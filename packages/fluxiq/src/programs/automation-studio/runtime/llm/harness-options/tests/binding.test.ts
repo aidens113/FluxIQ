@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioNodeRegistryResolution } from "../../../../nodes/index.ts";
-import { runAutomationStudioLlmEvidenceLoop } from "../../evidence-loop.ts";
+import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
+import { automationStudioLlmNodeDescriptions } from "../../node-tools/index.ts";
 import { automationStudioHarnessOptionBundleFromBinding, automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceRuntimeBinding } from "../binding.ts";
 import { AUTOMATION_STUDIO_BUILTIN_HARNESS_OPTION_IDS } from "../builtin.ts";
 import type { AutomationStudioHarnessOptionHost } from "../host.ts";
@@ -195,5 +196,74 @@ describe("the start location a build was told", () => {
     const calls = executeTool.mock.calls as unknown as Array<[{ startLocation?: string }]>;
     expect(calls).toHaveLength(1);
     expect(calls[0]![0]).not.toHaveProperty("startLocation");
+  });
+});
+
+// The build's described-node memory (t235): the model is shown every node by
+// name, asks for the definitions it needs, and a library call that fails
+// naming a node it never asked about describes that node on the way back.
+describe("Automation Studio harness option binding with a described-node memory", () => {
+  const AND = "builtin.logic.and";
+  const LIBRARY = [AND, "builtin.logic.or"];
+  const resolution: AutomationStudioHarnessOptionResolution = { ...SCOPE, allowSideEffectsWithoutPolicy: true };
+  const failed = (): AutomationStudioLlmEvidenceToolExecutionResult => ({ kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "node_failed" }, effectApplied: false, resultCode: "node_failed" });
+  function wired(executeTool: AutomationStudioLlmEvidenceRuntimeBinding["executeTool"]) {
+    const memory = automationStudioLlmNodeDescriptions({ resolution: { scope: { kind: "global" } } });
+    const registry = automationStudioHarnessOptionRegistry({ binding: { ...slot(), runsNodes: {}, executeTool }, nodeIds: LIBRARY, nodeDescriptions: memory });
+    const loop = registry.evidenceLoopBinding({ projectId: "project.one", flowId: "flow.one" }, resolution);
+    const run = (value: Record<string, unknown>, callId = "call.1") => loop.executeTool({ callId, toolId: "core.run_node", value: value as never });
+    return { memory, registry, loop, run };
+  }
+
+  it("offers core.describe_nodes only with a memory and the library beside it", () => {
+    const ids = (input: Parameters<typeof automationStudioHarnessOptionRegistry>[0]) => automationStudioHarnessOptionRegistry(input).tools(resolution).map((tool) => tool.toolId);
+    const memory = automationStudioLlmNodeDescriptions({ resolution: { scope: { kind: "global" } } });
+    expect(ids({ binding: { ...slot(), runsNodes: {} }, nodeIds: LIBRARY })).not.toContain("core.describe_nodes");
+    expect(ids({ binding: slot(), nodeIds: LIBRARY, nodeDescriptions: memory })).not.toContain("core.describe_nodes");
+    expect(ids({ binding: { ...slot(), runsNodes: {} }, nodeIds: LIBRARY, nodeDescriptions: memory })).toEqual(["erp.inspect", "erp.advance", "core.run_node", "core.describe_nodes"]);
+  });
+
+  it("describes a node through the loop binding, and the memory is the one the build holds", async () => {
+    const { memory, loop } = wired(vi.fn(async () => ({ observed: true })));
+    expect(await loop.executeTool({ callId: "call.1", toolId: "core.describe_nodes", value: { ids: [AND] } })).toMatchObject({ ok: true, described: [AND] });
+    expect(memory.ids()).toEqual([AND]);
+  });
+
+  it("describes the node of a failed call once, and names the parameters its definition does not declare", async () => {
+    const { memory, run } = wired(vi.fn(async () => failed()));
+    const first = await run({ node: AND, parameters: { emptyBehavior: "true", selector: "#go" }, consequences: [] });
+    expect(first).toMatchObject({ resultCode: "node_failed", evidence: { ok: false, code: "node_failed", described: `${AND} is now in flowBootstrap.describedNodes`, undeclaredParameters: ["selector"] } });
+    expect(memory.ids()).toEqual([AND]);
+
+    // Already described: no second `described`, only the pointer and the list.
+    const second = await run({ node: AND, parameters: { emptyBehavior: "true" }, consequences: [] }, "call.2") as AutomationStudioLlmEvidenceToolExecutionResult;
+    expect(second.evidence).toEqual({ ok: false, code: "node_failed", definition: `${AND} is in flowBootstrap.describedNodes` });
+    expect(memory.ids()).toEqual([AND]);
+  });
+
+  it("explains a failure answered as bare evidence the same way", async () => {
+    const { run } = wired(vi.fn(async () => ({ ok: false, code: "node_failed" })));
+    expect(await run({ node: AND, parameters: { bogus: 1 }, consequences: [] })).toEqual({ ok: false, code: "node_failed", described: `${AND} is now in flowBootstrap.describedNodes`, undeclaredParameters: ["bogus"] });
+  });
+
+  it("leaves a call that worked untouched, and never refuses an undescribed node before it runs", async () => {
+    const answer = { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, rows: 2 }, effectApplied: false };
+    const executeTool = vi.fn(async () => answer);
+    const { memory, run } = wired(executeTool);
+    expect(await run({ node: AND, parameters: { bogus: 1 }, consequences: [] })).toBe(answer);
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    expect(memory.ids()).toEqual([]);
+  });
+
+  it("passes the loop's own replays through untouched", async () => {
+    const { memory, run } = wired(vi.fn(async () => failed()));
+    expect(await run({ node: AND, parameters: {}, consequences: [], replay: "verify" })).toEqual(failed());
+    expect(memory.ids()).toEqual([]);
+  });
+
+  it("describes the node of a call that threw, and still throws", async () => {
+    const { memory, run } = wired(vi.fn(async () => { throw new Error("page gone"); }));
+    await expect(run({ node: AND, parameters: {}, consequences: [] })).rejects.toThrow("page gone");
+    expect(memory.ids()).toEqual([AND]);
   });
 });

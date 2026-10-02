@@ -19,7 +19,13 @@ import type {
 import type { AutomationStudioExplorationRefusalClassifier, AutomationStudioExplorationStateDigestPhase } from "../../recovery/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioLlmRunNodeTool } from "../node-tools/index.ts";
+import {
+  AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
+  automationStudioLlmDescribeNodesBundle,
+  automationStudioLlmRunNodeDescribingFailures,
+  automationStudioLlmRunNodeTool,
+  type AutomationStudioLlmNodeDescriptions
+} from "../node-tools/index.ts";
 import type { AutomationStudioHarnessOptionHost } from "./host.ts";
 import type { AutomationStudioHarnessOption, AutomationStudioHarnessOptionBundle, AutomationStudioHarnessOptionImplementation } from "./option.ts";
 import { AutomationStudioHarnessOptionRegistry } from "./registry.ts";
@@ -304,6 +310,13 @@ export function automationStudioHarnessOptionRegistry(input: {
    * build, which is the scope the value has.
    */
   startLocation?: string | undefined;
+  /**
+   * The build's described-node memory (`../node-tools/node-descriptions.ts`).
+   * Given, and with the library on offer, the model may ask for nodes' full
+   * definitions (`core.describe_nodes`), and a library call that fails naming
+   * a node it never asked about describes that node on the way back.
+   */
+  nodeDescriptions?: AutomationStudioLlmNodeDescriptions | undefined;
 }): AutomationStudioHarnessOptionRegistry {
   const registry = new AutomationStudioHarnessOptionRegistry(input.host ? { host: input.host } : {});
   // Only the names the domain said it runs. A node it will refuse is not a
@@ -315,7 +328,14 @@ export function automationStudioHarnessOptionRegistry(input: {
     ? automationStudioLlmRunNodeTool({ nodeIds: offeredNodeIds, ...(input.binding.runsNodes.initial ? { initial: input.binding.runsNodes.initial } : {}) })
     : undefined;
   if (input.binding && (input.binding.tools.length || input.binding.harnessOptions?.options.length || runNode)) {
-    registry.register(automationStudioHarnessOptionBundleFromBinding(input.binding, runNode, input.startLocation));
+    const bundle = automationStudioHarnessOptionBundleFromBinding(input.binding, runNode, input.startLocation);
+    // Describing is offered only beside the library it describes: with nothing
+    // to run, a definition is nothing the model can use.
+    const memory = runNode ? input.nodeDescriptions : undefined;
+    const runImplementation = bundle.implementations[AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID];
+    if (memory && runImplementation) bundle.implementations[AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID] = automationStudioLlmRunNodeDescribingFailures(runImplementation, memory);
+    registry.register(bundle);
+    if (memory) registry.register(automationStudioLlmDescribeNodesBundle(memory));
   }
   return registry;
 }

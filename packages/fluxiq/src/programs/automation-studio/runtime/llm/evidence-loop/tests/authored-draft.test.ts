@@ -8,6 +8,7 @@ import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudio
 import { automationStudioLlmEvidenceParseDecision } from "../../evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceAuthoredProgress } from "../../evidence-progress/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import type { AutomationStudioLlmEvidenceTool } from "../../evidence-loop.ts";
 
 const go = { toolId: "go", description: "Go or press.", inputSchema: { type: "object" }, effect: "mutate" as const };
 const stalled = () => new Error("stalled");
@@ -137,5 +138,64 @@ describe("progress, where the model authors its draft", () => {
     expect(progress.advanced()).toBe(false);
     missing = [];
     expect(progress.advanced()).toBe(false);
+  });
+});
+
+// The decision schema's authoring properties, explained once (t235). `add`
+// and `act` were offered on every tool variant with the same two sentences,
+// 468 characters a tool on every decision of a build. They are still offered
+// on every variant -- a look's call can carry a draft statement that proposes
+// a step, so no variant may lose them -- but explained only on the first call
+// that can act.
+describe("authoring properties in the decision schema", () => {
+  const look = (toolId: string): AutomationStudioLlmEvidenceTool => ({
+    toolId, description: `${toolId} looks.`, effect: "observe", inputSchema: { type: "object", additionalProperties: false, properties: {} }
+  });
+  const library: AutomationStudioLlmEvidenceTool = {
+    toolId: "core.run_node", description: "Runs a node.", effect: "mutate", perCallEffect: true,
+    inputSchema: { type: "object", additionalProperties: false, properties: { node: { type: "string" } } }
+  };
+  const variants = (tools: AutomationStudioLlmEvidenceTool[], authoring = true): Array<{ toolId: string; properties: JsonObject }> =>
+    ((buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, { type: "object" }, false, false, authoring).oneOf) as JsonObject[]).map((variant) => {
+      const properties = variant.properties as JsonObject;
+      return { toolId: (properties.toolId as JsonObject).const as string, properties };
+    });
+
+  it("explains add and act on the first call that can act, and offers them bare on every other", () => {
+    const shown = variants([look("web.find_on_page"), look("web.describe_element"), library, look("core.describe_nodes")]);
+    for (const variant of shown) {
+      const add = variant.properties.add as JsonObject;
+      const act = variant.properties.act as JsonObject;
+      expect(add.type).toBe("boolean");
+      expect(act.pattern).toBe("^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$");
+      if (variant.toolId === "core.run_node") {
+        expect(add.description).toMatch(/put its step into the Flow/u);
+        expect(act.description).toMatch(/acts checklist/u);
+      } else {
+        expect(add.description).toBeUndefined();
+        expect(act.description).toBeUndefined();
+      }
+    }
+  });
+
+  it("explains them on the first call when none can act", () => {
+    const shown = variants([look("web.find_on_page"), look("web.describe_element")]);
+    expect((shown[0]!.properties.add as JsonObject).description).toBeTypeOf("string");
+    expect((shown[1]!.properties.add as JsonObject).description).toBeUndefined();
+  });
+
+  it("offers neither where the model does not author its draft", () => {
+    for (const variant of variants([look("web.find_on_page"), library], false)) {
+      expect(variant.properties.add).toBeUndefined();
+      expect(variant.properties.act).toBeUndefined();
+    }
+  });
+
+  it("costs one explanation, not one a tool", () => {
+    const tools = [look("web.detect_repeating_structure"), look("web.find_on_page"), look("web.describe_element"), library, look("core.describe_nodes")];
+    const authored = JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, { type: "object" }, false, false, true)).length;
+    const plain = JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, { type: "object" }, false, false, false)).length;
+    // One explained pair plus four bare pairs over the schema with none.
+    expect(authored - plain).toBeLessThan(468 + 4 * 120);
   });
 });

@@ -29,11 +29,37 @@ describe("the run-node tool's declaration", () => {
     // anything runs.
     expect(automationStudioLlmEvidenceValidTools([built!])).toBe(true);
     expect(built!.description.length).toBeLessThanOrEqual(2_000);
+    // Room kept under the bound (t235): it was 1,990 of 2,000, so one more
+    // sentence of guidance refused every build's first request.
+    expect(built!.description.length).toBeLessThanOrEqual(1_500);
   });
 
-  it("names every consequence class from the declared list, so a new one needs no edit here", () => {
+  it("teaches the two steps: pick a name from the catalog, read its definition before first using it", () => {
+    // The catalog is names only (user, 2026-10-01); a node's parameters are
+    // shown once the model has asked for them.
+    const built = tool()!;
+    expect(built.description).toContain("flowBootstrap.nodeCatalog names every node");
+    expect(built.description).toContain("core.describe_nodes");
+    expect(built.description).toContain("unless it is already in flowBootstrap.describedNodes");
+    const properties = built.inputSchema.properties as { parameters: { description: string } };
+    expect(properties.parameters.description).toContain("flowBootstrap.describedNodes");
+  });
+
+  it("leaves the consequence classes to the schema's enum rather than repeating them in prose", () => {
+    // A class added in `action-permissions/` reaches the model through the
+    // enum with nobody editing this file.
+    const built = tool()!;
+    const consequences = (built.inputSchema.properties as { consequences: { items: { enum: string[] } } }).consequences;
+    expect(consequences.items.enum).toEqual([...AUTOMATION_STUDIO_ACTION_CONSEQUENCES]);
+    expect(built.description).not.toContain(AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", "));
+    expect(built.description).not.toContain("amend_draft add");
+  });
+
+  it("keeps the rules the model needs: handles not locators, lists by their detection handle", () => {
     const description = tool()!.description;
-    for (const consequence of AUTOMATION_STUDIO_ACTION_CONSEQUENCES) expect(description).toContain(consequence);
+    expect(description).toContain("{\"handle\": \"<the handle the evidence printed, copied exactly>\"}");
+    expect(description).toContain("Never write a locator");
+    expect(description).toContain("by the handle the detection tool issued");
   });
 
   it("shows both answers about consequences, not only the empty one", () => {
