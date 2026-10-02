@@ -3,6 +3,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { automationStudioLlmEvidenceParseCompletionCheck } from "../../evidence-loop-decision.ts";
 import { checkAutomationStudioFlowBootstrapCompletion } from "../bootstrap-completion.ts";
 import { automationStudioPlanNodeHandleSites } from "../plan-node-handles.ts";
 
@@ -573,6 +574,28 @@ describe("a completed list read with no declared columns", () => {
       const node = verdict.buildPlan.subflows[0]?.nodes.find((entry) => entry.definitionId === "web.output.dom-extract_list");
       const recordOutput = node?.parameters?.recordOutput as { schema?: { fields?: Array<{ id: string }> } } | undefined;
       expect(recordOutput?.schema?.fields?.map((column) => column.id)).toEqual(["name", "price"]);
+    }
+  });
+
+  // The warning used to be dropped on the way to an accepted verdict, so nobody
+  // saw that the instruction's "rating" was never read. It is kept beside the
+  // check, not in it: the loop reads a check by its exact keys, and an accepted
+  // check with one more would end the build as an invalid decision.
+  it("keeps the warning about a named column no field reads on the accepted verdict, and accepts it", async () => {
+    const draftSteps: AutomationStudioFlowDraftStep[] = [{ position: 1, id: "d1", iteration: 1, actionId: "web.dom.extract_list", toolId: "core.run_node", input: { node: "web.dom.extract_list", parameters: { extractList: read }, consequences: [] }, effect: "observe", effectApplied: true, disposition: "kept", proposes: true }];
+    const ask = (instructionText: string) => checkAutomationStudioFlowBootstrapCompletion({ result: { summary: "Scrape" }, draftSteps, projectId: "project.1", flowId: "flow.1", registry, resolution, instructionText });
+
+    const missed = await ask("Scrape every Plus product the search returns as a table with columns name, price and rating.");
+    expect(missed.ok).toBe(true);
+    if (!missed.ok) return;
+    expect(missed.warnings).toEqual([expect.objectContaining({ severity: "warning", code: "record_output.named_column_unmatched", message: expect.stringContaining("\"rating\"") })]);
+    expect(Object.keys(missed.check).sort()).toEqual(["answerability", "ok"]);
+    expect(automationStudioLlmEvidenceParseCompletionCheck(missed.check)).toMatchObject({ ok: true });
+
+    for (const instructionText of ["Scrape every Plus product the search returns as a table with columns name and price.", "Scrape every Plus product the search returns."]) {
+      const verdict = await ask(instructionText);
+      expect(verdict.ok).toBe(true);
+      if (verdict.ok) expect(verdict.warnings).toBeUndefined();
     }
   });
 });

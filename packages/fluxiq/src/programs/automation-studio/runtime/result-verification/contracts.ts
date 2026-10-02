@@ -217,6 +217,12 @@ export type AutomationStudioRunResultSummary = {
   /** The steps the Flow is built from, in authored order: what it can do at all. */
   flowShape: AutomationStudioResultFlowStepSummary[];
   /**
+   * Core's sentence naming the columns the instruction asks for that no stored
+   * column reads (`read-account/unread-columns.ts`). Set only on the summary the
+   * judge is shown, and only when there are some. Information, never a verdict.
+   */
+  instructionColumnsUnread?: string;
+  /**
    * True when a step's parameters were left out for want of room rather than
    * because the step had none.
    *

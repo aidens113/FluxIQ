@@ -1,0 +1,69 @@
+// The model is told, beside its draft, when a list read it ran misses a column
+// the instruction names.
+//
+// The build declares the instruction's named columns as the read's schema, and
+// a named column no field reads was a warning on the plan that nobody saw
+// (F35). The draft entry is in front of the model on every decision after the
+// read, so the note goes there: information, never an act and never a refusal.
+import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import { automationStudioFlowDraftEntry, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { automationStudioFlowBootstrapDraftActs } from "../draft-acts.ts";
+
+const COLUMNS = "Scrape every product the search returns as a table with columns name, price and rating.";
+
+function readStep(position: number, fields: JsonObject, disposition: AutomationStudioFlowDraftStep["disposition"] = "taken"): AutomationStudioFlowDraftStep {
+  return {
+    position, id: `d${position}`, iteration: position, actionId: "web.output.dom-extract_list", toolId: "core.run_node",
+    input: { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "list.1", fields } }, consequences: [] },
+    effect: "observe", effectApplied: true, disposition, proposes: true
+  };
+}
+
+const navigate: AutomationStudioFlowDraftStep = {
+  position: 1, id: "d1", iteration: 1, actionId: "web.output.browser-navigate", toolId: "core.run_node",
+  input: { node: "web.output.browser-navigate", parameters: { url: "https://store.test/" }, consequences: [] },
+  effect: "mutate", effectApplied: true, disposition: "kept", proposes: true
+};
+
+const notesOf = (value: unknown): string[] => Array.isArray(value)
+  ? value.flatMap((item) => typeof item === "object" && item !== null && typeof (item as JsonObject).note === "string" ? [(item as JsonObject).note as string] : [])
+  : [];
+
+describe("the draft says when a read misses a column the instruction names", () => {
+  it("names the column and the read, in the entry the model is shown", () => {
+    const steps = [navigate, readStep(2, { name: ".name", price: ".price", plus: ".plus" })];
+    const acts = automationStudioFlowBootstrapDraftActs({ instructionText: COLUMNS }).acts(steps);
+
+    expect(notesOf(acts)).toEqual(["The instruction asks for a column \"rating\" that no field of step 2 reads."]);
+    const entry = automationStudioFlowDraftEntry({ steps, authored: true, acts });
+    expect(JSON.stringify(entry?.value)).toContain("no field of step 2 reads");
+  });
+
+  it("names every column a read misses, once per read", () => {
+    const acts = automationStudioFlowBootstrapDraftActs({ instructionText: COLUMNS }).acts([navigate, readStep(2, { name: ".name" })]);
+    expect(notesOf(acts)).toEqual(["The instruction asks for columns \"price\", \"rating\" that no field of step 2 reads."]);
+  });
+
+  it("says nothing when every named column is read, the instruction names none, or the read was withdrawn", () => {
+    const all = { name: ".name", price: ".price", rating: ".stars", plus: ".plus" };
+    const missing = { name: ".name", price: ".price" };
+    const cases: Array<{ instructionText?: string; steps: AutomationStudioFlowDraftStep[] }> = [
+      { instructionText: COLUMNS, steps: [navigate, readStep(2, all)] },
+      { instructionText: "Scrape every product the search returns.", steps: [navigate, readStep(2, missing)] },
+      { steps: [navigate, readStep(2, missing)] },
+      { instructionText: COLUMNS, steps: [navigate, readStep(2, missing, "dropped")] }
+    ];
+    for (const { instructionText, steps } of cases) {
+      const acts = automationStudioFlowBootstrapDraftActs({ instructionText }).acts(steps);
+      expect(notesOf(acts)).toEqual([]);
+      expect(JSON.stringify(acts ?? null)).not.toContain("no field");
+    }
+  });
+
+  it("never counts the note as an act still owed", () => {
+    const draftActs = automationStudioFlowBootstrapDraftActs({ instructionText: COLUMNS });
+    const steps = [navigate, readStep(2, { name: ".name" })];
+    expect(draftActs.actsMissing(steps)).toEqual(draftActs.actsMissing([navigate, readStep(2, { name: ".name", price: ".p", rating: ".r" })]));
+  });
+});

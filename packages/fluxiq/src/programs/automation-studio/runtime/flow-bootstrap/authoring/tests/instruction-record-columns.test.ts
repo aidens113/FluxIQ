@@ -14,7 +14,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts
 import { automationStudioFlowBootstrapRecordOutputIssues } from "../../plan/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, assembleAutomationStudioFlowDraftPlan } from "../index.ts";
-import { authoringInstructionRecordColumns } from "../instruction-record-columns.ts";
+import { authoringInstructionRecordColumns, automationStudioFlowBootstrapUnreadColumnsSentence } from "../instruction-record-columns.ts";
 
 const definitions = webDomainNodeDefinitionsFixture();
 const registry = new AutomationStudioNodeRegistry(definitions);
@@ -147,5 +147,23 @@ describe("matching a named column to a field", () => {
       columns: [{ id: "name", label: "Name" }],
       unmatched: ["Name 2"]
     });
+  });
+});
+
+// The one sentence the build and the judge are told, by this matcher: names
+// from the instruction only, and nothing at all when there is nothing to say.
+describe("the sentence for a named column no field reads", () => {
+  it("names the columns the instruction asks for that no field reads", () => {
+    expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, fieldKeys: ["name", "price", "url", "plus"], reader: "step 3" }))
+      .toBe("The instruction asks for a column \"rating\" that no field of step 3 reads.");
+    expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, fieldKeys: ["Name", "url"] }))
+      .toBe("The instruction asks for columns \"price\", \"rating\" that no field reads.");
+  });
+
+  it("says nothing when every named column is read, none is named, or there are no fields", () => {
+    expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, fieldKeys: ["name", "price", "rating", "url", "ad"] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: "Find every pair of Plus earbuds under $50.", fieldKeys: ["name"] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: undefined, fieldKeys: ["name"] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, fieldKeys: [] })).toBeUndefined();
   });
 });

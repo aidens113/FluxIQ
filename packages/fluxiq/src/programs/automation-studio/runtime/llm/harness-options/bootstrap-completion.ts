@@ -107,6 +107,13 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
     check: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: true }> & {
       answerability: AutomationStudioLlmEvidenceLoopAnswerability;
     };
+    /**
+     * What the accepted plan was written with a warning about, such as an
+     * instruction's named column no field reads (`record_output.named_column_unmatched`).
+     * Kept on the accepted record rather than dropped; never a refusal. It sits
+     * beside `check`, not in it, because the loop reads a check by its exact keys.
+     */
+    warnings?: AutomationStudioFlowBootstrapIssue[];
   }
   | {
     ok: false;
@@ -304,7 +311,14 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     const verdict = refused(failures, accepted.script, answerability);
     return verdict.ok ? verdict : { ...verdict, check: { ...verdict.check, ...restoredField } };
   }
-  return { ok: true, summary: accepted.summary, buildPlan, check: { ok: true, answerability: answerability ?? { recordsRequested: false, recordProducerPresent: false, recordStorePresent: false }, ...restoredField } };
+  const warnings = accepted.issues.filter((item) => item.severity === "warning");
+  return {
+    ok: true,
+    summary: accepted.summary,
+    buildPlan,
+    check: { ok: true, answerability: answerability ?? { recordsRequested: false, recordProducerPresent: false, recordStorePresent: false }, ...restoredField },
+    ...(warnings.length ? { warnings } : {})
+  };
 }
 
 /** Registry validation, which may throw. */

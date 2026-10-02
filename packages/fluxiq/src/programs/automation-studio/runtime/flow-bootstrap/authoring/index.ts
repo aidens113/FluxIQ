@@ -10,7 +10,12 @@
 // second door rather than a second normaliser: a build that accrued a draft
 // hands that draft over instead of a written script, and both go through
 // `assemble.ts` from there.
+//
+// `instruction-record-columns.ts` publishes one sentence and nothing else: what
+// its matcher found unread, said to the build and the judge, so neither grows a
+// second matcher.
 export * from "./accept.ts";
 export * from "./assemble-draft.ts";
 export * from "./contracts.ts";
+export { automationStudioFlowBootstrapUnreadColumnsSentence } from "./instruction-record-columns.ts";
 export * from "./parse.ts";

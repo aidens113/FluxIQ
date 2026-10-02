@@ -15,7 +15,7 @@ import type { AutomationStudioFlowDocument, AutomationStudioFlowNode, Automation
 import type { AutomationStudioRunResultSummary } from "../contracts.ts";
 import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
 import { EARBUDS_LOCATORS, EARBUDS_NODE_ID, earbudsAttempt, earbudsNode } from "../read-account/tests/earbuds-read.ts";
-import { ANSWER, datasetSummary, flow, harness, runDetail, session, verify } from "./run-outcome-harness.ts";
+import { ANSWER, datasetSummary, flow, harness, instruction, runDetail, session, verify } from "./run-outcome-harness.ts";
 
 const schema: AutomationStudioRecordSchema = {
   schemaVersion: "0.1",
@@ -114,5 +114,23 @@ describe("the judge sees how the read went", () => {
     const traced = session({ flow: readFlow, trace: { attempts: [{ attemptId: "attempt.s6.rerun" }] } as never });
     await verify(context, { flow: readFlow, session: traced, ports: { ...context.ports, getFlowRunDetail: async () => detail } });
     expect(context.requests[0]?.context.resultSummary?.reads).toBeUndefined();
+  });
+
+  // The build declares the instruction's named columns, and a name no field
+  // reads was a warning nobody saw (F35). The judge is told it beside the
+  // stored columns, in the build's own sentence; nothing is said otherwise.
+  it("tells the judge which column the instruction asks for that no stored column reads", async () => {
+    const judged = async (body: string) => {
+      const context = harness({ answer: ANSWER.yes, datasets: [datasetSummary({ datasetId: "earbuds", recordCount: 8 })], schema, rows, instructions: [instruction(body)] });
+      await verify(context);
+      return context.requests[0]?.context.resultSummary;
+    };
+    expect((await judged("List the earbuds under $50 with columns name, price, rating, url and seller."))?.instructionColumnsUnread)
+      .toBe("The instruction asks for a column \"seller\" that no field reads.");
+    for (const body of ["List the earbuds under $50 with columns name, price, rating and url.", "List the earbuds under $50."]) {
+      const sent = await judged(body);
+      expect(sent).toBeDefined();
+      expect(sent?.instructionColumnsUnread).toBeUndefined();
+    }
   });
 });
