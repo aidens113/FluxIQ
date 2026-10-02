@@ -738,6 +738,39 @@ join the next step runs from, so playback skips it on a visit where the site
 remembers the answer. The stored draft is not rewritten, and a step that does
 an instructed act is never made optional.
 
+**Each step records the page it started on and the page it left (t243).** A
+run that meets a step it cannot run continues at the node whose expected
+pre-state matches the page, so the build records each step's pre-state as it
+sees it. The build's routing (`runtime/route-state/build-routing.ts`) keeps,
+for every call that reports the digest of the page it left
+(`stateDigests.after`) and that page's route state, the host's signature of the
+state (`signRouteState`) under that digest; the free first look counts the same
+way. A draft step's `stateBefore` and `stateAfter` digests then name its route
+signatures: `before`, its expected pre-state, and `after`. They ride the plan
+node (`routeSignatures`) through validation, which apply repeats and compares
+byte for byte, to the Flow node's metadata under `routeSignatures`
+(`runtime/flow-bootstrap/adaptation.ts`). They are keyed by digest rather than
+by call id because call ids repeat across repair rounds -- `initial.<tool>`
+opens every round -- while a digest names the page itself, and a step's
+`stateBefore` is the previous call's `stateAfter` whenever nothing moved the
+page in between. A host that signs no states records nothing, an observation
+made outside a call has no digest and maps nothing, and a plan the model wrote
+itself has any `routeSignatures` dropped before it is read: they are
+Core-derived only. Steps also record their **effect**, what they did to the
+page: the routing keeps the full route state of the page the newest call left,
+with that call's `stateDigests.after` -- one state in memory, never more -- and
+for a call whose `stateDigests.before` equals that digest, whose `after`
+differs and that reported the route state it left, keeps the host's
+`signRouteEffect(previous state, left state)` under the pair of digests. The
+web domain reports both digests on an action (its read before acting and its
+read after, `withCallStates`). A step's signatures then carry `effect` for its
+own `stateBefore` and `stateAfter`. A look (equal digests) records none, nor
+does a call that started on a page the previous call did not leave, a call
+after one that threw, or a host that records no effects. A run reads the
+effect for a step it cannot run, to pass over a step the site already did
+(`../automation-studio.md`, "A step that cannot run continues where the page
+is").
+
 **The instructed acts are the model's checklist from the first decision**
 (audit A1, cause 1). The draft entry carries `acts`: each lasting act the
 instruction asks for, in the person's words, with `done` naming the step of the

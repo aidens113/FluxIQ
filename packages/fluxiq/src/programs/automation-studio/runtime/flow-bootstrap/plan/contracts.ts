@@ -3,6 +3,7 @@
 // plan handed on to Bootstrap Adaptations.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationNodeParameter, AutomationNodeValueType } from "../../../nodes/index.ts";
+import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import type { AutomationStudioFlowBootstrapRouteCondition } from "./route-condition.ts";
 import type { AutomationStudioFlowBootstrapRoutingContext } from "./routing-context.ts";
 
@@ -25,6 +26,14 @@ export type AutomationStudioFlowBootstrapNode = {
    * answer.
    */
   consequences?: string[];
+  /**
+   * The pages the step ran between as the build saw them -- `before`, its
+   * expected pre-state, and `after` -- each the host's opaque signature of a
+   * route state (`../../route-state/signatures/`). Core-derived only: set
+   * from the build's draft, dropped from a plan the model wrote, and written
+   * to the Flow node's metadata under `routeSignatures` (`../adaptation.ts`).
+   */
+  routeSignatures?: AutomationStudioRouteSignatures;
 };
 
 export type AutomationStudioFlowBootstrapEdge = {

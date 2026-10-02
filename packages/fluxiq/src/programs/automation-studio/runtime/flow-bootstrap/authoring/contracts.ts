@@ -4,6 +4,7 @@
 // nested, nothing quoted, nothing escaped. This module holds only the shapes
 // the parser produces and the acceptor returns; the grammar itself is in
 // `./parse.ts`, and what the model is shown is in `./format.ts`.
+import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 
 /** One `key: value` line inside a step, with its value already joined. */
@@ -66,6 +67,13 @@ export type AutomationStudioFlowScriptStep = {
    * rather than guessed from where it landed after routing added its joins.
    */
   draftStepId?: string;
+  /**
+   * The route signatures the build recorded for the draft step this was
+   * written from: the page it started on and the page it left
+   * (`../../route-state/build-routing.ts`). Never written by a model, and set
+   * only on a step a draft step became; a join or a loop routing adds has none.
+   */
+  routeSignatures?: AutomationStudioRouteSignatures;
   line: number;
 };
 

@@ -31,6 +31,7 @@
 
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { assembleAutomationStudioFlowScriptPlan } from "./assemble.ts";
@@ -73,6 +74,14 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
    * declared none (`./instruction-record-columns.ts`); absent, nothing is.
    */
   instructionText?: string | undefined;
+  /**
+   * The route signatures the build recorded for a step: the page it started
+   * on and the page it left (`../../route-state/build-routing.ts`). Each plan
+   * node a step becomes carries its step's, so the Flow node can, and a run
+   * can continue at the node whose expected pre-state is the page it finds.
+   * Absent, or answering nothing for a step, no node records any.
+   */
+  routeSignaturesOf?: ((step: AutomationStudioFlowDraftStep) => AutomationStudioRouteSignatures | undefined) | undefined;
 }): {
   plan?: AutomationStudioFlowBootstrapPlan;
   refusedPlan?: AutomationStudioFlowBootstrapPlan;
@@ -92,13 +101,15 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
       issues.push(authoringError("flow_draft.step_not_written", `Step ${step.position} did "${step.actionId}" and nothing said how to write it down, so the result would not contain it.`, `draft.steps.${step.position}`));
       continue;
     }
+    const routeSignatures = input.routeSignaturesOf?.(step);
     routable.push({
       step,
       written: {
         description: written.description,
         ...(written.node ? { node: written.node } : {}),
         entries: (written.entries ?? []).map((entry) => ({ key: entry.key, lines: entry.value.split("\n"), line: 0 }))
-      }
+      },
+      ...(routeSignatures ? { routeSignatures } : {})
     });
   }
   // What each step says about when it runs becomes the steps, ports and edges
