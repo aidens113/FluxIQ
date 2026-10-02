@@ -61,6 +61,7 @@ import type { AutomationStudioFlowBootstrapBudgetBound, AutomationStudioFlowBoot
 import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../incomplete-draft/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../loop-limits/index.ts";
+import { automationStudioLlmStepLogScope } from "../../llm/step-log/index.ts";
 import { automationStudioFlowBootstrapBudgetExhausted } from "./budget-exhausted.ts";
 import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapRoundProgress, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
 import {
@@ -188,7 +189,9 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     const left = round === 0 ? { budget: input.budget, maxIterations: input.maxIterations } : remaining(input, spent, clock() - startedAt);
     let outcome: AutomationStudioLlmEvidenceLoopResult | AutomationStudioFlowBootstrapUnfinishedStall;
     try {
-      outcome = await input.round({ round, ...left, ...(repair ? { repair } : {}), stalled: (progress) => new AutomationStudioFlowBootstrapUnfinishedStall(progress) });
+      // The step log's round and phase for every call this round makes (`../../llm/step-log/`): a round with nothing to repair explores.
+      const phase = round === 0 || !repair?.seed.length ? "explore" : "repair";
+      outcome = await automationStudioLlmStepLogScope.run({ round, phase }, () => input.round({ round, ...left, ...(repair ? { repair } : {}), stalled: (progress) => new AutomationStudioFlowBootstrapUnfinishedStall(progress) }));
     } catch (error) {
       if (!(error instanceof AutomationStudioFlowBootstrapUnfinishedStall)) throw error;
       outcome = error;
@@ -212,7 +215,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     // Phase 2: a round a budget stopped is judged from the checklist alone; nothing more is run for a build that is ending.
     const judged = await automationStudioFlowBootstrapJudgeUnfinished({
       round, stopped, steps: ending.steps, lastIssueCodes: ending.lastIssueCodes,
-      ...(ending.kind === "unfinished" ? { test: input.test } : {}),
+      ...(ending.kind === "unfinished" ? { test: (steps: AutomationStudioFlowDraftStep[]) => automationStudioLlmStepLogScope.run({ round, phase: "test" }, () => input.test(steps)) } : {}),
       replayable: input.replayable, checklist: input.checklist
     });
     if (judged.kind === "cancelled") {
