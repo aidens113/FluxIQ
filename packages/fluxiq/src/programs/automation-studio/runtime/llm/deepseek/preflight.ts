@@ -129,8 +129,11 @@ function validEvidenceLoopContext(context: AutomationStudioLlmTaskRequest["conte
       // A free first look is a look. That is a tool that only observes -- or one
       // whose calls declare their own effect, whose initial argument the host
       // writes rather than the model, and which is therefore the host's
-      // statement that this one call observes.
-      || (tool.initialObservation !== undefined && ((tool.effect !== "observe" && tool.perCallEffect !== true) || !isRecord(tool.initialObservation) || Object.keys(tool.initialObservation).some((key) => key !== "input") || !isRecord(tool.initialObservation.input)))) return false;
+      // statement that this one call observes. An `arrival` is the same tool
+      // going to where the Flow starts, so only such a tool may carry one; it
+      // is checked here and never projected to the provider (`./request-body.ts`).
+      || (tool.initialObservation !== undefined && ((tool.effect !== "observe" && tool.perCallEffect !== true) || !isRecord(tool.initialObservation) || Object.keys(tool.initialObservation).some((key) => key !== "input" && key !== "arrival") || !isRecord(tool.initialObservation.input)
+        || (tool.initialObservation.arrival !== undefined && (tool.perCallEffect !== true || !isRecord(tool.initialObservation.arrival)))))) return false;
     ids.add(tool.toolId);
   }
   for (const item of loop.evidence) {

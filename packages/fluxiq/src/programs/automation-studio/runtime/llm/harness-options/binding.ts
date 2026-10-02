@@ -85,6 +85,25 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
   runsNodes?: {
     initial?: JsonObject;
     /**
+     * The node that takes this domain's target to a location, and the name of
+     * its parameter the location is written into.
+     *
+     * A build told where its Flow starts (`startLocation`) then opens by going
+     * there rather than with `initial`: the loop runs this node with the
+     * location as that parameter, before the first paid decision, and keeps the
+     * step as the Flow's first (`../evidence-loop.ts`). Without it, a domain
+     * that refuses every call made before the Flow has reached its start --
+     * the web domain does -- refused the free look of every such build, and
+     * the model spent its first paid decision on the navigation Core could
+     * have made (F31, `run-muqc07fh-eeffbc86` steps 0002-0004). Core still
+     * never reads the location: it is the domain's spelling, put where the
+     * domain said.
+     *
+     * Used only when the build has a `startLocation`, `initial` is declared
+     * (the arrival rides on it), and the node is one this binding offers.
+     */
+    arrival?: { node: string; parameter: string };
+    /**
      * The nodes this domain will actually run against its target, by id. Given,
      * the library offered to the model is narrowed to these.
      *
@@ -311,8 +330,13 @@ export function automationStudioHarnessOptionRegistry(input: {
   // to copy from it, so every name here that the domain cannot run is a paid
   // call whose only answer is `node_not_runnable_here`.
   const offeredNodeIds = runnableNodeIdsFor(input.binding, input.nodeIds);
-  const runNode = input.binding?.runsNodes && offeredNodeIds?.length
-    ? automationStudioLlmRunNodeTool({ nodeIds: offeredNodeIds, ...(input.binding.runsNodes.initial ? { initial: input.binding.runsNodes.initial } : {}) })
+  const runsNodes = input.binding?.runsNodes;
+  // A build told where it starts opens by going there (`runsNodes.arrival`);
+  // one that was not -- including a continuation, which passes no start --
+  // opens with the look, as before.
+  const arrival = runsNodes?.arrival && input.startLocation ? { ...runsNodes.arrival, location: input.startLocation } : undefined;
+  const runNode = runsNodes && offeredNodeIds?.length
+    ? automationStudioLlmRunNodeTool({ nodeIds: offeredNodeIds, ...(runsNodes.initial ? { initial: runsNodes.initial } : {}), ...(arrival ? { arrival } : {}) })
     : undefined;
   if (input.binding && (input.binding.tools.length || input.binding.harnessOptions?.options.length || runNode)) {
     registry.register(automationStudioHarnessOptionBundleFromBinding(input.binding, runNode, input.startLocation));
@@ -416,9 +440,10 @@ function executionFor(binding: AutomationStudioLlmEvidenceRuntimeBinding, toolId
     toolId,
     value: input.value,
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
-    // Every call of this build, including the free first look the loop takes
-    // before the first paid decision: that look is where a domain says "you are
-    // not there yet, and here is where you are meant to be".
+    // Every call of this build, including the opening call the loop makes
+    // before the first paid decision: the arrival at it when the binding
+    // declares one, and otherwise the free look, which is where a domain says
+    // "you are not there yet, and here is where you are meant to be".
     ...(startLocation === undefined ? {} : { startLocation }),
     permission: input.permission
   });

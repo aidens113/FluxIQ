@@ -127,10 +127,13 @@ export function automationStudioHarnessOptionIssues(option: AutomationStudioHarn
   // A free first look is a look. That is an option that only observes -- or one
   // whose calls declare their own effect, whose initial argument the host
   // writes rather than the model, and which is therefore the host's own
-  // statement that this one call observes.
+  // statement that this one call observes. Its `arrival` is the same option
+  // going to where the Flow starts (`../evidence-loop/tool.ts`), so only an
+  // option whose calls declare their own effect may carry one.
   if (option.initialObservation !== undefined
     && ((option.effect !== "observe" && option.perCallEffect !== true) || !isRecord(option.initialObservation) || !isRecord(option.initialObservation.input)
-      || Object.keys(option.initialObservation).some((key) => key !== "input"))) {
+      || Object.keys(option.initialObservation).some((key) => key !== "input" && key !== "arrival")
+      || (option.initialObservation.arrival !== undefined && (option.perCallEffect !== true || !isRecord(option.initialObservation.arrival))))) {
     issues.push("harness_option.initial_observation_invalid");
   }
   issues.push(...availabilityIssues(option.availability));
