@@ -2,7 +2,9 @@
 //
 // Without them it must be byte for byte the message every task kind was sent
 // before a domain could add to it: `system-prompt-pins.json` was written from
-// the source as it stood before the change (t237 W1), and is the pin. With
+// the source as it stood before the change (t237 W1), and is the pin; a pin
+// moves only when Core's own prose does (`loop_verification` was re-pinned to
+// dev's judge prose after lane D F45, from dev's unmodified builder). With
 // them, the domain's text sits after Core's format, injection and schema rules
 // and before Core's task prose, set off by blank lines -- and every word of
 // Core's message is still there.

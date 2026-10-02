@@ -67,7 +67,17 @@ export async function startAutomationStudioBuildRouting(input: {
   flowId: string;
   flowInputs: readonly AutomationStudioFlowPort[];
   start?: "now" | "first_look";
+  /**
+   * Tools whose calls read nothing on the page and change nothing there --
+   * `core.describe_nodes`, which reads the node library. A call of one records
+   * nothing: it is not the free first look, it did not move the page, and the
+   * next decision is not made to observe a page it never touched, which in the
+   * web domain is a whole page capture. Named by the caller, so this module
+   * needs to know no tool.
+   */
+  pageless?: readonly string[];
 }): Promise<AutomationStudioBuildRouting> {
+  const pageless = new Set(input.pageless ?? []);
   const observations: Array<{ seen: string; state: JsonObject }> = [];
   const observe = (signal: AbortSignal | undefined) => observeAutomationStudioRouteState({ hostRuntime: input.hostRuntime, projectId: input.projectId, flowId: input.flowId, ...(signal ? { signal } : {}) });
   // Unsettled only while a deferred start waits for the free first look.
@@ -95,6 +105,7 @@ export async function startAutomationStudioBuildRouting(input: {
       ...(start && !start.ok ? { stateUnavailable: start.reason } : {})
     }),
     recording: <C extends { callId: string; toolId: string; signal?: AbortSignal | undefined }, X>(executeTool: (call: C) => Promise<X>) => async (call: C): Promise<X> => {
+      if (pageless.has(call.toolId)) return await executeTool(call);
       const freeFirstLook = calls === 0 && call.callId.startsWith(FREE_FIRST_LOOK_CALL_PREFIX);
       calls += 1;
       // Anything else may move the page, so the start is read before it does.

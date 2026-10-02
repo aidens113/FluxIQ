@@ -1,3 +1,4 @@
+import { automationStudioFlowBootstrapCatalogNames } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import { estimateAutomationStudioLlmTokensFromUtf8Bytes } from "../token-estimation.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, type AutomationStudioDeepSeekModel } from "./models.ts";
@@ -95,6 +96,15 @@ export function automationStudioDeepSeekMessages(request: AutomationStudioLlmTas
  * later edit that adds a key must put it on the correct side of the window,
  * and a key that varies per call belongs after it. Other task kinds are one
  * call each and keep their order.
+ *
+ * The catalog an evidence decision is shown is every node by name and what it
+ * does (`nodeCatalog`, from the packet's `catalogNames`), the note that says
+ * how to read the rest, and the full definitions of only the nodes the build
+ * asked `core.describe_nodes` about (`describedNodes`) -- user, 2026-10-01. All
+ * three sit in the constant head. The names and the note never change during
+ * a build; `describedNodes` only ever gains an entry at its end, so a describe
+ * keeps the prefix through every node described before it, and two requests
+ * with an unchanged described set are byte prefixes exactly as before.
  */
 function providerUserPayload(request: AutomationStudioLlmTaskRequest): Record<string, unknown> {
   if (request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop) return providerEvidenceDecisionPayload(request, request.context.evidenceLoop);
@@ -139,7 +149,7 @@ function providerEvidenceDecisionPayload(
       // explorer decides whether to press with this, not only the diagnosis.
       // Fixed for the length of a loop, so it stays in the constant head.
       ...(request.context.policyGates ? { policyGates: request.context.policyGates } : {}),
-      ...(request.context.flowBootstrap ? { flowBootstrap: providerFlowBootstrap(request.context.flowBootstrap, false) } : {}),
+      ...(request.context.flowBootstrap ? { flowBootstrap: providerEvidenceFlowBootstrap(request.context.flowBootstrap) } : {}),
       evidenceLoop: {
         // The window. Everything after it varies between one call and the
         // next, and nothing constant may follow it.
@@ -164,26 +174,54 @@ function providerEvidenceDecisionPayload(
 }
 
 /**
- * What a build is shown of its catalog context: where its Flow starts, the
- * catalog, and the routing context when the build has one -- unless
- * `withRouting` is false, for an evidence decision, which carries it after its
- * window instead.
+ * What a one-shot build is shown of its catalog context: where its Flow
+ * starts, the whole catalog, and the routing context when the build has one.
+ * It is one call with no tools, so it cannot ask for a definition and is shown
+ * every one.
  *
  * `startLocation` comes first because it is the first thing the build has to
  * act on: it is not there, and nothing else it calls will work until it is.
  * The note beside it says so in words, because a bare address in a context
  * object is a fact and this is an instruction.
  */
-function providerFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>, withRouting = true): Record<string, unknown> {
+function providerFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>): Record<string, unknown> {
   const { nodeCatalog, catalogTruncated, catalogSelection, routing, startLocation } = context;
   return {
     ...(startLocation ? { startLocation, startLocationNote: FLOW_START_LOCATION_NOTE } : {}),
     nodeCatalog,
     catalogTruncated,
     catalogSelection,
-    ...(withRouting && routing ? { routing } : {})
+    ...(routing ? { routing } : {})
   };
 }
+
+/**
+ * What an evidence decision is shown of its catalog context: where its Flow
+ * starts, every node by name, the note on reading them, and the nodes it has
+ * had described (see above). The routing context rides after the window
+ * instead, and the whole catalog, `catalogTruncated` and `catalogSelection`
+ * are not sent: the names list every node, and a definition is one
+ * `core.describe_nodes` call away. A packet built without `catalogNames` -- a
+ * request assembled by hand -- has them derived from its catalog by the same
+ * function, so the wire never carries the full catalog to a decision.
+ */
+function providerEvidenceFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>): Record<string, unknown> {
+  const { nodeCatalog, catalogNames, describedNodes, startLocation } = context;
+  return {
+    ...(startLocation ? { startLocation, startLocationNote: FLOW_START_LOCATION_NOTE } : {}),
+    nodeCatalog: catalogNames ?? automationStudioFlowBootstrapCatalogNames(nodeCatalog),
+    nodeCatalogNote: AUTOMATION_STUDIO_DEEPSEEK_NODE_CATALOG_NOTE,
+    ...(describedNodes?.length ? { describedNodes } : {})
+  };
+}
+
+/**
+ * How an evidence decision reads `nodeCatalog` and `describedNodes`, said once.
+ * Constant, so it sits in the cached head; held under 300 characters by
+ * `./tests/request-body.test.ts`.
+ */
+const AUTOMATION_STUDIO_DEEPSEEK_NODE_CATALOG_NOTE =
+  "nodeCatalog lists every node by id and what it does, by category. Before first running a node, ask core.describe_nodes for it (several ids at once); its inputs, outputs and parameters then stay in describedNodes for the rest of this build, so never ask for one already there.";
 
 /**
  * What `startLocation` means, said once.

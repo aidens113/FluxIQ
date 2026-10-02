@@ -20,7 +20,13 @@ import type { AutomationStudioExplorationRefusalClassifier, AutomationStudioExpl
 import type { AutomationStudioLlmDomainSystemInstructions } from "../domain-instructions/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioLlmFailureEvidenceCaptureInput, AutomationStudioRuntimeTargetOverrideTarget } from "../harness.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioLlmRunNodeTool } from "../node-tools/index.ts";
+import {
+  AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
+  automationStudioLlmDescribeNodesBundle,
+  automationStudioLlmRunNodeDescribingFailures,
+  automationStudioLlmRunNodeTool,
+  type AutomationStudioLlmNodeDescriptions
+} from "../node-tools/index.ts";
 import type { AutomationStudioHarnessOptionHost } from "./host.ts";
 import type { AutomationStudioHarnessOption, AutomationStudioHarnessOptionBundle, AutomationStudioHarnessOptionImplementation } from "./option.ts";
 import { AutomationStudioHarnessOptionRegistry } from "./registry.ts";
@@ -103,6 +109,12 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * are, so the domain declares them, as it declares `deniedEvidenceKeys`.
    * Absent, every result is shown whole in every later decision, which is
    * what overflowed live builds (B1, `run-mup2i28c-6c7fc209`).
+   *
+   * A key written `holder.member` is a member of the object a result holds
+   * under `holder` -- for the web domain, a read's rows inside its `read` --
+   * and is a view of its own kind, replaced only by the next result whose same
+   * holder carries one; the loop is then offered `core.recall_result` to get
+   * an earlier one back whole (t194 w48, `../evidence-recall/`).
    */
   observedStateKeys?: readonly string[];
   tools: AutomationStudioLlmEvidenceTool[];
@@ -363,6 +375,13 @@ export function automationStudioHarnessOptionRegistry(input: {
    * build, which is the scope the value has.
    */
   startLocation?: string | undefined;
+  /**
+   * The build's described-node memory (`../node-tools/node-descriptions.ts`).
+   * Given, and with the library on offer, the model may ask for nodes' full
+   * definitions (`core.describe_nodes`), and a library call that fails naming
+   * a node it never asked about describes that node on the way back.
+   */
+  nodeDescriptions?: AutomationStudioLlmNodeDescriptions | undefined;
 }): AutomationStudioHarnessOptionRegistry {
   const registry = new AutomationStudioHarnessOptionRegistry(input.host ? { host: input.host } : {});
   // Only the names the domain said it runs. A node it will refuse is not a
@@ -379,7 +398,14 @@ export function automationStudioHarnessOptionRegistry(input: {
     ? automationStudioLlmRunNodeTool({ nodeIds: offeredNodeIds, ...(runsNodes.initial ? { initial: runsNodes.initial } : {}), ...(arrival ? { arrival } : {}) })
     : undefined;
   if (input.binding && (input.binding.tools.length || input.binding.harnessOptions?.options.length || runNode)) {
-    registry.register(automationStudioHarnessOptionBundleFromBinding(input.binding, runNode, input.startLocation));
+    const bundle = automationStudioHarnessOptionBundleFromBinding(input.binding, runNode, input.startLocation);
+    // Describing is offered only beside the library it describes: with nothing
+    // to run, a definition is nothing the model can use.
+    const memory = runNode ? input.nodeDescriptions : undefined;
+    const runImplementation = bundle.implementations[AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID];
+    if (memory && runImplementation) bundle.implementations[AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID] = automationStudioLlmRunNodeDescribingFailures(runImplementation, memory);
+    registry.register(bundle);
+    if (memory) registry.register(automationStudioLlmDescribeNodesBundle(memory));
   }
   return registry;
 }

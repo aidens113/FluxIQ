@@ -199,7 +199,11 @@ test pins a limit below.
   `catalogSelection.byteBudget`. The catalog is every node the resolution
   offers, in id order, each whole: label, description and every parameter's
   authoring text uncut, with no condensed form. `catalogTruncated` is always
-  `false`. The instruction is still read for one thing, a capability it asks
+  `false`. An evidence decision is sent every node by name and the full
+  entries only of the nodes the build asked `core.describe_nodes` for, and
+  neither `catalogTruncated` nor `catalogSelection` is on its payload; that
+  is a change of form, not a limit, since nothing is withheld that one
+  describe call does not return. The instruction is still read for one thing, a capability it asks
   for that no offered node provides (`missingRequiredTerms`).
 - Instruction truncation. The harness carries every instruction whole; it cut
   them to 2,000 tokens by default, 384 for a flow bootstrap and 4,000 for a

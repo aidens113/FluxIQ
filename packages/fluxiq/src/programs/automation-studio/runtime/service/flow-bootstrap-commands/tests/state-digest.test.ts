@@ -21,6 +21,16 @@ describe("automationStudioBootstrapStateDigestHook", () => {
     expect(await hook({ callId: "call.2", toolId: "t" })).toBe("call.2:before");
   });
 
+  it("never asks about a call that reads the node library (t235)", async () => {
+    // Each digest is a whole page capture in the web domain, and reading a
+    // node's definition touches no page.
+    const captureStateDigest = vi.fn(async ({ callId, phase }: { callId: string; phase: string }) => `${callId}:${phase}`);
+    const hook = automationStudioBootstrapStateDigestHook(bindingWith({ captureStateDigest }), context)!;
+    expect(await hook({ callId: "call.1", toolId: "core.describe_nodes" })).toBeUndefined();
+    expect(await hook({ callId: "call.1", toolId: "core.describe_nodes" })).toBeUndefined();
+    expect(captureStateDigest).not.toHaveBeenCalled();
+  });
+
   it("is nothing for a binding that reports each call's states itself, and the build loop then makes no digest call", async () => {
     const captureStateDigest = vi.fn(async () => "state.a");
     const binding = bindingWith({ captureStateDigest, stateDigestsOnCalls: true });
