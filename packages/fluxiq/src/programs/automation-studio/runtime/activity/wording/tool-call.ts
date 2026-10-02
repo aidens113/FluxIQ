@@ -1,7 +1,7 @@
 import type { ClientGatewayActivityPhase } from "@fluxiq/contracts/client-gateway";
 import { activityActionVerb } from "../../../../../ui/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../../flow-draft/index.ts";
-import { automationStudioActivityAction } from "./action.ts";
+import { automationStudioActivityAction, type AutomationStudioActivityCallWords } from "./action.ts";
 
 /** The run-node tool's id (`../../llm/node-tools/run-node.ts`), read as a plain string so this module does not reach into the loop. */
 const RUN_NODE_TOOL_ID = "core.run_node";
@@ -30,7 +30,7 @@ const ARRIVAL = "Opening where the Flow starts";
  *   tool and `exploring` for everything else;
  * - `node` is the node id a run-node call names, for the raw record.
  */
-export function automationStudioActivityToolCall(call: { callId: string; toolId: string; value?: unknown }): {
+export function automationStudioActivityToolCall(call: { callId: string; toolId: string; value?: unknown }, words?: AutomationStudioActivityCallWords): {
   phase: ClientGatewayActivityPhase;
   kind: "tool" | "note";
   title: string;
@@ -43,7 +43,7 @@ export function automationStudioActivityToolCall(call: { callId: string; toolId:
   }
   const value = call.value && typeof call.value === "object" && !Array.isArray(call.value) ? call.value as Record<string, unknown> : {};
   const node = call.toolId === RUN_NODE_TOOL_ID && typeof value.node === "string" && value.node ? value.node : undefined;
-  const action = automationStudioActivityAction({ id: node ?? call.toolId, parameters: value.parameters });
+  const action = automationStudioActivityAction({ id: node ?? call.toolId, parameters: value.parameters, words });
   const named = node ? { node } : {};
   if (call.callId.startsWith(DRY_RUN_PREFIX)) {
     if (value[REPLAY_KEY] === "reset") {

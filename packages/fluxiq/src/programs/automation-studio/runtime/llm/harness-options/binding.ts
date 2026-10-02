@@ -33,6 +33,14 @@ import { AutomationStudioHarnessOptionRegistry } from "./registry.ts";
 export type AutomationStudioLlmEvidenceRuntimeBinding = {
   domainId: string;
   /**
+   * What a call names, in words a person reads: the control its handle names
+   * on the page the domain last showed, and the words it types or looks for --
+   * never a value this domain screens as sensitive. For the chat alone
+   * (`../../activity/observer.ts`); nothing decides anything by it. Absent, the
+   * chat says the call's verb alone ("Typing into the page").
+   */
+  describeCall?(input: { projectId: string; flowId: string; toolId: string; value: JsonObject }): { target?: string | undefined; text?: string | undefined } | undefined;
+  /**
    * Keys that may never appear in the failure evidence or the reusable context
    * this domain produces, because for its medium they carry raw payload or
    * something the model could execute or address directly.

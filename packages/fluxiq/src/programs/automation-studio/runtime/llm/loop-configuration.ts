@@ -32,6 +32,9 @@ import {
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "./evidence-loop.ts";
 
+/** What a call names, in words a person reads: the control it acts on, and the words it types or looks for. */
+export type AutomationStudioLlmEvidenceCallWords = { target?: string | undefined; text?: string | undefined };
+
 export type AutomationStudioLlmEvidenceLoopInput = {
   tools: AutomationStudioLlmEvidenceTool[];
   decide(input: {
@@ -205,6 +208,13 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * ever digested twice.
    */
   captureStateDigest?(input: { callId: string; toolId: string; signal?: AbortSignal }): Promise<string | undefined> | string | undefined;
+  /**
+   * What a call names, in words a person reads, for the chat alone
+   * (`../activity/observer.ts`): the control its handle names and the words it
+   * types or looks for, as the bound domain allows them shown. The loop never
+   * reads it. Absent, the chat says the call's verb alone.
+   */
+  describeCall?(call: { toolId: string; value: JsonObject }): AutomationStudioLlmEvidenceCallWords | undefined;
   /**
    * `false` keeps every look on offer after an ignored redirect
    * (`decision-handlers/look-withdrawal.ts`). For replaying a build recorded
