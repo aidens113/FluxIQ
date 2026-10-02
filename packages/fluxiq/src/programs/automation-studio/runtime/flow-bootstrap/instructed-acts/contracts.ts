@@ -23,6 +23,12 @@
 // It is not a permission question -- saving is the automation's own work and
 // the instruction is the permission -- it is a completeness one, fed back at
 // `complete` like every other correctable refusal.
+//
+// Core does read one thing more of a step, still without learning its shape:
+// its string values, for the person's own words. A choice is held to its value
+// there (`./choice-evidence.ts`), and an act to its object
+// (`./object-binding.ts`): a step whose record names another act's object, and
+// not this one's, does not do this one.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
@@ -162,7 +168,25 @@ export type AutomationStudioInstructedActMissingReason =
    * adds -- and nothing that step was given sets it. Pressing add chooses no
    * size and sets no quantity (`run-munvvc3z-3eadc185`, `./check.ts`).
    */
-  | "choice_is_the_act_step";
+  | "choice_is_the_act_step"
+  /**
+   * What the step's own record shows it acted on is another act's object, and
+   * not this one's: the towels' Add to cart named for the napkins (live run 40,
+   * `run-muq6lqnw-fdfa7aac`, `./object-binding.ts`). `actsOn` names that act.
+   */
+  | "step_acts_on_another_object"
+  /**
+   * A quantity was named on a step the Flow repeats over a list, which runs it
+   * once per list item, not that many times on this item (run 40,
+   * `./quantity-fault.ts`).
+   */
+  | "quantity_is_a_repeat"
+  /**
+   * A quantity was named on a press of the act's own add, and the kept presses
+   * of that add on that item are not exactly the count asked for. `presses`
+   * lists them (`./quantity-fault.ts`).
+   */
+  | "quantity_presses_differ";
 
 /** Why it has no step, and the step the claim named, where one did. */
 type AutomationStudioInstructedMissingWhy = {
@@ -170,6 +194,10 @@ type AutomationStudioInstructedMissingWhy = {
   step?: string;
   /** `span_stops_short` only: the position of the step after the repeat that does part of the act. */
   after?: number;
+  /** `step_acts_on_another_object` only: the id of the act whose object the step acted on. */
+  actsOn?: string;
+  /** `quantity_presses_differ` only: the positions of the kept presses of the add, which are not the count. */
+  presses?: number[];
 };
 
 /**

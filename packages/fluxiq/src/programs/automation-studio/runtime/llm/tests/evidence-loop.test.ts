@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
-import { automationStudioLlmEvidenceParseDecision } from "../evidence-loop-decision.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
+import { automationStudioLlmEvidenceParseDecision, automationStudioLlmEvidenceValidTools } from "../evidence-loop-decision.ts";
 
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];
 
@@ -570,5 +570,87 @@ describe("the routing words of an amendment", () => {
     expect(amend?.properties.amendments?.items.properties.change.enum).toEqual(
       expect.arrayContaining(["optional", "only_if", "on_failed", "repeat"])
     );
+  });
+});
+
+// The opening arrival (F31): a build told where its Flow starts opens by going
+// there, so no build begins with a look the domain refuses and the model's
+// first paid decision sees the page. `run-muqc07fh-eeffbc86` steps 0002-0004:
+// the free look was refused `not_at_start_location`, and the first paid
+// decision (17k tokens) was the navigation the loop could have made itself.
+describe("the opening arrival (F31)", () => {
+  const look: JsonObject = { node: "web.output.dom-capture", parameters: {}, consequences: [] };
+  const arrival: JsonObject = { node: "web.output.navigate", parameters: { url: "https://shop.example/start" }, consequences: [] };
+  const runNode = (initialObservation: AutomationStudioLlmEvidenceTool["initialObservation"]): AutomationStudioLlmEvidenceTool => ({
+    toolId: "core.run_node", description: "Run a node.", inputSchema: { type: "object" }, effect: "mutate", perCallEffect: true, ...(initialObservation ? { initialObservation } : {})
+  });
+  const arrived = {
+    kind: "llm_evidence_tool_execution", evidence: { ok: true, page: { url: "https://shop.example/start", title: "Start" } }, effectApplied: true,
+    draft: { actionId: "web.output.navigate", input: arrival, effect: "mutate", proposes: true }
+  };
+  const stalled = () => new Error("stalled");
+  const complete = { kind: "complete", result: { flow: "ready" } };
+  type Shown = ReadonlyArray<{ callId: string; toolId: string; value: JsonObject }>;
+  const shownAt = (decide: { mock: { calls: unknown[][] } }, index: number): Shown => (decide.mock.calls[index]![0] as { evidence: Shown }).evidence;
+
+  describe("a build told where its Flow starts", () => {
+    it("opens by going there under the opening call id, before any decision, and keeps that step as the Flow's first", async () => {
+      const order: string[] = [];
+      const executeTool = vi.fn(async (call: { callId: string }) => { order.push(`run:${call.callId}`); return arrived; });
+      const decide = vi.fn(async () => { order.push("decide"); return complete; });
+      const result = await runAutomationStudioLlmEvidenceLoop({
+        tools: [runNode({ input: look, arrival })], decide, executeTool, maxIterations: 3, maxToolCalls: 3, dryRun: false, unusableDecisions: { stalled }
+      });
+      // The arrival, not the look, and no provider call before it.
+      expect(executeTool).toHaveBeenCalledTimes(1);
+      expect(executeTool.mock.calls[0]![0]).toEqual({ callId: "initial.core.run_node", toolId: "core.run_node", value: arrival });
+      expect(order).toEqual(["run:initial.core.run_node", "decide"]);
+      // The first paid decision sees the page the arrival left.
+      expect(shownAt(decide, 0).find((entry) => entry.callId === "initial.core.run_node")?.value).toEqual(arrived.evidence);
+      // Recorded as a model's call with add:true at iteration 0: a kept step.
+      expect(result.steps.map((step) => [step.id, step.iteration, step.callId, step.actionId, step.disposition])).toEqual([["d1", 0, "initial.core.run_node", "web.output.navigate", "kept"]]);
+      expect(result.trace[0]).toMatchObject({ iteration: 0, decision: "tool_call", callId: "initial.core.run_node", toolId: "core.run_node", effectApplied: true });
+      expect(result.accounting.toolCalls).toBe(1);
+    });
+
+    it("records the arrival in the history as a call, not as a look", async () => {
+      const looked = { kind: "llm_evidence_tool_execution", evidence: { ok: true, page: { title: "Start" } }, effectApplied: false, draft: { actionId: "web.output.dom-capture", effect: "observe", proposes: false } };
+      const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "call.1", toolId: "core.run_node", input: look }).mockResolvedValueOnce(complete);
+      await runAutomationStudioLlmEvidenceLoop({
+        tools: [runNode({ input: look, arrival })], decide, executeTool: vi.fn().mockResolvedValueOnce(arrived).mockResolvedValueOnce(looked),
+        maxIterations: 3, maxToolCalls: 3, dryRun: false, unusableDecisions: { stalled }
+      });
+      const history = JSON.stringify(shownAt(decide, 1).find((entry) => entry.toolId === "core.evidence_history")?.value ?? null);
+      expect(history).toContain("initial.core.run_node");
+      expect(history).not.toContain("\"look\"");
+    });
+
+    it("records an arrival that failed as a failed call, keeps no step, and still asks the model", async () => {
+      const decide = vi.fn().mockResolvedValueOnce(complete);
+      const result = await runAutomationStudioLlmEvidenceLoop({
+        tools: [runNode({ input: look, arrival })], decide, executeTool: vi.fn().mockRejectedValue(new Error("offline")),
+        maxIterations: 3, maxToolCalls: 3, dryRun: false, toolFailures: "observe", unusableDecisions: { stalled }
+      });
+      expect(result.steps.filter((step) => step.disposition === "kept")).toEqual([]);
+      expect(result.trace[0]).toMatchObject({ iteration: 0, callId: "initial.core.run_node", resultCode: "llm_evidence_loop.tool_failed" });
+      expect(decide).toHaveBeenCalled();
+    });
+
+    it("takes the free look exactly as before when no arrival is declared", async () => {
+      const executeTool = vi.fn().mockResolvedValue({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: false, draft: { actionId: "web.output.dom-capture", effect: "observe", proposes: false } });
+      const result = await runAutomationStudioLlmEvidenceLoop({
+        tools: [runNode({ input: look })], decide: vi.fn().mockResolvedValueOnce(complete), executeTool, maxIterations: 3, maxToolCalls: 3, dryRun: false, unusableDecisions: { stalled }
+      });
+      expect(executeTool.mock.calls[0]![0]).toMatchObject({ callId: "initial.core.run_node", value: look });
+      expect(result.steps.map((step) => step.disposition)).toEqual(["taken"]);
+    });
+  });
+
+  describe("which tools may declare an arrival", () => {
+    it("is a tool whose calls declare their own effect, and never one that only looks", () => {
+      expect(automationStudioLlmEvidenceValidTools([runNode({ input: look, arrival })])).toBe(true);
+      expect(automationStudioLlmEvidenceValidTools([{ toolId: "inspect", description: "Look.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {}, arrival: {} } }])).toBe(false);
+      expect(automationStudioLlmEvidenceValidTools([runNode({ input: look, arrival: "go" as unknown as JsonObject })])).toBe(false);
+    });
   });
 });

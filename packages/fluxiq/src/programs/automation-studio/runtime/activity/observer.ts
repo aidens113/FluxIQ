@@ -15,13 +15,13 @@
 // the evidence a tool gathered, or an issue code in a sentence. Ids and result
 // codes go to `detail.ref` and `detail.text` of the tool rows only.
 
-import type { JsonValue } from "../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../llm/index.ts";
 import { emitAutomationStudioActivityWaitedOut } from "./ask/index.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 import { emitAutomationStudioActivity } from "./emit.ts";
 import { emitAutomationStudioActivityThought } from "./thought.ts";
-import { automationStudioActivityCompletionRefusal, automationStudioActivityDecision, automationStudioActivityToolCall } from "./wording/index.ts";
+import { automationStudioActivityCompletionRefusal, automationStudioActivityDecision, automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "./wording/index.ts";
 
 type ToolCall = Parameters<AutomationStudioLlmEvidenceLoopInput["executeTool"]>[0];
 
@@ -37,6 +37,16 @@ function outcomeOf(status: "succeeded" | "failed", resultCode: string | undefine
   if (!resultCode) return "done";
   if (dryRun && resultCode.startsWith("core.replay.")) return resultCode === "core.replay.replayed" ? "done" : "didn't work the same way again";
   return /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved/u.test(resultCode) ? "didn't work" : "done";
+}
+
+/**
+ * The domain's words for a call, or nothing: only strings are kept, so an
+ * answer of another shape costs the chat its detail and nothing else.
+ */
+function describeSafely(describe: AutomationStudioLlmEvidenceLoopInput["describeCall"], call: { toolId: string; value?: unknown }): AutomationStudioActivityCallWords | undefined {
+  if (!describe || !call.value || typeof call.value !== "object" || Array.isArray(call.value)) return undefined;
+  const words = describe({ toolId: call.toolId, value: call.value as JsonObject });
+  return words && typeof words === "object" ? { ...(typeof words.target === "string" ? { target: words.target } : {}), ...(typeof words.text === "string" ? { text: words.text } : {}) } : undefined;
 }
 
 /**
@@ -56,8 +66,8 @@ function decisionFailed(error: unknown): void {
     : { phase: "thinking", label: `${title} — didn't work`, detail: { kind: "thought", title, status: "failed" } });
 }
 
-function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed", resultCode?: string): void {
-  const words = automationStudioActivityToolCall(call);
+function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed", resultCode?: string, describe?: AutomationStudioLlmEvidenceLoopInput["describeCall"]): void {
+  const words = automationStudioActivityToolCall(call, describeSafely(describe, call));
   const record = [resultCode ? `Result: ${resultCode}` : "", words.node ? `Node: ${words.node}` : ""].filter(Boolean).join(" · ");
   emitAutomationStudioActivity({
     phase: words.phase,
@@ -97,19 +107,19 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         decisionFailed(error);
         throw error;
       }
-      const chose = automationStudioActivityDecision(decision);
+      const chose = automationStudioActivityDecision(decision, input.describeCall && ((call) => describeSafely(input.describeCall, call)));
       if (chose) emitAutomationStudioActivityThought({ phase: chose.phase, title: chose.title, text: automationStudioActivityDecisionReason.of(decision) });
       return decision;
     },
     executeTool: async (call): Promise<JsonValue | Awaited<ReturnType<AutomationStudioLlmEvidenceLoopInput["executeTool"]>>> => {
-      toolActivity(call, "started");
+      toolActivity(call, "started", undefined, input.describeCall);
       try {
         const result = await executeTool.call(input, call);
         emitAutomationStudioActivityWaitedOut(call.callId, result, automationStudioActivityToolCall(call).phase);
-        toolActivity(call, "succeeded", resultCodeOf(result));
+        toolActivity(call, "succeeded", resultCodeOf(result), input.describeCall);
         return result;
       } catch (error) {
-        toolActivity(call, "failed");
+        toolActivity(call, "failed", undefined, input.describeCall);
         throw error;
       }
     },

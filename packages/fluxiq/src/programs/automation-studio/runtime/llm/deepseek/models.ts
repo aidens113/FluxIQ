@@ -26,12 +26,14 @@ export const AUTOMATION_STUDIO_DEEPSEEK_MODELS = ["deepseek-flash", "deepseek-v4
 export type AutomationStudioDeepSeekModel = (typeof AUTOMATION_STUDIO_DEEPSEEK_MODELS)[number];
 
 /**
- * What a caller who names no model gets: `deepseek-flash`, served by
- * DeepSeek-V4.1-Flash. It is the cheaper of the two by roughly four and a half
- * times on every axis, and the one every measurement in this repository was
- * taken against once the retired alias was replaced.
+ * The default model when `FLUXIQ_LLM_DEFAULT_MODEL` is unset: `deepseek-flash`,
+ * served by DeepSeek-V4.1-Flash. It is the cheaper of the two by roughly four
+ * and a half times on every axis, and the one every measurement in this
+ * repository was taken against once the retired alias was replaced. What a
+ * caller who names no model actually gets is
+ * {@link AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL}, at the end of this file.
  */
-export const AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL: AutomationStudioDeepSeekModel = "deepseek-flash";
+export const AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL: AutomationStudioDeepSeekModel = "deepseek-flash";
 
 // What each model can carry, and the largest window of them: a leaf of their
 // own so the harness can read them at module evaluation (`../model-limits/`).
@@ -84,3 +86,50 @@ export function resolveAutomationStudioDeepSeekModel(value: unknown): Automation
   if (!isAutomationStudioDeepSeekModel(value)) throw new Error(automationStudioDeepSeekModelRefusal(value));
   return value;
 }
+
+// The default model, as a developer and Lab knob, built as the run cost ceiling
+// is (`../../../model/run-cost-ceiling/`). A new Flow names no model, so its
+// builds -- the one the chat's `flow.createHere` starts among them, which makes
+// its Flow inside Core -- run on whatever this resolves to, as does every other
+// call whose caller names none. The Lab sets the variable for every Core it
+// starts from the run's `--llm-model`, which is how a build started from the
+// extension's chat is compared on another model (t233). It is not the
+// product's model setting: a Flow's own `llmModel` still wins wherever it is
+// set. It reads `process` through `globalThis`, so a browser surface listing
+// the models (`fluxiq/automation-studio/llm-models`) never touches it. It is
+// resolved once, when this module loads, and a value that is set and is not a
+// configured model throws naming the variable rather than falling back, so a
+// typo stops Core at start instead of silently building on the default. It
+// sits last in the file because the refusal reads the retired-id table above.
+
+/** The environment variable that sets Core's default DeepSeek model. */
+export const AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV = "FLUXIQ_LLM_DEFAULT_MODEL";
+
+type Environment = Readonly<Record<string, string | undefined>>;
+
+function processEnvironment(): Environment {
+  return (globalThis as { process?: { env?: Environment } }).process?.env ?? {};
+}
+
+/**
+ * Core's default model: `FLUXIQ_LLM_DEFAULT_MODEL` when it is set, otherwise
+ * {@link AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL}. Throws, naming the
+ * variable, when it is set to anything but one of
+ * {@link AUTOMATION_STUDIO_DEEPSEEK_MODELS}; it never falls back on a bad value.
+ */
+export function resolveAutomationStudioLlmDefaultModel(env: Environment = processEnvironment()): AutomationStudioDeepSeekModel {
+  const raw = env[AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV];
+  if (raw === undefined || raw.trim() === "") return AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL;
+  const value = raw.trim();
+  if (!isAutomationStudioDeepSeekModel(value)) {
+    throw new Error(`${AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV} must name a DeepSeek model Core is configured for. ${automationStudioDeepSeekModelRefusal(value)} Unset it to use the default, ${AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL}.`);
+  }
+  return value;
+}
+
+/**
+ * What a caller who names no model gets, a new Flow's builds among them:
+ * {@link resolveAutomationStudioLlmDefaultModel}, read once when this module
+ * loads -- `deepseek-flash` unless `FLUXIQ_LLM_DEFAULT_MODEL` says otherwise.
+ */
+export const AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL: AutomationStudioDeepSeekModel = resolveAutomationStudioLlmDefaultModel();

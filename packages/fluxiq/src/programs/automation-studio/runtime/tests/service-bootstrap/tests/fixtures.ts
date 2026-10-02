@@ -214,3 +214,28 @@ export function successfulHarnessResult(buildPlan: unknown = plan()) {
     diagnostics: []
   };
 }
+
+/**
+ * Whether a request is the judge of a build's test: once the model says the
+ * Flow is ready, the build asks the results verifier, through the build's own
+ * provider, whether what the Flow's test did answers the instruction
+ * (`result-verification/build-test/`). It is a provider call like any other,
+ * paid for and counted, but not a decision.
+ */
+export function isJudgeRequest(request: AutomationStudioLlmTaskRequest): boolean {
+  return request.taskKind === "loop_verification";
+}
+
+/** What one judge call costs in these tests. */
+export const JUDGE_USAGE = Object.freeze({ inputTokens: 200, outputTokens: 20, totalTokens: 220, estimatedCostUsd: 0.0005 });
+
+/**
+ * The judge's reply: `yes` unless told otherwise, with the rest of what its
+ * judgement said (`expected`, `observed`, and `changed` for its advice).
+ */
+export function judgeReply(answersRequest: "yes" | "no" | "unknown" = "yes", said: Record<string, string> = {}) {
+  return {
+    response: { kind: "diagnosis", summary: "Judged the build's test.", diagnosis: { answersRequest, ...said } },
+    usage: { ...JUDGE_USAGE }
+  };
+}

@@ -20,6 +20,7 @@ import type { AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type { AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "./unreadable-reply.ts";
 import {
@@ -30,6 +31,9 @@ import {
   type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "./evidence-loop.ts";
+
+/** What a call names, in words a person reads: the control it acts on, and the words it types or looks for. */
+export type AutomationStudioLlmEvidenceCallWords = { target?: string | undefined; text?: string | undefined };
 
 export type AutomationStudioLlmEvidenceLoopInput = {
   tools: AutomationStudioLlmEvidenceTool[];
@@ -205,6 +209,13 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    */
   captureStateDigest?(input: { callId: string; toolId: string; signal?: AbortSignal }): Promise<string | undefined> | string | undefined;
   /**
+   * What a call names, in words a person reads, for the chat alone
+   * (`../activity/observer.ts`): the control its handle names and the words it
+   * types or looks for, as the bound domain allows them shown. The loop never
+   * reads it. Absent, the chat says the call's verb alone.
+   */
+  describeCall?(call: { toolId: string; value: JsonObject }): AutomationStudioLlmEvidenceCallWords | undefined;
+  /**
    * `false` keeps every look on offer after an ignored redirect
    * (`decision-handlers/look-withdrawal.ts`). For replaying a build recorded
    * before looks were withdrawn, whose later decisions were made without it;
@@ -280,6 +291,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * between "each step worked when I took it" and "these steps work as a Flow".
    */
   dryRun?: false;
+  /**
+   * What the dry run observed, each time it passes: the replay it passed on and
+   * what each step answered, for a judge of what the build actually did. Never
+   * called on a refusal (`node-tools/dry-run-gate.ts`).
+   */
+  observeTest?(report: AutomationStudioFlowDraftTestReport): void;
   signal?: AbortSignal;
 };
 

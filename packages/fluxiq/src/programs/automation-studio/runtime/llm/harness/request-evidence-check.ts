@@ -111,6 +111,12 @@ function sendableExplorationEvidence(request: AutomationStudioLlmTaskRequest, de
  * runtime patch carry a summary as legitimately as the verification does --
  * and while this named only the verification, the packet builder put the slot
  * on the request and this refused the call outright.
+ *
+ * A build's test (`buildTest`, t195-w25) carries the domain's evidence in two
+ * more places: what the test observed of each step, where the declared keys are
+ * looked for, and each step's own words. No string anywhere in it may be shaped
+ * like a locator. The builder (`result-verification/build-test/summary.ts`)
+ * drops both before this sees them, so a refusal here means the two drifted.
  */
 function sendableResultSummary(request: AutomationStudioLlmTaskRequest, deniedKeys: readonly string[] | undefined): boolean {
   const summary = request.context.resultSummary;
@@ -118,7 +124,15 @@ function sendableResultSummary(request: AutomationStudioLlmTaskRequest, deniedKe
   if (!credentialFree(summary)) return false;
   const sampled = summary.recordSets.flatMap((set) => set.sampleRows ?? []);
   if (screenAutomationStudioLlmEvidence(sampled, deniedKeys).deniedKey) return false;
+  if (summary.buildTest !== undefined && !sendableBuildTest(summary.buildTest, deniedKeys)) return false;
   return Number.isFinite(serializedBytes(summary));
+}
+
+/** A build's test free of the declared keys in what it observed, and of locators anywhere. */
+function sendableBuildTest(buildTest: NonNullable<NonNullable<AutomationStudioLlmTaskRequest["context"]["resultSummary"]>["buildTest"]>, deniedKeys: readonly string[]): boolean {
+  const observed: unknown[] = Array.isArray(buildTest.steps) ? buildTest.steps.map((step) => (isRecord(step) ? step.observed : undefined)) : [];
+  if (screenAutomationStudioLlmEvidence(observed, deniedKeys).deniedKey) return false;
+  return !locatorShapedAnywhere(buildTest);
 }
 
 /** The tasks whose request may carry a recovery context. The packet builder's own rule, restated on the way out. */

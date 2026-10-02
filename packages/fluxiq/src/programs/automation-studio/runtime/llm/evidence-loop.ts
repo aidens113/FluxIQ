@@ -59,7 +59,7 @@ import {
   automationStudioLlmEvidenceLoopFailure as failure,
   automationStudioLlmEvidenceNoProgress,
   automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow, automationStudioLlmEvidenceLoopPurse,
-  type AutomationStudioLlmEvidenceLoopDecision,
+  type AutomationStudioLlmEvidenceLoopDecision, type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmEvidenceLoopExhaustedBound,
   type AutomationStudioLlmEvidenceLoopResult,
   automationStudioLlmEvidenceRerunReplaced,
@@ -393,6 +393,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     showEvidence: (entry) => { evidence.push(entry); if (entry.toolId === AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID) handling.dryRunSeen.verdict = entry.value; },
     targetMoved: () => { counters.mutationEpoch += 1; counters.attemptEpoch += 1; handling.dryRunSeen.ran = true; handling.repeats.moved(); },
     reusedClean: () => { handling.dryRunSeen.reused = true; },
+    ...(input.observeTest ? { observed: input.observeTest } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   });
   // The state every decision handler reads and writes (`decision-handlers/types.ts`).
@@ -401,8 +402,138 @@ export async function runAutomationStudioLlmEvidenceLoop(
     history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: automationStudioLlmEvidenceRepeatGuard(), looks,
     recordRow, draftRecord, accountEvidence, unusable, dryRun, authored
   };
+  // One call run and recorded, whoever decided it: the model's tool call, or the
+  // arrival the loop makes for it before its first decision (below), recorded
+  // exactly as that call added at iteration 0 would be. Nothing returned means
+  // the loop goes on; a result is how it ends.
+  type ToolCall = Extract<AutomationStudioLlmEvidenceLoopDecision, { kind: "tool_call" }>;
+  const runCall = async (iteration: number, callId: string, decision: ToolCall, tool: AutomationStudioLlmEvidenceTool, toolRequestSignature: string, rerun: {
+    replaces?: AutomationStudioFlowDraftStep | undefined; held?: AutomationStudioLlmEvidenceRerunHeld | undefined; verifying?: Extract<AutomationStudioLlmEvidenceAnswerCheckOutcome, { kind: "verify" }> | undefined
+  } = {}): Promise<AutomationStudioLlmEvidenceLoopResult | undefined> => {
+    const { replaces: rerunReplaces, held: rerunHeld, verifying } = rerun;
+    callIds.add(callId);
+    answeredRequests.set(toolRequestSignature, callId);
+    let execution: ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult> | "threw";
+    // Kept so a result that is not one can be refused by name (`./tool-failure.ts`).
+    let ran: Awaited<ReturnType<typeof input.executeTool>> | undefined;
+    let stateBefore: string | undefined;
+    let stateAfter: string | undefined;
+    try {
+      // A rerun runs from its step's own page, never from where the last call left it (`./node-tools/step-place.ts`).
+      const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
+      stateBefore = await digest(callId, decision.toolId);
+      ran = place?.kind === "unreachable" ? place.result : await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
+      stateAfter = await digest(callId, decision.toolId);
+      execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
+    } catch {
+      execution = "threw";
+    }
+    if (execution === "threw" || !execution) {
+      // Nothing answered the request, so asking it again is not a repeat.
+      answeredRequests.delete(toolRequestSignature);
+      if (rerunHeld) automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, undefined);
+      const next = automationStudioLlmEvidenceHandleFailedCall(handling, iteration, callId, tool, execution ? "llm_evidence_loop.tool_failed" : automationStudioLlmEvidenceToolResultInvalidCode(ran, tool.effect) ?? "llm_evidence_loop.tool_result_invalid", decision.input, decision.usage, stateBefore, toolRequestSignature);
+      return next.kind === "end" ? next.result : undefined;
+    }
+    ({ before: stateBefore, after: stateAfter } = statesOf(execution, stateBefore, stateAfter));
+    const { evidence: value, effectApplied, resultCode } = execution;
+    const evidenceBytes = Buffer.byteLength(JSON.stringify(value), "utf8");
+    accounting.toolCalls += 1;
+    accounting.evidenceBytes += evidenceBytes;
+    const record = callRecord(tool, decision.input, execution);
+    // A look the domain refused looked at nothing, so it did not answer the
+    // request it was registered against and the identical retry must be run
+    // rather than answered from it (`repeat-policy.ts` says why this is the
+    // look and never the action). Both doors have to open: the request's own
+    // signature, and the tool's latest observation for this epoch -- leaving
+    // either shut answers the retry from a refusal carrying nothing.
+    const lookRefused = automationStudioLlmEvidenceLookWasRefused({ evidence: value, effect: record.effect, effectApplied });
+    if (lookRefused) answeredRequests.delete(toolRequestSignature);
+    if (stateAfter !== undefined) handling.callStates.set(callId, stateAfter);
+    // An action this build saw only look and propose nothing: what withdrawal withholds.
+    if (record.effect === "observe" && record.proposes === false) looks.sawLook(tool.toolId, record.actionId);
+    if (record.effect === "mutate") { counters.attemptEpoch += 1; if (effectApplied) counters.mutationEpoch += 1; }
+    // What this call did on the page it found: a call that failed or changed nothing is not made again there (`repeat-guard/outcomes.ts`).
+    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, answer: JSON.stringify(value) });
+    if (!lookRefused && automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
+      observationEpochs.set(tool.toolId, counters.attemptEpoch);
+      latestObservations.set(tool.toolId, callId);
+    }
+    // A call ran, so a note about an earlier answer from memory or an unusable reply
+    // is about a moment the build has left; its trace is the history row.
+    automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID);
+    evidence.push({ callId, toolId: decision.toolId, value });
+    const refusedCall = typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false;
+    history.record(iteration, {
+      // The request as the repeat policy keys it -- what was asked, in the state it was asked
+      // in -- so a request answered from memory is the same decision as the call it repeats,
+      // and the same request after an action is a new one (`./repeat-policy.ts`).
+      kind: "call", signature: toolRequestSignature, callId, toolId: decision.toolId, ...(record.actionId !== decision.toolId ? { actionId: record.actionId } : {}),
+      resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no", ...(refusedCall ? { refused: true } : {})
+    });
+    if (record.effect === "mutate") handling.lastAction = { callId, iteration };
+    const draftChanged = draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
+    automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring });
+    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, draftSteps.find((step) => step.callId === callId)) : {};
+    // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
+    const addedToFlow = authored?.advanced() === true;
+    const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
+      ? "unobserved"
+      : stateBefore === stateAfter ? "unchanged" : "changed";
+    recordRow(
+      { iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...settled, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) },
+      { draftChanged, pageState }
+    );
+    // **What the loop learned, not what it ran.** The whole rule -- the four
+    // ways of learning nothing, why a refused look counts, why a repeat that
+    // announces itself needs the caller to say so, and the live runs each was
+    // measured on -- is in `./evidence-progress/no-progress.ts`. A call that
+    // changed something is always progress; anything else whose answer is the
+    // one its own tool already gave is not, whatever its code says.
+    const repeated = noProgress.answerRepeats({
+      toolId: decision.toolId,
+      answer: JSON.stringify(value),
+      // The caller's statement about *this* call, not its tool's standing
+      // declaration, which is what lets one tool run a whole library.
+      mutated: record.effect === "mutate" && effectApplied,
+      stateAfter,
+      ...(execution.repeatedAnswer === undefined ? {} : { repeatedAnswer: execution.repeatedAnswer })
+    });
+    // A look asked again and run once more: the same page is a step without
+    // progress whatever its bytes, and a page that moved by itself is progress.
+    const reask = verifying ? automationStudioLlmEvidenceReaskOutcome(verifying, { stateAfter, refused: lookRefused }) : undefined;
+    // A step the model added to its Flow is the draft advancing, wherever the page went.
+    if (addedToFlow || (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied }) && (reask === "moved" || (reask !== "repeat" && !repeated)))) {
+      // Progress: a redirect about steps without it no longer holds.
+      noProgress.cleared();
+      automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID);
+    } else {
+      noProgress.stepped(decision.toolId);
+      if (noProgress.reached()) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
+      if (reask === "repeat") {
+        automationStudioLlmEvidenceShowVerifiedRepeat(handling, { iteration, callId, toolId: decision.toolId, answeredByCallId: verifying!.answeredByCallId, requestSignature: toolRequestSignature });
+        automationStudioLlmEvidenceAskedAgain(handling, iteration);
+      }
+      noProgress.redirect(iteration);
+    }
+    // Looks in a row with nothing done between: told at five, the round stalled at eight (`decision-handlers/searching.ts`).
+    const searching = automationStudioLlmEvidenceSearchingWithoutActing(handling, iteration);
+    if (searching?.kind === "end") return searching.result;
+    if (searching) { if (input.propagateDecisionErrors) throw searching.error; return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting); }
+    return undefined;
+  };
   const initialTool = input.tools.find((tool) => tool.initialObservation);
-  if (initialTool) {
+  const arrival = initialTool?.initialObservation!.arrival;
+  if (initialTool && arrival) {
+    // A build told where its Flow starts opens by going there (F31): its look
+    // was refused for not being there yet, and the model's first paid decision
+    // was that navigation (`run-muqc07fh-eeffbc86`). The opening call id stays,
+    // since the domain keys per-build memory on it. No provider call.
+    if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
+    const opening: ToolCall = { kind: "tool_call", callId: `initial.${initialTool.toolId}`, toolId: initialTool.toolId, input: structuredClone(arrival), add: true };
+    const ended = await runCall(0, opening.callId, opening, initialTool, automationStudioLlmEvidenceRequestSignature({ tool: initialTool, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: opening.input }));
+    if (ended) return ended;
+  } else if (initialTool) {
     const initialInput = initialTool.initialObservation!.input;
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
     const callId = `initial.${initialTool.toolId}`;
@@ -654,116 +785,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // refused one. Same code, because both are an allowance running out; the
     // record now names which.
     if (accounting.toolCalls >= limits.maxToolCalls) return exhausted("tool_calls");
-    callIds.add(callId);
-    answeredRequests.set(toolRequestSignature, callId);
-    let execution: ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult> | "threw";
-    // Kept so a result that is not one can be refused by name (`./tool-failure.ts`).
-    let ran: Awaited<ReturnType<typeof input.executeTool>> | undefined;
-    let stateBefore: string | undefined;
-    let stateAfter: string | undefined;
-    try {
-      // A rerun runs from its step's own page, never from where the last call left it (`./node-tools/step-place.ts`).
-      const place = rerunning && rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
-      stateBefore = await digest(callId, decision.toolId);
-      ran = place?.kind === "unreachable" ? place.result : await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
-      stateAfter = await digest(callId, decision.toolId);
-      execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
-    } catch {
-      execution = "threw";
-    }
-    if (execution === "threw" || !execution) {
-      // Nothing answered the request, so asking it again is not a repeat.
-      answeredRequests.delete(toolRequestSignature);
-      if (rerunHeld) automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, undefined);
-      const next = automationStudioLlmEvidenceHandleFailedCall(handling, iteration, callId, tool, execution ? "llm_evidence_loop.tool_failed" : automationStudioLlmEvidenceToolResultInvalidCode(ran, tool.effect) ?? "llm_evidence_loop.tool_result_invalid", decision.input, decision.usage, stateBefore, toolRequestSignature);
-      if (next.kind === "end") return next.result;
-      continue;
-    }
-    ({ before: stateBefore, after: stateAfter } = statesOf(execution, stateBefore, stateAfter));
-    const { evidence: value, effectApplied, resultCode } = execution;
-    const evidenceBytes = Buffer.byteLength(JSON.stringify(value), "utf8");
-    accounting.toolCalls += 1;
-    accounting.evidenceBytes += evidenceBytes;
-    const record = callRecord(tool, decision.input, execution);
-    // A look the domain refused looked at nothing, so it did not answer the
-    // request it was registered against and the identical retry must be run
-    // rather than answered from it (`repeat-policy.ts` says why this is the
-    // look and never the action). Both doors have to open: the request's own
-    // signature, and the tool's latest observation for this epoch -- leaving
-    // either shut answers the retry from a refusal carrying nothing.
-    const lookRefused = automationStudioLlmEvidenceLookWasRefused({ evidence: value, effect: record.effect, effectApplied });
-    if (lookRefused) answeredRequests.delete(toolRequestSignature);
-    if (stateAfter !== undefined) handling.callStates.set(callId, stateAfter);
-    // An action this build saw only look and propose nothing: what withdrawal withholds.
-    if (record.effect === "observe" && record.proposes === false) looks.sawLook(tool.toolId, record.actionId);
-    if (record.effect === "mutate") { counters.attemptEpoch += 1; if (effectApplied) counters.mutationEpoch += 1; }
-    // What this call did on the page it found: a call that failed or changed nothing is not made again there (`repeat-guard/outcomes.ts`).
-    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, answer: JSON.stringify(value) });
-    if (!lookRefused && automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
-      observationEpochs.set(tool.toolId, counters.attemptEpoch);
-      latestObservations.set(tool.toolId, callId);
-    }
-    // A call ran, so a note about an earlier answer from memory or an unusable reply
-    // is about a moment the build has left; its trace is the history row.
-    automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID);
-    evidence.push({ callId, toolId: decision.toolId, value });
-    const refusedCall = typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false;
-    history.record(iteration, {
-      // The request as the repeat policy keys it -- what was asked, in the state it was asked
-      // in -- so a request answered from memory is the same decision as the call it repeats,
-      // and the same request after an action is a new one (`./repeat-policy.ts`).
-      kind: "call", signature: toolRequestSignature, callId, toolId: decision.toolId, ...(record.actionId !== decision.toolId ? { actionId: record.actionId } : {}),
-      resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no", ...(refusedCall ? { refused: true } : {})
-    });
-    if (record.effect === "mutate") handling.lastAction = { callId, iteration };
-    const draftChanged = draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
-    automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring });
-    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, draftSteps.find((step) => step.callId === callId)) : {};
-    // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
-    const addedToFlow = authored?.advanced() === true;
-    const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
-      ? "unobserved"
-      : stateBefore === stateAfter ? "unchanged" : "changed";
-    recordRow(
-      { iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...settled, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) },
-      { draftChanged, pageState }
-    );
-    // **What the loop learned, not what it ran.** The whole rule -- the four
-    // ways of learning nothing, why a refused look counts, why a repeat that
-    // announces itself needs the caller to say so, and the live runs each was
-    // measured on -- is in `./evidence-progress/no-progress.ts`. A call that
-    // changed something is always progress; anything else whose answer is the
-    // one its own tool already gave is not, whatever its code says.
-    const repeated = noProgress.answerRepeats({
-      toolId: decision.toolId,
-      answer: JSON.stringify(value),
-      // The caller's statement about *this* call, not its tool's standing
-      // declaration, which is what lets one tool run a whole library.
-      mutated: record.effect === "mutate" && effectApplied,
-      stateAfter,
-      ...(execution.repeatedAnswer === undefined ? {} : { repeatedAnswer: execution.repeatedAnswer })
-    });
-    // A look asked again and run once more: the same page is a step without
-    // progress whatever its bytes, and a page that moved by itself is progress.
-    const reask = verifying ? automationStudioLlmEvidenceReaskOutcome(verifying, { stateAfter, refused: lookRefused }) : undefined;
-    // A step the model added to its Flow is the draft advancing, wherever the page went.
-    if (addedToFlow || (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied }) && (reask === "moved" || (reask !== "repeat" && !repeated)))) {
-      // Progress: a redirect about steps without it no longer holds.
-      noProgress.cleared();
-      automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID);
-    } else {
-      noProgress.stepped(decision.toolId);
-      if (noProgress.reached()) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
-      if (reask === "repeat") {
-        automationStudioLlmEvidenceShowVerifiedRepeat(handling, { iteration, callId, toolId: decision.toolId, answeredByCallId: verifying!.answeredByCallId, requestSignature: toolRequestSignature });
-        automationStudioLlmEvidenceAskedAgain(handling, iteration);
-      }
-      noProgress.redirect(iteration);
-    }
-    // Looks in a row with nothing done between: told at five, the round stalled at eight (`decision-handlers/searching.ts`).
-    const searching = automationStudioLlmEvidenceSearchingWithoutActing(handling, iteration);
-    if (searching?.kind === "end") return searching.result;
-    if (searching) { if (input.propagateDecisionErrors) throw searching.error; return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting); }
+    const ended = await runCall(iteration, callId, decision, tool, toolRequestSignature, { replaces: rerunReplaces, held: rerunHeld, verifying });
+    if (ended) return ended;
   }
   return exhausted("iterations");
 }

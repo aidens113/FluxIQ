@@ -1064,6 +1064,32 @@ are coordinator-only metadata and are omitted from the provider-facing tool
 catalog; the model receives the resulting evidence, not a duplicate execution
 hint.
 
+**A build told where its Flow starts opens by going there (F31).** A tool whose
+calls declare their own effect (`perCallEffect`, the run-node tool) may carry
+`initialObservation: { input, arrival }`, where `arrival` is an input of the
+same tool that takes the target to the start location. A binding declares it as
+`runsNodes.arrival: { node, parameter }` — the node that goes somewhere and the
+parameter the location is written into — and the registry puts the build's
+`startLocation` there, without reading it, when the build has one and the node
+is offered (`runtime/llm/harness-options/binding.ts`,
+`runtime/llm/node-tools/run-node.ts`). The loop then runs the arrival instead of
+the look, under the same `initial.<toolId>` call id the domain keys its
+per-build memory on, before the first provider decision, and records it exactly
+as a model's call added to the Flow at iteration 0 would be: a kept step when it
+worked, with the epochs, repeat record, history row and trace row a call has; a
+failed call otherwise (`runtime/llm/evidence-loop.ts`, the shared `runCall`
+path). The start-location note tells the model the build opened there and that
+the step is the Flow's first, already kept, and that it must go there itself
+only if that entry failed. Before this, the web domain refused the free look of
+every such build for not being at the start yet, and the model's first paid
+decision was the navigation (`run-muqc07fh-eeffbc86`, about 17k tokens).
+`input` stays the look: a fresh look after a person cleared a check still takes
+it (`runtime/parking/person-needed-tool-calls.ts`). A build told no start, a
+binding that declares no arrival, and a continued build, which passes no start,
+open with the look as before. Every validator of the tool list accepts
+`arrival` only on a `perCallEffect` tool, and the provider projection never
+carries it.
+
 Reusable context is an explicit per-request option layered on this fresh
 inspection path. The service invokes a host-supplied, domain-neutral
 `selectForFreshEvidence` projection only after at least one current evidence

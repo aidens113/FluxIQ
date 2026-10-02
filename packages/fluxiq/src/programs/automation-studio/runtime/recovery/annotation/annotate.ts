@@ -471,6 +471,12 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // made: a repair built without the step the person has not yet allowed would
   // be a guess, and the person's answer is what the next run needs.
   const permissionRequest = permissions?.gate.request;
+  // A person's no that still stands when the exploration ends ends it the same
+  // way. The exploration goes on after a no so the model can try another way
+  // (`../runtime-exploration.ts`), and a grant on that other way lifts it; a no
+  // nothing replaced means any repair would be built around the act the person
+  // refused. It is not carried as the run's request: the person has answered it.
+  const permissionStop = permissionRequest ?? permissions?.gate.standingDecline;
   // A check only a person can complete, which the person did not get past,
   // ends the recovery as well. Neither the re-plan nor the patch is asked for:
   // a repair model has nothing to act on while the check stands, and must
@@ -490,7 +496,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // recovery on its own. A re-plan that comes back with nothing leaves the
   // original refusal standing, and the record then says the refusal was never
   // checked rather than that the look confirmed it.
-  const replan = refusalIsCheckable && !permissionRequest && !personStopped && provider && explorationEvidence
+  const replan = refusalIsCheckable && !permissionStop && !personStopped && provider && explorationEvidence
     ? await replanAutomationStudioRecoveryAfterExploration({
       plan: plannedBeforeLooking,
       ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}),
@@ -551,7 +557,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       : !patchWillFollow
         ? "resolution"
         : undefined;
-  const heldForPermission = Boolean(permissionRequest && patchWillFollow);
+  const heldForPermission = Boolean(permissionStop && patchWillFollow);
   const heldForPerson = Boolean(personStopped && patchWillFollow && !heldForPermission);
   const patchSkippedCode = heldForPermission ? "llm.runtime_patch_permission_required" : heldForPerson ? "llm.runtime_patch_person_needed" : plannedPatchSkippedCode;
   const patchSkippedRung: AutomationStudioRuntimeRecoveryRung | undefined = heldForPermission || heldForPerson ? "exploration" : plannedPatchSkippedRung;
@@ -657,7 +663,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         costAccounting: runBudget.snapshot(input.detail.summary.runId),
         providerCalls: providerCalls.calls,
         providerCallsOmitted: providerCalls.omitted,
-        ...(intentSkip ? { patchSkipped: intentSkip } : heldForPermission && permissionRequest ? { patchSkipped: permissionRequest.sentence } : heldForPerson && exploration ? { patchSkipped: exploration.reason } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
+        ...(intentSkip ? { patchSkipped: intentSkip } : heldForPermission && permissionStop ? { patchSkipped: permissionStop.sentence } : heldForPerson && exploration ? { patchSkipped: exploration.reason } : plan.patchRequest.request ? {} : { patchSkipped: plan.patchRequest.reason }),
         // A check handed to the person while exploring: how often they were
         // asked, and the person-needed code when the recovery ended on it.
         ...(exploration?.personNeeded ? { personNeeded: { asks: exploration.personNeeded.asks, ...(exploration.personNeeded.ended ? { ended: exploration.endedBy } : {}) } } : {}),

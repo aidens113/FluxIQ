@@ -1,5 +1,6 @@
 import type { ClientGatewayActivityPhase } from "@fluxiq/contracts/client-gateway";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../../flow-draft/index.ts";
+import type { AutomationStudioActivityCallWords } from "./action.ts";
 import { automationStudioActivityToolCall } from "./tool-call.ts";
 
 const COMPLETE = "Checking the Flow is finished";
@@ -12,11 +13,16 @@ const COMPLETE = "Checking the Flow is finished";
  * finished" (`verifying`). Nothing for anything else, so an unreadable
  * decision is not narrated.
  */
-export function automationStudioActivityDecision(decision: unknown): { phase: ClientGatewayActivityPhase; title: string } | undefined {
+export function automationStudioActivityDecision(
+  decision: unknown,
+  /** The bound domain's words for a call (`AutomationStudioLlmEvidenceLoopInput.describeCall`), when it has them. */
+  describe?: (call: { toolId: string; value?: unknown }) => AutomationStudioActivityCallWords | undefined
+): { phase: ClientGatewayActivityPhase; title: string } | undefined {
   if (!decision || typeof decision !== "object" || Array.isArray(decision)) return undefined;
   const record = decision as { kind?: unknown; callId?: unknown; toolId?: unknown; input?: unknown };
   if (record.kind === "tool_call" && typeof record.toolId === "string") {
-    const words = automationStudioActivityToolCall({ callId: typeof record.callId === "string" ? record.callId : "", toolId: record.toolId, value: record.input });
+    const call = { callId: typeof record.callId === "string" ? record.callId : "", toolId: record.toolId, value: record.input };
+    const words = automationStudioActivityToolCall(call, describe?.(call));
     return { phase: words.phase, title: words.title };
   }
   if (record.kind === "amend_draft") {

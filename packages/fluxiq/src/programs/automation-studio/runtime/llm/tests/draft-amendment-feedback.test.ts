@@ -256,3 +256,81 @@ describe("the feedback an amendment refusal is shown as", () => {
     expect(feedback.refused).toHaveLength(20);
   });
 });
+
+// Live run 37 (`run-muq5v4zg-39182b58`): the filtered request listing was step
+// 13 and nothing after it pressed a Confirm. `13 repeat over 13` was told the
+// rule in general, and three unchanged reruns of step 13 were told "go on with
+// the result you have"; the round stopped with no press tried. A refusal about
+// a listing now says what comes next, in the draft's own numbers.
+describe("a refusal about a listing says what comes next", () => {
+  // Run 37's draft as it stood at #13: a look, the way to the page (one
+  // navigation refused), a look, the See-all press, three trial listings, and
+  // the filtered listing at 13, which is in the Flow.
+  const look = (position: number) => ({ position, effect: "observe", effectApplied: false, disposition: "taken" });
+  const act = (position: number, disposition = "kept", effectApplied = true) => ({ position, effect: "mutate", effectApplied, disposition });
+  const read = (position: number, disposition = "taken") => ({ position, effect: "observe", effectApplied: true, disposition });
+  const run37 = [look(1), act(2), act(3), act(4, "kept", false), act(5), act(6), look(7), act(8, "taken"), look(9), read(10), read(11), read(12), read(13, "kept")];
+  const told = (refusals: readonly (AutomationStudioFlowDraftAmendmentRefusal & { repeated?: boolean })[], steps: Parameters<typeof automationStudioLlmEvidenceDraftAmendmentFeedback>[0]["steps"] = run37) =>
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 });
+  const nextOf = (feedback: Record<string, unknown>): string | undefined => (feedback.refused as { next?: string }[])[0]?.next;
+
+  it("a repeat put on the listing over itself, with no press after it: do the act on one kept row first, then the repeat to send", () => {
+    const feedback = told([{ step: 13, reason: "over_not_before", over: 13 }]);
+    const next = nextOf(feedback);
+    expect(next).toContain("Step 13 is the listing, so the repeat cannot go on it.");
+    expect(next).toContain("No step after step 13 does anything to a row yet");
+    expect(next).toContain("one row step 13 kept");
+    expect(next).toContain("press that row's own control");
+    expect(next).toContain(`{"step": <that press>, "change": "repeat", "over": 13}`);
+    expect(feedback.instruction).toContain("next, beside a refusal, is what to do instead");
+  });
+
+  it("names the press after the listing, and says to add it first when it is not in the Flow", () => {
+    const inFlow = told([{ step: 13, reason: "over_not_before", over: 13 }], [...run37, act(14)]);
+    expect(nextOf(inFlow)).toContain(`the repeat goes on it: send {"step": 14, "change": "repeat", "over": 13}`);
+    const taken = told([{ step: 13, reason: "over_not_before", over: 13 }], [...run37, act(14, "taken")]);
+    expect(nextOf(taken)).toContain(`add step 14 with its act, then send {"step": 14, "change": "repeat", "over": 13}`);
+    // A press that did not work is no act to repeat.
+    const failed = told([{ step: 13, reason: "over_not_before", over: 13 }], [...run37, act(14, "taken", false)]);
+    expect(nextOf(failed)).toContain("No step after step 13 does anything to a row yet");
+  });
+
+  it("finds the listing whichever way round the two steps were named", () => {
+    // `13 repeat over 14`: the repeat on the listing, over the press after it.
+    const swapped = told([{ step: 13, reason: "over_not_before", over: 14 }], [...run37, act(14)]);
+    expect(nextOf(swapped)).toContain(`send {"step": 14, "change": "repeat", "over": 13}`);
+  });
+
+  it("an unchanged rerun of a listing: its rows stand, do not run it again, go on to the act", () => {
+    const feedback = told([{ step: 13, reason: "changes_nothing", repeated: true }]);
+    const next = nextOf(feedback);
+    expect(next).toContain("Step 13 already ran with exactly this argument, so its result stands as shown: do not run it again.");
+    expect(next).toContain(`{"step": <that press>, "change": "repeat", "over": 13}`);
+    expect(feedback.instruction).toContain("stop sending it");
+    expect(feedback.instruction).toContain("next, beside a refusal");
+    expect((feedback.reasons as Record<string, string>).changes_nothing).toContain("A listing whose rows are right is never run again");
+  });
+
+  it("says nothing extra where the refused step is not a listing, or the draft gives no effects", () => {
+    expect(nextOf(told([{ step: 6, reason: "changes_nothing" }]))).toBeUndefined();
+    expect(nextOf(told([{ step: 6, reason: "over_not_before", over: 6 }]))).toBeUndefined();
+    const plain = told([{ step: 2, reason: "over_not_before", over: 2 }], [{ position: 1 }, { position: 2 }]);
+    expect(plain.refused).toEqual([{ step: 2, reason: "over_not_before" }]);
+    expect(plain.instruction).not.toContain("next, beside a refusal");
+  });
+
+  // The loop passes the draft itself, so a refusal it tells carries next.
+  it("reaches the model from the loop", async () => {
+    const list = { toolId: "list", description: "List rows.", inputSchema: { type: "object" }, effect: "observe" as const };
+    const executeTool = async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { rows: 4 }, effectApplied: true, draft: { proposes: true } });
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "call.list", toolId: "list", input: { where: "atLeast 5" }, add: true })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "repeat", over: 1 }] })
+      .mockResolvedValueOnce(complete);
+    await runAutomationStudioLlmEvidenceLoop({ tools: [list, press], decide, maxIterations: 8, maxToolCalls: 8, unusableDecisions: { stalled }, executeTool });
+    const feedback = feedbackShown(decide, 2);
+    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "over_not_before" }] });
+    expect(nextOf(feedback!)).toContain(`No step after step 1 does anything to a row yet`);
+    expect(nextOf(feedback!)).toContain(`"over": 1}`);
+  });
+});

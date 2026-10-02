@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyAutomationStudioFlowDraftAmendments } from "../amendment.ts";
+import { applyAutomationStudioFlowDraftAmendments, AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA } from "../amendment.ts";
 import type { AutomationStudioFlowDraftStep } from "../step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../step.ts";
 
@@ -109,5 +109,32 @@ describe("acts on the draft", () => {
     expect(draft[1]?.routing).toEqual({ kind: "optional" });
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "keep" }]).applied).toBe(1);
     expect(draft[1]?.routing).toBeUndefined();
+  });
+});
+
+// Live run 37 (`run-muq5v4zg-39182b58`): the filtered request listing was step
+// 13, in the Flow, with no press after it. The model sent `13 repeat over 13`,
+// then reran step 13 unchanged three times, as the schema's "first rerun the
+// listing" told it to.
+describe("a repeat on a listing, run 37", () => {
+  function filteredListing(): AutomationStudioFlowDraftStep[] {
+    return [
+      { position: 1, id: "d1", iteration: 1, actionId: "go", input: {}, effect: "mutate", effectApplied: true, disposition: "kept" },
+      { position: 2, id: "d2", iteration: 2, actionId: "list", input: { where: "atLeast 5" }, effect: "observe", proposes: true, effectApplied: true, disposition: "kept" }
+    ];
+  }
+
+  it("is refused over_not_before carrying the step it named as over, and writes no routing", () => {
+    const draft = filteredListing();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 2, through: 2 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before", over: 2 }] });
+    expect(draft[1]?.routing).toBeUndefined();
+  });
+
+  it("the schema puts the repeat on the act, never the listing, and never reruns a listing as it stands", () => {
+    const change = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>).change!.description;
+    expect(change).not.toContain("first rerun the listing");
+    expect(change).toContain("never to run it again as it stands");
+    expect(change).toContain("The repeat goes on the act, never on the listing itself");
+    expect(change).toContain("that row's own control");
   });
 });

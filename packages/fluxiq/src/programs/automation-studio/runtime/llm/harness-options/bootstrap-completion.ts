@@ -12,8 +12,8 @@
 // loop's completion check: the wrapper, the plan's structure, the evidence
 // profile's limits, the domain's resolution of each node's parameters, the
 // registry validation, whether the Flow could answer the instruction at all,
-// whether it could run at all, and whether it does every lasting thing the
-// instruction asks to be done. A result that passes is handed back ready to
+// whether it could run at all, and whether a person will be asked before every
+// act of a class they are asked about. A result that passes is handed back ready to
 // persist. A result that fails comes back with the code creation fails under,
 // the issues that refused it, and the feedback the model sees before it is
 // asked again -- issue codes and plan paths, which are the plan's own
@@ -29,7 +29,7 @@
 // on the forced final decision with no turn left to answer it. All three were
 // true at decision 24. So a check whose input exists runs whatever the others
 // said: the capability checks ask their question of the furthest plan the
-// structural checks produced, the instructed acts are read off the draft, and
+// structural checks produced, the act permissions are read off the draft, and
 // the refusal lists every failure together. Only a check with nothing to look
 // at is skipped -- a plan that never parsed has no nodes to resolve.
 //
@@ -50,10 +50,18 @@
 // `flow-bootstrap/reachability/` answers that from the plan and the start
 // location the build was given.
 //
-// *Does this Flow do what it was told to do?* `run-mulxk0ro-36bf090d` was told
-// to save three tables and list saved items, and was accepted having only read
-// a results page. `flow-bootstrap/instructed-acts/` answers that from the
-// instruction's words and the steps the model names for them.
+// *Does this Flow do what it was told to do?* is no longer asked here (t195).
+// It was answered from the draft alone (`flow-bootstrap/instructed-acts/`), and
+// that answer refused lane B's `choice_is_the_act_step` six times, lane D's
+// run 36 24 times while the checklist said done, and the napkins named on the
+// towels' Add in run 40 -- none of them ever reached the test that would have
+// shown what the Flow did. The test from the start and a judge of its actual
+// results decide it now; the acts checklist stays as information for the model
+// (`./draft-acts.ts`) and the judge. One rule of that reading still refuses,
+// because no test can undo it: an act whose verb names a class a person is
+// asked about (`delete`, `move_money`, `send_or_publish`) needs a step that
+// declares it, or nobody is asked (`act_consequence_undeclared`,
+// `flow-bootstrap/instructed-acts/permission.ts`).
 //
 // None costs a provider call, and each refusal carries its own account of what
 // is missing beside the issue rather than only a code.
@@ -74,7 +82,7 @@ import {
   automationStudioFlowBootstrapIssueFeedback,
   checkAutomationStudioFlowBootstrapAnswersInstruction,
   checkAutomationStudioFlowBootstrapReachesStartLocation,
-  checkAutomationStudioInstructedActs,
+  checkAutomationStudioInstructedActPermissions,
   parseAutomationStudioFlowBootstrapPlan,
   validateAutomationStudioFlowBootstrapPlan,
   type AutomationStudioFlowBootstrapIssue,
@@ -89,7 +97,6 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./binding.ts";
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters } from "./plan-parameter-resolution.ts";
-import { automationStudioRepeatSuggestion } from "./repeat-suggestion.ts";
 
 export type AutomationStudioFlowBootstrapCompletionFailureCode = Extract<AutomationStudioFlowBootstrapPhaseFailureCode,
   | "flow_bootstrap.evidence_completion_wrapper_invalid"
@@ -294,17 +301,14 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
       failures.push({ code: "flow_bootstrap.evidence_completion_cannot_reach_start", issues: [reaches.issue], about: about(capabilityPlan), detail: { key: "cannotReach", value: reaches.cannotReach, instruction: reaches.instruction } });
     }
   }
-  // Read off the draft rather than the plan, so it is asked even of a draft
-  // whose plan did not assemble. Only a Flow built from the draft has steps a
-  // claim can name. Where the build starts goes with it: a step that only
-  // arrives there does no act but opening (`run-munoeac4-33c17306`).
-  const acts = checkAutomationStudioInstructedActs({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined, startLocation: input.startLocation });
-  if (!acts.ok) {
-    // Filed under the cannot-answer code: a Flow that does not do what it was
-    // told cannot answer the instruction, and the issue code says which way.
-    // An act that needs a repeat is told the one amendment that gives it one (`./repeat-suggestion.ts`).
-    const repeat = drafted && draftSteps ? automationStudioRepeatSuggestion({ missingActs: acts.missingActs, draftSteps, registry: input.registry, resolution: input.resolution }) : undefined;
-    failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [acts.issue], detail: { key: "missingActs", value: repeat ? { ...acts.missingActs, repeatWith: repeat.amendment } : acts.missingActs, instruction: `${acts.instruction}${repeat?.instruction ?? ""}` } });
+  // Whether every act a person is asked about is declared, read off the draft
+  // rather than the plan, so it is asked even of a draft whose plan did not
+  // assemble. Only a Flow built from the draft has steps a claim can name.
+  // Whether the acts are done is the test's and the judge's, never this check's.
+  const permissions = checkAutomationStudioInstructedActPermissions({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined });
+  if (!permissions.ok) {
+    // Filed under the cannot-answer code, as the instructed acts were: the issue code says which way.
+    failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [permissions.issue], detail: { key: "missingActs", value: permissions.missingActs, instruction: permissions.instruction } });
   }
   const restoredField = restoredStep ? { restoredStep } : {};
   if (failures.length || !buildPlan || !accepted.ok) {

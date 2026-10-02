@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, copyDataDirSeed, caller, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { blankFixture, copyDataDirSeed, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const SEEDING_TIMEOUT_MS = 60_000;
 
@@ -46,13 +46,14 @@ function malformed(): AutomationStudioLlmProviderError {
     { case: "content_mismatched", finishReason: "stop", contentChars: 2_100, usage: { inputTokens: 100, outputTokens: 560, totalTokens: 660, estimatedCostUsd: 0.002 } });
 }
 
-/** A model whose replies are unreadable where `unreadable` says, and otherwise acts once, adds the step and finishes. */
+/** A model whose replies are unreadable where `unreadable` says, and otherwise acts once, adds the step and finishes; the judge of its test says yes. */
 async function build(unreadable: (call: number) => boolean) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   let acted = false;
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
   const provider = mockProvider(async (request) => {
     requests.push(request);
+    if (isJudgeRequest(request)) return judgeReply();
     if (unreadable(requests.length)) throw malformed();
     const decision: JsonObject = acted
       ? { kind: "complete", result: { summary: "Built.", plan: plan() } }
@@ -81,7 +82,9 @@ describe("a Flow build whose model reply arrives unreadable", () => {
     const { requests, generation } = await build((call) => call <= 2);
 
     await expect(generation).resolves.toMatchObject({ status: "proposed" });
-    expect(requests).toHaveLength(4);
+    // Two unreadable, the act, the completion, then the judge of the Flow's test.
+    expect(requests).toHaveLength(5);
+    expect(requests.map(isJudgeRequest)).toEqual([false, false, false, false, true]);
     const note = requests[2]!.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.decision_check")?.value;
     expect(note).toMatchObject({ code: "llm_evidence_loop.reply_unreadable", unreadable: { case: "content_mismatched" }, unreadableInARow: 2 });
   });

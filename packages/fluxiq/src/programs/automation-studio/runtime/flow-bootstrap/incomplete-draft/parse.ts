@@ -18,7 +18,7 @@ import type { AutomationStudioFlowBootstrapIncompleteDraft } from "./record.ts";
 const MAX_STEPS = automationStudioFlowBootstrapLargestSizeLimits().maxTotalNodes
   + AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS.maxIterations
   + 1;
-const STOPPED: readonly string[] = ["iterations", "budget", "tool_calls", "unusable_decisions", "repeat_without_progress"];
+const STOPPED: readonly string[] = ["iterations", "budget", "tool_calls", "unusable_decisions", "repeat_without_progress", "judged_wrong"]; // judged_wrong: a Flow the judge found wrong and no repair fixed (`../unfinished-build/phases.ts`).
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 const OPTIONAL_OBJECTS = ["ranWith", "settings", "replay", "routing"] as const;
 const OPTIONAL_STRINGS = ["id", "toolId", "resultCode", "stateBefore", "stateAfter"] as const;

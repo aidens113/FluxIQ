@@ -16,7 +16,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, copyDataDirSeed, caller, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { blankFixture, copyDataDirSeed, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const SEEDING_TIMEOUT_MS = 60_000;
 
@@ -54,13 +54,14 @@ const USAGE = { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedC
 /** What the DeepSeek adapter throws when its own deadline passes with no answer. */
 const timedOut = () => new AutomationStudioLlmProviderError("llm.provider_timeout", "DeepSeek did not respond before the request timeout.", true);
 
-/** A provider that gives no answer where `silent` says, and otherwise acts once, adds the step and finishes. */
+/** A provider that gives no answer where `silent` says, and otherwise acts once, adds the step and finishes; the judge of its test says yes. */
 async function build(silent: (call: number) => boolean) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   let acted = false;
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
   const provider = mockProvider(async (request) => {
     requests.push(request);
+    if (isJudgeRequest(request)) return judgeReply();
     if (silent(requests.length)) throw timedOut();
     const decision: JsonObject = acted
       ? { kind: "complete", result: { summary: "Built.", plan: plan() } }
@@ -125,6 +126,8 @@ describe("a Flow build whose model provider stops answering", () => {
     const { requests, generation } = await build((call) => call === 1 || call === 3);
 
     await expect(generation).resolves.toMatchObject({ status: "proposed" });
-    expect(requests).toHaveLength(4);
+    // Unanswered, the act, unanswered, the completion, then the judge of the Flow's test.
+    expect(requests).toHaveLength(5);
+    expect(requests.map(isJudgeRequest)).toEqual([false, false, false, false, true]);
   });
 });

@@ -67,6 +67,17 @@ const MERGE_NODE_ID = "builtin.control.merge";
 
 /** Where a seeded step's own name starts, kept clear of the `d<n>` the loop mints. */
 const SEED_STEP_ID_PREFIX = "f";
+const SEED_STEP_ID = new RegExp(`^${SEED_STEP_ID_PREFIX}[1-9][0-9]*$`, "u");
+
+/**
+ * Whether a draft step was carried from an earlier Flow (seeded here as
+ * `f<n>`) rather than run in this build: a re-authored Flow is judged on its
+ * own test, never on what the earlier Flow's steps claimed
+ * (`result-verification/build-test/`).
+ */
+export function automationStudioFlowDraftStepCarried(step: { id?: string | undefined }): boolean {
+  return typeof step.id === "string" && SEED_STEP_ID.test(step.id);
+}
 
 /** Where a run-node call keeps the node it names and that node's own parameters. */
 const NODE_KEY = "node";

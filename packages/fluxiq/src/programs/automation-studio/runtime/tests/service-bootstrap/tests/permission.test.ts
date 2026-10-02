@@ -18,7 +18,7 @@ import type { AutomationStudioActionConsequence } from "../../../action-permissi
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, expectNoTopology, caller, mockProvider, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { blankFixture, expectNoTopology, caller, isJudgeRequest, judgeReply, mockProvider, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const PRESS_ID = "domain.example.press";
 const REFUND = { handle: "c4", name: "Refund line 1" };
@@ -68,8 +68,9 @@ describe("building a Flow that needs an action a person has not allowed", () => 
 
     // The action itself is still never taken.
     expect(run.pressed).toEqual([]);
-    // Recoverable: the model was asked again and built the Flow it could.
-    expect(run.requests).toHaveLength(2);
+    // Recoverable: the model was asked again and built the Flow it could, and its test was judged.
+    expect(run.requests).toHaveLength(3);
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true]);
     expect(result.status).toBe("proposed");
     expect(result.permissionRequest).toMatchObject({
       schemaVersion: "automation-studio.action-permission-request.v1",
@@ -216,7 +217,11 @@ describe("the same build, carrying what the person allowed", () => {
   });
 });
 
-/** One build whose model answers with each decision in turn; the last repeats. `instructed` is its answer when asked what the instruction asks for. */
+/**
+ * One build whose model answers with each decision in turn; the last repeats.
+ * `instructed` is its answer when asked what the instruction asks for. The
+ * judge of a finished build's test says yes, and is counted in `requests`.
+ */
 async function build(decisions: JsonObject[], permittedConsequences?: AutomationStudioActionConsequence[], instructed: JsonObject[] = []) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const authorityRequests: AutomationStudioLlmTaskRequest[] = [];
@@ -230,6 +235,7 @@ async function build(decisions: JsonObject[], permittedConsequences?: Automation
       };
     }
     requests.push(request);
+    if (isJudgeRequest(request)) return judgeReply();
     const decision = decisions[Math.min(requests.length, decisions.length) - 1]!;
     return {
       response: { kind: "evidence_tool_decision", summary: "Refund the line.", decision },

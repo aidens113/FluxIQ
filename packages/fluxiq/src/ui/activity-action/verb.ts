@@ -23,7 +23,7 @@ const VERBS: readonly Entry[] = [
   { verb: "read", kind: "read", word: /^(extract|read|collect|scrape)$/u, gerund: "reading" },
   { verb: "list", kind: "read", word: /^list$/u, gerund: "listing" },
   { verb: "detect", kind: "look", word: /^detect$/u, gerund: "looking" },
-  { verb: "look", kind: "look", word: /^(capture|snapshot|inspect|look|observe)$/u, gerund: "looking" },
+  { verb: "look", kind: "look", word: /^(capture|snapshot|inspect|look|observe|find)$/u, gerund: "looking" },
   { verb: "scroll", kind: "other", word: /^scroll$/u, gerund: "scrolling" },
   { verb: "wait", kind: "wait", word: /^wait$/u, gerund: "waiting" },
   { verb: "assert", kind: "look", word: /^assert$/u, gerund: "checking" },

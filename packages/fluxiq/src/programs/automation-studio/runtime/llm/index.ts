@@ -25,13 +25,18 @@ export { estimateAutomationStudioDeepSeekInputTokens } from "./deepseek/index.ts
 // has to agree on them, and because one hardcoded string in each of those
 // layers is what made DeepSeek's last rename a source edit in two repositories
 // at once.
+// The default is the developer and Lab knob `FLUXIQ_LLM_DEFAULT_MODEL`, read
+// once at load, `deepseek-flash` when unset.
 export {
+  AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL,
   AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
   AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS,
   AUTOMATION_STUDIO_DEEPSEEK_MODELS,
+  AUTOMATION_STUDIO_LLM_DEFAULT_MODEL_ENV,
   automationStudioDeepSeekModelRefusal,
   isAutomationStudioDeepSeekModel,
   resolveAutomationStudioDeepSeekModel,
+  resolveAutomationStudioLlmDefaultModel,
   type AutomationStudioDeepSeekModel
 } from "./deepseek/index.ts";
 // What a call costs, beside the adapter that makes it: dated provider prices,
