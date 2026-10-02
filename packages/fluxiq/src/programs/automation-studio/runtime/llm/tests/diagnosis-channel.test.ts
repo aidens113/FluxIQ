@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmDiagnosisFields } from "../harness.ts";
+import { AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION } from "../diagnosis-instructions.ts";
 
 const base = { taskKind: "runtime_diagnosis" as const, projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[] };
 
@@ -101,5 +102,16 @@ describe("Automation Studio LLM structured diagnosis channel", () => {
     ]);
     // And the provider's own parse returns what the model put there.
     expect(answered.response).toEqual({ kind: "diagnosis", summary: "The target is gone.", diagnosis: fields });
+  });
+});
+
+// Live run 16 (`run-muqk713g-d08ad3dc`): shown the rows a condition removed by
+// itself under a bare `removedByItself`, the judge read three earbuds the
+// accessory rule had left out as rows that came back, and advised tightening the
+// rule. The field now says what it is, and the judge's instruction says it once.
+describe("the judge is told what the rows a condition left out by itself are", () => {
+  it("names the field and says none of its rows came back", () => {
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("leftOutOnlyByThis names the rows that condition alone left out of the result");
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("none of them came back");
   });
 });
