@@ -6,12 +6,13 @@
 
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation, parseAutomationStudioFlowBootstrapGenerationError, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioService } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowBootstrapFailedBuilds, automationStudioFlowStartLocation, parseAutomationStudioFlowBootstrapGenerationError, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioService } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
+  const failedBuilds = automationStudioFlowBootstrapFailedBuilds<NonNullable<ReturnType<typeof parseAutomationStudioFlowBootstrapGenerationError>>>();
   registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapGenerationReadiness,
@@ -100,6 +101,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
         });
       } catch (error) {
         const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
+        failedBuilds.ended(projectId, flowId, diagnostic ?? undefined);
         if (diagnostic) {
           return {
             ok: false,
@@ -109,7 +111,22 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
         }
         return { ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.unclassified_failure)." };
       }
+      failedBuilds.ended(projectId, flowId, undefined);
       return { ok: true, payload: { adaptation: sanitizedFlowBootstrapGeneration(generated) } };
+    }
+  });
+  // The diagnostic of a Flow's latest build that failed, as the request above
+  // answered it. A build the chat started answers the person in words, and
+  // what it spent used to be lost with the rest of its diagnostic: live run
+  // `run-muq3ubys-4b4dbf5b` spent $0.227 and the spend ledger recorded $0.
+  registry.register({
+    programId: "automation-studio",
+    endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapFailure,
+    permission: "programs.read",
+    classification: "read",
+    handler: async (request) => {
+      const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload) ? request.payload as Record<string, unknown> : {};
+      return { ok: true, payload: { failure: failedBuilds.latest(boundedIdentifier(payload.projectId, "Project"), boundedIdentifier(payload.flowId, "Flow")) ?? null } };
     }
   });
 }

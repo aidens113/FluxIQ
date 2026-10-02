@@ -7,3 +7,4 @@ export * from "./draft-from-flow.ts";
 export * from "./replay.ts";
 export * from "./replay-draft.ts";
 export * from "./dry-run-gate.ts";
+export * from "./step-place.ts";
