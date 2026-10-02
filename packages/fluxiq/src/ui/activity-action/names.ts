@@ -13,6 +13,9 @@ const PAIRS: readonly (readonly [ActivityActionKind, string])[] = [
   ["draft", "Edit Flow"],
   ["test", "Test run"],
   ["repair", "Repair"],
+  ["join", "Join paths"],
+  ["branch", "Choose path"],
+  ["repeat", "Repeat"],
   ["other", "Action"]
 ];
 
