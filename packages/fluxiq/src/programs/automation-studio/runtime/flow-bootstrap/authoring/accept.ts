@@ -10,6 +10,7 @@
 // that cannot pass them is still refused and still creates nothing.
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
+import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
 import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS } from "../plan/index.ts";
 import { assembleAutomationStudioFlowScriptPlan } from "./assemble.ts";
 import type { AutomationStudioFlowBootstrapAcceptance } from "./contracts.ts";
@@ -27,20 +28,27 @@ export function acceptAutomationStudioFlowBootstrapResult(input: {
   result: JsonValue;
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
+  /**
+   * The active instructions' own words, as the build read them. The columns
+   * they name are declared as the schema of every extraction whose author
+   * declared none (`./instruction-record-columns.ts`); absent, nothing is.
+   */
+  instructionText?: string | undefined;
 }): AutomationStudioFlowBootstrapAcceptance {
+  const namedColumns = automationStudioFlowBootstrapInstructionColumns(input.instructionText ?? "");
   const script = scriptText(input.result);
   const stated = statedSummary(input.result);
   if (script !== undefined) {
     const read = parseAutomationStudioFlowScript(script);
     const summary = boundedSummary(stated ?? read.script.summary ?? read.script.blocks[0]?.steps[0]?.description);
-    const assembled = assembleAutomationStudioFlowScriptPlan({ script: read.script, registry: input.registry, resolution: input.resolution, summary });
+    const assembled = assembleAutomationStudioFlowScriptPlan({ script: read.script, registry: input.registry, resolution: input.resolution, summary, namedColumns });
     const issues = [...read.issues, ...assembled.issues];
     if (assembled.plan) return { ok: true, summary, plan: assembled.plan, issues, script };
     return { ok: false, issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script };
   }
   const written = planValue(input.result);
   const summary = boundedSummary(stated);
-  const normalised = normaliseAutomationStudioFlowBootstrapJsonPlan({ value: written, registry: input.registry, resolution: input.resolution, summary });
+  const normalised = normaliseAutomationStudioFlowBootstrapJsonPlan({ value: written, registry: input.registry, resolution: input.resolution, summary, namedColumns });
   return normalised.plan
     ? { ok: true, summary, plan: normalised.plan, issues: normalised.issues }
     : { ok: false, issues: normalised.issues };

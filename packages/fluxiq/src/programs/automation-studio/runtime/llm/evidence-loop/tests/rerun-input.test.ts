@@ -153,3 +153,43 @@ describe("a list a rerun rewrites", () => {
     expect((extractList(input).where as JsonObject[])[4]).toEqual({ read: text("h2 span"), contains: ["ear tips"] });
   });
 });
+
+// Cause 6a of the same run: the re-author turned the ad mark into a text column,
+// and the merge kept the attribute only an attribute column takes.
+describe("a patch that changes a column's kind", () => {
+  const fields = (input: JsonObject): JsonObject => extractList(input).fields as JsonObject;
+
+  it("drops the old kind's own member and keeps what the model could not see", () => {
+    const input = automationStudioLlmEvidenceRerunInput(storedRead(), { extractList: { fields: { ad: { kind: "text" } } } });
+
+    // Before: { kind: "text", attribute: "data-ad-id", selector: ".ad", required: false }.
+    expect(fields(input).ad).toEqual({ kind: "text", selector: ".ad", required: false });
+    // The other columns are untouched.
+    expect(fields(input).plus).toEqual(mark("aria-label", ".plus"));
+  });
+
+  it("gives a condition rewritten against the changed column that column as it now stands", () => {
+    const stored = extractList(storedRead()).where as JsonObject[];
+    const where: JsonObject[] = stored.map((condition) => ({ ...condition, read: shown(condition.read as JsonObject) }));
+    where[0] = { read: { kind: "text", required: false }, is: "absent" };
+
+    const input = automationStudioLlmEvidenceRerunInput(storedRead(), { extractList: { fields: { ad: { kind: "text" } }, where } });
+
+    expect((extractList(input).where as JsonObject[])[0]).toEqual({ read: { kind: "text", selector: ".ad", required: false }, is: "absent" });
+  });
+
+  it("keeps the member when the kind stays, when the patch writes it, and drops none the new kind's change does not name", () => {
+    // The same kind: an ordinary merge.
+    expect(fields(automationStudioLlmEvidenceRerunInput(storedRead(), { extractList: { fields: { ad: { kind: "attribute", required: true } } } })).ad)
+      .toEqual({ kind: "attribute", attribute: "data-ad-id", selector: ".ad", required: true });
+    // Into a kind that owns a member, written with it.
+    expect(fields(automationStudioLlmEvidenceRerunInput(storedRead(), { extractList: { fields: { name: { kind: "attribute", attribute: "title" } } } })).name)
+      .toEqual({ kind: "attribute", attribute: "title", selector: "h2 span", required: true });
+    // Out of a kind that owns none: every stored member merges as before.
+    expect(fields(automationStudioLlmEvidenceRerunInput(storedRead(), { extractList: { fields: { name: { kind: "link" } } } })).name)
+      .toEqual({ kind: "link", selector: "h2 span", required: true });
+    // The old kind's member written again in the same patch is the patch's.
+    expect(fields(automationStudioLlmEvidenceRerunInput(storedRead(), { extractList: { fields: { ad: { kind: "image", attribute: "src" } } } })).ad)
+      .toEqual({ kind: "image", attribute: "src", selector: ".ad", required: false });
+  });
+});

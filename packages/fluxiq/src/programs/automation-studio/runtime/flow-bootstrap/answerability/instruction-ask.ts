@@ -36,14 +36,10 @@
 // no term here matches is simply not judged, which is where every instruction
 // stood before.
 import type { AutomationStudioFlowBootstrapInstructionAsk } from "./contracts.ts";
+import { automationStudioFlowBootstrapInstructionColumns } from "./instruction-columns.ts";
 
 /** What the person's own sentence may cost in the feedback. */
 const MAX_QUOTE = 200;
-const MAX_COLUMNS = 12;
-const MAX_COLUMN_NAME = 32;
-const MAX_COLUMN_WORDS = 3;
-/** How far past the word "columns" a named list may run. */
-const MAX_COLUMN_LIST = 200;
 
 /**
  * The words and phrases that ask for a set of rows. A phrase matches across any
@@ -65,10 +61,6 @@ const RECORD_SET_PATTERNS = RECORD_SET_TERMS.map((term) => new RegExp(
   "iu"
 ));
 
-/** The words after "columns", where an instruction names them. */
-const COLUMN_LIST = new RegExp(`(?<![A-Za-z0-9])columns?(?![A-Za-z0-9])([^.;\n]{0,${MAX_COLUMN_LIST}})`, "iu");
-const COLUMN_NAME = /^[A-Za-z][A-Za-z0-9 _-]*$/u;
-const COLUMN_SEPARATOR = /,|;| and | & /iu;
 /** Where the person's own sentence starts and ends. */
 const SENTENCE_BOUNDARY = /[.;!?\n]/u;
 
@@ -82,7 +74,7 @@ export function automationStudioFlowBootstrapInstructionAsk(instructionText: str
   }
   if (asksAt === undefined) return { records: false, columns: [] };
   const quote = sentenceAt(text, asksAt);
-  return { records: true, ...(quote ? { quote } : {}), columns: namedColumns(text) };
+  return { records: true, ...(quote ? { quote } : {}), columns: automationStudioFlowBootstrapInstructionColumns(text) };
 }
 
 /** The person's own sentence around a match, as they wrote it, bounded. */
@@ -103,24 +95,4 @@ function sentenceAt(text: string, at: number): string | undefined {
   }
   const sentence = text.slice(start, end).replace(/\s+/gu, " ").trim();
   return sentence ? sentence.slice(0, MAX_QUOTE) : undefined;
-}
-
-/**
- * The columns the instruction named, for the feedback alone. A Flow is never
- * held to a particular set of field names -- a column the model spells
- * differently is still the column asked for -- so these say what the person
- * wrote and gate nothing.
- */
-function namedColumns(text: string): string[] {
-  const listed = COLUMN_LIST.exec(text)?.[1];
-  if (!listed) return [];
-  const names: string[] = [];
-  for (const part of listed.split(COLUMN_SEPARATOR)) {
-    const name = part.replace(/^[^A-Za-z0-9]+/u, "").replace(/[^A-Za-z0-9]+$/u, "").replace(/\s+/gu, " ").trim();
-    if (!name || name.length > MAX_COLUMN_NAME || !COLUMN_NAME.test(name)) continue;
-    if (name.split(" ").length > MAX_COLUMN_WORDS || names.includes(name)) continue;
-    names.push(name);
-    if (names.length >= MAX_COLUMNS) break;
-  }
-  return names;
 }

@@ -552,3 +552,27 @@ describe("a completed draft whose acts are named for arriving where it starts", 
     expect(verdict.ok).toBe(true);
   });
 });
+
+// The completion passes the instruction's own words to the plan's assembly, so a
+// list read whose author declared no columns stores the ones the instruction
+// names (`flow-bootstrap/authoring/instruction-record-columns.ts`). Live run 12
+// stored two filter-only columns beside the four it was asked for.
+describe("a completed list read with no declared columns", () => {
+  const read = { item: "li.product", fields: { name: ".name", price: ".price", plus: ".plus" }, where: [{ field: "plus", is: "present" }] };
+
+  it("stores the columns the instruction names, by the reply's plan and by the draft", async () => {
+    const instructionText = "Scrape every Plus product the search returns as a table with columns name and price.";
+    const draftSteps: AutomationStudioFlowDraftStep[] = [{ position: 1, id: "d1", iteration: 1, actionId: "web.dom.extract_list", toolId: "core.run_node", input: { node: "web.dom.extract_list", parameters: { extractList: read }, consequences: [] }, effect: "observe", effectApplied: true, disposition: "kept", proposes: true }];
+    for (const input of [
+      { result: { summary: "Scrape", plan: planWith({ extractList: read }) } },
+      { result: { summary: "Scrape" }, draftSteps }
+    ]) {
+      const verdict = await checkAutomationStudioFlowBootstrapCompletion({ ...input, projectId: "project.1", flowId: "flow.1", registry, resolution, instructionText });
+      expect(verdict.ok, JSON.stringify(verdict.ok ? {} : verdict.check)).toBe(true);
+      if (!verdict.ok) return;
+      const node = verdict.buildPlan.subflows[0]?.nodes.find((entry) => entry.definitionId === "web.output.dom-extract_list");
+      const recordOutput = node?.parameters?.recordOutput as { schema?: { fields?: Array<{ id: string }> } } | undefined;
+      expect(recordOutput?.schema?.fields?.map((column) => column.id)).toEqual(["name", "price"]);
+    }
+  });
+});

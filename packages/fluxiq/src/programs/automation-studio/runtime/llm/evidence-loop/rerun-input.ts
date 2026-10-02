@@ -66,12 +66,29 @@
 // several entries of a map equally, runs exactly as written, so a guess never
 // puts one column's locator under another column's condition. Which column a
 // key names is still the caller's to resolve; this keeps only what Core withheld.
+//
+// **A patch that changes an object's `kind` drops the old kind's own member
+// (t194-w42, cause 6a of `run-muq66ff9-cb3767a1`).** A merge keeps every key the
+// patch leaves out, which is right for a member every kind takes and wrong for
+// one only the old kind takes: `{kind: "text"}` written over
+// `{kind: "attribute", attribute: "data-ad-id", selector: ".ad"}` merged into a
+// text column still carrying `attribute`, which no text column takes. Which
+// members each kind takes is the caller's vocabulary, not Core's, so Core keeps
+// to the one convention a kinded object states for itself: the member a kind
+// owns is the member named after it (`attribute` for the kind `attribute`). When
+// a patch changes `kind` from one string to another, that member of the stored
+// object leaves with the old kind unless the patch writes it again; every other
+// member merges as before, so what the model was never shown (the selector) is
+// still kept. A kind whose own member is named otherwise -- a table column's
+// `header` -- is not recognised here, and its member is kept, as before.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 
 /** The keys of a `core.run_node` argument (`../node-tools/run-node.ts`). */
 const NODE_KEY = "node";
 const PARAMETERS_KEY = "parameters";
 const CONSEQUENCES_KEY = "consequences";
+/** The key an object names what it is by. */
+const KIND_KEY = "kind";
 
 /** The argument a rerun runs with: `patch` merged over `previous` (RFC 7386). */
 export function automationStudioLlmEvidenceRerunInput(previous: JsonObject | undefined, patch: JsonObject): JsonObject {
@@ -89,6 +106,8 @@ function placed(target: JsonObject, patch: JsonObject): JsonObject {
 
 function mergePatch(target: JsonObject, patch: JsonObject): JsonObject {
   const merged: JsonObject = { ...target };
+  const leaving = oldKindMember(target, patch);
+  if (leaving !== undefined) delete merged[leaving];
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) {
       delete merged[key];
@@ -104,6 +123,18 @@ function mergePatch(target: JsonObject, patch: JsonObject): JsonObject {
     if (Array.isArray(value) && Array.isArray(stored)) merged[key] = restoredList(value, stored, merged);
   }
   return merged;
+}
+
+/**
+ * The stored member named after the stored `kind`, when the patch changes the
+ * kind to another and does not write that member itself: the member the old
+ * kind owned, which leaves with it.
+ */
+function oldKindMember(target: JsonObject, patch: JsonObject): string | undefined {
+  const was = target[KIND_KEY];
+  const becomes = patch[KIND_KEY];
+  if (typeof was !== "string" || typeof becomes !== "string" || was === becomes || was === KIND_KEY) return undefined;
+  return Object.hasOwn(target, was) && !Object.hasOwn(patch, was) ? was : undefined;
 }
 
 /** A list written over a stored one, each object inside each item keeping what the model was not shown of it. */
