@@ -55,6 +55,24 @@ describe("runtimeSessionToFlowRunDetail attempt ask", () => {
   });
 });
 
+// A sometimes-present step observed absent is skipped, not failed
+// (`executor/step-skip/absent-step.ts`). The run detail is all a reader of the
+// run -- the Lab, the web UI -- has, so without the mark a skip reads as a press.
+describe("runtimeSessionToFlowRunDetail skipped step", () => {
+  it("carries a skipped attempt's reason and observing code", () => {
+    const skipped = { ...attempt("popup.attempt.1", {}), route: "skipped", skipped: { reason: "target_absent", code: "web.target.not_found" } } as AutomationStudioNodeAttemptTrace;
+    const record = runtimeSessionToFlowRunDetail(session([skipped]), "project.conversions").actionAttempts?.[0];
+
+    expect(record).toMatchObject({ status: "succeeded", route: "skipped", skipped: { reason: "target_absent", code: "web.target.not_found" } });
+    expect(record).not.toHaveProperty("failure");
+  });
+
+  it("writes no skipped mark for an attempt that ran", () => {
+    const ran = runtimeSessionToFlowRunDetail(session([attempt("click.attempt.1", {}), failedAttempt()]), "project.conversions");
+    for (const record of ran.actionAttempts ?? []) expect(record).not.toHaveProperty("skipped");
+  });
+});
+
 // Fix 5: the only production call site passed no adaptations at all, so
 // `knownAdaptationMatches` was always empty no matter what any adaptation
 // recorded. The list has to reach the classifier for matching to exist.
