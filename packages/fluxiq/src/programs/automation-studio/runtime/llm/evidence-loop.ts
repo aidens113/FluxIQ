@@ -530,9 +530,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // A build told where its Flow starts opens by going there (F31): its look
     // was refused for not being there yet, and the model's first paid decision
     // was that navigation (`run-muqc07fh-eeffbc86`). The opening call id stays,
-    // since the domain keys per-build memory on it. No provider call.
+    // since the domain keys per-build memory on it. No provider call. A draft already holding the Flow (a repair's, a re-author's) holds its start: its opening is taken, not added (run 38 appended it as step 6).
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
-    const opening: ToolCall = { kind: "tool_call", callId: `initial.${initialTool.toolId}`, toolId: initialTool.toolId, input: structuredClone(arrival), add: true };
+    const opening: ToolCall = { kind: "tool_call", callId: `initial.${initialTool.toolId}`, toolId: initialTool.toolId, input: structuredClone(arrival), ...(draftSteps.some((step) => step.disposition === "kept") ? {} : { add: true as const }) };
     const ended = await runCall(0, opening.callId, opening, initialTool, automationStudioLlmEvidenceRequestSignature({ tool: initialTool, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: opening.input }));
     if (ended) return ended;
   } else if (initialTool) {

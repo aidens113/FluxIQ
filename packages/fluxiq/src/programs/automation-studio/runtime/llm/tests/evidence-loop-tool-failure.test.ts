@@ -377,4 +377,19 @@ describe("a result that is not one names the check it failed", () => {
     expect(automationStudioLlmEvidenceToolResultInvalidCode(base, "mutate")).toBeUndefined();
     expect(automationStudioLlmEvidenceToolResultInvalidCode({ page: "home" }, "observe")).toBeUndefined();
   });
+
+  // Live run `run-muqilf9s-c3211328`: a list read shows its first rows as the
+  // very objects its records hold. Reaching one object by two paths is not a
+  // cycle, and every read that returned rows was refused `evidence_not_json`.
+  it("reads a result whose evidence holds the same object twice, and still refuses a real cycle", () => {
+    const amara = { name: "Amara Osei", mutualFriends: "23 mutual friends" };
+    const jonas = { name: "Jonas Weber", mutualFriends: "Aisha Khan and 4 other mutual friends" };
+    const read = { ...base, evidence: { ok: true, read: { extracted: [amara, jonas], firstRows: [amara, jonas] } } };
+    expect(automationStudioLlmEvidenceToolResultInvalidCode(read, "observe")).toBeUndefined();
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(read as never, "observe")).toMatchObject({ evidence: read.evidence });
+
+    const cyclic: Record<string, unknown> = { ok: true };
+    cyclic.self = cyclic;
+    expect(refusal({ ...base, evidence: cyclic }, "observe")).toBe(invalid("evidence_not_json"));
+  });
 });

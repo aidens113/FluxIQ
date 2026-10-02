@@ -20,6 +20,7 @@ import {
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA,
   type AutomationStudioFlowDraftAmendment,
   type AutomationStudioFlowDraftStepReplay,
+  automationStudioFlowDraftControlWords,
   type AutomationStudioFlowDraftAmendmentChange
 } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
@@ -123,7 +124,7 @@ function readToolExecution(
     if (typeof value.effectApplied !== "boolean") return { refused: "effect_applied_not_boolean" };
     if (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean") return { refused: "targets_unchanged_not_boolean" };
     if (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode))) return { refused: "result_code_not_code" };
-    const draft = readCallRecord(value.draft);
+    const draft = readCallRecord(value.draft, value.evidence);
     if (draft && "refused" in draft) return draft;
     const diagnostic = automationStudioLlmEvidenceDiagnostic(value.diagnostic);
     // **The key list had to widen before the domain emitted either of these.**
@@ -192,10 +193,10 @@ function closedCode(value: unknown): value is string {
  * never interprets it; the argument is carried so the step can be written down
  * or run again; the two flags are the caller's statement about its own call.
  */
-function readCallRecord(value: unknown): { draft: NonNullable<AutomationStudioLlmEvidenceToolExecutionResult["draft"]> } | { refused: AutomationStudioLlmEvidenceToolResultCheck } | undefined {
+function readCallRecord(value: unknown, evidence: JsonValue): { draft: NonNullable<AutomationStudioLlmEvidenceToolExecutionResult["draft"]> } | { refused: AutomationStudioLlmEvidenceToolResultCheck } | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) return { refused: "draft.not_object" };
-  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay"])) return { refused: "draft.unknown_key" };
+  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption"])) return { refused: "draft.unknown_key" };
   if (value.actionId !== undefined && !validId(value.actionId)) return { refused: "draft.action_id" };
   if (value.input !== undefined && !isJsonObject(value.input)) return { refused: "draft.input" };
   if (value.ranWith !== undefined && !isJsonObject(value.ranWith)) return { refused: "draft.ran_with" };
@@ -203,13 +204,23 @@ function readCallRecord(value: unknown): { draft: NonNullable<AutomationStudioLl
   if (value.proposes !== undefined && typeof value.proposes !== "boolean") return { refused: "draft.proposes" };
   const replay = readReplayRecord(value.replay);
   if (value.replay !== undefined && !replay) return { refused: "draft.replay" };
+  // Page words, so withheld rather than refused when they may not travel:
+  // never shown in this call's own evidence, not plain, or not words at all
+  // (`../flow-draft/control-words.ts`). The call happened either way.
+  const control = automationStudioFlowDraftControlWords(value.control, evidence);
+  // The host's word that the call answered a layer gone after it. Only `true`
+  // says it; anything else is read as saying nothing, never as a refusal --
+  // the call happened either way (`../flow-draft/step.ts`, `interruption`).
+  const interruption = value.interruption === true;
   return { draft: {
     ...(value.actionId === undefined ? {} : { actionId: value.actionId }),
     ...(value.input === undefined ? {} : { input: value.input }),
     ...(value.ranWith === undefined ? {} : { ranWith: value.ranWith }),
     ...(value.effect === undefined ? {} : { effect: value.effect }),
     ...(value.proposes === undefined ? {} : { proposes: value.proposes }),
-    ...(replay ? { replay } : {})
+    ...(replay ? { replay } : {}),
+    ...(control === undefined ? {} : { control }),
+    ...(interruption ? { interruption: true as const } : {})
   } };
 }
 
@@ -507,8 +518,15 @@ function isJsonValue(value: unknown, seen = new Set<object>(), depth = 0): value
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
   if (!value || typeof value !== "object" || depth > AUTOMATION_STUDIO_LLM_JSON_MAX_DEPTH || seen.has(value)) return false;
+  // `seen` holds this value's ancestors only: an object reached twice by two
+  // paths (a read's first rows are the same objects as its records) is not a
+  // cycle. Until 2026-10-02 every object stayed in `seen`, so every list read
+  // that returned rows was refused as not JSON (live run `run-muqilf9s-c3211328`).
   seen.add(value);
-  if (Array.isArray(value)) return value.every((item) => isJsonValue(item, seen, depth + 1));
-  return Object.values(value as Record<string, unknown>).every((item) => isJsonValue(item, seen, depth + 1));
+  const valid = Array.isArray(value)
+    ? value.every((item) => isJsonValue(item, seen, depth + 1))
+    : Object.values(value as Record<string, unknown>).every((item) => isJsonValue(item, seen, depth + 1));
+  seen.delete(value);
+  return valid;
 }
 

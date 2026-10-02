@@ -709,6 +709,35 @@ option `draftAuthoring: "transcript"` keeps the old rule, under which every step
 that ran was `kept` unless withdrawn; it exists only to replay builds recorded
 under that rule (`runtime/llm/loop-configuration.ts`, `runtime/flow-draft/step.ts`).
 
+**Each step names the control it acted on (t174/F33).** A step's `input` names
+a control by the token the domain minted for it, a handle on the web, and a
+token says nothing once its page is gone: live run `run-muqiho5c-e830ce01`
+pressed "Not now" (t1082), then added that step as its add-to-cart act from a
+draft showing only `input: {target: {handle: "t1082"}}`, and completed with an
+empty cart. A call's draft statement may therefore carry `control`, the words
+its own outcome showed for what it acted on; the draft step keeps it and the
+draft entry prints it beside `input`. It is absent where nothing was acted on
+(a look, a navigation) and on a refusal. It is page text, so it crosses the
+evidence boundary as a permission request's control name does: read only on
+the execution-result parse path, carried only when the call's own evidence
+showed those words, plain (no control characters or `<>`), and cut to 120
+characters; anything else is withheld, never refused
+(`runtime/flow-draft/control-words.ts`). It is never a parameter: the Flow is
+written from `input`, `ranWith` and `settings` (`runtime/llm/node-tools/draft-step.ts`).
+
+**A step that answered an interruption is optional (t174, case 2 of t174-w60).**
+A call's draft statement may also carry `interruption: true`: the host saw the
+call answer something standing in front of the page -- a dialog, a consent
+wall, a covering popup -- that was gone after it. Only `true` is carried; any
+other value is withheld, never refused. The draft step keeps it, and a proposed
+step that says it, claims none of the instructed acts and has no routing of its
+own is wired as `optional` when the Flow is written
+(`runtime/flow-draft/sometimes-present.ts`,
+`runtime/flow-bootstrap/authoring/draft-routing.ts`): its failure reaches the
+join the next step runs from, so playback skips it on a visit where the site
+remembers the answer. The stored draft is not rewritten, and a step that does
+an instructed act is never made optional.
+
 **The instructed acts are the model's checklist from the first decision**
 (audit A1, cause 1). The draft entry carries `acts`: each lasting act the
 instruction asks for, in the person's words, with `done` naming the step of the

@@ -20,6 +20,9 @@
 // A condition is paired with its rejection count by position: the read reports
 // one count per condition it was given, in the order it was given them.
 //
+// **And the rows each condition removed by itself, by label** (`alone-rows.ts`),
+// carried, like the wording, only under the bound domain's declared keys.
+//
 // **Every read, every condition and every dedupe key** (user, 2026-09-30:
 // "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT
 // HIDE INFORMATION"). Until then a judge saw four reads, eight conditions each
@@ -30,6 +33,7 @@ import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automa
 import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
 import { automationStudioEvidenceKey } from "../../llm/index.ts";
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
+import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionText } from "./condition.ts";
 
 /** The members that mark an object as a read's own parameters. */
@@ -112,6 +116,8 @@ function conditionAccounts(
   const seen = Array.isArray(filter?.seen) ? filter.seen : [];
   // How many rows each condition removed by itself, positionally like the counts; absent from a read that did not count it.
   const alone = Array.isArray(filter?.alone) ? filter.alone : [];
+  // The rows each condition removed by itself, by label, positionally like the counts; absent from a read that did not send them (`alone-rows.ts`).
+  const aloneRows = Array.isArray(filter?.aloneRows) ? filter.aloneRows : [];
   const written = Array.isArray(authored?.where) ? authored.where : [];
   const columns = isRecord(authored?.fields) ? authored.fields : undefined;
   const total = Math.max(rejected.length, written.length);
@@ -120,10 +126,12 @@ function conditionAccounts(
     const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index]) : undefined;
     const rows = count(rejected[index]);
     const byItself = count(alone[index]);
+    const leftOutOnlyByThis = deniedKeys ? automationStudioResultReadAloneRows(aloneRows[index], deniedKeys) : undefined;
     accounts.push({
       ...(condition ? { condition } : {}),
       ...(rows !== undefined ? { rejected: rows } : {}),
-      ...(byItself !== undefined && (rows === undefined || byItself <= rows) ? { alone: byItself } : {})
+      ...(byItself !== undefined && (rows === undefined || byItself <= rows) ? { alone: byItself } : {}),
+      ...(leftOutOnlyByThis ? { leftOutOnlyByThis } : {})
     });
   }
   return accounts;
