@@ -18,6 +18,7 @@
 // -- a repair rewriting one node -- should resolve its names through the same
 // pass rather than a second one.
 export * from "./catalog.ts";
+export * from "./catalog-names.ts";
 export * from "./contracts.ts";
 export * from "./evidence-schema.ts";
 export * from "./flow-script-format.ts";

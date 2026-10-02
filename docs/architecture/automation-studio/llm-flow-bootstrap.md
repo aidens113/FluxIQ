@@ -51,6 +51,55 @@ not part of the schema or context. A `flow_bootstrap` request fails before
 provider invocation when it has no effective active instruction or no
 scope-aware registry context.
 
+### The catalog an evidence decision is shown
+
+The one-shot `flow_bootstrap` call has no tools, so it is sent the whole
+catalog above. An evidence decision -- every decision of an evidence-guided
+build: its exploration, its repair rounds and a re-author -- is sent the
+catalog by name instead, and the full definitions only of the nodes it asked
+for (user, 2026-10-01: the whole catalog, 41,122 of the 58,547 characters of
+one decision, was resent on every decision). Its `flowBootstrap` carries:
+
+- `nodeCatalog`: every offered node as `{"<category>": ["<id>: <description>"]}`,
+  nothing cut, descriptions whole with whitespace collapsed, categories in the
+  order they first appear in the id-sorted catalog and entries by id
+  (`runtime/flow-bootstrap/plan/catalog-names.ts`);
+- `nodeCatalogNote`: one constant sentence on how to read the two fields;
+- `describedNodes`: the full catalog entries (label, description, ports,
+  parameter contracts with their authoring text, output-action contract) of
+  the nodes this build has described, in the order each was first described,
+  absent until there is one.
+
+`catalogTruncated` and `catalogSelection` are not sent on that payload. The
+packet still carries the whole `nodeCatalog`, `catalogSelection` included, for
+every check that reads it (`catalogNames` and `describedNodes` sit beside it,
+`runtime/llm/harness/context-packet.ts`); only the request body leaves it out
+(`runtime/llm/deepseek/request-body.ts`).
+
+The model reads a definition with Core's tool `core.describe_nodes`
+(`{ids}`, up to 64 per call; `runtime/llm/node-tools/describe-nodes.ts`). It
+observes only, is never a step of the Flow, and is offered only beside the
+node library (`core.run_node`). It answers with a receipt -- `described`,
+`alreadyDescribed`, `unknown`, `shownIn: "flowBootstrap.describedNodes"` --
+never the definitions, which appear in `describedNodes` from the next decision
+on, so each is shown once per request however long ago it was asked for. A
+call naming only unknown ids is refused as `describe_nodes.unknown_nodes`. The
+memory is one build's (`runtime/llm/node-tools/node-descriptions.ts`): every
+round of the build shares it, and a new build starts empty. A describe call
+reads nothing on the page: build routing records nothing for it (`pageless`,
+`runtime/route-state/build-routing.ts`) and the state-digest hook skips it, so
+it costs no page capture.
+
+Describing first is advice, never a gate: nothing is refused before a call for
+not having been described. `core.run_node`'s description teaches the two steps
+(pick a name, read its definition before first running it). When a
+`core.run_node` call fails -- refused evidence `ok: false`, or a thrown call,
+including a rerun asked through `amend_draft` -- the node it named is described,
+and a refusal says so (`described`, or `definition` when it already was) with
+`undeclaredParameters` listing any parameter it gave that the definition does
+not declare (`runtime/llm/node-tools/describing-failures.ts`). Core's own
+replays of the draft pass through untouched.
+
 ## Permission on the authoring path
 
 A build may carry `permittedConsequences`, the lasting consequences the person
@@ -477,8 +526,10 @@ per node; how many nodes and edges it may carry, and its UTF-8 byte budget, come
 from the Flow's size setting (see "Flow Size" below). Its
 instruction asks for one primary Subflow with Router fallback by default and
 permits extra topology only when the active instruction requires it. Core
-rechecks these bounds after parsing and before registry validation. Every
-path sends the whole catalog. A representative routed three-action web plan is
+rechecks these bounds after parsing and before registry validation. No path
+cuts the catalog: the one-shot path sends it whole, and an evidence decision
+sends every node by name plus the definitions it asked for (see
+[The catalog an evidence decision is shown](#the-catalog-an-evidence-decision-is-shown)). A representative routed three-action web plan is
 1,110 bytes (370 tokens under Core's conservative estimator), so the 4,000
 output-token limit remains unchanged.
 
@@ -786,10 +837,13 @@ call that has already been made.
 Because every decision of an evidence loop is a fresh, stateless request, the
 whole of that cache turns on the order of the user message, and
 `providerUserPayload` arranges it deliberately: the task envelope, the decision
-grammar, the person's instruction, the tool descriptions, the node catalog and
-the policy gates first, then the evidence window, and the iteration counter
-last. Everything invariant is therefore one contiguous prefix, and the window --
-which usually only gains an entry between calls -- extends it. The order used to
+grammar, the person's instruction, the tool descriptions, the policy gates and
+the catalog context (the node names, their note and `describedNodes`) first,
+then the evidence window, and the iteration counter last. Everything invariant
+is therefore one contiguous prefix, and the window -- which usually only gains
+an entry between calls -- extends it. `describedNodes` is the one part of that
+head that grows: it is append-only for the length of a build, so a describe
+keeps the cached prefix through every node described before it. The order used to
 put the counter before the tool descriptions and the catalog, which left 20,341
 identical bytes of a 50,840-byte message behind a value that changed on every
 call. A key added here must go on the correct side of that line: anything that
@@ -837,8 +891,8 @@ exact revision. The normal
 
 Evidence-guided generation uses the caller's provider for a bounded series
 of `evidence_tool_decision` tasks. Every task carries the current filtered node
-catalog, strict dynamic decision schema, allowlisted tools, and prior sanitized
-evidence. A decision either requests one registered tool or completes with a
+catalog by name with the definitions the build has described, strict dynamic
+decision schema, allowlisted tools, and prior sanitized evidence. A decision either requests one registered tool or completes with a
 `{ summary, plan }` candidate whose plan schema is the existing strict Flow
 Bootstrap schema. Unknown tools, duplicate calls, cancellation, iteration
 exhaustion, and evidence-byte overflow fail closed. An unusable reply and a
@@ -1125,8 +1179,11 @@ evidence is retained even when an action is recoverably rejected, but the
 mutation epoch advances only when `effectApplied` is explicitly true. Legacy
 raw results remain valid for observations and unmarked tools; raw marked
 mutation results fail closed as no applied effect.
-Evidence-decision context carries the whole node catalog beside the tool
-schemas, decision schema and collected evidence. DeepSeek still estimates the final provider projection and rejects it
+Evidence-decision context carries every node by name and the definitions the
+build has described beside the tool schemas, decision schema and collected
+evidence. In the decision schema, the `add` and `act` properties are explained
+once, on the first tool variant that can act, and offered bare on every other
+(`runtime/llm/evidence-loop-decision.ts`). DeepSeek still estimates the final provider projection and rejects it
 if the authoritative per-call input or total-token limits would be exceeded.
 
 The persisted adaptation records only bounded iteration, decision, call/tool ID,

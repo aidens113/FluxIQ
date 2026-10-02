@@ -8,3 +8,7 @@ export * from "./replay.ts";
 export * from "./replay-draft.ts";
 export * from "./dry-run-gate.ts";
 export * from "./step-place.ts";
+// The nodes one build has been shown whole, and the option that asks for them.
+export * from "./node-descriptions.ts";
+export * from "./describe-nodes.ts";
+export * from "./describing-failures.ts";
