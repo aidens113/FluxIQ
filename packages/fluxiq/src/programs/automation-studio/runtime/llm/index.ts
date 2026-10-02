@@ -75,6 +75,8 @@ export {
 // (`decision-context/`). Public because a caller reading a run's evidence has
 // to be able to name the entry and read its rows.
 export * from "./decision-context/index.ts";
+// Core's tool that gives back a held view a newer result replaced (`evidence-recall/`, t194 w48).
+export * from "./evidence-recall/index.ts";
 // What the model is told when the draft refuses one of its amendments, and the
 // entry it arrives under. Published beside the loop for the same reason the
 // decision and completion feedback are: a caller reading a run's evidence has

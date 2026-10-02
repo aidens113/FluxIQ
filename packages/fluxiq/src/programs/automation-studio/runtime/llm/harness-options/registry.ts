@@ -20,6 +20,7 @@ import { automationStudioActionPermissionDenied, type AutomationStudioActionPerm
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowScope } from "../../../model/index.ts";
 import type { AutomationStudioNodeAvailability } from "../../../nodes/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
+import { automationStudioLlmEvidenceRecallBinding } from "../evidence-recall/index.ts";
 import { builtinAutomationStudioHarnessOptions } from "./builtin.ts";
 import type { AutomationStudioHarnessOptionHost } from "./host.ts";
 import {
@@ -34,8 +35,12 @@ import {
 } from "./option.ts";
 
 const DOMAIN_ID = /^[A-Za-z0-9._:-]{1,200}$/;
-/** A key a bundle may declare as part of a view of its target: a plain property name. */
-const OBSERVED_STATE_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+/**
+ * A key a bundle may declare as part of a view: a plain property name, or
+ * `holder.member`, a member of the object a result holds under `holder` -- a
+ * read's rows inside its read (`../decision-context/view-groups.ts`, t194 w48).
+ */
+const OBSERVED_STATE_KEY = /^[A-Za-z_][A-Za-z0-9_]{0,63}(?:\.[A-Za-z_][A-Za-z0-9_]{0,63})?$/;
 /** How many such keys one bundle may declare. */
 const OBSERVED_STATE_KEY_LIMIT = 32;
 
@@ -219,7 +224,9 @@ export class AutomationStudioHarnessOptionRegistry {
     // Only the declarations of bundles the model is offered something from: a
     // key means "a view of the target" only in results of the bundle that said so.
     const observedStateKeys = [...new Set(tools.flatMap((tool) => this.observedStateKeysByOption.get(tool.toolId) ?? []))];
-    return {
+    // A held view (`holder.member`) is replaced in what a decision is shown, so
+    // the binding offers `core.recall_result` to give it back (`../evidence-recall/`).
+    return automationStudioLlmEvidenceRecallBinding<AutomationStudioHarnessOptionLoopBinding>({
       tools,
       ...(observedStateKeys.length ? { observedStateKeys } : {}),
       executeTool: ({ callId, toolId, value, signal, permission }) => this.execute({
@@ -232,7 +239,7 @@ export class AutomationStudioHarnessOptionRegistry {
         ...(signal !== undefined ? { signal } : {}),
         ...(permission !== undefined ? { permission } : {})
       }, resolution)
-    };
+    });
   }
 }
 

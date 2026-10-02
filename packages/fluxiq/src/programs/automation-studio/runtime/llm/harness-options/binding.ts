@@ -63,6 +63,12 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * are, so the domain declares them, as it declares `deniedEvidenceKeys`.
    * Absent, every result is shown whole in every later decision, which is
    * what overflowed live builds (B1, `run-mup2i28c-6c7fc209`).
+   *
+   * A key written `holder.member` is a member of the object a result holds
+   * under `holder` -- for the web domain, a read's rows inside its `read` --
+   * and is a view of its own kind, replaced only by the next result whose same
+   * holder carries one; the loop is then offered `core.recall_result` to get
+   * an earlier one back whole (t194 w48, `../evidence-recall/`).
    */
   observedStateKeys?: readonly string[];
   tools: AutomationStudioLlmEvidenceTool[];
