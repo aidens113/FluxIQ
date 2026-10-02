@@ -20,7 +20,43 @@ export type AutomationStudioFlowBootstrapUnfinishedStop =
   /** Its decisions kept coming back unusable: most often completions the check kept refusing. */
   | "unusable_decisions"
   /** Its no-progress guard stopped it. */
-  | "repeat_without_progress";
+  | "repeat_without_progress"
+  /**
+   * It finished: the model said the Flow was ready and its test passed, but
+   * the judge of the test's results said the Flow does not do what was asked,
+   * or could not judge it because steps carried from an earlier Flow were not
+   * run in this test (`./phases.ts`).
+   */
+  | "judged_wrong";
+
+/** What one judge of a Flow's test spent, counted against the build's budget. */
+export type AutomationStudioFlowBootstrapJudgeSpend = { inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number };
+
+/**
+ * The judge's verdict on a finished round: whether what the Flow's test from
+ * its start actually did is what the instruction asks. `not_judged` is a judge
+ * that could not run -- no cost left, the deadline passed, or it was stopped.
+ * `untestedCarried` is the positions of steps carried from an earlier Flow
+ * that this test did not run, whose acts it therefore has no evidence of.
+ */
+export type AutomationStudioFlowBootstrapTestVerdict =
+  | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend }
+  | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; spent: AutomationStudioFlowBootstrapJudgeSpend }
+  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; spent: AutomationStudioFlowBootstrapJudgeSpend };
+
+/**
+ * The judge's account of a Flow it sent back to repair, as the repair is told
+ * it. `no` with what it did not do; `unknown` or `not_judged` only where steps
+ * carried from an earlier Flow were not run, with `findings` holding why.
+ */
+export type AutomationStudioFlowBootstrapJudgedWrong = {
+  verdict: "no" | "unknown" | "not_judged";
+  expected?: string;
+  observed?: string;
+  advice?: string;
+  findings: string[];
+  untestedCarried?: number[];
+};
 
 /** What a stopped round had recorded: its rows and what it spent. */
 export type AutomationStudioFlowBootstrapRoundProgress = {
@@ -89,9 +125,11 @@ export type AutomationStudioFlowBootstrapRoundEnding =
 export type AutomationStudioFlowBootstrapTested = "replayed_clean" | "replay_failed" | "not_tested";
 
 /**
- * The judgement of a Flow a round left unfinished (phase 2): what the test
- * did, and how much of what was asked the Flow does. Codes, counts and ids:
- * what the repair is told, and what an ending is written from.
+ * The judgement of a Flow (phase 2), for a round that stopped short or one
+ * that finished and was judged wrong: what the test did, how much of the
+ * checklist the Flow does, and, after a judge, what it found. Codes, counts,
+ * ids and the judge's screened words: what the repair is told, and what an
+ * ending is written from.
  */
 export type AutomationStudioFlowBootstrapJudgement = {
   /** The round that stopped: 0 for the exploration, then each repair. */
@@ -109,4 +147,12 @@ export type AutomationStudioFlowBootstrapJudgement = {
   todo: string[];
   /** The last refusal codes the model was shown before the round stopped. */
   lastIssueCodes: string[];
+  /** A finished round the judge sent back: what it found. Absent for a round that stopped short. */
+  judge?: AutomationStudioFlowBootstrapJudgedWrong;
+  /**
+   * The Flow's replay signature (`automationStudioFlowDraftReplaySignature`):
+   * a repair after a judged Flow advanced only if this changed, or more of the
+   * checklist was done.
+   */
+  flowSignature?: string;
 };

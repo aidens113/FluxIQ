@@ -42,7 +42,31 @@ describe("the entry a continued build starts from", () => {
       judgement,
       instruction: expect.stringContaining("This is the repair of a Flow that was not finished")
     });
-    expect(entry.value.instruction).toContain("complete only when every act and choice on the checklist is done");
+    // The Flow is judged on what it does, not on the checklist (t195).
+    expect(entry.value.instruction).toContain("complete when the Flow does what the instruction asks");
+    expect(entry.value.instruction).not.toContain("complete only when every act and choice on the checklist is done");
+  });
+
+  it("opens a repair of a Flow the judge sent back with the judge's account, the checklist as information", () => {
+    const judge = { verdict: "no", expected: "two packs of napkins in the cart", observed: "the test added one pack of towels", advice: "add the napkins, twice", findings: ["step 3 pressed Add on the towels"] };
+    const judgement = { stopped: "judged_wrong", test: "replayed_clean", stepsInFlow: 4, actsDone: 2, actsTodo: [], judge };
+    const entry = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [], judgement }, [step(1)]);
+    expect(entry.value).toMatchObject({ code: "llm_evidence_loop.repair", stopped: "judged_wrong", judgement: { judge } });
+    const instruction = entry.value.instruction as string;
+    expect(instruction).toMatch(/^The Flow you said was ready was tested from its start and judged against the instruction: judgement\.judge says what it did not do \(observed\), what was asked \(expected\) and what to change \(advice\)/u);
+    expect(instruction).toContain("The page is where the test left it: look first.");
+    expect(instruction).toContain("The acts checklist is the build's own reading and is information, not the bar: the Flow is judged on what its test does.");
+    expect(instruction).toContain("complete when the Flow does what the instruction asks");
+    expect(instruction).not.toContain("every act and choice on the checklist is done");
+    expect(instruction).not.toContain("carried from the earlier Flow");
+  });
+
+  it("tells a repair of a re-authored Flow to rerun live the carried steps its test never ran", () => {
+    const judge = { verdict: "unknown", findings: ["steps 5 to 9 were carried and not run"], untestedCarried: [5, 6, 7, 8, 9] };
+    const judgement = { stopped: "judged_wrong", test: "not_tested", stepsInFlow: 9, actsDone: 3, actsTodo: [], judge };
+    const instruction = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [], judgement }, [step(1)]).value.instruction as string;
+    expect(instruction).toContain("could not be judged against the instruction");
+    expect(instruction).toContain("Steps 5, 6, 7, 8, 9 were carried from the earlier Flow and not run in this build: rerun them live (amend_draft rerun)");
   });
 
   it("tells a round after one that added nothing that nothing is in the Flow yet, and to keep exploring", () => {

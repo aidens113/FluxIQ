@@ -36,6 +36,14 @@
 // reached from an empty Flow: it needs the evidence of a repair that got no
 // further than a judged Flow.
 //
+// **A Flow the model says is ready is judged (t195).** With a `judge`, what
+// the loop's test of it did is judged against the instruction: `yes` is the
+// result; `no` is repaired as a round that stopped short is, "not doable" only
+// when a repair hands back the same Flow; an unsure verdict is the result,
+// unverified, unless steps carried from an earlier Flow were not run in the
+// test (run 41, `run-muq70foz-74caa189`), which is repaired. The judge's spend
+// counts against the build's $0.25.
+//
 // **Unreadable replies end the build only as that (t211).** Each reply the
 // loop could not read is asked again; an unbroken run of them ends the round
 // as `unreadable`, and the build with a message saying so and how many tries
@@ -62,8 +70,15 @@ import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../inc
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../loop-limits/index.ts";
 import { automationStudioFlowBootstrapBudgetExhausted } from "./budget-exhausted.ts";
-import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapRoundProgress, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
+import type {
+  AutomationStudioFlowBootstrapJudgeSpend,
+  AutomationStudioFlowBootstrapJudgement,
+  AutomationStudioFlowBootstrapRoundProgress,
+  AutomationStudioFlowBootstrapTestVerdict,
+  AutomationStudioFlowBootstrapUnfinishedStop
+} from "./contracts.ts";
 import {
+  automationStudioFlowBootstrapJudgeFinished,
   automationStudioFlowBootstrapJudgeUnfinished,
   automationStudioFlowBootstrapJudgementAdvanced,
   automationStudioFlowBootstrapJudgementValue,
@@ -73,7 +88,7 @@ import {
 import { automationStudioFlowBootstrapNotDoable } from "./not-doable.ts";
 import { automationStudioFlowBootstrapRepliesUnreadable } from "./replies-unreadable.ts";
 import { automationStudioFlowBootstrapProviderUnavailable } from "./provider-unavailable.ts";
-import { automationStudioFlowBootstrapStopSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapStopSaid } from "./not-done.ts";
 import { automationStudioFlowBootstrapRoundEnding } from "./round-ending.ts";
 import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall.ts";
 
@@ -122,6 +137,13 @@ export type AutomationStudioFlowBootstrapBuildPhasesInput = {
    * the build waits on the person's answer, never spends past it.
    */
   callerEnding?(progress: AutomationStudioFlowBootstrapRoundProgress): unknown;
+  /**
+   * Judge a finished round: whether what the Flow's test from its start did is
+   * what the instruction asks, within what the build has left. Throws an
+   * `AbortError` when the build is cancelled. Absent: a Flow the loop accepts
+   * is the build's result, unjudged.
+   */
+  judge?(input: { round: number; loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }>; budget: AutomationStudioLlmEvidenceLoopBudget }): Promise<AutomationStudioFlowBootstrapTestVerdict>;
   /** Tell the person the build moved to a phase: the chat's row for it. */
   announce?(event: { phase: "exploring" | "verifying" | "repairing"; label: string; text: string }): void;
   maxRepairRounds?: number;
@@ -144,6 +166,8 @@ export type AutomationStudioFlowBootstrapBuildPhasesOutcome =
      * repaired kept only its repair's decisions (t214).
      */
     trace: AutomationStudioLlmEvidenceLoopTrace[];
+    /** The judge's verdict, where a judge was given: `yes`, or an unsure one, which marks the Flow unverified. */
+    judged?: AutomationStudioFlowBootstrapTestVerdict;
   }
   /**
    * An ending this lifecycle does not reach past, as the round's loop reported
@@ -200,27 +224,48 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     const spentBefore = spent.estimatedCostUsd;
     addAccounting(spent, ending.kind === "finished" || ending.kind === "other" ? ending.loop.accounting : ending.progress.accounting);
     const rounds = round + 1;
-    if (ending.kind === "finished") return { kind: "finished", loop: ending.loop, accounting: spent, rounds, trace: [...record] };
     if (ending.kind === "other") return { kind: "ended", loop: ending.loop, accounting: spent, rounds, trace: [...record] };
-    const stopped: AutomationStudioFlowBootstrapUnfinishedStop | "budget" = ending.kind === "budget" ? "budget" : ending.stopped;
-    const asked = input.callerEnding?.({ ...ending.progress, trace: [...record], accounting: { ...spent } });
-    if (asked !== undefined) throw asked;
-    // Only a Flow with steps in it is tested: an empty one has nothing to run.
-    if (ending.kind === "unfinished" && automationStudioFlowBootstrapRepairSeed(ending.steps).length) {
-      input.announce?.({ phase: "verifying", label: "Testing the Flow so far", text: `The build stopped before the Flow was finished: ${automationStudioFlowBootstrapStopSaid(stopped)}. Running the Flow as far as it got from its start, to judge what it does and what is left.` });
+    let phase2: Phase2;
+    if (ending.kind === "finished") {
+      if (!input.judge) return { kind: "finished", loop: ending.loop, accounting: spent, rounds, trace: [...record] };
+      // Phase 2 for a Flow the model said was ready: its test already ran in the loop; the judge reads what it did.
+      input.announce?.({ phase: "verifying", label: "Judging the Flow", text: "The Flow was tested from its start. Judging what the test did against what you asked." });
+      let verdict: AutomationStudioFlowBootstrapTestVerdict;
+      try {
+        verdict = await input.judge({ round, loop: ending.loop, budget: remaining(input, spent, clock() - startedAt).budget });
+      } catch (error) {
+        if (!cancellation(error)) throw error;
+        return { kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.loop.trace], steps: ending.loop.steps, accounting: { ...ending.loop.accounting } }, accounting: spent, rounds, trace: [...record] };
+      }
+      addAccounting(spent, judgeAccounting(verdict.spent));
+      if (verdict.verdict === "yes" || (verdict.verdict !== "no" && !verdict.untestedCarried?.length)) {
+        return { kind: "finished", loop: ending.loop, accounting: spent, rounds, trace: [...record], judged: verdict };
+      }
+      const judged = automationStudioFlowBootstrapJudgeFinished({ round, steps: ending.loop.steps, verdict, checklist: input.checklist });
+      const completionAttempts = ending.loop.trace.filter((row) => row.decision === "complete").length;
+      phase2 = { stopped: "judged_wrong", ...judged, lastIssueCodes: [], completionAttempts, progress: { trace: ending.loop.trace, accounting: ending.loop.accounting } };
+    } else {
+      const stopped: AutomationStudioFlowBootstrapUnfinishedStop | "budget" = ending.kind === "budget" ? "budget" : ending.stopped;
+      const asked = input.callerEnding?.({ ...ending.progress, trace: [...record], accounting: { ...spent } });
+      if (asked !== undefined) throw asked;
+      // Only a Flow with steps in it is tested: an empty one has nothing to run.
+      if (ending.kind === "unfinished" && automationStudioFlowBootstrapRepairSeed(ending.steps).length) {
+        input.announce?.({ phase: "verifying", label: "Testing the Flow so far", text: `The build stopped before the Flow was finished: ${automationStudioFlowBootstrapStopSaid(stopped)}. Running the Flow as far as it got from its start, to judge what it does and what is left.` });
+      }
+      // Phase 2: a round a budget stopped is judged from the checklist alone; nothing more is run for a build that is ending.
+      const judged = await automationStudioFlowBootstrapJudgeUnfinished({
+        round, stopped, steps: ending.steps, lastIssueCodes: ending.lastIssueCodes,
+        ...(ending.kind === "unfinished" ? { test: input.test } : {}),
+        replayable: input.replayable, checklist: input.checklist
+      });
+      if (judged.kind === "cancelled") {
+        return { kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.progress.trace], steps: ending.steps, accounting: { ...ending.progress.accounting } }, accounting: spent, rounds, trace: [...record] };
+      }
+      phase2 = { stopped, judgement: judged.judgement, seed: judged.seed, lastIssueCodes: ending.lastIssueCodes, completionAttempts: ending.completionAttempts, progress: ending.progress };
     }
-    // Phase 2: a round a budget stopped is judged from the checklist alone; nothing more is run for a build that is ending.
-    const judged = await automationStudioFlowBootstrapJudgeUnfinished({
-      round, stopped, steps: ending.steps, lastIssueCodes: ending.lastIssueCodes,
-      ...(ending.kind === "unfinished" ? { test: input.test } : {}),
-      replayable: input.replayable, checklist: input.checklist
-    });
-    if (judged.kind === "cancelled") {
-      return { kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.progress.trace], steps: ending.steps, accounting: { ...ending.progress.accounting } }, accounting: spent, rounds, trace: [...record] };
-    }
-    const { judgement, seed } = judged;
+    const { stopped, judgement, seed } = phase2;
     const end = async (kind: "not_doable" | AutomationStudioFlowBootstrapBudgetBound | { unreadable: AutomationStudioLlmEvidenceLoopUnreadable } | { providerUnavailable: AutomationStudioLlmEvidenceLoopProviderUnavailable }): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> => {
-      const kept = await input.keep(kind === "not_doable" || typeof kind === "object" ? (stopped === "budget" ? "budget" : stopped) : "budget", ending.lastIssueCodes, seed, ending.completionAttempts);
+      const kept = await input.keep(kind === "not_doable" || typeof kind === "object" ? (stopped === "budget" ? "budget" : stopped) : "budget", phase2.lastIssueCodes, seed, phase2.completionAttempts);
       const checklist = input.checklist(seed);
       const told = { judgement, checklist, rounds, decisions: spent.iterations };
       return {
@@ -231,9 +276,9 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
             ? automationStudioFlowBootstrapProviderUnavailable({ ...told, providerUnavailable: kind.providerUnavailable, changes: record.filter((row) => row.decision === "tool_call" && row.effectApplied === true).length, kept: kept !== undefined })
           : typeof kind === "object"
             ? automationStudioFlowBootstrapRepliesUnreadable({ ...told, unreadable: kind.unreadable, kept: kept !== undefined })
-            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds }, spending: kind === "cost" ? purseSpending(ending.progress.exhaustion?.costRefusal, spentBefore) : undefined }),
-        progress: { trace: [...record], accounting: { ...spent }, ...(ending.progress.exhaustion ? { exhaustion: ending.progress.exhaustion } : {}) },
-        lastIssueCodes: ending.lastIssueCodes,
+            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds }, spending: kind === "cost" ? purseSpending(phase2.progress.exhaustion?.costRefusal, spentBefore) : undefined }),
+        progress: { trace: [...record], accounting: { ...spent }, ...(phase2.progress.exhaustion ? { exhaustion: phase2.progress.exhaustion } : {}) },
+        lastIssueCodes: phase2.lastIssueCodes,
         kept,
         accounting: spent,
         rounds
@@ -264,12 +309,32 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     const exhausted = exhaustedBound(input, spent, clock() - startedAt);
     if (exhausted) return await end(exhausted);
     repairs += 1;
-    input.announce?.({ phase: "repairing", label: "Repairing the Flow", text: todo ? `Repairing the Flow live: ${todo} of the things you asked ${todo === 1 ? "is" : "are"} still to do.` : "Repairing the Flow live on what did not work when it was run." });
+    input.announce?.({ phase: "repairing", label: "Repairing the Flow", text: judgement.judge ? automationStudioFlowBootstrapRepairingJudgedSaid(judgement.judge) : todo ? `Repairing the Flow live: ${todo} of the things you asked ${todo === 1 ? "is" : "are"} still to do.` : "Repairing the Flow live on what did not work when it was run." });
     repair = {
       seed,
       resume: resume()
     };
   }
+}
+
+/** What a round left for phase 2 and phase 3: the judgement of its Flow, and what an ending is written from. */
+type Phase2 = {
+  stopped: AutomationStudioFlowBootstrapUnfinishedStop | "budget";
+  judgement: AutomationStudioFlowBootstrapJudgement;
+  seed: AutomationStudioFlowDraftStep[];
+  lastIssueCodes: readonly string[];
+  completionAttempts: number;
+  progress: AutomationStudioFlowBootstrapRoundProgress;
+};
+
+/** Whether a judge's failure is the build being cancelled. */
+function cancellation(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { name?: unknown }).name === "AbortError";
+}
+
+/** The judge's spend as a round's accounting: tokens and cost, and no decision, tool call or evidence. */
+function judgeAccounting(spend: AutomationStudioFlowBootstrapJudgeSpend): AutomationStudioLlmEvidenceLoopAccounting {
+  return { ...emptyAccounting(), inputTokens: spend.inputTokens, outputTokens: spend.outputTokens, totalTokens: spend.totalTokens, estimatedCostUsd: spend.estimatedCostUsd };
 }
 
 /**

@@ -34,6 +34,19 @@ describe("what the person is told is not done", () => {
     const said = automationStudioFlowBootstrapNotDoneSaid(automationStudioFlowBootstrapNotDone(automationStudioInstructedActsChecklist({ instructionText: CONFIRM, draftSteps: [failed] })));
     expect(said).toContain("the step I tried for it changed nothing");
   });
+
+  // The checklist's reasons read from what a step acted on and how many times
+  // (`../../instructed-acts/act-object.ts`, `quantity-fault.ts`) each have a
+  // clause of their own; they used to fall back to "nothing I tried did it".
+  it.each([
+    ["step_acts_on_another_object", "the step I named for it acted on a different item from the one you asked for"],
+    ["quantity_is_a_repeat", "the step for how many ran once for each item of a list, not that many times on this item"],
+    ["quantity_presses_differ", "the step for how many did not add it exactly the number of times you asked"]
+  ])("says %s in plain words of its own", (todo, words) => {
+    const said = automationStudioFlowBootstrapNotDoneSaid([{ id: "a1.quantity", quote: "two packs", todo }]);
+    expect(said).toBe(`"two packs": ${words}`);
+    expect(said).not.toContain("nothing I tried did it");
+  });
 });
 
 describe("what the person is told the last test found", () => {

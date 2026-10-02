@@ -1,5 +1,6 @@
 export * from "./audit-event.ts";
 export * from "./bootstrap-target.ts";
+export * from "./build-judge.ts";
 export * from "./contracts.ts";
 export * from "./evidence-trace.ts";
 export * from "./extend-subject.ts";

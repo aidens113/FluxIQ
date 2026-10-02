@@ -9,7 +9,7 @@ import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../../flow-bootstrap/index.ts";
 import { estimateAutomationStudioDeepSeekInputTokens } from "../../../llm/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../../../storage/index.ts";
-import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, isJudgeRequest, judgeReply, JUDGE_USAGE, type DataDirSeed } from "./fixtures.ts";
 
 let tempRoot: string;
 type Fixture = Awaited<ReturnType<typeof blankFixture>>;
@@ -184,6 +184,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const provider = mockProvider(async (request) => {
       requests.push(request);
+      if (isJudgeRequest(request)) return judgeReply();
       return {
         response: { kind: "evidence_tool_decision", summary: "Build candidate.", decision: { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } } },
         usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
@@ -198,7 +199,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     });
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
-    expect(requests.map((request) => request.taskKind)).toEqual(["evidence_tool_decision"]);
+    // One decision, then the judge of the Flow's test, through the same provider.
+    expect(requests.map((request) => request.taskKind)).toEqual(["evidence_tool_decision", "loop_verification"]);
     // Within the model's window, the only bound on a request since 2026-09-30; it was 8,000 tokens.
     expect(requests.every((request) => estimateAutomationStudioDeepSeekInputTokens(request) <= 992_000)).toBe(true);
     expect(requests[0]?.context.flowBootstrap?.nodeCatalog.length).toBeGreaterThan(0);
@@ -206,7 +208,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ projectId: project.id, flowId: flow.flowId, callId: "initial.inspect", toolId: "inspect", value: { scope: "current" } }));
     // The first observation is not sized: the model is shown the whole page.
     expect(executeTool.mock.calls[0]?.[0]).not.toHaveProperty("maxEvidenceBytes");
-    expect(result.accounting).toMatchObject({ inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 });
+    // The build pays for its judge: the decision's spend and the judge's, together.
+    expect(result.accounting).toMatchObject({ inputTokens: 10 + JUDGE_USAGE.inputTokens, outputTokens: 5 + JUDGE_USAGE.outputTokens, totalTokens: 15 + JUDGE_USAGE.totalTokens });
+    expect(result.accounting.estimatedCostUsd).toBeCloseTo(0.001 + JUDGE_USAGE.estimatedCostUsd, 9);
     const stored = await instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId);
     expect(stored?.evidenceTrace).toMatchObject([{ iteration: 0, decision: "tool_call", toolId: "inspect" }, { iteration: 1, decision: "complete" }]);
     expect(stored?.auditEvents[0]?.detail).toMatchObject({
@@ -232,6 +236,7 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const provider = mockProvider(async (request) => {
       requests.push(request);
+      if (isJudgeRequest(request)) return judgeReply();
       const iteration = request.context.evidenceLoop?.iteration ?? 0;
       const decision = iteration <= looks
         ? { kind: "tool_call", callId: `call.${iteration}`, toolId: "inspect", input: { area: `area.${iteration}` } }
@@ -257,14 +262,20 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     } else {
       await expect(generation).rejects.toThrow();
     }
-    expect(requests).toHaveLength(calls);
+    // A build that finishes then asks the judge of its test, once: a provider call that is not a decision.
+    const decisions = requests.filter((request) => !isJudgeRequest(request));
+    expect(decisions).toHaveLength(calls);
+    expect(requests).toHaveLength(calls + (finishes ? 1 : 0));
     // A new Flow's settings carry the $0.25 run cost ceiling, and the build's
     // total is that ceiling, which the resolution's $2 cannot raise. A build has
     // no ledger, so its requests no longer carry an even share of the total
     // that nothing checked: each carries the harness's own per-request default.
     const configured = (await instance.getFlow(project.id, flow.flowId)).metadata?.adaptationPolicySettings as { maxEstimatedCostUsdPerRun?: number } | undefined;
     expect(configured?.maxEstimatedCostUsdPerRun).toBe(0.25);
-    for (const request of requests) expect(request.maxEstimatedCostUsd).toBe(0.25);
+    for (const request of decisions) expect(request.maxEstimatedCostUsd).toBe(0.25);
+    // The judge may ask twice, so each of its calls is held to half of what the build has left.
+    const judged = requests.filter(isJudgeRequest);
+    if (finishes) expect(judged[0]?.maxEstimatedCostUsd).toBeCloseTo((0.25 - calls * 0.001) / 2, 9);
   });
 
   it("packs opted-in reusable context only after a fresh creation inspection and records safe provenance", async () => {

@@ -27,6 +27,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   automationStudioFlowDraftDryRunGate,
   type AutomationStudioFlowDraftDryRunRefusal,
+  type AutomationStudioFlowDraftTestReport,
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "../../index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
@@ -57,6 +58,7 @@ function harness(steps: AutomationStudioFlowDraftStep[], answers: Record<number,
   const calls: string[] = [];
   const shown: { callId: string; toolId: string; value: JsonValue }[] = [];
   let reused = 0;
+  const reports: AutomationStudioFlowDraftTestReport[] = [];
   const executeTool = async ({ callId, value }: { callId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
     calls.push(callId);
     if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: REPLAYED };
@@ -70,7 +72,8 @@ function harness(steps: AutomationStudioFlowDraftStep[], answers: Record<number,
     accountEvidence: (value) => JSON.stringify(value).length,
     showEvidence: (entry) => { shown.push(entry); },
     targetMoved: () => {},
-    reusedClean: () => { reused += 1; }
+    reusedClean: () => { reused += 1; },
+    observed: (report) => { reports.push(report); }
   });
   /** One completion: what the gate answered, and the replay calls it made. */
   const complete = async (): Promise<{ answer: AutomationStudioFlowDraftDryRunRefusal | undefined; ran: string[] }> => {
@@ -79,7 +82,7 @@ function harness(steps: AutomationStudioFlowDraftStep[], answers: Record<number,
     return { answer, ran: calls.slice(from) };
   };
   const lastVerdict = (): JsonObject => shown.filter((entry) => entry.toolId === "core.dry_run").at(-1)!.value as JsonObject;
-  return { complete, lastVerdict, reused: () => reused };
+  return { complete, lastVerdict, reused: () => reused, reports };
 }
 
 const refusedFor = (...codes: string[]) => ({ issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, ...codes] });
@@ -260,6 +263,7 @@ function gate(steps: AutomationStudioFlowDraftStep[], reusedClean?: () => void) 
   });
   const shown: string[] = [];
   const targetMoved = vi.fn();
+  const observed = vi.fn();
   const dryRun = automationStudioFlowDraftDryRunGate({
     enabled: true,
     steps,
@@ -267,9 +271,10 @@ function gate(steps: AutomationStudioFlowDraftStep[], reusedClean?: () => void) 
     accountEvidence: () => 1,
     showEvidence: (entry) => shown.push(entry.callId),
     targetMoved,
+    observed,
     ...(reusedClean ? { reusedClean } : {})
   });
-  return { dryRun, executeTool, shown, targetMoved };
+  return { dryRun, executeTool, shown, targetMoved, observed };
 }
 
 describe("the dry run of a draft completed again unchanged", () => {
@@ -312,5 +317,66 @@ describe("the dry run of a draft completed again unchanged", () => {
     steps[1] = pressOn(2, "#there");
     expect(await run.dryRun()).toBeUndefined();
     expect(run.executeTool).toHaveBeenCalledTimes(6);
+  });
+});
+
+// What the test observed (t195-w26a), reported on every pass and never on a
+// refusal, for a judge of what the build actually did.
+describe("what a passing test reports", () => {
+  it("reports a clean replay's observations, verified steps included, and reuses them for the same draft", async () => {
+    const steps = [step(2), step(3, { ranWith: { node: "web.click", parameters: { target: "#s3" }, consequences: ["create_new"] } }), step(4)];
+    const run = harness(steps, {});
+    expect((await run.complete()).answer).toBeUndefined();
+    expect(run.reports).toHaveLength(1);
+    const first = run.reports[0]!;
+    expect(first.reused).toBe(false);
+    expect(first.verdict.ok).toBe(true);
+    expect(first.verdict.outcomes.find((outcome) => outcome.step === 3)?.mode).toBe("verify");
+    expect(first.observations).toEqual([
+      { step: 2, stepId: "d2", resultCode: REPLAYED, evidence: { page: "dryrun.1.2" } },
+      { step: 3, stepId: "d3", resultCode: REPLAYED, evidence: { page: "dryrun.1.3" } },
+      { step: 4, stepId: "d4", resultCode: REPLAYED, evidence: { page: "dryrun.1.4" } }
+    ]);
+
+    // Completed again unchanged: not replayed, and reported as the first replay's.
+    expect(await run.complete()).toEqual({ answer: undefined, ran: [] });
+    expect(run.reports).toHaveLength(2);
+    expect(run.reports[1]).toEqual({ verdict: first.verdict, observations: first.observations, reused: true });
+  });
+
+  it("reports nothing for a refused replay", async () => {
+    const run = harness([step(2), step(26)], { 26: UNREPRODUCIBLE });
+    expect((await run.complete()).answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    expect((await run.complete()).answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    expect((await run.complete()).answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    expect(run.reports).toEqual([]);
+  });
+
+  it("reports a pass after the made-optional step with the verdict that passed", async () => {
+    const run = harness([step(2), step(3), step(4, { acts: ["a1"] })], { 3: UNREPRODUCIBLE });
+    expect((await run.complete()).answer).toBeUndefined();
+    expect(run.reports).toHaveLength(1);
+    expect(run.reports[0]).toMatchObject({ reused: false, verdict: { ok: true } });
+    expect(run.reports[0]!.observations.map((each) => each.step)).toEqual([2, 3, 4]);
+  });
+
+  it("reports the stored observations when a twice-replayed draft passes judged from its stored outcomes", async () => {
+    const steps = [pressOn(1, "#open"), pressOn(2, "#gone")];
+    const run = gate(steps);
+    await run.dryRun();
+    await run.dryRun();
+    expect(run.observed).not.toHaveBeenCalled();
+
+    steps[1]!.routing = { kind: "optional" };
+    expect(await run.dryRun()).toBeUndefined();
+    expect(run.executeTool).toHaveBeenCalledTimes(6);
+    expect(run.observed).toHaveBeenCalledTimes(1);
+    const report = run.observed.mock.calls[0]![0] as AutomationStudioFlowDraftTestReport;
+    expect(report.reused).toBe(true);
+    expect(report.verdict.ok).toBe(true);
+    expect(report.observations).toEqual([
+      { step: 1, stepId: "d1", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed, evidence: {} },
+      { step: 2, stepId: "d2", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.failed, evidence: {} }
+    ]);
   });
 });

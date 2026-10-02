@@ -28,6 +28,7 @@
 // the next run's schedule, and the person's own thread wherever the deployment
 // keeps one.
 
+export * from "./build-test/index.ts";
 export * from "./check-activity.ts";
 export * from "./contracts.ts";
 export * from "./core-observation.ts";

@@ -17,7 +17,7 @@ import { automationStudioActivityHub } from "../../../activity/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_PERSON_NEEDED_TEXT, type AutomationStudioParkingPort } from "../../../parking/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, caller, mockProvider, plan, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { blankFixture, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 /** Only the domain's account of the check carries this; the model must never be sent it. */
 const CHECK_MARKER = "CHECK-ONLY-A-PERSON-CAN-PASS";
@@ -76,9 +76,11 @@ describe("a build whose step lands on a check only a person can get past", () =>
     expect(ask).toMatchObject({ kind: "choice", parks: true, status: "answered", control: { kind: "person_check" }, answer: { kind: "choice", value: "person_done" } });
     // The model never saw the check, and the decision after the answer was shown the person's clearing and a fresh look.
     expect(run.requests.some((request) => request.includes(CHECK_MARKER))).toBe(false);
-    expect(run.requests).toHaveLength(2);
+    // Two decisions, then the judge of the Flow's test.
+    expect(run.requests).toHaveLength(3);
     expect(run.requests[1]).toContain("personCompletedCheck");
     expect(run.requests[1]).toContain("the list, after the check");
+    expect(run.requests[2]).toContain("\"taskKind\":\"loop_verification\"");
     // The look ran once at the start and once after the person, and the act was not run again.
     expect(run.calls).toEqual(["example.look", "example.act", "example.look"]);
     // The step stands: it applied, and it carries no failure code.
@@ -153,7 +155,7 @@ async function answerWhenAsked(run: Run, value: "person_done" | "person_stop") {
   throw new Error("The build never asked the person.");
 }
 
-/** One build: a free look, an action that lands on a check, then a completion. */
+/** One build: a free look, an action that lands on a check, then a completion; the judge of its test says yes. */
 async function build(options: { noThread?: boolean; port?: (real: AutomationStudioParkingPort) => AutomationStudioParkingPort } = {}) {
   const requests: string[] = [];
   const calls: string[] = [];
@@ -164,6 +166,7 @@ async function build(options: { noThread?: boolean; port?: (real: AutomationStud
   let decision = 0;
   const provider = mockProvider(async (request) => {
     requests.push(JSON.stringify(request));
+    if (isJudgeRequest(request)) return judgeReply();
     return {
       response: { kind: "evidence_tool_decision", summary: "Step.", decision: decisions[Math.min(decision++, decisions.length - 1)]! },
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }

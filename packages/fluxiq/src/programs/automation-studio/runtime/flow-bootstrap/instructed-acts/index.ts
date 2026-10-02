@@ -15,10 +15,19 @@
 //
 // `standing.ts` is the one loop the check and the checklist share, trying every
 // step named for an act; `step-fault.ts` is the rule it holds each step to.
+// The rules that loop applies after it -- `object-binding.ts` (what the step
+// acted on, read against each act's object from `act-object.ts`) and
+// `quantity-fault.ts` (how many) -- are absent for the reason the choice
+// evidence is: they are how the loop reaches its verdict, not what it offers.
+//
+// `permission.ts` is the one rule a completion is still refused for: an act
+// whose verb names a class a person is asked about needs a step declaring it.
+// The check and the checklist are information beside the test and its judge.
 export * from "./check.ts";
 export * from "./checklist.ts";
 export * from "./contracts.ts";
 export * from "./instruction-acts.ts";
+export * from "./permission.ts";
 export * from "./span.ts";
 export * from "./standing.ts";
 export * from "./step-fault.ts";
