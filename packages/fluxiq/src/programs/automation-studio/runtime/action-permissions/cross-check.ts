@@ -46,7 +46,7 @@
 // instruction plainly asks for something lasting, actions that commit ran, and
 // every one of them said it would cause nothing.
 
-import { automationStudioConsequencesInOrder, type AutomationStudioActionConsequence } from "./consequences.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, automationStudioConsequencesInOrder, type AutomationStudioActionConsequence } from "./consequences.ts";
 import { automationStudioDeclaredConsequences, automationStudioDeclaredNothingLasting, type AutomationStudioActionDeclarationRecord } from "./declared.ts";
 import type { AutomationStudioInstructedConsequence } from "./instructed.ts";
 
@@ -81,7 +81,12 @@ export type AutomationStudioActionDeclarationCrossCheck = {
   declaredNothing: number;
   /** The person's own words, for each class in `undeclared`. */
   quotes: Array<{ consequence: AutomationStudioActionConsequence; instructionId: string; quote: string }>;
-  /** Core's own sentence for the finding. Never a model's. */
+  /**
+   * Core's own sentence for the finding, in words the person approving the
+   * Flow can answer. Never a model's, and never a class code or a count: the
+   * structured fields above carry those. A caller may put a question after it
+   * ("Apply it as it stands?"), whose "it" is the Flow the sentence ends on.
+   */
   sentence: string;
 };
 
@@ -117,30 +122,37 @@ export function automationStudioActionDeclarationCrossCheck(input: {
     actions: input.declarations.length,
     declaredNothing,
     quotes,
-    sentence: sentenceFor({ verdict, undeclared, beyondInstruction, actions: input.declarations.length, declaredNothing })
+    sentence: sentenceFor({ verdict, undeclared, beyondInstruction })
   };
 }
 
-/** One plain sentence a person can act on, in Core's words. */
+/**
+ * One plain sentence a person can act on, in Core's words: each class as the
+ * person would say it (`AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES`), and no
+ * count. On t193's `run-muqiojz4-04a7a8fc` the question after the build read
+ * "The instruction asks for modify_existing and create_new, and none of this
+ * run's 61 actions said it would cause that; 61 of them said they would cause
+ * nothing lasting." -- two class codes and two counts, none of which told the
+ * person what to decide.
+ */
 function sentenceFor(input: {
   verdict: AutomationStudioActionDeclarationCrossCheckVerdict;
   undeclared: readonly AutomationStudioActionConsequence[];
   beyondInstruction: readonly AutomationStudioActionConsequence[];
-  actions: number;
-  declaredNothing: number;
 }): string {
-  if (input.verdict === "not_comparable") return "No action was put to the permission gate, so there is nothing to compare with the instruction.";
-  const steps = `${input.actions} action${input.actions === 1 ? "" : "s"}`;
+  if (input.verdict === "not_comparable") return "This Flow took no step at all, so there is nothing to compare with your instruction.";
   if (input.verdict === "undeclared") {
-    return `The instruction asks for ${list(input.undeclared)}, and none of this run's ${steps} said it would cause that; ${input.declaredNothing} of them said they would cause nothing lasting.`;
+    return `Your instruction asks to ${phrases(input.undeclared)}, but no step of this Flow said it would do that, so the Flow may not do what you asked.`;
   }
   if (input.verdict === "beyond_instruction") {
-    return `This run's ${steps} declared ${list(input.beyondInstruction)}, which the instruction does not ask for.`;
+    return `This Flow would ${phrases(input.beyondInstruction)}, which your instruction does not ask for.`;
   }
-  return `What this run's ${steps} declared matches what the instruction asks for.`;
+  return "What this Flow does matches what your instruction asks for.";
 }
 
-function list(values: readonly string[]): string {
-  if (values.length <= 1) return values[0] ?? "nothing";
-  return `${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
+/** "change something that already exists and create something new that stays". */
+function phrases(values: readonly AutomationStudioActionConsequence[]): string {
+  const said = values.map((value) => AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES[value]);
+  if (said.length <= 1) return said[0] ?? "do nothing lasting";
+  return `${said.slice(0, -1).join(", ")} and ${said[said.length - 1]}`;
 }

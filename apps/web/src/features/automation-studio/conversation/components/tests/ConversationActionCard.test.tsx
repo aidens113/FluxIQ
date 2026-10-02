@@ -44,7 +44,7 @@ describe("an action card", () => {
       expect(markup).toContain(`data-kind="${kind}"`);
       // The icon is decoration; the card's label says it all.
       expect(markup).toMatch(/<svg[^>]*aria-hidden="true"/u);
-      expect(markup).toContain(`aria-label="${ACTIVITY_ACTION_NAMES[kind]}: Get a free quote. ${kind === "test" ? "Passed" : "Done"}"`);
+      expect(markup).toContain(`aria-label="${ACTIVITY_ACTION_NAMES[kind]}: Get a free quote. ${kind === "test" || kind === "result_check" ? "Passed" : "Done"}"`);
     }
   });
 

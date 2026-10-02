@@ -20,16 +20,24 @@ import { activityActionReplayFailing } from "../../../../ui/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../llm/index.ts";
 import { emitAutomationStudioActivityWaitedOut } from "./ask/index.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
+import { automationStudioActivityDraftEdit } from "./draft-edit.ts";
 import { emitAutomationStudioActivity } from "./emit.ts";
 import { emitAutomationStudioActivityThought } from "./thought.ts";
 import { automationStudioActivityCompletionRefusal, automationStudioActivityDecision, automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "./wording/index.ts";
 
 type ToolCall = Parameters<AutomationStudioLlmEvidenceLoopInput["executeTool"]>[0];
 
-function resultCodeOf(result: unknown): string | undefined {
-  if (!result || typeof result !== "object" || Array.isArray(result)) return undefined;
-  const record = result as { kind?: unknown; resultCode?: unknown };
-  return record.kind === "llm_evidence_tool_execution" && typeof record.resultCode === "string" && record.resultCode ? record.resultCode : undefined;
+/** A code a raw record may carry: no space, so never a sentence or a page's words. */
+const CODE_SHAPED = /^[A-Za-z0-9_.:-]{1,100}$/u;
+
+/** A call's result code and the caller's reason for it, as the raw record carries them. */
+function resultOf(result: unknown): { code: string | undefined; reason: string | undefined } {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return { code: undefined, reason: undefined };
+  const record = result as { kind?: unknown; resultCode?: unknown; resultReason?: unknown };
+  if (record.kind !== "llm_evidence_tool_execution") return { code: undefined, reason: undefined };
+  const code = typeof record.resultCode === "string" && record.resultCode ? record.resultCode : undefined;
+  const reason = code && typeof record.resultReason === "string" && CODE_SHAPED.test(record.resultReason) ? record.resultReason : undefined;
+  return { code, reason };
 }
 
 /** How a call ended, in a person's words; the code itself goes to the raw record. */
@@ -70,15 +78,22 @@ function decisionFailed(error: unknown): void {
 }
 
 /**
- * One row of a tool call. `described` is the domain's words for it, asked once
+ * One row of a tool call. Its raw record (`detail.text`) is "Result: <code> ·
+ * Reason: <reason> · Node: <node>", each part when there is one: the reason is
+ * the caller's own code for why the call came to its result
+ * (`resultReason`), carried so a card can say a refusal in its own words --
+ * a press refused for naming no control from the page read "it wasn't on the
+ * page" from its code alone (t193, `run-muqiojz4-04a7a8fc`, `S/0090`). Only a
+ * code-shaped reason is carried. `described` is the domain's words for it, asked once
  * before the call runs and kept for its end: asked again after a click, a
  * handle on the page the click left was no longer there, so the row that ended
  * a press of "No thanks" read "Clicking on the page" and its card "Click · the
  * page" (t193, `run-muqiojz4-04a7a8fc`).
  */
-function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed", resultCode: string | undefined, described: AutomationStudioActivityCallWords | undefined): void {
+function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed", result: { code: string | undefined; reason?: string | undefined }, described: AutomationStudioActivityCallWords | undefined): void {
   const words = automationStudioActivityToolCall(call, described);
-  const record = [resultCode ? `Result: ${resultCode}` : "", words.node ? `Node: ${words.node}` : ""].filter(Boolean).join(" · ");
+  const resultCode = result.code;
+  const record = [resultCode ? `Result: ${resultCode}` : "", result.reason ? `Reason: ${result.reason}` : "", words.node ? `Node: ${words.node}` : ""].filter(Boolean).join(" · ");
   emitAutomationStudioActivity({
     phase: words.phase,
     label: status === "started" ? words.label : `${words.label} — ${outcomeOf(status, resultCode, words.dryRun)}`,
@@ -91,10 +106,12 @@ function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed"
  * `thinking` as a decision is asked for; when it returns, one `thought` row
  * naming what the model chose to do (`exploring` for a tool call, `building`
  * for a draft edit, `verifying` for a completion) with its stated reason as
- * `detail.text`, and nothing when it gave none; `building` for the draft tool,
+ * `detail.text`, and nothing when it gave none -- a draft edit's said only
+ * once the loop has answered it, as one that changed nothing when Core
+ * refused it (`./draft-edit.ts`); `building` for the draft tool,
  * `verifying` for a dry run's calls, `exploring` for every other tool (its
- * action as `detail.title`, its id as `detail.ref`, its result code in
- * `detail.text` when it ends; Core's bookkeeping calls as `note` rows), and
+ * action as `detail.title`, its id as `detail.ref`, its result code and the
+ * caller's reason for it in `detail.text` when it ends; Core's bookkeeping calls as `note` rows), and
  * `verifying` as a completed result is checked, a refusal said in words
  * rather than issue codes. A call whose result says a robot check stood on
  * the page and cleared by itself (`clearedWait`) is told as a wait on the
@@ -105,10 +122,13 @@ function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed"
  * exactly what the original did.
  */
 export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEvidenceLoopInput): AutomationStudioLlmEvidenceLoopInput {
-  const { decide, executeTool, checkCompletion } = input;
+  const { decide, executeTool, checkCompletion, unusableDecisions } = input;
+  // An edit to the draft is said once the loop has answered it (`./draft-edit.ts`).
+  const edit = automationStudioActivityDraftEdit();
   return {
     ...input,
     decide: async (request) => {
+      edit.decided(request.evidence);
       emitAutomationStudioActivity({ phase: "thinking", label: "Deciding the next step", detail: { kind: "thought", title: "Deciding the next step", status: "started" } });
       let decision: unknown;
       try {
@@ -118,22 +138,28 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         throw error;
       }
       const chose = automationStudioActivityDecision(decision, input.describeCall && ((call) => describeSafely(input.describeCall, call)));
-      if (chose) emitAutomationStudioActivityThought({ phase: chose.phase, title: chose.title, text: automationStudioActivityDecisionReason.of(decision) });
+      const reason = automationStudioActivityDecisionReason.of(decision);
+      if (chose && (decision as { kind?: unknown }).kind === "amend_draft") edit.hold({ iteration: request.iteration, phase: "building", title: chose.title, text: reason });
+      else if (chose) emitAutomationStudioActivityThought({ phase: chose.phase, title: chose.title, text: reason });
       return decision;
     },
     executeTool: async (call): Promise<JsonValue | Awaited<ReturnType<AutomationStudioLlmEvidenceLoopInput["executeTool"]>>> => {
+      edit.ran();
       const described = describeSafely(input.describeCall, call);
-      toolActivity(call, "started", undefined, described);
+      toolActivity(call, "started", { code: undefined }, described);
       try {
         const result = await executeTool.call(input, call);
         emitAutomationStudioActivityWaitedOut(call.callId, result, automationStudioActivityToolCall(call).phase);
-        toolActivity(call, "succeeded", resultCodeOf(result), described);
+        toolActivity(call, "succeeded", resultOf(result), described);
         return result;
       } catch (error) {
-        toolActivity(call, "failed", undefined, described);
+        toolActivity(call, "failed", { code: undefined }, described);
         throw error;
       }
     },
+    ...(unusableDecisions ? {
+      unusableDecisions: { ...unusableDecisions, stalled: (stall) => { edit.stalled(stall); return unusableDecisions.stalled(stall); } }
+    } satisfies Pick<AutomationStudioLlmEvidenceLoopInput, "unusableDecisions"> : {}),
     ...(checkCompletion ? {
       checkCompletion: async (result, context) => {
         emitAutomationStudioActivity({ phase: "verifying", label: "Checking the proposed Flow", detail: { kind: "check", title: "Completion check", status: "started" } });

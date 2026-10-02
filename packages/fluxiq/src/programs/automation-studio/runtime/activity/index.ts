@@ -21,6 +21,7 @@ export {
   automationStudioActivityAction,
   automationStudioActivityCompletionRefusal,
   automationStudioActivityDecision,
+  automationStudioActivityDraftEditRefused,
   automationStudioActivityHumanLabel,
   automationStudioActivityReasonText,
   automationStudioActivityRecoveryChoice,
