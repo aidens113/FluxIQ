@@ -10,20 +10,26 @@
 //
 // **The rule.** When a step joins the Flow, the step that left the page it
 // started on joins too, when the model took it without deciding about it
-// (`taken`): the newest step before it that changed the page, whose page after
-// is exactly the one this step found (`stateAfter` = `stateBefore`), and which
-// the Flow could hold. That step's own opener is kept the same way, so a menu
-// inside a drawer brings both presses. Nothing is kept without both states, a
-// step the model dropped is never brought back, and a page that moved between
-// the two (its digests differ) keeps nothing: the chain is only followed where
-// the draft itself shows one step made the other's page.
+// (`taken`) and the Flow could hold it: the newest step before it that changed
+// the page. Nothing else changed the page between them, so this step ran on
+// what that one left. That holds whether or not their digests agree exactly:
+// t193's run 40 pressed a product link and then a size on the product page,
+// and the page went on loading between the two (`after` 129619 bytes, the
+// next `before` 132179), so an exact match kept nothing. What still keeps
+// nothing: a step whose page is back where that step started (its effect gone
+// by itself), a step the model dropped, a step with no states, and anything
+// past `MAX_OPENERS` -- a chooser inside a drawer brings both presses, and no
+// longer chain of exploring is pulled into the Flow.
 
 import { automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "./step.ts";
+
+/** How many presses back a kept step brings: the one that opened its page, and the one that opened that. */
+const MAX_OPENERS = 2;
 
 /** Keeps the steps that opened `step`'s page, newest first, and returns them. */
 export function automationStudioFlowDraftKeepOpeners(steps: readonly AutomationStudioFlowDraftStep[], step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftStep[] {
   const kept: AutomationStudioFlowDraftStep[] = [];
-  for (let current: AutomationStudioFlowDraftStep | undefined = step; current;) {
+  for (let current: AutomationStudioFlowDraftStep | undefined = step; current && kept.length < MAX_OPENERS;) {
     const opener = openerOf(steps, current);
     if (!opener) break;
     opener.disposition = "kept";
@@ -40,6 +46,7 @@ function openerOf(steps: readonly AutomationStudioFlowDraftStep[], step: Automat
   const changed = steps
     .filter((candidate) => candidate !== step && candidate.iteration < step.iteration && candidate.stateBefore !== undefined && candidate.stateAfter !== undefined && candidate.stateBefore !== candidate.stateAfter)
     .reduce<AutomationStudioFlowDraftStep | undefined>((newest, candidate) => (!newest || candidate.iteration > newest.iteration ? candidate : newest), undefined);
-  if (!changed || changed.stateAfter !== step.stateBefore || changed.disposition !== "taken" || !automationStudioFlowDraftStepIsProposable(changed)) return undefined;
-  return changed;
+  if (!changed || changed.disposition !== "taken" || !automationStudioFlowDraftStepIsProposable(changed)) return undefined;
+  // Back where that step started: what it opened is gone, and this step does not stand on it.
+  return changed.stateBefore === step.stateBefore ? undefined : changed;
 }
