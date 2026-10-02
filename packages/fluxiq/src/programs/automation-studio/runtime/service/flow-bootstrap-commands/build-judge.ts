@@ -93,7 +93,9 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
     calls: () => calls,
     unverified: (built, announce) => {
       if (built.kind !== "finished" || (built.judged?.verdict !== "unknown" && built.judged?.verdict !== "not_judged")) return;
-      announce({ phase: "verifying", label: "Flow not verified", text: `Its test was not judged to answer what you asked: ${built.judged.why} Its first run is judged again.` });
+      const carried = built.judged.untestedCarried ?? [];
+      const untested = carried.length ? ` Step${carried.length === 1 ? "" : "s"} ${carried.join(", ")} came from the earlier Flow and ${carried.length === 1 ? "was" : "were"} not run in this build's test.` : "";
+      announce({ phase: "verifying", label: "Flow not verified", text: `Its test was not judged to answer what you asked: ${built.judged.why}${untested} Its first run is judged again.` });
     }
   };
 }

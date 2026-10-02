@@ -34,7 +34,7 @@ import type { AutomationStudioLlmProviderRetryStop } from "./account.ts";
  * and recorded as a step.
  *
  * Measured rather than assumed. Retrying it inside the call made
- * `runtime/tests/deepseek-bootstrap-exploration.test.ts`'s "asks again after a
+ * `runtime/tests/deepseek-bootstrap/tests/exploration.test.ts`'s "asks again after a
  * decision that runs past its deadline" fail, and turned five provider requests
  * into eleven in `deepseek-recovery-requests.test.ts`: the inner retry was
  * duplicating the outer one and spending the person's wall clock on it.
