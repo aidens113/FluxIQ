@@ -67,6 +67,12 @@ export type AutomationStudioFlowBootstrapRoutingContext = {
   paths: AutomationStudioFlowBootstrapRoutePath[];
   /** The distinct states observed, oldest first; the first is where a run starts. */
   situations: AutomationStudioFlowBootstrapRouteSituation[];
+  /**
+   * Where the situations are instead, when they are not listed here: an
+   * evidence decision carries each in its window, after the call it followed,
+   * so a situation is written once and read from cache after (`route-state/build-routing.ts`).
+   */
+  situationsShown?: string;
   /** Why no state could be observed, when none was. */
   stateUnavailable?: string;
   /** For a change to a Flow that ran: the route that run took, and why. */

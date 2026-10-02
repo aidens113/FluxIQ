@@ -13,6 +13,15 @@
 // and the credential store stood in, and holds every consecutive pair of
 // requests to the property (`../../deepseek/request-body.ts`).
 //
+// W2 round 2 (t193, 2026-10-02): what followed the window was read uncached on
+// every call, however rarely it changed, because it followed the window's
+// newest entry. The tools and the routing context now sit in front of the
+// window, and the routing context's situations are entries of the window, each
+// placed after the call it followed. So a request is a prefix of the next
+// through every settled entry and through all of that, except where the tools
+// were withdrawn, which costs one call. The output schema stays behind the
+// window: it changes more often, and in front each change would cost it all.
+//
 // A domain that declares which keys of a result are its view of the target
 // has every view but the newest replaced by a reference (B1,
 // `../../context-window.ts`). The view a request shows whole becomes a
@@ -37,7 +46,7 @@ const TOOL_ID = "demo.act";
 /** One request as it went out: its two messages, and the user message parsed. */
 type Sent = { system: string; user: string; payload: SentPayload };
 type SentEntry = { callId: string; toolId: string; value: unknown };
-type SentPayload = { outputSchema?: unknown; context: { evidenceLoop: { evidence: SentEntry[] }; routing?: { situations?: unknown[] }; flowBootstrap?: { routing?: { situations?: unknown[] } } } };
+type SentPayload = { outputSchema?: unknown; context: { evidenceLoop: { evidence: SentEntry[]; tools?: unknown }; routing?: { situations?: unknown[] }; flowBootstrap?: { routing?: { situations?: unknown[]; situationsShown?: string } } } };
 
 let tempRoot: string;
 beforeEach(async () => { tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-request-prefix-")); });
@@ -58,8 +67,13 @@ describe("the cached prefix of a build's decisions", () => {
     // below would hold for no reason.
     const changed = (read: (payload: SentPayload) => unknown) => sent.slice(1).some((request, index) => JSON.stringify(read(request.payload)) !== JSON.stringify(read(sent[index]!.payload)));
     expect(changed((payload) => payload.outputSchema), "the output schema changes during the build").toBe(true);
-    // Read where either order puts it, so this fixture check holds before the fix as well as after.
-    expect(changed((payload) => (payload.context.routing ?? payload.context.flowBootstrap?.routing)?.situations), "the routing context gains situations").toBe(true);
+    // The situations now arrive as window entries, one more as each call reaches a new page; the routing context lists none.
+    expect(changed((payload) => payload.context.evidenceLoop.evidence.filter((entry) => entry.toolId === ROUTE_STATE).length), "the window gains route states").toBe(true);
+    for (const request of sent) {
+      expect(request.payload.context.routing, "no routing context behind the window").toBeUndefined();
+      expect(request.payload.context.flowBootstrap?.routing?.situations).toEqual([]);
+      expect(request.payload.context.flowBootstrap?.routing?.situationsShown).toMatch(/core\.route_state/u);
+    }
 
     for (let index = 1; index < sent.length; index += 1) {
       const earlier = sent[index - 1]!;
@@ -70,11 +84,16 @@ describe("the cached prefix of a build's decisions", () => {
       // A tool's result never leaves the window, so everything the earlier
       // call was shown of them the later one is shown too, in the same place.
       expect(shared, `call ${index} -> ${index + 1}: tool results kept`).toBe(earlier.payload.context.evidenceLoop.evidence.filter(isToolResult).length);
-      const mustMatch = earlier.system.length + 1 + endOfEntry(earlier, shared);
       const matched = commonPrefixLength(prompt(earlier), prompt(later));
+      if (toolsChanged(earlier, later)) {
+        // The tools were withdrawn: the miss starts there, in front of the window, once.
+        expect(matched, `call ${index} -> ${index + 1}: the prefix reaches the tools`).toBeGreaterThanOrEqual(earlier.system.length + 1 + earlier.user.indexOf('"tools"'));
+        continue;
+      }
+      const mustMatch = earlier.system.length + 1 + endOfEntry(earlier, shared);
       expect(matched, `call ${index} -> ${index + 1}: first difference at ${matched}, inside ${pathAt(earlier, matched)}; must match through ${mustMatch}`).toBeGreaterThanOrEqual(mustMatch);
-      // The node catalog is the largest constant block and always inside it.
-      expect(prompt(earlier).indexOf('"nodeCatalog"'), `call ${index} -> ${index + 1}: catalog in the prefix`).toBeLessThan(matched);
+      // The node catalog and the tools are inside it.
+      for (const key of ['"nodeCatalog"', '"tools"']) expect(prompt(earlier).indexOf(key), `call ${index} -> ${index + 1}: ${key} in the prefix`).toBeLessThan(matched);
     }
   }, 60_000);
 
@@ -102,6 +121,7 @@ describe("the cached prefix of a build's decisions", () => {
       const view = evidence.findIndex((entry) => isObject(entry.value) && "elements" in entry.value);
       const settled = view < 0 ? evidence.filter(isToolResult).length : view;
       expect(JSON.stringify(later.payload.context.evidenceLoop.evidence.slice(0, settled)), `call ${index} -> ${index + 1}: entries before the view unchanged`).toBe(JSON.stringify(evidence.slice(0, settled)));
+      if (toolsChanged(earlier, later)) continue;
       const mustMatch = earlier.system.length + 1 + endOfEntry(earlier, settled);
       const matched = commonPrefixLength(prompt(earlier), prompt(later));
       expect(matched, `call ${index} -> ${index + 1}: first difference at ${matched}, inside ${pathAt(earlier, matched)}; must match through ${mustMatch}`).toBeGreaterThanOrEqual(mustMatch);
@@ -115,7 +135,16 @@ describe("the cached prefix of a build's decisions", () => {
 
 function isObject(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 
-function isToolResult(entry: SentEntry): boolean { return !entry.toolId.startsWith("core."); }
+/** The tool id a routing situation is shown under in the window (`../../../route-state/build-routing.ts`). */
+const ROUTE_STATE = "core.route_state";
+
+/** A tool's result, or a route state: entries written once, where they happened, and never changed. */
+function isToolResult(entry: SentEntry): boolean { return !entry.toolId.startsWith("core.") || entry.toolId === ROUTE_STATE; }
+
+/** Whether the offered tools changed between two requests (withdrawn in the wrap-up). */
+function toolsChanged(earlier: Sent, later: Sent): boolean {
+  return JSON.stringify(earlier.payload.context.evidenceLoop.tools) !== JSON.stringify(later.payload.context.evidenceLoop.tools);
+}
 
 /** How many entries from the start the two windows share byte for byte, counting only up to the last tool result. */
 function sharedToolResults(earlier: readonly SentEntry[], later: readonly SentEntry[]): number {

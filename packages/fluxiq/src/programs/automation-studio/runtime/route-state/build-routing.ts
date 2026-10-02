@@ -1,6 +1,7 @@
 // The routing context a Flow build is shown, kept current as its exploration
 // moves the page.
-import type { JsonObject } from "../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { screenAutomationStudioLlmEvidence } from "../llm/harness/index.ts";
 import type { AutomationStudioFlowPort } from "../../model/index.ts";
 import { buildAutomationStudioFlowBootstrapRoutingContext, type AutomationStudioFlowBootstrapRoutingContext } from "../flow-bootstrap/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
@@ -22,7 +23,35 @@ export type AutomationStudioBuildRouting = {
    * the dry run's replayed steps included.
    */
   recording<C extends { callId: string; toolId: string; signal?: AbortSignal | undefined }, X>(executeTool: (call: C) => Promise<X>): (call: C) => Promise<X>;
+  /**
+   * What one evidence decision is shown (W2): its window with each observed
+   * situation placed in it as a `core.route_state` entry right after the call
+   * that left it -- the start before every entry -- and the routing context with
+   * no situations of its own, saying where they are.
+   *
+   * **Why.** A provider's cache matches a prefix, and the routing context sat
+   * after the window because it grows: a situation per decision whose call
+   * reached a new page state. So all of it, 23k characters by decision 16 of
+   * `run-muqclqt5-b04525e8`, was read uncached on every decision. A situation
+   * never changes once observed, so placed where it happened it is written once
+   * and read from cache ever after, and the routing context left behind is
+   * constant for the build and goes in front of the window.
+   *
+   * A state value shaped like a credential is withheld, as the packet builder
+   * withholds one from the routing context; a key the domain denies refuses the
+   * request, as it does in any evidence. `deniedKeys` is the domain's list.
+   */
+  shown<E extends { callId: string; toolId: string; value: JsonValue }>(evidence: readonly E[], deniedKeys: readonly string[]): {
+    evidence: Array<E | { callId: string; toolId: string; value: JsonObject }>;
+    context: AutomationStudioFlowBootstrapRoutingContext;
+  };
 };
+
+/** The tool id a situation is shown under in the window. */
+export const AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID = "core.route_state";
+
+/** Said in the routing context in place of its situations, which the window carries. */
+const SITUATIONS_SHOWN = "Each core.route_state entry of your evidence is one situation: the state observed where a run starts, and after the call it follows.";
 
 /** How the evidence loop names its free first look (`../llm/evidence-loop.ts`): `initial.<toolId>`. */
 const FREE_FIRST_LOOK_CALL_PREFIX = "initial.";
@@ -68,7 +97,8 @@ export async function startAutomationStudioBuildRouting(input: {
   flowInputs: readonly AutomationStudioFlowPort[];
   start?: "now" | "first_look";
 }): Promise<AutomationStudioBuildRouting> {
-  const observations: Array<{ seen: string; state: JsonObject }> = [];
+  // `after` is the call whose page the state was observed on; absent for the start.
+  const observations: Array<{ seen: string; state: JsonObject; after?: string }> = [];
   const observe = (signal: AbortSignal | undefined) => observeAutomationStudioRouteState({ hostRuntime: input.hostRuntime, projectId: input.projectId, flowId: input.flowId, ...(signal ? { signal } : {}) });
   // Unsettled only while a deferred start waits for the free first look.
   let start: AutomationStudioRouteStateObservation | undefined;
@@ -78,28 +108,45 @@ export async function startAutomationStudioBuildRouting(input: {
   };
   if (input.start !== "first_look" || !input.hostRuntime?.observeRouteState) settleStart(await observe(undefined));
   // The newest call, and the state it left when that is known; whether it ran since the last decision.
-  let newest: { toolId: string; state?: JsonObject } | undefined;
+  let newest: { callId: string; toolId: string; state?: JsonObject } | undefined;
   let calls = 0;
   let ranSinceObserved = false;
+  const contextOf = (seen: ReadonlyArray<{ seen: string; state: JsonObject }>) => buildAutomationStudioFlowBootstrapRoutingContext({
+    current: "The Flow is blank: it has no routes and no subflows yet.",
+    flowInputs: input.flowInputs.map((port) => ({
+      id: port.id,
+      valueType: port.valueType.kind,
+      ...(port.required ? { required: true } : {}),
+      ...(port.description ? { description: port.description } : {})
+    })),
+    statePaths: input.hostRuntime?.routeStatePaths ?? [],
+    observations: seen,
+    ...(start && !start.ok ? { stateUnavailable: start.reason } : {})
+  });
   return {
-    context: () => buildAutomationStudioFlowBootstrapRoutingContext({
-      current: "The Flow is blank: it has no routes and no subflows yet.",
-      flowInputs: input.flowInputs.map((port) => ({
-        id: port.id,
-        valueType: port.valueType.kind,
-        ...(port.required ? { required: true } : {}),
-        ...(port.description ? { description: port.description } : {})
-      })),
-      statePaths: input.hostRuntime?.routeStatePaths ?? [],
-      observations,
-      ...(start && !start.ok ? { stateUnavailable: start.reason } : {})
-    }),
+    context: () => contextOf(observations),
+    shown: (evidence, deniedKeys) => {
+      const whole = contextOf(observations);
+      // The observation each situation came from: the one after which the context first had it.
+      const anchors: Array<string | undefined> = [];
+      for (let index = 0, had = 0; index < observations.length && anchors.length < whole.situations.length; index += 1) {
+        const situations = contextOf(observations.slice(0, index + 1)).situations.length;
+        if (situations > had) anchors.push(observations[index]!.after);
+        had = situations;
+      }
+      const entries = whole.situations.map((situation, index) => ({
+        callId: `${AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID}.${index + 1}`,
+        toolId: AUTOMATION_STUDIO_ROUTE_STATE_TOOL_ID,
+        value: { seen: situation.seen, state: Object.fromEntries(Object.entries(situation.state).filter(([, value]) => !screenAutomationStudioLlmEvidence(value, deniedKeys).secretShaped)) } as JsonObject
+      }));
+      return { evidence: placedAfterTheirCalls(evidence, entries, anchors), context: { ...whole, situations: [], situationsShown: SITUATIONS_SHOWN } };
+    },
     recording: <C extends { callId: string; toolId: string; signal?: AbortSignal | undefined }, X>(executeTool: (call: C) => Promise<X>) => async (call: C): Promise<X> => {
       const freeFirstLook = calls === 0 && call.callId.startsWith(FREE_FIRST_LOOK_CALL_PREFIX);
       calls += 1;
       // Anything else may move the page, so the start is read before it does.
       if (!start && !freeFirstLook) settleStart(await observe(call.signal));
-      const ran: { toolId: string; state?: JsonObject } = { toolId: call.toolId };
+      const ran: { callId: string; toolId: string; state?: JsonObject } = { callId: call.callId, toolId: call.toolId };
       let result: X;
       try {
         result = await executeTool(call);
@@ -127,11 +174,33 @@ export async function startAutomationStudioBuildRouting(input: {
       if (start?.ok && ranSinceObserved) {
         ranSinceObserved = false;
         current ??= await observe(decision.signal);
-        if (current.ok) observations.push({ seen: `after exploring with ${newest?.toolId ?? "a tool"}`, state: current.state });
+        if (current.ok) observations.push({ seen: `after exploring with ${newest?.toolId ?? "a tool"}`, state: current.state, ...(newest ? { after: newest.callId } : {}) });
       }
       return await decide(decision);
     }
   };
+}
+
+/**
+ * The window with each situation entry placed right after the entry of the call
+ * it was observed after; the start (no call) before every entry. One whose call
+ * is not in the window -- a dry run's, say -- follows the situation before it,
+ * so the situations stay in the order they were seen and each stays where it
+ * was first placed.
+ */
+function placedAfterTheirCalls<E extends { callId: string }, R>(evidence: readonly E[], entries: readonly R[], anchors: ReadonlyArray<string | undefined>): Array<E | R> {
+  const present = new Set(evidence.map((entry) => entry.callId));
+  const before: R[] = [];
+  const after = new Map<string, R[]>();
+  let anchor: string | undefined;
+  entries.forEach((entry, index) => {
+    const call = anchors[index];
+    if (call !== undefined && present.has(call)) anchor = call;
+    else if (call === undefined && index === 0) anchor = undefined;
+    if (anchor === undefined) before.push(entry);
+    else after.set(anchor, [...(after.get(anchor) ?? []), entry]);
+  });
+  return [...before, ...evidence.flatMap((entry) => [entry, ...(after.get(entry.callId) ?? [])])];
 }
 
 /** The route state a call reported about the page it left, when it reported a usable one. */

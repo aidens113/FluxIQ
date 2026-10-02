@@ -1970,7 +1970,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `bootstrapAdaptationAsFlowAdaptation` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/review-projection.ts:43` | - |
 | `boundedAutomationStudioActivity` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/bounded.ts:35` | - |
 | `buildAutomationStudioFlowBootstrapContext` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/catalog.ts:26` | - |
-| `buildAutomationStudioFlowBootstrapRoutingContext` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/routing-context.ts:84` | - |
+| `buildAutomationStudioFlowBootstrapRoutingContext` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/routing-context.ts:90` | - |
 | `buildAutomationStudioFlowFromConversation` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/commands/build.ts:22` | - |
 | `buildAutomationStudioLegacyMigrationOperations` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts:366` | - |
 | `buildAutomationStudioLlmEvidenceLoopDecisionSchema` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop-decision.ts:246` | - |
