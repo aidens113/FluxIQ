@@ -77,6 +77,25 @@ describe("what a call did on the page it found", () => {
     expect(guard.blocks("core.run_node", call().input, "s1")?.outcome).toBe("failed");
   });
 
+  it("blocks a look only once it answered the same twice on one page, and counts looks in a row until anything else", () => {
+    const look = call({ toolId: "find", input: { query: "Voltbay" }, effect: "observe", proposes: false, effectApplied: false, refused: false, resultCode: "web.inspect.succeeded", answer: "0 matches" });
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.recorded(look);
+    expect(guard.blocks("find", look.input)).toBeUndefined();
+    guard.recorded({ ...look, callId: "c2" });
+    expect(guard.blocks("find", look.input)).toEqual({ callId: "c2", outcome: "same_answer", resultCode: "web.inspect.succeeded" });
+    expect(guard.looks().map((one) => one.callId)).toEqual(["c1", "c2"]);
+    // A different answer is not the same look answered again; a look on a page not seen ends the run.
+    const other = automationStudioLlmEvidenceRepeatGuard();
+    other.recorded(look);
+    other.recorded({ ...look, callId: "c2", answer: "1 match" });
+    expect(other.blocks("find", look.input)).toBeUndefined();
+    other.recorded({ ...look, callId: "c3", stateBefore: undefined, stateAfter: undefined });
+    expect(other.looks()).toEqual([]);
+    guard.recorded(call({ callId: "c4" }));
+    expect(guard.looks()).toEqual([]);
+  });
+
   it("counts refused repeats in a row by decision", () => {
     const guard = automationStudioLlmEvidenceRepeatGuard();
     expect([guard.refusedAgain(4), guard.refusedAgain(5), guard.refusedAgain(7), guard.refusedAgain(8), guard.refusedAgain(9)]).toEqual([1, 2, 1, 2, 3]);

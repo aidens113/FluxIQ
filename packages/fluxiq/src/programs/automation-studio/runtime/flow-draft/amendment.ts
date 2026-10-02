@@ -58,6 +58,7 @@
 // already holds and never asks for again.
 
 import { automationStudioFlowDraftClaimAct } from "./act-claim.ts";
+import { automationStudioFlowDraftKeepOpeners } from "./opener.ts";
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
@@ -257,6 +258,8 @@ export function applyAutomationStudioFlowDraftAmendments(
       continue;
     }
     step.disposition = disposition;
+    // A step in the Flow brings the press that opened its page (`./opener.ts`).
+    if (disposition === "kept") automationStudioFlowDraftKeepOpeners(steps, step);
     if (clearsRouting) delete step.routing;
     // One act, one step: the claim moves here from any step that held it (`./act-claim.ts`).
     if (act !== undefined) automationStudioFlowDraftClaimAct(steps, step, act);

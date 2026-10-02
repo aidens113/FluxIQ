@@ -37,6 +37,16 @@
 // call from that page is refused. The second one still runs -- the first time
 // a call is repeated, nothing yet says it will end the same way.
 //
+// **A look that answered the same on the same page is answered from memory.**
+// Lane A's crossborder build asked `find_on_page "Voltbay"` 29 times on the
+// unchanged home page, each "0 matches": a refused press between finds reopened
+// every look to the repeat policy. A look made again on the same page that
+// answered exactly as the identical look before it (`same_answer`, from
+// `answer`) is refused like an action repeat: the next identical look there is
+// not run, the model is pointed at the answer it already has, and three refused
+// in a row stall the round. Looks in a row of any kind are counted as well
+// (`./searching.ts`).
+//
 // **A rerun is keyed where it runs.** A rerun runs from the page its step
 // started on (`../node-tools/step-place.ts`), not from the page the last call
 // left, so it is checked against that page (`blocks(..., at)`).
@@ -54,8 +64,10 @@
 //   moves the page without the loop seeing it, so the last state seen is
 //   forgotten (`moved`), and nothing is refused until the page is seen again.
 
+import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decision.ts";
+import { automationStudioLlmEvidenceSearchStreak, type AutomationStudioLlmEvidenceSearchStreak } from "./searching.ts";
 
 /** Words in a result code or reason that say the call may work if made again later. */
 const RETRY_LATER = /rate[_-]?limit|too[_-]?many|throttl|retry|disabled|busy|not[_-]?ready|loading|timed[_-]?out|timeout|try[_-]?again/iu;
@@ -67,9 +79,10 @@ export type AutomationStudioLlmEvidenceRepeatedOutcome = {
   /**
    * `failed`: it was refused or did not work. `changed_nothing`: it ran and the
    * page was as before. `same_result`: it ran again from the same page and
-   * ended on the same page as the identical call before it.
+   * ended on the same page as the identical call before it. `same_answer`: a
+   * look that answered on this page exactly as the identical look before it.
    */
-  outcome: "failed" | "changed_nothing" | "same_result";
+  outcome: "failed" | "changed_nothing" | "same_result" | "same_answer";
   resultCode?: string;
   resultReason?: string;
 };
@@ -90,10 +103,12 @@ export type AutomationStudioLlmEvidenceCallOutcome = {
   refused: boolean;
   resultCode?: string | undefined;
   resultReason?: string | undefined;
+  /** What the call answered, as the model was shown it: compared for a look only. */
+  answer?: string | undefined;
 };
 
 /** The loop's record of what its calls did. */
-export type AutomationStudioLlmEvidenceRepeatGuard = {
+export type AutomationStudioLlmEvidenceRepeatGuard = AutomationStudioLlmEvidenceSearchStreak & {
   /** A call reported the page as `state`. */
   seen(state: string): void;
   /** The page as the loop last saw it, when it has seen one since anything moved it unseen. */
@@ -110,13 +125,16 @@ export type AutomationStudioLlmEvidenceRepeatGuard = {
 
 export function automationStudioLlmEvidenceRepeatGuard(): AutomationStudioLlmEvidenceRepeatGuard {
   const outcomes = new Map<string, AutomationStudioLlmEvidenceRepeatedOutcome>();
-  // Where each call that changed something left the page, by its key.
+  // Where each call that changed something left the page, and what each look answered, by its key.
   const endedOn = new Map<string, string>();
+  const answered = new Map<string, string>();
+  const searching = automationStudioLlmEvidenceSearchStreak();
   let latest: string | undefined;
   let refusedInARow = 0;
   let lastRefused = Number.NEGATIVE_INFINITY;
   const key = (toolId: string, input: JsonObject, state: string): string => `${toolId}\u0000${state}\u0000${automationStudioLlmEvidenceCanonicalJson(input)}`;
   return {
+    ...searching,
     seen(state) {
       latest = state;
     },
@@ -129,8 +147,19 @@ export function automationStudioLlmEvidenceRepeatGuard(): AutomationStudioLlmEvi
     recorded(call) {
       const state = call.stateBefore ?? latest;
       if (call.stateAfter !== undefined) latest = call.stateAfter;
-      // A look is the repeat policy's (see the header); a page never seen is no key.
-      if (state === undefined || (call.effect === "observe" && !call.proposes)) return;
+      const look = call.effect === "observe" && !call.proposes;
+      // A look seen to leave the page as it found it is one more look in a row; anything else -- a look whose page was not seen
+      // included, since nothing says it did not move -- ends the run (`./searching.ts`).
+      if (look && state !== undefined && call.stateAfter === state) searching.looked({ callId: call.callId, toolId: call.toolId, input: call.input });
+      else searching.acted();
+      if (state === undefined) return;
+      if (look) {
+        const at = key(call.toolId, call.input, state);
+        const answer = call.answer === undefined || call.refused ? undefined : createHash("sha256").update(call.answer).digest("hex");
+        if (answer !== undefined && answered.get(at) === answer) outcomes.set(at, { callId: call.callId, outcome: "same_answer", ...(call.resultCode ? { resultCode: call.resultCode } : {}) });
+        else if (answer !== undefined) answered.set(at, answer);
+        return;
+      }
       const failed = call.refused || (call.effect === "mutate" && !call.effectApplied);
       const changedNothing = !call.effectApplied || (call.stateAfter !== undefined && call.stateAfter === state);
       const retryLater = RETRY_LATER.test(`${call.resultCode ?? ""} ${call.resultReason ?? ""}`);

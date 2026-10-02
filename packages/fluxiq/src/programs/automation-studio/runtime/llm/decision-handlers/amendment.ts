@@ -27,6 +27,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
 ): AutomationStudioLlmEvidenceDecisionNext {
   const { trace, accounting, draftSteps, amendmentMemory, noProgress, counters } = context;
   const end = (code: Parameters<typeof failure>[1]): { kind: "end"; result: ReturnType<typeof failure> } => ({ kind: "end", result: failure(draftSteps, code, trace, accounting) });
+  context.repeats.acted(); // Not a look: a run of looks is over (`../repeat-guard/searching.ts`).
   // Acting on an edit the model was not offered would let a draft be
   // edited after the allowance for editing it had run out.
   if (!canAmend) return end("llm_evidence_loop.invalid_decision");

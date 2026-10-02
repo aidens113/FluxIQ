@@ -34,6 +34,7 @@ export async function automationStudioLlmEvidenceHandleCompletion(
   const { input, limits, trace, accounting, draftSteps, counters, evidence } = context;
   const end = (code: Parameters<typeof failure>[1]): { kind: "end"; result: ReturnType<typeof failure> } => ({ kind: "end", result: failure(draftSteps, code, trace, accounting) });
   counters.completionAttempts += 1;
+  context.repeats.acted(); // Not a look: a run of looks is over (`../repeat-guard/searching.ts`).
   if (accounting.toolCalls - counters.failedToolCalls < limits.minToolCalls) return end("llm_evidence_loop.invalid_decision");
   // Every earlier answer to finishing -- the check's refusal, a dry run's
   // refusal and page -- is about the draft as it stood then. This attempt asks
