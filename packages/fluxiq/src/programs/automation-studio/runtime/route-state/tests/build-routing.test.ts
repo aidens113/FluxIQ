@@ -308,6 +308,27 @@ describe("route-state captures per decision type", () => {
     expect(run.contexts.get(2)!.situations.map((situation) => situation.seen)).toEqual(["where a run starts, before any step runs", "after exploring with core.run_node"]);
   });
 
+  it("a call of a pageless tool records nothing, so no decision captures for it (t235)", async () => {
+    // `core.describe_nodes` reads the node library. Recorded as a call, it
+    // made the next decision observe a page it never touched -- a whole page
+    // capture in the web domain -- and, made before the free first look, it
+    // took the look's place as the moment the start is read.
+    let captures = 0;
+    const routing = await startAutomationStudioBuildRouting({ hostRuntime: { capabilities: [], observeRouteState: () => { captures += 1; return routeStateOf(captures); } }, projectId: "p.1", flowId: "f.1", flowInputs: [], start: "first_look", pageless: ["core.describe_nodes"] });
+    const executeTool = routing.recording(async (call: { callId: string; toolId: string }) => call.toolId === "core.run_node"
+      ? { kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false, routeState: routeStateOf(0) }
+      : { ok: true, described: ["web.output.dom-click"] });
+    const decide = routing.observing(async (_decision: { signal?: AbortSignal }) => undefined);
+    await executeTool({ callId: "c.0", toolId: "core.describe_nodes" });
+    await executeTool({ callId: "initial.core.run_node", toolId: "core.run_node" });
+    await decide({});
+    await executeTool({ callId: "c.1", toolId: "core.describe_nodes" });
+    await decide({});
+    expect(captures).toBe(0);
+    // The look left the page as it found it, so the start is the one state shown.
+    expect(routing.context().situations.map((situation) => situation.seen)).toEqual(["where a run starts, before any step runs"]);
+  });
+
   it("a call that throws reports nothing, so the decision after it captures", async () => {
     const run = await build({ 1: act("c.1"), 2: act("c.2", CLICK, "h.2"), 3: { kind: "complete", result: { done: 3 } } }, "after", { outcomes: { 1: { throws: true } } });
     expect([at(run, "start"), at(run, 1), at(run, 2), at(run, 3)]).toEqual([0, 0, 1, 0]);

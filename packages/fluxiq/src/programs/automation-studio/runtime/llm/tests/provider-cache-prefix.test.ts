@@ -70,8 +70,31 @@ describe("the order of a DeepSeek evidence-loop request", () => {
     // build's. The bounds are set below what it measures so that resizing the
     // fixture cannot make the test lie, and far enough above what the old order
     // reached -- 1,272 bytes of the same 50,711 -- that any regression fails.
-    expect(shared).toBeGreaterThan(40_000);
+    // The bound was 40,000 until t235: an evidence decision is now sent the
+    // catalog by name only, which took this fixture's message from about
+    // 50,700 bytes to about 20,500, so the shared prefix is measured smaller in
+    // bytes while still holding everything but the new result (the ratio).
+    expect(shared).toBeGreaterThan(18_000);
     expect(shared / first.length).toBeGreaterThan(0.8);
+  });
+
+  it("keeps the prefix through the names and their note when a node is described between two calls", async () => {
+    // A describe appends to describedNodes, which sits after the names and the
+    // note in the constant head: everything before it stays cached, and only
+    // what follows the new definition is read again.
+    const [run, extract] = [nodeCatalog[1]!, nodeCatalog[0]!];
+    const first = await userMessage(loopRequest(1, evidence(3), [run]));
+    const second = await userMessage(loopRequest(2, evidence(4), [run, extract]));
+    const shared = commonPrefixLength(first, second);
+
+    expect(first.indexOf('"nodeCatalogNote"')).toBeGreaterThan(first.indexOf('"nodeCatalog"'));
+    expect(first.indexOf('"describedNodes"'), "the note and the first described node").toBeLessThan(shared);
+    expect(first.slice(0, shared)).toContain(JSON.stringify(run));
+    expect(second.indexOf(JSON.stringify(extract)), "the newly described node").toBeGreaterThanOrEqual(shared - 1);
+    // And with the described set unchanged, the two calls share everything up
+    // to the newest result, exactly as before.
+    const third = await userMessage(loopRequest(3, evidence(5), [run, extract]));
+    expect(commonPrefixLength(second, third)).toBeGreaterThan(second.indexOf('"call.4"'));
   });
 
   it("keeps the whole constant block when only the evidence grows", async () => {
@@ -283,7 +306,7 @@ const nodeCatalog: AutomationStudioFlowBootstrapCatalogEntry[] = Array.from({ le
   }))
 }));
 
-function loopRequest(iteration: number, gathered: Array<{ callId: string; toolId: string; value: unknown }>): AutomationStudioLlmTaskRequest {
+function loopRequest(iteration: number, gathered: Array<{ callId: string; toolId: string; value: unknown }>, describedNodes: AutomationStudioFlowBootstrapCatalogEntry[] = []): AutomationStudioLlmTaskRequest {
   const evidenceLoop = {
     iteration,
     tools,
@@ -315,7 +338,8 @@ function loopRequest(iteration: number, gathered: Array<{ callId: string; toolId
         outputSchema: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA,
         nodeCatalog,
         catalogTruncated: true,
-        catalogSelection: { usedBytes: Buffer.byteLength(JSON.stringify(nodeCatalog), "utf8"), requiredTerms: [], missingRequiredTerms: [] }
+        catalogSelection: { usedBytes: Buffer.byteLength(JSON.stringify(nodeCatalog), "utf8"), requiredTerms: [], missingRequiredTerms: [] },
+        ...(describedNodes.length ? { describedNodes } : {})
       },
       evidenceLoop
     }

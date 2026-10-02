@@ -3,6 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { automationStudioHarnessOptionBundleFromBinding, automationStudioHarnessOptionRegistry, type AutomationStudioLlmEvidenceRuntimeBinding } from "../binding.ts";
 import { AutomationStudioHarnessOptionRegistry, type AutomationStudioHarnessOptionResolution } from "../registry.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID } from "../../evidence-recall/index.ts";
 
 const DOMAIN_ID = "erp-ledger";
 const SCOPE: AutomationStudioHarnessOptionResolution = { scope: { kind: "domain", domainId: DOMAIN_ID } };
@@ -39,8 +40,27 @@ describe("a domain's view of its target, as declared", () => {
     expect(loop).not.toHaveProperty("observedStateKeys");
   });
 
+  it("takes a member of a held object as `holder.member`, and then offers the recall beside the domain's tools (t194 w48)", () => {
+    const loop = automationStudioHarnessOptionRegistry({ binding: binding(["ledgerRows", "query.rows"]) }).evidenceLoopBinding({ projectId: "p", flowId: "f" }, SCOPE);
+    expect(loop.observedStateKeys).toEqual(["ledgerRows", "query.rows"]);
+    expect(loop.tools.map((tool) => tool.toolId)).toEqual(["erp.inspect", AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID]);
+    // Only a page declared: nothing a recall could give back, so no recall.
+    const pageOnly = automationStudioHarnessOptionRegistry({ binding: binding(["ledgerRows"]) }).evidenceLoopBinding({ projectId: "p", flowId: "f" }, SCOPE);
+    expect(pageOnly.tools.map((tool) => tool.toolId)).toEqual(["erp.inspect"]);
+  });
+
+  it("answers a recall from the result the domain returned, without calling the domain again", async () => {
+    const declared = binding(["query.rows"]);
+    (declared.executeTool as ReturnType<typeof vi.fn>).mockResolvedValue({ query: { rows: [1, 2, 3], count: 3 } });
+    const loop = automationStudioHarnessOptionRegistry({ binding: declared }).evidenceLoopBinding({ projectId: "p", flowId: "f" }, SCOPE);
+    await loop.executeTool({ callId: "read.1", toolId: "erp.inspect", value: {} });
+    const answer = await loop.executeTool({ callId: "recall.2", toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID, value: { callId: "read.1" } });
+    expect(declared.executeTool).toHaveBeenCalledTimes(1);
+    expect(answer).toMatchObject({ evidence: { recalled: "read.1", restored: { query: { rows: [1, 2, 3] } } } });
+  });
+
   it("refuses a declaration that is not a list of plain property names", () => {
-    for (const keys of [["ledger rows"], [""], Array.from({ length: 33 }, (_, index) => `k${index}`), "ledgerRows"]) {
+    for (const keys of [["ledger rows"], [""], ["a.b.c"], [".rows"], ["query."], Array.from({ length: 33 }, (_, index) => `k${index}`), "ledgerRows"]) {
       const bundle = { ...automationStudioHarnessOptionBundleFromBinding(binding()), observedStateKeys: keys as readonly string[] };
       expect(() => new AutomationStudioHarnessOptionRegistry().register(bundle), JSON.stringify(keys)).toThrow("observed state keys are invalid");
     }

@@ -67,6 +67,22 @@ describe("a build's purse", () => {
     expect(spent.hold(call(undefined))).toMatchObject({ ok: false, refusal: { spentUsd: 0.25, ceilingUsd: 0.25 } });
   });
 
+  it("holds an unpriced call at the most any call here has reported costing, so like calls stop before the ceiling (t234)", () => {
+    // A refuted result's repair ladder: $0.03 a call, unpriced, under $0.10. Held at nothing, the fourth call went out at $0.09 and the ladder spent $0.12.
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
+    let sent = 0;
+    for (let i = 0; i < 10; i += 1) {
+      const held = purse.hold(call(undefined));
+      if (!held.ok) break;
+      sent += 1;
+      held.hold.settle({ inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.03 });
+    }
+    expect(sent).toBe(3);
+    expect(purse.spentUsd()).toBeCloseTo(0.09, 9);
+    expect(purse.refusal).toMatchObject({ spentUsd: 0.09, ceilingUsd: 0.1 });
+    expect(purse.refusal?.projectedCostUsd).toBeUndefined();
+  });
+
   it("counts what earlier builds of the same Flow creation spent, and says so when it refuses (t234)", () => {
     // run-muqbzu32-8691a65e stopped with $0.0738 spent of $0.10; building again carried a fresh ceiling.
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.0738 });

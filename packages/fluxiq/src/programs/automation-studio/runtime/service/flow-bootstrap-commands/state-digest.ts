@@ -1,4 +1,4 @@
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, type AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/index.ts";
 
 // The state digest a build takes either side of each step it runs.
 //
@@ -37,6 +37,9 @@ export function automationStudioBootstrapStateDigestHook(
   if (!capture) return undefined;
   const asked = new Set<string>();
   return (input) => {
+    // Reading the node library touches no state, so it is never digested: a
+    // digest here is a whole page capture in the web domain, taken twice.
+    if (input.toolId === AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID) return Promise.resolve(undefined);
     const phase = asked.has(input.callId) ? "after" : "before";
     asked.add(input.callId);
     return capture({

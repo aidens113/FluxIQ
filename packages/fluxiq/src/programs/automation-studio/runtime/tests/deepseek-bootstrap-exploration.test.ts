@@ -297,7 +297,8 @@ function endpoint(
       outputSchema?: { properties?: { decision?: JsonObject } };
       context: {
         evidenceLoop?: { iteration: number; decisionSchema?: JsonObject; evidence?: Array<{ toolId?: unknown; value?: unknown }> };
-        flowBootstrap?: { nodeCatalog?: Array<{ id?: unknown }> };
+        // Names only since 2026-10-01: `{ category: ["<id>: <description>"] }`, not the full entries it was.
+        flowBootstrap?: { nodeCatalog?: Record<string, unknown> };
       };
     };
     if (user.taskKind !== "evidence_tool_decision") throw new Error(`The stub endpoint was asked for ${user.taskKind}.`);
@@ -310,9 +311,10 @@ function endpoint(
     const draftValue = evidence.find((entry) => entry.toolId === "core.flow_draft")?.value;
     const draft = draftObservation(draftValue, 4_000);
     const visibleRecordProducerCount = new Set(
-      (user.context.flowBootstrap?.nodeCatalog ?? []).flatMap((entry) =>
-        typeof entry.id === "string" && registeredRecordProducerIds.has(entry.id) ? [entry.id] : []
-      )
+      Object.values(user.context.flowBootstrap?.nodeCatalog ?? {}).flatMap((lines) => Array.isArray(lines) ? lines : []).flatMap((line) => {
+        const id = typeof line === "string" ? line.slice(0, line.indexOf(":")) : undefined;
+        return id && registeredRecordProducerIds.has(id) ? [id] : [];
+      })
     ).size;
     observations.push({
       iteration,

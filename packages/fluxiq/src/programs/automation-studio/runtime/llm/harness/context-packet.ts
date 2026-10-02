@@ -12,7 +12,9 @@ import type {
   AutomationStudioFlowSubflow
 } from "../../../model/index.ts";
 import {
+  automationStudioFlowBootstrapCatalogNames,
   buildAutomationStudioFlowBootstrapContext,
+  type AutomationStudioFlowBootstrapContext,
   type AutomationStudioFlowBootstrapRoutingContext
 } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioConversationTurn } from "../../conversations/index.ts";
@@ -248,7 +250,10 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     })
     : undefined;
   const routing = catalogContext && input.flowBootstrap?.routing ? packRoutingContext(input.flowBootstrap.routing, deniedEvidenceKeys) : undefined;
-  const flowBootstrap = catalogContext && routing ? { ...catalogContext, routing } : catalogContext;
+  const withRouting = catalogContext && routing ? { ...catalogContext, routing } : catalogContext;
+  const flowBootstrap = withRouting && input.taskKind === "evidence_tool_decision"
+    ? withNamesAndDescribed(withRouting, input.flowBootstrap?.describedNodeIds ?? [])
+    : withRouting;
   const packed: AutomationStudioLlmContextPacket = {
     schemaVersion: "0.1",
     taskKind: input.taskKind,
@@ -298,6 +303,32 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
   };
   if (input.explorationEvidence === undefined) return packed;
   return { ...packed, explorationEvidence: packAutomationStudioLlmExploredEvidence(input, input.explorationEvidence, deniedEvidenceKeys) };
+}
+
+/**
+ * An evidence decision's catalog context, with what it is shown of the catalog:
+ * every node by name (`catalogNames`) and, in full, only the nodes this build
+ * asked `core.describe_nodes` about (`describedNodes`, in the order first
+ * described; an id the catalog does not hold is skipped, and the field is
+ * absent while there are none). `nodeCatalog`, `catalogTruncated` and
+ * `catalogSelection` stay as they were, because the readers that check a
+ * packet read them; only the wire leaves them out
+ * (`../deepseek/request-body.ts`).
+ */
+function withNamesAndDescribed(context: AutomationStudioFlowBootstrapContext, describedNodeIds: readonly string[]): AutomationStudioFlowBootstrapContext {
+  const byId = new Map(context.nodeCatalog.map((entry) => [entry.id, entry] as const));
+  const seen = new Set<string>();
+  const describedNodes = describedNodeIds.flatMap((id) => {
+    const entry = byId.get(id);
+    if (!entry || seen.has(id)) return [];
+    seen.add(id);
+    return [entry];
+  });
+  return {
+    ...context,
+    catalogNames: automationStudioFlowBootstrapCatalogNames(context.nodeCatalog),
+    ...(describedNodes.length ? { describedNodes } : {})
+  };
 }
 
 /**

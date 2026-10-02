@@ -213,8 +213,10 @@ describe("a Flow creation's one purse", () => {
 
   it("(e) counts the judge's calls against the same purse", async () => {
     const decisionCost = CEILING * 0.01;
-    // The judge is asked twice about a "no" (`result-verification/verify.ts`), and its two answers take the purse past the ceiling.
-    const judgeCost = CEILING / 2;
+    // The judge is asked twice about a "no" (`result-verification/verify.ts`). Its two answers fit, and leave the
+    // purse too little for the repair's next decision, which is held at the most any call has reported costing
+    // (the mock does not price: `llm/build-purse/purse.ts`).
+    const judgeCost = CEILING * 0.4;
     const requests: AutomationStudioLlmTaskRequest[] = [];
     let paid = 0;
     let decided = 0;
@@ -245,7 +247,7 @@ describe("a Flow creation's one purse", () => {
     const judged = requests.findIndex(isJudgeRequest);
     expect(judged).toBe(2);
     expect(requests.filter(isJudgeRequest)).toHaveLength(2);
-    // Its spend took the purse past the ceiling, so no repair decision was sent after it.
+    // Its spend left the purse too little for another call, so no repair decision was sent after it.
     expect(requests.slice(judged + 1).some((request) => !isJudgeRequest(request))).toBe(false);
     expect(ending.code).toBe("flow_bootstrap.evidence_budget_exhausted");
     // What the creation carries is every call the build paid for, the judge's included.

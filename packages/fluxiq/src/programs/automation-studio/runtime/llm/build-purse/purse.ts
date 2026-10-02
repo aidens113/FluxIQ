@@ -31,9 +31,13 @@
 // cost ending.
 //
 // A provider that does not price leaves nothing to project. Such a call is held
-// at nothing and refused only once the purse is already spent; holding it at
-// the whole ceiling instead would refuse every call after the first one that
-// cost anything.
+// at the most any call on this purse has reported costing -- a measured figure,
+// nothing until one has reported -- so a run of like calls stops before the one
+// that would cross the ceiling, not after it. The loop's own count used to stop
+// such a build first, and with that count gone the purse is what holds it
+// (t234: a refuted result's repair ladder spent $0.12 of $0.10 without it).
+// Holding it at the whole ceiling instead would refuse every call after the
+// first one that cost anything.
 
 import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 
@@ -97,6 +101,8 @@ export class AutomationStudioLlmBuildPurse {
   /** What earlier builds of the same Flow creation spent: part of `spentUsd`, never charged again. */
   readonly carriedUsd: number;
   private settledUsd = 0;
+  /** The most any call settled on this purse reported costing: what an unpriced call is held at. */
+  private largestReportedUsd = 0;
   private readonly pending = new Map<number, number>();
   private holds = 0;
 
@@ -127,15 +133,17 @@ export class AutomationStudioLlmBuildPurse {
   /**
    * Hold a call's worst case, or refuse it. `projectedCostUsd` is the call's
    * worst case (`./projected-cost.ts`); `undefined` means the provider does not
-   * price, and the call is refused only once nothing is left.
+   * price, and the call is held at the most any call here has reported costing,
+   * or refused only once nothing is left while none has.
    */
   hold(call: { projectedCostUsd: number | undefined; estimatedInputTokens: number; maxOutputTokens: number }): { ok: true; hold: AutomationStudioLlmBuildPurseHold } | { ok: false; refusal: AutomationStudioLlmBuildPurseRefusal } {
     const spentUsd = this.spentUsd();
     const pendingUsd = this.pendingUsd();
     const projected = call.projectedCostUsd;
     if (projected !== undefined) this.lastProjectedCostUsd = projected;
-    const over = projected !== undefined
-      ? spentUsd + pendingUsd + projected > this.ceilingUsd + EPSILON_USD
+    const heldUsd = projected ?? this.largestReportedUsd;
+    const over = heldUsd > 0
+      ? spentUsd + pendingUsd + heldUsd > this.ceilingUsd + EPSILON_USD
       : spentUsd + pendingUsd >= this.ceilingUsd;
     if (over) {
       this.refusal = {
@@ -151,7 +159,6 @@ export class AutomationStudioLlmBuildPurse {
       return { ok: false, refusal: this.refusal };
     }
     const id = this.holds += 1;
-    const heldUsd = projected ?? 0;
     this.pending.set(id, heldUsd);
     let settled = false;
     return {
@@ -164,6 +171,7 @@ export class AutomationStudioLlmBuildPurse {
           const reported = usage?.estimatedCostUsd;
           const valid = typeof reported === "number" && Number.isFinite(reported) && reported >= 0;
           this.settledUsd += valid ? reported : heldUsd;
+          if (valid) this.largestReportedUsd = Math.max(this.largestReportedUsd, reported);
           if (valid && projected !== undefined && reported > heldUsd + EPSILON_USD) {
             this.breaches += 1;
             this.options.onBreach?.();

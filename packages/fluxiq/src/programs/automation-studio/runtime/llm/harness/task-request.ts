@@ -201,6 +201,12 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
     startLocation?: string;
     /** The Flow's size bounds, from its setting (`../../flow-bootstrap/plan/size-limits.ts`); the default when absent. */
     size?: AutomationStudioFlowBootstrapSizeLimits;
+    /**
+     * The nodes this build has been shown whole so far, in the order they were
+     * first described (`../node-tools/node-descriptions.ts`). An evidence
+     * decision is shown every node by name and only these in full.
+     */
+    describedNodeIds?: readonly string[];
   };
   evidenceLoop?: AutomationStudioLlmContextPacket["evidenceLoop"];
   policy?: AutomationStudioAdaptationPolicy;
