@@ -5,7 +5,7 @@ import {
   automationStudioFlowDraftClaimAct, automationStudioFlowDraftKeepOpeners,
   automationStudioFlowDraftReplaySignature,
   automationStudioFlowDraftStepIsAction,
-  automationStudioFlowDraftStepIsProposable,
+  automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf,
   type AutomationStudioFlowDraftStep
 } from "../flow-draft/index.ts";
 // The record of every decision and what the loop answered it, and what one
@@ -419,6 +419,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     let ran: Awaited<ReturnType<typeof input.executeTool>> | undefined;
     let stateBefore: string | undefined;
     let stateAfter: string | undefined;
+    const words = automationStudioFlowDraftStepWordsOf(input.describeCall, { toolId: decision.toolId, value: decision.input }); // Asked before the call: a click that closes its popup leaves its handle naming nothing (`../flow-draft/step-words.ts`).
     try {
       // A rerun runs from its step's own page, never from where the last call left it (`./node-tools/step-place.ts`).
       const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
@@ -473,7 +474,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no", ...(refusedCall ? { refused: true } : {})
     });
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
-    const draftChanged = draftRecord({ iteration, callId, ...record, effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
+    const draftChanged = draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
     automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring });
     const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, draftSteps.find((step) => step.callId === callId)) : {};
     // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.

@@ -75,8 +75,16 @@ function keptStep(value: unknown, position: number): value is AutomationStudioFl
   if (value.proposes !== undefined && typeof value.proposes !== "boolean") return false;
   // The acts the model said the step does (`../../flow-draft/step.ts`): Core's own ids, nothing else.
   if (value.acts !== undefined && (!Array.isArray(value.acts) || !value.acts.every((act) => typeof act === "string" && /^a[1-9][0-9]{0,2}(?:\.[a-z]{1,16})?$/u.test(act)))) return false;
+  // The domain's words for the call (`../../flow-draft/step.ts`, `words`): a target and a text, each a string, and nothing else.
+  if (value.words !== undefined && !stepWords(value.words)) return false;
   return OPTIONAL_OBJECTS.every((key) => value[key] === undefined || isRecord(value[key]))
     && OPTIONAL_STRINGS.every((key) => value[key] === undefined || typeof value[key] === "string");
+}
+
+function stepWords(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value);
+  return keys.length > 0 && keys.every((key) => (key === "target" || key === "text") && typeof value[key] === "string");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

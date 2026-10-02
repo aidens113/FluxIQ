@@ -130,6 +130,8 @@ describe("activityActionOf: outcome and why", () => {
     ["a not_found code", tool("Clicking “Buy”", "Result: web.target.not_found · Node: web.output.dom-click"), "failed", "it wasn't on the page"],
     ["a timeout code", tool("Waiting for the page", "Result: web.wait.timeout · Node: web.output.wait"), "failed", "the page took too long"],
     ["a replay that changed", tool("Clicking “Next”", "Result: core.replay.changed", "succeeded", RUN_NODE, "verifying"), "failed", "it didn't work the same way again"],
+    ["a replay the site remembered (t193)", tool("Clicking “Set as my store”", "Result: core.replay.remembered · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying"), "done", null],
+    ["a replay already in place", tool("Clicking “12 Double Rolls”", "Result: core.replay.present", "succeeded", RUN_NODE, "verifying"), "done", null],
     ["an unknown failing code", tool("Clicking on the page", "Result: web.action.failed"), "failed", null],
     ["a person needed", tool("Looking at the page", "Result: example.user_intervention_required"), "waiting", null],
     ["a waiting phase", { phase: "waiting_permission", detail: { kind: "ask", title: "Asked a question (confirm)", status: "started" } }, "waiting", null],
@@ -197,5 +199,22 @@ describe("activityActionOf: no output carries an id or a result code", () => {
       expect(outputs.length).toBeGreaterThan(0);
       for (const output of outputs) expect(output).not.toMatch(DOTTED);
     }
+  });
+});
+
+describe("activityActionOf: looks name what they look at (t193)", () => {
+  it("reads Core's look-ups as looks, named by what they look up", () => {
+    expect(outputsOf(activityActionOf(tool("Looking up how to use “Type”", undefined, "started", "core.describe_nodes")))).toEqual(["look", "Type", "working", ""]);
+    expect(outputsOf(activityActionOf(tool("Looking again at what an earlier step found", "Result: core.recall.succeeded", "succeeded", "core.recall_result")))).toEqual(["look", "", "done", ""]);
+  });
+
+  it("names a look by the words it looks for, in their quotes, when it names no control", () => {
+    expect(outputsOf(activityActionOf(tool('Looking for "Colour" on the page', undefined, "started", "web.find_on_page")))).toEqual(["look", '"Colour"', "working", ""]);
+    expect(activityActionOf(tool('Typing "towels"', undefined, "started", RUN_NODE))?.target).toBeNull();
+    expect(activityActionOf(tool('Looking for "web.output.x" on the page', undefined, "started", "web.find_on_page"))?.target).toBeNull();
+  });
+
+  it("reads an element's details as a look at that element", () => {
+    expect(outputsOf(activityActionOf(tool("Reading the details of “Add to cart”", undefined, "started", "web.describe_element")))).toEqual(["look", "Add to cart", "working", ""]);
   });
 });

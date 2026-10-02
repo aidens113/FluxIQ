@@ -45,8 +45,11 @@ import type { AutomationStudioFlowDraftAmendmentRefusal } from "../flow-draft/in
 /** The evidence entry a refused amendment's feedback arrives under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID = "core.amendment_check";
 
-/** What the entry is recorded and shown under. */
-const AMENDMENTS_REFUSED_CODE = "llm_evidence_loop.draft_amendments_refused";
+/**
+ * What the entry is recorded and shown under, and the issue a round that
+ * stalled on amendments refused again is recorded under (`./decision-handlers/amendment.ts`).
+ */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE = "llm_evidence_loop.draft_amendments_refused";
 
 /**
  * What each reason means, in Core's words.
@@ -70,7 +73,7 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   already_in_flow: "That step is already in the Flow (inResult: true). Every step with inResult true is part of the finished Flow as it stands, so there is nothing to confirm: do not keep it again. Run what the Flow still lacks, or complete.",
   already_out: "That step is already out of the Flow (inResult: false), so dropping it again changes nothing. Leave it, or keep it to put it back.",
   act_on_a_read: "That step only reads -- a listing, a look or another read that changes nothing -- so it does no act: the rest of your change to it was made, but the act was not recorded on it. An act is done by the step that changes something, such as the press: name the act there. To do it to every item a listing kept, add the listing without act, add the press with act, then repeat the press over the listing.",
-  act_already_named: "That step already names that act (act beside it in the draft), so naming it again changes nothing. If the acts checklist still shows the act not done, its todo says why and its step says which step: correct exactly that -- repeat the press over its listing, or rerun a read that names it, since a rerun of a read does not carry the act -- rather than naming the act again."
+  act_already_named: "That step already names that act (act beside it in the draft), so naming it again changes nothing. If the acts checklist shows the act done, nothing is left to do for it: go on with the acts and choices the checklist still shows not done. If it still shows the act not done, its todo says why and its step says which step: correct exactly that -- repeat the press over its listing, or rerun a read that names it, since a rerun of a read does not carry the act -- rather than naming the act again."
 };
 
 const AMENDMENT_FEEDBACK_INSTRUCTION = "The listed amendments changed nothing, for the reason beside each one, and the draft is as it was for them. "
@@ -114,9 +117,15 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
   maxStepsWithoutProgress: number;
   /** The iteration whose draft the applied amendments put back exactly, when they did. */
   sameDraftAsIteration?: number;
+  /**
+   * The acts and choices the checklist shows not done, by id, when the draft
+   * has a checklist (`./loop-configuration.ts`, `draft.actsMissing`): what an
+   * `act_already_named` about a done act is told to go on with.
+   */
+  actsNotDone?: readonly string[] | undefined;
 }): JsonObject {
   const refused = input.refusals.map((refusal) => {
-    const next = nextStep(refusal, input.steps);
+    const next = nextStep(refusal, input.steps) ?? actDone(refusal, input.actsNotDone);
     return { step: refusal.step, reason: refusal.reason, ...(refusal.repeated ? { repeated: true } : {}), ...(next ? { next } : {}) };
   });
   const undone = input.sameDraftAsIteration !== undefined;
@@ -125,7 +134,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
   for (const reason of met) reasons[reason] = REFUSAL_REASONS[reason];
   return {
     ok: false,
-    code: refused.length || !undone ? AMENDMENTS_REFUSED_CODE : AMENDMENT_UNDONE_CODE,
+    code: refused.length || !undone ? AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE : AMENDMENT_UNDONE_CODE,
     refused,
     applied: input.applied,
     steps: input.steps.length,
@@ -187,6 +196,25 @@ function rowAct(listing: number, steps: readonly AutomationStudioDraftAmendmentF
   }
   const add = press.disposition === "kept" ? "" : `add step ${press.position} with its act, then `;
   return `Step ${press.position} is the first step after step ${listing} that changes something. If it is the act done to one row step ${listing} kept, the repeat goes on it: ${add}send ${repeat(String(press.position))}.`;
+}
+
+/**
+ * What to do instead of naming again an act the checklist already shows done,
+ * or nothing when the act is still to do or there is no checklist to read.
+ *
+ * Live run `run-muqiojz4-04a7a8fc` sent `10 keep act a2.quantity` five
+ * decisions running, each refused `act_already_named`, while the checklist
+ * showed `a2.quantity` done and `a3` still to do: the reason told it only what
+ * to do about an act *not* done, and the round ended. So the refusal says the
+ * act needs nothing more, and names, from the checklist, what does.
+ */
+function actDone(refusal: AutomationStudioFlowDraftAmendmentRefusal, actsNotDone: readonly string[] | undefined): string | undefined {
+  if (refusal.reason !== "act_already_named" || refusal.act === undefined || actsNotDone === undefined) return undefined;
+  if (actsNotDone.includes(refusal.act)) return undefined;
+  const done = `The acts checklist shows ${refusal.act} done, so nothing is left to do for it: do not name it again.`;
+  return actsNotDone.length
+    ? `${done} Still not done on the checklist: ${actsNotDone.join(", ")}. Go on with those.`
+    : `${done} Nothing on the checklist is still to do: complete when the Flow does what the person asked.`;
 }
 
 /** Every position the draft has, ascending. */

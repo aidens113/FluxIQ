@@ -142,4 +142,22 @@ describe("the draft entry a decision is shown", () => {
     expect(automationStudioFlowDraftEntry({ steps: [step(1, "inspect", {}, { effect: "observe" })] })).toBeUndefined();
     expect(automationStudioFlowDraftEntry({ steps: [] })).toBeUndefined();
   });
+
+  // run-muqiojz4-04a7a8fc: ten presses that each read `{"target":{"handle":...}}`,
+  // and the model named a "×" closing a chat overlay as its add-to-cart act.
+  it("says which control each step named, in the domain's words, as does, beside the argument it ran with", () => {
+    const steps = [
+      step(1, "web.click", { handle: "t667" }, { words: { target: "12 Double Rolls" } }),
+      step(2, "web.click", { handle: "t1091" }, { words: { target: "×" } }),
+      step(3, "web.type", { handle: "t11" }, { words: { target: "Search", text: "paper towels" } }),
+      step(4, "web.click", { handle: "t404" })
+    ];
+    const lines = value(steps).steps as Array<Record<string, unknown>>;
+    expect(lines.map((line) => line.does)).toEqual([{ target: "12 Double Rolls" }, { target: "×" }, { target: "Search", text: "paper towels" }, undefined]);
+    expect(lines[1]?.input).toEqual({ handle: "t1091" });
+    expect(lines[3]).not.toHaveProperty("does");
+    // The authored telling says what does is for.
+    const authored = automationStudioFlowDraftEntry({ steps, authored: true })!.value as Entry;
+    expect(authored.instruction).toContain("does, beside a step, names the control it acted on and the words it typed: name an act only on a step whose does is that act.");
+  });
 });

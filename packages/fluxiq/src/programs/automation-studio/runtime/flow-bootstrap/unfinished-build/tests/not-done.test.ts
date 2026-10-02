@@ -8,7 +8,14 @@ import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "../contracts.ts";
 import { automationStudioFlowBootstrapJudgeUnfinished } from "../judgement.ts";
-import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapNotDoneSaid, automationStudioFlowBootstrapProgressSaid, automationStudioFlowBootstrapTestSaid } from "../not-done.ts";
+import {
+  automationStudioFlowBootstrapBlockedSaid,
+  automationStudioFlowBootstrapNotDone,
+  automationStudioFlowBootstrapNotDoneSaid,
+  automationStudioFlowBootstrapProgressSaid,
+  automationStudioFlowBootstrapStopSaid,
+  automationStudioFlowBootstrapTestSaid
+} from "../not-done.ts";
 
 const CONFIRM = "Go through my friend requests and confirm everyone I have at least five mutual friends with, and leave every other request as it is.";
 
@@ -63,6 +70,35 @@ describe("what the person is told the last test found", () => {
 
   it("says a clean run was without failing when everything asked is done", () => {
     expect(automationStudioFlowBootstrapTestSaid(judgement({ done: 1, todo: [] }))).toBe("The Flow as far as it got (7 steps) ran from its start without failing.");
+  });
+});
+
+// Live run `run-muqiojz4-04a7a8fc` (t193, bigbox) stalled on five amendments
+// refused in a row and was told "every attempt to finish was refused", though
+// it never tried to finish.
+describe("what the person is told stopped the build", () => {
+  it("claims no attempt to finish for a run of unusable decisions", () => {
+    const said = automationStudioFlowBootstrapStopSaid("unusable_decisions");
+    expect(said).toBe("too many of its decisions in a row could not be used");
+    expect(said).not.toContain("finish");
+  });
+
+  it("says which kind of decision it was when the issues are known", () => {
+    expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.draft_amendments_refused"]))
+      .toBe("too many of its decisions in a row could not be used, because the model kept asking for changes to the Flow that changed nothing");
+    expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.repeat_refused"]))
+      .toBe("too many of its decisions in a row could not be used, because the model kept trying again what had already failed or changed nothing");
+    expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["bootstrap.instructed_act_missing"]))
+      .toBe("too many of its decisions in a row could not be used, because the Flow did not yet do what you asked");
+    // An issue with no words of its own adds nothing, and other stops are said as before.
+    expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["something.else"])).toBe("too many of its decisions in a row could not be used");
+    expect(automationStudioFlowBootstrapStopSaid("iterations", ["llm_evidence_loop.draft_amendments_refused"])).toBe("it used every decision it had without the Flow being finished");
+    expect(automationStudioFlowBootstrapStopSaid("budget")).toBe("a budget ran out");
+  });
+
+  it("puts refused amendments into words as what held a build up", () => {
+    expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.draft_amendments_refused"])).toBe("the model kept asking for changes to the Flow that changed nothing");
+    expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.draft_amendment_undone"])).toBe("the model kept asking for changes to the Flow that changed nothing");
   });
 });
 

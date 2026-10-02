@@ -22,6 +22,10 @@ const VERBS: readonly Entry[] = [
   { verb: "upload", kind: "other", word: /^upload$/u, gerund: "adding" },
   { verb: "read", kind: "read", word: /^(extract|read|collect|scrape)$/u, gerund: "reading" },
   { verb: "list", kind: "read", word: /^list$/u, gerund: "listing" },
+  // An element's or a step's whole description (`web.describe_element`), read
+  // rather than acted on. After `read`, so a title opening "Reading" still reads
+  // back as a read.
+  { verb: "describe", kind: "look", word: /^describe$/u, gerund: "reading" },
   { verb: "detect", kind: "look", word: /^detect$/u, gerund: "looking" },
   { verb: "look", kind: "look", word: /^(capture|snapshot|inspect|look|observe|find)$/u, gerund: "looking" },
   { verb: "scroll", kind: "other", word: /^scroll$/u, gerund: "scrolling" },

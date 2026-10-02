@@ -1,6 +1,4 @@
-/** A dry run's result codes (`programs/automation-studio/runtime/llm/node-tools/replay.ts`): all but `replayed` mean the step did something else the second time. */
-const REPLAY_PREFIX = "core.replay.";
-const REPLAYED = "core.replay.replayed";
+import { activityActionReplayFailing } from "./replay-failing.ts";
 
 /**
  * Short reasons, each told by the words a result code ends with. Generic words
@@ -35,7 +33,7 @@ const REASONS: readonly { words: RegExp; why: string }[] = [
  */
 export function activityActionFailureReason(resultCode: string): string | null {
   const code = resultCode.trim().toLowerCase();
-  if (code.startsWith(REPLAY_PREFIX) && code !== REPLAYED) return "it didn't work the same way again";
+  if (activityActionReplayFailing(code)) return "it didn't work the same way again";
   const segments = code.split(".").map((segment) => `_${segment.replace(/[\s-]+/gu, "_")}_`);
   // The last segment first, then each one before it back to the second: the
   // first segment is a namespace, not a reason.

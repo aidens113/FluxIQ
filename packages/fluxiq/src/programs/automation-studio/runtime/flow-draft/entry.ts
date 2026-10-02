@@ -5,9 +5,12 @@
 // the exploration runs, the list of what it did is in front of the model when
 // it writes the result.
 //
-// **Nothing here is page content.** Every field is either Core's own
-// bookkeeping or the argument the model itself wrote when it asked for the
-// action.
+// **Nothing here is page content.** Every field is Core's own bookkeeping,
+// the argument the model itself wrote when it asked for the action, or -- as
+// `does` -- the bound domain's own wording of that call (`./step.ts`, `words`):
+// the name of the control a handle stood for and the words the call typed or
+// looked for, made from names the model was already shown when it chose the
+// call. Nothing is read from a page to make this entry.
 //
 // Every step is listed, with the argument it ran with, and the guidance is
 // told in full -- a look too, as `disposition: look`. A look holds a step
@@ -49,7 +52,7 @@ const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it:
 // evidence, marked `taken`, and is in the Flow only once the model adds it
 // (`./step.ts`). The acts checklist beside it (`acts`) is what "ready" means
 // (audit A1, cause 1), so the telling names it.
-const AUTHORED_INSTRUCTION = "The Flow you are authoring. Every step you run is listed here as evidence (disposition taken) and is not in the Flow until you add it: add true on the call that runs it, or amend_draft add naming its step. inResult true marks a step of the Flow. Add only what the finished Flow needs, in the order it needs it: getting to the page, dismissing what covers it, and the acts themselves. Getting to a control includes the press that opened the chooser, drawer or menu it is inside: adding the control's step adds that press with it if you have not. Never add a look, a failed try, a detour, or a second copy of a step already added. acts lists what the person asked to be done, in their words: say which act a step does with act (a1, a2 ...) when you add it, and done then names that step. To do one act to every item of a list, three steps in this order: add the step listing them, with a where keeping only those to act on; do the act to one row it kept -- press that row's own control -- and add that press with its act; then send amend_draft {\"step\": <that press>, \"change\": \"repeat\", \"over\": <the listing>}, and never act yourself on the items your listing left out. The repeat goes on the press, never on the listing, and a listing that already keeps the right rows is not run again. For something only sometimes there, add it and mark it optional: a cookie banner, a sign-up popup or anything else that covers the page may not be there the next time the Flow runs, so its dismissal is optional. reorder moves a step, drop takes one out, rerun does one again with a corrected argument in its place. Complete when the Flow does what the person asked: it is then tested from its start and judged on what it does, and acts done is your own reading, not the bar. A did_not_work step can only be rerun. A step whose disposition is look only looked: it is listed so its number shows, and it can never be added or do an act.";
+const AUTHORED_INSTRUCTION = "The Flow you are authoring. Every step you run is listed here as evidence (disposition taken) and is not in the Flow until you add it: add true on the call that runs it, or amend_draft add naming its step. inResult true marks a step of the Flow. Add only what the finished Flow needs, in the order it needs it: getting to the page, dismissing what covers it, and the acts themselves. Getting to a control includes the press that opened the chooser, drawer or menu it is inside: adding the control's step adds that press with it if you have not. Never add a look, a failed try, a detour, or a second copy of a step already added. acts lists what the person asked to be done, in their words: say which act a step does with act (a1, a2 ...) when you add it, and done then names that step. does, beside a step, names the control it acted on and the words it typed: name an act only on a step whose does is that act. To do one act to every item of a list, three steps in this order: add the step listing them, with a where keeping only those to act on; do the act to one row it kept -- press that row's own control -- and add that press with its act; then send amend_draft {\"step\": <that press>, \"change\": \"repeat\", \"over\": <the listing>}, and never act yourself on the items your listing left out. The repeat goes on the press, never on the listing, and a listing that already keeps the right rows is not run again. For something only sometimes there, add it and mark it optional: a cookie banner, a sign-up popup or anything else that covers the page may not be there the next time the Flow runs, so its dismissal is optional. reorder moves a step, drop takes one out, rerun does one again with a corrected argument in its place. Complete when the Flow does what the person asked: it is then tested from its start and judged on what it does, and acts done is your own reading, not the bar. A did_not_work step can only be rerun. A step whose disposition is look only looked: it is listed so its number shows, and it can never be added or do an act.";
 
 /**
  * The draft as one entry, or nothing when the draft holds no step a result
@@ -89,6 +92,12 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     step: step.position,
     actionId: step.actionId,
     input: step.input,
+    // What the call named, in the domain's words: the control a handle in
+    // `input` stood for, and the words typed or looked for (`./step.ts`,
+    // `words`). A handle is a name for a control on one page, so without this
+    // every press read alike and run `run-muqiojz4-04a7a8fc` named a "×" as
+    // its add-to-cart act.
+    ...(step.words ? { does: { ...step.words } } : {}),
     ...(step.resultCode ? { resultCode: step.resultCode } : {}),
     changed: step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
     disposition: shownDisposition(step),

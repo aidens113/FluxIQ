@@ -16,6 +16,7 @@
 // codes go to `detail.ref` and `detail.text` of the tool rows only.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { activityActionReplayFailing } from "../../../../ui/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../llm/index.ts";
 import { emitAutomationStudioActivityWaitedOut } from "./ask/index.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
@@ -35,7 +36,9 @@ function resultCodeOf(result: unknown): string | undefined {
 function outcomeOf(status: "succeeded" | "failed", resultCode: string | undefined, dryRun: boolean): string {
   if (status === "failed") return "didn't work";
   if (!resultCode) return "done";
-  if (dryRun && resultCode.startsWith("core.replay.")) return resultCode === "core.replay.replayed" ? "done" : "didn't work the same way again";
+  // A step the site remembered, or whose effect was already there, held:
+  // `remembered` read "didn't work the same way again" (t193).
+  if (dryRun && resultCode.startsWith("core.replay.")) return activityActionReplayFailing(resultCode) ? "didn't work the same way again" : "done";
   return /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved/u.test(resultCode) ? "didn't work" : "done";
 }
 
@@ -66,8 +69,15 @@ function decisionFailed(error: unknown): void {
     : { phase: "thinking", label: `${title} — didn't work`, detail: { kind: "thought", title, status: "failed" } });
 }
 
-function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed", resultCode?: string, describe?: AutomationStudioLlmEvidenceLoopInput["describeCall"]): void {
-  const words = automationStudioActivityToolCall(call, describeSafely(describe, call));
+/**
+ * One row of a tool call. `described` is the domain's words for it, asked once
+ * before the call runs and kept for its end: asked again after a click, a
+ * handle on the page the click left was no longer there, so the row that ended
+ * a press of "No thanks" read "Clicking on the page" and its card "Click · the
+ * page" (t193, `run-muqiojz4-04a7a8fc`).
+ */
+function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed", resultCode: string | undefined, described: AutomationStudioActivityCallWords | undefined): void {
+  const words = automationStudioActivityToolCall(call, described);
   const record = [resultCode ? `Result: ${resultCode}` : "", words.node ? `Node: ${words.node}` : ""].filter(Boolean).join(" · ");
   emitAutomationStudioActivity({
     phase: words.phase,
@@ -112,14 +122,15 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
       return decision;
     },
     executeTool: async (call): Promise<JsonValue | Awaited<ReturnType<AutomationStudioLlmEvidenceLoopInput["executeTool"]>>> => {
-      toolActivity(call, "started", undefined, input.describeCall);
+      const described = describeSafely(input.describeCall, call);
+      toolActivity(call, "started", undefined, described);
       try {
         const result = await executeTool.call(input, call);
         emitAutomationStudioActivityWaitedOut(call.callId, result, automationStudioActivityToolCall(call).phase);
-        toolActivity(call, "succeeded", resultCodeOf(result), input.describeCall);
+        toolActivity(call, "succeeded", resultCodeOf(result), described);
         return result;
       } catch (error) {
-        toolActivity(call, "failed", undefined, input.describeCall);
+        toolActivity(call, "failed", undefined, described);
         throw error;
       }
     },

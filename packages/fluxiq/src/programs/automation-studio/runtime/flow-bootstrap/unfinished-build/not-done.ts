@@ -34,7 +34,12 @@ const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo | Automation
 const STOP_WORDS: Readonly<Record<AutomationStudioFlowBootstrapUnfinishedStop, string>> = Object.freeze({
   iterations: "it used every decision it had without the Flow being finished",
   tool_calls: "it used every action it had without the Flow being finished",
-  unusable_decisions: "every attempt to finish was refused",
+  // Any run of decisions the loop could not use ends a round this way -- a
+  // completion refused, an edit to the Flow that changed nothing, a call
+  // refused as a repeat -- so the words claim none of them. Live run
+  // `run-muqiojz4-04a7a8fc` was told "every attempt to finish was refused"
+  // after five refused amendments and no attempt to finish at all.
+  unusable_decisions: "too many of its decisions in a row could not be used",
   repeat_without_progress: "it kept repeating itself without getting further",
   judged_wrong: "the Flow it said was ready was tested from its start and judged not to do what you asked"
 });
@@ -62,6 +67,10 @@ const BLOCKED_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/permission/u, "a step needed your permission"],
   [/^llm_output\.|malformed|unreadable|provider_output/u, "the model's replies could not be read"],
   [/^llm_evidence_loop\.(?:already_answered|already_observed|look_withdrawn|no_progress)/u, "the model kept asking for what it had already been shown"],
+  // Its edits to the draft, refused again and again (`../../llm/draft-amendment-feedback.ts`).
+  [/^llm_evidence_loop\.draft_amendments?_(?:refused|undone)$/u, "the model kept asking for changes to the Flow that changed nothing"],
+  // A call refused unrun, because the same call had already failed or changed nothing there (`../../llm/repeat-guard/`).
+  [/^llm_evidence_loop\.repeat_refused$/u, "the model kept trying again what had already failed or changed nothing"],
   [/plan|flow_draft|validation|node|subflow/u, "the Flow it wrote was not one that could run"]
 ];
 
@@ -147,9 +156,15 @@ export function automationStudioFlowBootstrapProgressSaid(
   return `${proven} of the ${asked} things you asked worked when the Flow was run from its start${rest}${still}.`;
 }
 
-/** Why a round stopped, as a clause. */
-export function automationStudioFlowBootstrapStopSaid(stopped: AutomationStudioFlowBootstrapUnfinishedStop | "budget"): string {
-  return stopped === "budget" ? "a budget ran out" : STOP_WORDS[stopped];
+/**
+ * Why a round stopped, as a clause. A round that stopped on decisions it could
+ * not use says which kind they were, from the issues they were refused for,
+ * when those are known (`BLOCKED_WORDS`).
+ */
+export function automationStudioFlowBootstrapStopSaid(stopped: AutomationStudioFlowBootstrapUnfinishedStop | "budget", issueCodes: readonly string[] = []): string {
+  if (stopped === "budget") return "a budget ran out";
+  const blocked = stopped === "unusable_decisions" ? automationStudioFlowBootstrapBlockedSaid(issueCodes) : "";
+  return blocked ? `${STOP_WORDS[stopped]}, because ${blocked}` : STOP_WORDS[stopped];
 }
 
 function bounded(text: string, most: number): string {

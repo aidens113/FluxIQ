@@ -3,7 +3,7 @@
 // decision's amendments naming that step held until it has run.
 import { applyAutomationStudioFlowDraftAmendments, automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioLlmDecisionContextSignature, automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, automationStudioLlmEvidenceDraftAmendmentFeedback } from "../draft-amendment-feedback.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE, automationStudioLlmEvidenceDraftAmendmentFeedback } from "../draft-amendment-feedback.ts";
 import {
   automationStudioLlmEvidenceHeldAmendments,
   automationStudioLlmEvidenceLoopFailure as failure,
@@ -105,8 +105,10 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // rerun refused as one, or a decision whose every amendment was refused the
   // same way before -- run 36 sent `25 keep act a1` seven times, refused each time.
   const repeatedOnly = !rerun.request && !amended.applied && refusals.length > 0 && refusals.every((refusal) => refusal.repeated === true);
-  if (rerun.refused.some((refusal) => refusal.reason === "changes_nothing") || repeatedOnly) {
-    const stop = automationStudioLlmEvidenceRepeatStop(context, context.repeats.refusedAgain(iteration));
+  const rerunRepeated = rerun.refused.some((refusal) => refusal.reason === "changes_nothing");
+  if (rerunRepeated || repeatedOnly) {
+    // A round stalled on amendments refused again is said as that, not as a refused call (`../../flow-bootstrap/unfinished-build/not-done.ts`).
+    const stop = automationStudioLlmEvidenceRepeatStop(context, context.repeats.refusedAgain(iteration), rerunRepeated ? undefined : AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE);
     if (stop?.kind === "stalled") {
       if (context.input.propagateDecisionErrors) throw stop.error;
       return end("llm_evidence_loop.repeat_without_progress");
@@ -170,7 +172,9 @@ function tell(
 ): void {
   const amendmentFeedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
     refusals, applied, steps: context.draftSteps, stepsWithoutProgress: context.noProgress.steps, maxStepsWithoutProgress: context.limits.maxStepsWithoutProgress,
-    ...(sameDraftAs === undefined ? {} : { sameDraftAsIteration: sameDraftAs })
+    ...(sameDraftAs === undefined ? {} : { sameDraftAsIteration: sameDraftAs }),
+    // What is still to do, for an act named again that the checklist shows done (`../draft-amendment-feedback.ts`).
+    actsNotDone: context.input.draft ? context.input.draft.actsMissing?.(context.draftSteps) : undefined
   });
   context.accountEvidence(amendmentFeedback);
   automationStudioLlmDecisionContextSupersede(context.evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID);
