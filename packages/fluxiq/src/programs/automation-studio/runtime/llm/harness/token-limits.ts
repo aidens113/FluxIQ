@@ -76,8 +76,43 @@ export const AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS = 2_000;
  * its own diagnostics rather than this narrowing hiding them.
  */
 export function automationStudioLlmDecisionTokenLimits(named: Partial<AutomationStudioLlmTokenLimits> | undefined): Partial<AutomationStudioLlmTokenLimits> | undefined {
+  return withReplyAtMost(named, AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS);
+}
+
+/**
+ * What a judge's call reserves for its reply: 2,000 tokens.
+ *
+ * Derived the way the decision cap is: at least three times the largest
+ * recorded judge reply (412 tokens, run 38 `run-muqilf9s-c3211328`; its judge
+ * calls cost $0.0005-$0.0009), rounded up to the thousand. A judge answers in
+ * the diagnosis envelope -- one verdict word, what it expected and observed,
+ * and advice -- so its reply is no longer than a decision's.
+ *
+ * It matters for the same reason (cause C7 of that run): under a build's purse
+ * each call is held at its worst case, and at the default 8,000-token
+ * allowance a judge call was held at about $0.011, so a build with $0.009 of
+ * its $0.10 left could not have its test judged. The hold stays a true upper
+ * bound because the request's `max_tokens` is this figure.
+ *
+ * Every model-backed judge call takes it: the one call site,
+ * `../../result-verification/verify.ts`, serves the build-test judge, the
+ * runtime result check and the re-check after a repair's replay.
+ */
+export const AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS = 2_000;
+
+/**
+ * A judge call's token limits: the resolver's input and total, with the reply
+ * allowance at most `AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS`. Badly named
+ * limits pass through as named, as for a decision.
+ */
+export function automationStudioLlmJudgeTokenLimits(named: Partial<AutomationStudioLlmTokenLimits> | undefined): Partial<AutomationStudioLlmTokenLimits> | undefined {
+  return withReplyAtMost(named, AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS);
+}
+
+/** The resolved limits with the reply allowance at most `replyTokens`; limits the resolver refuses are returned as named. */
+function withReplyAtMost(named: Partial<AutomationStudioLlmTokenLimits> | undefined, replyTokens: number): Partial<AutomationStudioLlmTokenLimits> | undefined {
   const resolved = resolveAutomationStudioLlmTokenLimits(named);
-  return resolved.diagnostics.length ? named : { ...resolved.limits, maxOutputTokens: Math.min(resolved.limits.maxOutputTokens, AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS) };
+  return resolved.diagnostics.length ? named : { ...resolved.limits, maxOutputTokens: Math.min(resolved.limits.maxOutputTokens, replyTokens) };
 }
 
 /**
