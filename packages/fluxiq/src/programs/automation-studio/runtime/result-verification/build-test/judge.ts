@@ -30,7 +30,11 @@ import {
 import { automationStudioBuildTestUntestedCarried } from "./summary.ts";
 
 /** What the judge's calls cost. */
-export type AutomationStudioBuildTestJudgeSpend = { inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number };
+export type AutomationStudioBuildTestJudgeSpend = {
+  inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number;
+  /** Provider calls made: verify asks once, and again when the first answer is not yes (one intervention each). A build counts them with its other calls outside the loop. */
+  calls: number;
+};
 
 /**
  * The judge's verdict on a build's test.
@@ -57,7 +61,7 @@ export type AutomationStudioBuildTestJudgeInput = {
  */
 const NOT_A_FINDING_OF_A_TEST: ReadonlySet<string> = new Set([AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.noRecordSet]);
 
-const NOTHING_SPENT: AutomationStudioBuildTestJudgeSpend = Object.freeze({ inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
+const NOTHING_SPENT: AutomationStudioBuildTestJudgeSpend = Object.freeze({ inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0, calls: 0 });
 
 /** A judge bound to one build: its provider, its instruction and its declared keys. */
 export function automationStudioBuildTestJudge(deps: {
@@ -127,7 +131,7 @@ export function automationStudioBuildTestJudge(deps: {
 
 /** What every call cost, summed; a call that reported nothing counts nothing. */
 function spentBy(interventions: readonly AutomationStudioFlowIntervention[]): AutomationStudioBuildTestJudgeSpend {
-  const spent = { ...NOTHING_SPENT };
+  const spent = { ...NOTHING_SPENT, calls: interventions.length };
   for (const intervention of interventions) {
     const usage = intervention.tokenUsage;
     spent.inputTokens += finite(usage?.inputTokens);

@@ -10,6 +10,7 @@
 
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST } from "../harness.ts";
 import {
+  AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL,
   AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
   resolveAutomationStudioDeepSeekModel,
   type AutomationStudioDeepSeekModel
@@ -49,8 +50,14 @@ const PEAK_RATES_USD_PER_MILLION_TOKENS: Readonly<Record<AutomationStudioDeepSee
 /** How much less an off-peak call costs: exactly half, on every rate and every model. */
 export const AUTOMATION_STUDIO_DEEPSEEK_OFF_PEAK_RATE_MULTIPLIER = 0.5;
 
+// The three published rates below are `deepseek-flash`'s, the built-in default,
+// and stay so whatever `FLUXIQ_LLM_DEFAULT_MODEL` says (`models.ts`): they are
+// dated figures, not a price for any particular call. Nothing in Core prices a
+// call with them -- every estimate and reservation passes the model the call is
+// made on to `estimateAutomationStudioDeepSeekCostUsd` below, which reads that
+// model's own row.
 export const AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TOKENS =
-  PEAK_RATES_USD_PER_MILLION_TOKENS[AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL].cacheMissInput;
+  PEAK_RATES_USD_PER_MILLION_TOKENS[AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL].cacheMissInput;
 /**
  * What an input token costs when the provider served it from its own context
  * cache, as against {@link AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TOKENS}
@@ -65,9 +72,9 @@ export const AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_MISS_INPUT_USD_PER_MILLION_TO
  * turns out to be wrong cannot let a run overspend its budget.
  */
 export const AUTOMATION_STUDIO_DEEPSEEK_PEAK_CACHE_HIT_INPUT_USD_PER_MILLION_TOKENS =
-  PEAK_RATES_USD_PER_MILLION_TOKENS[AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL].cacheHitInput;
+  PEAK_RATES_USD_PER_MILLION_TOKENS[AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL].cacheHitInput;
 export const AUTOMATION_STUDIO_DEEPSEEK_PEAK_OUTPUT_USD_PER_MILLION_TOKENS =
-  PEAK_RATES_USD_PER_MILLION_TOKENS[AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL].output;
+  PEAK_RATES_USD_PER_MILLION_TOKENS[AUTOMATION_STUDIO_DEEPSEEK_BUILT_IN_DEFAULT_MODEL].output;
 
 /**
  * What one call cost, with the part of its input the provider served from cache
@@ -75,8 +82,9 @@ export const AUTOMATION_STUDIO_DEEPSEEK_PEAK_OUTPUT_USD_PER_MILLION_TOKENS =
  *
  * `cacheHitInputTokens` is a subset of `inputTokens`, defaulting to none, so
  * every caller that does not know about caching gets exactly the conservative
- * all-miss figure it always got. `model` defaults to the configured default, so
- * a caller that names none is priced for the model it will actually get. The
+ * all-miss figure it always got. `model` defaults to Core's default model
+ * (`FLUXIQ_LLM_DEFAULT_MODEL`, resolved at load), so a caller that names none is
+ * priced for the model it will actually get. The
  * rates are scaled by a thousand rather than a hundred because a cache-hit rate
  * has three decimal places; every rate on the list is a whole number of
  * thousandths, so the arithmetic stays integral.

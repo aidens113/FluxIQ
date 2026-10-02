@@ -459,8 +459,11 @@ export function automationStudioLlmEvidenceValidTools(tools: AutomationStudioLlm
     // A first look is free only where it is a look. That is a tool that only
     // observes -- or one whose calls declare their own effect, whose initial
     // argument the *caller* writes rather than the model, and which is
-    // therefore the caller's statement that this one call observes.
-    && (tool.initialObservation === undefined || ((tool.effect === "observe" || tool.perCallEffect === true) && isJsonObject(tool.initialObservation) && exactKeys(tool.initialObservation, ["input"]) && isJsonObject(tool.initialObservation.input))));
+    // therefore the caller's statement that this one call observes. Its
+    // `arrival`, run instead to go to where the Flow starts, is the same tool
+    // going somewhere, so only a tool whose calls declare their effect has one.
+    && (tool.initialObservation === undefined || ((tool.effect === "observe" || tool.perCallEffect === true) && isJsonObject(tool.initialObservation) && exactKeys(tool.initialObservation, ["input", "arrival"]) && isJsonObject(tool.initialObservation.input)
+      && (tool.initialObservation.arrival === undefined || (tool.perCallEffect === true && isJsonObject(tool.initialObservation.arrival))))));
   return structurallyValid
     && tools.filter((tool) => tool.initialObservation !== undefined).length <= 1
     && (!tools.some((tool) => tool.repeatPolicy === "after_mutation") || tools.some((tool) => tool.effect === "mutate"));

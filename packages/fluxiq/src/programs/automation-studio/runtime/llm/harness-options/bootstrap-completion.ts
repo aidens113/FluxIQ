@@ -11,9 +11,10 @@
 // So every check a completed result must pass runs here, as the evidence
 // loop's completion check: the wrapper, the plan's structure, the evidence
 // profile's limits, the domain's resolution of each node's parameters, the
-// registry validation, whether the Flow could answer the instruction at all,
-// whether it could run at all, and whether a person will be asked before every
-// act of a class they are asked about. A result that passes is handed back ready to
+// registry validation, and whether a person will be asked before every act of
+// a class they are asked about. Whether the Flow could answer the instruction
+// and whether it could run from where it starts are asked too, as information
+// (below). A result that passes is handed back ready to
 // persist. A result that fails comes back with the code creation fails under,
 // the issues that refused it, and the feedback the model sees before it is
 // asked again -- issue codes and plan paths, which are the plan's own
@@ -50,6 +51,16 @@
 // `flow-bootstrap/reachability/` answers that from the plan and the start
 // location the build was given.
 //
+// **Both are information now, not refusals (t195-w28a).** Under the user's rule
+// that nothing restricts the model but the permission gates, a Flow either
+// question finds wanting is accepted like any other: it goes to its test from
+// the start, and the judge of that test decides. What the two checks found
+// travels on the accepted verdict as `notes` (`AutomationStudioBuildTestNote`),
+// reaches the judge's `buildTest` account beside the steps
+// (`service/flow-bootstrap-commands/build-judge.ts`), and reaches a repair
+// through the judge's reasons. A Flow that cannot answer is still a wrong Flow;
+// it is now the judge, reading what the test did, that says so.
+//
 // *Does this Flow do what it was told to do?* is no longer asked here (t195).
 // It was answered from the draft alone (`flow-bootstrap/instructed-acts/`), and
 // that answer refused lane B's `choice_is_the_act_step` six times, lane D's
@@ -64,10 +75,14 @@
 // `flow-bootstrap/instructed-acts/permission.ts`).
 //
 // None costs a provider call, and each refusal carries its own account of what
-// is missing beside the issue rather than only a code.
+// is missing beside the issue rather than only a code. A plan that cannot be
+// built at all -- it does not parse, a parameter does not resolve, the registry
+// refuses it -- is still refused: that is input that cannot execute, not a
+// judgement about what it would do.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
+import type { AutomationStudioBuildTestNote } from "../../result-verification/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
@@ -98,13 +113,15 @@ import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HAN
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters } from "./plan-parameter-resolution.ts";
 
+// `evidence_completion_cannot_answer` is still produced, by the one act rule
+// that refuses (an undeclared consequence a person is asked about); the
+// answerability and start-location checks no longer refuse at all.
 export type AutomationStudioFlowBootstrapCompletionFailureCode = Extract<AutomationStudioFlowBootstrapPhaseFailureCode,
   | "flow_bootstrap.evidence_completion_wrapper_invalid"
   | "flow_bootstrap.evidence_completion_plan_invalid"
   | "flow_bootstrap.evidence_completion_profile_limit_exceeded"
   | "flow_bootstrap.evidence_completion_parameters_unresolved"
-  | "flow_bootstrap.evidence_completion_cannot_answer"
-  | "flow_bootstrap.evidence_completion_cannot_reach_start">;
+  | "flow_bootstrap.evidence_completion_cannot_answer">;
 
 export type AutomationStudioFlowBootstrapCompletionVerdict =
   | {
@@ -121,6 +138,13 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
      * beside `check`, not in it, because the loop reads a check by its exact keys.
      */
     warnings?: AutomationStudioFlowBootstrapIssue[];
+    /**
+     * What the capability checks found this Flow cannot do: no step producing
+     * the records the instruction asks for, or no step going to where it
+     * starts. Information for the judge of its test, never a refusal. Beside
+     * `check` for the same reason as `warnings`.
+     */
+    notes?: AutomationStudioBuildTestNote[];
   }
   | {
     ok: false;
@@ -289,16 +313,22 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // The capability questions, of the furthest plan there is. Answering is not
   // running: a Flow that acts on the target it was told to start at and never
   // goes there fails before its first step, whatever it would have produced.
+  // What they find is information for the judge (t195-w28a), never a refusal,
+  // so the answerability facts carry no refusal's issue code either.
   let answerability: AutomationStudioLlmEvidenceLoopAnswerability | undefined;
+  const notes: AutomationStudioBuildTestNote[] = [];
   if (capabilityPlan) {
     const answers = checkAutomationStudioFlowBootstrapAnswersInstruction({ plan: capabilityPlan, registry: input.registry, resolution: input.resolution, instructionText: input.instructionText });
-    answerability = answers.answerability;
+    const { recordsRequested, recordProducerPresent, recordStorePresent } = answers.answerability;
+    answerability = { recordsRequested, recordProducerPresent, recordStorePresent };
     if (!answers.ok) {
-      failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [answers.issue], about: about(capabilityPlan), detail: { key: "cannotAnswer", value: answers.cannotAnswer, instruction: answers.instruction } });
+      const columns = strings(answers.cannotAnswer.columns);
+      notes.push({ code: "bootstrap.cannot_answer_instruction", said: answers.issue.message, ...(columns.length ? { columns } : {}) });
     }
     const reaches = checkAutomationStudioFlowBootstrapReachesStartLocation({ plan: capabilityPlan, registry: input.registry, resolution: input.resolution, startLocation: input.startLocation });
     if (!reaches.ok) {
-      failures.push({ code: "flow_bootstrap.evidence_completion_cannot_reach_start", issues: [reaches.issue], about: about(capabilityPlan), detail: { key: "cannotReach", value: reaches.cannotReach, instruction: reaches.instruction } });
+      const starts = reaches.cannotReach.starts;
+      notes.push({ code: "bootstrap.cannot_reach_start_location", said: reaches.issue.message, ...(typeof starts === "string" && starts ? { starts } : {}) });
     }
   }
   // Whether every act a person is asked about is declared, read off the draft
@@ -321,8 +351,14 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     summary: accepted.summary,
     buildPlan,
     check: { ok: true, answerability: answerability ?? { recordsRequested: false, recordProducerPresent: false, recordStorePresent: false }, ...restoredField },
-    ...(warnings.length ? { warnings } : {})
+    ...(warnings.length ? { warnings } : {}),
+    ...(notes.length ? { notes } : {})
   };
+}
+
+/** The strings of a list an account carries, as written. */
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "") : [];
 }
 
 /** Registry validation, which may throw. */
@@ -414,7 +450,7 @@ type CompletionFailure = {
   code: AutomationStudioFlowBootstrapCompletionFailureCode;
   issues: AutomationStudioFlowBootstrapIssue[];
   about?: RefusalSubject;
-  detail?: { key: "cannotAnswer" | "cannotReach" | "missingActs" | "limitsExceeded"; value: JsonObject | JsonObject[]; instruction: string };
+  detail?: { key: "missingActs" | "limitsExceeded"; value: JsonObject | JsonObject[]; instruction: string };
 };
 
 /**

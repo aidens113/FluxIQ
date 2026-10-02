@@ -523,8 +523,10 @@ records it from every call it is handed, dry-run replay steps included, and
 before a decision records the newest call's state when a call ran since the
 last one -- Core's own notes and a shifting window record nothing. It asks the
 host for a capture only when the newest call carried none. An evidence-guided
-build takes the start state from its free first look (captured right after it
-only when the look carried none); a build that writes its Flow in one reply
+build takes the start state from its opening call -- the free first look, or,
+for a build told where its Flow starts, the arrival there that the loop makes in
+its place (`automation-studio/llm-flow-bootstrap.md`, F31) -- captured right after it only when
+that call carried none; a build that writes its Flow in one reply
 observes the start before anything runs.
 
 A draft step that repeats a span over a list

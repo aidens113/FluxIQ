@@ -90,3 +90,20 @@ describe("the run-node tool's declaration", () => {
     expect(automationStudioLlmRunNodeTool({ nodeIds: [] })).toBeUndefined();
   });
 });
+
+// F31: the call a build told where it starts opens with.
+describe("the run-node tool's opening arrival", () => {
+  const look = { node: "web.output.dom-capture", parameters: {}, consequences: [] };
+  const arrival = { node: "web.output.navigate", parameter: "url", location: "https://start.example/" };
+
+  it("rides on the first look as a call of this tool, the location written into the named parameter", () => {
+    const tool = automationStudioLlmRunNodeTool({ nodeIds: ["web.output.dom-capture", "web.output.navigate"], initial: look, arrival });
+    expect(tool?.initialObservation).toEqual({ input: look, arrival: { node: "web.output.navigate", parameters: { url: "https://start.example/" }, consequences: [] } });
+    expect(automationStudioLlmEvidenceValidTools([tool!])).toBe(true);
+  });
+
+  it("is never offered for a node outside the library, nor without a first look to ride on", () => {
+    expect(automationStudioLlmRunNodeTool({ nodeIds: ["web.output.dom-capture"], initial: look, arrival })?.initialObservation).toEqual({ input: look });
+    expect(automationStudioLlmRunNodeTool({ nodeIds: ["web.output.navigate"], arrival })?.initialObservation).toBeUndefined();
+  });
+});

@@ -219,6 +219,10 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       traceStepCount: 2,
       providerCallCount: 1,
       decisionCount: 1,
+      // The judge's one call is a call outside the loop, counted where the
+      // accounting already has its spend (t195-w28b).
+      additionalProviderCallCount: 1,
+      totalProviderCallCount: 2,
       toolCallCount: 1,
       toolIds: ["inspect"]
     });

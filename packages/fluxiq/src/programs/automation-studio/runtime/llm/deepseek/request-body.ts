@@ -226,11 +226,18 @@ const AUTOMATION_STUDIO_DEEPSEEK_NODE_CATALOG_NOTE =
 /**
  * What `startLocation` means, said once.
  *
- * The build begins nowhere: the target it is to work on has not been opened for
- * it, and every call it makes is refused until it has gone there itself. That
- * is deliberate. A Flow is assembled from the steps that ran, so a build that
- * was handed its page writes a Flow with no step that reaches one -- measured
- * on 2026-09-23, and the reason this field exists.
+ * The build begins nowhere: the target it is to work on is not handed to it,
+ * and every action is refused until the Flow has gone there. That is deliberate.
+ * A Flow is assembled from the steps that ran, so a build that was handed its
+ * page writes a Flow with no step that reaches one -- measured on 2026-09-23,
+ * and the reason this field exists.
+ *
+ * Going there is no longer the model's first paid decision: the loop opens the
+ * build by running the domain's arrival with startLocation, keeps that step as
+ * the Flow's first, and shows its result as the first evidence entry
+ * (`../evidence-loop.ts`, F31). The note used to say "nothing was opened for
+ * you", and `run-muqc07fh-eeffbc86` spent 17k tokens on that navigation. It
+ * still says what to do when the arrival failed, or a domain declared none.
  */
 const FLOW_START_LOCATION_NOTE =
-  "You are not at startLocation yet, and nothing was opened for you. Your first call must be the node that goes there, with startLocation as its destination; every other call is refused until it has run. It is also the Flow's own first step, because the Flow is built from the steps you run.";
+  "The build opened by going to startLocation: the first entry of your evidence is that step, and it is the Flow's first step, already kept. Only if that entry failed, or your evidence does not open with it, must your first call be the node that goes there, with startLocation as its destination; every action is refused until it has run.";

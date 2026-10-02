@@ -49,4 +49,16 @@ describe("the record an exhausted evidence loop ends with", () => {
     expect(record).toMatchObject({ budgetBound: "cost", costRefusal: refusal });
     expect(record.costRefusal).not.toBe(refusal);
   });
+
+  it("carries the purse's standing as the cost figures only where the loop's count ran out of cost (t194-w47)", () => {
+    const standing = { ...refusal, projectedCostUsd: 0.0314, spentUsd: 0.0738, ceilingUsd: 0.1, declinedBy: "loop_budget" as const };
+    // Run 13: the count found no decision the cost budget could pay for, and the purse never saw one.
+    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", lastRemaining: { limitedBy: "cost" }, purseRefusal: standing }))
+      .toMatchObject({ budgetBound: "cost", costRefusal: standing });
+    // Tokens or time ran out: the standing is no cost ending's figures, and the bound stays the one that ran out.
+    const tokens = automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "budget", lastRemaining: { limitedBy: "tokens" }, purseRefusal: standing });
+    expect(tokens).toMatchObject({ budgetBound: "tokens" });
+    expect(tokens).not.toHaveProperty("costRefusal");
+    expect(automationStudioLlmEvidenceLoopExhaustion({ ...base, bound: "iterations", lastRemaining: { limitedBy: "cost" }, purseRefusal: standing })).not.toHaveProperty("costRefusal");
+  });
 });

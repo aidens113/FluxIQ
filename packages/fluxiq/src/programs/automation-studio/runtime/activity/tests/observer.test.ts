@@ -167,3 +167,31 @@ describe("observeAutomationStudioEvidenceLoop", () => {
     }
   });
 });
+
+// Every chat step says what it does (user rule): the decision's heading and the call's card name the
+// control and the words the call types, as the bound domain describes them (crossborder run-muqc07fh-eeffbc86).
+describe("a call the bound domain describes", () => {
+  const typing = { kind: "tool_call", callId: "c1", toolId: "core.run_node", input: { node: "web.output.dom-type", parameters: { target: { handle: "t11" }, text: "USB-C hub", submit: true }, consequences: [] } };
+  const describeCall = (call: { toolId: string; value: Record<string, unknown> }) => {
+    const parameters = call.value.parameters as { target?: { handle?: string }; text?: string } | undefined;
+    return parameters?.target?.handle === "t11" ? { target: "Search", text: parameters.text } : undefined;
+  };
+
+  it("heads the decision and titles the call with the control and the words typed", async () => {
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ describeCall, decide: async () => automationStudioActivityDecisionReason.attach({ ...typing }, "Search for the hub.") as never }));
+    await inScope(async () => {
+      await observed.decide(decideRequest);
+      await observed.executeTool({ callId: "c1", toolId: "core.run_node", value: typing.input });
+    });
+    const titles = seen.map((event) => event.detail?.title);
+    expect(titles).toContain('Typing "USB-C hub" into “Search”');
+    expect(seen.filter((event) => event.detail?.kind === "tool").map((event) => event.detail?.title)).toEqual(['Typing "USB-C hub" into “Search”', 'Typing "USB-C hub" into “Search”']);
+  });
+
+  it("says the verb alone when the domain describes nothing, or answers in another shape", async () => {
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ describeCall: () => ({ target: 7 }) as never }));
+    await inScope(() => observed.executeTool({ callId: "c1", toolId: "core.run_node", value: typing.input }));
+    expect(seen[0]!.detail?.title).toBe("Typing into the page");
+  });
+});
+

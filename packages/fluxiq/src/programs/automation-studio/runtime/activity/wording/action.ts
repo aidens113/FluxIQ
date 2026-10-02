@@ -1,9 +1,24 @@
 import { activityActionVerb, type ActivityActionVerb } from "../../../../../ui/index.ts";
 import { automationStudioActivityHumanLabel } from "./human-label.ts";
 
-type Phrase = { verb: ActivityActionVerb; plain: string; named?: (name: string) => string; also?: { word: RegExp; plain: string } };
+type Phrase = {
+  verb: ActivityActionVerb;
+  plain: string;
+  named?: (name: string) => string;
+  /** The words the call types or looks for, with the control's name when there is one. */
+  said?: (text: string, name: string | undefined) => string;
+  also?: { word: RegExp; plain: string };
+};
 
+/** What a call names, in words a person reads (`AutomationStudioLlmEvidenceCallWords`): the control, and the words it types or looks for. */
+export type AutomationStudioActivityCallWords = { target?: string | undefined; text?: string | undefined };
+
+/** A control's name, in the curly quotes a card reads its target from (`ui/activity-action/action-of.ts`). */
 const quoted = (name: string): string => `“${name}”`;
+/** Words typed or looked for, in straight quotes, so a card never reads them as the control. */
+const said = (text: string): string => `"${text}"`;
+/** The most of a typed or searched text a title shows. */
+const MAX_SAID = 60;
 
 /**
  * What a node or tool does, told by the verbs in its id. The first word of the
@@ -19,19 +34,20 @@ const PHRASES: readonly Phrase[] = [
   { verb: "navigate", plain: "Opening a page" },
   { verb: "back", plain: "Going back a page" },
   { verb: "click", plain: "Clicking on the page", named: (name) => `Clicking ${quoted(name)}` },
-  { verb: "type", plain: "Typing into the page", named: (name) => `Typing into ${quoted(name)}` },
+  { verb: "type", plain: "Typing into the page", named: (name) => `Typing into ${quoted(name)}`, said: (text, name) => `Typing ${said(text)}${name ? ` into ${quoted(name)}` : ""}` },
+  { verb: "search", plain: "Searching the page", said: (text) => `Searching the page for ${said(text)}` },
   { verb: "clear", plain: "Clearing a field", named: (name) => `Clearing ${quoted(name)}` },
   { verb: "select", plain: "Choosing an option", named: (name) => `Choosing an option in ${quoted(name)}` },
   { verb: "check", plain: "Ticking a box", named: (name) => `Ticking ${quoted(name)}` },
   { verb: "upload", plain: "Adding a file", named: (name) => `Adding a file to ${quoted(name)}` },
   { verb: "read", plain: "Reading from the page", also: { word: /^(list|rows|records|items)$/u, plain: "Reading the list" } },
   { verb: "detect", plain: "Looking for something on the page", also: { word: /^(repeating|list|structure)$/u, plain: "Looking for the list of items" } },
-  { verb: "look", plain: "Looking at the page" },
+  { verb: "look", plain: "Looking at the page", said: (text) => `Looking for ${said(text)} on the page` },
   { verb: "scroll", plain: "Scrolling the page" },
   { verb: "wait", plain: "Waiting for the page" },
   { verb: "assert", plain: "Checking the page" },
   { verb: "download", plain: "Downloading a file" },
-  { verb: "key", plain: "Pressing a key" },
+  { verb: "key", plain: "Pressing a key", said: (text, name) => `Pressing ${said(text)}${name ? ` in ${quoted(name)}` : ""}` },
   { verb: "dialog", plain: "Answering a dialog" },
   { verb: "tab", plain: "Switching tabs" }
 ];
@@ -48,6 +64,13 @@ function elementName(parameters: unknown): string | undefined {
   return automationStudioActivityHumanLabel((element as { accessibleName?: unknown }).accessibleName, 60);
 }
 
+/** Words a call types or looks for, collapsed and bounded; nothing for an empty one. */
+function saidText(text: string | undefined): string | undefined {
+  const collapsed = typeof text === "string" ? text.replace(/\s+/gu, " ").trim().replace(/"/gu, "'") : "";
+  if (!collapsed) return undefined;
+  return collapsed.length <= MAX_SAID ? collapsed : `${collapsed.slice(0, MAX_SAID - 1).trimEnd()}…`;
+}
+
 /**
  * What a step does, in a person's words: its authored label when it has one
  * ("Open search"), else the verb its id names with the element's name when the
@@ -55,7 +78,7 @@ function elementName(parameters: unknown): string | undefined {
  * ("Opening a page"). Nothing when the id names no known verb, so the caller
  * says something plain of its own rather than the id.
  */
-export function automationStudioActivityAction(input: { id?: string | undefined; parameters?: unknown; label?: string | undefined }): string | undefined {
+export function automationStudioActivityAction(input: { id?: string | undefined; parameters?: unknown; label?: string | undefined; words?: AutomationStudioActivityCallWords | undefined }): string | undefined {
   const label = automationStudioActivityHumanLabel(input.label, 120);
   if (label) return label.charAt(0).toUpperCase() + label.slice(1);
   if (typeof input.id !== "string") return undefined;
@@ -65,7 +88,11 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
     const verb = named ? PHRASES.find((candidate) => candidate.verb === named) : undefined;
     if (!verb) continue;
     if (verb.also && words.slice(index + 1).some((rest) => verb.also!.word.test(rest))) return verb.also.plain;
-    const name = verb.named ? elementName(input.parameters) : undefined;
+    // The domain's own reading of the call first (the control a handle names,
+    // the words it types), then the element a resolved node carries.
+    const name = automationStudioActivityHumanLabel(input.words?.target, 60) ?? (verb.named ? elementName(input.parameters) : undefined);
+    const text = saidText(input.words?.text);
+    if (text !== undefined && verb.said) return verb.said(text, name);
     return name && verb.named ? verb.named(name) : verb.plain;
   }
   return undefined;

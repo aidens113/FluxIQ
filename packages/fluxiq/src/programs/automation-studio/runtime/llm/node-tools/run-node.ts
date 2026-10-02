@@ -88,10 +88,19 @@ const DESCRIPTION = [
  * before the first paid decision, so the model's first question is asked with
  * the target already in front of it. The caller writes that argument, not the
  * model, which is why it may be declared on a tool that can also act.
+ *
+ * `arrival` is the call that takes the target to where the Flow starts: the
+ * node that goes somewhere, the parameter the destination is written into, and
+ * the destination, which Core carries as given and never reads. It rides on
+ * `initial` and is offered only when its node is in the library, so a node the
+ * domain cannot run is never the call a build opens with. The loop then opens
+ * with it instead of the look (`../evidence-loop.ts`), as the step the model
+ * would otherwise have paid a decision to take (F31, `run-muqc07fh-eeffbc86`).
  */
 export function automationStudioLlmRunNodeTool(input: {
   nodeIds: readonly string[];
   initial?: JsonObject;
+  arrival?: { node: string; parameter: string; location: string };
 }): AutomationStudioLlmEvidenceTool | undefined {
   const nodeIds = [...new Set(input.nodeIds)].filter((id) => typeof id === "string" && id.length > 0).sort();
   if (!nodeIds.length) return undefined;
@@ -124,6 +133,13 @@ export function automationStudioLlmRunNodeTool(input: {
         }
       }
     },
-    ...(input.initial ? { initialObservation: { input: input.initial } } : {})
+    ...(input.initial ? { initialObservation: { input: input.initial, ...arrivalFor(input.arrival, nodeIds) } } : {})
   };
+}
+
+/** The arrival as a call of this tool, when its node is one the library offers. */
+function arrivalFor(arrival: { node: string; parameter: string; location: string } | undefined, nodeIds: readonly string[]): { arrival?: JsonObject } {
+  if (!arrival || !arrival.parameter || !arrival.location || !nodeIds.includes(arrival.node)) return {};
+  // Nothing lasting: going to a page changes no saved thing.
+  return { arrival: { node: arrival.node, parameters: { [arrival.parameter]: arrival.location }, consequences: [] } };
 }

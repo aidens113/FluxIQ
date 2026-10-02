@@ -32,6 +32,9 @@ export type AutomationStudioFlowBootstrapBudgetSizes = {
   maxRounds?: number | undefined;
 };
 
+/** What a cost ending says was spent (`spending` below). */
+type Spending = { spentUsd: number; pendingUsd: number; projectedCostUsd?: number | undefined; projectedAtLeast?: boolean | undefined };
+
 /** The budget ending. */
 export function automationStudioFlowBootstrapBudgetExhausted(input: {
   bound: AutomationStudioFlowBootstrapBudgetBound;
@@ -43,12 +46,15 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   /** Whether the Flow so far was kept for the next build. */
   kept: boolean;
   /**
-   * Where the build's purse refused its next call (`../../llm/build-purse/`):
-   * what the whole build had spent, what was held for calls still in flight,
-   * and that call's worst case -- absent where the provider does not price. Said
-   * only for a `cost` ending, so the person reads the figures that stopped it.
+   * What the whole build had spent when its cost budget stopped it, what was
+   * held for calls still in flight, and the worst case of the call it declined
+   * (`../../llm/build-purse/`) -- absent where the provider does not price or no
+   * call was priced. `projectedAtLeast` where that is the last call's worst
+   * case, which the next, larger one costs at least at worst: the loop's count
+   * declined it before the purse priced it. Said only for a `cost` ending, so
+   * the person reads the figures that stopped it.
    */
-  spending?: { spentUsd: number; pendingUsd: number; projectedCostUsd?: number | undefined } | undefined;
+  spending?: Spending | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const notDone = automationStudioFlowBootstrapNotDone(input.checklist);
   const said = automationStudioFlowBootstrapProgressSaid(input.checklist, input.judgement);
@@ -59,7 +65,7 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   const blocked = automationStudioFlowBootstrapBlockedSaid(input.judgement.lastIssueCodes)
     || (input.judgement.stopped === "budget" ? "" : automationStudioFlowBootstrapStopSaid(input.judgement.stopped));
   const tried = `I explored live ${input.rounds === 1 ? "once" : `${input.rounds} times`} over ${input.decisions} decisions${blocked ? `, and what held it up was that ${blocked}` : ""}.`;
-  const spending = input.bound === "cost" && input.spending ? spendingSaid(input.spending) : "";
+  const spending = input.bound === "cost" && input.spending ? spendingSaid(input.spending, input.sizes.maxCostUsd) : "";
   const message = [`The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished${spending}.${progress}`, automationStudioFlowBootstrapTestSaid(input.judgement), tried, kept.trim()]
     .filter(Boolean)
     .join(" ");
@@ -83,13 +89,17 @@ function budgetSaid(bound: AutomationStudioFlowBootstrapBudgetBound, sizes: Auto
   }
 }
 
-/** What the build had spent and what its refused call could have cost, as the person is told it. */
-function spendingSaid(spending: { spentUsd: number; pendingUsd: number; projectedCostUsd?: number | undefined }): string {
+/** What the build had spent and what its declined call could have cost, as the person is told it. */
+function spendingSaid(spending: Spending, ceilingUsd: number | undefined): string {
   const held = spending.pendingUsd > 0 ? `, with ${usd(spending.pendingUsd)} more held for calls still running` : "";
   const spent = `: it had spent ${usd(spending.spentUsd)}${held}`;
-  return spending.projectedCostUsd !== undefined
-    ? `${spent}, and its next call could have cost up to ${usd(spending.projectedCostUsd)}`
-    : `${spent}, which left nothing for its next call`;
+  if (spending.projectedCostUsd !== undefined) {
+    return spending.projectedAtLeast
+      ? `${spent}, and its next call could have cost ${usd(spending.projectedCostUsd)} or more`
+      : `${spent}, and its next call could have cost up to ${usd(spending.projectedCostUsd)}`;
+  }
+  const left = ceilingUsd === undefined ? 0 : ceilingUsd - spending.spentUsd - spending.pendingUsd;
+  return left >= 0.0005 ? `${spent}, which left ${usd(left)}, too little for its next call` : `${spent}, which left nothing for its next call`;
 }
 
 function usd(amount: number): string {
