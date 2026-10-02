@@ -84,6 +84,7 @@ export type ActivityActionVerb =
   | "upload"
   | "read"
   | "list"
+  | "describe"
   | "detect"
   | "look"
   | "scroll"

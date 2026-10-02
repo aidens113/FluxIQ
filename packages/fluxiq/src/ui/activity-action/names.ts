@@ -6,7 +6,9 @@ const PAIRS: readonly (readonly [ActivityActionKind, string])[] = [
   ["type", "Type"],
   ["navigate", "Open page"],
   ["read", "Read list"],
-  ["look", "Look at page"],
+  // Not "Look at page": a look names what it looks at or for (a control's
+  // details, a list, words on the page), and the card's target says which.
+  ["look", "Look"],
   ["wait", "Wait"],
   ["person_check", "Robot check"],
   ["permission", "Permission"],
