@@ -183,23 +183,36 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(outcome.kind === "finished" && outcome.judged).toMatchObject({ verdict: "unknown", why: "the test read no cart" });
   });
 
-  it("repairs a re-authored Flow whose carried steps its test never ran, told to run them again (run 41)", async () => {
+  // An extended draft's carried steps have no replay (`llm/node-tools/draft-from-flow.ts`),
+  // so no build's test can run them. Repairing for them ended every improvement
+  // the judge could not see whole as "not doable" (the extension chat's "improve
+  // an automation"). The claims still never decide (run 41): the judge is told
+  // those steps did not run, the outcome names them, and the first real run is judged.
+  it("is the result, unverified and naming them, when a re-authored Flow's carried steps were never run in its test (run 41)", async () => {
     const carried = Array.from({ length: 9 }, (_, index) => step(index + 1, { id: index < 4 ? `d${index + 1}` : `f${index + 1}`, acts: index === 0 ? ["a1"] : index === 1 ? ["a1.quantity"] : index === 4 ? ["a2"] : [] }));
     const unsure: AutomationStudioFlowBootstrapTestVerdict = { verdict: "unknown", why: "steps 5 to 9 were carried from the earlier Flow and not run", untestedCarried: [5, 6, 7, 8, 9], spent: JUDGE_SPEND };
-    const { input, requests, announced } = harness([
+    const { input, requests } = harness([() => finished(carried)], [() => unsure]);
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind).toBe("finished");
+    expect(requests).toHaveLength(1);
+    expect(outcome.kind === "finished" && outcome.judged).toMatchObject({ verdict: "unknown", untestedCarried: [5, 6, 7, 8, 9] });
+  });
+
+  it("still repairs a re-authored Flow the judge found wrong, carried steps or not", async () => {
+    const carried = Array.from({ length: 6 }, (_, index) => step(index + 1, { id: index < 3 ? `d${index + 1}` : `f${index + 1}` }));
+    const wrong: AutomationStudioFlowBootstrapTestVerdict = { verdict: "no", observed: "the test read no cart", findings: [], spent: JUDGE_SPEND };
+    const { input, requests } = harness([
       () => finished(carried),
       (request) => finished(request.repair!.seed.map((each) => ({ ...each, ranWith: { target: `rerun-${each.position}` } })))
-    ], [() => unsure, () => YES]);
+    ], [() => wrong, () => YES]);
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
     expect(outcome.kind).toBe("finished");
     expect(requests).toHaveLength(2);
-    const repair = requests[1]!.repair!;
-    expect(repair.resume.judgement).toMatchObject({ test: "not_tested", judge: { verdict: "unknown", untestedCarried: [5, 6, 7, 8, 9] } });
-    expect(automationStudioLlmEvidenceResumeEntry(repair.resume, repair.seed).value.instruction)
-      .toContain("Steps 5, 6, 7, 8, 9 were carried from the earlier Flow and not run in this build: rerun them live (amend_draft rerun)");
-    expect(announced).toContain("repairing: Repairing the Flow: Steps 5, 6, 7, 8, 9 came from the earlier Flow and were not run when it was tested. Repairing the Flow live, running them again.");
+    expect(requests[1]!.repair!.resume.judgement).toMatchObject({ judge: { verdict: "no", observed: "the test read no cart" } });
   });
 
   it("proposes the Flow unverified when the judge had no cost left to judge with", async () => {

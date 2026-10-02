@@ -142,6 +142,14 @@ export class AutomationStudioConversations {
   private model: AutomationStudioConversationModel | null = null;
 
   /**
+   * Where the bound domain's own system instructions are read, when a person's
+   * message is read. Asked per message rather than copied once, so a runtime
+   * bound after this collaborator was made -- which is how a host binds it --
+   * is the one the model is told about.
+   */
+  private domainInstructions: () => string | undefined = () => undefined;
+
+  /**
    * Finds a person's live unlocked session, so a paired client's chat can use
    * their key (`commands/caller.ts`). Null leaves a paired caller on its own
    * session, where the key is locked.
@@ -296,6 +304,16 @@ export class AutomationStudioConversations {
   }
 
   /**
+   * Connects the bound domain's system instructions, already checked where the
+   * runtime was bound. The service passes the reader of its own binding
+   * (`../service.ts`), so the chat is told what every Flow model call is told.
+   */
+  bindDomainInstructions(read: () => string | undefined): this {
+    this.domainInstructions = read;
+    return this;
+  }
+
+  /**
    * A person's turn, read as an instruction and answered in the thread.
    *
    * The turn is stored before anything else is tried, so nothing that fails
@@ -317,6 +335,7 @@ export class AutomationStudioConversations {
       transcript: earlier.transcript,
       transcriptWithheld: earlier.withheld,
       context: { projectId: input.projectId, capabilities: input.capabilities, flows: input.flows, onScreen, message: input.text },
+      domainInstructions: this.domainInstructions(),
       caller: input.caller ?? null,
       ...(input.limits ? { limits: input.limits } : {})
     });

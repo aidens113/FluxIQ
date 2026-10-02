@@ -114,6 +114,9 @@ const EXPLORE_AGAIN_INSTRUCTION = "Nothing is in the Flow yet: the build stopped
   + "Add each step the Flow needs as you run it (add true), naming the act or choice it does (act a2, or a2.quantity). "
   + "Complete when the Flow does what the instruction asks: it is then tested from its start and judged on what it does; the checklist is the build's own reading, information, not the bar.";
 
+/** Said after the explore-again instruction when the Flow the model said was ready was judged and sent back. */
+const EXPLORE_AGAIN_JUDGED = "The Flow you said was ready was tested from its start and judged: judgement.judge says what it did not do (observed), what was asked (expected) and what to change (advice). Go by that, and add each step you run that the Flow needs.";
+
 /** Whether this entry opens a round after one that left nothing in the Flow. */
 function nothingInFlow(resume: AutomationStudioLlmEvidenceLoopResume): boolean {
   return resume.judgement !== undefined && resume.judgement.stepsInFlow === 0;
@@ -121,8 +124,12 @@ function nothingInFlow(resume: AutomationStudioLlmEvidenceLoopResume): boolean {
 
 /** What the entry tells the model to do: explore again, repair after a judge, repair, or continue. */
 function instructionFor(resume: AutomationStudioLlmEvidenceLoopResume): string {
-  if (nothingInFlow(resume)) return EXPLORE_AGAIN_INSTRUCTION;
   const judge = judgedBy(resume);
+  // A Flow the judge sent back can leave nothing in the Flow (a plan that came
+  // with the reply, not from steps run and added): exploring again then goes by
+  // what the judge found, which the round would otherwise never be told
+  // (t195-w29, `../../tests/deepseek-bootstrap/tests/answerability.test.ts`).
+  if (nothingInFlow(resume)) return judge ? `${EXPLORE_AGAIN_INSTRUCTION} ${EXPLORE_AGAIN_JUDGED}` : EXPLORE_AGAIN_INSTRUCTION;
   if (judge) return judgedInstruction(judge);
   return resume.judgement ? REPAIR_INSTRUCTION : INSTRUCTION;
 }

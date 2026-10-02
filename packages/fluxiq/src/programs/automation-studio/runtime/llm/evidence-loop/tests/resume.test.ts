@@ -74,6 +74,18 @@ describe("the entry a continued build starts from", () => {
     const entry = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "unusable_decisions", outstandingIssueCodes: ["bootstrap.instructed_act_missing"], judgement }, []);
     expect(entry.value).toMatchObject({ code: "llm_evidence_loop.explore_again", draftSteps: 0, judgement, instruction: expect.stringContaining("Nothing is in the Flow yet") });
     expect(entry.value.instruction).toContain("Keep exploring live from the page as it stands");
+    expect(entry.value.instruction).not.toContain("judgement.judge");
+  });
+
+  // t195-w29: a judged Flow can leave nothing in the Flow (its plan came with the
+  // reply); the round that explores again is told what the judge found.
+  it("tells a round that explores again after a judge's no what the judge found", () => {
+    const judge = { verdict: "no", observed: "the Flow reads no records", advice: "read the results as a table", findings: [] };
+    const judgement = { stopped: "judged_wrong", test: "replayed_clean", stepsInFlow: 0, actsDone: 0, actsTodo: [], judge };
+    const entry = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [], judgement }, []);
+    expect(entry.value).toMatchObject({ code: "llm_evidence_loop.explore_again", judgement: { judge } });
+    expect(entry.value.instruction).toContain("Nothing is in the Flow yet");
+    expect(entry.value.instruction).toContain("judgement.judge says what it did not do (observed), what was asked (expected) and what to change (advice)");
   });
 
   it("carries a stop for unusable decisions as it was given", () => {

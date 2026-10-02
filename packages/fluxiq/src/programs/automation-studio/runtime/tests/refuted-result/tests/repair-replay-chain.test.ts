@@ -283,12 +283,15 @@ describe("a wrong answer, end to end, with a scripted provider", () => {
     const detail = await harness.service.getFlowRunDetail(harness.projectId, run.runId);
 
     // Refuted (asked twice, as a refutation always is), re-authored in two
-    // decisions, and the repaired run judged once.
-    expect(harness.calls.map((call) => call.taskKind)).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "loop_verification"]);
+    // decisions, the re-author's own test judged (it is a build: lane D F43),
+    // and the repaired run judged once.
+    expect(harness.calls.map((call) => call.taskKind)).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification"]);
+    // The build's judge read the re-author's own test, not a run.
+    expect(harness.calls[4]!.sent).toContain("buildTest");
     // The judge was shown the wrong rows first and the right rows last.
     expect(harness.calls[0]!.sent).toContain("Beta");
-    expect(harness.calls[4]!.sent).not.toContain("Beta");
-    expect(harness.calls[4]!.sent).toContain("Gamma");
+    expect(harness.calls[5]!.sent).not.toContain("Beta");
+    expect(harness.calls[5]!.sent).toContain("Gamma");
     // The re-author was never shown the denied locator, and the Flow never lost it.
     for (const call of harness.calls) expect(call.sent).not.toContain(SELECTOR);
 
