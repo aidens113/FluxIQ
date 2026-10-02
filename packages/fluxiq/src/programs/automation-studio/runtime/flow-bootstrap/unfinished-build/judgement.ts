@@ -155,7 +155,8 @@ function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, 
     ...(verdict.expected ? { expected: verdict.expected } : {}),
     ...(verdict.observed ? { observed: verdict.observed } : {}),
     ...(verdict.advice ? { advice: verdict.advice } : {}),
-    findings: [...verdict.findings]
+    findings: [...verdict.findings],
+    ...(verdict.records ? { records: { ...verdict.records } } : {})
   };
 }
 
@@ -192,21 +193,4 @@ function judgeValue(judge: AutomationStudioFlowBootstrapJudgedWrong): JsonObject
     findings: [...judge.findings],
     ...(judge.untestedCarried?.length ? { untestedCarried: [...judge.untestedCarried] } : {})
   };
-}
-
-/**
- * Whether a repair got any further than the judgement before it: more acts or
- * choices done, more steps in the Flow, or fewer of them failing the test. A
- * repair that got no further is the evidence that no route is left.
- *
- * Where a judge sent a Flow back (either side has `judge`), the checklist is
- * information, not the bar: the repair advanced if it handed back a different
- * Flow -- its replay signature changed -- or more of the checklist is done. A
- * repair that hands back the same Flow is the evidence for not doable.
- */
-export function automationStudioFlowBootstrapJudgementAdvanced(before: AutomationStudioFlowBootstrapJudgement, after: AutomationStudioFlowBootstrapJudgement): boolean {
-  if (before.judge || after.judge) return after.flowSignature !== before.flowSignature || after.done > before.done;
-  if (after.done > before.done || after.stepsInFlow > before.stepsInFlow) return true;
-  if (before.tested === "replay_failed" && after.tested === "replayed_clean") return true;
-  return before.tested === "replay_failed" && after.tested === "replay_failed" && after.failedSteps.length < before.failedSteps.length;
 }

@@ -179,3 +179,47 @@ describe("a Flow build that stops before its Flow is ready", () => {
     expect(diagnostic.ending?.message).toContain("I tried 2 times live -- exploring, then one repair after testing what I had");
   });
 });
+
+// Run 38 (cause C8): a build's first round ended on refused repeats with the
+// Flow it started from unchanged, and the phases opened a second round that
+// repeated it exactly. The service now hands the phases the signature of the
+// Flow the first round starts from -- here the kept draft a continuation
+// carries on (t240).
+describe("a continuation whose first round ends on repeats with the kept draft unchanged", () => {
+  it("ends not doable after that one round, never opening an identical second round", async () => {
+    let building = 1;
+    let call = 0;
+    const second: number[] = [];
+    const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
+    const provider = mockProvider(async () => {
+      call += 1;
+      if (building === 2) second.push(call);
+      // The first build adds a step each call until its calls run out; the second presses again and again, adding nothing, to no effect.
+      const decision: JsonObject = { kind: "tool_call", callId: `call.${call}`, toolId: "example.act", input: { press: call }, ...(building === 1 ? { add: true } : {}) };
+      return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
+    });
+    const instance = new AutomationStudioService({
+      dataDir: tempRoot,
+      llmProviderResolver: (() => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
+      llmEvidenceRuntime: {
+        domainId: "example",
+        deniedEvidenceKeys: [],
+        tools: [{ toolId: "example.act", description: "Change the target.", inputSchema: { type: "object" }, effect: "mutate" }],
+        executeTool: async (input) => building === 1 || input.callId === undefined || !second.length
+          ? { kind: "llm_evidence_tool_execution", evidence: { changed: input.callId ?? "replayed" }, effectApplied: true, resultCode: "example.acted" }
+          : { kind: "llm_evidence_tool_execution", evidence: { changed: false }, effectApplied: false, resultCode: "example.unchanged" }
+      }
+    });
+    services.add(instance);
+    const request = { projectId: project.id, flowId: flow.flowId, evidenceGuided: true as const, caller: caller() };
+
+    const first = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
+    expect(first.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls" });
+    building = 2;
+    const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
+
+    expect(diagnostic.code).toBe("flow_bootstrap.not_doable");
+    expect(diagnostic.ending).toMatchObject({ kind: "not_doable", tried: { rounds: 1 } });
+    expect(diagnostic.ending?.message).toContain("ended on refused repeats of the same calls and handed back the Flow it started from, unchanged");
+  });
+});
