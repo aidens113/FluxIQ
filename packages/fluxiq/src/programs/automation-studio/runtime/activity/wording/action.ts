@@ -53,15 +53,20 @@ const PHRASES: readonly Phrase[] = [
 ];
 
 /**
- * The accessible name of the element a step acts on, when the step already
- * carries it: the element identity a resolved node keeps (`element`), which is
- * part of the Flow the person owns. Never a value typed, read or observed.
+ * The name of the element a step acts on, when the step already carries it:
+ * the element identity a resolved node keeps (`element`), which is part of the
+ * Flow the person owns. Its accessible name, else its visible text -- many
+ * controls a page draws as plain elements have no accessible name, and on
+ * `run-muqiho5c-e830ce01` the playback of "Accept all", "7-in-1", "Spain", "Get
+ * coupons" and "Not now" each read "Click · the page" (F36). Never a value
+ * typed, read or observed.
  */
 function elementName(parameters: unknown): string | undefined {
   if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return undefined;
   const element = (parameters as { element?: unknown }).element;
   if (!element || typeof element !== "object" || Array.isArray(element)) return undefined;
-  return automationStudioActivityHumanLabel((element as { accessibleName?: unknown }).accessibleName, 60);
+  const identity = element as { accessibleName?: unknown; visibleText?: unknown };
+  return automationStudioActivityHumanLabel(identity.accessibleName, 60) ?? automationStudioActivityHumanLabel(identity.visibleText, 60);
 }
 
 /** Words a call types or looks for, collapsed and bounded; nothing for an empty one. */
@@ -72,13 +77,31 @@ function saidText(text: string | undefined): string | undefined {
 }
 
 /**
+ * The sentence for a sometimes-present step the run skipped because what it
+ * acts on was not shown (`executor/step-skip/absent-step.ts`): the control by name when
+ * the step carries one ("Skipped “Not now”: it was not shown"), else the
+ * step's authored label, else "a step". It says skipped, never failed: the
+ * popup or banner simply was not there this time.
+ */
+function notShownSentence(input: { parameters?: unknown; label?: string | undefined; words?: AutomationStudioActivityCallWords | undefined }): string {
+  const name = automationStudioActivityHumanLabel(input.words?.target, 60) ?? elementName(input.parameters);
+  if (name) return `Skipped ${quoted(name)}: it was not shown`;
+  const label = automationStudioActivityHumanLabel(input.label, 120);
+  return `Skipped ${label ? quoted(label) : "a step"}: what it acts on was not shown`;
+}
+
+/**
  * What a step does, in a person's words: its authored label when it has one
  * ("Open search"), else the verb its id names with the element's name when the
  * step carries one ("Clicking “Get a free quote”"), else the verb alone
  * ("Opening a page"). Nothing when the id names no known verb, so the caller
  * says something plain of its own rather than the id.
+ *
+ * With `notShown`, what a run says instead when it skipped the step because
+ * what it acts on was not on the page; always a sentence, never nothing.
  */
-export function automationStudioActivityAction(input: { id?: string | undefined; parameters?: unknown; label?: string | undefined; words?: AutomationStudioActivityCallWords | undefined }): string | undefined {
+export function automationStudioActivityAction(input: { id?: string | undefined; parameters?: unknown; label?: string | undefined; words?: AutomationStudioActivityCallWords | undefined; notShown?: boolean | undefined }): string | undefined {
+  if (input.notShown === true) return notShownSentence(input);
   const label = automationStudioActivityHumanLabel(input.label, 120);
   if (label) return label.charAt(0).toUpperCase() + label.slice(1);
   if (typeof input.id !== "string") return undefined;

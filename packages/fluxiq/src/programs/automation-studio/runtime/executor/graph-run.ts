@@ -2,6 +2,7 @@ import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
+import { automationStudioAbsentStepSkip } from "./step-skip/index.ts";
 import { nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
 import {
@@ -27,7 +28,7 @@ import { automationStudioRunState, type AutomationStudioRunState } from "./run-s
 import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
-import { automationStudioActivityAskResolution, automationStudioActivityRecoveryChoice, emitAutomationStudioActivity, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
+import { automationStudioActivityAction, automationStudioActivityAskResolution, automationStudioActivityRecoveryChoice, emitAutomationStudioActivity, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -452,13 +453,16 @@ async function executeAutomationStudioGraph(
       const recordedState = automationStudioRecordedState(currentNode);
       // The wait ceiling, gated by the state the node expects to find. It never
       // fails the node: an unsatisfied gate is a mark on the attempt, because the
-      // recording is evidence the action was possible at that point.
+      // recording is evidence the action was possible at that point. A
+      // sometimes-present step the gate judged not shown is skipped instead,
+      // with nothing dispatched (`step-skip/absent-step.ts`).
       const readiness = await automationStudioAwaitNodeReadiness(currentNode, options, `${currentNode.id}.attempt.${nextAttemptNumber()}`);
       if (options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
       }
       emitAutomationStudioActivityStep({ index: step + 1, count: flow.nodes.length, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues });
-      const executed = remainingMs === undefined
+      const notShown = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? nodeAttemptWithAdaptationIds(currentNode, { attemptId: `${currentNode.id}.attempt.${nextAttemptNumber()}`, nodeId: currentNode.id, definitionId: currentNode.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], failure: { category: "target_not_found", code: "executor.ready_state.not_shown", retryable: false, stage: "target_resolution" } }) : undefined;
+      const executed = notShown && automationStudioAbsentStepSkip(flow, currentNode, notShown) ? notShown : remainingMs === undefined
         ? await executeAutomationStudioNode(flow, currentNode, values, options, nextAttemptNumber(), withholding, runState)
         : await executeWithRegionTimeout(
           (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, nextAttemptNumber(), withholding, runState),
@@ -568,6 +572,19 @@ async function executeAutomationStudioGraph(
           effects, regionTransitions,
           ...(attempt.message ? { message: attempt.message } : {})
         };
+      }
+      // A sometimes-present step (a popup, a banner) observed not on the page is
+      // skipped, not failed: no fault, no ladder, no budget, no "Recovery started".
+      const skipEdge = routeOverride === undefined && attempt.status === "failed" ? automationStudioAbsentStepSkip(flow, currentNode, attempt) : undefined;
+      if (skipEdge) {
+        const { failure, fault: _fault, message: _message, ...shown } = attempts[attemptIndex]!;
+        attempts[attemptIndex] = { ...shown, status: "succeeded", route: "skipped", skipped: { reason: "target_absent", code: failure!.code } };
+        const said = automationStudioActivityAction({ parameters: currentNode.parameterValues, label: currentNode.label, notShown: true }) ?? "Skipped a step";
+        emitAutomationStudioActivity({ phase: "running", label: said, detail: { kind: "step", title: said, status: "succeeded", ref: currentNode.id } });
+        currentNode = nodesById.get(skipEdge.targetNodeId);
+        if (!currentNode) return missingTargetTrace(startedAt, now(), skipEdge, attempts, values, effects);
+        recordRegionTransition(skipEdge, regionId, options, regionTransitions, now());
+        continue;
       }
       if (routeOverride === undefined && attempt.status === "failed") {
         const failedEdge = chooseAutomationStudioEdge(flow, currentNode.id, attempt.route ?? "failed");

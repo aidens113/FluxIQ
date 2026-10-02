@@ -65,3 +65,27 @@ describe("a call the bound domain describes", () => {
     expect(title).toMatch(/^Typing "say 'hi' x+…"$/u);
   });
 });
+
+// t174/w62: a sometimes-present step (a popup, a banner) the run skipped
+// because what it acts on was not on the page. Skipped, never failed.
+describe("automationStudioActivityAction for a step skipped because it was not shown", () => {
+  it("names the control first, then the authored label, else says a step", () => {
+    const element = { element: { accessibleName: "Close dialog", visibleText: "×" } };
+    expect(automationStudioActivityAction({ id: "web.output.dom-click", parameters: element, label: "Dismiss the offer", notShown: true })).toBe("Skipped “Close dialog”: it was not shown");
+    expect(automationStudioActivityAction({ id: "web.output.dom-click", words: { target: "Not now" }, notShown: true })).toBe("Skipped “Not now”: it was not shown");
+    expect(automationStudioActivityAction({ id: "web.output.dom-click", label: "Dismiss the offer", notShown: true })).toBe("Skipped “Dismiss the offer”: what it acts on was not shown");
+    expect(automationStudioActivityAction({ id: "vendor.frobnicate", notShown: true })).toBe("Skipped a step: what it acts on was not shown");
+  });
+
+  it("never names a control by an id, and a card reads it as done, not failed", () => {
+    const title = automationStudioActivityAction({ id: "web.output.dom-click", parameters: { element: { accessibleName: "a.b" } }, notShown: true })!;
+    expect(title).toBe("Skipped a step: what it acts on was not shown");
+    const card = activityActionOf({ phase: "running", step: { nodeId: "n1" }, detail: { kind: "step", title, status: "succeeded", ref: "n1" } });
+    expect(card?.outcome).toBe("done");
+    expect(card?.why ?? null).toBeNull();
+  });
+
+  it("says what the step does when notShown is not set", () => {
+    expect(automationStudioActivityAction({ id: "web.output.dom-click", label: "Dismiss the offer", notShown: false })).toBe("Dismiss the offer");
+  });
+});

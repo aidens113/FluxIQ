@@ -635,6 +635,31 @@ every failure is swallowed. Each deterministic ladder rung leaves the candidate
 list once it has run, so an already-consumed deterministic answer does not
 suppress escalation forever.
 
+**A sometimes-present step that is not shown is skipped, not recovered.** A
+popup, banner or consent prompt is only sometimes on the page, so finding it
+gone is the page's state, not a failure (t174). Before the fault assessment,
+the "Recovery started" activity and the ladder, the executor asks
+`automationStudioAbsentStepSkip` (`runtime/executor/step-skip/absent-step.ts`) whether
+the failed node is sometimes-present and its target was observed absent.
+Sometimes-present is the optional shape a build writes (a `failed` edge into a
+`builtin.control.merge` that the node's `success` edge also enters) or
+`metadata.sometimesPresent === true`; absent is a failure of category
+`target_not_found`, which is the host's own look at the page after its own
+wait. On a skip the attempt reads `status: "succeeded"`, `route: "skipped"`
+and `skipped: { reason: "target_absent", code }`, with no `failure`, `fault`,
+`message` or `recoveryDecision`. No retry runs, no recovery budget is spent,
+nothing goes on the defence ledger, and the run follows the Merge edge (or,
+for a node marked by metadata alone, its `success` edge). The step's activity
+row says it was skipped because what it acts on was not shown ("Skipped
+“Not now”: it was not shown"). A node that also declares a `readyState` is
+observed first: when the gate judged at least one condition and the state was
+not met, the same skip is taken with nothing dispatched, under the code
+`executor.ready_state.not_shown`. A gate that judged nothing says nothing about
+the page and the node is pressed as before. A straight-line node whose target
+is absent, and an optional node failing any other way (`target_ambiguous`, an
+action that ran and failed), still go through the ladder unchanged
+(`runtime/executor/tests/optional-failed-route.test.ts`, `absent-step.test.ts`).
+
 **The recorded state is read while the Flow runs.** Every node a recording
 proposal produces carries `stateLink`, `stateSnapshotId`, `stateRef` and
 `recordedGapMs` in its metadata; the executor reads them
