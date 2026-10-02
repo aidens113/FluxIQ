@@ -27,3 +27,4 @@ export * from "./state-store.ts";
 export * from "./timeline.ts";
 export * from "./tokens-per-run/index.ts";
 export * from "./validation.ts";
+export * from "./run-cost-ceiling/index.ts";

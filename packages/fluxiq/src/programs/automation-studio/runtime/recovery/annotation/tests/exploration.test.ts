@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import {
+  AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
   AutomationStudioLlmRunBudgetLedger,
   automationStudioExploredEvidenceLabel,
   type AutomationStudioLlmEvidenceRuntimeBinding,
@@ -247,7 +248,8 @@ function base(calls: string[], resultCode?: string) {
     runDetail: detail,
     recoveryContext: buildAutomationStudioRuntimeRecoveryContext({ detail }),
     runBudget: new AutomationStudioLlmRunBudgetLedger({ maxCallsPerRun: 4, maxTotalTokensPerRun: 200_000, maxOutputTokensPerRun: 100_000 }),
-    maxEstimatedCostUsd: 0.05
+    // A fifth of the run cost ceiling the ledger defaults to, so five calls fit.
+    maxEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD / 5
   };
 }
 

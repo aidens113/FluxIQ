@@ -6,6 +6,7 @@ import type { AutomationStudioFlowExpansionReferences } from "./flow-adaptation.
 import type { AutomationStudioFlowRegion, AutomationStudioFlowRegionHandoff } from "./regions.ts";
 import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING } from "./flow-size/index.ts";
 import { AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY } from "./tokens-per-run/index.ts";
+import { resolveAutomationStudioLlmRunCostCeilingUsd } from "./run-cost-ceiling/index.ts";
 
 /** The workspace in which a canonical Flow is authored and may execute. */
 export type AutomationStudioFlowScope =
@@ -293,7 +294,7 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
     // Written as a literal because the model does not import the runtime;
     // `runtime/llm/flow-execution-limits/tests/run-cost-ceiling.test.ts` holds
     // the two equal.
-    maxEstimatedCostUsdPerRun: 0.25
+    maxEstimatedCostUsdPerRun: resolveAutomationStudioLlmRunCostCeilingUsd()
   };
   return {
     adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION,

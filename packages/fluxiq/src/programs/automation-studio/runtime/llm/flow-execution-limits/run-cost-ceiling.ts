@@ -1,4 +1,4 @@
-// The most one run may spend on the model: $0.25.
+// The most one run may spend on the model: $0.10 (the user's rule, 2026-10-01; was $0.25).
 //
 // This is a plain configured limit, not a grant. It is the default total of a
 // build, of a build that re-authors a Flow whose result was refuted, and of a
@@ -13,8 +13,14 @@
 // So the ceiling is fixed here, and what a Flow, a resolver or an authorization
 // says can only lower it.
 
-/** The most one run -- a build, or a recovery -- may be estimated to spend. */
-export const AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD = 0.25;
+import { resolveAutomationStudioLlmRunCostCeilingUsd } from "../../../model/run-cost-ceiling/index.ts";
+
+/**
+ * The most one run -- a build, or a recovery -- may be estimated to spend:
+ * FLUXIQ_LLM_RUN_COST_CEILING_USD (the developer and Lab knob, default $0.10),
+ * read once when Core loads, so an invalid value stops Core at start.
+ */
+export const AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD: number = resolveAutomationStudioLlmRunCostCeilingUsd();
 
 /**
  * A run's total: the ceiling, lowered by each limit given that is a positive

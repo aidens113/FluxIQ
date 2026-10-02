@@ -7,7 +7,7 @@ import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceO
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../../flow-bootstrap/index.ts";
-import { estimateAutomationStudioDeepSeekInputTokens } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, estimateAutomationStudioDeepSeekInputTokens } from "../../../llm/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../../../storage/index.ts";
 import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
@@ -258,12 +258,13 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       await expect(generation).rejects.toThrow();
     }
     expect(requests).toHaveLength(calls);
-    // A new Flow's settings carry the $0.25 run cost ceiling, and the build's
+    // A new Flow's settings carry the run cost ceiling ($0.10 since 2026-10-01;
+    // was $0.25), and the build's
     // total is that ceiling, which the resolution's $2 cannot raise. A build has
     // no ledger, so its requests no longer carry an even share of the total
     // that nothing checked: each carries the harness's own per-request default.
     const configured = (await instance.getFlow(project.id, flow.flowId)).metadata?.adaptationPolicySettings as { maxEstimatedCostUsdPerRun?: number } | undefined;
-    expect(configured?.maxEstimatedCostUsdPerRun).toBe(0.25);
+    expect(configured?.maxEstimatedCostUsdPerRun).toBe(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
     for (const request of requests) expect(request.maxEstimatedCostUsd).toBe(0.25);
   });
 

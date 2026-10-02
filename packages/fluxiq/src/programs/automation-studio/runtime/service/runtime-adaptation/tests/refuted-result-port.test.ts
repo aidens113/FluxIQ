@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
-import { AutomationStudioLlmRequestRefusedError } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRequestRefusedError } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY,
   AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY,
@@ -127,48 +127,54 @@ describe("a re-author whose build fails", () => {
   });
 });
 
-// The user's rule: a build, and its repair, each spend at most $0.25 in total,
-// lowered and never raised by the Flow's own setting. Each part of the repair
-// was held to $0.25 on its own, so one repair -- a build, the build again, the
-// patch ladder -- could spend about $0.75.
+// The user's rule: a build, and its repair, each spend at most the run cost
+// ceiling in total ($0.10 since 2026-10-01; was $0.25), lowered and never
+// raised by the Flow's own setting. Each part of the repair was held to the
+// ceiling on its own, so one repair -- a build, the build again, the patch
+// ladder -- could spend about three times it.
+//
+// Amounts are fractions of the ceiling, rounded to the billionth as the purse
+// rounds, so the scenarios hold whatever the ceiling is set to.
 describe("the repair's one purse", () => {
+  const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
+  const usd = (value: number): number => Math.round(value * 1_000_000_000) / 1_000_000_000;
   /** A build that ran out of turns having reported `costUsd`: a failure that may pass, so it is built again. */
   const outOfTurns = (costUsd: number) => flowBootstrapPhaseFailure("provider_output_validation", { requestId: `request.${costUsd}`, estimatedInputTokens: 10, estimatedCostUsd: costUsd }, "flow_bootstrap.evidence_iteration_limit");
   /** What the recovery's own gate record says it spent, as `annotate.ts` writes it. */
   const ladderSpending = (costUsd: number) => vi.fn(async (refuted: { detail: AutomationStudioFlowRunDetail }) => ({ ...refuted.detail, metadata: { ...(refuted.detail.metadata ?? {}), llmGate: { invoked: true, costAccounting: { calls: 1, estimatedCostUsd: costUsd } } } }));
 
-  it("hands a re-author retry only what the first build left: $0.05 after $0.20", async () => {
+  it("hands a re-author retry only what the first build left: a fifth of the purse after four fifths", async () => {
     let calls = 0;
     const generate = vi.fn(async () => {
       calls += 1;
-      if (calls === 1) throw outOfTurns(0.2);
-      return { adaptationId: "adaptation.two", accounting: { requestId: "request.two", estimatedInputTokens: 10, estimatedCostUsd: 0.04 } };
+      if (calls === 1) throw outOfTurns(usd(CEILING * 0.8));
+      return { adaptationId: "adaptation.two", accounting: { requestId: "request.two", estimatedInputTokens: 10, estimatedCostUsd: usd(CEILING * 0.16) } };
     });
     const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))(request);
 
     expect(generate).toHaveBeenCalledTimes(2);
-    expect((generate.mock.calls as unknown[][]).map((call) => call[2])).toEqual([0.25, 0.05]);
-    expect(marker(result)).toMatchObject({ applied: true, purse: { limitUsd: 0.25, spentUsd: 0.24, leftUsd: 0.01 } });
+    expect((generate.mock.calls as unknown[][]).map((call) => call[2])).toEqual([CEILING, usd(CEILING * 0.2)]);
+    expect(marker(result)).toMatchObject({ applied: true, purse: { limitUsd: CEILING, spentUsd: usd(CEILING * 0.96), leftUsd: usd(CEILING * 0.04) } });
   });
 
   it("does not run the patch ladder once the re-authors have spent the purse, and names cost as why", async () => {
-    const spent = [0.15, 0.1];
+    const spent = [usd(CEILING * 0.6), usd(CEILING * 0.4)];
     const generate = vi.fn(async () => { throw outOfTurns(spent.shift()!); });
     const port = deps({ generate: generate as never });
     const result = await automationStudioRefutedResultRepairPort(port)(request);
 
     expect(generate).toHaveBeenCalledTimes(2);
-    expect((generate.mock.calls as unknown[][]).map((call) => call[2])).toEqual([0.25, 0.1]);
+    expect((generate.mock.calls as unknown[][]).map((call) => call[2])).toEqual([CEILING, usd(CEILING * 0.4)]);
     // The ladder is a recovery that asks a model; it was not called at all.
     expect(port.annotate).not.toHaveBeenCalled();
     expect(marker(result)).toMatchObject({
       degraded: { to: "patch_ladder", afterCode: "flow_bootstrap.evidence_iteration_limit", bound: "cost" },
-      purse: { limitUsd: 0.25, spentUsd: 0.25, leftUsd: 0, refusedParts: ["patch_ladder"], bound: "cost" }
+      purse: { limitUsd: CEILING, spentUsd: CEILING, leftUsd: 0, refusedParts: ["patch_ladder"], bound: "cost" }
     });
   });
 
   it("does not build again when the first build spent the purse, and records the retry it did not make", async () => {
-    const generate = vi.fn(async () => { throw outOfTurns(0.25); });
+    const generate = vi.fn(async () => { throw outOfTurns(CEILING); });
     const port = deps({ generate: generate as never });
     const result = await automationStudioRefutedResultRepairPort(port)(request);
 
@@ -176,18 +182,19 @@ describe("the repair's one purse", () => {
     expect(port.annotate).not.toHaveBeenCalled();
     expect(marker(result).attempts).toHaveLength(2);
     expect(marker(result).attempts[1]).toMatchObject({ code: "llm_budget.run_cost_limit", retryable: false, providerInvocation: "not_attempted" });
-    expect(marker(result).purse).toMatchObject({ spentUsd: 0.25, refusedParts: ["reauthor", "patch_ladder"], bound: "cost" });
+    expect(marker(result).purse).toMatchObject({ spentUsd: CEILING, refusedParts: ["reauthor", "patch_ladder"], bound: "cost" });
   });
 
-  it("caps the whole repair at a Flow's $0.10, re-author, retry and patch ladder together", async () => {
-    const spent = [0.07, 0.02];
+  it("caps the whole repair at a Flow's lower figure, re-author, retry and patch ladder together", async () => {
+    const flowUsd = usd(CEILING * 0.4);
+    const spent = [usd(CEILING * 0.28), usd(CEILING * 0.08)];
     const generate = vi.fn(async () => { throw outOfTurns(spent.shift()!); });
-    const annotate = ladderSpending(0.01);
-    const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never, annotate: annotate as never, maxCostUsd: () => 0.1 }))(request);
+    const annotate = ladderSpending(usd(CEILING * 0.04));
+    const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never, annotate: annotate as never, maxCostUsd: () => flowUsd }))(request);
 
     const handed = [...(generate.mock.calls as unknown[][]).map((call) => call[2]), ...(annotate.mock.calls as unknown[][]).map((call) => call[1])];
-    expect(handed).toEqual([0.1, 0.03, 0.01]);
-    expect(marker(result)).toMatchObject({ degraded: { to: "patch_ladder" }, purse: { limitUsd: 0.1, spentUsd: 0.1, leftUsd: 0 } });
+    expect(handed).toEqual([flowUsd, usd(CEILING * 0.12), usd(CEILING * 0.04)]);
+    expect(marker(result)).toMatchObject({ degraded: { to: "patch_ladder" }, purse: { limitUsd: flowUsd, spentUsd: flowUsd, leftUsd: 0 } });
     expect(marker(result).degraded.bound).toBeUndefined();
   });
 
@@ -199,44 +206,44 @@ describe("the repair's one purse", () => {
     const generate = vi.fn(async () => {
       throw new AutomationStudioFlowBootstrapGenerationError({
         code: "flow_bootstrap.evidence_iteration_limit", stage: "provider_output_validation", retryable: true, providerInvocation: "attempted", providerResponse: "received",
-        accounting: { requestId: "request.loop", estimatedInputTokens: 10, estimatedCostUsd: 0.2 },
+        accounting: { requestId: "request.loop", estimatedInputTokens: 10, estimatedCostUsd: usd(CEILING * 0.8) },
         evidenceLoop: { iterationCount: 2, decisionCount: 2, toolCallCount: 2, evidenceBytes: 100 }
       });
     });
     const port = deps({ generate: generate as never });
     const result = await automationStudioRefutedResultRepairPort(port)(request);
 
-    // $0.05 is left, and the build's two decisions cost $0.10 each.
+    // A fifth of the purse is left, and the build's two decisions cost two fifths each.
     expect(generate).toHaveBeenCalledTimes(1);
     expect(port.annotate).not.toHaveBeenCalled();
     expect(marker(result).attempts[0]).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", retryable: true });
-    expect(marker(result).purse).toMatchObject({ spentUsd: 0.2, leftUsd: 0.05, averagedCalls: 2, averagedUsd: 0.2, refusedParts: ["reauthor", "patch_ladder"], bound: "cost" });
+    expect(marker(result).purse).toMatchObject({ spentUsd: usd(CEILING * 0.8), leftUsd: usd(CEILING * 0.2), averagedCalls: 2, averagedUsd: usd(CEILING * 0.8), refusedParts: ["reauthor", "patch_ladder"], bound: "cost" });
   });
 
   it("is never raised by a Flow set above the ceiling", async () => {
     const generate = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
     await automationStudioRefutedResultRepairPort(deps({ generate: generate as never, maxCostUsd: () => 1 }))(request);
-    expect((generate.mock.calls as unknown[][])[0]![2]).toBe(0.25);
+    expect((generate.mock.calls as unknown[][])[0]![2]).toBe(CEILING);
   });
 
   it("opens where the run's earlier passes left it, so a re-run refuted again spends from the same total", async () => {
-    const generate = vi.fn(async () => ({ adaptationId: "adaptation.three", accounting: { requestId: "request.three", estimatedInputTokens: 10, estimatedCostUsd: 0.01 } }));
-    const earlier = { ...detail, metadata: { ...(detail.metadata ?? {}), [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: { routed: true, applied: true, purse: { limitUsd: 0.25, spentUsd: 0.18, leftUsd: 0.07 } } } } as AutomationStudioFlowRunDetail;
+    const generate = vi.fn(async () => ({ adaptationId: "adaptation.three", accounting: { requestId: "request.three", estimatedInputTokens: 10, estimatedCostUsd: usd(CEILING * 0.04) } }));
+    const earlier = { ...detail, metadata: { ...(detail.metadata ?? {}), [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: { routed: true, applied: true, purse: { limitUsd: CEILING, spentUsd: usd(CEILING * 0.72), leftUsd: usd(CEILING * 0.28) } } } } as AutomationStudioFlowRunDetail;
     const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))({ ...request, detail: earlier });
 
-    expect((generate.mock.calls as unknown[][])[0]![2]).toBe(0.07);
-    expect(marker(result).purse).toMatchObject({ spentUsd: 0.19, leftUsd: 0.06 });
+    expect((generate.mock.calls as unknown[][])[0]![2]).toBe(usd(CEILING * 0.28));
+    expect(marker(result).purse).toMatchObject({ spentUsd: usd(CEILING * 0.76), leftUsd: usd(CEILING * 0.24) });
   });
 
   it("gives a refutation the route does not take the patch ladder with what is left, and nothing once it is spent", async () => {
     const notWrongAnswer = { ...request, detail: { ...detail, metadata: { [AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY]: { attempted: true, attempts: 1, code: "core.result.unconfirmed" } } } as unknown as AutomationStudioFlowRunDetail };
-    const annotate = ladderSpending(0.02);
+    const annotate = ladderSpending(usd(CEILING * 0.08));
     const first = await automationStudioRefutedResultRepairPort(deps({ annotate: annotate as never }))(notWrongAnswer);
-    expect((annotate.mock.calls as unknown[][])[0]![1]).toBe(0.25);
-    expect(marker(first)).toMatchObject({ routed: false, purse: { spentUsd: 0.02 } });
+    expect((annotate.mock.calls as unknown[][])[0]![1]).toBe(CEILING);
+    expect(marker(first)).toMatchObject({ routed: false, purse: { spentUsd: usd(CEILING * 0.08) } });
 
-    const spentDetail = { ...notWrongAnswer.detail, metadata: { ...(notWrongAnswer.detail.metadata ?? {}), [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: { purse: { limitUsd: 0.25, spentUsd: 0.25 } } } } as AutomationStudioFlowRunDetail;
-    const spentLadder = ladderSpending(0.02);
+    const spentDetail = { ...notWrongAnswer.detail, metadata: { ...(notWrongAnswer.detail.metadata ?? {}), [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: { purse: { limitUsd: CEILING, spentUsd: CEILING } } } } as AutomationStudioFlowRunDetail;
+    const spentLadder = ladderSpending(usd(CEILING * 0.08));
     const second = await automationStudioRefutedResultRepairPort(deps({ annotate: spentLadder as never }))({ ...notWrongAnswer, detail: spentDetail });
     expect(spentLadder).not.toHaveBeenCalled();
     expect(marker(second).purse).toMatchObject({ refusedParts: ["patch_ladder"], bound: "cost" });

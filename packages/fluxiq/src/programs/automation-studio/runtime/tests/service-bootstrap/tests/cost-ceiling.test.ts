@@ -1,7 +1,7 @@
-// A build is held to the run's $0.25 cost ceiling from what each decision
-// reports having cost.
+// A build is held to the run's cost ceiling ($0.10 since 2026-10-01; was
+// $0.25) from what each decision reports having cost.
 //
-// The user's rule: a build's total defaults to $0.25, and a Flow's own setting
+// The user's rule: a build's total defaults to the ceiling, and a Flow's own setting
 // may lower it but never raise it. Before, a new Flow's settings carried $1 and
 // the resolver's default total was $2, and the Flow's figure won, so a build
 // whose model never finished went on paying well past a quarter.
@@ -28,8 +28,9 @@ describe("a build's cost ceiling", () => {
     await rm(tempRoot, { recursive: true, force: true });
   });
 
-  it("stops a build that never finishes at the ceiling, names cost as its bound, and spends no more than $0.25", async () => {
-    const costPerCall = 0.03;
+  it("stops a build that never finishes at the ceiling, names cost as its bound, and spends no more than the ceiling", async () => {
+    // Twelve hundredths of the ceiling: as $0.03 was of $0.25.
+    const costPerCall = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD * 0.12;
     const requests: AutomationStudioLlmTaskRequest[] = [];
     // A model that keeps looking while it may, and whose completions are
     // refused once only completing is offered: nothing but the budget ends it.
@@ -61,12 +62,13 @@ describe("a build's cost ceiling", () => {
 
     // Reported as the budget hit it is (t208): its own code, and a message the person reads, never "not doable".
     expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
-    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", message: expect.stringContaining("spending limit of $0.25") });
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", message: expect.stringContaining(`spending limit of $${AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD.toFixed(2)}`) });
     expect(diagnostic.evidenceLoop?.exhausted).toMatchObject({ bound: "budget", budgetBound: "cost" });
     // What the provider was actually paid for, every call of the build counted.
     const spent = requests.length * costPerCall;
     expect(spent).toBeLessThanOrEqual(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
-    expect(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD).toBe(0.25);
+    // The build ran under the host's default total, which is the ceiling itself.
+    expect(defaults.maxTotalEstimatedCostUsd).toBe(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
     // And it stopped on money, not long before it: a decision's worth held back
     // for the calls the loop cannot see, and one more it would not fit.
     expect(spent).toBeGreaterThan(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD - 3 * costPerCall);
