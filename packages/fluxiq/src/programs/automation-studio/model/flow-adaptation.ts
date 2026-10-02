@@ -335,6 +335,15 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
   message?: string;
   /** Structured failure recorded on the attempt. Stored records are parsed again before use. */
   failure?: AutomationStudioFailureRecord;
+  /**
+   * Set when the run skipped this node rather than ran it: a sometimes-present
+   * step (a popup, a banner, a consent prompt) whose target was observed not to
+   * be on the page. The attempt then reads `status: "succeeded"`, `route:
+   * "skipped"` and carries no `failure`. `code` is what observed the absence:
+   * the host's failure code (`web.target.not_found`), or
+   * `executor.ready_state.not_shown` when nothing was dispatched.
+   */
+  skipped?: { reason: "target_absent"; code: string };
   metadata?: JsonObject;
 };
 
