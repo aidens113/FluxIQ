@@ -17,7 +17,7 @@ import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
 import {
   automationStudioFlowBootstrapBlockedSaid,
   automationStudioFlowBootstrapNotDone,
-  automationStudioFlowBootstrapNotDoneSaid,
+  automationStudioFlowBootstrapProgressSaid,
   automationStudioFlowBootstrapStopSaid,
   automationStudioFlowBootstrapTestSaid
 } from "./not-done.ts";
@@ -51,10 +51,8 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   spending?: { spentUsd: number; pendingUsd: number; projectedCostUsd?: number | undefined } | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const notDone = automationStudioFlowBootstrapNotDone(input.checklist);
-  const asked = (input.checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
-  const progress = asked
-    ? ` ${asked - notDone.length} of the ${asked} things you asked are done${notDone.length ? `; still to do: ${automationStudioFlowBootstrapNotDoneSaid(notDone)}` : ""}.`
-    : "";
+  const said = automationStudioFlowBootstrapProgressSaid(input.checklist, input.judgement);
+  const progress = said ? ` ${said}` : "";
   const kept = input.kept
     ? " The Flow so far was kept, and building again carries on from it."
     : " Nothing was kept to carry on from.";

@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 2870
+- Public declarations: 2874
 - Class: 92
 - Interface: 2
-- Object: 356
-- Type: 1640
+- Object: 357
+- Type: 1641
 - Type Alias: 1
-- Value: 779
+- Value: 781
 
 ## Public Declarations
 
@@ -259,6 +259,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_NODE_REPLAY_KEY` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/replay.ts:57` | The key a replay call carries, which no ordinary call of any tool may use. |
 | `AUTOMATION_STUDIO_NODE_REPLAY_KINDS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/replay.ts:60` | What one replay call asks for. |
 | `AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/replay.ts:65` | The only codes a replay may answer with, and what each one means. |
+| `AUTOMATION_STUDIO_NODE_RERUN_PLACE_UNREACHABLE_CODE` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/step-place.ts:37` | The result code of a rerun that ran nothing, because its step's place could not be put back. |
 | `AUTOMATION_STUDIO_NODE_VERIFIES_STATE_METADATA_KEY` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/contracts.ts:238` | The node-definition metadata key a verification verb sets to `true`, so its success counts as a downstream assertion. |
 | `AUTOMATION_STUDIO_NORMAL_EDITOR_GRAPH_WRITE_ENDPOINT` | Object | `packages/fluxiq/src/programs/automation-studio/api/contracts/endpoints.ts:178` | - |
 | `AUTOMATION_STUDIO_OBJECT_THRESHOLD_BYTES` | Object | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts:9` | - |
@@ -847,8 +848,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioFlowBootstrapIssue` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:134` | - |
 | `automationStudioFlowBootstrapIssueFeedback` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/issue-feedback.ts:119` | - |
 | `AutomationStudioFlowBootstrapJudgement` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:96` | The judgement of a Flow a round left unfinished (phase 2): what the test did, and how much of what was asked the Flow does. Codes, counts and ids: what the repair is told, and what an ending is written from. |
-| `automationStudioFlowBootstrapJudgementAdvanced` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:113` | - |
-| `automationStudioFlowBootstrapJudgementValue` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:95` | - |
+| `automationStudioFlowBootstrapJudgementAdvanced` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:118` | - |
+| `automationStudioFlowBootstrapJudgementValue` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:100` | - |
 | `automationStudioFlowBootstrapJudgeUnfinished` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:51` | - |
 | `automationStudioFlowBootstrapLargestSizeLimits` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/size-limits.ts:98` | - |
 | `AutomationStudioFlowBootstrapLastRoute` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/routing-context.ts:54` | - |
@@ -868,6 +869,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioFlowBootstrapPlanParameterResolution` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness-options/plan-parameter-resolution.ts:60` | - |
 | `AutomationStudioFlowBootstrapPlanRecordSets` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/answerability/contracts.ts:35` | What the Flow a build wrote can do with a set of records, read off the plan. |
 | `AutomationStudioFlowBootstrapPlanSource` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/profile-limits.ts:49` | Where the plan came from. `reply`: the model wrote it, and the one-reply limits apply. `draft`: Core assembled it from the steps the build ran, and the Flow's own limits apply. |
+| `automationStudioFlowBootstrapProgressSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts:105` | - |
 | `automationStudioFlowBootstrapProviderStatus` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/failure-state.ts:221` | - |
 | `automationStudioFlowBootstrapProviderUnavailable` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/provider-unavailable.ts:27` | - |
 | `AutomationStudioFlowBootstrapReachability` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/reachability/contracts.ts:43` | Whether the plan may be proposed, or what the model is told instead. A refusal is not the end of a build. It is fed back exactly as a refused parameter is, and the exploration asks again on the same budget, cost and no-progress guards -- so nothing here can spin. |
@@ -895,7 +897,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioFlowBootstrapSizeRefusal` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/size-limits.ts:82` | - |
 | `automationStudioFlowBootstrapSizeSetting` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/size-limits.ts:70` | - |
 | `AutomationStudioFlowBootstrapSizeSetting` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/size-limits.ts:67` | The setting a size bound comes from, as a refusal names it: where it is stored, where a person changes it, and its value. |
-| `automationStudioFlowBootstrapStopSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts:96` | - |
+| `automationStudioFlowBootstrapStopSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts:123` | - |
 | `AutomationStudioFlowBootstrapSubflow` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:36` | - |
 | `automationStudioFlowBootstrapSuppliedRecordsPath` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/record-output-contract.ts:67` | - |
 | `AutomationStudioFlowBootstrapTested` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:89` | What the test of the Flow so far found. |
@@ -1356,6 +1358,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioNodeReplayStepCall` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/replay.ts:106` | - |
 | `automationStudioNodeReplayToolId` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/replay.ts:137` | - |
 | `automationStudioNodeReplayVerifyCall` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/replay.ts:126` | - |
+| `automationStudioNodeRerunFromItsPlace` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/step-place.ts:47` | - |
+| `AutomationStudioNodeRerunPlace` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/step-place.ts:40` | Where a rerun runs: as the target stands, after it was put back, or nowhere. |
 | `automationStudioNodeRetryPolicy` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/retry-policy.ts:51` | - |
 | `AutomationStudioNodeRetryPolicy` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/retry-policy.ts:15` | How many times one node may be attempted, and how long the run waits between those attempts. `maxAttempts` counts the first attempt, so the default of three means one attempt and two retries. `backoffMs` is read by attempt number: the wait before attempt two is `backoffMs[0]`, before attempt three `backoffMs[1]`, and a policy with fewer entries than attempts repeats its last one. |
 | `AutomationStudioNodeRuntimeRequirements` | Type | `packages/fluxiq/src/programs/automation-studio/nodes/definitions.ts:42` | - |

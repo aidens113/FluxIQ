@@ -74,6 +74,10 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
   const checklist = input.checklist(seed);
   const todo = automationStudioInstructedActsNotDone(checklist);
   const all = (checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
+  // A step named for an act is a claim; the same step working when the Flow
+  // ran from its start is the nearest thing to a result Core can see.
+  const worked = new Set(seed.filter((step) => step.replayed?.status === "replayed").map((step) => step.position));
+  const proven = (checklist ?? []).flatMap((item) => [item.done, ...(item.choices ?? []).map((choice) => choice.done)]).filter((position) => position !== undefined && worked.has(position)).length;
   return {
     kind: "judged",
     seed,
@@ -85,6 +89,7 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
       failedSteps: seed.filter((step) => step.replayed !== undefined && step.replayed.status !== "replayed").map((step) => step.position),
       stepsInFlow: seed.length,
       done: all - todo.length,
+      ...(tested === "not_tested" ? {} : { proven }),
       todo,
       lastIssueCodes: [...new Set(input.lastIssueCodes)]
     }

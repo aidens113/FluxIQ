@@ -67,7 +67,7 @@ import {
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
-import { automationStudioFlowDraftDryRunGate } from "./node-tools/index.ts";
+import { automationStudioFlowDraftDryRunGate, automationStudioNodeRerunFromItsPlace } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
 import {
   automationStudioLlmEvidenceCanonicalJson,
@@ -660,8 +660,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
     let stateBefore: string | undefined;
     let stateAfter: string | undefined;
     try {
+      // A rerun runs from its step's own page, never from where the last call left it (`./node-tools/step-place.ts`).
+      const place = rerunning && rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
-      ran = await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
+      ran = place?.kind === "unreachable" ? place.result : await input.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {

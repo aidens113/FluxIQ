@@ -106,6 +106,12 @@ export type AutomationStudioFlowBootstrapJudgement = {
   stepsInFlow: number;
   /** Acts and choices done, and the ids of those still to do. */
   done: number;
+  /**
+   * Of `done`, those whose step worked when the Flow was run from its start in
+   * this judgement's test: a result, where `done` is a claim (a step named for
+   * it). Absent when nothing was tested.
+   */
+  proven?: number;
   todo: string[];
   /** The last refusal codes the model was shown before the round stopped. */
   lastIssueCodes: string[];

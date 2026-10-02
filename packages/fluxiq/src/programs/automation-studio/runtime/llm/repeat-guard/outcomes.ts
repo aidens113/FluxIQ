@@ -28,6 +28,19 @@
 // refused before it runs (`../decision-handlers/refused-repeat.ts`), and the
 // model is told what happened then and what to do instead.
 //
+// **A call that goes where it went before is no progress either.** Lane D's
+// run 37 (t195) navigated its repair to the same address eight times. Each
+// navigation succeeded and moved the page, so it was neither failed nor a call
+// that changed nothing, and nothing here counted it. A call made again from the
+// same page that ends on the same page as the identical call before it did
+// (`same_result`) is recorded like one that changed nothing: the next identical
+// call from that page is refused. The second one still runs -- the first time
+// a call is repeated, nothing yet says it will end the same way.
+//
+// **A rerun is keyed where it runs.** A rerun runs from the page its step
+// started on (`../node-tools/step-place.ts`), not from the page the last call
+// left, so it is checked against that page (`blocks(..., at)`).
+//
 // **What still runs.**
 //
 // - Anything after the page changed: the key holds the page.
@@ -51,8 +64,12 @@ const RETRY_LATER = /rate[_-]?limit|too[_-]?many|throttl|retry|disabled|busy|not
 export type AutomationStudioLlmEvidenceRepeatedOutcome = {
   /** The call that already did it. */
   callId: string;
-  /** `failed`: it was refused or did not work. `changed_nothing`: it ran and the page was as before. */
-  outcome: "failed" | "changed_nothing";
+  /**
+   * `failed`: it was refused or did not work. `changed_nothing`: it ran and the
+   * page was as before. `same_result`: it ran again from the same page and
+   * ended on the same page as the identical call before it.
+   */
+  outcome: "failed" | "changed_nothing" | "same_result";
   resultCode?: string;
   resultReason?: string;
 };
@@ -79,18 +96,22 @@ export type AutomationStudioLlmEvidenceCallOutcome = {
 export type AutomationStudioLlmEvidenceRepeatGuard = {
   /** A call reported the page as `state`. */
   seen(state: string): void;
+  /** The page as the loop last saw it, when it has seen one since anything moved it unseen. */
+  state(): string | undefined;
   /** Something moved the page without the loop seeing it (a dry run): nothing is refused until it is seen again. */
   moved(): void;
   /** A call ran, and this is how. */
   recorded(call: AutomationStudioLlmEvidenceCallOutcome): void;
-  /** The earlier outcome that makes this call a repeat to refuse, or undefined when it may run. */
-  blocks(toolId: string, input: JsonObject): AutomationStudioLlmEvidenceRepeatedOutcome | undefined;
+  /** The earlier outcome that makes this call a repeat to refuse, or undefined when it may run; `at` is the page it would run on, when not the last one seen. */
+  blocks(toolId: string, input: JsonObject, at?: string): AutomationStudioLlmEvidenceRepeatedOutcome | undefined;
   /** Decision `iteration` was refused as a repeat; returns how many decisions in a row have been, this one included. */
   refusedAgain(iteration: number): number;
 };
 
 export function automationStudioLlmEvidenceRepeatGuard(): AutomationStudioLlmEvidenceRepeatGuard {
   const outcomes = new Map<string, AutomationStudioLlmEvidenceRepeatedOutcome>();
+  // Where each call that changed something left the page, by its key.
+  const endedOn = new Map<string, string>();
   let latest: string | undefined;
   let refusedInARow = 0;
   let lastRefused = Number.NEGATIVE_INFINITY;
@@ -102,6 +123,9 @@ export function automationStudioLlmEvidenceRepeatGuard(): AutomationStudioLlmEvi
     moved() {
       latest = undefined;
     },
+    state() {
+      return latest;
+    },
     recorded(call) {
       const state = call.stateBefore ?? latest;
       if (call.stateAfter !== undefined) latest = call.stateAfter;
@@ -111,19 +135,22 @@ export function automationStudioLlmEvidenceRepeatGuard(): AutomationStudioLlmEvi
       const changedNothing = !call.effectApplied || (call.stateAfter !== undefined && call.stateAfter === state);
       const retryLater = RETRY_LATER.test(`${call.resultCode ?? ""} ${call.resultReason ?? ""}`);
       const at = key(call.toolId, call.input, state);
-      if ((!failed && !changedNothing) || retryLater) {
+      const sameResult = !failed && !changedNothing && call.stateAfter !== undefined && endedOn.get(at) === call.stateAfter;
+      if (!failed && !changedNothing && call.stateAfter !== undefined) endedOn.set(at, call.stateAfter);
+      if ((!failed && !changedNothing && !sameResult) || retryLater) {
         outcomes.delete(at);
         return;
       }
       outcomes.set(at, {
         callId: call.callId,
-        outcome: failed ? "failed" : "changed_nothing",
+        outcome: failed ? "failed" : changedNothing ? "changed_nothing" : "same_result",
         ...(call.resultCode ? { resultCode: call.resultCode } : {}),
         ...(call.resultReason ? { resultReason: call.resultReason } : {})
       });
     },
-    blocks(toolId, input) {
-      return latest === undefined ? undefined : outcomes.get(key(toolId, input, latest));
+    blocks(toolId, input, at) {
+      const state = at ?? latest;
+      return state === undefined ? undefined : outcomes.get(key(toolId, input, state));
     },
     refusedAgain(iteration) {
       // In a row means one decision after another: anything else decided between breaks the run.

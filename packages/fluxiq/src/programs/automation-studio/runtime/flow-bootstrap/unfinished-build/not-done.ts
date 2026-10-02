@@ -92,6 +92,33 @@ export function automationStudioFlowBootstrapTestSaid(judgement: AutomationStudi
   return `When the Flow as far as it got (${steps}) was run from its start,${failed} did not work.`;
 }
 
+/**
+ * How much of what was asked the Flow does, as an ending says it: results, not
+ * claims. A checklist item is done when a step is named for it, and runs 36 and
+ * 38 (t193, bigbox) ended "6 of the 6 things you asked are done" and "5 of the
+ * 6" with nothing in the cart but what one step had really added: the claims
+ * stood on steps that typed into a search field. So "worked" is said only of a
+ * step that worked when the Flow was run from its start
+ * (`AutomationStudioFlowBootstrapJudgement.proven`), and the rest is said as a
+ * step not yet shown to work. Empty when the instruction asked for no act.
+ */
+export function automationStudioFlowBootstrapProgressSaid(
+  checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined,
+  judgement: Pick<AutomationStudioFlowBootstrapJudgement, "tested" | "proven"> | undefined
+): string {
+  const asked = (checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
+  if (!asked) return "";
+  const notDone = automationStudioFlowBootstrapNotDone(checklist);
+  const named = Math.max(0, asked - notDone.length);
+  const still = notDone.length ? `; still to do: ${automationStudioFlowBootstrapNotDoneSaid(notDone)}` : "";
+  if (!named) return `${asked === 1 ? "The one thing you asked is not done" : `None of the ${asked} things you asked is done`}${still}.`;
+  const have = (count: number): string => (count === 1 ? "has" : "have");
+  if (!judgement || judgement.tested === "not_tested") return `${named} of the ${asked} things you asked ${have(named)} a step in the Flow, not yet shown to work by running it${still}.`;
+  const proven = Math.min(named, judgement.proven ?? 0);
+  const rest = named > proven ? `, and ${named - proven} more ${have(named - proven)} a step that did not work in that run` : "";
+  return `${proven} of the ${asked} things you asked worked when the Flow was run from its start${rest}${still}.`;
+}
+
 /** Why a round stopped, as a clause. */
 export function automationStudioFlowBootstrapStopSaid(stopped: AutomationStudioFlowBootstrapUnfinishedStop | "budget"): string {
   return stopped === "budget" ? "a budget ran out" : STOP_WORDS[stopped];

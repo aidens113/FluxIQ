@@ -38,7 +38,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // is recorded, digested and checked like any other; the step it replaces
   // is found before a reorder beside it renumbers the draft, and withdrawn
   // only once that call has worked (`../evidence-loop/rerun-replacement.ts`).
-  const rerun = automationStudioLlmEvidenceRerunRequest(decision.amendments, draftSteps, context.toolIds, (toolId, input) => context.repeats.blocks(toolId, input) !== undefined);
+  const rerun = automationStudioLlmEvidenceRerunRequest(decision.amendments, draftSteps, context.toolIds, (toolId, input, at) => context.repeats.blocks(toolId, input, at) !== undefined);
   // An amendment naming the step the rerun replaces is about the step that
   // will replace it, so it waits for the rerun; the rest apply now, in order
   // (`../evidence-loop/held-amendments.ts`, live run `run-mup2i28c-6c7fc209`).
