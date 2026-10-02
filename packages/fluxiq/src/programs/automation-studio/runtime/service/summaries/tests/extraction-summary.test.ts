@@ -295,3 +295,19 @@ async function runDetailFor(payload: JsonObject) {
   const session: AutomationStudioRuntimeSession = { schemaVersion: "0.1", runId: "run.extraction-summary", projectId: "project.extraction", targetKind: "flow", targetId: flow.flowId, flowId: flow.flowId, status: "succeeded", queuedAt: 1, flow, trace };
   return runtimeSessionToFlowRunDetail(session, "project.extraction");
 }
+
+// Live run `run-muqk713g`: 12 rows passed every condition and 10 were stored,
+// the other two repeats of an earlier page that nothing on the record named.
+describe("the rows a page-by-page read left out as repeats of an earlier page", () => {
+  it("travel as a count, and are absent from a read that did not send one", () => {
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, earlierPageRepeats: 2 } } })).toEqual({ ...READ, earlierPageRepeats: 2 });
+    expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, earlierPageRepeats: 0 } } })).toEqual({ ...READ, earlierPageRepeats: 0 });
+    expect(extractionSummaryFromOutputs({ result: { extraction: READ } })).not.toHaveProperty("earlierPageRepeats");
+  });
+
+  it("drop the whole summary when the count is not a count", () => {
+    for (const value of [-1, 1.5, "2", null]) {
+      expect(extractionSummaryFromOutputs({ result: { extraction: { ...READ, earlierPageRepeats: value } } }), JSON.stringify(value)).toBeUndefined();
+    }
+  });
+});

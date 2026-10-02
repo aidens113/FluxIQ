@@ -37,6 +37,8 @@ describe("a read's account", () => {
       paginates: true,
       dedupes: true,
       dedupeBy: ["url"],
+      // It pages with `next`, so it leaves out a row identical to an earlier page's; the record carries no count of them.
+      dropsEarlierPageRepeats: true,
       conditions: [
         { condition: "attribute data-sponsored is absent", rejected: 13 },
         { condition: "rating atLeast 4", rejected: 20 },
@@ -113,7 +115,7 @@ describe("a read's account", () => {
   it("reads as a sentence that names the stop and each condition's rejections", () => {
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
     expect(automationStudioResultReadSentence(reads[0]!, "brief")).toBe(
-      `step ${EARBUDS_NODE_ID} read 5 pages of at most 5, paging stopped on page_limit and kept 8 of 56 items seen; it pages, keeps one row per url, its 4 conditions rejected 13, 20, 27, 16 rows`
+      `step ${EARBUDS_NODE_ID} read 5 pages of at most 5, paging stopped on page_limit and kept 8 of 56 items seen; it pages, keeps one row per url, leaves out rows repeating an earlier page's, its 4 conditions rejected 13, 20, 27, 16 rows`
     );
     const full = automationStudioResultReadSentence(reads[0]!, "full");
     expect(full).toContain("It already follows pages");
@@ -194,5 +196,107 @@ describe("a read's account has no caps", () => {
     read.where[0] = { read: { kind: "attribute", selector: ".result-card .plus-badge i", attribute, required: false }, is: "present" };
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [node], deniedEvidenceKeys: [] });
     expect(reads[0]?.conditions?.[0]?.condition).toBe(`attribute ${attribute} is present`);
+  });
+});
+
+// Live run `run-muqk713g`: every judge was told the earbuds read "does not
+// deduplicate" and asked for a dedupe, though a read that pages page by page
+// already leaves out a row identical to one an earlier page yielded; 12 rows
+// passed its conditions, 10 were stored, and nothing said the other two were
+// such repeats. And `dedupe: "url"` read as no dedupe at all.
+describe("a read's dedupe and the repeats of earlier pages it left out", () => {
+  /** The earbuds step with its `dedupe` and `paginate` replaced (a key set to `undefined` is removed). */
+  function nodeWith(read: { dedupe?: unknown; paginate?: unknown }) {
+    const node = earbudsNode();
+    const parameters = node.parameterValues!.extractList as Record<string, unknown>;
+    for (const [key, value] of Object.entries(read)) {
+      if (value === undefined) delete parameters[key];
+      else parameters[key] = value;
+    }
+    return node;
+  }
+
+  /** The earbuds attempt with the read's own count of earlier-page repeats. */
+  function attemptWith(earlierPageRepeats: unknown) {
+    const attempt = earbudsAttempt();
+    const extraction = attempt.metadata!.extraction as Record<string, unknown>;
+    return earbudsAttempt({ metadata: { extraction: { ...extraction, recordCount: 10, earlierPageRepeats } } as never });
+  }
+
+  const accountOf = (node: ReturnType<typeof earbudsNode>, attempt = earbudsAttempt()) =>
+    automationStudioResultReadAccounts({ actionAttempts: [attempt], flowNodes: [node], deniedEvidenceKeys: [] }).reads[0]!;
+
+  it("reads a dedupe in every form the domain accepts", () => {
+    const forms: Array<[unknown, string[] | undefined]> = [
+      [true, undefined],
+      ["url", ["url"]],
+      ["name, url", ["name", "url"]],
+      [["name", "url"], ["name", "url"]],
+      [{ by: "url" }, ["url"]],
+      [{ by: ["name", "url"] }, ["name", "url"]],
+      [{ fields: "url" }, ["url"]],
+      [[{ field: "url" }], ["url"]],
+      [["url"], ["url"]],
+      [[true], undefined],
+      ["unique", undefined],
+      [{}, undefined],
+      // A column in another casing is the column it plainly means.
+      ["URL", ["url"]]
+    ];
+    for (const [dedupe, by] of forms) {
+      const read = accountOf(nodeWith({ dedupe }));
+      expect(read.dedupes, JSON.stringify(dedupe)).toBe(true);
+      expect(read.dedupeBy, JSON.stringify(dedupe)).toEqual(by);
+    }
+  });
+
+  it("reads no dedupe where the domain reads none, or refuses the value", () => {
+    for (const dedupe of [false, null, "none", "off", [], [false], 7, { colour: "url" }]) {
+      const read = accountOf(nodeWith({ dedupe, paginate: { mode: "scroll", maxScrolls: 5 } }));
+      expect(read.dedupes, JSON.stringify(dedupe)).toBe(false);
+      expect(read).not.toHaveProperty("dedupeBy");
+    }
+  });
+
+  it("says a page-by-page read left out the rows repeating an earlier page's, and how many, never that it does not deduplicate", () => {
+    const read = accountOf(nodeWith({ dedupe: undefined }), attemptWith(2));
+    expect(read).toMatchObject({ dedupes: false, dropsEarlierPageRepeats: true, earlierPageRepeats: 2, kept: 10 });
+    const full = automationStudioResultReadSentence(read, "full");
+    expect(full).not.toContain("does not deduplicate");
+    expect(full).toContain("It names no dedupe, but as a read that moves page by page it already leaves out a row identical, field for field, to one an earlier page yielded: it left out 2 such rows its conditions had kept.");
+    expect(automationStudioResultReadSentence(read, "brief")).toContain("left out 2 rows repeating an earlier page's");
+  });
+
+  it("says the same of a page-by-page read whose count did not reach the record, without a number", () => {
+    for (const paginate of [{ next: "a.next-page", maxPages: 5 }, { mode: "next", next: "a.next-page", maxPages: 5 }, { mode: "numbered", pages: "a.page", maxPages: 5 }]) {
+      const read = accountOf(nodeWith({ dedupe: undefined, paginate }));
+      expect(read, JSON.stringify(paginate)).toMatchObject({ dedupes: false, dropsEarlierPageRepeats: true });
+      expect(read).not.toHaveProperty("earlierPageRepeats");
+      const full = automationStudioResultReadSentence(read, "full");
+      expect(full).not.toContain("does not deduplicate");
+      expect(full).toContain("it left out an unreported number of such rows");
+    }
+  });
+
+  it("says both a dedupe and the repeats of earlier pages for a read that has both", () => {
+    const read = accountOf(nodeWith({ dedupe: "url" }), attemptWith(1));
+    const full = automationStudioResultReadSentence(read, "full");
+    expect(full).toContain("It already keeps one row per url.");
+    expect(full).toContain("it left out 1 such row its conditions had kept.");
+    expect(automationStudioResultReadSentence(read, "brief")).toContain("keeps one row per url, left out 1 row repeating an earlier page's");
+  });
+
+  it("still says a read that neither dedupes nor moves page by page does not deduplicate", () => {
+    for (const paginate of [undefined, { mode: "scroll", maxScrolls: 5 }, { mode: "loadMore", control: "button.more", maxPages: 5 }]) {
+      const read = accountOf(nodeWith({ dedupe: undefined, paginate }));
+      expect(read).not.toHaveProperty("dropsEarlierPageRepeats");
+      expect(automationStudioResultReadSentence(read, "full")).toContain("It does not deduplicate.");
+    }
+  });
+
+  it("drops a count that is not one, and keeps the account content-free", () => {
+    const read = accountOf(nodeWith({ dedupe: undefined, paginate: { mode: "scroll", maxScrolls: 5 } }), attemptWith("two"));
+    expect(read).not.toHaveProperty("earlierPageRepeats");
+    expect(read).not.toHaveProperty("dropsEarlierPageRepeats");
   });
 });
