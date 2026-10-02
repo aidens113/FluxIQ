@@ -36,6 +36,16 @@ export type AutomationStudioLlmBuildPurseRefusal = {
   /** What calls still in flight were held at. */
   pendingUsd: number;
   ceilingUsd: number;
+  /**
+   * Absent for the purse's own refusal (`hold`). `"loop_budget"` where the
+   * loop's count of decisions left (`../loop-budget.ts`) stopped before the
+   * call reached the purse (`standing`): the call was never priced, so
+   * `projectedCostUsd`, `estimatedInputTokens` and `maxOutputTokens` are the
+   * last call priced -- the least the next, larger request can cost at worst --
+   * and the tokens are zero where nothing was priced. `run-muqbzu32-8691a65e`
+   * ended that way with $0.074 of $0.10 spent and said no figures (t194-w47).
+   */
+  declinedBy?: "loop_budget";
 };
 
 /** One call's hold on the purse, settled once by whichever comes first. */
@@ -71,6 +81,7 @@ export class AutomationStudioLlmBuildPurse {
   refusal: AutomationStudioLlmBuildPurseRefusal | undefined;
   /** The worst case of the last call it priced: the least the next, larger request can cost at worst. */
   lastProjectedCostUsd: number | undefined;
+  private lastPriced: { estimatedInputTokens: number; maxOutputTokens: number } | undefined;
   private settledUsd = 0;
   private readonly pending = new Map<number, number>();
   private holds = 0;
@@ -92,6 +103,25 @@ export class AutomationStudioLlmBuildPurse {
   }
 
   /**
+   * Where the purse stands, in a refusal's figures, for a call something other
+   * than the purse declined to send (`declinedBy`): what was spent and held,
+   * and the last call's worst case. Information only: it holds and refuses
+   * nothing.
+   */
+  standing(): AutomationStudioLlmBuildPurseRefusal {
+    return {
+      code: "llm_budget.run_cost_limit",
+      ...(this.lastProjectedCostUsd !== undefined ? { projectedCostUsd: this.lastProjectedCostUsd } : {}),
+      estimatedInputTokens: this.lastPriced?.estimatedInputTokens ?? 0,
+      maxOutputTokens: this.lastPriced?.maxOutputTokens ?? 0,
+      spentUsd: this.spentUsd(),
+      pendingUsd: this.pendingUsd(),
+      ceilingUsd: this.ceilingUsd,
+      declinedBy: "loop_budget"
+    };
+  }
+
+  /**
    * Hold a call's worst case, or refuse it. `projectedCostUsd` is the call's
    * worst case (`./projected-cost.ts`); `undefined` means the provider does not
    * price, and the call is refused only once nothing is left.
@@ -100,7 +130,10 @@ export class AutomationStudioLlmBuildPurse {
     const spentUsd = this.spentUsd();
     const pendingUsd = this.pendingUsd();
     const projected = call.projectedCostUsd;
-    if (projected !== undefined) this.lastProjectedCostUsd = projected;
+    if (projected !== undefined) {
+      this.lastProjectedCostUsd = projected;
+      this.lastPriced = { estimatedInputTokens: call.estimatedInputTokens, maxOutputTokens: call.maxOutputTokens };
+    }
     const over = projected !== undefined
       ? spentUsd + pendingUsd + projected > this.ceilingUsd + EPSILON_USD
       : spentUsd + pendingUsd >= this.ceilingUsd;

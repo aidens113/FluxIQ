@@ -234,7 +234,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
             ? automationStudioFlowBootstrapProviderUnavailable({ ...told, providerUnavailable: kind.providerUnavailable, changes: record.filter((row) => row.decision === "tool_call" && row.effectApplied === true).length, kept: kept !== undefined })
           : typeof kind === "object"
             ? automationStudioFlowBootstrapRepliesUnreadable({ ...told, unreadable: kind.unreadable, kept: kept !== undefined })
-            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds }, spending: kind === "cost" ? purseSpending(ending.progress.exhaustion?.costRefusal, spentBefore) : undefined }),
+            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds }, spending: kind === "cost" ? costSpending(ending.progress.exhaustion?.costRefusal, spentBefore, spent.estimatedCostUsd) : undefined }),
         progress: { trace: [...record], accounting: { ...spent }, ...(ending.progress.exhaustion ? { exhaustion: ending.progress.exhaustion } : {}) },
         lastIssueCodes: ending.lastIssueCodes,
         kept,
@@ -276,13 +276,22 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
 }
 
 /**
- * The purse's refusal in the build's own figures: the round's purse was given
- * what the rounds before left of the ceiling, so what the build had spent is
- * theirs plus what this round's purse counted. Nothing where no purse refused.
+ * What a cost ending says the build spent, in the build's own figures. Where
+ * the round's cost budget declined a decision (`costRefusal`), the round's
+ * purse was given what the rounds before left of the ceiling, so what the
+ * build had spent is theirs plus what this round's purse counted, and the
+ * declined call's worst case goes with it -- "at least" where the loop's count
+ * declined it before the purse priced it. Every other cost ending -- a repair
+ * with nothing left to start with -- says the whole build's spend (t194-w47:
+ * a cost ending without figures is never said).
  */
-function purseSpending(refusal: AutomationStudioLlmEvidenceLoopExhaustion["costRefusal"], spentBefore: number): { spentUsd: number; pendingUsd: number; projectedCostUsd?: number } | undefined {
-  if (!refusal) return undefined;
-  return { spentUsd: spentBefore + refusal.spentUsd, pendingUsd: refusal.pendingUsd, ...(refusal.projectedCostUsd !== undefined ? { projectedCostUsd: refusal.projectedCostUsd } : {}) };
+function costSpending(refusal: AutomationStudioLlmEvidenceLoopExhaustion["costRefusal"], spentBefore: number, spentInAll: number): { spentUsd: number; pendingUsd: number; projectedCostUsd?: number; projectedAtLeast?: boolean } {
+  if (!refusal) return { spentUsd: spentInAll, pendingUsd: 0 };
+  return {
+    spentUsd: spentBefore + refusal.spentUsd,
+    pendingUsd: refusal.pendingUsd,
+    ...(refusal.projectedCostUsd !== undefined ? { projectedCostUsd: refusal.projectedCostUsd, ...(refusal.declinedBy === "loop_budget" ? { projectedAtLeast: true } : {}) } : {})
+  };
 }
 
 /** What the rounds so far have left of the build's budget, for the next one. */
