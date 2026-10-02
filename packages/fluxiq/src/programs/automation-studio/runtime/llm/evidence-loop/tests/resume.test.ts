@@ -138,9 +138,14 @@ describe("a continued build", () => {
 // five-step draft, opened with the free navigation to the start, and appended it
 // as step 6 because the opening was always sent with `add: true`. The Flow then
 // ended on the feed, off the requests page its last step left, and the refuted
-// result was filed under that navigate. A re-author's draft is the Flow too,
-// seeded with no resume; a round that resumes with nothing in the Flow has no
-// start yet, and its opening is still the Flow's first step.
+// result was filed under that navigate. t195 made that opening taken, not added,
+// but it still ran, so the re-author began on the feed without the requests
+// link, against its own "The page is where the test left it: look first". A
+// round whose draft holds the Flow (a repair's, a re-author's, seeded with no
+// resume) now opens with the look on the page as it stands, carrying the Flow's
+// calls under `held` so the domain keeps where the build arrived and what it was
+// shown (C8). A round with nothing in the Flow has no start yet, and its opening
+// is still the navigation, the Flow's first step.
 describe("the opening of a round whose draft already holds the Flow", () => {
   const look: JsonObject = { node: "web.output.dom-capture", parameters: {}, consequences: [] };
   const arrival: JsonObject = { node: "web.output.browser-navigate", parameters: { url: "https://social.example/" }, consequences: [] };
@@ -162,20 +167,59 @@ describe("the opening of a round whose draft already holds the Flow", () => {
     return { result, executeTool };
   };
 
-  it("still goes to the start, but a resumed five-step draft stays five steps", async () => {
-    const { result, executeTool } = await round({
+  const looked = { kind: "llm_evidence_tool_execution", evidence: { ok: true, page: { url: "https://social.example/friends/requests/", title: "Requests" } }, effectApplied: false };
+  const heldRound = async (draft: NonNullable<Parameters<typeof runAutomationStudioLlmEvidenceLoop>[0]["draft"]>) => {
+    const executeTool = vi.fn(async (_call: { callId: string; toolId: string; value: JsonObject }) => looked);
+    const decide = vi.fn().mockResolvedValue({ kind: "recorded_run_ended" });
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: [runNode], decide, executeTool, maxIterations: 1, maxToolCalls: 2, dryRun: false,
+      unusableDecisions: { maxConsecutive: 1, stalled: () => new Error("stalled") }, draft
+    });
+    return { result, executeTool, decide };
+  };
+  const flowStep = (position: number, url: string): AutomationStudioFlowDraftStep =>
+    step(position, { id: `s${position}`, toolId: "core.run_node", actionId: "web.output.browser-navigate", input: { node: "web.output.browser-navigate", parameters: { url } }, proposes: true });
+
+  it("looks at the page where the test left it, and never navigates, on a resumed five-step draft", async () => {
+    const { result, executeTool, decide } = await heldRound({
       seed: [kept(1), kept(2), kept(3), kept(4), kept(5)],
       resume: { revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [] }
     });
 
-    expect(executeTool.mock.calls[0]![0]).toMatchObject({ callId: "initial.core.run_node", value: arrival });
-    expect(result.steps.find((entry) => entry.callId === "initial.core.run_node")?.disposition).toBe("taken");
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    const opened = executeTool.mock.calls[0]![0];
+    expect(opened.callId).toBe("initial.core.run_node");
+    expect(opened.value).toMatchObject(look);
+    expect(opened.value.node).not.toBe(arrival.node);
+    // The Flow's calls go with the look, as the steps were written; the draft is unchanged.
+    expect(opened.value.held).toEqual([1, 2, 3, 4, 5].map((position) => ({ target: `t.${position}` })));
     expect(result.steps.filter((entry) => entry.disposition === "kept").map((entry) => entry.callId)).toEqual(["call.1", "call.2", "call.3", "call.4", "call.5"]);
+    expect(result.steps.find((entry) => entry.callId === "initial.core.run_node")?.disposition).not.toBe("kept");
+    // The model's first decision is asked with that look in front of it.
+    const shown = (decide.mock.calls[0]![0] as { evidence: { callId?: string; value: unknown }[] }).evidence;
+    expect(shown.find((entry) => entry.callId === "initial.core.run_node")?.value).toEqual(looked.evidence);
   });
 
-  it("is the Flow's first step on a build's first round, as before", async () => {
-    const { result } = await round(undefined);
+  it("is a look carrying the Flow's own step addresses when a re-author's draft holds the Flow without resuming it", async () => {
+    const { result, executeTool } = await heldRound({ seed: [flowStep(1, "https://social.example/"), kept(2), flowStep(3, "https://social.example/friends/requests/")] });
 
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    expect(executeTool.mock.calls[0]![0].value).toEqual({
+      ...look,
+      held: [
+        { node: "web.output.browser-navigate", parameters: { url: "https://social.example/" } },
+        { target: "t.2" },
+        { node: "web.output.browser-navigate", parameters: { url: "https://social.example/friends/requests/" } }
+      ]
+    });
+    expect(result.steps.filter((entry) => entry.disposition === "kept").map((entry) => entry.callId)).toEqual(["call.1", "call.2", "call.3"]);
+  });
+
+  it("goes to the start as the Flow's first step on a build's first round, as before", async () => {
+    const { result, executeTool } = await round(undefined);
+
+    expect(executeTool.mock.calls[0]![0]).toMatchObject({ callId: "initial.core.run_node", value: arrival });
+    expect(executeTool.mock.calls[0]![0].value.held).toBeUndefined();
     expect(result.steps.map((entry) => [entry.callId, entry.disposition])).toEqual([["initial.core.run_node", "kept"]]);
   });
 
@@ -185,16 +229,21 @@ describe("the opening of a round whose draft already holds the Flow", () => {
     expect(result.steps.find((entry) => entry.callId === "initial.core.run_node")?.disposition).toBe("kept");
   });
 
-  it("is taken, not added, when a re-author's draft holds the Flow without resuming it", async () => {
-    const { result } = await round({ seed: [kept(1), kept(2), kept(3)] });
+  it("is the Flow's first step when a round resumes with nothing in the Flow", async () => {
+    const { result, executeTool } = await round({ seed: [], resume: { revision: 2, stopped: "judged_wrong", outstandingIssueCodes: [], judgement: { stepsInFlow: 0 } } });
 
-    expect(result.steps.find((entry) => entry.callId === "initial.core.run_node")?.disposition).toBe("taken");
-    expect(result.steps.filter((entry) => entry.disposition === "kept").map((entry) => entry.callId)).toEqual(["call.1", "call.2", "call.3"]);
+    expect(executeTool.mock.calls[0]![0].value).toEqual(arrival);
+    expect(result.steps.find((entry) => entry.callId === "initial.core.run_node")?.disposition).toBe("kept");
   });
 
-  it("is the Flow's first step when a round resumes with nothing in the Flow", async () => {
-    const { result } = await round({ seed: [], resume: { revision: 2, stopped: "judged_wrong", outstandingIssueCodes: [], judgement: { stepsInFlow: 0 } } });
+  it("carries nothing held on a look of a build told no start, whose draft holds nothing", async () => {
+    const lookOnly: AutomationStudioLlmEvidenceTool = { ...runNode, initialObservation: { input: look } };
+    const executeTool = vi.fn(async (_call: { callId: string; toolId: string; value: JsonObject }) => looked);
+    await runAutomationStudioLlmEvidenceLoop({
+      tools: [lookOnly], decide: vi.fn().mockResolvedValue({ kind: "recorded_run_ended" }), executeTool, maxIterations: 1, maxToolCalls: 2, dryRun: false,
+      unusableDecisions: { maxConsecutive: 1, stalled: () => new Error("stalled") }, draft: { seed: [] }
+    });
 
-    expect(result.steps.find((entry) => entry.callId === "initial.core.run_node")?.disposition).toBe("kept");
+    expect(executeTool.mock.calls[0]![0].value).toEqual(look);
   });
 });

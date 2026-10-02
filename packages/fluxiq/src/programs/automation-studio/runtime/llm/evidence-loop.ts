@@ -525,14 +525,15 @@ export async function runAutomationStudioLlmEvidenceLoop(
     return undefined;
   };
   const initialTool = input.tools.find((tool) => tool.initialObservation);
-  const arrival = initialTool?.initialObservation!.arrival;
+  // A draft already holding the Flow (a repair's, a re-author's) opens with the look where the test left the page, never the arrival (run 38 C3), and
+  // the look carries the Flow's calls as written under `held`, so the domain keeps where the build arrived and the addresses it held (C8).
+  const held = draftSteps.some((step) => step.disposition === "kept") ? draftSteps.filter((step) => step.disposition === "kept" && (step.toolId ?? step.actionId) === initialTool?.toolId).map((step) => structuredClone(step.input)) : undefined;
+  const arrival = held ? undefined : initialTool?.initialObservation!.arrival;
   if (initialTool && arrival) {
-    // A build told where its Flow starts opens by going there (F31): its look
-    // was refused for not being there yet, and the model's first paid decision
-    // was that navigation (`run-muqc07fh-eeffbc86`). The opening call id stays,
-    // since the domain keys per-build memory on it. No provider call. A draft already holding the Flow (a repair's, a re-author's) holds its start: its opening is taken, not added (run 38 appended it as step 6).
+    // A build told where its Flow starts opens by going there (F31): its look was refused for not being there yet, and the model's first paid
+    // decision was that navigation (`run-muqc07fh-eeffbc86`). The opening call id stays, since the domain keys per-build memory on it. No provider call.
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
-    const opening: ToolCall = { kind: "tool_call", callId: `initial.${initialTool.toolId}`, toolId: initialTool.toolId, input: structuredClone(arrival), ...(draftSteps.some((step) => step.disposition === "kept") ? {} : { add: true as const }) };
+    const opening: ToolCall = { kind: "tool_call", callId: `initial.${initialTool.toolId}`, toolId: initialTool.toolId, input: structuredClone(arrival), add: true };
     const ended = await runCall(0, opening.callId, opening, initialTool, automationStudioLlmEvidenceRequestSignature({ tool: initialTool, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: opening.input }));
     if (ended) return ended;
   } else if (initialTool) {
@@ -547,7 +548,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     let stateAfter: string | undefined;
     try {
       stateBefore = await digest(callId, initialTool.toolId);
-      execution = automationStudioLlmEvidenceParseToolExecutionResult(ran = await input.executeTool({ callId, toolId: initialTool.toolId, value: structuredClone(initialInput), ...(input.signal ? { signal: input.signal } : {}) }), initialTool.effect);
+      execution = automationStudioLlmEvidenceParseToolExecutionResult(ran = await input.executeTool({ callId, toolId: initialTool.toolId, value: structuredClone(held ? { ...initialInput, held } : initialInput), ...(input.signal ? { signal: input.signal } : {}) }), initialTool.effect);
       stateAfter = await digest(callId, initialTool.toolId);
       if (execution) ({ before: stateBefore, after: stateAfter } = statesOf(execution, stateBefore, stateAfter));
     } catch {
