@@ -87,24 +87,40 @@ export function automationStudioDeepSeekMessages(request: AutomationStudioLlmTas
  * wrap-up. The scripted build in `../evidence-loop/tests/request-prefix.test.ts`
  * holds the property.
  *
- * So, for an evidence decision: the task envelope, the instruction, the policy
- * gates and the node catalog first; then the evidence window; then everything
- * that varies -- the offered tools, the counter, the routing context, any
- * reusable context, and last the output schema. Nothing is removed or cut:
- * `context.routing` is the object `flowBootstrap.routing` was, moved because it
- * cannot sit inside `flowBootstrap` without sitting in front of the window. A
- * later edit that adds a key must put it on the correct side of the window,
- * and a key that varies per call belongs after it. Other task kinds are one
- * call each and keep their order.
+ * **W2, measured again (t193, `run-muqclqt5-b04525e8`, 2026-10-02).** With the
+ * varying parts behind the window, every decision still read them uncached:
+ * whatever follows the window follows its newest entry, so it misses on every
+ * call however rarely it changes. They were two thirds of each decision's
+ * misses -- the output schema (10k characters), the tools (6k) and the routing
+ * context (2.8k at the first decision, 23k by the sixteenth). The routing
+ * context changes only by gaining situations, which the build now places in
+ * the window after the call each followed (`../../route-state/build-routing.ts`),
+ * leaving a context that is constant: it goes in front. The tools change only
+ * when withdrawn (once in that build): in front, a change costs one call's
+ * miss of the window instead of every call paying for them. The output schema
+ * stays last: it changed three times in that build, and each change in front
+ * of the window would cost the whole window, more than it costs behind it.
+ * Reconstructed on that run's requests, the decisions after the first send
+ * 151k uncached tokens where they sent 228k.
+ *
+ * So, for an evidence decision: the task envelope; the instruction, the policy
+ * gates, the node catalog and a routing context that lists no situations; the
+ * offered tools; then the evidence window; and after it only what varies --
+ * the counter, a routing context that still lists its situations (a caller
+ * that does not place them), any reusable context, and last the output schema.
+ * Nothing is removed or cut. A later edit that adds a key must put it on the
+ * correct side of the window, and a key that varies per call belongs after it.
+ * Other task kinds are one call each and keep their order.
  *
  * The catalog an evidence decision is shown is every node by name and what it
  * does (`nodeCatalog`, from the packet's `catalogNames`), the note that says
  * how to read the rest, and the full definitions of only the nodes the build
  * asked `core.describe_nodes` about (`describedNodes`) -- user, 2026-10-01. All
  * three sit in the constant head. The names and the note never change during
- * a build; `describedNodes` only ever gains an entry at its end, so a describe
- * keeps the prefix through every node described before it, and two requests
- * with an unchanged described set are byte prefixes exactly as before.
+ * a build; `describedNodes` only ever gains an entry at its end, so it is the
+ * last thing in the head before the tools: a describe keeps the prefix through
+ * every node described before it, and two requests with an unchanged described
+ * set are byte prefixes exactly as before.
  */
 function providerUserPayload(request: AutomationStudioLlmTaskRequest): Record<string, unknown> {
   if (request.taskKind === "evidence_tool_decision" && request.context.evidenceLoop) return providerEvidenceDecisionPayload(request, request.context.evidenceLoop);
@@ -134,6 +150,8 @@ function providerEvidenceDecisionPayload(
   loop: NonNullable<AutomationStudioLlmTaskRequest["context"]["evidenceLoop"]>
 ): Record<string, unknown> {
   const routing = request.context.flowBootstrap?.routing;
+  // Constant once its situations are in the window; a context that still lists them grows, and goes after it.
+  const routingInFront = routing !== undefined && routing.situations.length === 0;
   const outputSchema = automationStudioDeepSeekOutputSchema(request);
   return {
     taskKind: request.taskKind,
@@ -149,22 +167,22 @@ function providerEvidenceDecisionPayload(
       // explorer decides whether to press with this, not only the diagnosis.
       // Fixed for the length of a loop, so it stays in the constant head.
       ...(request.context.policyGates ? { policyGates: request.context.policyGates } : {}),
-      ...(request.context.flowBootstrap ? { flowBootstrap: providerEvidenceFlowBootstrap(request.context.flowBootstrap) } : {}),
+      ...(request.context.flowBootstrap ? { flowBootstrap: providerEvidenceFlowBootstrap(request.context.flowBootstrap, routingInFront) } : {}),
       evidenceLoop: {
-        // The window. Everything after it varies between one call and the
-        // next, and nothing constant may follow it.
-        evidence: loop.evidence,
-        // Withdrawn in the wrap-up and after an ignored redirect.
+        // Withdrawn only in the wrap-up and after an ignored redirect.
         tools: loop.tools.map((tool) => ({
           toolId: tool.toolId,
           description: tool.description,
           ...(tool.effect ? { effect: tool.effect } : {}),
           ...(tool.repeatPolicy ? { repeatPolicy: tool.repeatPolicy } : {})
         })),
+        // The window. Everything after it varies between one call and the
+        // next, and nothing constant may follow it.
+        evidence: loop.evidence,
         iteration: loop.iteration
       },
       // Gains a situation whenever a call reaches a new page state.
-      ...(routing ? { routing } : {}),
+      ...(routing && !routingInFront ? { routing } : {}),
       // Looked up again against each decision's fresh evidence.
       ...(request.context.reusableContext ? { reusableContext: request.context.reusableContext } : {})
     },
@@ -197,20 +215,23 @@ function providerFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskReque
 
 /**
  * What an evidence decision is shown of its catalog context: where its Flow
- * starts, every node by name, the note on reading them, and the nodes it has
- * had described (see above). The routing context rides after the window
- * instead, and the whole catalog, `catalogTruncated` and `catalogSelection`
- * are not sent: the names list every node, and a definition is one
- * `core.describe_nodes` call away. A packet built without `catalogNames` -- a
- * request assembled by hand -- has them derived from its catalog by the same
- * function, so the wire never carries the full catalog to a decision.
+ * starts, every node by name, the note on reading them, the routing context
+ * when it is constant (`withRouting`; one that still lists its situations rides
+ * after the window instead), and the nodes it has had described, last because
+ * they are the one part that grows (see above). The whole catalog,
+ * `catalogTruncated` and `catalogSelection` are not sent: the names list every
+ * node, and a definition is one `core.describe_nodes` call away. A packet built
+ * without `catalogNames` -- a request assembled by hand -- has them derived from
+ * its catalog by the same function, so the wire never carries the full catalog
+ * to a decision.
  */
-function providerEvidenceFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>): Record<string, unknown> {
-  const { nodeCatalog, catalogNames, describedNodes, startLocation } = context;
+function providerEvidenceFlowBootstrap(context: NonNullable<AutomationStudioLlmTaskRequest["context"]["flowBootstrap"]>, withRouting: boolean): Record<string, unknown> {
+  const { nodeCatalog, catalogNames, describedNodes, routing, startLocation } = context;
   return {
     ...(startLocation ? { startLocation, startLocationNote: FLOW_START_LOCATION_NOTE } : {}),
     nodeCatalog: catalogNames ?? automationStudioFlowBootstrapCatalogNames(nodeCatalog),
     nodeCatalogNote: AUTOMATION_STUDIO_DEEPSEEK_NODE_CATALOG_NOTE,
+    ...(withRouting && routing ? { routing } : {}),
     ...(describedNodes?.length ? { describedNodes } : {})
   };
 }

@@ -1598,11 +1598,10 @@ const bootstrapInstructionText = resolvedInstructions.instructions
                 });
               }
               creation.endIfReadingRefused(); // The reading was refused: the build ends on cost here, not on a question.
-              const decision = await runHarness({
-                taskKind: "evidence_tool_decision", projectId, flowId, ...promptInstructions,
-                evidenceLoop: { iteration, tools, evidence: evidence.map((item) => ({ ...item })), decisionSchema, completionSchema, canComplete },
+              const decision = await runHarness({ // The route states sit in the window after the calls that left them, and the routing context is constant (W2, `route-state/build-routing.ts`).
+                taskKind: "evidence_tool_decision", projectId, flowId, ...promptInstructions, ...((shown) => ({ evidenceLoop: { iteration, tools, evidence: shown.evidence.map((item) => ({ ...item })), decisionSchema, completionSchema, canComplete }, flowBootstrap: { registry, resolution, size, routing: shown.context, describedNodeIds: nodeDescriptions.ids(), ...(startLocation === undefined ? {} : { startLocation }) } }))(routing.shown(evidence, this.llmEvidenceRuntime?.deniedEvidenceKeys ?? [])),
                 // The node catalog is every offered node, whole: no 16,000-token allocation of its own (2026-09-30).
-                flowBootstrap: { registry, resolution, size, routing: routing.context(), describedNodeIds: nodeDescriptions.ids(), ...(startLocation === undefined ? {} : { startLocation }) },
+                // (The evidence window and the routing context are given together, above.)
                 ...(reusableContextResult?.packet ? { reusableContext: reusableContextResult.packet } : {}),
                 provider: unresolvedProvider.provider, ...(decisionTokenLimits ? { tokenLimits: decisionTokenLimits } : {}),
                 ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}),
