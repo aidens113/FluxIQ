@@ -22,7 +22,7 @@ import { validateAutomationStudioFlowBootstrapPlan } from "../../../flow-bootstr
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, expectNoTopology, caller, mockProvider, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { blankFixture, expectNoTopology, caller, isJudgeRequest, judgeReply, mockProvider, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const TYPE_ID = "domain.example.type";
 /** The one field the stand-in domain showed the model, and what it really is. */
@@ -152,11 +152,12 @@ function typingPlan(selector: JsonValue, text: JsonValue = "Ada"): JsonObject {
   };
 }
 
-/** A creation whose model completes with each plan in turn; the last repeats. */
+/** A creation whose model completes with each plan in turn; the last repeats. The judge of a finished build's test says yes, and is counted in `requests`. */
 async function create(plans: JsonObject[], options: { binding?: AutomationStudioLlmEvidenceRuntimeBinding; maxCallsPerRun?: number } = {}) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const provider = mockProvider(async (request) => {
     requests.push(request);
+    if (isJudgeRequest(request)) return judgeReply();
     const plan = plans[Math.min(requests.length, plans.length) - 1]!;
     return {
       response: { kind: "evidence_tool_decision", summary: "Fill the form.", decision: { kind: "complete", result: { summary: "Type the name.", plan } } },
@@ -192,7 +193,9 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     const run = await create([typingPlan({ handle: NAME_FIELD.handle })]);
     const result = await run.generation;
 
-    expect(run.requests).toHaveLength(1);
+    // The completion, then the judge of the Flow's test.
+    expect(run.requests).toHaveLength(2);
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, true]);
     const stored = await run.instance.getFlowBootstrapAdaptation(run.project.id, run.flow.flowId, result.adaptationId);
     const node = stored!.buildPlan.plan.subflows[0]!.nodes.find((item) => item.key === "enter_name");
     expect(node?.parameters).toEqual({ selector: NAME_FIELD.locator, text: "Ada" });
@@ -216,7 +219,9 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     const run = await create([typingPlan("input[name=\"Name\"]"), typingPlan({ handle: NAME_FIELD.handle })]);
     const result = await run.generation;
 
-    expect(run.requests).toHaveLength(2);
+    // The refused plan, the corrected one, then the judge of the Flow's test.
+    expect(run.requests).toHaveLength(3);
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true]);
     expect(feedbackBefore(run.requests, 1)).toBeUndefined();
     expect(feedbackBefore(run.requests, 2)).toMatchObject({
       ok: false,

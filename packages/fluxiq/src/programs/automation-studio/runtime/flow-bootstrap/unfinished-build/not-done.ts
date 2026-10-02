@@ -4,7 +4,7 @@
 // Both come from the checklist (`../instructed-acts/checklist.ts`): the ids
 // and the person's own words for each act and choice still to do, and the
 // checklist's reason put into a plain clause. Nothing here is page content.
-import type { AutomationStudioInstructedActChecklistItem, AutomationStudioInstructedActTodo } from "../instructed-acts/index.ts";
+import type { AutomationStudioInstructedActChecklistItem, AutomationStudioInstructedActObjectTodo, AutomationStudioInstructedActTodo } from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
 
@@ -12,8 +12,8 @@ const MAX_QUOTE = 200;
 const MAX_SAID_QUOTE = 90;
 const MAX_SAID = 4;
 
-/** Each reason, as a clause that finishes "... : <quote> -- ". */
-const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo, string>> = Object.freeze({
+/** Each reason, as a clause that finishes "... : <quote> -- ". Every reason the checklist gives has its own. */
+const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo, string>> = Object.freeze({
   no_step_added: "nothing I tried did it",
   step_not_kept: "the step I tried for it is not in the Flow",
   step_changed_nothing: "the step I tried for it changed nothing",
@@ -24,7 +24,10 @@ const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo, string>> = 
   span_stops_short: "part of it ran once after the loop instead of on every item",
   act_consequence_undeclared: "the step for it did not say it needs your permission, so you were never asked",
   choice_is_the_act_step: "the step that adds the item does not set it",
-  step_claimed_twice: "the step I tried for it already does something else"
+  step_claimed_twice: "the step I tried for it already does something else",
+  step_acts_on_another_object: "the step I named for it acted on a different item from the one you asked for",
+  quantity_is_a_repeat: "the step for how many ran once for each item of a list, not that many times on this item",
+  quantity_presses_differ: "the step for how many did not add it exactly the number of times you asked"
 });
 
 /** Why each round stopped, as a clause that finishes "The build stopped because ...". */
@@ -32,7 +35,8 @@ const STOP_WORDS: Readonly<Record<AutomationStudioFlowBootstrapUnfinishedStop, s
   iterations: "it used every decision it had without the Flow being finished",
   tool_calls: "it used every action it had without the Flow being finished",
   unusable_decisions: "every attempt to finish was refused",
-  repeat_without_progress: "it kept repeating itself without getting further"
+  repeat_without_progress: "it kept repeating itself without getting further",
+  judged_wrong: "the Flow it said was ready was tested from its start and judged not to do what you asked"
 });
 
 /** The acts and choices not done, as the ending's record keeps them. */
@@ -45,7 +49,7 @@ export function automationStudioFlowBootstrapNotDone(checklist: readonly Automat
 
 /** "`"add two packs ..."`: nothing I tried did it; ..." -- at most four, then how many more. */
 export function automationStudioFlowBootstrapNotDoneSaid(notDone: AutomationStudioFlowBootstrapBuildEnding["notDone"]): string {
-  const said = notDone.slice(0, MAX_SAID).map((item) => `"${bounded(item.quote, MAX_SAID_QUOTE)}": ${TODO_WORDS[item.todo as AutomationStudioInstructedActTodo] ?? "nothing I tried did it"}`);
+  const said = notDone.slice(0, MAX_SAID).map((item) => `"${bounded(item.quote, MAX_SAID_QUOTE)}": ${TODO_WORDS[item.todo as AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo] ?? "nothing I tried did it"}`);
   const more = notDone.length > MAX_SAID ? `; and ${notDone.length - MAX_SAID} more` : "";
   return `${said.join("; ")}${more}`;
 }
@@ -80,6 +84,7 @@ export function automationStudioFlowBootstrapBlockedSaid(issueCodes: readonly st
  * and two wrong requests had been confirmed while it explored.
  */
 export function automationStudioFlowBootstrapTestSaid(judgement: AutomationStudioFlowBootstrapJudgement | undefined): string {
+  if (judgement?.judge) return judgedTestSaid(judgement);
   if (!judgement || judgement.tested === "not_tested") return judgement && judgement.stepsInFlow === 0 ? "No step I found belonged in the Flow." : "";
   const steps = `${judgement.stepsInFlow} step${judgement.stepsInFlow === 1 ? "" : "s"}`;
   if (judgement.tested === "replayed_clean") {
@@ -90,6 +95,29 @@ export function automationStudioFlowBootstrapTestSaid(judgement: AutomationStudi
   }
   const failed = judgement.failedSteps.length ? ` step ${judgement.failedSteps.slice(0, 3).join(", ")}` : " a step";
   return `When the Flow as far as it got (${steps}) was run from its start,${failed} did not work.`;
+}
+
+/**
+ * The test of a Flow the model said was ready, which a judge sent back: it
+ * ran clean, so it is never said to have failed, nor to have done what was
+ * asked; or steps carried from an earlier Flow were not run in it at all.
+ */
+function judgedTestSaid(judgement: AutomationStudioFlowBootstrapJudgement): string {
+  const steps = `${judgement.stepsInFlow} step${judgement.stepsInFlow === 1 ? "" : "s"}`;
+  const carried = judgement.judge?.untestedCarried ?? [];
+  if (carried.length) {
+    return `Step${carried.length === 1 ? "" : "s"} ${carried.slice(0, 6).join(", ")}${carried.length > 6 ? " and more" : ""} of the Flow (${steps}) came from the earlier Flow and ${carried.length === 1 ? "was" : "were"} not run when it was tested, so what ${carried.length === 1 ? "it does" : "they do"} could not be judged.`;
+  }
+  return `The Flow (${steps}) ran from its start, but what it did was judged not to be what you asked.`;
+}
+
+/** The repair's announcement after a judge, naming its reason in its own words, bounded. */
+export function automationStudioFlowBootstrapRepairingJudgedSaid(judge: NonNullable<AutomationStudioFlowBootstrapJudgement["judge"]>): string {
+  const carried = judge.untestedCarried ?? [];
+  if (carried.length) return `Steps ${carried.join(", ")} came from the earlier Flow and were not run when it was tested. Repairing the Flow live, running them again.`;
+  const reason = (judge.observed ?? judge.findings[0] ?? "").replace(/\s+/gu, " ").trim();
+  const said = reason.length > 160 ? `${reason.slice(0, 157).trimEnd()}...` : reason;
+  return `The Flow was tested from its start and judged not to do what you asked${said ? `: ${said}` : ""}. Repairing it live.`;
 }
 
 /**

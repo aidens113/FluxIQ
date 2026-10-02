@@ -17,7 +17,7 @@
 // where the values came from.
 
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
-import type { JsonObject } from "../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 // The bounds live in `runtime/loop-limits/`, which neither this directory nor
 // the harness owns. This file used to re-export them so a reader of the contract
 // had them in hand, and no longer does: `result-summary.ts`, the module that
@@ -239,6 +239,58 @@ export type AutomationStudioRunResultSummary = {
   flowParametersWithheld?: boolean;
   /** True when a record set, a row sample, a column list, a read's condition wording or the Flow shape was cut to fit. */
   withheld: boolean;
+  /**
+   * Present only when what is judged is a build's test, before its Flow is
+   * proposed, rather than a finished run (`build-test/`). A test stores no
+   * record set, so the judgement is made from each step's own words and what
+   * the test observed of it.
+   */
+  buildTest?: AutomationStudioBuildTestAccount;
+};
+
+/**
+ * One step of the Flow a build proposes, as the judge of its test reads it.
+ *
+ * `target` and `observed` are the domain's words and evidence, screened by the
+ * builder (`build-test/summary.ts`) and checked again before sending
+ * (`llm/harness/request-evidence-check.ts`). `claims` are the model's own and
+ * prove nothing.
+ */
+export type AutomationStudioBuildTestStep = {
+  /** The step's position in the draft, the number the repair is told. */
+  step: number;
+  /** What was done, under the caller's own name for it. */
+  action: string;
+  /** The step's own words from what it ran with, then what it was given: the name or text of what it acted on, the item, the option, the typed text. */
+  target?: string[];
+  /** The acts the step, or the build's result, names it for. Claims, not proof. */
+  claims?: string[];
+  /** How the step answered in this test. `not_run` when the test did not run it, or did not run at all. */
+  outcome: "replayed" | "verified" | "present" | "remembered" | "failed" | "changed" | "unreproducible" | "not_run";
+  /** Set when the step's effect lasts and the test only checked it rather than doing it again. */
+  withheld?: true;
+  /** The position of the checked step before this one whose withheld effect this step may have needed. */
+  withheldBy?: number;
+  /** When the step runs, when it is not simply the next thing: optional, only if, on failure, or repeated over another step. */
+  runs?: JsonValue;
+  /** Set when the step was carried from an earlier Flow rather than run in this build. */
+  carried?: true;
+  /** What the test observed for this step: the rows a read returned, or a check's answer. */
+  observed?: JsonValue;
+  /** What the step did while the build explored, for a step the test only checked. */
+  explored?: { changed: "yes" | "no" | "unknown"; resultCode?: string; stateChanged?: boolean };
+};
+
+/** A build's test, as its judge reads it: every proposed step in order, and the build's own reading of the instruction's acts. */
+export type AutomationStudioBuildTestAccount = {
+  kind: "build_test";
+  /** `reused` when the test's answer was an earlier clean replay of the same Flow; `not_run` when no test applied to this Flow. */
+  test: "ran" | "reused" | "not_run";
+  steps: AutomationStudioBuildTestStep[];
+  /** The build's checklist of the instruction's acts. Information, not proof. */
+  checklist?: JsonObject[];
+  /** What the build's own check found missing. Information, not proof. */
+  missingActs?: JsonObject;
 };
 
 /**

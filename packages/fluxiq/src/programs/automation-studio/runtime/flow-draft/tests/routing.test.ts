@@ -69,8 +69,9 @@ describe("saying when a step runs", () => {
   // Live run run-munuj2os-c205ee3a put repeat on the listing, over itself.
   it("refuses a repeat whose over is not before the step it goes on, and says so as its own reason", () => {
     const draft = steps(3);
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 2 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before" }] });
-    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 3 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before" }] });
+    // The step named as over rides on the refusal, so the telling can name the listing (live run 37).
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 2 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before", over: 2 }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 3 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before", over: 3 }] });
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 1 }])).toEqual({ applied: 1, refused: [] });
   });
 
