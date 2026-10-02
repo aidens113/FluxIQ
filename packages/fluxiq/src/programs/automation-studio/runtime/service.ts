@@ -1574,7 +1574,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             // A completed plan is checked while the model can still correct it: a refused one is fed back and asked for again.
             checkCompletion: async (result, context) => {
               keeper.attempted(context.steps);
-              const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, size, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, draftSteps: context.steps, instructionText: bootstrapInstructionText, ...(startLocation === undefined ? {} : { startLocation }) });
+              const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, size, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, draftSteps: context.steps, routeSignaturesOf: routing.signaturesOf, instructionText: bootstrapInstructionText, ...(startLocation === undefined ? {} : { startLocation }) });
               accepted.verdict = verdict.ok ? verdict : undefined;
               return verdict.check;
             },

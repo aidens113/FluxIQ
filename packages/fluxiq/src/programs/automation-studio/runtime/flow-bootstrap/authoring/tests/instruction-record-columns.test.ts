@@ -14,7 +14,7 @@ import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts
 import { automationStudioFlowBootstrapRecordOutputIssues } from "../../plan/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, assembleAutomationStudioFlowDraftPlan } from "../index.ts";
-import { authoringInstructionRecordColumns, automationStudioFlowBootstrapUnreadColumnsSentence } from "../instruction-record-columns.ts";
+import { authoringInstructionRecordColumns, automationStudioFlowBootstrapDraftUnreadColumnsSentence, automationStudioFlowBootstrapUnreadColumnsSentence } from "../instruction-record-columns.ts";
 
 const definitions = webDomainNodeDefinitionsFixture();
 const registry = new AutomationStudioNodeRegistry(definitions);
@@ -154,8 +154,8 @@ describe("matching a named column to a field", () => {
 // from the instruction only, and nothing at all when there is nothing to say.
 describe("the sentence for a named column no field reads", () => {
   it("names the columns the instruction asks for that no field reads", () => {
-    expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, fieldKeys: ["name", "price", "url", "plus"], reader: "step 3" }))
-      .toBe("The instruction asks for a column \"rating\" that no field of step 3 reads.");
+    expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, fieldKeys: ["name", "price", "url", "plus"] }))
+      .toBe("The instruction asks for a column \"rating\" that no field reads.");
     expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, fieldKeys: ["Name", "url"] }))
       .toBe("The instruction asks for columns \"price\", \"rating\" that no field reads.");
   });
@@ -165,5 +165,35 @@ describe("the sentence for a named column no field reads", () => {
     expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: "Find every pair of Plus earbuds under $50.", fieldKeys: ["name"] })).toBeUndefined();
     expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: undefined, fieldKeys: ["name"] })).toBeUndefined();
     expect(automationStudioFlowBootstrapUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, fieldKeys: [] })).toBeUndefined();
+  });
+});
+
+// Said beside the build's draft, about the draft as a whole (run
+// `run-murdouox-c5294247`, R4). The note used to be said per read and to name
+// that read's step: a draft whose only read was the filter listing a repeat
+// runs over was told "no field of step 12 reads mutualFriends", and the model
+// spent its last four decisions rewriting and rerunning that listing instead
+// of adding the read after the confirms that the table needed. A column is
+// missing only when no read of the draft gives it, and saying so names no step,
+// so the note points at no read the model would then rework.
+describe("the sentence beside the draft for a named column no read gives", () => {
+  const FRIENDS = "Confirm every friend request from someone with at least 3 mutual friends, then give me a table with columns name and mutualFriends.";
+
+  it("names the column and no step when no read of the draft gives it", () => {
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [["name", "url", "requestId"]] }))
+      .toBe("The instruction asks for a column \"mutualFriends\" that no read in the draft gives.");
+  });
+
+  it("holds the instruction to every read at once: a column one read gives is not missing", () => {
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [["name", "url"], ["name", "mutualFriends"]] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, reads: [["name"], ["url"]] }))
+      .toBe("The instruction asks for columns \"price\", \"rating\" that no read in the draft gives.");
+  });
+
+  it("says nothing when there is no read with fields, or no named column", () => {
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [[]] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: "Confirm every friend request.", reads: [["name"]] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: undefined, reads: [["name"]] })).toBeUndefined();
   });
 });

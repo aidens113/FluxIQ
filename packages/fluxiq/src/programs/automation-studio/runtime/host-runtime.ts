@@ -46,6 +46,37 @@ export type AutomationStudioHostRuntimeBoundary = {
   observeRouteState?(input: { projectId: string; flowId: string; signal?: AbortSignal }): JsonObject | Promise<JsonObject>;
   /** The `state.*` paths `observeRouteState` fills, so a model can write a condition on one that is absent right now. */
   routeStatePaths?: readonly AutomationStudioHostRouteStatePath[];
+  /**
+   * One route state, as the compact signature a Flow node keeps of the page it
+   * started on and the page it left (`route-state/signatures/`). Pure and
+   * synchronous; Core stores the answer on the node and never reads inside it,
+   * so a host returns nothing it would not put in a Flow document -- hashes,
+   * not page text. Without it no node records a pre-state.
+   */
+  signRouteState?(state: JsonObject): JsonObject;
+  /**
+   * Whether the page a recorded signature describes is the page observed now,
+   * and how close the two are, 0 to 1. Pure and synchronous. This is how a run
+   * finds the node whose expected pre-state holds when a step cannot run
+   * (`executor/state-routing/`); without it, two signatures match only when
+   * they are structurally equal.
+   */
+  compareRouteSignatures?(recorded: JsonObject, observed: JsonObject): { matches: boolean; closeness: number };
+  /**
+   * What one step did to the page, from the route state before it and the route
+   * state after it, as a compact record a Flow node keeps beside its signatures.
+   * Pure and synchronous, and as opaque to Core as a signature.
+   */
+  signRouteEffect?(before: JsonObject, after: JsonObject): JsonObject;
+  /**
+   * Whether the page observed now already shows a step's recorded effect: the
+   * route state as `observeRouteState` returned it, not a signature, so the host
+   * can test it exactly. True only on positive evidence; an effect that records
+   * nothing the page gained says nothing, and is false. A run reads it for a
+   * step it cannot run: the site already did what the step does -- a store
+   * already chosen, a page already turned -- so the run goes on past it.
+   */
+  routeEffectHolds?(effect: JsonObject, observed: JsonObject): boolean;
   captureStateSnapshot?(input: AutomationStudioHostRuntimeActionContext & { point: "before_action" | "after_action" | "after_wait_retry" | "after_patch_test" }): AutomationStudioHostStateSnapshotRef | Promise<AutomationStudioHostStateSnapshotRef>;
   inspectStateDiff?(input: { before?: AutomationStudioHostStateSnapshotRef; after?: AutomationStudioHostStateSnapshotRef; node: AutomationStudioFlowNode; attemptId: string }): JsonObject | Promise<JsonObject>;
   rollbackHint?(input: AutomationStudioHostRuntimeActionContext): JsonObject | Promise<JsonObject>;

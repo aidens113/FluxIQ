@@ -31,18 +31,31 @@ const notesOf = (value: unknown): string[] => Array.isArray(value)
   : [];
 
 describe("the draft says when a read misses a column the instruction names", () => {
-  it("names the column and the read, in the entry the model is shown", () => {
+  it("names the column, and no step, in the entry the model is shown", () => {
     const steps = [navigate, readStep(2, { name: ".name", price: ".price", plus: ".plus" })];
     const acts = automationStudioFlowBootstrapDraftActs({ instructionText: COLUMNS }).acts(steps);
 
-    expect(notesOf(acts)).toEqual(["The instruction asks for a column \"rating\" that no field of step 2 reads."]);
+    expect(notesOf(acts)).toEqual(["The instruction asks for a column \"rating\" that no read in the draft gives."]);
     const entry = automationStudioFlowDraftEntry({ steps, authored: true, acts });
-    expect(JSON.stringify(entry?.value)).toContain("no field of step 2 reads");
+    expect(JSON.stringify(entry?.value)).toContain("no read in the draft gives");
+    expect(JSON.stringify(entry?.value)).not.toContain("of step 2");
   });
 
-  it("names every column a read misses, once per read", () => {
-    const acts = automationStudioFlowBootstrapDraftActs({ instructionText: COLUMNS }).acts([navigate, readStep(2, { name: ".name" })]);
-    expect(notesOf(acts)).toEqual(["The instruction asks for columns \"price\", \"rating\" that no field of step 2 reads."]);
+  it("names every column no read gives, once for the whole draft", () => {
+    const acts = automationStudioFlowBootstrapDraftActs({ instructionText: COLUMNS }).acts([navigate, readStep(2, { name: ".name" }), readStep(3, { name: ".title" })]);
+    expect(notesOf(acts)).toEqual(["The instruction asks for columns \"price\", \"rating\" that no read in the draft gives."]);
+  });
+
+  // Run `run-murdouox-c5294247`, R4: the filter listing a repeat runs over was
+  // named as the read missing the column, and the model reworked that listing
+  // for four decisions instead of adding the read the table needed.
+  it("never names the listing an act repeats over, and is quiet once a later read gives the column", () => {
+    const friends = "Confirm every friend request from someone with at least 3 mutual friends, then give me a table with columns name and mutualFriends.";
+    const listing = readStep(2, { name: ".name", requestId: ".id" });
+    const only = automationStudioFlowBootstrapDraftActs({ instructionText: friends }).acts([navigate, listing]);
+    expect(notesOf(only)).toEqual(["The instruction asks for a column \"mutualFriends\" that no read in the draft gives."]);
+    const withResultRead = automationStudioFlowBootstrapDraftActs({ instructionText: friends }).acts([navigate, listing, readStep(3, { name: ".name", mutualFriends: ".mutual" })]);
+    expect(notesOf(withResultRead)).toEqual([]);
   });
 
   it("says nothing when every named column is read, the instruction names none, or the read was withdrawn", () => {
