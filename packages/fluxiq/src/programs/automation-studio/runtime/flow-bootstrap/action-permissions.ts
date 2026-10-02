@@ -80,6 +80,7 @@
 import {
   AutomationStudioActionPermissionGate,
   automationStudioActionDeclarationCrossCheck,
+  automationStudioDestructiveConsequences,
   type AutomationStudioActionDeclarationCrossCheck,
   type AutomationStudioActionDeclarationRecord,
   type AutomationStudioActionPermissionCheck,
@@ -127,8 +128,10 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
    *
    * Called once, after the loop has stopped. It may derive the instruction's
    * authority -- one provider call -- for a build that never needed it, and
-   * where a caller passed an `ask` it says the finding out loud in the same
-   * thread the permission question uses. It never refuses anything.
+   * it says the finding in the Flow's thread: as a yes-or-no question through
+   * `ask` when a class nobody declared is one a person is asked about, and
+   * otherwise as a plain line through `say`, or not at all without one. It
+   * never refuses or pauses anything.
    */
   crossCheck(): Promise<AutomationStudioActionDeclarationCrossCheck | undefined>;
   /**
@@ -152,6 +155,13 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
   deriveInstructed?: (() => Promise<readonly AutomationStudioInstructedConsequence[]>) | undefined;
   /** Absent, a refused action is refused and nobody is asked, exactly as before a thread existed. */
   ask?: AutomationStudioFlowBootstrapPermissionAsk | undefined;
+  /**
+   * Says something in the Flow's thread that is not a question, for a finding
+   * that needs no answer. Absent, such a finding is recorded on the proposal
+   * and not said: the parking port only opens questions, and a creation or an
+   * edit nobody declared is not one to put to the person.
+   */
+  say?: ((text: string) => Promise<unknown>) | undefined;
   now?: () => number;
   newRequestId?: () => string;
 }): AutomationStudioFlowBootstrapActionPermissions {
@@ -227,7 +237,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         declarations: gate.declarations,
         instructed: await gate.resolveInstructed()
       });
-      if (crossCheck.verdict === "undeclared" && input.ask) await saidOutLoud(input.ask, crossCheck);
+      if (crossCheck.verdict === "undeclared") await saidOutLoud(input, crossCheck);
       return crossCheck;
     },
     endedOnRequest: (progress, accounting) => gate.request
@@ -245,17 +255,37 @@ const NO_LOOP_PROGRESS: { trace: readonly AutomationStudioLlmEvidenceLoopTrace[]
 /**
  * Says a contradiction in the Flow's own thread, and does not wait.
  *
- * Not a parking ask: the build has finished and has a Flow, and the question is
+ * **A question only for what a person is asked about.** The user's rule
+ * (2026-10-01): only moving money, deleting, and sending or publishing ask the
+ * person (`../action-permissions/destructive.ts` is that list). So the finding
+ * is a yes-or-no question only when one of the classes nobody declared is one
+ * of those; `modify_existing` and `create_new` -- adding to a cart, choosing a
+ * colour -- are said as a plain line where the thread takes one (`say`), and
+ * not at all where it only takes questions. Run `run-muqk4u32-0b36e58f` ended
+ * on "... Apply it as it stands?" about a creation and an edit, a question the
+ * rule says nobody should have been asked. Either way the finding is on the
+ * proposal (`permission-outcome.ts`).
+ *
+ * Never a pause: the build has finished and has a Flow, and the question is
  * whether to apply it, which the person answers by approving the proposal the
  * finding is recorded on. A `confirm` rather than an `open` question, so the
  * thread offers yes and no and an answer means something; `parks: false`,
  * because nothing is being held. A thread that cannot be written to loses the
  * turn and keeps the record, which is the same trade the permission ask makes.
  */
-async function saidOutLoud(ask: AutomationStudioFlowBootstrapPermissionAsk, crossCheck: AutomationStudioActionDeclarationCrossCheck): Promise<void> {
+async function saidOutLoud(
+  thread: { ask?: AutomationStudioFlowBootstrapPermissionAsk | undefined; say?: ((text: string) => Promise<unknown>) | undefined },
+  crossCheck: AutomationStudioActionDeclarationCrossCheck
+): Promise<void> {
+  const asksPerson = automationStudioDestructiveConsequences(crossCheck.undeclared).length > 0;
   try {
-    await ask.port.open({
-      askId: `declaration-cross-check:${crossCheck.undeclared.join("-")}:${Math.trunc((ask.now ?? Date.now)())}`,
+    if (!asksPerson) {
+      if (thread.say) await thread.say(crossCheck.sentence);
+      return;
+    }
+    if (!thread.ask) return;
+    await thread.ask.port.open({
+      askId: `declaration-cross-check:${crossCheck.undeclared.join("-")}:${Math.trunc((thread.ask.now ?? Date.now)())}`,
       kind: "confirm",
       parks: false,
       timeoutMs: null,

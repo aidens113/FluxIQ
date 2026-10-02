@@ -207,7 +207,23 @@ describe("holding what was declared against what was instructed", () => {
     expect(check.undeclared).toEqual(["send_or_publish"]);
     expect(check.declaredNothing).toBe(2);
     expect(check.quotes).toEqual([{ consequence: "send_or_publish", instructionId: "instruction.schedule", quote: "Schedule a post for Friday" }]);
-    expect(check.sentence).toBe("The instruction asks for send_or_publish, and none of this run's 2 actions said it would cause that; 2 of them said they would cause nothing lasting.");
+    expect(check.sentence).toBe("Your instruction asks to send or publish something (\"Schedule a post for Friday\"), but nothing FluxIQ did while building this Flow said it would.");
+  });
+
+  it("says each class in the person's words with their own quote, and counts nothing (run muqk4u32)", () => {
+    const press = (ref: string) => ({ action: { kind: "exploration_step" as const, id: "core.run_node", ref, verb: "press" as const, effect: "mutate" as const }, control: { name: null, kind: "button" }, consequences: [], permitted: true });
+    const check = automationStudioActionDeclarationCrossCheck({
+      declarations: Array.from({ length: 72 }, (_, index) => press(`call.${index}`)),
+      instructed: [
+        { consequence: "create_new", instructionId: "instruction.cart", instructionDigest: SCHEDULE.instructionDigest, quote: "add it to the cart" },
+        { consequence: "modify_existing", instructionId: "instruction.cart", instructionDigest: SCHEDULE.instructionDigest, quote: "set the quantity  to\n3" }
+      ]
+    });
+
+    expect(check.verdict).toBe("undeclared");
+    expect(check.undeclared).toEqual(["modify_existing", "create_new"]);
+    expect(check.sentence).toBe("Your instruction asks to change something that exists (\"set the quantity to 3\") and create something new (\"add it to the cart\"), but nothing FluxIQ did while building this Flow said it would.");
+    expect(check.sentence).not.toMatch(/modify_existing|create_new|72|\d+ action/u);
   });
 
   it("agrees when one action declared what the instruction asks for", () => {
@@ -235,6 +251,7 @@ describe("holding what was declared against what was instructed", () => {
     expect(check.verdict).toBe("beyond_instruction");
     expect(check.beyondInstruction).toEqual(["delete"]);
     expect(check.undeclared).toEqual([]);
+    expect(check.sentence).toBe("While building this Flow, FluxIQ said a step would delete something, which your instruction does not ask for.");
   });
 
   it("reports the contradiction first when both directions disagree", () => {
@@ -255,6 +272,6 @@ describe("holding what was declared against what was instructed", () => {
 
     expect(check.verdict).toBe("not_comparable");
     expect(check.undeclared).toEqual([]);
-    expect(check.sentence).toBe("No action was put to the permission gate, so there is nothing to compare with the instruction.");
+    expect(check.sentence).toBe("Nothing FluxIQ did while building this Flow changed anything, so there is nothing to compare with your instruction.");
   });
 });
