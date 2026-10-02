@@ -91,6 +91,10 @@ export {
   automationStudioLlmEvidenceDraftAmendmentFeedback
 } from "./draft-amendment-feedback.ts";
 export * from "./harness-options/index.ts";
+// A bound domain's own system instructions (`domain-instructions/`): public
+// because a downstream domain types the `systemInstructions` it binds with
+// them, and checks its text against the same bound Core enforces at bind time.
+export * from "./domain-instructions/index.ts";
 // The library as one thing a build may do: the verb that runs a node of the
 // registry against the live target, and how such a step is written down.
 export * from "./node-tools/index.ts";
