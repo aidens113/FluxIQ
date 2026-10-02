@@ -110,6 +110,30 @@ export type AutomationStudioFlowDraftStep = {
    * step down.
    */
   ranWith?: JsonObject;
+  /**
+   * The words of the control the step acted on, as the call's own result showed
+   * them, when it acted on one (`./control-words.ts`).
+   *
+   * Shown beside `input` because a token names a control only while its page
+   * stands: live run `run-muqiho5c-e830ce01` added a press of "Not now" as its
+   * add-to-cart act, from a draft that showed the step as a handle alone. Page
+   * text, bounded and screened; never a parameter of the Flow, which is written
+   * from `input`, `ranWith` and `settings` alone.
+   */
+  control?: string;
+  /**
+   * The host says this step answered something that stood in front of the
+   * page -- a dialog, a consent wall, a covering popup -- and was gone after
+   * it, as the caller stated it on its own call.
+   *
+   * Such a layer is there on one visit and not the next: a site that remembers
+   * the answer never shows it again. So a step that says it, does none of the
+   * person's acts and says nothing else about when it runs is optional in the
+   * Flow (`./sometimes-present.ts`), and playback skips it when it is absent.
+   * The stored `routing` is left as it was; only the routing the Flow is
+   * written from changes.
+   */
+  interruption?: true;
   effect: AutomationStudioFlowDraftStepEffect;
   /** Whether a changing action changed anything, as the caller reported it. */
   effectApplied?: boolean;

@@ -32,11 +32,22 @@
 // 21 and 33 shipped or nearly shipped such drafts when a missing step was waved
 // through on being insisted on (`./dry-run.ts`). A missing step with a failing
 // step after it is still refused, as before.
+//
+// **A step the host says answered an interruption.** The replay is one way to
+// learn a step is only sometimes there; the press itself is another. A host
+// that saw the press answer a layer standing in front of the page -- a dialog,
+// a consent wall, a covering popup -- that was gone after it says so on the
+// call (`./step.ts`, `interruption`). Such a step is optional from the moment
+// it is drafted, under the same exclusions as above: it does none of the
+// person's acts and says nothing else about when it runs. The draft is not
+// rewritten; the routing the Flow is written from reads it
+// (`../flow-bootstrap/authoring/draft-routing.ts`).
 
 import type { AutomationStudioFlowDraftDryRun } from "./dry-run.ts";
 import { automationStudioFlowDraftReplayOutcomeBlocks } from "./dry-run.ts";
-import { automationStudioFlowDraftConditionalStepIds, automationStudioFlowDraftStepById } from "./routing.ts";
+import { automationStudioFlowDraftConditionalStepIds, automationStudioFlowDraftStepById, automationStudioFlowDraftStepId } from "./routing.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
+import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
 import { automationStudioFlowDraftWithheldStepIds } from "./verify-only.ts";
 
 /**
@@ -69,6 +80,22 @@ export function automationStudioFlowDraftSometimesPresentStepIds(input: {
       continue;
     }
     laterPassed = false;
+  }
+  return found;
+}
+
+/**
+ * The ids of the proposed steps the host says answered an interruption and
+ * that may therefore be skipped when it is not there: `interruption` set, no
+ * act claimed, and no routing of their own -- the same exclusions as a step
+ * the replay proved only sometimes there.
+ */
+export function automationStudioFlowDraftInterruptionStepIds(steps: readonly AutomationStudioFlowDraftStep[]): ReadonlySet<string> {
+  const found = new Set<string>();
+  for (const step of steps) {
+    if (step.interruption !== true || step.acts?.length || step.routing !== undefined) continue;
+    if (!automationStudioFlowDraftStepIsProposed(step)) continue;
+    found.add(automationStudioFlowDraftStepId(step));
   }
   return found;
 }

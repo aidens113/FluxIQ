@@ -5,9 +5,12 @@
 // the exploration runs, the list of what it did is in front of the model when
 // it writes the result.
 //
-// **Nothing here is page content.** Every field is either Core's own
-// bookkeeping or the argument the model itself wrote when it asked for the
-// action.
+// **One field here is page content: `control`.** Every other field is either
+// Core's own bookkeeping or the argument the model itself wrote when it asked
+// for the action. `control` is the words of the control a step acted on, which
+// the call's own result had already shown the model, screened and bounded on
+// the way in (`./control-words.ts`): a handle alone let live run
+// `run-muqiho5c-e830ce01` take its press of "Not now" for Add to cart.
 //
 // Every step is listed, with the argument it ran with, and the guidance is
 // told in full -- a look too, as `disposition: look`. A look holds a step
@@ -89,6 +92,8 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     step: step.position,
     actionId: step.actionId,
     input: step.input,
+    // Beside the input, which names the control only by a token its page minted.
+    ...(step.control ? { control: step.control } : {}),
     ...(step.resultCode ? { resultCode: step.resultCode } : {}),
     changed: step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
     disposition: shownDisposition(step),

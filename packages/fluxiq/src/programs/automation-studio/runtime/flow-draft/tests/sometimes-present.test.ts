@@ -7,6 +7,7 @@
 // the word "optional".
 import { describe, expect, it } from "vitest";
 import {
+  automationStudioFlowDraftInterruptionStepIds,
   automationStudioFlowDraftSometimesPresentStepIds,
   type AutomationStudioFlowDraftDryRun,
   type AutomationStudioFlowDraftReplayOutcome,
@@ -93,5 +94,28 @@ describe("a missing step that is still refused", () => {
 
   it("was in a replay whose reset failed", () => {
     expect(ids(RUN_9, [outcome(2, "replayed"), outcome(3, "unreproducible"), outcome(4, "replayed"), outcome(8, "replayed")], "failed")).toEqual([]);
+  });
+});
+
+// A press the host says answered a layer that was gone after it (t174-w60,
+// case 2): optional from the moment it is drafted, so playback skips it when
+// the layer is not there, without the model having to say so.
+describe("a step the host says answered an interruption", () => {
+  const interruptionIds = (steps: AutomationStudioFlowDraftStep[]) => [...automationStudioFlowDraftInterruptionStepIds(steps)];
+
+  it("is only sometimes there when it does no act and says nothing about when it runs", () => {
+    expect(interruptionIds([step(2), step(3, { interruption: true }), step(4, { acts: ["a1"] })])).toEqual(["d3"]);
+  });
+
+  it("is not, when it claims one of the person's acts: such a step is never skipped", () => {
+    expect(interruptionIds([step(2), step(3, { interruption: true, acts: ["a1"] })])).toEqual([]);
+  });
+
+  it("is not, when it already says when it runs", () => {
+    expect(interruptionIds([step(2), step(3, { interruption: true, routing: { kind: "only_if", check: "d2" } })])).toEqual([]);
+  });
+
+  it("is not, when it is not proposed for the Flow", () => {
+    expect(interruptionIds([step(3, { interruption: true, disposition: "dropped" }), step(4, { interruption: true, effectApplied: false })])).toEqual([]);
   });
 });

@@ -132,6 +132,39 @@ describe("a step the Flow does not always take", () => {
   });
 });
 
+describe("a step the host says answered an interruption", () => {
+  // The host saw the press answer a layer -- a consent wall, a covering popup
+  // -- that was gone after it (t174-w60, case 2). Playback finds it absent on
+  // any visit the site remembers, so it is wired as optional without the
+  // model having said so, and the draft itself is left as it was.
+  it("is wired as optional: its failure reaches the join the next step runs from", () => {
+    const dismissal = { ...step(1, "press", { target: "#consent-decline" }), interruption: true as const };
+    const assembled = assemble([dismissal, step(2, "press", { target: "#search-submit" })]);
+
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(assembled.plan?.subflows[0]?.nodes.map((node) => node.definitionId)).toEqual([
+      "web.output.dom-click", "builtin.control.merge", "web.output.dom-click"
+    ]);
+    expect(wiring(assembled.plan!)).toEqual(expect.arrayContaining([
+      "web.output.dom-click:failed -> builtin.control.merge:in",
+      "web.output.dom-click:success -> builtin.control.merge:branches",
+      "builtin.control.merge:success -> web.output.dom-click:in"
+    ]));
+    expect(dismissal).not.toHaveProperty("routing");
+  });
+
+  it("is never made optional when it does one of the person's acts", () => {
+    const assembled = assemble([
+      { ...step(1, "press", { target: "#add-to-cart" }), interruption: true, acts: ["a1"] },
+      step(2, "press", { target: "#search-submit" })
+    ]);
+
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(assembled.plan?.subflows[0]?.nodes.map((node) => node.definitionId)).toEqual(["web.output.dom-click", "web.output.dom-click"]);
+    expect(wiring(assembled.plan!).some((edge) => edge.includes(":failed"))).toBe(false);
+  });
+});
+
 describe("a step that recovers another", () => {
   it("wires the failure to the recovery and brings both paths back together", () => {
     const assembled = assemble([

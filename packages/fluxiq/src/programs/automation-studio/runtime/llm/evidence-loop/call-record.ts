@@ -43,7 +43,7 @@ export function automationStudioLlmEvidenceCallRecord(
   tool: AutomationStudioLlmEvidenceTool,
   input: JsonObject,
   execution?: { draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] }
-): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay } {
+): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true } {
   const declared = execution?.draft;
   const actionId = declared?.actionId ?? tool.toolId;
   return {
@@ -53,6 +53,10 @@ export function automationStudioLlmEvidenceCallRecord(
     ...(declared?.ranWith === undefined ? {} : { ranWith: declared.ranWith }),
     effect: declared?.effect ?? tool.effect ?? "observe",
     ...(declared?.proposes === undefined ? {} : { proposes: declared.proposes }),
-    ...(declared?.replay === undefined ? {} : { replay: declared.replay })
+    ...(declared?.replay === undefined ? {} : { replay: declared.replay }),
+    // The words of what it acted on, already screened on the parse path; shown beside `input` (`../../flow-draft/entry.ts`).
+    ...(declared?.control === undefined ? {} : { control: declared.control }),
+    // The caller's word that it answered a layer gone after it (`../../flow-draft/step.ts`).
+    ...(declared?.interruption === true ? { interruption: true as const } : {})
   };
 }

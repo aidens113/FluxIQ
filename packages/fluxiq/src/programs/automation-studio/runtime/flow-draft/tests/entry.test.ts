@@ -9,7 +9,7 @@ function step(position: number, actionId: string, input: Record<string, string>,
 type Entry = {
   code: string;
   format?: string;
-  steps: { step: number; actionId: string; input?: unknown; inputTooLarge?: boolean; inResult: boolean; disposition: string; changed: string; act?: string; replayed?: string; runs?: string; settings?: unknown }[];
+  steps: { step: number; actionId: string; input?: unknown; control?: string; inputTooLarge?: boolean; inResult: boolean; disposition: string; changed: string; act?: string; replayed?: string; runs?: string; settings?: unknown }[];
   unlisted?: number;
   omitted?: string[];
   instruction: string;
@@ -131,6 +131,20 @@ describe("the draft entry a decision is shown", () => {
     ]);
     expect(shown.steps.map((listed) => listed.act)).toEqual(["a1", "a2, a2.quantity", undefined]);
     expect(shown.steps[2]).not.toHaveProperty("act");
+  });
+
+  // Live run `run-muqiho5c-e830ce01` pressed "Not now" and was shown the step
+  // as `input: {target: {handle: "t1082"}}` alone, then added it as its "put
+  // three in my cart" act and completed with an empty cart.
+  it("names the control each step acted on, beside its input, and nothing on a step that acted on none", () => {
+    const shown = value([
+      step(1, "go", { url: "https://shop.test/" }),
+      step(2, "press", { target: "t1082" }, { control: "Not now" })
+    ]);
+    expect(shown.steps[1]).toMatchObject({ step: 2, input: { target: "t1082" }, control: "Not now" });
+    // Beside the input, where the model reads which step is which.
+    expect(Object.keys(shown.steps[1]!).slice(0, 4)).toEqual(["step", "actionId", "input", "control"]);
+    expect(shown.steps[0]).not.toHaveProperty("control");
   });
 
   it("tells an authoring model never to act itself on the items its listing left out", () => {
