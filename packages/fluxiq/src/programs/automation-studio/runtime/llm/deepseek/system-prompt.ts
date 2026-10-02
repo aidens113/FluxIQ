@@ -35,37 +35,65 @@ const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_COMPACT_OUTPUT_INSTRUCTION = "Return mini
 // the chat's account of why each step is taken (`activity/decision-reason.ts`).
 const AUTOMATION_STUDIO_EVIDENCE_DECISION_COMPACT_OUTPUT_INSTRUCTION = "Return minified JSON. Write summary as one plain sentence under 240 characters for the person watching: what you do next, on what, and why. When completing, emit only the minimal result required by the completion schema and current instruction.";
 
-/** What the model is told, before it is told what to work on. */
+/**
+ * What the model is told, before it is told what to work on.
+ *
+ * Three parts, in this order: Core's output-format and injection rules with
+ * the schema instruction; the bound domain's own instructions, when it bound
+ * any (`../domain-instructions/`); then Core's prose for this task. The
+ * domain's text is constant for a binding and the rules before it are constant
+ * for a task kind, so both sit inside the prefix a provider's cache can reuse
+ * from one call to the next. It is set off by blank lines and added, never
+ * substituted: nothing a domain writes removes or replaces Core's rules.
+ * Without it the message is byte for byte what it was before domains could add
+ * to it (`./tests/system-prompt.test.ts`).
+ */
 export function automationStudioDeepSeekSystemPrompt(request: AutomationStudioLlmTaskRequest): string {
-  // A staged request carries the exploration policy as its "gather" stage
-  // instruction, where a domain can add to it or replace it outright. Repeating
-  // it here as a provider constant would put Core's own words back into the
-  // system message underneath a domain's replacement, and the override would
-  // not be an override. The schema and injection-defence constants stay: those
-  // are not stage prose and are not a domain's to replace.
-  const staged = request.context.stage !== undefined;
-  const systemPromptBase = request.taskKind === "flow_bootstrap"
-    ? `${AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT} ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_SCHEMA_INSTRUCTION} ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_COMPACT_OUTPUT_INSTRUCTION}`
-    : request.taskKind === "evidence_tool_decision"
-      ? [
-        AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT,
-        AUTOMATION_STUDIO_STRUCTURED_OUTPUT_SCHEMA_INSTRUCTION,
-        ...(staged ? [] : [AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION]),
-        AUTOMATION_STUDIO_EVIDENCE_DECISION_COMPACT_OUTPUT_INSTRUCTION
-      ].join(" ")
-    : automationStudioDeepSeekOutputSchema(request)
-      ? `${AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT} ${AUTOMATION_STUDIO_STRUCTURED_OUTPUT_SCHEMA_INSTRUCTION}${request.taskKind === "runtime_patch" ? ` ${AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_INSTRUCTION}${request.metadata?.executionPurpose === "diagnose_and_adapt" ? "" : ` ${AUTOMATION_STUDIO_RUNTIME_PATCH_CONSEQUENCES_INSTRUCTION}`} ${AUTOMATION_STUDIO_NO_REPAIR_INSTRUCTION}` : ""}${request.taskKind === "runtime_patch" && request.context.explorationEvidence?.packets.length ? ` ${exploredEvidenceHandleInstruction()}` : ""}`
-    : AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT;
+  const rules = coreRules(request);
+  const prose = coreTaskProse(request);
+  const domainText = request.domainInstructions?.text;
+  if (!domainText) return [rules, ...prose].join(" ");
+  return prose.length ? `${rules}\n\n${domainText}\n\n${prose.join(" ")}` : `${rules}\n\n${domainText}`;
+}
+
+/** Core's answer-format and injection rules, and the schema instruction for this task. Never a domain's to replace. */
+function coreRules(request: AutomationStudioLlmTaskRequest): string {
+  if (request.taskKind === "flow_bootstrap") return `${AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT} ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_SCHEMA_INSTRUCTION}`;
+  if (request.taskKind === "evidence_tool_decision" || automationStudioDeepSeekOutputSchema(request)) return `${AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT} ${AUTOMATION_STUDIO_STRUCTURED_OUTPUT_SCHEMA_INSTRUCTION}`;
+  return AUTOMATION_STUDIO_DEEPSEEK_SYSTEM_PROMPT;
+}
+
+/** Core's prose for this task, each sentence group in the order it was always sent. */
+function coreTaskProse(request: AutomationStudioLlmTaskRequest): string[] {
+  const prose: string[] = [];
+  if (request.taskKind === "flow_bootstrap") prose.push(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_COMPACT_OUTPUT_INSTRUCTION);
+  if (request.taskKind === "evidence_tool_decision") {
+    // A staged request carries the exploration policy as its "gather" stage
+    // instruction, where a domain can add to it or replace it outright.
+    // Repeating it here as a provider constant would put Core's own words back
+    // into the system message underneath a domain's replacement, and the
+    // override would not be an override. The schema and injection-defence
+    // constants stay: those are not stage prose and are not a domain's to
+    // replace.
+    if (request.context.stage === undefined) prose.push(AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION);
+    prose.push(AUTOMATION_STUDIO_EVIDENCE_DECISION_COMPACT_OUTPUT_INSTRUCTION);
+  }
+  if (request.taskKind === "runtime_patch" && automationStudioDeepSeekOutputSchema(request)) {
+    prose.push(AUTOMATION_STUDIO_RUNTIME_TARGET_OVERRIDE_INSTRUCTION);
+    if (request.metadata?.executionPurpose !== "diagnose_and_adapt") prose.push(AUTOMATION_STUDIO_RUNTIME_PATCH_CONSEQUENCES_INSTRUCTION);
+    prose.push(AUTOMATION_STUDIO_NO_REPAIR_INSTRUCTION);
+    if (request.context.explorationEvidence?.packets.length) prose.push(exploredEvidenceHandleInstruction());
+  }
   // The diagnosis fields are asked for wherever the response is a diagnosis,
   // which is the one shape that carries them. Asking for them is the other half
   // of opening the channel: the schema permits the object, and this is what
   // makes a model fill it rather than putting everything into the summary.
-  const withDiagnosisFields = automationStudioLlmTaskExpectsDiagnosis(request.taskKind) ? `${systemPromptBase} ${automationStudioDiagnosisPromptInstruction(request.taskKind)}` : systemPromptBase;
+  if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) prose.push(automationStudioDiagnosisPromptInstruction(request.taskKind));
   // An evidence decision is told it whether or not this call carries reusable
   // context: the context is looked up again for each decision's fresh evidence,
   // so it can appear between one call and the next, and a system message that
   // changed with it would strand the whole of the next request's cached prefix
   // (`./request-body.ts`). Said where there is none, it is a rule about nothing.
-  const reusableRuleStated = request.context.reusableContext !== undefined || request.taskKind === "evidence_tool_decision";
-  return reusableRuleStated ? `${withDiagnosisFields} ${AUTOMATION_STUDIO_REUSABLE_CONTEXT_INSTRUCTION}` : withDiagnosisFields;
+  if (request.context.reusableContext !== undefined || request.taskKind === "evidence_tool_decision") prose.push(AUTOMATION_STUDIO_REUSABLE_CONTEXT_INSTRUCTION);
+  return prose;
 }

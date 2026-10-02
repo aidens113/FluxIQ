@@ -51,6 +51,55 @@ not part of the schema or context. A `flow_bootstrap` request fails before
 provider invocation when it has no effective active instruction or no
 scope-aware registry context.
 
+### The catalog an evidence decision is shown
+
+The one-shot `flow_bootstrap` call has no tools, so it is sent the whole
+catalog above. An evidence decision -- every decision of an evidence-guided
+build: its exploration, its repair rounds and a re-author -- is sent the
+catalog by name instead, and the full definitions only of the nodes it asked
+for (user, 2026-10-01: the whole catalog, 41,122 of the 58,547 characters of
+one decision, was resent on every decision). Its `flowBootstrap` carries:
+
+- `nodeCatalog`: every offered node as `{"<category>": ["<id>: <description>"]}`,
+  nothing cut, descriptions whole with whitespace collapsed, categories in the
+  order they first appear in the id-sorted catalog and entries by id
+  (`runtime/flow-bootstrap/plan/catalog-names.ts`);
+- `nodeCatalogNote`: one constant sentence on how to read the two fields;
+- `describedNodes`: the full catalog entries (label, description, ports,
+  parameter contracts with their authoring text, output-action contract) of
+  the nodes this build has described, in the order each was first described,
+  absent until there is one.
+
+`catalogTruncated` and `catalogSelection` are not sent on that payload. The
+packet still carries the whole `nodeCatalog`, `catalogSelection` included, for
+every check that reads it (`catalogNames` and `describedNodes` sit beside it,
+`runtime/llm/harness/context-packet.ts`); only the request body leaves it out
+(`runtime/llm/deepseek/request-body.ts`).
+
+The model reads a definition with Core's tool `core.describe_nodes`
+(`{ids}`, up to 64 per call; `runtime/llm/node-tools/describe-nodes.ts`). It
+observes only, is never a step of the Flow, and is offered only beside the
+node library (`core.run_node`). It answers with a receipt -- `described`,
+`alreadyDescribed`, `unknown`, `shownIn: "flowBootstrap.describedNodes"` --
+never the definitions, which appear in `describedNodes` from the next decision
+on, so each is shown once per request however long ago it was asked for. A
+call naming only unknown ids is refused as `describe_nodes.unknown_nodes`. The
+memory is one build's (`runtime/llm/node-tools/node-descriptions.ts`): every
+round of the build shares it, and a new build starts empty. A describe call
+reads nothing on the page: build routing records nothing for it (`pageless`,
+`runtime/route-state/build-routing.ts`) and the state-digest hook skips it, so
+it costs no page capture.
+
+Describing first is advice, never a gate: nothing is refused before a call for
+not having been described. `core.run_node`'s description teaches the two steps
+(pick a name, read its definition before first running it). When a
+`core.run_node` call fails -- refused evidence `ok: false`, or a thrown call,
+including a rerun asked through `amend_draft` -- the node it named is described,
+and a refusal says so (`described`, or `definition` when it already was) with
+`undeclaredParameters` listing any parameter it gave that the definition does
+not declare (`runtime/llm/node-tools/describing-failures.ts`). Core's own
+replays of the draft pass through untouched.
+
 ## Permission on the authoring path
 
 A build may carry `permittedConsequences`, the lasting consequences the person
@@ -336,6 +385,51 @@ them. The bootstrap directives are absent from the untrusted user context and
 other task messages. Requests disable thinking and set temperature to zero;
 the strict Bootstrap response schema remains authoritative.
 
+### Domain system instructions
+
+A domain may bind its own instructions with its evidence runtime:
+`AutomationStudioLlmEvidenceRuntimeBinding.systemInstructions`, a
+`{ version, text }` checked when the runtime is bound
+(`runtime/llm/domain-instructions/`). `version` matches
+`^[a-z0-9][a-z0-9._-]{0,63}$`, and `text` is non-blank, at most 4,000
+characters, with no control character but a line feed. A text that fails is
+refused by the service constructor or `bindLlmEvidenceRuntime`, never mid-build.
+
+Coverage is central, not per call site. The service wraps the host's execution
+resolver and the result-check resolver once, where they are stored, with
+`automationStudioLlmResolverWithDomainInstructions`. Every provider either
+resolves is decorated by `automationStudioLlmProviderWithDomainInstructions`,
+which sets `domainInstructions: { domainId, version, text }` on each request
+passed to `runTask` and to `measureInput`. That covers every evidence decision,
+the bootstrap call, the instruction authority, the build judge, runtime
+diagnosis and patch, result verification, recovery annotation and the standing
+repair authority, and any call site added later. The binding is read when a
+provider is resolved, so a runtime bound after the resolver is the one sent.
+
+The request carries the instructions beside its context, like
+`deniedEvidenceKeys`. They are never part of the user payload, but they are
+part of the system message, so the provider's `measureInput` counts them. The
+DeepSeek system message is built in three parts:
+
+1. Core's rules: the JSON-only and injection rules, then the task's schema
+   instruction.
+2. The domain's text, set off by a blank line before and after.
+3. Core's prose for the task, as before: the evidence-decision instruction,
+   compact-output rules, runtime-patch prose, diagnosis fields and the
+   reusable-context rule.
+
+Both of the first two parts are constant for a binding and a task kind, so the
+text sits inside the prefix a provider's cache reuses from one call to the next.
+Nothing a domain writes replaces Core's schema or injection rules. Without
+instructions the message is byte for byte what it was; the pins are
+`runtime/llm/deepseek/tests/system-prompt-pins.json`.
+
+The chat's interpreter (`runtime/conversations/instructions/prompt.ts`) gets
+the same text. The service connects the conversations collaborator to its
+binding with `bindDomainInstructions`. The text follows the panel's fixed
+capability vocabulary and precedes the project's Flows and what is on screen.
+The answer-shape rules stay last.
+
 Provider response content is still untrusted. For bootstrap tasks the adapter
 requires exactly `kind`, `summary`, and `plan`, then parses the plan through
 the strict bootstrap parser before returning it to the harness. The harness
@@ -430,14 +524,14 @@ is persisted. The per-request ceiling is the model's context window --
 1,000,000 tokens for both configured models, derived from
 `AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS` as
 `AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST` -- and the session-key
-profile is that whole window: 992,000 input tokens, 8,000 reserved for the reply,
-1,000,000 total. A request whose estimated input plus reserved output exceeds the
+profile is that whole window: 992,000 input tokens, 8,000 reserved for the reply
+by default (build decisions send and reserve 2,000), 1,000,000 total. A request whose estimated input plus reserved output exceeds the
 window is refused before it is sent, never trimmed:
 `llm_budget.input_limit_exceeded` or `llm_budget.request_total_exceeded` from
 the harness, and `llm.provider_input_budget_exceeded` from the DeepSeek adapter,
 each stating the estimated input tokens, the bytes and the window. The build's
-spend is bounded by its loop budget: the $0.25 run cost ceiling and the per-call
-cost check derived from it are unchanged.
+spend is bounded by the Flow creation's one purse, not by the window; see
+[One purse per Flow creation](#one-purse-per-flow-creation).
 
 The API failure boundary is cross-bundle-safe without trusting JavaScript class
 identity. It recognizes only the canonical error name and message paired with a
@@ -477,8 +571,10 @@ per node; how many nodes and edges it may carry, and its UTF-8 byte budget, come
 from the Flow's size setting (see "Flow Size" below). Its
 instruction asks for one primary Subflow with Router fallback by default and
 permits extra topology only when the active instruction requires it. Core
-rechecks these bounds after parsing and before registry validation. Every
-path sends the whole catalog. A representative routed three-action web plan is
+rechecks these bounds after parsing and before registry validation. No path
+cuts the catalog: the one-shot path sends it whole, and an evidence decision
+sends every node by name plus the definitions it asked for (see
+[The catalog an evidence decision is shown](#the-catalog-an-evidence-decision-is-shown)). A representative routed three-action web plan is
 1,110 bytes (370 tokens under Core's conservative estimator), so the 4,000
 output-token limit remains unchanged.
 
@@ -652,8 +748,9 @@ it against the checklist, and seeds a live repair with that Flow and judgement.
 An empty Flow has nothing to test and explores again from the live page while
 budget remains. Repairs continue while the judgement advances (more acts or
 choices done, more steps in the Flow, or fewer failed steps), up to two repairs
-and six live rounds. Every round shares the build's $0.25 purse, time/token
-budget and declared call count; the per-round decision backstop starts afresh.
+and six live rounds. Every round draws on the Flow creation's one purse and
+shares the build's time/token budget and declared call count; no round has a
+cost share of its own, and the per-round decision backstop starts afresh.
 A permission or person-needed question takes precedence over another round.
 
 The three explicit endings carry `diagnostic.ending.message`, the outstanding
@@ -663,7 +760,7 @@ acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).
 | Code | Trigger | Message begins |
 | --- | --- | --- |
 | `flow_bootstrap.not_doable` | A repair of a tested, non-empty Flow got no further than the previous judgement | "I could not build this Flow, and I found no way to:" followed by what could not be done, the test and what was tried |
-| `flow_bootstrap.evidence_budget_exhausted` | Cost, time, token or declared calls ran out, or the repair/live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
+| `flow_bootstrap.evidence_budget_exhausted` | The purse refused a call (the only cost ending), time, token or declared calls ran out, or the repair/live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
 | `flow_bootstrap.model_replies_unreadable` | Six consecutive unreadable replies, each asked again with a corrective note | "The build stopped because the model's replies could not be read:" followed by the count, cause, paid attempts, progress and kept-Flow status |
 
 Budget exhaustion does not establish that the task is impossible, and an empty
@@ -786,14 +883,53 @@ call that has already been made.
 Because every decision of an evidence loop is a fresh, stateless request, the
 whole of that cache turns on the order of the user message, and
 `providerUserPayload` arranges it deliberately: the task envelope, the decision
-grammar, the person's instruction, the tool descriptions, the node catalog and
-the policy gates first, then the evidence window, and the iteration counter
-last. Everything invariant is therefore one contiguous prefix, and the window --
-which usually only gains an entry between calls -- extends it. The order used to
+grammar, the person's instruction, the tool descriptions, the policy gates and
+the catalog context (the node names, their note and `describedNodes`) first,
+then the evidence window, and the iteration counter last. Everything invariant
+is therefore one contiguous prefix, and the window -- which usually only gains
+an entry between calls -- extends it. `describedNodes` is the one part of that
+head that grows: it is append-only for the length of a build, so a describe
+keeps the cached prefix through every node described before it. The order used to
 put the counter before the tool descriptions and the catalog, which left 20,341
 identical bytes of a 50,840-byte message behind a value that changed on every
 call. A key added here must go on the correct side of that line: anything that
 varies per call belongs after the evidence.
+
+### One purse per Flow creation
+
+One purse per Flow creation is the only cost authority for a build
+(`runtime/llm/build-purse/purse.ts`, `run.ts`). A Flow creation runs from its
+first build until a Flow is proposed or a build ends not doable. Every build of
+it -- continuations after a budget ending included, with each one's rounds,
+test, judge and repairs -- draws from one ceiling:
+`FLUXIQ_LLM_RUN_COST_CEILING_USD`, $0.10 by default, which the Flow's
+`maxEstimatedCostUsdPerRun` may lower and nothing may raise. The whole build
+body runs inside `automationStudioLlmBuildPurseScope`, so reading the
+instruction, every decision, the test and the judge are all held against it.
+
+- **The spend outlives a build.** It is kept on a per-Flow creation record
+  (`runtime/flow-bootstrap/creation-spend/`, stored as `creation-spend.json`
+  beside the Flow by `runtime/service/creation-spend.ts`), carried into the
+  next build's purse as `carriedUsd`, and cleared when the creation ends. A
+  refuted-result repair during a later scheduled run keeps its own run ceiling
+  and never touches the record.
+- **Holds are true worst cases.** Each call is held at all of its input
+  uncached at peak rates -- input measured at 3 UTF-8 bytes per token plus 16
+  framing tokens, which overstated every recorded call -- plus its reply
+  allowance. Build decisions send and hold `max_tokens` 2,000
+  (`AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS`,
+  `runtime/llm/harness/token-limits.ts`), at least three times the largest of
+  6,119 recorded decision replies (593 tokens; p99 469). Other calls keep the
+  8,000 default; a runtime patch step can reach about 2,700 tokens.
+- **The loop budget does not end a build on cost.** Its count of decisions
+  left (`runtime/llm/loop-budget.ts`) reads the purse's figures with no
+  held-back decision; it only tells the model what is left and drives the
+  wrap-up. The purse refusing a call is the only cost ending, and that ending
+  states what was spent (earlier builds of the Flow included), what was held,
+  the refused call's worst case, and what the Flow has left.
+- **The judge has no cap of its own.** Each judge call is held at its true
+  worst case rather than at a share of what is left, and a judge call the
+  purse refuses gives a `not_judged` verdict.
 
 ## Generation readiness capability
 
@@ -837,19 +973,20 @@ exact revision. The normal
 
 Evidence-guided generation uses the caller's provider for a bounded series
 of `evidence_tool_decision` tasks. Every task carries the current filtered node
-catalog, strict dynamic decision schema, allowlisted tools, and prior sanitized
-evidence. A decision either requests one registered tool or completes with a
+catalog by name with the definitions the build has described, strict dynamic
+decision schema, allowlisted tools, and prior sanitized evidence. A decision either requests one registered tool or completes with a
 `{ summary, plan }` candidate whose plan schema is the existing strict Flow
 Bootstrap schema. Unknown tools, duplicate calls, cancellation, iteration
 exhaustion, and evidence-byte overflow fail closed. An unusable reply and a
 refused completion are asked again, up to three in a row, as described above.
 The series has no fixed length of its own. It makes at most 64 decisions, or
 fewer when the resolution declares a call count, with at most one more tool
-call than decisions. Each decision reserves the build's total estimated cost
-divided by its decisions, and the loop's budget holds the build's token and
-cost totals on every call. The build's total cost ceiling is the Flow setting
-`adaptationPolicySettings.maxEstimatedCostUsdPerRun` when set, and the
-resolution's default otherwise. The
+call than decisions. No decision has a cost share: each is held against the
+Flow creation's one purse at its own worst case, and the loop's budget holds
+the build's token totals on every call. The cost ceiling is
+`FLUXIQ_LLM_RUN_COST_CEILING_USD` ($0.10 by default), which the Flow setting
+`adaptationPolicySettings.maxEstimatedCostUsdPerRun` may lower and nothing may
+raise ([One purse per Flow creation](#one-purse-per-flow-creation)). The
 ordinary proposed Bootstrap Adaptation is written only from a completion the
 completion check accepted.
 
@@ -1125,8 +1262,11 @@ evidence is retained even when an action is recoverably rejected, but the
 mutation epoch advances only when `effectApplied` is explicitly true. Legacy
 raw results remain valid for observations and unmarked tools; raw marked
 mutation results fail closed as no applied effect.
-Evidence-decision context carries the whole node catalog beside the tool
-schemas, decision schema and collected evidence. DeepSeek still estimates the final provider projection and rejects it
+Evidence-decision context carries every node by name and the definitions the
+build has described beside the tool schemas, decision schema and collected
+evidence. In the decision schema, the `add` and `act` properties are explained
+once, on the first tool variant that can act, and offered bare on every other
+(`runtime/llm/evidence-loop-decision.ts`). DeepSeek still estimates the final provider projection and rejects it
 if the authoritative per-call input or total-token limits would be exceeded.
 
 The persisted adaptation records only bounded iteration, decision, call/tool ID,
@@ -1179,7 +1319,7 @@ is retained outside the patch.
 
 Runtime Debug exposes `Build Flow from instructions` only for a blank top-level orchestration Flow with no Router or Subflows, at least one active applicable instruction, an enabled DeepSeek key, and saved limits that exactly match the build profile: 4,000 input tokens, 1,000 output tokens, 5,000 total tokens, 20 seconds, USD 0.25, and zero provider retries. The build always asks Core for one call; the Flow's saved call count is not consulted. Ordinary Run remains unavailable while the Flow has no executable topology.
 
-The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the request at action time: 8,000 input, 4,000 output, and 12,000 total tokens per call, 45 seconds and USD 0.25 per call. It names no call count and ignores the Flow's saved one. The build is bounded by its loop budget -- the build's total cost ceiling, which is the Flow's `maxEstimatedCostUsdPerRun` when set, its token budget, and its deadline -- and the panel describes the run by what ends it (a proposal, a lack of progress, the token budget, the total cost, or the deadline) rather than by a call count. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
+The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the request at action time: 8,000 input, 4,000 output, and 12,000 total tokens per call, 45 seconds and USD 0.25 per call. It names no call count and ignores the Flow's saved one. The build is bounded by the Flow creation's one purse -- `FLUXIQ_LLM_RUN_COST_CEILING_USD`, $0.10 by default, lowered by the Flow's `maxEstimatedCostUsdPerRun` when that is smaller -- and by its token budget and its deadline, and the panel describes the run by what ends it (a proposal, a lack of progress, the token budget, the total cost, or the deadline) rather than by a call count. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
 
 The authoring action runs on the current authenticated session's own unlocked key and does not ask for the account password or PIN again, or for any confirmation of its size. The browser route adds the authenticated session, so browser code never derives or exposes it. Where the person has allowed lasting consequences, the request carries them as `permittedConsequences`. The surface keeps availability checks visible, and a rejected check offers an explicit retry.
 

@@ -28,7 +28,7 @@
       "apps/web/src/features/automation-studio/state/state-geometry.ts::values": 31,
       "apps/web/src/features/automation-studio/model/live-helpers.ts::values": 27,
       "apps/web/src/features/automation-studio/graph/edge-routing.ts::values": 25,
-      "apps/web/src/features/programs/live-views/shared.tsx::values": 24,
+      "apps/web/src/features/programs/live-views/shared.tsx::values": 23,
       "apps/web/src/features/automation-studio/settings/flow-settings-model.ts::values": 21,
       "apps/web/src/features/automation-studio/state/model/state-source-index.ts::values": 21,
       "packages/fluxiq/src/programs/automation-studio/nodes/shared/definition.ts::values": 21,
@@ -125,7 +125,6 @@
       "apps/web/src/features/automation-studio/workspace/cache/coordinator.ts": 1,
       "apps/web/src/features/programs/program-api.ts": 1,
       "apps/web/src/features/programs/ui-performance.ts": 1,
-      "apps/web/src/lib/login-attempts.ts": 1,
       "packages/contracts/src/failure/parse-record.ts": 1,
       "packages/fluxiq/src/framework/index.ts": 1,
       "packages/fluxiq/src/programs/_shared/storage.ts": 1,
@@ -148,7 +147,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4491,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4490,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "imports": {
@@ -344,11 +343,8 @@
       "apps/web/src/features/automation-studio/live/hooks/useGatewayRecordingBridge.ts": 1,
       "apps/web/src/features/automation-studio/project/use-project-catalog-loader.ts": 1,
       "apps/web/src/features/automation-studio/runtime/FlowRunView.tsx": 1,
-      "apps/web/src/features/automation-studio/state/StateRawPanel.tsx": 1,
       "apps/web/src/features/automation-studio/sync/background-work.ts": 1,
-      "apps/web/src/features/programs/components/data/CodeViewer.tsx": 1,
       "apps/web/src/features/programs/live-views/docs.tsx": 1,
-      "apps/web/src/features/programs/live-views/secret-keys.tsx": 1,
       "packages/fluxiq/src/programs/_shared/storage.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/datasets/run-datasets.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/projects/artifacts.ts": 1,

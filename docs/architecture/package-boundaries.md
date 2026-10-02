@@ -108,6 +108,40 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): a domain adds its own system instructions (`fluxiq`)
+
+A domain bound through `llmEvidenceRuntime` can now register instructions that
+Core adds to the system message of every model request made for that domain's
+work. Nothing changes for a host that binds none: every system message is byte
+for byte what it was. Read this entry if a domain binds an evidence runtime, a
+host writes its own LLM provider, or a test pins a system message.
+
+**Added.**
+- `systemInstructions?: AutomationStudioLlmDomainSystemInstructions` on
+  `AutomationStudioLlmEvidenceRuntimeBinding`, `{ version, text }`. `version`
+  matches `^[a-z0-9][a-z0-9._-]{0,63}$`; `text` is not blank, is at most
+  `AUTOMATION_STUDIO_LLM_DOMAIN_SYSTEM_INSTRUCTIONS_MAX_LENGTH` (4,000)
+  characters, and has no control character but a line feed. The service checks
+  it in its constructor and in `bindLlmEvidenceRuntime`, and throws there; a
+  domain can run the same check itself with
+  `assertAutomationStudioLlmDomainSystemInstructions(value, domainId)`.
+- `domainInstructions?: { domainId, version, text }` on
+  `AutomationStudioLlmTaskRequest`. It is never part of the user payload. A
+  provider that builds its own system message should place `text` there; a
+  provider's `measureInput` counts it.
+- `automationStudioLlmProviderWithDomainInstructions(provider, instructions)`
+  and `automationStudioLlmResolverWithDomainInstructions(resolver, binding)`.
+  The service wraps the execution resolver and the result-check resolver with
+  the second, so every provider it resolves stamps `domainInstructions` on each
+  request it runs or measures: evidence decisions, Flow Bootstrap, repairs,
+  result verification, the build judge and the standing repair authority.
+
+**Where the text goes.** The DeepSeek adapter's system message is Core's
+JSON-only and injection rules with the schema instruction, a blank line, the
+domain's text, a blank line, then Core's task prose. The chat's interpreter
+gets the text after the panel's capability vocabulary and before the project's
+Flows; its answer-shape rules stay last. Neither replaces any of Core's rules.
+
 ### Next minor (unreleased): the model sees the whole page (`fluxiq`)
 
 Core no longer caps, ranks or trims what a model call is shown. Only two
@@ -165,7 +199,11 @@ test pins a limit below.
   `catalogSelection.byteBudget`. The catalog is every node the resolution
   offers, in id order, each whole: label, description and every parameter's
   authoring text uncut, with no condensed form. `catalogTruncated` is always
-  `false`. The instruction is still read for one thing, a capability it asks
+  `false`. An evidence decision is sent every node by name and the full
+  entries only of the nodes the build asked `core.describe_nodes` for, and
+  neither `catalogTruncated` nor `catalogSelection` is on its payload; that
+  is a change of form, not a limit, since nothing is withheld that one
+  describe call does not return. The instruction is still read for one thing, a capability it asks
   for that no offered node provides (`missingRequiredTerms`).
 - Instruction truncation. The harness carries every instruction whole; it cut
   them to 2,000 tokens by default, 384 for a flow bootstrap and 4,000 for a

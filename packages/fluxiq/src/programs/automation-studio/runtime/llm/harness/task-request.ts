@@ -11,6 +11,7 @@ import type { AutomationStudioConversationTurn } from "../../conversations/index
 import type { AutomationStudioRuntimeRecoveryContext } from "../../recovery/index.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioReusableLlmContextPacket } from "../../reusable-llm-context.ts";
+import type { AutomationStudioLlmTaskDomainInstructions } from "../domain-instructions/index.ts";
 import type { AutomationStudioLlmProviderInvocationState } from "../provider-contract.ts";
 import type { AutomationStudioLlmProviderRetryAccount, AutomationStudioLlmProviderRetryLedger } from "../provider-retry/index.ts";
 import type { AutomationStudioLlmProviderRefusal } from "../../provider-refusal/index.ts";
@@ -42,6 +43,14 @@ export type AutomationStudioLlmTaskRequest = {
    * when nobody declared any; a provider then refuses a request that carries
    * evidence, rather than reading the absence as an empty list. */
   deniedEvidenceKeys?: readonly string[];
+  /** The bound domain's own system instructions, stamped on the request by the
+   * provider the service resolved for that domain's work
+   * (`../domain-instructions/provider.ts`) rather than by any call site.
+   * Carried beside the context like `deniedEvidenceKeys`: never part of the
+   * user payload. Unlike them it is sent -- an adapter places the text in its
+   * system message (`../deepseek/system-prompt.ts`) -- so a provider's
+   * `measureInput` counts it. Absent, the system message is Core's alone. */
+  domainInstructions?: AutomationStudioLlmTaskDomainInstructions;
   dryRun?: boolean;
   metadata?: JsonObject;
 };
@@ -201,6 +210,12 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
     startLocation?: string;
     /** The Flow's size bounds, from its setting (`../../flow-bootstrap/plan/size-limits.ts`); the default when absent. */
     size?: AutomationStudioFlowBootstrapSizeLimits;
+    /**
+     * The nodes this build has been shown whole so far, in the order they were
+     * first described (`../node-tools/node-descriptions.ts`). An evidence
+     * decision is shown every node by name and only these in full.
+     */
+    describedNodeIds?: readonly string[];
   };
   evidenceLoop?: AutomationStudioLlmContextPacket["evidenceLoop"];
   policy?: AutomationStudioAdaptationPolicy;

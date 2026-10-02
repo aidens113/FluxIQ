@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider, type AutomationStudioLlmUsageSummary } from "../../harness.ts";
-import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceTool } from "../../evidence-loop.ts";
+import { runAutomationStudioLlmEvidenceLoop, AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, type AutomationStudioLlmEvidenceLoopBudget, type AutomationStudioLlmEvidenceTool } from "../../evidence-loop.ts";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmCurrentBuildPurse } from "../../build-purse/index.ts";
 
 // `run-mup2u8o3-6697c4be`, cause 4: a build's ninth decision was sent with
 // $0.154 of its $0.25 spent, re-read 475,714 of its 477,506 input tokens
@@ -106,5 +107,96 @@ describe("a build's cost ceiling, held before each decision is sent", () => {
 
     expect(llm.asked).toBe(1);
     expect(result).toMatchObject({ ok: true, accounting: { estimatedCostUsd: 0.2, budgetBreaches: 1 } });
+  });
+});
+
+/** A provider that prices every request at `worstCaseUsd` and reports each answer's cost, noting the purse each call was made under. */
+function flatProvider(worstCaseUsd: number, answers: Array<{ decision: Record<string, unknown>; costUsd: number }>) {
+  let asked = 0;
+  const purses: unknown[] = [];
+  const llm: AutomationStudioLlmProvider = {
+    metadata: { provider: "deepseek", model: "deepseek-flash" },
+    estimateCostUsd: () => worstCaseUsd,
+    runTask: async () => {
+      const answer = answers[asked]!;
+      asked += 1;
+      purses.push(automationStudioLlmCurrentBuildPurse());
+      return { response: { kind: "evidence_tool_decision", summary: "Next.", decision: answer.decision }, usage: { inputTokens: 1_000, outputTokens: 100, totalTokens: 1_100, estimatedCostUsd: answer.costUsd } };
+    }
+  };
+  return { llm, purses, get asked() { return asked; } };
+}
+
+/** The loop as a build runs it under the build's own purse, noting the budget entry each decision was shown. */
+function buildUnder(llm: AutomationStudioLlmProvider, purse: AutomationStudioLlmBuildPurse, budget: AutomationStudioLlmEvidenceLoopBudget) {
+  const budgets: Array<Record<string, unknown> | undefined> = [];
+  const result = runAutomationStudioLlmEvidenceLoop({
+    tools: [look], maxIterations: 20, maxToolCalls: 20, completionSchema, propagateDecisionErrors: true, purse, budget,
+    executeTool: async ({ value }) => ({ page: value.page ?? null }),
+    decide: async ({ iteration, tools, evidence, decisionSchema, canComplete }) => {
+      const last = evidence.at(-1);
+      budgets.push(last?.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID ? last.value as Record<string, unknown> : undefined);
+      const decision = await runAutomationStudioLlmHarness({
+        taskKind: "evidence_tool_decision", projectId: "project.one", flowId: "flow.one", instructions: [],
+        evidenceLoop: { iteration, tools, evidence: evidence.map((item) => ({ ...item })), decisionSchema, completionSchema, canComplete },
+        provider: llm, tokenLimits, expectedOutput: "evidence_tool_decision", deniedEvidenceKeys: []
+      });
+      if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw new Error(`decision failed: ${decision.diagnostics.map((item) => item.code).join(",")}`);
+      return { ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) };
+    }
+  });
+  return { result, budgets };
+}
+
+// t234: one purse per Flow creation, handed to the loop, is the only cost
+// authority. The loop makes none of its own, reads what is left from it, and
+// ends on cost only when it refuses a decision.
+describe("an evidence loop given the build's purse", () => {
+  it("ends when the purse refuses a decision, with the refusal's figures and the spend earlier builds carried", async () => {
+    // Earlier builds of the same Flow creation spent $0.05 of its $0.10.
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.05 });
+    const llm = flatProvider(0.03, [
+      { decision: { kind: "tool_call", callId: "call.1", toolId: "inspect", input: { page: 1 } }, costUsd: 0.03 },
+      { decision: { kind: "complete", result: {} }, costUsd: 0.01 }
+    ]);
+
+    // No cost bound in the loop's own budget: the purse is the ceiling.
+    const { result, budgets } = buildUnder(llm.llm, purse, { maxTotalTokens: 1_000_000 });
+    const ended = await result;
+
+    // $0.08 spent, $0.03 at worst: refused, never sent.
+    expect(llm.asked).toBe(1);
+    expect(budgets[1]).toMatchObject({ decisionsLeft: 1, costLeftUsd: expect.closeTo(0.02, 3) });
+    expect(ended).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", exhaustion: { bound: "budget", budgetBound: "cost", iterations: 1 } });
+    if (ended.ok) return;
+    expect(ended.exhaustion!.costRefusal).toEqual({
+      code: "llm_budget.run_cost_limit", projectedCostUsd: 0.03, estimatedInputTokens: expect.any(Number), maxOutputTokens: 8_000,
+      spentUsd: expect.closeTo(0.08, 9), pendingUsd: 0, ceilingUsd: 0.1, carriedUsd: 0.05
+    });
+    expect(ended.accounting.estimatedCostUsd).toBeCloseTo(0.03, 9);
+  });
+
+  it("holds every decision against the purse it was given, so what earlier calls spent on it is what is left", async () => {
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
+    // An earlier call of the same build -- the instruction reading -- held at $0.02, reported $0.03: a breach before the loop.
+    const earlier = purse.hold({ projectedCostUsd: 0.02, estimatedInputTokens: 1_000, maxOutputTokens: 100 });
+    if (!earlier.ok) throw new Error("not held");
+    earlier.hold.settle({ estimatedCostUsd: 0.03 });
+    const llm = flatProvider(0.004, [
+      // Reports more than its $0.004 worst case: a breach during the loop.
+      { decision: { kind: "tool_call", callId: "call.1", toolId: "inspect", input: { page: 1 } }, costUsd: 0.005 },
+      { decision: { kind: "complete", result: {} }, costUsd: 0.001 }
+    ]);
+
+    const { result, budgets } = buildUnder(llm.llm, purse, { maxCostUsd: 0.1 });
+    const ended = await result;
+
+    expect(ended).toMatchObject({ ok: true, accounting: { estimatedCostUsd: 0.006, budgetBreaches: 1 } });
+    // Every decision was held against the purse given, and no other.
+    expect(llm.purses).toEqual([purse, purse]);
+    // $0.10 less the earlier $0.03 and the first decision's $0.005, nothing held back.
+    expect(budgets[1]).toMatchObject({ costLeftUsd: expect.closeTo(0.065, 3) });
+    expect(purse.spentUsd()).toBeCloseTo(0.036, 9);
+    expect(purse.breaches).toBe(2);
   });
 });

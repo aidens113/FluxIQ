@@ -22,6 +22,20 @@ export function automationStudioLlmCurrentBuildPurse(): AutomationStudioLlmBuild
 }
 
 /**
+ * Make every call inside `call` under `purse`, as `call` itself reads the
+ * outcome: a refused call fails as the harness reports it and nothing is
+ * thrown for it here. The build's whole body runs inside this, so the calls no
+ * loop wraps -- the instruction reading, the test, the judge -- are held against
+ * the same purse as the decisions (`./purse.ts`). A loop that wraps its own
+ * decisions in `automationStudioLlmBuildPurseRun` with the same purse nests
+ * inside it.
+ */
+export async function automationStudioLlmBuildPurseScope<T>(purse: AutomationStudioLlmBuildPurse | undefined, call: () => Promise<T>): Promise<T> {
+  if (!purse) return await call();
+  return await purses.run(purse, call);
+}
+
+/**
  * Run `call` under `purse`. If the purse refused a call `call` made, throws
  * `AutomationStudioLlmBuildPurseRefused` whatever `call` itself returned or
  * threw: the refusal is the ending, and a caller's reading of the failed
