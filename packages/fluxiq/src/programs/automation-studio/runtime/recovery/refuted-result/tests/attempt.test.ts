@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import type { AutomationStudioResultVerificationOutcome } from "../../../result-verification/index.ts";
-import { automationStudioRefutedResultAttempt } from "../attempt.ts";
+import { AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID, automationStudioRefutedResultAttempt, automationStudioRefutedResultAttemptNamesNode } from "../attempt.ts";
 
 const NOW = 5_000;
 
@@ -58,6 +58,48 @@ describe("automationStudioRefutedResultAttempt", () => {
 
   it("builds no attempt when the run recorded no step, because there would be no node to speak about", () => {
     expect(automationStudioRefutedResultAttempt({ runId: "run.1", detail: cleanRun([]), outcome: refuted(), now: NOW })).toBeUndefined();
+  });
+
+  it("names the step whose rows were judged", () => {
+    const attempt = automationStudioRefutedResultAttempt({ runId: "run.1", detail: cleanRun(), outcome: refuted(), now: NOW })!;
+
+    expect(automationStudioRefutedResultAttemptNamesNode(attempt.record)).toBe(true);
+    expect(automationStudioRefutedResultAttemptNamesNode(attempt.trace)).toBe(true);
+  });
+
+  // Live run 38 (`run-muqilf9s-c3211328`): no step stored records, so the
+  // refutation was filed under the last step that succeeded -- a navigate back
+  // to the feed that ran and matched -- and read everywhere as a failed navigate.
+  it("names no step when no step stored records: run 38's Flow gives no failed navigate", () => {
+    const detail = cleanRun([
+      step({ order: 1, nodeId: "node.s1", definitionId: "web.output.browser-navigate" }),
+      step({ order: 2, nodeId: "node.s2", definitionId: "web.output.dom-click" }),
+      step({ order: 3, nodeId: "node.s3", definitionId: "web.output.browser-navigate" }),
+      step({ order: 4, nodeId: "node.s4", definitionId: "web.output.dom-click" }),
+      step({ order: 5, nodeId: "node.s5", definitionId: "web.output.dom-click" }),
+      step({ order: 6, nodeId: "node.s6", definitionId: "web.output.browser-navigate" })
+    ]);
+
+    const attempt = automationStudioRefutedResultAttempt({ runId: "run.1", detail, outcome: refuted(), now: NOW })!;
+
+    expect(attempt.trace).toMatchObject({ nodeId: AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID, definitionId: AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID, status: "failed" });
+    expect(attempt.record).toMatchObject({ attemptId: "result-verification.run.1", nodeId: AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID, order: 7, status: "failed" });
+    expect((detail.actionAttempts ?? []).map((attempt) => attempt.nodeId)).not.toContain(attempt.record.nodeId);
+    expect(automationStudioRefutedResultAttemptNamesNode(attempt.record)).toBe(false);
+    expect(automationStudioRefutedResultAttemptNamesNode(attempt.trace)).toBe(false);
+    // The failure keeps its own category and stage: it is the result's, unchanged.
+    expect(attempt.trace.failure).toMatchObject({ category: "output_not_observed", stage: "verification", code: "core.result.does_not_answer_request" });
+    // Timed from the end of the run, as before.
+    expect(attempt.record.startedAt).toBe(1_106);
+  });
+
+  it("names no step for a run whose only record producer failed, rather than the step before it", () => {
+    const detail = cleanRun([
+      step({ order: 1, nodeId: "node.s1", definitionId: "web.output.browser-navigate" }),
+      { ...step({ order: 2, nodeId: "node.s2", definitionId: "web.dom.extract_list", recordCount: 3 }), status: "failed" }
+    ]);
+
+    expect(automationStudioRefutedResultAttempt({ runId: "run.1", detail, outcome: refuted(), now: NOW })?.record.nodeId).toBe(AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID);
   });
 });
 
