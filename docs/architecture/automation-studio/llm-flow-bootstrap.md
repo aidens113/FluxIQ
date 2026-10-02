@@ -746,9 +746,36 @@ coordinator in `runtime/flow-bootstrap/unfinished-build/phases.ts` tests a
 partial non-empty Flow from its start with the same deterministic gate, judges
 it against the checklist, and seeds a live repair with that Flow and judgement.
 An empty Flow has nothing to test and explores again from the live page while
-budget remains. Repairs continue while the judgement advances (more acts or
-choices done, more steps in the Flow, or fewer failed steps), up to two repairs
-and six live rounds. Every round draws on the Flow creation's one purse and
+budget remains.
+
+**Repairs are bounded by money and progress, not by a count (t240).** Another
+round opens only when both hold:
+
+- **The purse can fund it.** It must hold one more decision plus the judging of
+  its Flow, each at its capped hold (2,000 reply tokens for either): what the
+  purse last priced a decision at and a judge call at
+  (`AutomationStudioLlmBuildPurse.lastProjectedCostUsd`). A judge not yet priced
+  is held at the decision's price, which is at least its own: its request carries
+  the test's account, not the page. A build that cannot fund the round ends
+  `budget_exhausted` (`cost`), saying what was left and what the round could have
+  cost (run 38, cause C7). A provider that does not price leaves nothing to
+  project, and only an empty purse stops the round.
+- **The round before it measurably progressed** (`unfinished-build/progress.ts`),
+  by what the test and the judge report. That means more acts or choices with a
+  step, or more of them proven by the test; a test that now runs clean, or fails
+  at fewer steps; with no judge, more steps that worked; a round that finished
+  and was judged where the one before stopped short; carried steps now judged;
+  or a judge finding no longer reported. A merely different Flow is not
+  progress: the earbuds build `run-muqiho7e-13be6c03` handed back three
+  different Flows, and the judge reported the same thing each time.
+
+A round that did not progress ends the build `not_doable`, saying what stood
+still. So does a round that ended on refused repeats
+(`repeat_without_progress`) and handed back the Flow it started from: a second
+round would only repeat it (run 38, cause C8). For an extend build's first
+round, the caller passes the seeded Flow's replay signature as
+`seedSignature`. Six live rounds stay the backstop, since the published
+record's reader is bounded by it. Every round draws on the Flow creation's one purse and
 shares the build's time/token budget and declared call count; no round has a
 cost share of its own, and the per-round decision backstop starts afresh.
 A permission or person-needed question takes precedence over another round.
@@ -759,8 +786,8 @@ acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).
 
 | Code | Trigger | Message begins |
 | --- | --- | --- |
-| `flow_bootstrap.not_doable` | A repair of a tested, non-empty Flow got no further than the previous judgement | "I could not build this Flow, and I found no way to:" followed by what could not be done, the test and what was tried |
-| `flow_bootstrap.evidence_budget_exhausted` | The purse refused a call (the only cost ending), time, token or declared calls ran out, or the repair/live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
+| `flow_bootstrap.not_doable` | A round of a tested, non-empty Flow made no measurable progress on the previous judgement, or ended on refused repeats with the Flow it started from unchanged | "I could not build this Flow, and I found no way to:" followed by what could not be done, the test and what was tried |
+| `flow_bootstrap.evidence_budget_exhausted` | The purse refused a call or could not fund another round (the only cost endings), time, token or declared calls ran out, or the live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
 | `flow_bootstrap.model_replies_unreadable` | Six consecutive unreadable replies, each asked again with a corrective note | "The build stopped because the model's replies could not be read:" followed by the count, cause, paid attempts, progress and kept-Flow status |
 
 Budget exhaustion does not establish that the task is impossible, and an empty

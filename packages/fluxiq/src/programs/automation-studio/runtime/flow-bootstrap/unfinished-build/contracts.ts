@@ -121,6 +121,39 @@ export type AutomationStudioFlowBootstrapRoundEnding =
     progress: AutomationStudioFlowBootstrapRoundProgress;
   };
 
+/**
+ * What one round measurably did better than the judged round before it, read
+ * only from what the build's test and the judge report (`./progress.ts`):
+ * - `acts_done`: more of the checklist's acts and choices have a step;
+ * - `acts_proven`: more of those steps worked when the Flow ran from its start;
+ * - `test_passes`: the Flow now runs clean from its start where it did not;
+ * - `fewer_failed_steps`: it still fails, but at fewer steps;
+ * - `more_working_steps`: with no judge on either side, more steps worked when it ran;
+ * - `finished_and_judged`: the model said it was ready and its test passed, where the round before stopped short;
+ * - `carried_steps_judged`: the judge could not judge the Flow before (steps carried and never run) and now judged it;
+ * - `judge_findings_resolved`: a finding the judge reported before is no longer reported.
+ */
+export type AutomationStudioFlowBootstrapProgressMeasure =
+  | "acts_done"
+  | "acts_proven"
+  | "test_passes"
+  | "fewer_failed_steps"
+  | "more_working_steps"
+  | "finished_and_judged"
+  | "carried_steps_judged"
+  | "judge_findings_resolved";
+
+/**
+ * Why no route is left, as the not-doable ending says it (t240):
+ * `no_progress` -- the round measurably did no better than the judged round
+ * before it (`before`); `repeated_unchanged` -- the round ended on refused
+ * repeats of the same calls and handed back the Flow it started from, so a
+ * second round would only repeat it (run 38, cause C8).
+ */
+export type AutomationStudioFlowBootstrapNoRouteLeft =
+  | { kind: "no_progress"; before: AutomationStudioFlowBootstrapJudgement }
+  | { kind: "repeated_unchanged" };
+
 /** What the test of the Flow so far found. */
 export type AutomationStudioFlowBootstrapTested = "replayed_clean" | "replay_failed" | "not_tested";
 

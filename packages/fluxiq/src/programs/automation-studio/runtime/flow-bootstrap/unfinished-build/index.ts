@@ -10,6 +10,7 @@ export * from "./judgement.ts";
 export * from "./not-doable.ts";
 export * from "./not-done.ts";
 export * from "./phases.ts";
+export * from "./progress.ts";
 export * from "./provider-unavailable.ts";
 export * from "./replies-unreadable.ts";
 export * from "./round-ending.ts";

@@ -132,7 +132,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     // Two of three things asked are not done, so the clean run is not said to be without failing.
     expect(outcome.ending.message).toContain("ran from its start, but it does not yet do all you asked");
     expect(outcome.ending.message).not.toContain("without failing");
-    expect(outcome.ending.message).toContain("I tried 2 times live -- exploring, then one repair after testing what I had -- over 76 decisions");
+    expect(outcome.ending.message).toContain("I tried 2 times live -- exploring, then one repair after testing what I had -- over 76 decisions, and the last repair made no measurable progress on the round before it: it handed back the same Flow; no more of the 3 things you asked had a step (1, as before); no more of its steps worked when it was run from its start.");
     expect(outcome.ending.message).not.toMatch(/[a-z]+_[a-z]+|bootstrap\./u);
     expect(outcome.ending.message.length).toBeLessThanOrEqual(1_000);
     expect(outcome.kept).toEqual({ revision: 1, steps: 1 });
@@ -180,20 +180,6 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     await runAutomationStudioFlowBootstrapBuildPhases(input);
 
     expect(requests[1]!.maxIterations).toBe(18);
-  });
-
-  it("says a repair that is still getting further at its last round ran out of repairs, not that the task cannot be done", async () => {
-    let added = 1;
-    const growing = (request: AutomationStudioFlowBootstrapRoundRequest) => {
-      added += 1;
-      return outOfDecisions([...(request.repair?.seed ?? []), step(added, { id: `d${10 + added}`, acts: added === 2 ? ["a1"] : [] })], spent(10, 0.01));
-    };
-    const { input, requests } = harness([growing, growing, growing], { maxRepairRounds: 2 });
-
-    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
-
-    expect(requests).toHaveLength(3);
-    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "repair_rounds" });
   });
 
   it("keeps an empty draft exploring live while budget remains, told plainly that nothing is in the Flow yet", async () => {
