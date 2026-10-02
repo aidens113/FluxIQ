@@ -47,6 +47,7 @@
 
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowInstruction, AutomationStudioFlowIntervention, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import {
+  automationStudioLlmJudgeTokenLimits,
   runAutomationStudioLlmHarness,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmRunBudgetLedger,
@@ -182,7 +183,8 @@ async function askOnce(
     ...(request.policy ? { policy: request.policy } : {}),
     provider,
     ...(request.runBudget ? { runBudget: request.runBudget } : {}),
-    ...(request.tokenLimits ? { tokenLimits: request.tokenLimits } : {}),
+    // A judge's reply is held at a judge's size, never the 8,000-token default: under a build's purse the hold is the reply allowance (`../llm/harness/token-limits.ts`, run 38's C7).
+    ...withDefined("tokenLimits", automationStudioLlmJudgeTokenLimits(request.tokenLimits)),
     ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
     ...(request.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: request.maxEstimatedCostUsd } : {}),
     ...(request.signal ? { signal: request.signal } : {}),
@@ -204,6 +206,11 @@ async function askOnce(
   // intervention is told here which check it was and who asked.
   const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check } };
   return { verification, intervention };
+}
+
+/** `{ [key]: value }`, or nothing when the value is undefined, for an optional field that may not be set to `undefined`. */
+function withDefined<K extends string, V>(key: K, value: V | undefined): { [P in K]?: V } {
+  return value === undefined ? {} : ({ [key]: value } as { [P in K]?: V });
 }
 
 /** The first error code a failed call reported. Codes only: a provider's message never reaches a run record. */
