@@ -18,15 +18,22 @@
 // completion: the build ends by writing its result from what it has, not by
 // running into a limit mid-exploration.
 //
-// Spending is read from each decision's reported usage. A decision the caller
+// Tokens are read from each decision's reported usage. A decision the caller
 // could not use reports none, so it is counted at the loop's average; and one
 // decision's worth is held back for calls the loop cannot see that spend the
 // same run budget, such as the build's one reading of its instructions.
 //
-// What is counted here is what the model is told. What holds the ceiling is the
-// purse (`./evidence-loop/cost-purse.ts`): before each decision is sent, its
-// own worst case is priced from its request, and one the budget cannot pay for
-// is never sent.
+// **Cost is counted, never enforced, here (t234).** The purse
+// (`./build-purse/purse.ts`, held through `./evidence-loop/cost-purse.ts`) is
+// the only cost authority: before each decision is sent its own worst case is
+// priced from its request, and one the purse cannot pay for is never sent --
+// the only way a loop ends on cost. The cost count reads that same purse --
+// what is spent, the earlier builds of the same Flow creation included, and
+// what is in flight -- holds nothing back, and is never less than one: it tells
+// the model what is left and when to wrap up, and leaves the deciding to the
+// purse. It used to hold back an extra average decision and count to zero on
+// its own, and `run-muqbzu32-8691a65e` stopped with $0.0738 of $0.10 spent and
+// a next decision of $0.0245 at worst that the purse would have paid for.
 //
 // **The last decisions are for finishing, not only the very last one.** The
 // last decision used to be the only one offered completion alone, so a
@@ -81,6 +88,14 @@ export type AutomationStudioLlmEvidenceLoopSpending = {
    * with $0.09 left on `run-muq3uozx-3153564b` when calls cost $0.003.
    */
   nextDecisionCostUsd?: number;
+  /**
+   * The purse the loop's decisions are held against, read before this
+   * decision: the cost count reads it rather than the loop's own figures, so
+   * what earlier builds of the same Flow creation spent and what calls in
+   * flight are held at count, and nothing else is held back. Absent, the
+   * count reads `maxCostUsd` and `estimatedCostUsd`.
+   */
+  purse?: { ceilingUsd: number; spentUsd: number; pendingUsd: number };
 };
 
 /** What is left, this decision included. Only the bounds the budget names appear. */
@@ -88,15 +103,20 @@ export type AutomationStudioLlmEvidenceLoopRemaining = {
   decisionsLeft: number;
   /**
    * The bound that left the fewest decisions, and so the one that ends the
-   * loop if nothing changes. Recorded on an exhausted loop so a reader need not
-   * work out from the trace which of tokens, cost and time it was
-   * (`./evidence-loop/exhaustion.ts`). Never shown to the model.
+   * loop if nothing changes -- unless it is cost, which never ends a loop on
+   * its count: the purse does, by refusing a decision. Recorded on an
+   * exhausted loop so a reader need not work out from the trace which of
+   * tokens and time it was (`./evidence-loop/exhaustion.ts`). Never shown to
+   * the model.
    */
   limitedBy: AutomationStudioLlmEvidenceLoopBudgetBound;
   tokensLeft?: number;
   costLeftUsd?: number;
   secondsLeft?: number;
 };
+
+/** Floating-point slack, as the purse allows, so money for exactly one worst case counts it. */
+const COST_EPSILON_USD = 1e-9;
 
 /** The evidence entry the remaining budget is shown under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID = "core.budget";
@@ -119,17 +139,23 @@ export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudi
     counts.push(["tokens", tokensLeft < perDecision ? 0 : 1 + Math.floor((tokensLeft - perDecision) / Math.max(1, averageTokens))]);
     remaining.tokensLeft = Math.max(0, Math.floor(tokensLeft));
   }
-  if (budget.maxCostUsd !== undefined) {
-    const costLeft = budget.maxCostUsd - spent.estimatedCostUsd - (unreported + 1) * averageCost;
+  if (budget.maxCostUsd !== undefined || spent.purse) {
+    // What the purse has left: its ceiling less what is spent and what is in
+    // flight, with nothing held back. Without one, the loop's own figures.
+    const costLeft = spent.purse
+      ? spent.purse.ceilingUsd - spent.purse.spentUsd - spent.purse.pendingUsd
+      : budget.maxCostUsd! - spent.estimatedCostUsd - unreported * averageCost;
     // As the token bound counts: the next decision is reserved at its worst
-    // case, once, so it can never overrun the ceiling, and those after it at
-    // what decisions have actually cost. Counting every one at the worst case
-    // withdrew tools with $0.09 left when calls cost a tenth of it
-    // (`run-muq3uozx-3153564b`). Before anything is reported, the worst case
-    // is the only price known.
+    // case, once, and those after it at what decisions have actually cost.
+    // Counting every one at the worst case withdrew tools with $0.09 left when
+    // calls cost a tenth of it (`run-muq3uozx-3153564b`). Before anything is
+    // reported, the worst case is the only price known.
     const worstCase = Math.max(averageCost, spent.nextDecisionCostUsd !== undefined && Number.isFinite(spent.nextDecisionCostUsd) ? spent.nextDecisionCostUsd : 0);
     const perDecision = spent.reportedDecisions ? averageCost : worstCase;
-    counts.push(["cost", costLeft <= 0 || costLeft < worstCase ? 0 : perDecision > 0 ? 1 + Math.floor((costLeft - worstCase) / perDecision) : iterationsLeft]);
+    const counted = costLeft <= 0 || costLeft + COST_EPSILON_USD < worstCase ? 0 : perDecision > 0 ? 1 + Math.floor((costLeft - worstCase + COST_EPSILON_USD) / perDecision) : iterationsLeft;
+    // Never none: the decision is sent and the purse decides. At one, the loop
+    // offers only completion; it does not end there (`./evidence-loop.ts`).
+    counts.push(["cost", Math.max(1, counted)]);
     remaining.costLeftUsd = Math.max(0, Math.floor(costLeft * 10_000) / 10_000);
   }
   if (budget.maxDurationMs !== undefined) {

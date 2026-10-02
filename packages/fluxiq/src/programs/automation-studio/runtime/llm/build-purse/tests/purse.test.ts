@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AutomationStudioLlmBuildPurse } from "../purse.ts";
 import { automationStudioLlmProjectedCallCostUsd } from "../projected-cost.ts";
 import { AutomationStudioLlmBuildPurseRefused } from "../refused.ts";
-import { automationStudioLlmBuildPurseRun, automationStudioLlmCurrentBuildPurse } from "../run.ts";
+import { automationStudioLlmBuildPurseRun, automationStudioLlmBuildPurseScope, automationStudioLlmCurrentBuildPurse } from "../run.ts";
 import { automationStudioLlmBuildPurseHoldCall } from "../harness-hold.ts";
 import { createAutomationStudioDeepSeekProvider } from "../../deepseek/index.ts";
 
@@ -67,18 +67,25 @@ describe("a build's purse", () => {
     expect(spent.hold(call(undefined))).toMatchObject({ ok: false, refusal: { spentUsd: 0.25, ceilingUsd: 0.25 } });
   });
 
-  it("states where it stands for a call something else declined, in a refusal's figures, and holds nothing for it (t194-w47)", () => {
-    let accounted = 0.0587;
-    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, spentUsd: () => accounted });
-    // Nothing priced yet: no worst case, and no tokens.
-    expect(purse.standing()).toEqual({ code: "llm_budget.run_cost_limit", estimatedInputTokens: 0, maxOutputTokens: 0, spentUsd: 0.0587, pendingUsd: 0, ceilingUsd: 0.1, declinedBy: "loop_budget" });
-    // Run 13's last decision: 72,677 input tokens, priced at worst at $0.0314, and settled at $0.0151.
-    const held = purse.hold({ projectedCostUsd: 0.0314, estimatedInputTokens: 72_677, maxOutputTokens: 8_000 });
-    if (held.ok) held.hold.settle({ inputTokens: 72_677, outputTokens: 515, totalTokens: 73_192, estimatedCostUsd: 0.0151 });
-    accounted = 0.0738;
-    expect(purse.standing()).toEqual({ code: "llm_budget.run_cost_limit", projectedCostUsd: 0.0314, estimatedInputTokens: 72_677, maxOutputTokens: 8_000, spentUsd: 0.0738, pendingUsd: 0, ceilingUsd: 0.1, declinedBy: "loop_budget" });
-    expect(purse.refusal).toBeUndefined();
-    expect(purse.pendingUsd()).toBe(0);
+  it("counts what earlier builds of the same Flow creation spent, and says so when it refuses (t234)", () => {
+    // run-muqbzu32-8691a65e stopped with $0.0738 spent of $0.10; building again carried a fresh ceiling.
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.0738 });
+    expect(purse.carriedUsd).toBe(0.0738);
+    expect(purse.spentUsd()).toBeCloseTo(0.0738, 9);
+    expect(purse.leftUsd()).toBeCloseTo(0.0262, 9);
+    // The next decision at worst: about 79,460 estimated input tokens all uncached and 2,000 reply tokens fits; more does not.
+    const fits = purse.hold({ projectedCostUsd: 0.0262, estimatedInputTokens: 79_400, maxOutputTokens: 2_000 });
+    expect(fits.ok).toBe(true);
+    if (fits.ok) fits.hold.settle({ inputTokens: 79_000, outputTokens: 120, totalTokens: 79_120, estimatedCostUsd: 0.0151 });
+    expect(purse.spentUsd()).toBeCloseTo(0.0889, 9);
+    const refused = purse.hold({ projectedCostUsd: 0.0275, estimatedInputTokens: 84_000, maxOutputTokens: 2_000 });
+    expect(refused).toMatchObject({ ok: false, refusal: { spentUsd: 0.0889, carriedUsd: 0.0738, ceilingUsd: 0.1, projectedCostUsd: 0.0275 } });
+    expect(purse.leftUsd()).toBeCloseTo(0.0111, 9);
+  });
+
+  it("refuses a carried spend that is not a finite, non-negative amount", () => {
+    expect(() => new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: Number.NaN })).toThrow();
+    expect(() => new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: -0.01 })).toThrow();
   });
 });
 
@@ -115,5 +122,18 @@ describe("a call made under a purse", () => {
       automationStudioLlmBuildPurseHoldCall({ provider: priced, estimatedInputTokens: 300_000, maxOutputTokens: 8_000 });
       return "swallowed";
     })).rejects.toBeInstanceOf(AutomationStudioLlmBuildPurseRefused);
+  });
+
+  it("holds every call made inside a build's scope, and throws nothing for a refusal the caller reads itself (t234)", async () => {
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.09 });
+    const priced = { estimateCostUsd: () => 0.02 };
+    const outcome = await automationStudioLlmBuildPurseScope(purse, async () => {
+      // A judge's call, made inside the build with no loop around it.
+      const held = automationStudioLlmBuildPurseHoldCall({ provider: priced, estimatedInputTokens: 20_000, maxOutputTokens: 2_000 });
+      return held && !held.ok ? held.diagnostic.code : "sent";
+    });
+    expect(outcome).toBe("llm_budget.run_cost_limit");
+    expect(purse.refusal).toMatchObject({ spentUsd: 0.09, carriedUsd: 0.09, projectedCostUsd: 0.02 });
+    expect(automationStudioLlmCurrentBuildPurse()).toBeUndefined();
   });
 });

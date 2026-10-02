@@ -68,6 +68,7 @@ import {
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
 import { automationStudioFlowDraftDryRunGate, automationStudioNodeRerunFromItsPlace } from "./node-tools/index.ts";
+import type { AutomationStudioLlmBuildPurseRefusal } from "./build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
 import {
   automationStudioLlmEvidenceCanonicalJson,
@@ -232,7 +233,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // Looks withdrawn after an ignored redirect (`decision-handlers/look-withdrawal.ts`),
   // only where a decision can be refused without ending the loop.
   const looks = automationStudioLlmEvidenceLookWithdrawal({ enabled: input.lookWithdrawal !== false && input.unusableDecisions !== undefined });
-  const accounting = automationStudioLlmEvidenceLoopEmptyAccounting(); const purse = automationStudioLlmEvidenceLoopPurse(input.budget, accounting); // Each decision's worst case held against the cost budget before it is sent (`./evidence-loop/cost-purse.ts`).
+  const accounting = automationStudioLlmEvidenceLoopEmptyAccounting(); const purse = automationStudioLlmEvidenceLoopPurse(input.budget, accounting, input.purse); // Each decision's worst case held against the build's purse, or the loop's own at its cost budget, before it is sent: the only cost authority (`./evidence-loop/cost-purse.ts`).
   if (!limits || !automationStudioLlmEvidenceValidTools(input.tools)) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting);
   const toolIds = new Set(input.tools.map((tool) => tool.toolId));
   const toolsById = new Map(input.tools.map((tool) => [tool.toolId, tool] as const));
@@ -372,11 +373,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // which live run it was). Shared by every allowance that can run out: the
   // budget's at the top of an iteration, the tool-call ceiling, and the literal
   // max-iteration exit.
-  // What the record says is built in `./evidence-loop/exhaustion.ts`, beside the fields it fills.
-  const exhausted = (bound: AutomationStudioLlmEvidenceLoopExhaustedBound): AutomationStudioLlmEvidenceLoopResult =>
+  // What the record says is built in `./evidence-loop/exhaustion.ts`; `costRefusal` is the purse's refusal, the only cost ending.
+  const exhausted = (bound: AutomationStudioLlmEvidenceLoopExhaustedBound, costRefusal?: AutomationStudioLlmBuildPurseRefusal): AutomationStudioLlmEvidenceLoopResult =>
     failure(draftSteps, "llm_evidence_loop.iteration_limit", trace, accounting, automationStudioLlmEvidenceLoopExhaustion({
       bound, maxIterations: limits.maxIterations, iterations: accounting.iterations, draftSteps, completionAttempts: counters.completionAttempts,
-      unusableInARow: counters.unusableInARow, lastIssueCodes, lastRemaining, purseRefusal: purse.refusal, outstandingIssueCodes: noProgress.outstanding
+      unusableInARow: counters.unusableInARow, lastIssueCodes, lastRemaining, purseRefusal: costRefusal, outstandingIssueCodes: noProgress.outstanding
     }));
   // The dry run (`../flow-draft/dry-run.ts`): before a completed result is
   // accepted, the draft is run again from where its first step started, with no
@@ -618,14 +619,15 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const canComplete = accounting.toolCalls - counters.failedToolCalls >= limits.minToolCalls;
     offeredCompletion = canComplete;
     if (!eligibleTools.length && !canComplete) return failure(draftSteps, "llm_evidence_loop.repeat_without_progress", trace, accounting);
-    // What the budget leaves (`loop-budget.ts`): told to the model as
-    // the newest entry, and a last decision that is offered only completion.
+    // What the budget leaves (`loop-budget.ts`), cost read from the purse in use:
+    // told to the model as the newest entry, and a last decision offered only completion.
+    const purseFigures = purse.figures();
     const remaining = input.budget && automationStudioLlmEvidenceLoopRemaining(input.budget, {
-      decisions: iteration - 1, reportedDecisions, totalTokens: accounting.totalTokens, estimatedCostUsd: accounting.estimatedCostUsd, elapsedMs: clock() - startedAtMs, ...(purse.lastProjectedCostUsd !== undefined ? { nextDecisionCostUsd: purse.lastProjectedCostUsd } : {})
+      decisions: iteration - 1, reportedDecisions, totalTokens: accounting.totalTokens, estimatedCostUsd: accounting.estimatedCostUsd, elapsedMs: clock() - startedAtMs,
+      ...(purse.lastProjectedCostUsd !== undefined ? { nextDecisionCostUsd: purse.lastProjectedCostUsd } : {}), ...(purseFigures ? { purse: purseFigures } : {})
     }, limits.maxIterations - iteration + 1);
-    // Nothing left to pay for a decision with. The run's budget is what ran
-    // out, which a retry raises; what the last decision happened to be is
-    // recorded beside it and is not the ending.
+    // No decision left for tokens or time (cost never counts to none: the purse decides). The budget is what
+    // ran out, which a retry raises; what the last decision happened to be is recorded beside it, not the ending.
     lastRemaining = remaining || undefined;
     if (remaining && remaining.decisionsLeft === 0) { accounting.iterations = iteration - 1; return exhausted("budget"); } // This decision was never asked for, so it is not counted.
     finalDecision = remaining !== undefined && remaining.decisionsLeft === 1 && canComplete;
@@ -656,7 +658,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       unanswered.answered();
       decision = automationStudioLlmEvidenceParseDecision(raw);
       refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend }) : undefined;
-    } catch (thrown) { if (purse.refused(thrown)) { accounting.iterations = iteration - 1; return exhausted("budget"); } // Not sent: the cost budget could not pay for it at worst.
+    } catch (thrown) { const costRefusal = purse.refused(thrown); if (costRefusal) { accounting.iterations = iteration - 1; return exhausted("budget", costRefusal); } // Not sent: the purse could not pay for it at worst, the only cost ending.
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError && automationStudioLlmProviderUnanswered(thrown.issueCodes)) {
@@ -739,7 +741,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     counters.unusableInARow = 0;
     // The last decision the budget allowed was offered only completion, and was
     // spent on something else. The budget is still what ran out, and the paid decision leaves its row (`./evidence-loop/final-decision-row.ts`).
-    if (finalDecision) { recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds)); return exhausted("budget"); }
+    // Not when cost is the bound: its count only informs, so the loop carries on and the purse decides.
+    if (finalDecision && remaining && remaining.limitedBy !== "cost") { recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds)); return exhausted("budget"); }
     if (!toolIds.has(decision.toolId)) return failure(draftSteps, "llm_evidence_loop.unknown_tool", trace, accounting);
     // A repeat is answered from what the loop already holds. Checked before the
     // call id, so a request repeated word for word is a repeat, not a clash.

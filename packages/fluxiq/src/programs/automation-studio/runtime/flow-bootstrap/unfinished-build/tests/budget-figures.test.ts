@@ -2,6 +2,9 @@
 // its purse held it at is counted on the build's accounting (F17 leftovers,
 // t194-w23): what the build had spent, what its refused call could have cost,
 // against the ceiling -- and the breaches of every round, kept past the loop.
+// These builds are given no purse of their own, so each round's loop is given
+// what the rounds before left; one purse shared by every round is
+// `./shared-purse.test.ts`.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "../../../llm/build-purse/index.ts";
@@ -123,17 +126,6 @@ describe("the closing message of a build its purse stopped", () => {
     const outcome = await unfinished(input);
 
     expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.240, which left \$0\.010, too little for its next call\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
-  });
-
-  it("says the loop count's figure as a least worst case, not a most", async () => {
-    // Run 13's figures: $0.0738 spent, and the last request's worst case $0.0314, which the next costs at least at worst.
-    const declined = { ...refusal(0.0738, 0.0314, 0.1), declinedBy: "loop_budget" as const };
-    const { input } = harness([() => stoppedByCost([step(1, { acts: ["a1"] })], spent(15, 0.0738), declined)]);
-    input.budget = { maxCostUsd: 0.1, maxDurationMs: 540_000 };
-
-    const outcome = await unfinished(input);
-
-    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.10 before the Flow was finished: it had spent \$0\.074, and its next call could have cost \$0\.031 or more\. /u);
   });
 
   it("says the whole build's spend where a repair had nothing left to start with", async () => {

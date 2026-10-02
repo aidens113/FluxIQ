@@ -430,14 +430,14 @@ is persisted. The per-request ceiling is the model's context window --
 1,000,000 tokens for both configured models, derived from
 `AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS` as
 `AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST` -- and the session-key
-profile is that whole window: 992,000 input tokens, 8,000 reserved for the reply,
-1,000,000 total. A request whose estimated input plus reserved output exceeds the
+profile is that whole window: 992,000 input tokens, 8,000 reserved for the reply
+by default (build decisions send and reserve 2,000), 1,000,000 total. A request whose estimated input plus reserved output exceeds the
 window is refused before it is sent, never trimmed:
 `llm_budget.input_limit_exceeded` or `llm_budget.request_total_exceeded` from
 the harness, and `llm.provider_input_budget_exceeded` from the DeepSeek adapter,
 each stating the estimated input tokens, the bytes and the window. The build's
-spend is bounded by its loop budget: the $0.25 run cost ceiling and the per-call
-cost check derived from it are unchanged.
+spend is bounded by the Flow creation's one purse, not by the window; see
+[One purse per Flow creation](#one-purse-per-flow-creation).
 
 The API failure boundary is cross-bundle-safe without trusting JavaScript class
 identity. It recognizes only the canonical error name and message paired with a
@@ -643,8 +643,9 @@ it against the checklist, and seeds a live repair with that Flow and judgement.
 An empty Flow has nothing to test and explores again from the live page while
 budget remains. Repairs continue while the judgement advances (more acts or
 choices done, more steps in the Flow, or fewer failed steps), up to two repairs
-and six live rounds. Every round shares the build's $0.25 purse, time/token
-budget and declared call count; the per-round decision backstop starts afresh.
+and six live rounds. Every round draws on the Flow creation's one purse and
+shares the build's time/token budget and declared call count; no round has a
+cost share of its own, and the per-round decision backstop starts afresh.
 A permission or person-needed question takes precedence over another round.
 
 The three explicit endings carry `diagnostic.ending.message`, the outstanding
@@ -654,7 +655,7 @@ acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).
 | Code | Trigger | Message begins |
 | --- | --- | --- |
 | `flow_bootstrap.not_doable` | A repair of a tested, non-empty Flow got no further than the previous judgement | "I could not build this Flow, and I found no way to:" followed by what could not be done, the test and what was tried |
-| `flow_bootstrap.evidence_budget_exhausted` | Cost, time, token or declared calls ran out, or the repair/live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
+| `flow_bootstrap.evidence_budget_exhausted` | The purse refused a call (the only cost ending), time, token or declared calls ran out, or the repair/live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
 | `flow_bootstrap.model_replies_unreadable` | Six consecutive unreadable replies, each asked again with a corrective note | "The build stopped because the model's replies could not be read:" followed by the count, cause, paid attempts, progress and kept-Flow status |
 
 Budget exhaustion does not establish that the task is impossible, and an empty
@@ -786,6 +787,42 @@ identical bytes of a 50,840-byte message behind a value that changed on every
 call. A key added here must go on the correct side of that line: anything that
 varies per call belongs after the evidence.
 
+### One purse per Flow creation
+
+One purse per Flow creation is the only cost authority for a build
+(`runtime/llm/build-purse/purse.ts`, `run.ts`). A Flow creation runs from its
+first build until a Flow is proposed or a build ends not doable. Every build of
+it -- continuations after a budget ending included, with each one's rounds,
+test, judge and repairs -- draws from one ceiling:
+`FLUXIQ_LLM_RUN_COST_CEILING_USD`, $0.10 by default, which the Flow's
+`maxEstimatedCostUsdPerRun` may lower and nothing may raise. The whole build
+body runs inside `automationStudioLlmBuildPurseScope`, so reading the
+instruction, every decision, the test and the judge are all held against it.
+
+- **The spend outlives a build.** It is kept on a per-Flow creation record
+  (`runtime/flow-bootstrap/creation-spend/`, stored as `creation-spend.json`
+  beside the Flow by `runtime/service/creation-spend.ts`), carried into the
+  next build's purse as `carriedUsd`, and cleared when the creation ends. A
+  refuted-result repair during a later scheduled run keeps its own run ceiling
+  and never touches the record.
+- **Holds are true worst cases.** Each call is held at all of its input
+  uncached at peak rates -- input measured at 3 UTF-8 bytes per token plus 16
+  framing tokens, which overstated every recorded call -- plus its reply
+  allowance. Build decisions send and hold `max_tokens` 2,000
+  (`AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS`,
+  `runtime/llm/harness/token-limits.ts`), at least three times the largest of
+  6,119 recorded decision replies (593 tokens; p99 469). Other calls keep the
+  8,000 default; a runtime patch step can reach about 2,700 tokens.
+- **The loop budget does not end a build on cost.** Its count of decisions
+  left (`runtime/llm/loop-budget.ts`) reads the purse's figures with no
+  held-back decision; it only tells the model what is left and drives the
+  wrap-up. The purse refusing a call is the only cost ending, and that ending
+  states what was spent (earlier builds of the Flow included), what was held,
+  the refused call's worst case, and what the Flow has left.
+- **The judge has no cap of its own.** Each judge call is held at its true
+  worst case rather than at a share of what is left, and a judge call the
+  purse refuses gives a `not_judged` verdict.
+
 ## Generation readiness capability
 
 The authenticated, read-only `get-flow-bootstrap-generation-readiness` endpoint
@@ -836,11 +873,12 @@ exhaustion, and evidence-byte overflow fail closed. An unusable reply and a
 refused completion are asked again, up to three in a row, as described above.
 The series has no fixed length of its own. It makes at most 64 decisions, or
 fewer when the resolution declares a call count, with at most one more tool
-call than decisions. Each decision reserves the build's total estimated cost
-divided by its decisions, and the loop's budget holds the build's token and
-cost totals on every call. The build's total cost ceiling is the Flow setting
-`adaptationPolicySettings.maxEstimatedCostUsdPerRun` when set, and the
-resolution's default otherwise. The
+call than decisions. No decision has a cost share: each is held against the
+Flow creation's one purse at its own worst case, and the loop's budget holds
+the build's token totals on every call. The cost ceiling is
+`FLUXIQ_LLM_RUN_COST_CEILING_USD` ($0.10 by default), which the Flow setting
+`adaptationPolicySettings.maxEstimatedCostUsdPerRun` may lower and nothing may
+raise ([One purse per Flow creation](#one-purse-per-flow-creation)). The
 ordinary proposed Bootstrap Adaptation is written only from a completion the
 completion check accepted.
 
@@ -1170,7 +1208,7 @@ is retained outside the patch.
 
 Runtime Debug exposes `Build Flow from instructions` only for a blank top-level orchestration Flow with no Router or Subflows, at least one active applicable instruction, an enabled DeepSeek key, and saved limits that exactly match the build profile: 4,000 input tokens, 1,000 output tokens, 5,000 total tokens, 20 seconds, USD 0.25, and zero provider retries. The build always asks Core for one call; the Flow's saved call count is not consulted. Ordinary Run remains unavailable while the Flow has no executable topology.
 
-The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the request at action time: 8,000 input, 4,000 output, and 12,000 total tokens per call, 45 seconds and USD 0.25 per call. It names no call count and ignores the Flow's saved one. The build is bounded by its loop budget -- the build's total cost ceiling, which is the Flow's `maxEstimatedCostUsdPerRun` when set, its token budget, and its deadline -- and the panel describes the run by what ends it (a proposal, a lack of progress, the token budget, the total cost, or the deadline) rather than by a call count. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
+The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the request at action time: 8,000 input, 4,000 output, and 12,000 total tokens per call, 45 seconds and USD 0.25 per call. It names no call count and ignores the Flow's saved one. The build is bounded by the Flow creation's one purse -- `FLUXIQ_LLM_RUN_COST_CEILING_USD`, $0.10 by default, lowered by the Flow's `maxEstimatedCostUsdPerRun` when that is smaller -- and by its token budget and its deadline, and the panel describes the run by what ends it (a proposal, a lack of progress, the token budget, the total cost, or the deadline) rather than by a call count. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
 
 The authoring action runs on the current authenticated session's own unlocked key and does not ask for the account password or PIN again, or for any confirmation of its size. The browser route adds the authenticated session, so browser code never derives or exposes it. Where the person has allowed lasting consequences, the request carries them as `permittedConsequences`. The surface keeps availability checks visible, and a rejected check offers an explicit retry.
 

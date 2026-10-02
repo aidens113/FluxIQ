@@ -39,9 +39,11 @@ export type AutomationStudioLlmEvidenceLoopExhaustedBound =
   /** `maxIterations`: the loop reached the last turn it was configured for. */
   | "iterations"
   /**
-   * The run's own budget (`loop-budget.ts`) had no decision left, so the loop
-   * stopped before asking for one it could not pay for -- including the last
-   * decision, which is offered only completion and spent on something else.
+   * The run's budget ran out. Either the purse (`./cost-purse.ts`) refused a
+   * decision it could not pay for at worst -- the only cost ending -- or the
+   * count of decisions left (`../loop-budget.ts`) had none for tokens or time,
+   * including a last decision, offered only completion, spent on something
+   * else while one of those was the bound.
    */
   | "budget"
   /** `maxToolCalls`: the loop had turns left but no allowance to run anything with them. */
@@ -97,9 +99,10 @@ export type AutomationStudioLlmEvidenceLoopExhaustion = {
    */
   lastIssueCodes: readonly string[];
   /**
-   * Which of the run's budget bounds had no decision left, when `bound` is
-   * `budget`: the one whose count of decisions left was smallest
-   * (`../loop-budget.ts`). Absent for the other bounds.
+   * Which of the run's budget bounds ran out, when `bound` is `budget`: `cost`
+   * when the purse refused the next decision, otherwise the one whose count of
+   * decisions left was smallest (`../loop-budget.ts`). Absent for the other
+   * bounds.
    *
    * `run-mulx76vv-a882551e` ended `budget` with $0.06 of a $0.25 cost cap spent
    * and 527,633 of 600,000 tokens, and the debug had to compute from the trace
@@ -117,17 +120,17 @@ export type AutomationStudioLlmEvidenceLoopExhaustion = {
    */
   outstandingIssueCodes: readonly string[];
   /**
-   * The decision the cost budget declined, when that is what ended the loop
-   * (`./cost-purse.ts`): what was spent, what the next decision would have
-   * cost at worst, and the ceiling it would have crossed. `budgetBound` is then
-   * `cost`. The decision was never sent, so `iterations` does not count it.
+   * The decision the purse refused, when that is what ended the loop
+   * (`./cost-purse.ts`): what was spent (what earlier builds of the same Flow
+   * creation carried included), what was in flight, what the next decision
+   * would have cost at worst, and the ceiling it would have crossed.
+   * `budgetBound` is then `cost`. The decision was never sent, so
+   * `iterations` does not count it.
    *
-   * Either the purse refused it, or the loop's count of decisions left
-   * (`../loop-budget.ts`) found none it could pay for before the decision
-   * reached the purse (`declinedBy: "loop_budget"`): its figure is then the
-   * last decision's worst case, the least the next can cost at worst. The
-   * second used to carry nothing, so `run-muqbzu32-8691a65e` stopped at $0.074
-   * of $0.10 and told the person no figure at all (t194-w47).
+   * Only an actual refusal. The loop's count of decisions left used to stop a
+   * loop on cost before the purse saw the decision, and `run-muqbzu32-8691a65e`
+   * stopped at $0.0738 of $0.10 with a next decision the purse would have paid
+   * for; the count no longer ends a loop on cost (t234).
    */
   costRefusal?: AutomationStudioLlmBuildPurseRefusal;
 };
@@ -153,14 +156,14 @@ export function automationStudioLlmEvidenceLoopExhaustion(state: {
   lastIssueCodes: readonly string[];
   /** Which budget bound had the fewest decisions left when the budget was last read, where it was. */
   lastRemaining: { limitedBy: AutomationStudioLlmEvidenceLoopBudgetBound } | undefined;
-  /** The call the build's purse refused, or its standing where it refused none (`./cost-purse.ts`). */
+  /** The decision the purse refused, when that is what ended the loop (`./cost-purse.ts`); undefined otherwise. */
   purseRefusal: AutomationStudioLlmBuildPurseRefusal | undefined;
   outstandingIssueCodes: readonly string[];
 }): AutomationStudioLlmEvidenceLoopExhaustion {
   const { bound, lastRemaining } = state;
-  // The purse's refusal ends the loop on cost whatever the count said; its
-  // standing is the cost figures only where cost is the bound the count ran out of.
-  const purseRefusal = state.purseRefusal && (state.purseRefusal.declinedBy === undefined || lastRemaining?.limitedBy === "cost") ? state.purseRefusal : undefined;
+  // The purse's refusal is the only cost ending, whatever the count said and
+  // whether or not the loop was given a budget to count with.
+  const purseRefusal = bound === "budget" ? state.purseRefusal : undefined;
   return {
     bound,
     maxIterations: state.maxIterations,
@@ -175,7 +178,7 @@ export function automationStudioLlmEvidenceLoopExhaustion(state: {
     // decision it could use has no last refusal, and reporting the one before
     // it would be the same conflation in a smaller field.
     lastIssueCodes: state.unusableInARow ? [...state.lastIssueCodes] : [],
-    ...(bound === "budget" && lastRemaining ? { budgetBound: purseRefusal ? "cost" as const : lastRemaining.limitedBy, ...(purseRefusal ? { costRefusal: { ...purseRefusal } } : {}) } : {}),
+    ...(purseRefusal ? { budgetBound: "cost" as const, costRefusal: { ...purseRefusal } } : bound === "budget" && lastRemaining ? { budgetBound: lastRemaining.limitedBy } : {}),
     // What a continuation of this build is told it still owes.
     outstandingIssueCodes: state.outstandingIssueCodes
   };

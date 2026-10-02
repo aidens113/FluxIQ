@@ -298,8 +298,12 @@ provider key from the environment.
 before dispatch against the run's token, output-token and estimated-cost
 budgets. The Flow setting `adaptationPolicySettings.maxEstimatedCostUsdPerRun`
 (the policy's `maxEstimatedCostUsdPerRun`), when set, is the run's total
-estimated-cost ceiling for builds and recoveries alike; otherwise the
-resolution's default total applies.
+estimated-cost ceiling for recoveries; otherwise the resolution's default
+total applies. A build is different: one purse per Flow creation, across every
+build of it until a Flow is proposed or a build ends not doable, is its only
+cost authority, at `FLUXIQ_LLM_RUN_COST_CEILING_USD` ($0.10 by default), which
+`maxEstimatedCostUsdPerRun` may lower and nothing may raise
+([One purse per Flow creation](automation-studio/llm-flow-bootstrap.md#one-purse-per-flow-creation)).
 [Iterating adaptations and their bounds](#iterating-adaptations-and-their-bounds)
 lists the guards.
 
@@ -1076,10 +1080,13 @@ diagnostic message. The receipt lists at most 250 calls, and
 
 Evidence-guided Flow Bootstrap follows the same model. Its loop makes at most
 64 decisions, or fewer when the resolution declares a call count, with at most
-one more tool call than decisions. Each decision reserves the build's total
-estimated cost divided by its decisions, and the loop's budget holds the
-build's token and cost totals on every call. The same Flow setting,
-`maxEstimatedCostUsdPerRun`, is the build's total cost ceiling when it is set.
+one more tool call than decisions. No decision has a cost share: each is held
+at its own worst case against the Flow creation's one purse
+([One purse per Flow creation](automation-studio/llm-flow-bootstrap.md#one-purse-per-flow-creation)),
+whose ceiling is `FLUXIQ_LLM_RUN_COST_CEILING_USD` ($0.10 by default), lowered
+by `maxEstimatedCostUsdPerRun` when that is smaller. The loop's count of
+decisions left only informs the model and drives the wrap-up; the purse
+refusing a call is the only cost ending.
 The loop stops a repeated request or a repeated observation with no change in
 between. An unusable decision, or a completed plan that Core refuses, spends
 that decision and the loop asks again. Three such decisions in a row, or fewer

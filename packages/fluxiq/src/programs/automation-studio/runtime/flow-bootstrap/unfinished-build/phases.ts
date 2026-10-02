@@ -12,7 +12,7 @@
 // `evidence_unusable_decision` or `evidence_iteration_limit`. It never reached
 // a test, a judgement, a repair or a "not doable": the person saw "Build
 // failed" and nothing after. `run-muog33va-96469cb2` stopped with 25 of 64
-// calls, $0.06 of $0.25 and 398 s of 540 s still unused.
+// calls, $0.06 of its $0.25 ceiling and 398 s of 540 s still unused.
 //
 // **What happens now.** A round that stops short with steps in its Flow goes
 // to phase 2 with what it has: the Flow so far is tested from its start and
@@ -41,8 +41,9 @@
 // result; `no` is repaired as a round that stopped short is, "not doable" only
 // when a repair hands back the same Flow; an unsure verdict is the result,
 // unverified, unless steps carried from an earlier Flow were not run in the
-// test (run 41, `run-muq70foz-74caa189`), which is repaired. The judge's spend
-// counts against the build's run cost ceiling.
+// test (run 41, `run-muq70foz-74caa189`), which is repaired. The judge's calls
+// are held against the build's purse like every other call, and it is asked
+// within what the purse has left.
 //
 // **Unreadable replies end the build only as that (t211).** Each reply the
 // loop could not read is asked again; an unbroken run of them ends the round
@@ -52,11 +53,22 @@
 //
 // **A budget is never "not doable".** A round stopped by the spend ceiling,
 // the token budget or the deadline -- or a repair that has none of them left to
-// start with -- ends the build as exactly that (`./budget-exhausted.ts`). The
-// $0.25 per-build ceiling holds across every round: each repair is given only
-// what the rounds before it left of the build's cost, tokens and time, and of
-// a call count the Flow's settings declared. The decision backstop is not such
-// a budget: each round meets it on its own.
+// start with -- ends the build as exactly that (`./budget-exhausted.ts`). Each
+// repair is given only what the rounds before it left of the build's tokens and
+// time, and of a call count the Flow's settings declared. The decision
+// backstop is not such a budget: each round meets it on its own.
+//
+// **Cost is one purse's (t234).** The ceiling is a Flow creation's --
+// FLUXIQ_LLM_RUN_COST_CEILING_USD, $0.10 unless set -- held by one purse opened
+// for the build with what earlier builds of the Flow spent
+// (`../../llm/build-purse/purse.ts`). Every round, its test and the judge draw
+// from that purse, and no round is given a fresh share of it: each round's
+// budget keeps the whole ceiling, the purse holds each call at its worst case,
+// and its refusal is the only cost ending. A repair is not started once the
+// purse has nothing left, the judge is asked within what it has left, and a
+// cost ending's figures are the purse's. A build given no purse keeps the
+// older arithmetic: each repair is given what the rounds before it left of the
+// cost budget too.
 //
 // Everything that decides a round belongs to the caller (`round`, `test`):
 // this module never calls a provider or runs a tool itself, and every ending
@@ -65,12 +77,13 @@
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmEvidenceLoopProviderUnavailable, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "../../llm/evidence-loop/index.ts";
+import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound, AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapIncompleteDraftPointer } from "../incomplete-draft/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../loop-limits/index.ts";
 import { automationStudioLlmStepLogScope } from "../../llm/step-log/index.ts";
-import { automationStudioFlowBootstrapBudgetExhausted } from "./budget-exhausted.ts";
+import { automationStudioFlowBootstrapBudgetExhausted, type AutomationStudioFlowBootstrapCostSpending } from "./budget-exhausted.ts";
 import type {
   AutomationStudioFlowBootstrapJudgeSpend,
   AutomationStudioFlowBootstrapJudgement,
@@ -99,12 +112,21 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_REPAIR_ROUNDS = 2;
 /** The least time worth starting a repair with: a look, a few decisions and the test. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS = 30_000;
 
+/** What a purse has left at most and still counts as spent: the purse's own floating-point slack. */
+const PURSE_EMPTY_USD = 1e-9;
+
 /** What one live round is given. */
 export type AutomationStudioFlowBootstrapRoundRequest = {
   /** 0 for the exploration, then each repair. */
   round: number;
-  /** What the build has left: the whole budget for the exploration, what the rounds before left for a repair. */
+  /**
+   * What the build has left: the whole budget for the exploration, what the
+   * rounds before left for a repair. With a purse its cost stays the whole
+   * ceiling: the purse, not this figure, holds what is left of it.
+   */
   budget: AutomationStudioLlmEvidenceLoopBudget;
+  /** The build's purse, for the caller to hand its loop: every round draws from this one. Absent where the build was given none. */
+  purse?: AutomationStudioLlmBuildPurse | undefined;
   /** The round's decision backstop. */
   maxIterations: number;
   /** A repair's seed and the entry its first decision reads. Absent for the exploration. */
@@ -125,6 +147,13 @@ export type AutomationStudioFlowBootstrapBuildPhasesInput = {
   checklist(steps: readonly AutomationStudioFlowDraftStep[]): AutomationStudioInstructedActChecklistItem[] | undefined;
   /** The whole build's budget: what every round together may spend. */
   budget: AutomationStudioLlmEvidenceLoopBudget;
+  /**
+   * The build's purse (`../../llm/build-purse/`): the Flow creation's cost
+   * ceiling and what earlier builds of it spent. Handed to every round; the
+   * cost check before a repair, the judge's budget and a cost ending's figures
+   * are read from it. Absent: each round is given what the rounds before left.
+   */
+  purse?: AutomationStudioLlmBuildPurse | undefined;
   /** The decision backstop of one round. */
   maxIterations: number;
   /** A call count the Flow's settings or the resolver declared, which the whole build is held to. */
@@ -215,7 +244,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     try {
       // The step log's round and phase for every call this round makes (`../../llm/step-log/`): a round with nothing to repair explores.
       const phase = round === 0 || !repair?.seed.length ? "explore" : "repair";
-      outcome = await automationStudioLlmStepLogScope.run({ round, phase }, () => input.round({ round, ...left, ...(repair ? { repair } : {}), stalled: (progress) => new AutomationStudioFlowBootstrapUnfinishedStall(progress) }));
+      outcome = await automationStudioLlmStepLogScope.run({ round, phase }, () => input.round({ round, ...left, ...(input.purse ? { purse: input.purse } : {}), ...(repair ? { repair } : {}), stalled: (progress) => new AutomationStudioFlowBootstrapUnfinishedStall(progress) }));
     } catch (error) {
       if (!(error instanceof AutomationStudioFlowBootstrapUnfinishedStall)) throw error;
       outcome = error;
@@ -223,7 +252,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     const ending = automationStudioFlowBootstrapRoundEnding(outcome);
     // Every round publishes its rows: one that stopped short with the ending, the one that finished with the Flow.
     record.push(...numberedAcrossBuild(ending.kind === "finished" || ending.kind === "other" ? ending.loop.trace : ending.progress.trace, spent.iterations));
-    // What the rounds before this one spent: a repair's purse holds only what they left, so its refusal's spend is this round's alone.
+    // What the rounds before this one spent: without the build's purse a repair's loop holds only what they left, so its refusal's spend is this round's alone.
     const spentBefore = spent.estimatedCostUsd;
     addAccounting(spent, ending.kind === "finished" || ending.kind === "other" ? ending.loop.accounting : ending.progress.accounting);
     const rounds = round + 1;
@@ -235,7 +264,9 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       input.announce?.({ phase: "verifying", label: "Judging the Flow", text: "The Flow was tested from its start. Judging what the test did against what you asked." });
       let verdict: AutomationStudioFlowBootstrapTestVerdict;
       try {
-        verdict = await input.judge({ round, loop: ending.loop, budget: remaining(input, spent, clock() - startedAt).budget });
+        const { budget } = remaining(input, spent, clock() - startedAt);
+        // With a purse the judge is asked within what it has left: earlier builds' spend and calls in flight taken out.
+        verdict = await input.judge({ round, loop: ending.loop, budget: input.purse ? { ...budget, maxCostUsd: input.purse.leftUsd() } : budget });
       } catch (error) {
         if (!cancellation(error)) throw error;
         return { kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.loop.trace], steps: ending.loop.steps, accounting: { ...ending.loop.accounting } }, accounting: spent, rounds, trace: [...record] };
@@ -280,7 +311,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
             ? automationStudioFlowBootstrapProviderUnavailable({ ...told, providerUnavailable: kind.providerUnavailable, changes: record.filter((row) => row.decision === "tool_call" && row.effectApplied === true).length, kept: kept !== undefined })
           : typeof kind === "object"
             ? automationStudioFlowBootstrapRepliesUnreadable({ ...told, unreadable: kind.unreadable, kept: kept !== undefined })
-            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds }, spending: kind === "cost" ? costSpending(phase2.progress.exhaustion?.costRefusal, spentBefore, spent.estimatedCostUsd) : undefined }),
+            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.purse?.ceilingUsd ?? input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRepairRounds, maxRounds }, spending: kind === "cost" ? costSpending(phase2.progress.exhaustion?.costRefusal, input.purse, spentBefore, spent.estimatedCostUsd) : undefined }),
         progress: { trace: [...record], accounting: { ...spent }, ...(phase2.progress.exhaustion ? { exhaustion: phase2.progress.exhaustion } : {}) },
         lastIssueCodes: phase2.lastIssueCodes,
         kept,
@@ -342,29 +373,40 @@ function judgeAccounting(spend: AutomationStudioFlowBootstrapJudgeSpend): Automa
 }
 
 /**
- * What a cost ending says the build spent, in the build's own figures. Where
- * the round's cost budget declined a decision (`costRefusal`), the round's
- * purse was given what the rounds before left of the ceiling, so what the
- * build had spent is theirs plus what this round's purse counted, and the
- * declined call's worst case goes with it -- "at least" where the loop's count
- * declined it before the purse priced it. Every other cost ending -- a repair
- * with nothing left to start with -- says the whole build's spend (t194-w47:
- * a cost ending without figures is never said).
+ * What a cost ending says was spent (t194-w47: a cost ending without figures
+ * is never said). With the build's purse the figures are its own, and already
+ * the Flow creation's: the refusal that ended the round as it stands -- what
+ * was spent, earlier builds' spend included and named, what was held, and the
+ * refused call's worst case -- or, where nothing was refused (a repair with
+ * nothing left to start with), what the purse has spent and holds. Without
+ * one, a round's loop was given what the rounds before left of the ceiling, so
+ * what the build had spent is theirs plus what that loop counted, and every
+ * other cost ending says the whole build's spend.
  */
-function costSpending(refusal: AutomationStudioLlmEvidenceLoopExhaustion["costRefusal"], spentBefore: number, spentInAll: number): { spentUsd: number; pendingUsd: number; projectedCostUsd?: number; projectedAtLeast?: boolean } {
+function costSpending(refusal: AutomationStudioLlmEvidenceLoopExhaustion["costRefusal"], purse: AutomationStudioLlmBuildPurse | undefined, spentBefore: number, spentInAll: number): AutomationStudioFlowBootstrapCostSpending {
+  const projected = refusal?.projectedCostUsd !== undefined ? { projectedCostUsd: refusal.projectedCostUsd } : {};
+  if (purse) {
+    const carriedUsd = refusal ? refusal.carriedUsd ?? 0 : purse.carriedUsd;
+    return {
+      ...(refusal ? { spentUsd: refusal.spentUsd, pendingUsd: refusal.pendingUsd } : { spentUsd: purse.spentUsd(), pendingUsd: purse.pendingUsd() }),
+      ...projected,
+      ...(carriedUsd > 0 ? { carriedUsd } : {}),
+      ceilingUsd: refusal?.ceilingUsd ?? purse.ceilingUsd
+    };
+  }
   if (!refusal) return { spentUsd: spentInAll, pendingUsd: 0 };
-  return {
-    spentUsd: spentBefore + refusal.spentUsd,
-    pendingUsd: refusal.pendingUsd,
-    ...(refusal.projectedCostUsd !== undefined ? { projectedCostUsd: refusal.projectedCostUsd, ...(refusal.declinedBy === "loop_budget" ? { projectedAtLeast: true } : {}) } : {})
-  };
+  return { spentUsd: spentBefore + refusal.spentUsd, pendingUsd: refusal.pendingUsd, ...projected };
 }
 
-/** What the rounds so far have left of the build's budget, for the next one. */
+/**
+ * What the rounds so far have left of the build's budget, for the next one.
+ * With a purse the cost stays whole: the purse holds what is left of it, and a
+ * share refilled from the rounds' accounting would be a second count.
+ */
 function remaining(input: AutomationStudioFlowBootstrapBuildPhasesInput, spent: AutomationStudioLlmEvidenceLoopAccounting, elapsedMs: number): { budget: AutomationStudioLlmEvidenceLoopBudget; maxIterations: number } {
   const budget: AutomationStudioLlmEvidenceLoopBudget = {
     ...input.budget,
-    ...(input.budget.maxCostUsd !== undefined ? { maxCostUsd: Math.max(0, input.budget.maxCostUsd - spent.estimatedCostUsd) } : {}),
+    ...(input.budget.maxCostUsd !== undefined && !input.purse ? { maxCostUsd: Math.max(0, input.budget.maxCostUsd - spent.estimatedCostUsd) } : {}),
     ...(input.budget.maxTotalTokens !== undefined ? { maxTotalTokens: Math.max(0, input.budget.maxTotalTokens - spent.totalTokens) } : {}),
     ...(input.budget.maxDurationMs !== undefined ? { maxDurationMs: Math.max(0, input.budget.maxDurationMs - elapsedMs) } : {})
   };
@@ -375,7 +417,8 @@ function remaining(input: AutomationStudioFlowBootstrapBuildPhasesInput, spent: 
 /** The budget with nothing left to start a repair with, or nothing when there is enough of each. */
 function exhaustedBound(input: AutomationStudioFlowBootstrapBuildPhasesInput, spent: AutomationStudioLlmEvidenceLoopAccounting, elapsedMs: number): AutomationStudioFlowBootstrapBudgetBound | undefined {
   const { budget, maxIterations } = remaining(input, spent, elapsedMs);
-  if (budget.maxCostUsd !== undefined && budget.maxCostUsd <= 0) return "cost";
+  // A purse's spend is summed in floating point: a ceiling spent to the cent can leave 1e-17 of it, which no call fits.
+  if (input.purse ? input.purse.leftUsd() <= PURSE_EMPTY_USD : budget.maxCostUsd !== undefined && budget.maxCostUsd <= 0) return "cost";
   if (budget.maxTotalTokens !== undefined && budget.maxTotalTokens < (budget.maxTokensPerDecision ?? 1)) return "tokens";
   if (budget.maxDurationMs !== undefined && budget.maxDurationMs < AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS) return "duration";
   if (maxIterations < 1) return "calls";
