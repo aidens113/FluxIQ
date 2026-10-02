@@ -227,6 +227,37 @@ describe("reading a person's message as an instruction", () => {
     });
     expect((await interpret(null, "what can you do?")).decision).toMatchObject({ kind: "reply", text: expect.stringContaining("Run a Flow") });
   });
+
+  // The reading's cost goes to a Flow the turn builds (t234 W9), so every
+  // attempt it paid for is counted, the unreadable ones included.
+  it("sums what each priced attempt cost, and carries nothing for a model that does not price", async () => {
+    const answers = ['{"do": ', '{"do": "run.execute", "with": {"flowId": "kettle"}}'];
+    const pricing: AutomationStudioConversationModel = {
+      name: "pricing",
+      decide: async (_request, execution) => {
+        execution.paid?.(0.0002);
+        return answers.shift();
+      }
+    };
+    const priced = await interpret(pricing, "run my kettle flow");
+    expect(priced).toMatchObject({ source: "model", attempts: 2 });
+    expect(priced.costUsd).toBeCloseTo(0.0004, 12);
+
+    // Every attempt failed: Core read the words itself, and what the attempts cost is still counted.
+    const failing: AutomationStudioConversationModel = {
+      name: "pricing-then-failing",
+      decide: async (_request, execution) => {
+        execution.paid?.(0.0001);
+        throw providerError("llm.provider_malformed_response", true);
+      }
+    };
+    const fellBack = await interpret(failing, "run my kettle flow");
+    expect(fellBack).toMatchObject({ source: "closest_match", attempts: 3 });
+    expect(fellBack.costUsd).toBeCloseTo(0.0003, 12);
+
+    expect(await interpret(scripted('{"do": "run.execute", "with": {"flowId": "kettle"}}'), "run my kettle flow")).not.toHaveProperty("costUsd");
+    expect(await interpret(null, "run my kettle flow")).not.toHaveProperty("costUsd");
+  });
 });
 
 describe("the answer a model writes, read forgivingly", () => {

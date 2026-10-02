@@ -3,7 +3,7 @@
 // live script recorded in the chat-plain-requests report, not here.
 
 import { describe, expect, it, vi } from "vitest";
-import { automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel } from "../index.ts";
+import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, estimateAutomationStudioDeepSeekCostUsd } from "../index.ts";
 
 const KEY = "sk-test-0123456789abcdef";
 const REQUEST = {
@@ -60,6 +60,37 @@ describe("the chat window's DeepSeek call", () => {
     await expect(empty).rejects.toMatchObject({ code: "llm.provider_malformed_response", retryable: true });
     const unreachable = modelWith((async () => { throw new TypeError("fetch failed"); }) as unknown as typeof fetch).decide(REQUEST, execution());
     await expect(unreachable).rejects.toMatchObject({ code: "llm.provider_network_error", retryable: true });
+  });
+
+  // The call that decides to build a Flow is part of that Flow's cost (t234 W9):
+  // the conversation is told what each reply cost, priced as the step log
+  // prices it, and carries it into the build's creation purse.
+  it("tells the conversation what a reply cost, priced from its usage, even when the reply cannot be used", async () => {
+    const usage = { prompt_tokens: 1_200, completion_tokens: 40, total_tokens: 1_240, prompt_cache_hit_tokens: 1_000, prompt_cache_miss_tokens: 200 };
+    const expected = estimateAutomationStudioDeepSeekCostUsd(1_200, 40, 1_000, AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL);
+    expect(expected).toBeGreaterThan(0);
+
+    const paid = vi.fn();
+    const answer = await modelWith((async () => reply(200, { choices: [{ message: { content: '{"do": "flow.createHere"}' } }], usage })) as unknown as typeof fetch)
+      .decide(REQUEST, { ...execution(), paid });
+    expect(answer).toBe('{"do": "flow.createHere"}');
+    expect(paid).toHaveBeenCalledTimes(1);
+    expect(paid).toHaveBeenCalledWith(expected);
+
+    // An empty answer was still paid for.
+    const paidForEmpty = vi.fn();
+    await expect(modelWith((async () => reply(200, { choices: [{ message: { content: "" } }], usage })) as unknown as typeof fetch).decide(REQUEST, { ...execution(), paid: paidForEmpty }))
+      .rejects.toMatchObject({ code: "llm.provider_malformed_response" });
+    expect(paidForEmpty).toHaveBeenCalledWith(expected);
+
+    // A reply with no usage, or counts the pricing refuses, is unpriced: nothing is told.
+    const unpriced = vi.fn();
+    await modelWith((async () => reply(200, { choices: [{ message: { content: "{}" } }] })) as unknown as typeof fetch).decide(REQUEST, { ...execution(), paid: unpriced });
+    await modelWith((async () => reply(200, { choices: [{ message: { content: "{}" } }], usage: { prompt_tokens: -1, completion_tokens: 4 } })) as unknown as typeof fetch).decide(REQUEST, { ...execution(), paid: unpriced });
+    expect(unpriced).not.toHaveBeenCalled();
+
+    // A model with no one to tell still answers.
+    await expect(modelWith((async () => reply(200, { choices: [{ message: { content: "{}" } }], usage })) as unknown as typeof fetch).decide(REQUEST, execution())).resolves.toBe("{}");
   });
 
   it("does not retry when no key can be released, and says so without the key", async () => {

@@ -199,7 +199,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
           onScreen,
           caller: caller ? { userId: caller.userId, sessionId: caller.sessionId } : null
         });
-        const context = commandContext(dependencies, request, { projectId, conversationId: personTurn.conversationId, startLocation: onScreen.pageUrl ?? null });
+        const context = commandContext(dependencies, request, { projectId, conversationId: personTurn.conversationId, startLocation: onScreen.pageUrl ?? null, interpretationCostUsd: answer.interpretationCostUsd });
         const execution = context ? await startAutomationStudioConversationCommand({ response: answer.response, context }) : null;
         return { ok: true, payload: { turn: answer.turn, response: answer.response ? { ...answer.response, execution } : null, problem: answer.problem } };
       }
@@ -265,7 +265,7 @@ export function registerAutomationStudioConversationEndpoints(dependencies: Auto
 function commandContext(
   dependencies: AutomationStudioConversationApiDependencies,
   request: ProgramApiRequest,
-  target: { projectId: string; conversationId: string; startLocation: string | null }
+  target: { projectId: string; conversationId: string; startLocation: string | null; interpretationCostUsd?: number | undefined }
 ): AutomationStudioConversationCommandContext | null {
   if (!request.actor) return null;
   const conversations = dependencies.service.conversations;
@@ -277,7 +277,9 @@ function commandContext(
     conversationId: target.conversationId,
     sessionId: caller.sessionId,
     keyLocked: caller.keyLocked,
-    startLocation: target.startLocation
+    startLocation: target.startLocation,
+    // What reading the turn cost, carried into the purse of a Flow the command builds (`commands/build.ts`).
+    ...(target.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: target.interpretationCostUsd })
   };
 }
 
