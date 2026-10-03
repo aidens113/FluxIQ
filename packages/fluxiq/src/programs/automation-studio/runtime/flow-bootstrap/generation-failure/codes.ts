@@ -183,6 +183,10 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PHASE_FAILURE_CODES = {
     // carrying `ending`, a message the person reads: no route to the task is
     // left, or a budget ran out first -- never the one dressed as the other.
     "flow_bootstrap.not_doable",
+    // A build that stopped with a route still open: repairs that got no
+    // further, or a round that handed back the Flow it started from. Carries
+    // `ending`: the Flow so far kept, what stood still, what is left (t195-w37).
+    "flow_bootstrap.build_not_finished",
     "flow_bootstrap.evidence_budget_exhausted",
     // The model's replies kept arriving unreadable: each was asked again with
     // a note of what could not be read, until an unbroken run of them stopped

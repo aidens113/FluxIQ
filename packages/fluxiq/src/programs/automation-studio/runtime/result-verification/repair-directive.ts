@@ -85,7 +85,16 @@ export type AutomationStudioResultJudgementText = {
   observed?: unknown;
   /** The model's advice, read from `changed` and falling back to the reply's own summary. */
   advice?: unknown;
+  /**
+   * The model's `stillAchievable`: whether what was asked can still be had. A
+   * build ends "not doable" only on its `no` (t195-w37, live run
+   * `run-murwcaj0-40e56557`); anything but the three words is dropped.
+   */
+  stillAchievable?: unknown;
 };
+
+/** The three words `stillAchievable` may carry; any other value is not carried. */
+const STILL_ACHIEVABLE = ["yes", "no", "unknown"] as const;
 
 export type AutomationStudioResultRepairDirectiveInput = {
   summary: AutomationStudioRunResultSummary;
@@ -367,10 +376,13 @@ function screenedJudgement(judgement: AutomationStudioResultJudgementText | unde
   const expected = carried(judgement.expected);
   const observed = carried(judgement.observed);
   const advice = carried(judgement.advice);
+  // A closed word, not prose: carried only as one of the three, never screened as text.
+  const stillAchievable = STILL_ACHIEVABLE.find((word) => word === judgement.stillAchievable);
   const said = {
     ...(expected ? { expected } : {}),
     ...(observed ? { observed } : {}),
-    ...(advice ? { advice } : {})
+    ...(advice ? { advice } : {}),
+    ...(stillAchievable ? { stillAchievable } : {})
   };
   return { ...(Object.keys(said).length ? { judgement: said } : {}), withheld };
 }

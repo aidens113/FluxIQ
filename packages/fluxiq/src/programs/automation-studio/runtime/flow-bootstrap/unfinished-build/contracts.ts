@@ -50,7 +50,14 @@ export type AutomationStudioFlowBootstrapJudgeSpend = { inputTokens: number; out
 export type AutomationStudioFlowBootstrapTestVerdict =
   | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
   | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
-  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
+  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; stillAchievable?: AutomationStudioFlowBootstrapStillAchievable; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
+
+/**
+ * Whether the judge said what was asked can still be had (its diagnosis's
+ * `stillAchievable`). Only a `no` ends a build "not doable" (t195-w37: the
+ * user's rule, "only if there is absolutely no way"); absent is `unknown`.
+ */
+export type AutomationStudioFlowBootstrapStillAchievable = "yes" | "no" | "unknown";
 
 /**
  * What the judged test stored, from the summary the judge read (t240): rows
@@ -77,6 +84,8 @@ export type AutomationStudioFlowBootstrapJudgedWrong = {
   untestedCarried?: number[];
   /** A `no`'s record counts, where the judge reported them. */
   records?: AutomationStudioFlowBootstrapJudgedRecords;
+  /** A `no`'s word on whether what was asked can still be had, where the judge gave it. */
+  stillAchievable?: AutomationStudioFlowBootstrapStillAchievable;
 };
 
 /** What a stopped round had recorded: its rows and what it spent. */
@@ -171,14 +180,24 @@ export type AutomationStudioFlowBootstrapProgressMeasure =
   | "fewer_records_missing_required";
 
 /**
- * Why no route is left, as the not-doable ending says it (t240):
- * `no_progress` -- the round measurably did no better than the judged round
- * before it (`before`); `repeated_unchanged` -- the round ended on refused
- * repeats of the same calls and handed back the Flow it started from, so a
- * second round would only repeat it (run 38, cause C8).
+ * Why no route is left, as the not-doable ending says it: the judge said what
+ * was asked can no longer be had (`stillAchievable: "no"`). The only case
+ * since t195-w37 -- a round that got no further is not one (live run
+ * `run-murwcaj0-40e56557`, whose judge said "still achievable" and named the
+ * fix, and whose build ended "I found no way to").
  */
-export type AutomationStudioFlowBootstrapNoRouteLeft =
-  | { kind: "no_progress"; before: AutomationStudioFlowBootstrapJudgement }
+export type AutomationStudioFlowBootstrapNoRouteLeft = { kind: "judged_unachievable" };
+
+/**
+ * Why a build with a route still open stopped, as the not-finished ending
+ * says it (t240; t195-w37): `no_progress` -- the last round, and `rounds` in a
+ * row, measurably did no better than the judged round before (`before`, the
+ * judgement before the last); `repeated_unchanged` -- the round ended on
+ * refused repeats of the same calls and handed back the Flow it started from,
+ * so a second round would only repeat it (run 38, cause C8).
+ */
+export type AutomationStudioFlowBootstrapStoodStill =
+  | { kind: "no_progress"; before: AutomationStudioFlowBootstrapJudgement; rounds: number }
   | { kind: "repeated_unchanged" };
 
 /** What the test of the Flow so far found. */

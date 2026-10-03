@@ -123,6 +123,15 @@ describe("how much of what was asked the ending says is done", () => {
     expect(automationStudioFlowBootstrapProgressSaid(checklist, { tested: "replayed_clean", proven: 3 })).toMatch(/^3 of the 4 things you asked worked when the Flow was run from its start; still to do/u);
   });
 
+  // Live run `run-murz83zy-5030820f` asked one thing and was told "1 of the 1
+  // things you asked worked when the Flow was run from its start".
+  it("says the one thing asked as one thing, never \"1 of the 1 things\"", () => {
+    const one = [{ id: "a1", verb: "confirm", quote: "confirm everyone with five mutual friends", done: 1 }];
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replayed_clean", proven: 1 })).toBe("The one thing you asked worked when the Flow was run from its start.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replay_failed", proven: 0 })).toBe("The one thing you asked has a step that did not work when the Flow was run from its start.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "not_tested" })).toBe("The one thing you asked has a step in the Flow, not yet shown to work by running it.");
+  });
+
   it("says none is done when no step is named, and nothing when nothing was asked", () => {
     expect(automationStudioFlowBootstrapProgressSaid([{ id: "a1", verb: "add", quote: "add the towels" }], { tested: "replayed_clean", proven: 0 })).toBe("The one thing you asked is not done; still to do: \"add the towels\": nothing I tried did it.");
     expect(automationStudioFlowBootstrapProgressSaid(undefined, undefined)).toBe("");

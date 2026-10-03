@@ -33,6 +33,12 @@
 // very Flow (its `flowSignature`): what ran was another Flow, or nothing. The
 // checklist is still read for it, as information: the Flow is judged on what
 // its test does.
+//
+// **The judge's word on whether it can still be done is kept (t195-w37).** A
+// `no` carries `stillAchievable` where the judge gave it: the one thing that
+// ends a build "not doable" (`./phases.ts`). Live run `run-murwcaj0-40e56557`
+// had a judge say "still achievable" twice, and the build ended "I found no
+// way to" all the same, because the judgement never carried it.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioInstructedActsNotDone, type AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
@@ -166,7 +172,9 @@ function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, 
     ...(verdict.observed ? { observed: verdict.observed } : {}),
     ...(verdict.advice ? { advice: verdict.advice } : {}),
     findings: [...verdict.findings],
-    ...(verdict.records ? { records: { ...verdict.records } } : {})
+    ...(verdict.records ? { records: { ...verdict.records } } : {}),
+    // Whether what was asked can still be had: only a `no` here ends the build "not doable" (t195-w37, `./phases.ts`).
+    ...(verdict.stillAchievable ? { stillAchievable: verdict.stillAchievable } : {})
   };
 }
 

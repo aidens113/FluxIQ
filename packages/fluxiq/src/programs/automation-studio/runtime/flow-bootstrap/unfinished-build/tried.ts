@@ -8,16 +8,16 @@
 // only in the not-doable sentence, so a debug could not tell which bound ended
 // which round. They are recorded here as closed words, which the run record
 // and the Lab publish as they are.
-import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
-import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapNoRouteLeft } from "./contracts.ts";
+import type { AutomationStudioFlowBootstrapBuildEnding, AutomationStudioFlowBootstrapEndingRoute } from "../generation-failure/index.ts";
+import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
 
-/** The ending's `tried`: live rounds, decisions, the Flow's steps, the last test, each round's stop and, for "not doable", which case left no route. */
+/** The ending's `tried`: live rounds, decisions, the Flow's steps, the last test, each round's stop and, for "not doable" and "not finished", which case ended the build. */
 export function automationStudioFlowBootstrapTried(input: {
   rounds: number;
   decisions: number;
   judgement: AutomationStudioFlowBootstrapJudgement;
   stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
-  noRoute?: AutomationStudioFlowBootstrapNoRouteLeft | undefined;
+  noRoute?: { kind: AutomationStudioFlowBootstrapEndingRoute } | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding["tried"] {
   return {
     rounds: input.rounds,

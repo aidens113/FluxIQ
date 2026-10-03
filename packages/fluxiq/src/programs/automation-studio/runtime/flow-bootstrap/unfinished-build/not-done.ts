@@ -149,6 +149,9 @@ export function automationStudioFlowBootstrapRepairingJudgedSaid(judge: NonNulla
  * step that worked when the Flow was run from its start
  * (`AutomationStudioFlowBootstrapJudgement.proven`), and the rest is said as a
  * step not yet shown to work. Empty when the instruction asked for no act.
+ *
+ * One thing asked is said as one thing (t195-w37): live run
+ * `run-murz83zy-5030820f` read "1 of the 1 things you asked worked".
  */
 export function automationStudioFlowBootstrapProgressSaid(
   checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined,
@@ -160,6 +163,13 @@ export function automationStudioFlowBootstrapProgressSaid(
   const named = Math.max(0, asked - notDone.length);
   const still = notDone.length ? `; still to do: ${automationStudioFlowBootstrapNotDoneSaid(notDone)}` : "";
   if (!named) return `${asked === 1 ? "The one thing you asked is not done" : `None of the ${asked} things you asked is done`}${still}.`;
+  if (asked === 1) {
+    // Named, so done: the one thing has a step, which worked when run, did not, or was never run.
+    if (!judgement || judgement.tested === "not_tested") return "The one thing you asked has a step in the Flow, not yet shown to work by running it.";
+    return (judgement.proven ?? 0) > 0
+      ? "The one thing you asked worked when the Flow was run from its start."
+      : "The one thing you asked has a step that did not work when the Flow was run from its start.";
+  }
   const have = (count: number): string => (count === 1 ? "has" : "have");
   if (!judgement || judgement.tested === "not_tested") return `${named} of the ${asked} things you asked ${have(named)} a step in the Flow, not yet shown to work by running it${still}.`;
   const proven = Math.min(named, judgement.proven ?? 0);

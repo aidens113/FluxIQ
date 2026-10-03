@@ -51,6 +51,7 @@ export function emitAutomationStudioBuildRequest(instructions: ReadonlyArray<{ b
 
 const ENDING_TITLES = Object.freeze({
   not_doable: "Not doable: this Flow could not be built",
+  not_finished: "Build stopped: the Flow is not finished yet",
   budget_exhausted: "Build stopped: a budget ran out",
   replies_unreadable: "Build stopped: the model's replies could not be read",
   provider_unavailable: "Build stopped: the AI model provider is not responding"
