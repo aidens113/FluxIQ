@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -240,5 +240,101 @@ describe("AutomationStudioProjectDatabasePool idle grace period", () => {
     expect(pool.stats().openProjects).toBe(0);
     await expect(lease.database.get("select 1")).rejects.toThrow(/is closed/);
     await expect(pool.acquire("project.idle")).rejects.toThrow(/closing/);
+  });
+});
+
+// Races between the idle timer and the calls that close or reopen a project.
+// Each case holds a connection's close open with `holdClose`, so the moment
+// between the timer starting a close and the close finishing can be observed.
+function holdClose(database: { close(): Promise<void> }): { started(): boolean; finish(): void } {
+  let finish = () => {};
+  const gate = new Promise<void>((resolve) => { finish = resolve; });
+  let started = false;
+  const close = database.close.bind(database);
+  database.close = () => {
+    started = true;
+    return gate.then(close);
+  };
+  return { started: () => started, finish };
+}
+
+async function settlesWithin(promise: Promise<unknown>, ms = 100): Promise<boolean> {
+  let settled = false;
+  void promise.then(() => { settled = true; }, () => { settled = true; });
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  return settled;
+}
+
+describe("AutomationStudioProjectDatabasePool idle close races", () => {
+  beforeEach(async () => {
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-database-test-"));
+  });
+
+  afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+
+  it("closeAll waits for an idle close the timer has already started", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 20 });
+    const lease = await pool.acquire("project.race");
+    const held = holdClose(lease.database);
+    await lease.release();
+    await waitFor(() => held.started());
+    expect(pool.stats().openProjects).toBe(0);
+
+    const closing = pool.closeAll();
+    expect(await settlesWithin(closing)).toBe(false);
+    held.finish();
+    await closing;
+    await expect(lease.database.get("select 1")).rejects.toThrow(/is closed/);
+    await rm(path.join(rootDir, "projects", "project.race"), { recursive: true });
+  });
+
+  it("closeIdleProject waits for an idle close the timer has already started", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 20 });
+    const lease = await pool.acquire("project.race");
+    const held = holdClose(lease.database);
+    await lease.release();
+    await waitFor(() => held.started());
+
+    const closing = pool.closeIdleProject("project.race");
+    expect(await settlesWithin(closing)).toBe(false);
+    held.finish();
+    await closing;
+    await expect(lease.database.get("select 1")).rejects.toThrow(/is closed/);
+    await rm(path.join(rootDir, "projects", "project.race"), { recursive: true });
+    await pool.closeAll();
+  });
+
+  it("opens a project again only once its idle close has finished", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 20 });
+    const lease = await pool.acquire("project.race");
+    const held = holdClose(lease.database);
+    await lease.release();
+    await waitFor(() => held.started());
+
+    const acquiring = pool.acquire("project.race");
+    expect(await settlesWithin(acquiring)).toBe(false);
+    held.finish();
+    const reopened = await acquiring;
+    expect(reopened.database).not.toBe(lease.database);
+    await expect(lease.database.get("select 1")).rejects.toThrow(/is closed/);
+    await expect(reopened.database.get<{ one: number }>("select 1 as one")).resolves.toEqual({ one: 1 });
+    await reopened.release();
+    await pool.closeAll();
+  });
+
+  it("gives a failed open's error to the lease that asked, not to closeIdleProject or closeAll", async () => {
+    // A file where the project's folder belongs makes the open fail.
+    await mkdir(path.join(rootDir, "projects"), { recursive: true });
+    await writeFile(path.join(rootDir, "projects", "project.blocked"), "not a folder");
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 60_000 });
+
+    const acquiring = pool.acquire("project.blocked");
+    const closingIdle = pool.closeIdleProject("project.blocked");
+    const closingAll = pool.closeAll();
+
+    await expect(acquiring).rejects.toThrow();
+    await expect(closingIdle).resolves.toBeUndefined();
+    await expect(closingAll).resolves.toBeUndefined();
+    expect(pool.stats().openProjects).toBe(0);
   });
 });

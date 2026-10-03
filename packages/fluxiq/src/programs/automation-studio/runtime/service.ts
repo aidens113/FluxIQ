@@ -156,6 +156,8 @@ import {
   withFlowSourceFileMetadata,
   AutomationStudioProjectStore,
   withAutomationStudioProjectDatabaseHeld,
+  AUTOMATION_STUDIO_PROJECT_DATABASE_IDLE_CLOSE_MS,
+  removeAutomationStudioProjectFiles,
   AutomationStudioRecordingStore,
   PIPELINE_ARTIFACT_IO_CONCURRENCY,
   mapWithConcurrency,
@@ -411,7 +413,7 @@ export class AutomationStudioService {
         this.objectStore = new AutomationStudioObjectStore(automationDataDir);
         this.recordingStateIndexes = new RecordingStateIndexStore(automationDataDir);
       }
-      this.runtimeProjectDatabasePool = new AutomationStudioProjectDatabasePool({ rootDir: automationDataDir, idleCloseMs: process.env.T246_IDLE0 ? 0 : 1_000 });
+      this.runtimeProjectDatabasePool = new AutomationStudioProjectDatabasePool({ rootDir: automationDataDir, idleCloseMs: AUTOMATION_STUDIO_PROJECT_DATABASE_IDLE_CLOSE_MS });
       this.projectDatabasePool = this.runtimeProjectDatabasePool;
       projectRootDir = path.join(automationDataDir, "projects");
       const nodeRootDir = options.customNodeRootDir ?? (options.storageRootDir ? undefined : path.join(automationDataDir, "nodes"));
@@ -3947,10 +3949,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         ...state,
         projects: state.projects.filter((project) => project.id !== projectId)
       }));
-      if (this.projectPaths.root) {
-        if (this.objectStore) await ProgramJsonStore.deletePath(this.projectPaths.projectDirectory(projectId));
-        else { await this.runtimeProjectDatabasePool?.closeIdleProject(projectId); await rm(this.projectPaths.projectDirectory(projectId), { recursive: true, force: true }); } // An idle connection holds project.sqlite open.
-      }
+      if (this.projectPaths.root) await removeAutomationStudioProjectFiles({ objectStore: this.objectStore, pool: this.runtimeProjectDatabasePool, projectId, projectDirectory: this.projectPaths.projectDirectory(projectId) });
       await this.uiCache.purgeProject(projectId).catch(() => undefined);
       return { deletedProjectId: projectId };
     });
