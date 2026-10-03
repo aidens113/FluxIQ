@@ -67,7 +67,7 @@ import {
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmRunFlowBinding, automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceNoted } from "./node-tools/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceNoted } from "./node-tools/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "./build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
 import {
@@ -75,7 +75,6 @@ import {
   automationStudioLlmEvidenceParseDecision,
   automationStudioLlmEvidenceParseToolExecutionResult,
   automationStudioLlmEvidenceToolResultInvalidCode,
-  automationStudioLlmEvidenceValidTools,
   buildAutomationStudioLlmEvidenceLoopDecisionSchema
 } from "./evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenceLookWasRefused, automationStudioLlmEvidenceNothingHappened, automationStudioLlmEvidenceRequestSignature } from "./repeat-policy.ts";
@@ -234,16 +233,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // only where a decision can be refused without ending the loop.
   const looks = automationStudioLlmEvidenceLookWithdrawal({ enabled: input.lookWithdrawal !== false && input.unusableDecisions !== undefined });
   const accounting = automationStudioLlmEvidenceLoopEmptyAccounting(); const purse = automationStudioLlmEvidenceLoopPurse(input.budget, accounting, input.purse); // Each decision's worst case held against the build's purse, or the loop's own at its cost budget, before it is sent: the only cost authority (`./evidence-loop/cost-purse.ts`).
-  // `core.run_flow` after the caller's tools where the loop drafts and runs its dry run: part of the Flow run again, never its test (`./node-tools/run-flow.ts`).
-  const runFlow = automationStudioLlmRunFlowBinding({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && input.dryRun !== false }); const tools = runFlow.tools;
-  if (!limits || !automationStudioLlmEvidenceValidTools(tools)) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting);
-  const toolIds = new Set(tools.map((tool) => tool.toolId));
-  const toolsById = new Map(tools.map((tool) => [tool.toolId, tool] as const));
-  // Whether any mutation is reachable at all. Read once, because the offered
-  // list does not change during a loop, and because it is what decides whether
-  // a mutation-gated observation is gated or simply shut (see
-  // `repeat-policy.ts`).
-  const mutableTools = tools.some((tool) => tool.effect === "mutate" || tool.perCallEffect === true);
+  // The caller's tools, with `core.run_flow` after them where the loop drafts and runs its dry run: part of the Flow
+  // run again, never its test. Fixed for the whole loop, so read once (`./node-tools/loop-tools.ts`).
+  const toolSet = automationStudioLlmEvidenceLoopToolSet({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && input.dryRun !== false });
+  if (!limits || !toolSet) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting);
+  const { runFlow, tools, toolIds, toolsById, mutableTools } = toolSet;
   const callIds = new Set<string>();
   // Each request that ran, by what it asked in which epoch, and the call that
   // answered it (`repeat-policy.ts` says which epoch).
