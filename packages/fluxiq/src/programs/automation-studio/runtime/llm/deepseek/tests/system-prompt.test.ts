@@ -31,6 +31,8 @@ const CASES: Record<string, AutomationStudioLlmTaskRequest> = {
   runtime_patch_proposal_explored: request("runtime_patch", { explorationEvidence: { packets: [{ evidenceId: "e1", toolId: "t", packet: {} }] } }, { executionPurpose: "diagnose_and_adapt" }),
   runtime_diagnosis: request("runtime_diagnosis"),
   loop_verification: request("loop_verification"),
+  // A build's test is the one verification told how to read `buildTest` (run `run-murwd8le-79e735a8`, Cause 9).
+  loop_verification_build_test: request("loop_verification", { resultSummary: { buildTest: { kind: "build_test", steps: [] } } }),
   instruction_suggestion: request("instruction_suggestion"),
   router_patch: request("router_patch")
 };
@@ -45,6 +47,16 @@ describe("automationStudioDeepSeekSystemPrompt without domain instructions", () 
       expect(automationStudioDeepSeekSystemPrompt(pinned)).toBe(PINS[name]);
     });
   }
+});
+
+// Run `run-murwd8le-79e735a8` (Cause 9): the post-run checks called the
+// playback "a build test", told how to read a `buildTest` they did not carry.
+describe("a verification's system message", () => {
+  it("tells only a verification of a build's test how to read one, from the request's own summary", () => {
+    expect(automationStudioDeepSeekSystemPrompt(request("loop_verification", { resultSummary: { flowShape: [] } }))).not.toContain("resultSummary.buildTest");
+    expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification!)).not.toContain("resultSummary.buildTest");
+    expect(automationStudioDeepSeekSystemPrompt(CASES.loop_verification_build_test!)).toContain("When resultSummary.buildTest is present");
+  });
 });
 
 describe("automationStudioDeepSeekSystemPrompt with domain instructions", () => {

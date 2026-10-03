@@ -11,6 +11,7 @@
 // for the reason the request reader does: it is a cohesive read with one
 // answer, and the service is left with the build.
 
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioBootstrapExistingTopology } from "../../flow-bootstrap/index.ts";
 import { automationStudioBootstrapExtendSubflow } from "../../flow-bootstrap/index.ts";
@@ -39,11 +40,17 @@ export async function automationStudioFlowBootstrapExtendSubject(input: {
   listSubflows(): Promise<readonly { subflowId: string; graphFlowId?: string; role?: string; status?: string }[]>;
   getFlowRouter(): Promise<{ routerId: string } | null | undefined>;
   getGraphFlow(graphFlowId: string): Promise<{ nodes: readonly AutomationStudioFlowNode[]; edges: readonly AutomationStudioFlowEdge[] }>;
+  /**
+   * For a re-author: where each node started in the run being repaired, by
+   * node id (`llm/node-tools/run-start-pages.ts`). The seed keeps them beside
+   * its steps, so a rerun of a carried step starts where its node did.
+   */
+  startPages?: Readonly<Record<string, JsonObject>> | undefined;
 }): Promise<AutomationStudioFlowBootstrapExtendSubject | undefined> {
   const subflow = automationStudioBootstrapExtendSubflow(await input.listSubflows());
   if (!subflow) return undefined;
   const graph = await input.getGraphFlow(subflow.graphFlowId);
-  const seed = automationStudioFlowDraftSeedFromFlow({ nodes: graph.nodes, edges: graph.edges });
+  const seed = automationStudioFlowDraftSeedFromFlow({ nodes: graph.nodes, edges: graph.edges, startPages: input.startPages });
   // A graph with no step the assembler would emit is nothing to extend: the
   // build would be starting from an empty draft, which is a creation, and
   // saying so is more useful than silently doing one under the other word.

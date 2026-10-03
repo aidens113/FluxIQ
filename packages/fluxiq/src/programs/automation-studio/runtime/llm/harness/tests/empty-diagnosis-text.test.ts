@@ -2,11 +2,12 @@
 // instruction already asks it to omit what it cannot answer, and a build-test
 // judge that finds nothing to change says so with `changed: ""`; refusing that
 // threw away a "yes" verdict and ended the build "not verified" (live run
-// muqk713g). An empty or blank text is read as omitted, and a too-long one is
-// still refused.
+// muqk713g). An empty or blank text is read as omitted, and one that is not a
+// string is still refused. A too-long one is read clipped
+// (`long-diagnosis-text.test.ts`).
 
 import { describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH, parseAutomationStudioLlmProviderResult } from "../index.ts";
+import { parseAutomationStudioLlmProviderResult } from "../index.ts";
 
 const parse = (diagnosis: Record<string, unknown>) => {
   const raw = { response: { kind: "diagnosis", summary: "The result answers the request.", diagnosis } };
@@ -26,10 +27,10 @@ describe("an empty diagnosis text", () => {
     }
   });
 
-  it("still refuses a text that is too long, or not a string", () => {
-    for (const refused of ["x".repeat(AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH + 1), 3, null]) {
+  it("still refuses a text that is not a string", () => {
+    for (const refused of [3, null, ["x"], { text: "x" }]) {
       const { result } = parse({ answersRequest: "no", changed: refused });
-      expect(result.response, String(refused).slice(0, 20)).toBeUndefined();
+      expect(result.response, JSON.stringify(refused)).toBeUndefined();
       expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.invalid_diagnosis_text");
     }
   });

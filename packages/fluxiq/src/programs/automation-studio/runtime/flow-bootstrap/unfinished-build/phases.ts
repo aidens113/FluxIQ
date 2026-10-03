@@ -76,6 +76,22 @@
 // calls are held against the build's purse like every other call, and it is
 // asked within what the purse has left.
 //
+// **A round that could not be measured never ends the build "not doable"
+// (t194-w70).** A re-author or extend build seeds its draft from a stored Flow,
+// and a step carried from it has nothing it ran with and nothing to put the
+// target back with until it is rerun live; Core never runs it itself (the
+// permission gate). A round whose Flow still holds one is not tested at its end
+// (`./judgement.ts`, `notRunInThisBuild`), so it has no measurement, and
+// neither `repeated_unchanged` nor `no_progress` is concluded from it: live run
+// murwcmx2's re-author stopped twice on unusable decisions with the advised fix
+// rerun in its draft, both rounds `not_tested`, and ended not doable comparing
+// them -- the fix never ran from the Flow's start. Such a round is repaired
+// again, told which steps have not run (`../../llm/evidence-loop/resume.ts`),
+// under the same money and round bounds; its progress is fewer steps not run or
+// a changed Flow (`./progress.ts`), which the announcement says. When money or
+// the round limit runs out first, the budget ending says the Flow as it stands
+// was never run whole, naming those steps (`./not-done.ts`).
+//
 // **Unreadable replies end the build only as that (t211).** Each reply the
 // loop could not read is asked again; an unbroken run of them ends the round
 // as `unreadable`, and the build with a message saying so and how many tries
@@ -131,10 +147,10 @@ import {
   type AutomationStudioFlowBootstrapUnfinishedTest
 } from "./judgement.ts";
 import { automationStudioFlowBootstrapNotDoable } from "./not-doable.ts";
-import { automationStudioFlowBootstrapJudgementProgress } from "./progress.ts";
+import { automationStudioFlowBootstrapJudgementProgress, automationStudioFlowBootstrapJudgementUnmeasured } from "./progress.ts";
 import { automationStudioFlowBootstrapRepliesUnreadable } from "./replies-unreadable.ts";
 import { automationStudioFlowBootstrapProviderUnavailable } from "./provider-unavailable.ts";
-import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapStopSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapRepairingNotRunSaid, automationStudioFlowBootstrapStopSaid } from "./not-done.ts";
 import { automationStudioFlowBootstrapRoundEnding } from "./round-ending.ts";
 import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall.ts";
 
@@ -330,8 +346,9 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       const stopped: AutomationStudioFlowBootstrapUnfinishedStop | "budget" = ending.kind === "budget" ? "budget" : ending.stopped;
       const asked = input.callerEnding?.({ ...ending.progress, trace: [...record], accounting: { ...spent } });
       if (asked !== undefined) throw asked;
-      // Only a Flow with steps in it is tested: an empty one has nothing to run.
-      if (ending.kind === "unfinished" && automationStudioFlowBootstrapRepairSeed(ending.steps).length) {
+      // Said only when the test will run: a Flow with steps in it that carries what a replay needs, exactly as `automationStudioFlowBootstrapJudgeUnfinished` decides. An empty Flow has nothing to run, and one nothing can replay is not run; announcing a test then was followed by none (live run murwcmx2, UI-4).
+      const toTest = automationStudioFlowBootstrapRepairSeed(ending.steps);
+      if (ending.kind === "unfinished" && toTest.length && input.replayable(toTest)) {
         input.announce?.({ phase: "verifying", label: "Testing the Flow so far", text: `The build stopped before the Flow was finished: ${automationStudioFlowBootstrapStopSaid(stopped, ending.lastIssueCodes)}. Running the Flow as far as it got from its start, to judge what it does and what is left.` });
       }
       // Phase 2: a round a budget stopped is judged from the checklist alone; nothing more is run for a build that is ending.
@@ -395,15 +412,23 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       startSignature = undefined;
       continue;
     }
-    // A round that ended on refused repeats and handed back the Flow it started from: a second round would repeat it exactly (run 38, C8).
-    if (stopped === "repeat_without_progress" && startSignature !== undefined && judgement.flowSignature === startSignature) return await end("not_doable", { kind: "repeated_unchanged" });
-    // Phase 3, or the evidence that no route is left: a round that measurably did no better than the judged Flow before it.
-    if (previous && !automationStudioFlowBootstrapJudgementProgress(previous, judgement).length) return await end("not_doable", { kind: "no_progress", before: previous });
+    // A Flow holding steps that never ran in this build was not run from its start: no measurement, so never "not doable" from it (t194-w70, murwcmx2 C-F).
+    const unmeasured = automationStudioFlowBootstrapJudgementUnmeasured(judgement);
+    const moved = previous ? automationStudioFlowBootstrapJudgementProgress(previous, judgement) : undefined;
+    if (!unmeasured) {
+      // A round that ended on refused repeats and handed back the Flow it started from: a second round would repeat it exactly (run 38, C8).
+      if (stopped === "repeat_without_progress" && startSignature !== undefined && judgement.flowSignature === startSignature) return await end("not_doable", { kind: "repeated_unchanged" });
+      // Phase 3, or the evidence that no route is left: a round that measurably did no better than the judged Flow before it.
+      if (previous && moved && !moved.length) return await end("not_doable", { kind: "no_progress", before: previous });
+    }
+    // Whether the round before this one also held steps never run, and this one ran none of them: what the announcement says.
+    const ranNoneAgain = unmeasured && previous !== undefined && automationStudioFlowBootstrapJudgementUnmeasured(previous) && !moved?.includes("fewer_steps_not_run");
     previous = judgement;
     if (rounds >= maxRounds) return await end("rounds");
     const exhausted = exhaustedForNextRound();
     if (exhausted) return await end(exhausted);
-    input.announce?.({ phase: "repairing", label: "Repairing the Flow", text: judgement.judge ? automationStudioFlowBootstrapRepairingJudgedSaid(judgement.judge) : todo ? `Repairing the Flow live: ${todo} of the things you asked ${todo === 1 ? "is" : "are"} still to do.` : "Repairing the Flow live on what did not work when it was run." });
+    const notRunSteps = judgement.judge?.untestedCarried?.length ? [] : judgement.notRunInThisBuild ?? [];
+    input.announce?.({ phase: "repairing", label: "Repairing the Flow", text: notRunSteps.length ? automationStudioFlowBootstrapRepairingNotRunSaid(notRunSteps, ranNoneAgain) : judgement.judge ? automationStudioFlowBootstrapRepairingJudgedSaid(judgement.judge) : todo ? `Repairing the Flow live: ${todo} of the things you asked ${todo === 1 ? "is" : "are"} still to do.` : "Repairing the Flow live on what did not work when it was run." });
     repair = {
       seed,
       resume: resume()

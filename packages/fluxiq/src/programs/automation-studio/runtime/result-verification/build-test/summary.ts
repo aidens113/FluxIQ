@@ -34,11 +34,19 @@
 //     it starts (t195-w28a). Information the judge confirms against the steps,
 //     never a refusal.
 //
-// **What it does not carry.** The cart, a confirmation, any page the Flow does
-// not itself read: the test does not look at them (t195-w25 open question 5).
-// Nor a page view inside an observation, Core's bookkeeping, or text another
-// step already sent (`./observation.ts`, t195-w28a), nor a handle or a
-// machine-minted key among a step's words.
+// **And the page the test ended on** (`endView`, t174-w87), once, beside the
+// steps: the view the caller captured after the test, or else the domain's view
+// in the test's last answer, by the domain's declared view keys. Run
+// `run-murwd8le-79e735a8`'s judges saw outcome words only, while the page the
+// test left said the site had refused its Add to cart (Cause 7). An earlier
+// step's view is never offered as the end: a later step may have changed the
+// page. A passing replayed press answers without a page (the web domain's
+// `replay.ts`), so a test whose last step passed holds none unless the caller
+// captured one.
+//
+// **What it does not carry.** A page view inside an observation, Core's
+// bookkeeping, or text another step already sent (`./observation.ts`,
+// t195-w28a), nor a handle or a machine-minted key among a step's words.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -64,8 +72,13 @@ import {
   automationStudioWithoutLocators,
   screenAutomationStudioLlmEvidence
 } from "../../llm/index.ts";
-import type { AutomationStudioBuildTestAccount, AutomationStudioBuildTestNote, AutomationStudioBuildTestStep, AutomationStudioRunResultSummary } from "../contracts.ts";
-import { summarizeAutomationStudioRunResult } from "../result-summary.ts";
+import type { AutomationStudioBuildTestAccount, AutomationStudioBuildTestNote, AutomationStudioBuildTestStep } from "../contracts.ts";
+import {
+  automationStudioResultEndView,
+  summarizeAutomationStudioRunResult,
+  type AutomationStudioResultEndView,
+  type AutomationStudioRunResultSummaryWithEndView
+} from "../result-summary.ts";
 import { automationStudioBuildTestObservationReader } from "./observation.ts";
 
 /**
@@ -123,7 +136,9 @@ export function automationStudioBuildTestResultSummary(input: {
   observedStateKeys?: readonly string[] | undefined;
   /** What the completion check found the accepted Flow cannot do (`AutomationStudioBuildTestNote`). */
   notes?: readonly AutomationStudioBuildTestNote[] | undefined;
-}): AutomationStudioRunResultSummary {
+  /** The page the caller captured after the test, as the domain produced it. Absent, the test's last answer's view, if it carried one. */
+  endView?: AutomationStudioResultEndView | undefined;
+}): AutomationStudioRunResultSummaryWithEndView {
   const denied = input.deniedEvidenceKeys;
   const observe = denied === undefined ? undefined : automationStudioBuildTestObservationReader({ deniedEvidenceKeys: denied, observedStateKeys: input.observedStateKeys });
   const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
@@ -174,6 +189,9 @@ export function automationStudioBuildTestResultSummary(input: {
     ...(input.notes?.length ? { notes: input.notes.map((note) => automationStudioWithoutLocators({ ...note })) } : {})
   };
   const shape = summarizeAutomationStudioRunResult({ recordSets: [], flowNodes: input.nodes, deniedEvidenceKeys: denied });
+  const held = input.endView ?? lastView(input.report, input.observedStateKeys);
+  const ended = held ? automationStudioResultEndView(held, denied) : undefined;
+  if (ended?.withheld) withheld = true;
   return {
     schemaVersion: "automation-studio.run-result-summary.v1",
     totalRecordCount: 0,
@@ -183,8 +201,22 @@ export function automationStudioBuildTestResultSummary(input: {
     recordSets: [],
     flowShape: shape.flowShape,
     withheld: withheld || shape.withheld,
-    buildTest
+    buildTest,
+    ...(ended?.endView ? { endView: ended.endView } : {})
   };
+}
+
+/**
+ * The domain's view of its target in the test's last answer, by the keys the
+ * domain declared a view, with the step it answered. Nothing when that answer
+ * carried no view: an earlier one is not the page the test ended on.
+ */
+function lastView(report: AutomationStudioBuildTestReportInput | undefined, viewKeys: readonly string[] | undefined): AutomationStudioResultEndView | undefined {
+  const last = report?.observations.at(-1);
+  const evidence = last?.evidence;
+  if (!last || !viewKeys?.length || !evidence || typeof evidence !== "object" || Array.isArray(evidence)) return undefined;
+  const view = Object.fromEntries(viewKeys.filter((key) => Object.hasOwn(evidence, key)).map((key) => [key, evidence[key]!]));
+  return Object.keys(view).length ? { after: last.step, view } : undefined;
 }
 
 /** The positions of the carried steps the test did not run: no evidence their acts are done. */

@@ -5,8 +5,11 @@
 // observation, the tool result the run recorded for it -- page view and all.
 // Sent whole, the judge's request was 28,214 characters, 17,816 of them six
 // page views. With the domain's view keys out, Core's bookkeeping out, and text
-// another step sent named rather than repeated (`../observation.ts`), it is
-// 8,113. No model is called: the provider is scripted and only captures.
+// another step sent named rather than repeated (`../observation.ts`), it was
+// 8,113. Since t174-w87 the one view the test ended on -- step 11's -- is sent
+// once beside the steps (`endView`), because a judge without the page invents
+// what it shows (run `run-murwd8le-79e735a8`, Cause 7): 11,158. No model is
+// called: the provider is scripted and only captures.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
@@ -14,6 +17,7 @@ import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
+import type { AutomationStudioRunResultSummaryWithEndView } from "../../result-summary.ts";
 import { automationStudioBuildTestResultSummary, type AutomationStudioBuildTestReportInput } from "../summary.ts";
 import { DENIED } from "./draft-steps.ts";
 import { ACCEPT_FRIENDS } from "./live-run-drafts.ts";
@@ -22,12 +26,13 @@ import { ACCEPT_FRIENDS } from "./live-run-drafts.ts";
 const VIEW_KEYS = ["elements", "dialogs", "blockedBy", "page"];
 
 /**
- * The bound, and why. The cut request is 8,113 characters. One page view of
- * this Flow's pages is 2,845 to 3,019, so any one observation that carries its
- * view again puts the request past 10,000, while a sentence more of the
- * domain's own read account or a longer run id does not.
+ * The bound, and why. The cut request is 11,158 characters: 8,113 for the
+ * steps, and one page view, the one the test ended on. One page view of this
+ * Flow's pages is 2,845 to 3,019, so any one observation that carries its view
+ * again, or a second end view, puts the request past 14,000, while a sentence
+ * more of the domain's own read account or a longer run id does not.
  */
-const BOUND = 10_000;
+const BOUND = 14_000;
 
 type Fixture = { startLocation: string; result: JsonObject; steps: AutomationStudioFlowDraftStep[]; report: AutomationStudioBuildTestReportInput };
 const fixture = JSON.parse(readFileSync(new URL("./run-36-test.json", import.meta.url), "utf8")) as Fixture;
@@ -51,7 +56,9 @@ async function requestSent(observedStateKeys?: readonly string[]): Promise<Autom
     startLocation: fixture.startLocation, deniedEvidenceKeys: DENIED, ...(observedStateKeys ? { observedStateKeys } : {})
   });
   await automationStudioBuildTestJudge({ instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project-1", flowId: "flow-1", provider })({ summary, budget: { maxCostUsd: 1 } });
-  expect(seen).toHaveLength(1);
+  // A yes is confirmed by a second call with the same evidence (`../judge.ts`, live run murwcmx2).
+  expect(seen).toHaveLength(2);
+  expect(seen[1]?.context).toEqual(seen[0]?.context);
   return seen[0]!;
 }
 
@@ -61,11 +68,20 @@ const observed = (request: AutomationStudioLlmTaskRequest, step: number): JsonOb
 describe("the judge's request on run 36's test", () => {
   it("stays under its bound, which the views the domain declared would take it far past", async () => {
     const lean = JSON.stringify(await requestSent(VIEW_KEYS)).length;
-    // With every other cut and no view key declared it is 23,036: the views
+    // With every other cut and no view key declared it is 23,089: the views
     // two steps share are named, and the four that differ are sent.
     const viewed = JSON.stringify(await requestSent()).length;
     expect(lean).toBeLessThan(BOUND);
-    expect(viewed).toBeGreaterThan(2 * BOUND);
+    expect(viewed).toBeGreaterThan(BOUND + 2 * 3_019);
+  });
+
+  it("sends the page the test ended on once, beside the steps: the last step's view and no other", async () => {
+    const request = await requestSent(VIEW_KEYS);
+    const ended = (request.context.resultSummary as AutomationStudioRunResultSummaryWithEndView | undefined)?.endView;
+    const last = fixture.report.observations.at(-1)!;
+    expect(ended).toEqual({ after: 11, view: { page: (last.evidence as JsonObject).page } });
+    // A page view's second line, as JSON writes it: one view in the whole request.
+    expect(JSON.stringify(request).split("\\nURL ").length - 1).toBe(1);
   });
 
   it("sends no observation with a page view or Core's bookkeeping in it", async () => {

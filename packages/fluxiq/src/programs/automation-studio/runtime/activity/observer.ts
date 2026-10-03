@@ -162,9 +162,12 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
     } satisfies Pick<AutomationStudioLlmEvidenceLoopInput, "unusableDecisions"> : {}),
     ...(checkCompletion ? {
       checkCompletion: async (result, context) => {
-        emitAutomationStudioActivity({ phase: "verifying", label: "Checking the proposed Flow", detail: { kind: "check", title: "Completion check", status: "started" } });
+        // A note, not a check row: it reads the plan and runs nothing, and a
+        // check row was a "Test run · Passed" card before any step was tested
+        // (D4). With no words it is the live line only; refused, a message.
+        emitAutomationStudioActivity({ phase: "verifying", label: "Checking the proposed Flow", detail: { kind: "note", title: "Completion check", status: "started" } });
         const check = await checkCompletion.call(input, result, context);
-        emitAutomationStudioActivity({ phase: "verifying", label: check.ok ? "The proposed Flow’s plan checks out; it still has to run cleanly" : "The proposed Flow was sent back to be fixed", detail: { kind: "check", title: "Completion check", status: check.ok ? "succeeded" : "failed", ...(check.ok ? {} : { text: automationStudioActivityCompletionRefusal(check) }) } });
+        emitAutomationStudioActivity({ phase: "verifying", label: check.ok ? "The proposed Flow’s plan checks out; it still has to run cleanly" : "The proposed Flow was sent back to be fixed", detail: { kind: "note", title: "Completion check", status: check.ok ? "succeeded" : "failed", ...(check.ok ? {} : { text: automationStudioActivityCompletionRefusal(check) }) } });
         return check;
       }
     } satisfies Pick<AutomationStudioLlmEvidenceLoopInput, "checkCompletion"> : {})

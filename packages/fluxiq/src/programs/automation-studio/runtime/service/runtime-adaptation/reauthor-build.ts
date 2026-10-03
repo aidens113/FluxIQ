@@ -13,7 +13,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import { automationStudioFlowBootstrapFailureDiagnosticOf, flowBootstrapPhaseFailure, type AutomationStudioFlowBootstrapFailureDiagnostic } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
-import type { AutomationStudioLlmModelCaller } from "../../llm/index.ts";
+import { automationStudioRunNodeStartPages, type AutomationStudioLlmModelCaller } from "../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REPAIR_COST_BOUND_CODE,
   automationStudioReauthorRefutedResult,
@@ -36,8 +36,14 @@ export type AutomationStudioReauthorBuildDependencies = {
    * The build, run-owned, with the brief beside the Flow's own instructions.
    * `costLeftUsd` is what is left of the repair's purse, always above zero: the
    * build's total, which its loop budget holds it to.
+   *
+   * `startPages` is where each node's first attempt started in the run being
+   * repaired, by node id, as the host stated it (`llm/node-tools/run-start-pages.ts`):
+   * a rerun of a step carried from the Flow is put back there before it runs,
+   * not run wherever the run left the target (t194 cause C-D, `run-murwcmx2`).
+   * Empty when the run's host recorded none.
    */
-  generate(request: AutomationStudioGenerateFlowBootstrapAdaptationInput, brief: AutomationStudioFlowInstruction, costLeftUsd: number): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult>;
+  generate(request: AutomationStudioGenerateFlowBootstrapAdaptationInput, brief: AutomationStudioFlowInstruction, costLeftUsd: number, startPages: Readonly<Record<string, JsonObject>>): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult>;
   approve(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
   /** Applies the approved adaptation; the run then replays the Flow it produced. */
   apply(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
@@ -79,6 +85,8 @@ export async function automationStudioReauthorBuild(input: {
   now: () => number;
 }): Promise<{ detail: AutomationStudioFlowRunDetail; built: AutomationStudioReauthorBuilt; purse: AutomationStudioResultRepairPurse }> {
   const { deps, projectId, flowId, brief, now } = input;
+  // Read once, off the run as it was refuted: a retry of the build starts from the same run.
+  const startPages = automationStudioRunNodeStartPages(input.detail);
   let purse = input.purse;
   const build = async (): Promise<AutomationStudioReauthorBuilt> => {
     if (!automationStudioResultRepairPurseAllowsPart(purse)) {
@@ -99,7 +107,7 @@ export async function automationStudioReauthorBuild(input: {
           projectId, flowId, mode: "extend", evidenceGuided: true,
           caller: { actorUserId: caller.actorUserId, actorSessionId: caller.actorSessionId },
           ...(deps.permittedConsequences?.length ? { permittedConsequences: [...deps.permittedConsequences] } : {})
-        }, brief, costLeftUsd);
+        }, brief, costLeftUsd, startPages);
         return { adaptationId: generated.adaptationId, accounting: { ...generated.accounting } };
       },
       approve: (adaptationId) => deps.approve({ projectId, flowId, adaptationId, actorId: REPAIR_ACTOR }),

@@ -127,8 +127,8 @@ describe("a Flow build whose model provider stops answering", () => {
     const { requests, generation } = await build((call) => call === 1 || call === 3);
 
     await expect(generation).resolves.toMatchObject({ status: "proposed" });
-    // Unanswered, the act, unanswered, the completion, then the judge of the Flow's test.
-    expect(requests).toHaveLength(5);
-    expect(requests.map(isJudgeRequest)).toEqual([false, false, false, false, true]);
+    // Unanswered, the act, unanswered, the completion, then the judge of the Flow's test, twice (a build-finishing yes is confirmed by a second call: murwcmx2, C-H).
+    expect(requests).toHaveLength(6);
+    expect(requests.map(isJudgeRequest)).toEqual([false, false, false, false, true, true]);
   });
 });

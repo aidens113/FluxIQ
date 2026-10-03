@@ -4,7 +4,7 @@ import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
 import { automationStudioActivityHub } from "../default-hub.ts";
 import { observeAutomationStudioEvidenceLoop } from "../observer.ts";
 import { runWithAutomationStudioActivity } from "../scope.ts";
-import { emitAutomationStudioActivityStep } from "../step.ts";
+import { emitAutomationStudioActivityStep } from "../step/index.ts";
 
 /** A dotted id such as `core.run_node`: never in a sentence a person reads. */
 const RAW_ID = /\b[a-z]+\.[a-z_]+/iu;
@@ -83,6 +83,23 @@ describe("observed tool calls", () => {
     await inBuild(async () => await loop.checkCompletion!({}, { steps: [] }));
     expect(seen.map((event) => event.label)).toEqual(["Checking the proposed Flow", "The proposed Flow’s plan checks out; it still has to run cleanly"]);
     expect(seen[1]!.label).not.toMatch(/passed/u);
+  });
+
+  // D4, `run-murwd8le-79e735a8` (00008, 00011, 00014): both test runs opened
+  // with a card "Test run · Passed" before any step ran. The completion check
+  // reads the plan, runs nothing, and settles before the dry run starts, so it
+  // is no check row (a test card) at all: a note, which a chat shows on the
+  // live line, or as a plain message when it says why the Flow went back.
+  it("say a completion check as a note, never as a check row that settles before the test runs", async () => {
+    const passing = observeAutomationStudioEvidenceLoop({ tools: [], decide: async () => ({}), executeTool: async () => ({}), checkCompletion: async () => ({ ok: true }) });
+    await inBuild(async () => await passing.checkCompletion!({}, { steps: [] }));
+    const refused = observeAutomationStudioEvidenceLoop({ tools: [], decide: async () => ({}), executeTool: async () => ({}), checkCompletion: async () => ({ ok: false, issueCodes: ["bootstrap.instructed_act_missing"], feedback: {} }) });
+    await inBuild(async () => await refused.checkCompletion!({}, { steps: [] }));
+
+    expect(seen.map((event) => event.detail?.kind)).toEqual(["note", "note", "note", "note"]);
+    expect(seen.map((event) => event.detail?.title)).toEqual(["Completion check", "Completion check", "Completion check", "Completion check"]);
+    expect(seen[1]!.detail).not.toHaveProperty("text");
+    expect(seen[3]!.detail?.text).toBe("It needs changes before it can be used, and it goes back to be fixed. One thing needs fixing.");
   });
 });
 

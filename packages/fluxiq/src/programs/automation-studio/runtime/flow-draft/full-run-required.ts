@@ -41,7 +41,10 @@
 // Since t252 a step may also be written rather than run (`core.run_node` with
 // `write: true`), and both tellings say so: writing is how a step whose run
 // would do something lasting takes its place without doing it.
-// Core's words only; what a step acts on is the domain's.
+// Core's words only; what a step acts on is the domain's. The re-author's
+// brief and a repair's resume say the same of carried steps in the same words
+// before any completion is refused (`../recovery/refuted-result/brief.ts`,
+// `../llm/evidence-loop/resume.ts`, t194-w70).
 
 import type { JsonObject } from "../../../../core/index.ts";
 
@@ -53,7 +56,7 @@ export type AutomationStudioFlowDraftUnrunnableWord = "not_run_in_this_build" | 
 
 const FULL_RUN_REQUIRED_INSTRUCTION = "The Flow is finished only once it has run whole from its start and been judged to do what was asked. "
   + "These steps cannot be run again as they stand, so the Flow cannot be tested whole until they can. "
-  + "not_run_in_this_build: the step came from the Flow being changed and has not run in this build. "
+  + "not_run_in_this_build: the step came from the Flow being changed and has not run in this build; a rerun of it is first put back where its node started in the run being repaired, where that run recorded it. "
   + "cannot_run_again: its run left nothing to run it again with, or, for the first step, nothing to put the target back where the Flow starts. "
   + "not_a_library_step: it ran through a tool that is not the node library, and a Flow is made only of library nodes that ran: run or write the node that does it with core.run_node (add true, or write true) in its place, and drop this one. "
   + "not_reached: the test never came to it, because the list its repeat goes over had no items in the test: run the listing where it returns items, or run this step once yourself, so the test can run it. "

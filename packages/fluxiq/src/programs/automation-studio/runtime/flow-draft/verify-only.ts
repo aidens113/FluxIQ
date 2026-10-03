@@ -16,7 +16,9 @@
 // any consequence but none is *verified* instead of run: the host is asked to
 // show that the step could run now (its target is there and would take the
 // action) or that its effect is already in place, and to act on nothing. Every
-// other step is run again exactly as before. Nothing here widens or narrows
+// other step is run again exactly as before. A step that does an act the
+// person's instruction asks to last is verified too, whatever it declared
+// (t174-w83, `automationStudioFlowDraftStepReplayMode`). Nothing here widens or narrows
 // what a person is asked: a check is not the act, and the act stays gated
 // where it always was.
 //
@@ -109,11 +111,25 @@ const NONE = "none";
  * Core reads only whether it says anything but none: an unrecognised class is
  * still a claim that something lasts, and the gate -- not this -- decides
  * whether a class is one Core knows.
+ *
+ * **The instruction is a second witness (t174-w83).** A step's declaration is
+ * the model's word, and the model can be wrong: run `run-murwd8le-79e735a8`
+ * kept an Add to cart that declared `consequences: []`, and both of the
+ * build's tests pressed it again on the person's cart (Cause 3). So a caller
+ * that has read the person's instruction passes `lastingActs`: the ids of the
+ * instruction's acts (`a1`, `a2` ...) that the read says ask for something
+ * lasting (`../flow-bootstrap/action-permissions.ts`, `instructedLastingActs`).
+ * A changing step that claims one of them is checked whatever it declared.
+ * Only an act's own id counts. A choice of it (`a1.colour`, `a1.quantity`) is
+ * a selection the act's own step stands on, and verifying it would leave that
+ * step's target absent; the set holds only acts, so a choice never matches.
+ * Without the set the rule is the declaration alone, as it always was.
  */
-export function automationStudioFlowDraftStepReplayMode(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftReplayMode {
+export function automationStudioFlowDraftStepReplayMode(step: AutomationStudioFlowDraftStep, lastingActs?: ReadonlySet<string>): AutomationStudioFlowDraftReplayMode {
   if (step.effect !== "mutate") return "replay";
   const declared = step.ranWith && "consequences" in step.ranWith ? step.ranWith.consequences : step.input.consequences;
-  return declaresLasting(declared) ? "verify" : "replay";
+  if (declaresLasting(declared)) return "verify";
+  return lastingActs?.size && step.acts?.some((act) => lastingActs.has(act)) ? "verify" : "replay";
 }
 
 /**

@@ -17,6 +17,18 @@ export type AutomationStudioHostStateSnapshotRef = {
   stateRef: string;
   capturedAt: number;
   summary?: JsonObject;
+  /**
+   * The host's own token for putting the target back to the state this
+   * snapshot was taken in: the same token its tool results state as a step's
+   * `replay.from` (`llm/node-tools/replay.ts`), sent back in a reset. Core
+   * carries it unread. A re-author reads it off each node's first
+   * `before_action` snapshot so a rerun of a step carried from the Flow starts
+   * where that node started (`llm/node-tools/run-start-pages.ts`). A host
+   * writes it only when the token is one a reset can use and holds nothing it
+   * would not put in evidence; without it a rerun runs where the target is,
+   * and says so.
+   */
+  from?: JsonObject;
 };
 
 export type AutomationStudioHostRuntimeActionContext = {

@@ -21,7 +21,7 @@ import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
-import type { AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
+import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "./unreadable-reply.ts";
 import {
@@ -263,6 +263,9 @@ export type AutomationStudioLlmEvidenceLoopInput = {
      * amendment naming a step names one step.
      */
     seed?: readonly AutomationStudioFlowDraftStep[];
+    /** Where each seeded step's node started in the run being repaired, by step id (`node-tools/draft-from-flow.ts`): a rerun of it, or
+     * of the step that took its place, with no start page of its own is put back there first (`node-tools/step-place.ts`; t194 C-D). */
+    seedStartedOn?: Readonly<Record<string, JsonObject>>;
     /**
      * The seed is the draft of a build that ran out before it finished, and
      * this build continues it (`../flow-bootstrap/incomplete-draft/`).
@@ -324,6 +327,23 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * called on a refusal (`node-tools/dry-run-gate.ts`).
    */
   observeTest?(report: AutomationStudioFlowDraftTestReport): void;
+  /**
+   * The ids of the instruction's acts the build reads as lasting
+   * (`../flow-bootstrap/action-permissions.ts`, `instructedLastingActs`), asked
+   * for once, only when the loop first sends its steps again -- its dry run, a
+   * part run (`core.run_flow`) or a rerun's put-back -- each of which checks a
+   * step claiming one rather than running it again
+   * (`../flow-draft/verify-only.ts`; t174-w89, run `run-murwd8le-79e735a8`
+   * Cause 3). Absent, a step lasts by its declaration alone.
+   */
+  lastingActs?: (() => Promise<ReadonlySet<string>>) | undefined;
+  /**
+   * One look at the target the dry run left, right after it passes, for the
+   * judge of the test (`node-tools/dry-run-gate.ts`, `endView`). Asked only
+   * where `observeTest` is given; a look that fails leaves the report without
+   * a page.
+   */
+  testEndView?: AutomationStudioFlowDraftDryRunGateInput["endView"];
   signal?: AbortSignal;
 };
 

@@ -12,6 +12,10 @@
 // that never needed it, so `instructed()` is read *after* it: reading it first
 // gives the set as it stood before the derivation, which for the build this
 // exists to catch -- every action declaring nothing lasting -- is empty.
+// A build whose instruction asks for acts reads it earlier, before its first
+// test (`instructedLastingActs`, t174-w83); the gate holds that one read, so
+// `crossCheck()` reuses it without a second call and `instructed()` read after
+// it is the same set. The order still matters for every other build.
 
 import type {
   AutomationStudioActionDeclarationCrossCheck,
