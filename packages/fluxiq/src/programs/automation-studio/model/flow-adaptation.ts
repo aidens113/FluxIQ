@@ -351,6 +351,28 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
   skipped?:
     | { reason: "target_absent"; code: string }
     | { reason: "state_routed"; code: string; toNodeId: string; direction: "forward" | "backward" };
+  /**
+   * What state routing made of the page when this step could not run (t243,
+   * `runtime/executor/state-routing/`), as closed words and node ids only:
+   * never a reason sentence, page text, a signature or a count.
+   *
+   * - `routed` / `effect_holds`: the step was passed over, and `skipped`
+   *   already says where the run went, which way and on which code; this only
+   *   tells a page that matched the destination's starting page (`routed`)
+   *   from one that already showed the step's own effect (`effect_holds`).
+   * - `guard_stopped`: the page matched `toNodeId` once too often without
+   *   progress, so the run ended failed.
+   * - `no_match`, `unobserved`, `no_pre_states`: no way on was found, and the
+   *   step went on to fail or be recovered as before.
+   *
+   * `code` is the Core code that asked: `executor.ready_state.not_shown` when
+   * the step's readiness gate did not hold, else the attempt's failure code.
+   * It is absent when that code is not in the shape of a Core code.
+   */
+  stateRouting?:
+    | { outcome: "routed" | "effect_holds" }
+    | { outcome: "guard_stopped"; code?: string; toNodeId: string }
+    | { outcome: "no_match" | "unobserved" | "no_pre_states"; code?: string };
   metadata?: JsonObject;
 };
 

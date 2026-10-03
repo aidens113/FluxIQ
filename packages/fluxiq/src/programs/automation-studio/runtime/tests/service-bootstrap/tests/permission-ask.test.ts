@@ -18,7 +18,8 @@ import type { AutomationStudioActionConsequence } from "../../../action-permissi
 import { automationStudioActivityHub } from "../../../activity/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, caller, mockProvider, plan, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
+import { blankFixture, caller, isJudgeRequest, judgeReply, mockProvider, plan, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const REFUND: AutomationStudioActionConsequence[] = ["move_money", "modify_existing"];
 /**
@@ -166,12 +167,13 @@ describe("a build that needs permission asks for it in the Flow's thread", () =>
 async function checkoutBuild() {
   const acted: string[] = [];
   const decisions: JsonObject[] = [
-    { kind: "tool_call", callId: "call.checkout", toolId: "example.act", input: { control: "Continue to checkout" } },
-    { kind: "tool_call", callId: "call.place", toolId: "example.act", input: { control: "Place order" } },
+    { kind: "tool_call", callId: "call.checkout", toolId: "example.act", input: { control: "Continue to checkout" }, add: true },
+    { kind: "tool_call", callId: "call.place", toolId: "example.act", input: { control: "Place order" }, add: true },
     { kind: "complete", result: { summary: "Built.", plan: plan() } }
   ];
   let call = 0;
-  const provider = mockProvider(async (request) => ({
+  // The judge of the Flow's test says yes: a build finishes only on that (user, 2026-10-02).
+  const provider = mockProvider(async (request) => isJudgeRequest(request) ? judgeReply() : ({
     // The instruction is read once for what it asks for, with no tools; that
     // call must not use up one of the model's decisions.
     response: request.context.evidenceLoop?.tools.length === 0
@@ -192,7 +194,8 @@ async function checkoutBuild() {
     }
   };
   const { project, flow } = await seeded(example);
-  const instance = new AutomationStudioService({ dataDir: tempRoot, llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never, llmEvidenceRuntime: binding });
+  // Said how to run its steps again, so the build's test can run the Flow whole; its replay calls press nothing.
+  const instance = new AutomationStudioService({ dataDir: tempRoot, llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never, llmEvidenceRuntime: automationStudioReplayingBinding(binding) });
   services.add(instance);
   const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller(), permissionAskTimeoutMs: 30_000 });
   return { instance, project, flow, acted, generation };
@@ -261,23 +264,36 @@ describe("a build that never explored", () => {
   });
 });
 
-/** One build whose model runs an action with a lasting consequence, then completes. */
+/**
+ * One build whose model runs an action with a lasting consequence, then a step
+ * with none, then completes; the judge of its test says yes. The second step is
+ * the Flow a build refused its action can still finish with: a Flow is finished
+ * only once a run of it whole was judged (user, 2026-10-02), and a refused
+ * action is no step of it.
+ */
 async function build(options: { waitMs?: number } = {}) {
   const acted: string[] = [];
   const decisions: JsonObject[] = [
-    { kind: "tool_call", callId: "call.refund", toolId: "example.act", input: {} },
+    { kind: "tool_call", callId: "call.refund", toolId: "example.act", input: {}, add: true },
+    { kind: "tool_call", callId: "call.open", toolId: "example.act", input: { control: "Open order" }, add: true },
     { kind: "complete", result: { summary: "Built.", plan: plan() } }
   ];
   let call = 0;
-  const provider = mockProvider(async () => ({
-    response: { kind: "evidence_tool_decision", summary: "Step.", decision: decisions[Math.min(call++, decisions.length - 1)]! },
+  const provider = mockProvider(async (request) => isJudgeRequest(request) ? judgeReply() : ({
+    // The instruction is read once for what it asks for, with no tools; that
+    // call must not use up one of the model's decisions.
+    response: request.context.evidenceLoop?.tools.length === 0
+      ? { kind: "evidence_tool_decision", summary: "Read the instruction.", decision: { kind: "complete", result: { instructed: [] } } }
+      : { kind: "evidence_tool_decision", summary: "Step.", decision: decisions[Math.min(call++, decisions.length - 1)]! },
     usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
   }));
   const binding: AutomationStudioLlmEvidenceRuntimeBinding = {
     domainId: "example",
     deniedEvidenceKeys: [],
-    tools: [{ toolId: "example.act", description: "Refund a line.", inputSchema: { type: "object" }, effect: "mutate" }],
+    tools: [{ toolId: "example.act", description: "Refund a line, or open the order.", inputSchema: { type: "object" }, effect: "mutate" }],
     executeTool: async (input) => {
+      // Opening the order leaves nothing lasting, so it asks nobody.
+      if (input.value.control === "Open order") return { kind: "llm_evidence_tool_execution", evidence: { opened: true }, effectApplied: true };
       const verdict = await input.permission({ consequences: REFUND, control: { name: "Refund line 1", kind: "button" }, verb: "press" });
       if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "permission_required" }, effectApplied: false, resultCode: "example.permission_required" };
       acted.push("refund");
@@ -288,7 +304,8 @@ async function build(options: { waitMs?: number } = {}) {
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
-    llmEvidenceRuntime: binding
+    // Said how to run its steps again, so the build's test can run the Flow whole; its replay calls refund nothing.
+    llmEvidenceRuntime: automationStudioReplayingBinding(binding)
   });
   services.add(instance);
   // The control's name has to have been shown before a request may carry it.

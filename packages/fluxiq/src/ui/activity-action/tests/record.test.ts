@@ -13,3 +13,11 @@ describe("activityActionRecordOf", () => {
     expect(activityActionRecordOf(undefined)).toEqual({ resultCode: undefined, node: undefined });
   });
 });
+
+describe("activityActionRecordOf: a refusal's reason", () => {
+  it("reads the reason a refusal carries, between the code and the node", () => {
+    expect(activityActionRecordOf("Result: web.action.rejected.target_unobserved · Reason: target_not_a_handle · Node: web.output.dom-click"))
+      .toEqual({ resultCode: "web.action.rejected.target_unobserved", reason: "target_not_a_handle", node: "web.output.dom-click" });
+    expect(activityActionRecordOf("Result: web.target.not_found").reason).toBeUndefined();
+  });
+});

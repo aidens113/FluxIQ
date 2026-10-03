@@ -22,6 +22,7 @@ import type { AutomationStudioInstructedActChecklistItem } from "../instructed-a
 import type { AutomationStudioLlmEvidenceLoopProviderUnavailable } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
 import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The ending of a build whose model provider stopped answering. */
 export function automationStudioFlowBootstrapProviderUnavailable(input: {
@@ -30,6 +31,8 @@ export function automationStudioFlowBootstrapProviderUnavailable(input: {
   checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined;
   rounds: number;
   decisions: number;
+  /** Why each live round stopped, in order (`./tried.ts`). */
+  stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
   /** How many of the build's actions changed the page. */
   changes: number;
   /** Whether the Flow so far was kept for the next build. */
@@ -49,6 +52,6 @@ export function automationStudioFlowBootstrapProviderUnavailable(input: {
     kind: "provider_unavailable",
     message: message.slice(0, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE),
     notDone,
-    tried: { rounds: input.rounds, decisions: input.decisions, stepsInFlow: input.judgement.stepsInFlow, tested: input.judgement.tested }
+    tried: automationStudioFlowBootstrapTried(input)
   };
 }

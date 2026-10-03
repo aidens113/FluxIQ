@@ -8,8 +8,9 @@
 // can show is that they meet: that the loop's own test of the Flow reaches the
 // judge as `buildTest`, that the judge asks through the build's provider and
 // the build pays for it, that a `no` becomes a repair round told what the judge
-// said, and that a Flow nobody could judge is proposed and said to be
-// unverified. Each case here fails if the service stops passing its judge.
+// said, and that a Flow nobody could judge is never proposed: with nothing left
+// to pay the judge, the build ends at its budget with the Flow kept (user,
+// 2026-10-02). Each case here fails if the service stops passing its judge.
 //
 // No model is called: the provider is scripted, and the domain is a stand-in
 // that runs, replays and checks its steps as the dry run asks it to.
@@ -22,7 +23,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, caller, copyDataDirSeed, isJudgeRequest, JUDGE_USAGE, judgeReply, mockProvider, plan, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { blankFixture, caller, copyDataDirSeed, expectNoTopology, isJudgeRequest, JUDGE_USAGE, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const SEEDING_TIMEOUT_MS = 60_000;
 
@@ -247,18 +248,22 @@ describe("a Flow the model says is ready", () => {
     }, 30_000);
   });
 
-  it("proposes the Flow, said to be unverified, when the build has no cost left to ask the judge", async () => {
+  it("ends at its budget with the Flow kept, never proposed unjudged, when the build has no cost left to ask the judge", async () => {
     // The completion spends all the build had: its run cost ceiling.
     const run = await build({ instruction: READ_TOWELS, decisions: [read("call.read"), complete()], judge: [], usage: (decision) => (decision === 1 ? { ...USAGE, estimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } : USAGE) });
-    const result = await run.generation;
+    const diagnostic = await rejectedGenerationDiagnostic(run.generation);
 
-    expect(result.status).toBe("proposed");
-    // Nobody was asked: the judge never reached the provider.
+    // A build finishes only on a judged success of the Flow as it stands (user, 2026-10-02): unjudged, it is never proposed.
+    // Nobody was asked -- the judge never reached the provider -- and no repair could be paid for, so the build ends at its budget.
     expect(run.requests.some(isJudgeRequest)).toBe(false);
-    // The person is told the Flow was not verified, and why.
-    const notVerified = activity.find((event) => event.label === "Flow not verified");
-    expect(notVerified).toMatchObject({ phase: "verifying", detail: { kind: "note", title: "Flow not verified" } });
-    expect(notVerified?.detail?.text).toContain("no cost left");
+    expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1, stepsInFlow: 1, tested: "replayed_clean" } });
+    // The person is told the Flow ran but was not judged, and that it was kept.
+    expect(diagnostic.ending?.message).toContain("not judged");
+    expect(diagnostic.ending?.message).toContain("The Flow so far was kept");
+    expect(diagnostic.evidenceLoop?.incompleteDraft).toMatchObject({ revision: 1, steps: 1 });
+    await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
+    expect(activity.some((event) => event.label === "Flow not verified")).toBe(false);
   }, 30_000);
 });
 

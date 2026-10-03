@@ -11,6 +11,18 @@
 //
 // The domain here is a stand-in with one typing action; the web domain's
 // resolver is its own work.
+//
+// A Flow is finished only once a run of the whole Flow from its start was
+// judged to do what was asked (t244, user 2026-10-02), and a reply that writes
+// the plan out whole with no step run in the build is refused
+// `llm_evidence_loop.full_run_required`. So a case that builds a Flow first
+// types into the field through the stand-in's own acting tool and adds that
+// step: the build's test has a step to run, and -- the stand-in's tool not
+// being a node of the library, so Core cannot write its step down -- the plan
+// is still the one the reply wrote, which is the plan whose handles this file
+// is about (`llm/harness-options/bootstrap-completion.ts`, "The draft wins
+// wherever there is one"). The cases whose subject is the completion check's
+// refusal never act: the check refuses the plan before a test arises.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -22,9 +34,12 @@ import { validateAutomationStudioFlowBootstrapPlan } from "../../../flow-bootstr
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, expectNoTopology, caller, isJudgeRequest, judgeReply, mockProvider, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const TYPE_ID = "domain.example.type";
+/** The stand-in's own tool for typing into a field it showed: not a node of the library. */
+const TYPE_TOOL = "example.type_text";
 /** The one field the stand-in domain showed the model, and what it really is. */
 const NAME_FIELD = { handle: "target.1", locator: "[name=\"name\"]" };
 
@@ -104,7 +119,10 @@ function isHandle(value: JsonValue | undefined): value is { handle: string } {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value) && typeof (value as JsonObject).handle === "string";
 }
 
-/** The stand-in domain: one observing tool, and a resolver that only runs what it showed. */
+/**
+ * The stand-in domain: one observing tool, one typing tool, and a resolver
+ * that only runs what it showed.
+ */
 function typingBinding(resolve = true): AutomationStudioLlmEvidenceRuntimeBinding {
   const resolvePlanNodeParameters: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["resolvePlanNodeParameters"]> = ({ nodeDefinitionId, parameters }) => {
     if (nodeDefinitionId !== TYPE_ID) return { status: "unchanged" };
@@ -116,8 +134,13 @@ function typingBinding(resolve = true): AutomationStudioLlmEvidenceRuntimeBindin
   return {
     domainId: "example",
     deniedEvidenceKeys: [],
-    tools: [{ toolId: "example.inspect", description: "Inspect the fields in view.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
-    executeTool: async () => ({ fields: [{ handle: NAME_FIELD.handle, label: "Name" }] }),
+    tools: [
+      { toolId: "example.inspect", description: "Inspect the fields in view.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } },
+      { toolId: TYPE_TOOL, description: "Type text into a field in view.", inputSchema: { type: "object" }, effect: "mutate" }
+    ],
+    executeTool: async ({ toolId }) => toolId === TYPE_TOOL
+      ? { kind: "llm_evidence_tool_execution" as const, evidence: { typed: true }, effectApplied: true, resultCode: "example.typed" }
+      : { fields: [{ handle: NAME_FIELD.handle, label: "Name" }] },
     ...(resolve ? { resolvePlanNodeParameters } : {})
   };
 }
@@ -152,15 +175,24 @@ function typingPlan(selector: JsonValue, text: JsonValue = "Ada"): JsonObject {
   };
 }
 
-/** A creation whose model completes with each plan in turn; the last repeats. The judge of a finished build's test says yes, and is counted in `requests`. */
-async function create(plans: JsonObject[], options: { binding?: AutomationStudioLlmEvidenceRuntimeBinding; maxCallsPerRun?: number } = {}) {
+/**
+ * A creation whose model completes with each plan in turn; the last repeats.
+ * With `types`, it first types the name and adds that step, so the Flow has a
+ * step its test can run. The judge of a finished build's test says yes, and is
+ * counted in `requests`.
+ */
+async function create(plans: JsonObject[], options: { binding?: AutomationStudioLlmEvidenceRuntimeBinding; maxCallsPerRun?: number; types?: true } = {}) {
   const requests: AutomationStudioLlmTaskRequest[] = [];
+  let decided = 0;
   const provider = mockProvider(async (request) => {
     requests.push(request);
     if (isJudgeRequest(request)) return judgeReply();
-    const plan = plans[Math.min(requests.length, plans.length) - 1]!;
+    const at = decided++;
+    const decision: JsonObject = options.types && at === 0
+      ? { kind: "tool_call", callId: "call.type", toolId: TYPE_TOOL, input: { field: NAME_FIELD.handle, text: "Ada" }, add: true }
+      : { kind: "complete", result: { summary: "Type the name.", plan: plans[Math.min(at - (options.types ? 1 : 0), plans.length - 1)]! } };
     return {
-      response: { kind: "evidence_tool_decision", summary: "Fill the form.", decision: { kind: "complete", result: { summary: "Type the name.", plan } } },
+      response: { kind: "evidence_tool_decision", summary: "Fill the form.", decision },
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
     };
   });
@@ -168,7 +200,7 @@ async function create(plans: JsonObject[], options: { binding?: AutomationStudio
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: options.maxCallsPerRun ?? 6 })) as never,
-    llmEvidenceRuntime: options.binding ?? typingBinding()
+    llmEvidenceRuntime: automationStudioReplayingBinding(options.binding ?? typingBinding())
   }).bindNativeNodeRuntime(typingRuntime());
   services.add(instance);
   const instruction = await instance.getFlowInstruction(project.id, "instruction.build");
@@ -190,12 +222,12 @@ function feedbackBefore(requests: AutomationStudioLlmTaskRequest[], call: number
 
 describe("creating a Flow whose nodes name what the exploration showed", () => {
   it("builds the node with the parameter the domain resolved from the handle", async () => {
-    const run = await create([typingPlan({ handle: NAME_FIELD.handle })]);
+    const run = await create([typingPlan({ handle: NAME_FIELD.handle })], { types: true });
     const result = await run.generation;
 
-    // The completion, then the judge of the Flow's test.
-    expect(run.requests).toHaveLength(2);
-    expect(run.requests.map(isJudgeRequest)).toEqual([false, true]);
+    // The typing step, the completion, then the judge of the Flow's test.
+    expect(run.requests).toHaveLength(3);
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true]);
     const stored = await run.instance.getFlowBootstrapAdaptation(run.project.id, run.flow.flowId, result.adaptationId);
     const node = stored!.buildPlan.plan.subflows[0]!.nodes.find((item) => item.key === "enter_name");
     expect(node?.parameters).toEqual({ selector: NAME_FIELD.locator, text: "Ada" });
@@ -207,7 +239,7 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
   it("builds a node whose handle carries the location it was seen at", async () => {
     const located = typingBinding();
     const resolvePlanNodeParameters = vi.fn(located.resolvePlanNodeParameters!);
-    const run = await create([typingPlan({ handle: NAME_FIELD.handle, location: "https://form.example.test/step-2" })], { binding: { ...located, resolvePlanNodeParameters } });
+    const run = await create([typingPlan({ handle: NAME_FIELD.handle, location: "https://form.example.test/step-2" })], { binding: { ...located, resolvePlanNodeParameters }, types: true });
     await expect(run.generation).resolves.toMatchObject({ status: "proposed" });
     expect(resolvePlanNodeParameters).toHaveBeenCalledWith(expect.objectContaining({
       nodeDefinitionId: TYPE_ID,
@@ -216,30 +248,31 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
   });
 
   it("hands a guessed locator back to the model, and builds the corrected plan", async () => {
-    const run = await create([typingPlan("input[name=\"Name\"]"), typingPlan({ handle: NAME_FIELD.handle })]);
+    const run = await create([typingPlan("input[name=\"Name\"]"), typingPlan({ handle: NAME_FIELD.handle })], { types: true });
     const result = await run.generation;
 
-    // The refused plan, the corrected one, then the judge of the Flow's test.
-    expect(run.requests).toHaveLength(3);
-    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true]);
-    expect(feedbackBefore(run.requests, 1)).toBeUndefined();
-    expect(feedbackBefore(run.requests, 2)).toMatchObject({
+    // The typing step, the refused plan, the corrected one, then the judge of the Flow's test.
+    expect(run.requests).toHaveLength(4);
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, false, true]);
+    expect(feedbackBefore(run.requests, 2)).toBeUndefined();
+    expect(feedbackBefore(run.requests, 3)).toMatchObject({
       ok: false,
       refusal: "flow_bootstrap.evidence_completion_parameters_unresolved",
       issues: [{ code: "example.locator_not_observed", path: "plan.subflows.0.nodes.1.parameters" }]
     });
     // The model is shown codes and plan paths, never page content.
-    expect(JSON.stringify(feedbackBefore(run.requests, 2))).not.toContain("input[name");
+    expect(JSON.stringify(feedbackBefore(run.requests, 3))).not.toContain("input[name");
     const stored = await run.instance.getFlowBootstrapAdaptation(run.project.id, run.flow.flowId, result.adaptationId);
     expect(stored!.buildPlan.plan.subflows[0]!.nodes[1]!.parameters).toEqual({ selector: NAME_FIELD.locator, text: "Ada" });
-    expect(stored!.evidenceTrace?.map((step) => step.decision)).toEqual(["tool_call", "unusable", "complete"]);
+    // The free look, the typing step, the refused plan, the corrected one.
+    expect(stored!.evidenceTrace?.map((step) => step.decision)).toEqual(["tool_call", "tool_call", "unusable", "complete"]);
   });
 
   it("hands a plan the registry refuses back to the model, and builds the corrected plan", async () => {
-    const run = await create([typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT), typingPlan({ handle: NAME_FIELD.handle })]);
+    const run = await create([typingPlan({ handle: NAME_FIELD.handle }, UNREADABLE_TEXT), typingPlan({ handle: NAME_FIELD.handle })], { types: true });
     await expect(run.generation).resolves.toMatchObject({ status: "proposed" });
 
-    expect(feedbackBefore(run.requests, 2)).toMatchObject({
+    expect(feedbackBefore(run.requests, 3)).toMatchObject({
       refusal: "flow_bootstrap.evidence_completion_plan_invalid",
       issues: [{ code: "bootstrap.invalid_parameter_value", path: expect.stringContaining("parameters.text") }]
     });
@@ -294,8 +327,8 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
   });
 
   it("refuses to persist a plan that still names a handle, however it arrives", async () => {
-    const run = await create([typingPlan({ handle: NAME_FIELD.handle })]);
-    await run.generation;
+    const run = await create([typingPlan({ handle: NAME_FIELD.handle })], { types: true });
+    await expect(run.generation).resolves.toMatchObject({ status: "proposed" });
     const other = await run.instance.createFlow({ projectId: run.project.id, flowId: "flow.direct", name: "Direct" });
     const registry = typingRuntime().sdk.nodes;
     const validated = validateAutomationStudioFlowBootstrapPlan({

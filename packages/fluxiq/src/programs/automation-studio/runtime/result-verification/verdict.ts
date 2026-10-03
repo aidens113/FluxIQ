@@ -78,7 +78,11 @@ export type AutomationStudioResultVerdictInput = {
   summaryText?: string | undefined;
   /** How the verdict was reached: `model` when a reply arrived, otherwise why not. */
   basis: Exclude<AutomationStudioResultVerdictBasis, "core_observation" | "model_disagreed" | "model_unconfirmed">;
-  /** The diagnostic code of a call that did not come back usable. Codes only, never a message. */
+  /**
+   * The diagnostic code of a call that did not come back usable. Codes only,
+   * never a message. Kept on the verification as `failureCode`; the reason a
+   * person reads says what happened in words instead.
+   */
   failureCode?: string | undefined;
 };
 
@@ -93,7 +97,12 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
   const codes = AUTOMATION_STUDIO_RESULT_VERDICT_CODES;
   const observation = automationStudioResultObservation(input.summary);
   if (input.basis === "model_unavailable") {
-    return failed("unsure", "model_unavailable", codes.unavailable, `The run's result was never judged: the verification call did not come back usable${input.failureCode ? ` (${input.failureCode})` : ""}. A result nobody checked is not a result that answers.`, observation);
+    // The reason is said in the chat, so it names what happened in words; the
+    // exact code goes on the record beside it (live run muqk713g).
+    return {
+      ...failed("unsure", "model_unavailable", codes.unavailable, `The run's result was never judged: ${callFailureWords(input.failureCode)}. A result nobody checked is not a result that answers.`, observation),
+      ...(input.failureCode ? { failureCode: input.failureCode } : {})
+    };
   }
   const verdict = automationStudioResultVerdictFromDiagnosis(input.diagnosis);
   if (verdict === "answers") {
@@ -123,6 +132,22 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
   return silent
     ? failed(verdict, "model_silent", codes.silent, "The verification call answered without saying whether the result answers the request, so nothing confirmed it.", observation)
     : failed(verdict, "model", codes.unsure, "The verification call could not tell whether the result answers the request, so nothing confirmed it.", observation);
+}
+
+/**
+ * What happened to a verification call that did not come back usable, in
+ * words, by its diagnostic code's family. Never the code itself: this sentence
+ * is said in the chat, and the code is kept on the record as `failureCode`.
+ */
+function callFailureWords(code: string | undefined): string {
+  if (code === undefined) return "the verification call did not come back usable";
+  if (/(^|[._])aborted$|cancel/.test(code)) return "the judge's call was stopped before it answered";
+  if (/timeout$/.test(code)) return "the judge ran out of time before it answered";
+  if (/^llm_(budget|usage)\.|budget_exceeded$|usage_limit_exceeded$/.test(code)) return "the judge's call would have gone past its spending or size limit";
+  if (/^llm_output\.|^llm\.provider_(malformed_response|output_|response_oversize|usage_invalid|result_summary_invalid)/.test(code)) return "the judge's reply could not be read";
+  if (/^llm\.provider_(http_error|network_error|rate_limited|auth_failed|secret_|request_failed|request_setup_failed|redirect_rejected|model_unsupported)/.test(code)) return "the model could not be reached";
+  if (/^llm\.request\.|^llm\.provider_.*(_invalid|credential_in_request)$/.test(code)) return "the judge's request could not be sent";
+  return "the verification call did not come back usable";
 }
 
 /** The judgement's advice: what it said changed, or failing that what its reply said at all. */

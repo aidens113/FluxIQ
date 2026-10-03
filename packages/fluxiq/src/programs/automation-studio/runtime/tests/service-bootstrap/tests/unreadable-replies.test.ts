@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, copyDataDirSeed, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const SEEDING_TIMEOUT_MS = 60_000;
@@ -64,12 +65,12 @@ async function build(unreadable: (call: number) => boolean) {
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
-    llmEvidenceRuntime: {
+    llmEvidenceRuntime: automationStudioReplayingBinding({
       domainId: "example",
       deniedEvidenceKeys: [],
       tools: [{ toolId: "example.act", description: "Change the target.", inputSchema: { type: "object" }, effect: "mutate" }],
       executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" })
-    }
+    })
   });
   services.add(instance);
   const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });

@@ -15,8 +15,14 @@ const OPENING_PREFIX = "initial.";
 const REPLAY_KEY = "replay";
 /** The callId of a step run again with a corrected argument, `rerun.<step>` (`../../llm/evidence-loop/rerun-request.ts`), and of the reset before it, `rerun.<step>.place` (`../../llm/node-tools/step-place.ts`). */
 const RERUN = /^rerun\.(\d+)(?:\.|$)/u;
+/** A step done again after a rerun's reset and before the rerun, `rerun.<step>[.<k>].place.<position>` (`../../llm/node-tools/step-place.ts`). */
+const DONE_AGAIN = /^rerun\.\d+(?:\.\d+)?\.place\.\d+$/u;
+/** A rerun's reset, before the step runs again. */
+const RERUN_RESET = "Putting the page back to where the step starts";
 
 const FROM_THE_START = "Trying the Flow from the start";
+/** A step a part run sends (`core.run_flow`, `../../llm/node-tools/run-flow-part.ts`): part of a test, never exploring. */
+const PART_OF_THE_FLOW = "Trying part of the Flow";
 /** The opening call when it goes to where the Flow starts rather than looks. */
 const ARRIVAL = "Opening where the Flow starts";
 /** The opening call when it looks at the page the Flow starts on. */
@@ -48,8 +54,8 @@ function unnamed(toolId: string, node: string | undefined): string {
  *   before the first decision, and a dry run or a rerun putting the page
  *   back), which a reader may hide, and `tool` for a step that is part of the
  *   work -- the opening call that goes to where the Flow starts among them;
- * - `phase` is `verifying` for a dry run's calls, `building` for the draft
- *   tool and `exploring` for everything else;
+ * - `phase` is `verifying` for a dry run's calls and the steps a part run
+ *   sends, `building` for the draft tool and `exploring` for everything else;
  * - `node` is the node id a run-node call names, for the raw record.
  */
 export function automationStudioActivityToolCall(call: { callId: string; toolId: string; value?: unknown }, words?: AutomationStudioActivityCallWords): {
@@ -89,14 +95,32 @@ export function automationStudioActivityToolCall(call: { callId: string; toolId:
     return { phase: "exploring", kind: "note", title: OPENING_LOOK, label: OPENING_LOOK, dryRun: false, ...named };
   }
   const rerun = RERUN.exec(call.callId)?.[1];
+  // A step run again under the model's own call id: one a part run sends, with
+  // the replay key a dry run's steps carry (t244). A rerun's steps carry the key
+  // too -- its reset and the earlier steps it does again first (t193) -- and are
+  // answered below.
+  if (!rerun && (value[REPLAY_KEY] === "step" || value[REPLAY_KEY] === "verify")) {
+    const title = action ?? unnamed(call.toolId, node);
+    return { phase: "verifying", kind: "tool", title, label: `${PART_OF_THE_FLOW}: ${lowerFirst(title)}`, dryRun: true, ...named };
+  }
+  // A rerun's words name no step number: the person never sees the draft's
+  // numbering, and "Trying step 12 again" on the page's status overlay told
+  // them nothing (t195, `run-murdouox-c5294247`, UI review).
   if (value[REPLAY_KEY] === "reset") {
     // A rerun puts the page back where its step starts before running it
     // again: bookkeeping, like a dry run's reset. Its row read "Action · the
     // page" (t193, `run-muqiojz4-04a7a8fc`).
-    const title = rerun ? `Putting the page back to where step ${rerun} starts` : "Putting the page back to where the step starts";
-    return { phase: "exploring", kind: "note", title, label: title, dryRun: false };
+    return { phase: "exploring", kind: "note", title: RERUN_RESET, label: RERUN_RESET, dryRun: false };
   }
   const title = action ?? unnamed(call.toolId, node);
-  const label = rerun ? `Trying step ${rerun} again: ${lowerFirst(title)}` : title;
+  if (rerun && DONE_AGAIN.test(call.callId)) {
+    // The steps before a rerun on its page, done again so the rerun finds what
+    // they built there; a step whose effect lasts is only checked.
+    const label = value[REPLAY_KEY] === "verify"
+      ? `Checking an earlier step is still done: ${lowerFirst(title)}`
+      : `Doing an earlier step again first: ${lowerFirst(title)}`;
+    return { phase: "exploring", kind: "tool", title, label, dryRun: false, ...named };
+  }
+  const label = rerun ? `Trying again: ${lowerFirst(title)}` : title;
   return { phase: "exploring", kind: "tool", title, label, dryRun: false, ...named };
 }

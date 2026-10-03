@@ -6,8 +6,9 @@
  * `maxTokensPerRun: 12000`, which held an unattended recovery to 12,000 tokens
  * and refused a whole page's diagnosis outright. The user's order that day was
  * to remove every limit on what the model is passed: the model's own context
- * window is the only bound on a request, and the $0.25 per-build ceiling the
- * bound on spending. So the default carries no token cap, and a stored Flow that
+ * window is the only bound on a request, and the run cost ceiling (then $0.25;
+ * now `AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 by default) the bound
+ * on spending. So the default carries no token cap, and a stored Flow that
  * still holds exactly 12,000 has it cleared where it is read
  * (`runtime/service/flow-settings/tokens-per-run-default-migration.ts`).
  *

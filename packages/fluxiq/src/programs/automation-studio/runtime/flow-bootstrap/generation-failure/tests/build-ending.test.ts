@@ -56,6 +56,21 @@ describe("the ending of a build that could not finish", () => {
     expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: unbounded })).toBeNull();
   });
 
+  // Live run muqk713g: each round's stop and the no-route case read back whole, in closed words only.
+  it("reads back each round's stop and the no-route case, and refuses any word outside them", () => {
+    const tried = { ...NOT_DOABLE.tried, stops: [{ round: 0, stopped: "iterations" as const }, { round: 1, stopped: "repeat_without_progress" as const }], noRoute: { kind: "repeated_unchanged" as const } };
+    const { diagnostic } = flowBootstrapBuildEndingFailure({ ...NOT_DOABLE, tried }, PROGRESS, ACCOUNTING);
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(diagnostic)?.ending?.tried).toEqual(tried);
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: { ...NOT_DOABLE, tried: { ...tried, stops: [{ round: 0, stopped: "gave up because the page said so" }] } } })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: { ...NOT_DOABLE, tried: { ...tried, stops: [{ round: 0, stopped: "iterations", why: "x" }] } } })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: { ...NOT_DOABLE, tried: { ...tried, noRoute: { kind: "no_progress", before: {} } } } })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...diagnostic, ending: { ...NOT_DOABLE, tried: { ...tried, stops: Array.from({ length: 7 }, (_, round) => ({ round, stopped: "iterations" })) } } })).toBeNull();
+    // A budget ending has no no-route case: only "not doable" is reached by one.
+    const budget = flowBootstrapBuildEndingFailure({ ...BUDGET, tried: { ...BUDGET.tried, stops: [{ round: 0, stopped: "budget" }] } }, PROGRESS, ACCOUNTING).diagnostic;
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic(budget)).toEqual(budget);
+    expect(parseAutomationStudioFlowBootstrapFailureDiagnostic({ ...budget, ending: { ...BUDGET, tried: { ...BUDGET.tried, noRoute: { kind: "no_progress" } } } })).toBeNull();
+  });
+
   it("cannot be written by a phase failure, which has no message to give", () => {
     for (const code of ["flow_bootstrap.not_doable", "flow_bootstrap.evidence_budget_exhausted"] as const) {
       const { diagnostic } = flowBootstrapPhaseFailure("provider_output_validation", ACCOUNTING, code);

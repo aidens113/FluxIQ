@@ -45,6 +45,8 @@
 // as `redeem.ts` is about `loop_verification`: neither takes the kinds as an
 // argument, so no settings field and no caller can widen either.
 
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../llm/flow-execution-limits/index.ts";
+
 /** The one task kind a standing check authorization can ever be redeemed for. */
 export const AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND = "loop_verification" as const;
 
@@ -68,7 +70,8 @@ export type AutomationStudioUnattendedRepairClause = {
    * and "a repair may spend up to this" is what a person can reason about;
    * `resolveAutomationStudioRecoveryRunBudget` divides it into per-call shares
    * as it does for every other recovery. It bounds the run *on top of* the
-   * policy's own $0.25 ceiling, never above it.
+   * run cost ceiling (`AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 by
+   * default), never above it.
    */
   maxCostUsdPerRun: number;
 };
@@ -138,7 +141,8 @@ export type AutomationStudioResultCheckRedemption =
  * 2026-09-21), so the default total covers well over six hundred checks -- more
  * than the default schedule reaches in a Flow's first several thousand runs --
  * while still being a number a person can reason about. The per-call ceiling is
- * far above the measured call and far below a recovery's own $0.25, so a
+ * far above the measured call and below a recovery's own ceiling (the run cost
+ * ceiling, $0.10 by default), so a
  * verification whose packet grew unexpectedly is refused rather than billed.
  */
 export const AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS = Object.freeze({
@@ -147,12 +151,16 @@ export const AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS = Object.free
   ttlMs: 90 * 24 * 60 * 60 * 1000,
   /**
    * What one unattended repair may spend when the person turning repair on
-   * names no number. $0.25 is Core's own ceiling for a recovery nobody asked
-   * the model into (`run-budget.ts`), so this default authorizes the repair such
-   * a run would have made and nothing wider. Note it is **not** a default
-   * for `enabled`: repair stays off until somebody turns it on.
+   * names no number: Core's own ceiling for any recovery,
+   * `AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD` ($0.10 unless
+   * FLUXIQ_LLM_RUN_COST_CEILING_USD says otherwise;
+   * `../recovery/annotation/run-budget.ts`), so this default authorizes the
+   * repair such a run would have made and nothing wider. It follows the
+   * constant rather than restating it: it was a literal $0.25 that outlived
+   * the ceiling it claimed to equal. Note it is **not** a default for
+   * `enabled`: repair stays off until somebody turns it on.
    */
-  repairMaxCostUsdPerRun: 0.25
+  repairMaxCostUsdPerRun: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD
 });
 
 /** Why a standing authorization was not redeemed. One code per reason, so a reader can act on it. */

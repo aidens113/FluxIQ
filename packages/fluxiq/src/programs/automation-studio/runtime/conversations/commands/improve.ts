@@ -46,7 +46,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
     progress.landed("saved what should change as an instruction on the Flow");
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "extend" });
-    if (!built.ok) return progress.failed(built.cause);
+    if (!built.ok) return progress.failed(built.cause, { ending: built.ending });
     progress.carry({ adaptationId: built.adaptationId });
     return {
       ...progress.succeeded("Worked out the change on the website. It is waiting for you to say whether to apply it."),

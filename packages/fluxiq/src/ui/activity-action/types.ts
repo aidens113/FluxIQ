@@ -14,6 +14,12 @@ export type ActivityActionKind =
   | "permission"
   | "draft"
   | "test"
+  /**
+   * A check that a run's result answers the request. It runs nothing, so it is
+   * no test run: a real run's result check read "Test run · Working on it"
+   * (t193, `run-muqiojz4-04a7a8fc`).
+   */
+  | "result_check"
   | "repair"
   /**
    * The Flow's own control steps, which act on the Flow's paths and never on

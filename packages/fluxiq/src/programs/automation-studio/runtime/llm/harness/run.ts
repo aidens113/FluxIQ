@@ -136,7 +136,7 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       maxOutputTokens: request.tokenLimits.maxOutputTokens
       // The request's own worst case, under its ceiling: a small call is not
       // held at the price of a full window, which at the window profile is
-      // the whole $0.25 purse and refused every call after the first.
+      // the whole run purse (then $0.25) and refused every call after the first.
       , maxEstimatedCostUsd: reservedCostUsd(input.provider, estimatedInputTokens, request.tokenLimits.maxOutputTokens, request.maxEstimatedCostUsd)
       , ...(input.runBudgetAllowance ? { allowance: input.runBudgetAllowance } : {})
       // What the call is, for its own line on the run's receipt.

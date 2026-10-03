@@ -594,7 +594,14 @@ built at all cannot run. Checks 6 and 7 are information, not refusals (user,
 2026-10-01: no restriction on what the model does beyond the permission
 gates): what they find travels on the accepted verdict as `notes`, and reaches
 the judge of the build's test as `buildTest.notes`
-(`runtime/result-verification/build-test/`). The judge's verdict on what the
+(`runtime/result-verification/build-test/`). A replayed list read's observation
+also carries `readRows`: the labels of the rows it returned and, per condition,
+the rows that condition alone left out, screened by the same function as the
+runtime judge's `leftOutOnlyByThis` (`build-test/read-rows.ts`), so the judge
+can see an asked row was dropped (live run `run-muqk713g`, cause C3). A judge
+reply that leaves a diagnosis text empty (`changed: ""` beside a yes) has that
+field read as omitted, not refused (`runtime/llm/harness/provider-result.ts`,
+cause C2). The judge's verdict on what the
 test actually did decides, and a wrong result is repaired with its reasons. The
 instructed-act check that follows is information the same way, except
 `act_consequence_undeclared`, which is what makes a delete, a payment or a send
@@ -854,8 +861,10 @@ round opens only when both hold:
   by what the test and the judge report. That means more acts or choices with a
   step, or more of them proven by the test; a test that now runs clean, or fails
   at fewer steps; with no judge, more steps that worked; a round that finished
-  and was judged where the one before stopped short; carried steps now judged;
-  or a judge finding no longer reported. It also counts what the judged test
+  and was judged where the one before stopped short; a Flow judged where the
+  one before was not judged either way (`judged_after_unjudged`: the judge was
+  unsure, did not run, said yes about another version of the Flow or about no
+  test, or carried steps never ran); or a judge finding no longer reported. It also counts what the judged test
   stored: the build-test judge returns its summary's stored, refused and
   missing-required row counts on a `no`. Progress there means rows stored where
   none were, or fewer refused or incomplete rows while no fewer are stored. A
@@ -874,6 +883,13 @@ record's reader is bounded by it. Every round draws on the Flow creation's one p
 shares the build's time/token budget and declared call count; no round has a
 cost share of its own, and the per-round decision backstop starts afresh.
 A permission or person-needed question takes precedence over another round.
+A build that ends without a Flow records why each round stopped and, for "not
+doable", which case left no route, as closed words on its ending's `tried`
+(`stops: [{round, stopped}]`, `noRoute: {kind}`, `unfinished-build/tried.ts`);
+a re-author attempt keeps that ending (`service/runtime-adaptation/reauthor-build.ts`),
+so a debug can tell which bound ended which round. A rerun of a draft step says
+where it ran (`rerunPlace`: put back to its start page, or in place and why,
+`runtime/llm/node-tools/step-place.ts`).
 
 The three explicit endings carry `diagnostic.ending.message`, the outstanding
 acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).
@@ -910,7 +926,8 @@ steps that had applied an effect, the iteration an undo returned the draft to
 and the step it reran; each completion with the draft revision it was checked
 against, its issue codes, the closed codes of the check's feedback and the
 steps the dry run refused (or `clean`, `reused_clean` when the gate answered
-from an earlier clean replay of the same draft, or `not_run`); each unusable
+from an earlier clean replay of the same Flow, by its Flow signature, or
+`not_run`); each unusable
 reply; and,
 beside the rows, each no-progress redirect. Rows hold only closed codes, ids
 and integers, never page content or model prose. Identical decisions are
@@ -1051,7 +1068,9 @@ instruction, every decision, the test and the judge are all held against it.
   the refused call's worst case, and what the Flow has left.
 - **The judge has no cap of its own.** Each judge call is held at its true
   worst case rather than at a share of what is left, and a judge call the
-  purse refuses gives a `not_judged` verdict.
+  purse refuses gives a `not_judged` verdict, which finishes nothing: the
+  round goes to repair, and a purse that cannot fund that repair ends the build
+  at its budget with the Flow kept.
 
 ## Generation readiness capability
 
@@ -1213,14 +1232,22 @@ proposed (dropped, exploratory or failed), which is not replayed. A step
 reported before is marked `again: true` on the next refusal, which changes no
 verdict. Until 2026-09-30 an `unreproducible` step stopped blocking once it had
 been reported, and live runs 18, 21 and 33 were accepted or passed a dry run
-that way with a step that did not replay. A clean verdict is remembered by the
-draft's replay signature (the proposed steps, in order, with what each runs
-with), so a completion over the same unchanged draft is not replayed again; its
-history row says `reused_clean`. A refused draft completed again unchanged is
-replayed at most twice; after that it is judged again from those replays'
-outcomes, which refuses it again unless its failing steps have since been
-marked as not always run (routing is not part of the signature), and a pass
-that way also records `reused_clean`.
+that way with a step that did not replay. Clean and refused verdicts are
+remembered by the draft's Flow signature
+(`runtime/flow-draft/flow-signature.ts`: per proposed step, in order, its
+action, the argument it runs with, its settings, its routing, whether it
+answers an interruption, and its acts), so a completion over the same unchanged
+Flow is not replayed again; its history row says `reused_clean`. A refused Flow
+completed again unchanged is replayed at most twice; after that it is refused
+again from what those replays found, never passed from them. Routing and
+settings are in the signature because an edit to either is an edit to the Flow:
+a step marked optional or `only_if` since the refusal is a changed Flow, and
+the changed Flow is run (user, 2026-10-02). A refused replay that itself proved
+a step only sometimes there and made it optional passes on the Flow signature
+taken after that change, because that replay is a run of that Flow. The
+replay signature (`automationStudioFlowDraftReplaySignature`, routing left out)
+remains only for progress and no-progress: whether the model is re-sending the
+same steps, and the `seedSignature` an extend build's first round starts from.
 
 A dry run never clears site data or logs the person out, never repeats a
 lasting effect, and checks a changing step rather than running it again
@@ -1245,6 +1272,106 @@ declare none (an open, a filter, a navigation) are run again as before, since
 the steps after them stand on them. The build trace prints a dry run's own call
 ids (`dryrun.<attempt>.<step|reset>`), so a completion that replayed can be told
 from one that reused a verdict.
+
+#### Running part of the Flow
+
+The user's rule (2026-10-02): the build and repair loops can run the Flow from
+a chosen step to test part of it, but the Flow must also run whole and be
+judged a success at least once. The first half is `core.run_flow`
+(`runtime/llm/node-tools/run-flow.ts`, `run-flow-part.ts`). Its input is
+`{from, to?}`, step numbers as the draft shows them; it runs the proposed steps
+from `from` to `to` (the last proposed step when `to` is absent), in order, **on
+the target as it stands**: nothing is reset first, which is the point -- a
+repaired step and the ones after it are tried without running everything
+before them. Each step is sent with the very call the dry run would send
+(`replay: "step"`, or `replay: "verify"` for a step that declares a lasting
+consequence, D1) through the loop's own executor, so the permission gate sees
+it as it sees every call. Unlike the dry run there is no second try on a step's
+own page.
+
+A step the Flow does not always run that does not pass is reported and the run
+goes on, as the Flow would; any other step that does not pass stops the run
+there and leaves the target where it broke. A step with nothing to run it with
+-- one carried from an earlier Flow that never ran in this build -- stops it as
+`not_run_in_this_build`: it declares no consequence, and running it would pass
+a permission gate that reads an absent declaration as "no consequence". The
+answer is `core.run_flow.ran` or `core.run_flow.stopped`, with each step's word
+(`replayed`, `verified`, `present`, `failed`, ...), `stoppedAt`, and the
+evidence of the last step that answered; a bad range is refused
+`run_flow.input_invalid`, `run_flow.nothing_in_flow` or
+`run_flow.not_a_flow_step`. It costs one decision and counts as one tool call;
+the steps it sends make no provider call and are not counted, as the dry run's
+are not. The chat shows "Running part of the Flow" (or "the rest of the Flow",
+"one step of the Flow", "the Flow from its start": never a step number, which
+the person never sees) and each step as "Trying part of the Flow: ..." in the
+`verifying` phase
+(`runtime/activity/wording/core-tool.ts`, `tool-call.ts`).
+
+**It is never the Flow's test.** It records no draft step, writes no
+`step.replayed`, and leaves the dry-run gate's verdicts alone; its answer tells
+the model so. **Where it is offered:** the evidence loop adds it after the
+caller's tools only where the loop drafts and its dry run is on, only while the
+draft holds a proposed step that can run again (one with `ranWith` and
+`replay`), only where the caller's own tools can act (a tool with
+`effect: "mutate"` or a per-call effect), never in place of a caller tool with
+the same id, and never past the 32-tool limit. That is the build, each of its
+repair rounds, and a re-author (an extend build). The recovery ladder's
+exploration has no draft and nothing that acts, so it is not offered there.
+
+#### A whole run judged success, on the Flow as it stands
+
+The second half of the rule: a build finishes only after a run of the whole
+Flow from its start was judged to do what was asked, on the Flow as it finally
+stands; any edit after that run needs another. Three pieces hold it:
+
+- **A test says which Flow it ran.** The report the dry-run gate hands
+  `observeTest` carries the Flow signature of the draft it ran, and the build's
+  judge (`runtime/service/flow-bootstrap-commands/build-judge.ts`) stamps that
+  signature on its verdict as `flowSignature` -- this round's observed test,
+  never an earlier round's, and none when no test was observed.
+- **Only a yes about this Flow finishes.** The phases coordinator
+  (`runtime/flow-bootstrap/unfinished-build/phases.ts`) ends a round finished
+  only on a `yes` whose `flowSignature` equals the Flow signature of the steps
+  the loop accepted. `no`, `unknown`, `not_judged`, and a `yes` about another
+  version of the Flow or about no test (treated as `not_judged` in Core's
+  words) are a round `judged_wrong`, repaired live with the judge's account
+  under the same funding, progress and round bounds. There is no "finished
+  unverified" outcome and no "Flow not verified" note. A phases caller given no
+  judge still finishes unjudged; the service always passes one for an
+  evidence-guided build. The one-shot build runs no test and no judge and
+  produces a proposal for review.
+- **A Flow the test cannot run whole is refused, not passed untested.** A
+  completion is refused `llm_evidence_loop.full_run_required`
+  (`runtime/flow-draft/full-run-required.ts`, `dry-run-gate.ts`), naming each
+  step with its word, before any replay and before a judge is paid:
+  `not_run_in_this_build` (carried from an earlier Flow, always refused);
+  and, where the loop sets `fullRunRequired` (the build's every round,
+  `runtime/llm/loop-configuration.ts`, set by `runtime/service.ts`),
+  `cannot_run_again` (its run left nothing to run it again with, or the first
+  step has nothing to put the target back where the Flow starts), a Flow none
+  of whose steps ran in this build (refused naming no step), and
+  `not_a_library_step` where the loop offers `core.run_node` (a step taken
+  through another tool would send the Flow to the plan the reply wrote out,
+  which never ran). The way through is to rerun each step in the Flow's order
+  (`amend_draft` rerun, declaring its consequences) or run its library node in
+  its place. A loop that authors no Flow -- the recovery ladder's exploration --
+  does not set `fullRunRequired` and still passes what it cannot run.
+
+**Re-authored and extended Flows.** A re-author or an improve is an extend
+build seeded from the stored Flow (`runtime/llm/node-tools/draft-from-flow.ts`):
+its carried steps `f<n>` have no `ranWith`, no `replay` and no consequence
+declaration, so each must be rerun live before the Flow can be tested whole.
+The rerun is a new step; it records `standsFor`, the id of the step whose place
+it took (`runtime/flow-draft/step.ts`,
+`runtime/llm/evidence-loop/rerun-replacement.ts`), so the written Flow keeps
+that node's id. The re-seed carries a node's `metadata.routeSignatures` onto
+its step as `routeSignatures`, and a rerun that recorded none of its own takes
+them, so a re-authored Flow keeps state routing for a node whose fresh
+signatures could not be taken. Because the re-author's build finishes only on a
+judged success, its approve and apply (`runtime/recovery/refuted-result/reauthor.ts`)
+happen only after the re-authored Flow, carried steps included, ran whole and
+was judged. Until 2026-10-02 carried steps were never run, the judge answered
+`unknown`, and the Flow was applied unverified.
 
 Core's own notes are superseded rather than accumulated. Before a
 `core.request_check`, `core.no_progress`, `core.decision_check`,
