@@ -22,7 +22,7 @@ import { compactJsonObject } from "../compact-json.ts";
 import { booleanSetting } from "../flow-settings/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "./contracts.ts";
-import { AUTOMATION_STUDIO_JUDGED_PROMOTION_APPLY_AT } from "./judged-promotion.ts";
+import { AUTOMATION_STUDIO_JUDGED_PROMOTION_APPLY_AT } from "../../durable-behavior/index.ts";
 
 export type AutomationStudioRuntimePromotionPorts = AutomationStudioPriorManualReviewPorts & {
   saveFlowAdaptation(adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioFlowAdaptation>;

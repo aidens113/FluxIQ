@@ -81,7 +81,15 @@ afterEach(async () => {
   await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
 });
 
-async function harness(options: { verdict?: "yes" | "no"; authorized?: boolean } = {}) {
+async function harness(options: {
+  verdict?: "yes" | "no";
+  /** The judge's answer call by call, then `verdict`. */
+  verdicts?: Array<"yes" | "no">;
+  authorized?: boolean;
+  /** The Flow is the drift step alone, so the trial that repairs it runs the Flow to its end. */
+  driftOnly?: boolean;
+} = {}) {
+  let judgeCalls = 0;
   /** The drift step's retry setting in the stored Flow, read at each moment the judge was asked. */
   const storedAtJudgement: unknown[] = [];
   let readStoredDrift: (() => Promise<unknown>) | undefined;
@@ -108,7 +116,9 @@ async function harness(options: { verdict?: "yes" | "no"; authorized?: boolean }
     metadata: { provider: "mock", model: "judge" },
     runTask: async () => {
       storedAtJudgement.push(await readStoredDrift?.());
-      return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: options.verdict ?? "yes" } }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.0015 } };
+      const answersRequest = options.verdicts?.[judgeCalls] ?? options.verdict ?? "yes";
+      judgeCalls += 1;
+      return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest } }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.0015 } };
     }
   };
   const service = new AutomationStudioService({
@@ -154,13 +164,13 @@ async function harness(options: { verdict?: "yes" | "no"; authorized?: boolean }
     projectId: project.id,
     flow: {
       ...blank,
-      nodes: [
+      nodes: options.driftOnly ? [{ id: "drift", definitionId: DRIFT.id, parameterValues: { expectedOutputs: { done: true } } }] : [
         { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
         { id: "extract", definitionId: EXTRACT.id, parameterValues: { recordOutput: RECORD_OUTPUT } },
         { id: "drift", definitionId: DRIFT.id, parameterValues: { expectedOutputs: { done: true } } },
         { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
       ],
-      edges: [
+      edges: options.driftOnly ? [] : [
         { id: "start.extract", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "extract", targetPortId: "in" },
         { id: "extract.drift", sourceNodeId: "extract", sourcePortId: "success", targetNodeId: "drift", targetPortId: "in" },
         { id: "drift.end", sourceNodeId: "drift", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
@@ -173,7 +183,7 @@ async function harness(options: { verdict?: "yes" | "no"; authorized?: boolean }
   const run = await service.runRuntimeSession({ projectId: project.id, flowId: created.flowId });
   const detail = await service.getFlowRunDetail(project.id, run.runId);
   const adaptation = detail?.adaptationIds[0] ? await service.getFlowAdaptation(project.id, created.flowId, detail.adaptationIds[0]) : null;
-  return { service, run, detail, adaptation, storedAtJudgement, storedDrift: await readStoredDrift() };
+  return { service, run, detail, adaptation, storedAtJudgement, storedDrift: await readStoredDrift(), judgeCalls };
 }
 
 describe("a runtime patch and the whole run that judges it", () => {
@@ -211,9 +221,10 @@ describe("a runtime patch and the whole run that judges it", () => {
     for (const receipt of found.detail?.metadata?.runtimePatchAttempts as Array<Record<string, unknown>>) {
       expect(receipt.approvalDecision).toMatchObject({ applied: false, notAppliedReason: expect.any(String) });
     }
+    // Each later patch had its own whole-Flow re-run, was refuted too, and was not kept.
     for (const laterId of found.detail?.adaptationIds.slice(1) ?? []) {
       const later = await found.service.getFlowAdaptation(found.run.projectId!, found.run.flowId, laterId);
-      expect(later?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "not_rerun" });
+      expect(later?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: expect.any(String) });
     }
     expect(found.detail?.metadata?.adaptiveMetrics).toMatchObject({ durableBehaviorChanged: false, adaptationApplyCount: 0 });
   });
@@ -226,5 +237,50 @@ describe("a runtime patch and the whole run that judges it", () => {
     expect(found.storedDrift).toBeUndefined();
     expect(found.adaptation?.status).toBe("validated");
     expect(found.adaptation?.metadata?.approvalDecision).toMatchObject({ autoApply: true, applied: false, notAppliedReason: "not_judged" });
+  });
+  // t249 follow-up: a trial that ran the Flow to its end began at the Flow's
+  // start and finished on the candidate, so it is the whole run. Its pass is
+  // adopted as the resumed pass and judged; nothing runs again.
+  it("judges a trial that ran the Flow to its end as the whole run, and keeps the patch when it answers", { timeout: 180_000 }, async () => {
+    const found = await harness({ driftOnly: true });
+
+    expect(found.run.status).toBe("succeeded");
+    expect(found.run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
+    expect(found.storedAtJudgement).toEqual([undefined]);
+    expect(found.detail?.metadata?.adaptiveRetry).toMatchObject({ attempted: true, status: "succeeded", trialCompleted: true, candidateAdaptationIds: [found.adaptation?.adaptationId] });
+    // The run's own trace holds the failed first attempt and the trial's pass, under distinct ids.
+    const ids = found.run.trace?.attempts.map((attempt) => attempt.attemptId) ?? [];
+    expect(found.run.trace?.attempts.map((attempt) => [attempt.nodeId, attempt.status])).toEqual([["drift", "failed"], ["drift", "succeeded"]]);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(found.storedDrift).toBe(2);
+    expect(found.adaptation).toMatchObject({ status: "applied", metadata: { approvalDecision: { applied: true, judgedRunId: found.run.runId } } });
+    expect(found.adaptation?.metadata?.approvalDecision).not.toHaveProperty("notAppliedReason");
+    expect(found.detail?.metadata?.runtimePatchAttempts).toEqual([expect.not.objectContaining({ completedTrace: expect.anything() })]);
+  });
+
+  it("leaves a trial that ran the Flow to its end unapplied when its run is refuted, never as not re-run", { timeout: 180_000 }, async () => {
+    const found = await harness({ driftOnly: true, verdict: "no" });
+
+    expect(found.storedDrift).toBeUndefined();
+    expect(found.adaptation?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "refuted" });
+  });
+
+  // t249 follow-up: the patch ladder after a refuted result writes a patch with
+  // no failed step to resume from. It gets the whole-Flow re-run from the start
+  // a re-authored Flow gets, on the unapplied candidate, and is judged.
+  it("re-runs a patch the refuted result's repair wrote from the Flow's start, and keeps it when that run answers", { timeout: 180_000 }, async () => {
+    const found = await harness({ verdicts: ["no", "no", "yes"] });
+
+    expect(found.run.status).toBe("succeeded");
+    expect(found.run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
+    expect(found.judgeCalls).toBe(3);
+    // The first patch's own run was refuted: not kept.
+    expect(found.adaptation?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "refuted" });
+    const laterId = found.detail?.adaptationIds[1];
+    expect(laterId).toBeDefined();
+    expect(found.detail?.metadata?.repairedRerun).toMatchObject({ attempted: true, status: "succeeded", candidateAdaptationIds: [laterId] });
+    const later = await found.service.getFlowAdaptation(found.run.projectId!, found.run.flowId, laterId!);
+    expect(later).toMatchObject({ status: "applied", metadata: { approvalDecision: { applied: true, judgedRunId: found.run.runId } } });
+    expect(found.storedDrift).toBe(2);
   });
 });

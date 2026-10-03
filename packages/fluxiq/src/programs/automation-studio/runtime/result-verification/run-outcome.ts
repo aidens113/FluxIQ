@@ -67,7 +67,7 @@ import type { AutomationStudioGraphExecutionTrace } from "../executor/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 
 import {
-  automationStudioRefutedResultFlowWasReauthored,
+  automationStudioRefutedResultRerunsFlow,
   automationStudioResultRepairSettled,
   automationStudioStepFailureTarget,
   repairAutomationStudioRefutedRunResult,
@@ -336,7 +336,8 @@ export async function verifyAutomationStudioRuntimeSessionResult(
     // a row that changed nothing in the answer, is recorded and stops there
     // (`recovery/refuted-result/history.ts`).
     if (repaired && !repaired.stopped) {
-      const reauthored = automationStudioRefutedResultFlowWasReauthored(repaired.detail);
+      // A re-authored Flow, or a ladder patch held for a judged whole run, is re-run from the start (t249).
+      const reauthored = automationStudioRefutedResultRerunsFlow(repaired.detail);
       const rerun = reauthored && input.ports.rerunRepairedFlow
         ? await input.ports.rerunRepairedFlow({ detail: repaired.detail, ...(input.subflowId ? { subflowId: input.subflowId } : {}) })
         : undefined;

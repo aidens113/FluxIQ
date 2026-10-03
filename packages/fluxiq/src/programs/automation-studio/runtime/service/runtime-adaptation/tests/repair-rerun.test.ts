@@ -90,11 +90,14 @@ async function rerun(options: {
   sessionMetadata?: NonNullable<AutomationStudioRuntimeSession["metadata"]>;
   adaptations?: AutomationStudioFlowAdaptation[];
   from?: "start" | "resume";
+  /** A re-run from the start follows a re-authored Flow unless told otherwise (t249: else it re-runs an untried ladder patch). */
+  reauthored?: boolean;
 } = {}) {
   const context = await adaptationContext();
   const first = await refutedSession();
   const session = options.sessionMetadata ? { ...first, metadata: { ...(first.metadata ?? {}), ...options.sessionMetadata } } : first;
   const firstDetail = runtimeSessionToFlowRunDetail(session, PROJECT_ID);
+  const reauthorMarker = (options.from ?? "start") === "start" && options.reauthored !== false ? { resultReauthor: { routed: true, applied: true, adaptationId: "adaptation.bootstrap.1", attempt: 1, attempts: [] } } : {};
   const written: AutomationStudioRuntimeSession[] = [];
   const saved: AutomationStudioFlowRunDetail[] = [];
   const savedAdaptations: AutomationStudioFlowAdaptation[] = [];
@@ -116,7 +119,7 @@ async function rerun(options: {
     },
     projectId: PROJECT_ID,
     session,
-    detail: options.detailMetadata ? { ...firstDetail, metadata: { ...(firstDetail.metadata ?? {}), ...options.detailMetadata } } : firstDetail,
+    detail: { ...firstDetail, metadata: { ...(firstDetail.metadata ?? {}), ...reauthorMarker, ...(options.detailMetadata ?? {}) } },
     graphOptions: { effectDispatcher: options.dispatcher ?? checkPassed, delay: async () => undefined, recoveryBudget: recoveryBudgetFromRuntimeAdaptationContext(context) },
     adaptationContext: context,
     from: options.from ?? "start"
@@ -252,10 +255,13 @@ describe("a re-run and a runtime patch still waiting for its judged run", () => 
     expect(written).toEqual([]);
   });
 
-  it("settles a pending patch unapplied before a re-run from the start, with its run's reason", async () => {
+  // A re-authored Flow is run as stored: a pending patch was written for the graph before.
+  const reauthoredMarker = { resultReauthor: { routed: true, applied: true, adaptationId: "adaptation.bootstrap.1", attempt: 1, attempts: [] } };
+
+  it("settles a pending patch unapplied before a re-authored Flow's re-run from the start, with its run's reason", async () => {
     const { result, saved, savedAdaptations, applied } = await rerun({
       adaptations: [adaptation()],
-      detailMetadata: { runtimePatchAttempts: [receipt], adaptiveRetry: { attempted: true, status: "succeeded", candidateAdaptationIds: [ADAPTATION_ID] } },
+      detailMetadata: { ...reauthoredMarker, runtimePatchAttempts: [receipt], adaptiveRetry: { attempted: true, status: "succeeded", candidateAdaptationIds: [ADAPTATION_ID] } },
       sessionMetadata: { resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer" } }
     });
 
@@ -269,9 +275,76 @@ describe("a re-run and a runtime patch still waiting for its judged run", () => 
     expect(kept?.[0]?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "refuted" });
   });
 
-  it("settles a patch no resumed pass ran as never re-run", async () => {
-    const { savedAdaptations } = await rerun({ adaptations: [adaptation()], detailMetadata: { runtimePatchAttempts: [receipt] } });
+  it("settles a patch no pass ran as never re-run when the Flow was re-authored", async () => {
+    const { savedAdaptations } = await rerun({ adaptations: [adaptation()], detailMetadata: { ...reauthoredMarker, runtimePatchAttempts: [receipt] } });
 
     expect(savedAdaptations[0]?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "not_rerun" });
+  });
+
+  // t249 follow-up: the patch ladder after a refuted result writes a patch with
+  // no failed step to resume from. The whole Flow is run again from its start,
+  // on the unapplied candidate, so the patch can be judged -- and kept.
+  it("runs a patch no pass has run yet as the candidate of a whole-Flow re-run from the start", async () => {
+    const { result, saved, savedAdaptations, applied, stored } = await rerun({ reauthored: false, dispatcher: readNeedsRepair, adaptations: [adaptation()], detailMetadata: { runtimePatchAttempts: [receipt] } });
+
+    expect(result?.session?.status).toBe("succeeded");
+    expect(result?.session?.trace?.attempts.slice(4).map((attempt) => attempt.nodeId)).toEqual(["search", "check", "join", "read"]);
+    expect(result?.flow?.nodes.find((node) => node.id === "read")?.parameterValues).toMatchObject({ parameters: { target: { selector: "#results-v2" } } });
+    expect(stored.nodes.find((node) => node.id === "read")?.parameterValues).toEqual({ outputId: "activate-element", parameters: { elementId: "results" } });
+    expect(savedAdaptations).toEqual([]);
+    expect(applied).toEqual([]);
+    expect(saved.at(-1)?.metadata?.repairedRerun).toMatchObject({ attempted: true, status: "succeeded", candidateAdaptationIds: [ADAPTATION_ID] });
+  });
+
+  it("settles the earlier pass's patch on that pass's verdict before running the new one", async () => {
+    const earlier = { ...adaptation(), adaptationId: "adaptation.earlier" };
+    const { result, savedAdaptations } = await rerun({
+      reauthored: false,
+      dispatcher: readNeedsRepair,
+      adaptations: [earlier, adaptation()],
+      detailMetadata: { runtimePatchAttempts: [{ ...receipt, adaptationId: "adaptation.earlier" }, receipt], adaptiveRetry: { attempted: true, status: "succeeded", candidateAdaptationIds: ["adaptation.earlier"] } },
+      sessionMetadata: { resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer" } }
+    });
+
+    expect(savedAdaptations.map((saved) => [saved.adaptationId, (saved.metadata?.approvalDecision as Record<string, unknown> | undefined)?.notAppliedReason])).toEqual([["adaptation.earlier", "refuted"]]);
+    expect(result?.session?.status).toBe("succeeded");
+  });
+
+  it("declines a re-run from the start that would change nothing", async () => {
+    const { result, written } = await rerun({ reauthored: false, adaptations: [], detailMetadata: {} });
+
+    expect(result).toEqual({ declinedCode: "repair_rerun.nothing_to_rerun" });
+    expect(written).toEqual([]);
+  });
+
+  // t249 follow-up: a trial that ran the Flow to its end began at the Flow's
+  // start and finished on the candidate. It is adopted as the resumed pass,
+  // and nothing runs again.
+  it("adopts a trial that ran the Flow to its end as the resumed pass, running nothing again", async () => {
+    const trialAttempt = { attemptId: "read.attempt.5", nodeId: "read", definitionId: "builtin.policy.action", startedAt: 3, finishedAt: 4, status: "succeeded", route: "success", inputs: {}, outputs: { ok: true }, effects: [] };
+    const completedTrace = { status: "succeeded", startedAt: 3, finishedAt: 4, attempts: [trialAttempt], values: { ok: true }, effects: [] };
+    const dispatched: string[] = [];
+    const { result, saved, written } = await rerun({
+      from: "resume",
+      dispatcher: (effect) => { dispatched.push(JSON.stringify(effect.payload ?? null)); return { status: "success", route: "success", outputs: { ok: true } }; },
+      adaptations: [adaptation()],
+      detailMetadata: { runtimePatchAttempts: [{ ...receipt, resumeFrom: { completed: true }, completedTrace }] }
+    });
+
+    expect(dispatched).toEqual([]);
+    expect(result?.session?.status).toBe("succeeded");
+    expect(result?.session?.trace?.attempts.map((attempt) => attempt.attemptId)).toEqual(["search.attempt.1", "check.attempt.2", "join.attempt.3", "read.attempt.4", "read.attempt.5"]);
+    expect(written.at(-1)?.status).toBe("succeeded");
+    const kept = saved.at(-1)?.metadata as Record<string, any> | undefined;
+    expect(kept?.adaptiveRetry).toMatchObject({ attempted: true, status: "succeeded", trialCompleted: true, candidateAdaptationIds: [ADAPTATION_ID] });
+    // The trial's pass now lives in the run's own trace, not on its receipt.
+    expect(kept?.runtimePatchAttempts?.[0]).not.toHaveProperty("completedTrace");
+  });
+
+  it("still declines a completed trial whose receipt carries no pass to adopt", async () => {
+    const { result, written } = await rerun({ from: "resume", adaptations: [adaptation()], detailMetadata: { runtimePatchAttempts: [{ ...receipt, resumeFrom: { completed: true } }] } });
+
+    expect(result).toEqual({ declinedCode: "resume_point_completed" });
+    expect(written).toEqual([]);
   });
 });

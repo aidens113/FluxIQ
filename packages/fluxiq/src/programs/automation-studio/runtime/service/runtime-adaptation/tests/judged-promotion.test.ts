@@ -53,8 +53,10 @@ describe("what a finished run comes to for a pending patch", () => {
     expect(automationStudioJudgedPromotionOutcome(session("cancelled"), true)).toEqual({ apply: false, reason: "run_cancelled" });
   });
 
-  it("leaves a patch waiting while its run has not finished", () => {
-    expect(automationStudioJudgedPromotionOutcome(session("waiting"), true)).toEqual({ waiting: true });
+  // t249 follow-up: a run parked on a person is settled, not left pending. No
+  // Core path continues a parked run on the candidate, so the settle is final.
+  it("settles a parked run's patch unapplied, and leaves one still running untouched", () => {
+    expect(automationStudioJudgedPromotionOutcome(session("waiting"), true)).toEqual({ apply: false, reason: "run_parked" });
     expect(automationStudioJudgedPromotionOutcome(session("running"), true)).toEqual({ waiting: true });
   });
 });
@@ -174,10 +176,39 @@ describe("settling a run's pending patches", () => {
     expect((settled.metadata?.runtimePatchAttempts as Array<Record<string, unknown>>)[0]?.approvalDecision).toEqual(decided);
   });
 
-  it("changes nothing while the run is still waiting on a person", async () => {
-    const { settled, stored } = await settle({ session: session("waiting"), ran: true });
+  it("settles the patch of a run parked on a person as unapplied, on the adaptation and the receipt", async () => {
+    const { settled, stored, applied } = await settle({ session: session("waiting"), ran: true });
+
+    expect(applied).toEqual([]);
+    expect(stored.get("a.1")?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "run_parked", judgedRunId: RUN_ID });
+    expect((settled.metadata?.runtimePatchAttempts as Array<Record<string, unknown>>)[0]?.approvalDecision).toMatchObject({ notAppliedReason: "run_parked" });
+  });
+
+  it("changes nothing while the run is still running", async () => {
+    const { settled, stored } = await settle({ session: session("running"), ran: true });
 
     expect(stored.get("a.1")?.metadata?.approvalDecision).toEqual(pending);
     expect((settled.metadata?.runtimePatchAttempts as Array<Record<string, unknown>>)[0]?.approvalDecision).toEqual(pending);
+  });
+
+  it("settles every pending patch of a run that threw as errored, whatever its session last said", async () => {
+    const stored = new Map([["a.1", adaptation("a.1")]]);
+    const settled = await settleAutomationStudioJudgedPromotions({
+      ports: {
+        getFlowAdaptation: async (_projectId, _flowId, id) => stored.get(id) ?? null,
+        saveFlowAdaptation: async (saved) => { stored.set(saved.adaptationId, saved); return saved; },
+        applyFlowAdaptation: async () => { throw new Error("not reached"); }
+      },
+      projectId: "project.judged",
+      flowId: "flow.judged",
+      session: session("running"),
+      detail: { adaptationIds: ["a.1"], metadata: { runtimePatchAttempts: [{ adaptationId: "a.1", approvalDecision: pending, completedTrace: { status: "succeeded", attempts: [] } }] } } as unknown as AutomationStudioFlowRunDetail,
+      reason: "run_errored"
+    });
+
+    expect(stored.get("a.1")?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "run_errored" });
+    const receipt = (settled.metadata?.runtimePatchAttempts as Array<Record<string, unknown>>)[0];
+    expect(receipt?.approvalDecision).toMatchObject({ notAppliedReason: "run_errored" });
+    expect(receipt).not.toHaveProperty("completedTrace");
   });
 });

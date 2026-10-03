@@ -22,6 +22,12 @@
 // Every assertion below is on a run nobody asked the model into, except the
 // last two, which pin a run a person asked for behaving as it did before any
 // of this.
+//
+// The service is imported first. Imported after `result-check-authorization/`
+// and `result-check-schedule/`, a module cycle on dev (seen at c49b3e7a, t249)
+// leaves `automationStudioLlmResolutionWithinFlowSettings` undefined when the
+// recovery calls it, and every test here fails on that, not on what it asserts.
+import { AutomationStudioService } from "../../../service.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -34,7 +40,6 @@ import type { AutomationStudioRuntimeSessionLlm } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES } from "../../../result-check-authorization/index.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../result-check-schedule/index.ts";
-import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 
 const RECORD_OUTPUT: JsonObject = {
@@ -320,9 +325,14 @@ describe("a repaired run's result, with nobody watching", () => {
     const found = await harness({ verdict: "no" });
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId });
 
-    // Two agreeing refusals are what refute (`agreement.ts`), so both calls are
-    // the standing authorization's.
-    expect(found.standingCalls).toEqual(["loop_verification", "loop_verification"]);
+    // Two agreeing refusals are what refute (`agreement.ts`), so the calls come
+    // in pairs, all the standing authorization's. Since t249 the patch the
+    // refuted result's own repair writes is re-run from the Flow's start and
+    // judged in its turn, rather than left unjudged; each pass is refuted here,
+    // and the repair's own bound and convergence stop end it.
+    expect(found.standingCalls.length).toBeGreaterThan(2);
+    expect(found.standingCalls.length % 2).toBe(0);
+    expect(found.standingCalls.every((call) => call === "loop_verification")).toBe(true);
     expect(run.metadata?.resultVerification).toMatchObject({ status: "refuted", performed: true, verdict: "does_not_answer", calls: 2 });
     expect(run.metadata?.resultCheck).toMatchObject({ checked: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRepair, status: "refuted" });
     // Every step of the retry succeeded and the run is failed anyway: a repair

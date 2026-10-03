@@ -7,46 +7,46 @@
 // (`../../live-patch.ts`). The promotion gate decides whether the patch may be
 // applied without a person (`./runtime-promotion.ts`); where it may, nothing is
 // applied yet -- the decision is recorded with `applyAt: "judged_whole_run"` and
-// `applied: false`. The run then resumes on the *unapplied candidate*: the
+// `applied: false`. The run then goes on on the *unapplied candidate*: the
 // stored Flow with every pending patch of this run written onto it in memory
-// (`automationStudioJudgedPromotionCandidate`, in `./repair-rerun.ts`). The
-// resumed run keeps the run's id, so the run that is judged went from the
-// Flow's start, through the patched step, to its end. Its result is judged, and
-// only then does the service settle the patch (`settleAutomationStudioRunJudgedPromotions`):
-// applied to the stored Flow when the run ended `succeeded` with a performed
-// verdict of `answers`, otherwise left unapplied with the reason on both the
-// adaptation and the run's own receipt.
+// (`automationStudioJudgedPromotionCandidate`, in `./repair-rerun.ts`).
 //
-// **Why the trialling run is the judged whole run, and not a re-run from the
-// start.** The trial and the resume continue one run, which began at the
-// Flow's start; the steps before the patched one are the same in the candidate
-// and the stored Flow, and the steps after it ran on the candidate. Running the
-// Flow again from its start after applying would repeat every lasting effect
-// the run already had (a charge, a submitted form), which is why the resume
-// exists at all (`../adaptations/adaptive-retry.ts`). The re-run from the start
-// that `./repair-rerun.ts` also performs follows a *re-authored* Flow, never a
-// runtime patch, and it settles any patch still pending first: that patch's own
-// run was refuted or never finished, and a re-authored graph is not the one it
-// was written for.
+// - **The resume.** It keeps the run's id and picks up at the trial's resume
+//   point, so the run that is judged went from the Flow's start, through the
+//   patched step, to its end.
+// - **A trial that ran the Flow to its end.** That run, too, began at the
+//   Flow's start and finished on the candidate: the trial's own pass is adopted
+//   as the resumed pass, with nothing run again (`./repair-rerun.ts`).
+// - **A patch the refuted result's repair wrote.** No step failed, so there is
+//   nowhere to resume: the Flow is run again from its start on the candidate,
+//   the same whole-Flow re-run a re-authored Flow takes.
 //
-// **Reasons a patch stays unapplied.** `not_rerun`: no resumed run ran it (the
-// resume was declined, or the patch came after the verdict). `run_cancelled`.
-// `run_failed`: the run that ran it did not finish. `refuted`: it finished and
-// its result was judged not to answer. `not_judged`: it finished and nothing
-// judged it. `apply_failed`: judged to answer, and the apply itself refused.
-// An unapplied adaptation keeps its trial evidence and stays reviewable; a
-// person can still apply it through review.
+// Each pass records the patches it ran (`candidateAdaptationIds`). The run's
+// result is judged, and only then does the service settle each pending patch
+// (`settleAutomationStudioRunJudgedPromotions`): applied to the stored Flow when
+// the run ended `succeeded` with a performed verdict of `answers` and a pass ran
+// the patch, otherwise left unapplied with the reason on both the adaptation and
+// the run's own receipt. A patch a pass ran is settled before the next pass
+// starts, so a later pass's verdict never stands for an earlier pass's patch.
+//
+// **Reasons a patch stays unapplied.** `not_rerun`: no pass ran it (the resume
+// was declined, or the Flow was re-authored before it ran). `run_cancelled`.
+// `run_failed`: the pass that ran it did not finish. `refuted`: it finished and
+// its result was not judged to answer. `not_judged`: it finished and nothing
+// judged it. `run_parked`: the run stopped waiting on a person; no Core path
+// continues a parked run on the candidate, so the settle is final.
+// `run_errored`: the run threw. `apply_failed`: judged to answer, and the apply
+// itself refused. An unapplied adaptation keeps its trial evidence and stays
+// reviewable; a person can still apply it through review.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowArtifact, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../model/index.ts";
+import { automationStudioDecisionAwaitsJudgedRun, automationStudioRunCandidateAdaptationIds } from "../../durable-behavior/index.ts";
 import { automationStudioGraphFlowWithAdaptationPatch } from "../adaptations/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord } from "../json-values.ts";
 
-/** What a deferred promotion decision waits for, as its `applyAt`. */
-export const AUTOMATION_STUDIO_JUDGED_PROMOTION_APPLY_AT = "judged_whole_run";
-
-export type AutomationStudioJudgedPromotionReason = "not_rerun" | "run_cancelled" | "run_failed" | "refuted" | "not_judged" | "apply_failed";
+export type AutomationStudioJudgedPromotionReason = "not_rerun" | "run_cancelled" | "run_failed" | "refuted" | "not_judged" | "run_parked" | "run_errored" | "apply_failed";
 
 /** What settling one pending patch comes to: applied, unapplied with a reason, or still waiting on a run that has not finished. */
 export type AutomationStudioJudgedPromotionOutcome = { apply: true } | { apply: false; reason: AutomationStudioJudgedPromotionReason } | { waiting: true };
@@ -75,17 +75,11 @@ export function automationStudioRunAdaptationIds(detail: Pick<AutomationStudioFl
  * run `runId`: allowed unattended, held, and not yet settled.
  */
 export function automationStudioAwaitsJudgedRun(adaptation: Pick<AutomationStudioFlowAdaptation, "metadata">, runId: string): boolean {
-  const decision = adaptation.metadata?.approvalDecision;
-  return isJsonRecord(decision)
-    && decision.autoApply === true
-    && decision.applyAt === AUTOMATION_STUDIO_JUDGED_PROMOTION_APPLY_AT
-    && decision.applied === false
-    && decision.settledAt === undefined
-    && (decision.runId === undefined || decision.runId === runId);
+  return automationStudioDecisionAwaitsJudgedRun(adaptation.metadata?.approvalDecision, runId);
 }
 
 /**
- * The candidate a resumed run runs: the stored graph Flow with every pending
+ * The candidate a pass runs: the stored graph Flow with every pending
  * adaptation of its graph written onto it, unsaved, by the function an apply
  * uses. A patch with no durable form (`edit_recovery`) changes nothing here,
  * as its apply will be refused and recorded. Throws for a patch it cannot write.
@@ -109,10 +103,11 @@ export function automationStudioJudgedPromotionCandidate(input: {
 
 /**
  * What a finished run comes to for one pending patch. `ranIt` says whether a
- * resumed pass of this run ran the patch as part of its candidate.
+ * pass of this run ran the patch as part of its candidate.
  */
 export function automationStudioJudgedPromotionOutcome(session: Pick<AutomationStudioRuntimeSession, "status" | "metadata">, ranIt: boolean): AutomationStudioJudgedPromotionOutcome {
   if (session.status === "cancelled") return { apply: false, reason: "run_cancelled" };
+  if (session.status === "waiting") return { apply: false, reason: "run_parked" };
   if (session.status !== "succeeded" && session.status !== "failed") return { waiting: true };
   if (!ranIt) return { apply: false, reason: "not_rerun" };
   const verification = isJsonRecord(session.metadata?.resultVerification) ? session.metadata.resultVerification : undefined;
@@ -123,9 +118,13 @@ export function automationStudioJudgedPromotionOutcome(session: Pick<AutomationS
 }
 
 /**
- * Settles every pending patch of this run against how `session` ended, and
+ * Settles the pending patches of this run against how `session` ended, and
  * answers `detail` with its receipts saying so. The caller saves the detail it
  * is handed back. Each adaptation is written as it is settled.
+ *
+ * `only: "ran"` settles just the patches a pass already ran -- before a new
+ * pass starts, whose verdict must not stand for them. `reason` settles every
+ * pending patch unapplied with it, whatever the session says: a run that threw.
  */
 export async function settleAutomationStudioJudgedPromotions(input: {
   ports: AutomationStudioJudgedPromotionPorts;
@@ -133,12 +132,16 @@ export async function settleAutomationStudioJudgedPromotions(input: {
   flowId: string;
   session: Pick<AutomationStudioRuntimeSession, "runId" | "status" | "metadata">;
   detail: AutomationStudioFlowRunDetail;
+  only?: "ran" | undefined;
+  reason?: AutomationStudioJudgedPromotionReason | undefined;
 }): Promise<AutomationStudioFlowRunDetail> {
   const recorded = automationStudioRunAdaptationIds(input.detail);
-  if (!recorded.length || "waiting" in automationStudioJudgedPromotionOutcome(input.session, false)) return input.detail;
-  const ran = new Set(candidateAdaptationIds(input.detail));
+  if (!recorded.length) return input.detail;
+  if (!input.reason && "waiting" in automationStudioJudgedPromotionOutcome(input.session, false)) return input.detail;
+  const ran = new Set(automationStudioRunCandidateAdaptationIds(input.detail));
   const settled = new Map<string, JsonObject>();
   for (const adaptationId of recorded) {
+    if (input.only === "ran" && !ran.has(adaptationId)) continue;
     const adaptation = await input.ports.getFlowAdaptation(input.projectId, input.flowId, adaptationId);
     if (!adaptation) continue;
     const decision = isJsonRecord(adaptation.metadata?.approvalDecision) ? adaptation.metadata.approvalDecision : {};
@@ -147,7 +150,7 @@ export async function settleAutomationStudioJudgedPromotions(input: {
       if (decision.settledAt !== undefined && decision.judgedRunId === input.session.runId) settled.set(adaptationId, decision);
       continue;
     }
-    const outcome = automationStudioJudgedPromotionOutcome(input.session, ran.has(adaptationId));
+    const outcome: AutomationStudioJudgedPromotionOutcome = input.reason ? { apply: false, reason: input.reason } : automationStudioJudgedPromotionOutcome(input.session, ran.has(adaptationId));
     if ("waiting" in outcome) continue;
     settled.set(adaptationId, await settleOne(input, adaptation, decision, outcome));
   }
@@ -160,13 +163,19 @@ export async function settleAutomationStudioJudgedPromotions(input: {
       runtimePatchAttempts: attempts.map((attempt) => {
         if (!isJsonRecord(attempt) || typeof attempt.adaptationId !== "string") return attempt;
         const decision = settled.get(attempt.adaptationId);
-        return decision ? { ...attempt, approvalDecision: decision } : attempt;
+        if (!decision) return attempt;
+        // A trial's own pass rides on its receipt only until a pass adopts it (`./repair-rerun.ts`).
+        const { completedTrace: _adoptedOrNot, ...kept } = attempt;
+        return { ...kept, approvalDecision: decision };
       })
     }
   };
 }
 
-/** The same, for a run that has finished: its stored record is read, settled, and saved. */
+/**
+ * The same, for a run that has ended: its stored record is read, settled, and
+ * saved. `reason` is for a run that threw, whose session cannot say why.
+ */
 export async function settleAutomationStudioRunJudgedPromotions(input: {
   ports: AutomationStudioJudgedPromotionPorts & {
     getFlowRunDetail(projectId: string, runId: string): Promise<AutomationStudioFlowRunDetail | null>;
@@ -175,11 +184,12 @@ export async function settleAutomationStudioRunJudgedPromotions(input: {
   projectId: string;
   flowId: string | undefined;
   session: AutomationStudioRuntimeSession;
+  reason?: AutomationStudioJudgedPromotionReason | undefined;
 }): Promise<AutomationStudioRuntimeSession> {
   if (!input.flowId) return input.session;
   const detail = await input.ports.getFlowRunDetail(input.projectId, input.session.runId);
   if (!detail) return input.session;
-  const settled = await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.flowId, session: input.session, detail });
+  const settled = await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.flowId, session: input.session, detail, ...(input.reason ? { reason: input.reason } : {}) });
   if (settled !== detail) await input.ports.saveFlowRunDetail(settled);
   return input.session;
 }
@@ -217,10 +227,4 @@ async function settleOne(
 
 function withDecision(adaptation: AutomationStudioFlowAdaptation, approvalDecision: JsonObject): AutomationStudioFlowAdaptation {
   return { ...adaptation, updatedAt: Date.now(), metadata: { ...(adaptation.metadata ?? {}), approvalDecision } };
-}
-
-/** The adaptations a resumed pass of this run ran as its candidate (`./repair-rerun.ts`). */
-function candidateAdaptationIds(detail: Pick<AutomationStudioFlowRunDetail, "metadata">): string[] {
-  const retry = isJsonRecord(detail.metadata?.adaptiveRetry) ? detail.metadata.adaptiveRetry : undefined;
-  return Array.isArray(retry?.candidateAdaptationIds) ? retry.candidateAdaptationIds.filter((id): id is string => typeof id === "string") : [];
 }

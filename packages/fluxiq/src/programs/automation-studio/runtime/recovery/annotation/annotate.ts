@@ -630,7 +630,9 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       // The same gate the exploration answered to: a repair that would
       // lastingly act is allowed by it, or becomes its request.
       ...(permissions ? { permissionGate: permissions.gate } : {}),
-      ...(input.graphOptions ? { graphOptions: input.graphOptions } : {})
+      // Numbered after the run's own attempts: a trial that runs the Flow to its
+      // end is adopted as the run's resumed pass, and the store drops a repeated id.
+      ...(input.graphOptions ? { graphOptions: { ...input.graphOptions, priorAttemptCount: Math.max(input.graphOptions.priorAttemptCount ?? 0, input.detail.actionAttempts?.length ?? 0) } } : {})
     })
     : { attempts: [], adaptationIds: [], changeProposalIds: [] };
   // Read again after the patches: a repair that needed a permission nobody gave

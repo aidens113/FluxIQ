@@ -1058,31 +1058,49 @@ order, as built:
    or cannot be written onto the Flow, declines the resume
    (`repair_rerun.candidate_unreadable`, `repair_rerun.candidate_unwritable`)
    rather than running a Flow the patch took no part in.
+   - **A trial that ran the Flow to its end** leaves nothing to resume
+     (`resume_point_completed`), and it is already the whole run: it began at
+     the Flow's start and finished on the candidate. Its saved trace rides on
+     the patch's receipt (`completedTrace`, `runtime/recovery/annotation/patches.ts`)
+     and is adopted as the resumed pass -- appended to the run's own trace,
+     `adaptiveRetry.trialCompleted: true` -- with nothing run again. The trial
+     numbers its attempts after the run's, so the two never share an id.
+   - **A patch the refuted result's repair wrote** has no failed step to resume
+     from. The run is run again from the Flow's start on the candidate
+     (`repairedRerun.candidateAdaptationIds`), the same whole-Flow re-run a
+     re-authored Flow takes (`automationStudioRefutedResultRerunsFlow`,
+     `runtime/recovery/refuted-result/reauthor.ts`), and that run is judged.
+     Before it starts, a patch an earlier pass already ran is settled on that
+     pass's ending, so a later verdict never stands for it.
 5. **The result is judged, then the patch is settled.** Once
    `verifyAutomationStudioRuntimeSessionResult` returns, the service settles every
    pending patch of the run (`settleAutomationStudioRunJudgedPromotions`,
    `runtime/service/runtime-adaptation/judged-promotion.ts`). It is applied,
    through `review-flow-adaptation`'s apply and so through the promotion gates,
    only when the run ended `succeeded`, its verdict was performed and is
-   `answers`, and the resumed pass ran the patch. Otherwise it stays unapplied
-   with `notAppliedReason`: `not_rerun` (no resumed pass ran it -- the resume was
-   declined, or the patch came from a refuted result's repair after the
-   verdict), `run_cancelled`, `run_failed`, `refuted` (judged, and not
-   `answers`), `not_judged`, or `apply_failed` (judged to answer; the apply
-   refused). The decision on the adaptation and on the run's
-   `runtimePatchAttempts` receipt carry `judgedRunId` and `settledAt`. A run
-   still `waiting` on a person settles nothing.
+   `answers`, and a pass ran the patch. Otherwise it stays unapplied with
+   `notAppliedReason`: `not_rerun` (no pass ran it -- the resume was declined,
+   or the Flow was re-authored before it ran), `run_cancelled`, `run_failed`,
+   `refuted` (judged, and not `answers`), `not_judged`, `run_parked` (the run
+   stopped waiting on a person), `run_errored` (the run threw; settled by
+   `endAutomationStudioRuntimeSessionAfterThrow`'s `settleAfterThrow` port after
+   the session is marked failed), or `apply_failed` (judged to answer; the
+   apply refused). The decision on the adaptation and on the run's
+   `runtimePatchAttempts` receipt carry `judgedRunId` and `settledAt`. A
+   settle is final: no Core path continues a parked run, and a continuation
+   would run the stored Flow rather than the candidate, so it could not be the
+   judged whole run for the patch.
 
 **Why the trialling run is the judged whole run.** The trial and the resume
 continue one run that began at the Flow's start: the steps before the patched
 one are the same in the candidate and the stored Flow, and the steps after it
 ran on the candidate. Running the Flow again from its start after an apply would
 repeat every lasting effect the run already had, which is why the resume exists
-at all. The re-run from the start that `repair-rerun.ts` also performs follows a
-*re-authored* Flow, never a runtime patch, and it settles any patch still
-pending first, unapplied, with the reason its own run gave: that run was
-refuted or did not finish, and a re-authored graph is not the one the patch was
-written for.
+at all, and why a trial that already ran to the end is adopted rather than run
+again. A re-run from the start happens only where there is no step to resume
+from: after a re-authoring, which settles every pending patch first (it was
+written for the graph before), or for a patch the refuted result's repair
+wrote, which that re-run carries as its candidate.
 
 **Reuse.** Only an applied patch changes the stored Flow, so only it is run by
 later runs, replayed as evidence by a run that asks no model, and counted as

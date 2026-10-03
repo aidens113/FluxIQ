@@ -227,7 +227,11 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
       const savedAdaptation = await input.ports.saveFlowAdaptation(adaptation);
       const promoted = await input.ports.promoteRuntimeAdaptation({ adaptation: savedAdaptation, context: input.context });
       const approvalDecision = isJsonRecord(promoted.metadata?.approvalDecision) ? promoted.metadata.approvalDecision : undefined;
-      if (approvalDecision) attempts[attempts.length - 1] = compactJsonObject({ ...attempts[attempts.length - 1], approvalDecision });
+      // A trial that ran the Flow to its end, on a patch allowed unattended, is
+      // the run's resumed pass (t249): its saved trace rides on the receipt
+      // until the re-run step adopts it, since nothing runs again to replace it.
+      const completed = tested.verdict?.resumeFrom && "completed" in tested.verdict.resumeFrom && approvalDecision?.autoApply === true && tested.trace;
+      if (approvalDecision) attempts[attempts.length - 1] = compactJsonObject({ ...attempts[attempts.length - 1], approvalDecision, ...(completed ? { completedTrace: tested.trace as unknown as JsonObject } : {}) });
       adaptationIds.push(promoted.adaptationId);
     }
   }

@@ -29,6 +29,7 @@
 // could not have been added: that file is at its line ratchet, and the wrong
 // answer's re-run is the same ninety lines with one branch in them.
 
+import type { JsonValue } from "../../../../../core/index.ts";
 import type {
   AutomationStudioFlowAdaptation,
   AutomationStudioFlowArtifact,
@@ -39,7 +40,8 @@ import type {
   AutomationStudioRuntimeSession
 } from "../../../model/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
-import type { AutomationStudioGraphExecutionOptions } from "../../executor.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor.ts";
+import { automationStudioRefutedResultFlowWasReauthored } from "../../recovery/refuted-result/index.ts";
 import { decideAutomationStudioAdaptiveRetry } from "../adaptations/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions } from "../../flow-version/index.ts";
 import { canonicalFlowDocument } from "../flows/index.ts";
@@ -116,9 +118,17 @@ export async function rerunAutomationStudioSessionAfterRepair(
   const decision = input.from === "resume"
     ? decideAutomationStudioAdaptiveRetry({ runtimePatchAttempts: input.detail.metadata?.runtimePatchAttempts, ...(input.subflowId ? { subflowId: input.subflowId } : {}) })
     : undefined;
+  // A trial that ran the Flow to its end leaves nothing to resume, and it is
+  // already the whole run: it began at the Flow's start and finished on the
+  // candidate. Its own pass is adopted as the resumed pass, with nothing run
+  // again (t249), where its receipt carries it (`recovery/annotation/patches.ts`).
+  let adopted: AutomationStudioGraphExecutionTrace | undefined;
   if (input.from === "resume") {
     if (!decision) return null;
-    if ("declined" in decision) return { declinedCode: decision.declined.notResumableCode };
+    if ("declined" in decision) {
+      adopted = decision.declined.notResumableCode === "resume_point_completed" ? trialCompletedTrace(input.detail) : undefined;
+      if (!adopted) return { declinedCode: decision.declined.notResumableCode };
+    }
   }
   const resumeNodeId = decision && !("declined" in decision) ? decision.resume.nodeId : undefined;
   const rerunStartedAt = Date.now();
@@ -126,17 +136,22 @@ export async function rerunAutomationStudioSessionAfterRepair(
   if ("declinedCode" in found) return found;
   const updatedFlow = found.flow;
   if (input.subflowId) await input.ports.assertOwnedSubflowGraph(input.projectId, updatedFlow);
-  // A resume runs the unapplied candidate: the stored Flow with this run's
+  // Every pass runs the unapplied candidate: the stored Flow with this run's
   // pending runtime patches written onto it, unsaved. Nothing is applied until
-  // the run's result is judged. A run from the start follows a re-authored
-  // Flow, so any patch still pending is settled first, unapplied: its own run
-  // was refuted or never finished, and it was written for the graph before.
-  const candidate = input.from === "resume" ? await resumeCandidate(input, updatedFlow) : { flow: updatedFlow, adaptationIds: [] };
-  if ("declinedCode" in candidate) return candidate;
+  // the run's result is judged. Before a re-run from the start, a patch an
+  // earlier pass already ran is settled on that pass's ending, so this pass's
+  // verdict never stands for it. A re-authored Flow settles every pending patch
+  // first: they were written for the graph before. Otherwise the re-run is the
+  // whole-Flow pass for the patches the refuted result's repair wrote, which had
+  // no failed step to resume from.
+  const reauthored = input.from === "start" && automationStudioRefutedResultFlowWasReauthored(input.detail);
   const detail = input.from === "start"
-    ? await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.adaptationContext.flowId, session: input.session, detail: input.detail })
+    ? await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.adaptationContext.flowId, session: input.session, detail: input.detail, ...(reauthored ? {} : { only: "ran" as const }) })
     : input.detail;
-  const retryTrace = await runCanonicalAutomationStudioFlow(
+  const candidate = reauthored ? { flow: updatedFlow, adaptationIds: [] } : await pendingCandidate({ ...input, detail }, updatedFlow);
+  if ("declinedCode" in candidate) return candidate;
+  if (input.from === "start" && !reauthored && !candidate.adaptationIds.length) return { declinedCode: UNREADABLE.nothingToRerun };
+  const retryTrace = adopted ?? await runCanonicalAutomationStudioFlow(
     candidate.flow,
     await input.ports.listPublishedFlowSnapshots(),
     // Numbered after the first pass's attempts: the re-run is kept under the
@@ -163,7 +178,7 @@ export async function rerunAutomationStudioSessionAfterRepair(
       ...retryTrace,
       attempts: [...(input.session.trace?.attempts ?? []), ...retryTrace.attempts],
       effects: [...(input.session.trace?.effects ?? []), ...retryTrace.effects],
-      message: `${input.from === "resume" ? "Adaptive retry" : "Repaired re-run"} ${retryTrace.status}.${input.session.trace?.message ? ` Initial failure: ${input.session.trace.message}` : ""}`
+      message: `${adopted ? "Trial ran the Flow to its end," : input.from === "resume" ? "Adaptive retry" : "Repaired re-run"} ${retryTrace.status}.${input.session.trace?.message ? ` Initial failure: ${input.session.trace.message}` : ""}`
     }
   };
   await input.ports.writeRuntimeSession(input.projectId, retrySession);
@@ -205,10 +220,12 @@ export async function rerunAutomationStudioSessionAfterRepair(
       // being repaired a second time.
       ...(retryDetail.metadata ?? {}),
       ...(detail.metadata ?? {}),
+      ...(adopted ? { runtimePatchAttempts: receiptsWithoutTrialTraces(detail) } : {}),
       [input.from === "resume" ? "adaptiveRetry" : "repairedRerun"]: {
         attempted: true,
         status: retryTrace.status,
         attemptCount: retryTrace.attempts.length,
+        ...(adopted ? { trialCompleted: true } : {}),
         // The pending patches this pass ran, which the judged-promotion settle reads.
         ...(candidate.adaptationIds.length ? { candidateAdaptationIds: candidate.adaptationIds } : {})
       },
@@ -219,12 +236,12 @@ export async function rerunAutomationStudioSessionAfterRepair(
 }
 
 /**
- * The candidate a resume runs, or why it could not be built. A pending patch
+ * The candidate a pass runs, or why it could not be built. A pending patch
  * that cannot be read, or cannot be written onto the Flow it was trialled on,
- * declines the resume: running the stored Flow instead would put a run the
- * patch never took part in up for the judgement that keeps it.
+ * declines the pass: running the stored Flow instead would put a run the patch
+ * never took part in up for the judgement that keeps it.
  */
-async function resumeCandidate(
+async function pendingCandidate(
   input: AutomationStudioRepairRerunInput,
   flow: AutomationStudioFlowArtifact
 ): Promise<{ flow: AutomationStudioFlowArtifact; adaptationIds: string[] } | { declinedCode: string }> {
@@ -242,6 +259,31 @@ async function resumeCandidate(
   } catch {
     return { declinedCode: UNREADABLE.candidateUnwritable };
   }
+}
+
+/**
+ * The trial's own pass, when a trial on a patch allowed unattended ran the Flow
+ * to its end: the last such receipt's saved trace. Nothing when no receipt
+ * carries one, which declines the resume as before.
+ */
+function trialCompletedTrace(detail: AutomationStudioFlowRunDetail): AutomationStudioGraphExecutionTrace | undefined {
+  const attempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts : [];
+  for (const attempt of [...attempts].reverse()) {
+    if (!attempt || typeof attempt !== "object" || Array.isArray(attempt)) continue;
+    const trace = attempt.completedTrace;
+    if (trace && typeof trace === "object" && !Array.isArray(trace) && Array.isArray(trace.attempts) && typeof trace.status === "string") return trace as unknown as AutomationStudioGraphExecutionTrace;
+  }
+  return undefined;
+}
+
+/** The run's receipts, without the trial pass the resume has now adopted into the run's own trace. */
+function receiptsWithoutTrialTraces(detail: AutomationStudioFlowRunDetail): JsonValue[] {
+  const attempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts : [];
+  return attempts.map((attempt) => {
+    if (!attempt || typeof attempt !== "object" || Array.isArray(attempt) || !("completedTrace" in attempt)) return attempt;
+    const { completedTrace: _adopted, ...kept } = attempt;
+    return kept;
+  });
 }
 
 /**
@@ -282,6 +324,7 @@ const UNREADABLE = {
   subflow: "repair_rerun.subflow_unreadable",
   subflowAbsent: "repair_rerun.subflow_absent",
   graph: "repair_rerun.subflow_graph_unreadable",
+  nothingToRerun: "repair_rerun.nothing_to_rerun",
   candidate: "repair_rerun.candidate_unreadable",
   candidateUnwritable: "repair_rerun.candidate_unwritable"
 } as const;
