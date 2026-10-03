@@ -18,6 +18,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTask
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import type { AutomationStudioLlmProviderResolverInput } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { caller, isJudgeRequest, judgeReply, mockProvider } from "./fixtures.ts";
 
 const OPEN_ID = "domain.example.open";
@@ -118,17 +119,51 @@ function firstBuildPlan(runtime: AutomationStudioNativeNodeRuntime, scope: Param
   return result.validated;
 }
 
+const USAGE = { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 };
+
+/** A model reply carrying `decision`. */
+function reply(summary: string, decision: Record<string, unknown>) {
+  return { response: { kind: "evidence_tool_decision", summary, decision }, usage: { ...USAGE } };
+}
+
+/**
+ * Rerun the draft's step `step`, declaring that it leaves nothing lasting.
+ *
+ * The steps an extend carries from the Flow on disk (`f1`, `f2`) never ran in
+ * this build, so the Flow could not be run whole from its start and the build
+ * may not finish over them (t244, user 2026-10-02; `flow-draft/full-run-required.ts`).
+ * A rerun runs the carried step now, takes its place in the draft, and stands
+ * for its node, so the written Flow keeps that node's id.
+ */
+function rerun(step: number) {
+  return reply(`Run step ${step} again.`, { kind: "amend_draft", amendments: [{ step, change: "rerun", input: { consequences: [] } }] });
+}
+
+/**
+ * Rerun both carried steps, the first then the second. A rerun takes its
+ * step's place and the step it replaced stays listed, withdrawn, just after it
+ * (`llm/evidence-loop/rerun-replacement.ts`): once `f1` is rerun the draft
+ * reads rerun, `f1` withdrawn, `f2`, so `f2` is then step 3.
+ */
+const RERUN_CARRIED = [rerun(1), rerun(3)];
+
+/** Each reply in turn, the last one repeated. */
+function inOrder(replies: unknown[]) {
+  let at = 0;
+  return async () => replies[Math.min(at++, replies.length - 1)];
+}
+
 /**
  * A service holding the applied Flow, whose model decides as `decide` says.
- * The judge of the extended Flow's test says yes: the steps carried from the
- * Flow on disk are not run by the build's test, and only a judge's yes
- * proposes a Flow with untested carried steps (run 41,
- * `flow-bootstrap/unfinished-build/phases.ts`).
+ * The judge of the extended Flow's test says yes. That test runs the whole
+ * Flow from its start, carried steps included, so every case that finishes
+ * reruns the two steps carried from the Flow on disk first.
  */
 async function serviceWithAppliedFlow(input: { decide(request: AutomationStudioLlmTaskRequest): Promise<unknown> }) {
   const runtime = nativeRuntime();
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const resolutions: AutomationStudioLlmProviderResolverInput[] = [];
+  const evidenceRuntime = automationStudioReplayingBinding(binding());
   const provider = mockProvider(async (request) => {
     requests.push(request);
     if (isJudgeRequest(request)) return judgeReply();
@@ -141,12 +176,13 @@ async function serviceWithAppliedFlow(input: { decide(request: AutomationStudioL
       return {
         provider,
         tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 },
-        maxCallsPerRun: 4,
+        // Two reruns of the carried steps, at most one step of its own, the completion, and the judge.
+        maxCallsPerRun: 6,
         maxEstimatedCostUsd: 0.1,
         timeoutMs: 20_000
       };
     }) as never,
-    llmEvidenceRuntime: binding()
+    llmEvidenceRuntime: evidenceRuntime
   });
   instance.bindNativeNodeRuntime(runtime);
   services.add(instance);
@@ -178,16 +214,13 @@ async function serviceWithAppliedFlow(input: { decide(request: AutomationStudioL
   const review = { projectId: project.id, flowId: flow.flowId, adaptationId: created.adaptationId, actorId: "reviewer" };
   await instance.reviewFlowBootstrapAdaptation({ ...review, action: "approve" });
   const applied = await instance.reviewFlowBootstrapAdaptation({ ...review, action: "apply" });
-  return { instance, project, flow, applied, requests, resolutions, runtime };
+  return { instance, project, flow, applied, requests, resolutions, runtime, replays: evidenceRuntime.replays };
 }
 
 describe("extending a Flow that already exists", () => {
   it("opens for a non-blank Flow, starts from its steps, and keeps its ids", async () => {
-    const { instance, project, flow, applied, requests } = await serviceWithAppliedFlow({
-      decide: async () => ({
-        response: { kind: "evidence_tool_decision", summary: "Search first, then read.", decision: { kind: "complete", result: { summary: "Search the catalog, then read the rows." } } },
-        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
-      })
+    const { instance, project, flow, applied, requests, replays } = await serviceWithAppliedFlow({
+      decide: inOrder([...RERUN_CARRIED, reply("Search first, then read.", { kind: "complete", result: { summary: "Search the catalog, then read the rows." } })])
     });
     const before = applied.topology.subflows[0]!;
 
@@ -204,7 +237,8 @@ describe("extending a Flow that already exists", () => {
     expect(record.mode).toBe("extend");
     expect(record.origin).toEqual({ entryPoint: "edge_case", instructionIds: ["instruction.extend"] });
     // The build started from the Flow rather than from nothing: the plan holds
-    // the two steps that were already there, written from the draft the seed made.
+    // the two steps that were already there, written from the draft the seed
+    // made -- each run again in this build, standing for the node it replaced.
     const after = record.topology.subflows[0]!;
     expect(after.graphFlow.nodes.map((node) => node.definitionId)).toEqual([OPEN_ID, READ_ID]);
     // And it is an edit: the Router, the Subflow, the graph Flow and every node
@@ -216,7 +250,9 @@ describe("extending a Flow that already exists", () => {
     expect(record.existingIds).toMatchObject({ routerId: applied.topology.router.routerId, subflowId: before.subflow.subflowId, graphFlowId: before.graphFlow.flowId });
     // The model was asked, and the loop it was asked through is the build's own.
     expect(requests.some((request) => request.taskKind === "evidence_tool_decision")).toBe(true);
-    // And the extended Flow was judged, once, after the model said it was ready.
+    // And the extended Flow was tested whole from its start -- both steps run
+    // again by the build's test -- and judged, once, after the model said it was ready.
+    expect(replays.filter((call) => call.value.replay !== "reset").map((call) => call.value.node)).toEqual([OPEN_ID, READ_ID]);
     expect(requests.filter(isJudgeRequest)).toHaveLength(1);
     expect(isJudgeRequest(requests.at(-1)!)).toBe(true);
   }, 60_000);
@@ -224,15 +260,13 @@ describe("extending a Flow that already exists", () => {
   it("runs the step the Flow was missing and adds it, keeping the ids of the ones it kept", async () => {
     // The whole point of routing a wrong answer here: the model looks at the
     // page, runs the control the Flow never had, and the Flow gains that step.
-    let decisions = 0;
+    // It then reruns the two steps it carried, so the Flow can be tested whole.
     const { instance, project, flow, applied } = await serviceWithAppliedFlow({
-      decide: async () => {
-        decisions += 1;
-        const decision = decisions === 1
-          ? { kind: "tool_call", callId: "call.search", toolId: "core.run_node", input: { node: SEARCH_ID, parameters: { where: "widgets" }, consequences: [] }, add: true }
-          : { kind: "complete", result: { summary: "Search the catalog, then read the rows." } };
-        return { response: { kind: "evidence_tool_decision", summary: "Search first.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
-      }
+      decide: inOrder([
+        reply("Search first.", { kind: "tool_call", callId: "call.search", toolId: "core.run_node", input: { node: SEARCH_ID, parameters: { where: "widgets" }, consequences: [] }, add: true }),
+        ...RERUN_CARRIED,
+        reply("Search first.", { kind: "complete", result: { summary: "Search the catalog, then read the rows." } })
+      ])
     });
     const before = applied.topology.subflows[0]!;
 
@@ -255,10 +289,7 @@ describe("extending a Flow that already exists", () => {
 
   it("presents the extend build's caller to the resolver, and nothing else", async () => {
     const { instance, project, flow, resolutions } = await serviceWithAppliedFlow({
-      decide: async () => ({
-        response: { kind: "evidence_tool_decision", summary: "Keep the current steps.", decision: { kind: "complete", result: { summary: "Keep the current steps." } } },
-        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 }
-      })
+      decide: inOrder([...RERUN_CARRIED, reply("Keep the current steps.", { kind: "complete", result: { summary: "Keep the current steps." } })])
     });
     await instance.generateFlowBootstrapAdaptation({
       projectId: project.id,
@@ -284,10 +315,7 @@ describe("extending a Flow that already exists", () => {
 
   it("applies an extend in place, so the Flow on disk is the edited one", async () => {
     const { instance, project, flow, applied } = await serviceWithAppliedFlow({
-      decide: async () => ({
-        response: { kind: "evidence_tool_decision", summary: "Read it again.", decision: { kind: "complete", result: { summary: "Read the rows." } } },
-        usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
-      })
+      decide: inOrder([...RERUN_CARRIED, reply("Read it again.", { kind: "complete", result: { summary: "Read the rows." } })])
     });
     const result = await instance.generateFlowBootstrapAdaptation({
       projectId: project.id, flowId: flow.flowId, mode: "extend", evidenceGuided: true,

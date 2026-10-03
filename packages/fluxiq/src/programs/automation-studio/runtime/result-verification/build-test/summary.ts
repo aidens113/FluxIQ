@@ -20,7 +20,9 @@
 //     napkins does not.
 //   - `outcome`, from the test that passed, or `not_run`.
 //   - `observed`, what the test saw for a step that reads (the rows) or a step
-//     it only checked, screened like any other evidence.
+//     it only checked, screened like any other evidence. A replayed list read
+//     names its rows, and the rows each condition left out by itself, by label
+//     (`readRows`, `./read-rows.ts`).
 //   - `explored`, what a checked step did while the build explored it, since
 //     the test did not do it again.
 //   - `claims`, `checklist` and `missingActs`: the model's claims and the

@@ -256,7 +256,9 @@ describe("the loop's gate on proposing", () => {
     expect(result.steps.map((entry) => entry.replayed?.status)).toEqual(["replayed"]);
   });
 
-  it("does not replay a caller that says nothing about replaying", async () => {
+  // A loop that authors no Flow (the recovery ladder's exploration) finishes
+  // with whatever it ran: its caller said nothing about running a step again.
+  it("does not replay a caller that says nothing about replaying, where the loop authors no Flow", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "#a" }, add: true })
       .mockResolvedValue({ kind: "complete", result: { summary: "done" } });
@@ -267,5 +269,25 @@ describe("the loop's gate on proposing", () => {
     });
     expect(result.ok).toBe(true);
     expect(executeTool).toHaveBeenCalledTimes(1);
+  });
+
+  // t244 (user, 2026-10-02): a Flow is finished only once it has run whole
+  // from its start and been judged. In a build, a caller that says nothing
+  // about running a step again used to be "not a caller this gate applies to",
+  // and its Flow was proposed untested; its completion is now refused for
+  // exactly that, and nothing is run again.
+  it("refuses, and runs nothing again, a build's Flow whose caller cannot run its steps again", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "c1", toolId: "press", input: { target: "#a" }, add: true })
+      .mockResolvedValue({ kind: "complete", result: { summary: "done" } });
+    const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { page: "after" }, effectApplied: true }));
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools: [{ toolId: "press", description: "Press.", inputSchema: { type: "object" }, effect: "mutate" as const }],
+      decide, executeTool, maxIterations: 3, maxToolCalls: 6, minToolCalls: 1, unusableDecisions: { stalled: () => new Error("stalled") }, fullRunRequired: true
+    });
+    expect(result.ok).toBe(false);
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    const shown = decide.mock.calls[2]?.[0].evidence.find((entry: { toolId: string }) => entry.toolId === "core.dry_run");
+    expect(shown?.value).toMatchObject({ code: "llm_evidence_loop.full_run_required", steps: [{ step: 1, actionId: "press", replayed: "cannot_run_again" }] });
   });
 });

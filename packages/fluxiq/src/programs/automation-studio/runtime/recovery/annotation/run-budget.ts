@@ -14,8 +14,9 @@
 // ledger. The first two are sized here, and the call count survives only as a
 // runaway backstop.
 //
-// The cost ceiling is the run cost ceiling, $0.25
-// (`../../llm/flow-execution-limits/run-cost-ceiling.ts`), whoever asked for
+// The cost ceiling is the run cost ceiling, `AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`
+// ($0.10 unless FLUXIQ_LLM_RUN_COST_CEILING_USD says otherwise;
+// `../../llm/flow-execution-limits/run-cost-ceiling.ts`), whoever asked for
 // the run. What the resolver, the Flow's configured
 // `maxEstimatedCostUsdPerRun` or an unattended repair's authorization says may
 // lower it and never raise it. A run a person asked for used to take the Flow's
@@ -112,7 +113,7 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
   // `maxTokensPerRun` a person set or a resolver's whole-run exposure. There is
   // no smaller default of Core's own any more: it was 6,000 tokens per share
   // (144,000 for a recovery nobody asked for), which refused a whole page's
-  // diagnosis outright. The $0.25 purse is what bounds spending (2026-09-30).
+  // diagnosis outright. The run's cost purse is what bounds spending (2026-09-30).
   const tokenShares = input.explicitRunBudget ? costShares : Math.min(costShares, AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES);
   const tokenLimits = resolution?.tokenLimits;
   // A resolver that names no per-call limit gets the harness's own default, which
@@ -127,7 +128,7 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
   )));
   const maxOutputTokensPerRun = Math.max(1, Math.trunc(Math.min(maxTotalTokensPerRun, (tokenLimits?.maxOutputTokens ?? maxTotalTokensPerRun) * tokenShares)));
   // A resolver that gives a per-call cost and no total is multiplied into a
-  // purse, which the ceiling then holds to $0.25 like any other.
+  // purse, which the run cost ceiling then lowers like any other.
   const requestedCost = resolution?.maxTotalEstimatedCostUsd ?? (resolution?.maxEstimatedCostUsd ?? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD) * costShares;
   // Whoever asked for the run: the ceiling, lowered by the resolver's total, by
   // the Flow's configured limit and by what a repair has left, and raised by none.
@@ -137,8 +138,8 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
   // cache miss -- and never less than an even share of the purse. The ledger
   // counts a call that reports more than it reserved as a budget breach
   // (`../../llm/run-budget.ts`), so a reservation below what a call can really
-  // cost reads an ordinary call as a breach: an even share of $0.25 over 64
-  // declared calls is $0.0039, and live repairs' $0.0041 and $0.0044 diagnoses
+  // cost reads an ordinary call as a breach: an even share of the ceiling, then
+  // $0.25, over 64 declared calls was $0.0039, and live repairs' $0.0041 and $0.0044 diagnoses
   // failed `run-munutuvf-6a1c548a` and `run-munv9eqy-1827b928` for it. The total
   // is still what binds: a call is admitted only while what was spent and what
   // is reserved leave room for this reservation, so a recovery stops at most one
@@ -164,7 +165,7 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
  * Nothing when it declared none. The harness's own default is then the model's
  * whole window (`../../llm/harness/token-limits.ts`, since 2026-09-30), a
  * request no call is expected to fill and one whose worst case is more than the
- * whole $0.25 purse; reserving it would leave room for one call per recovery.
+ * whole purse; reserving it would leave room for one call per recovery.
  * An even share of the purse is reserved instead, and the harness reserves each
  * call at its own measured size when the provider can price it.
  */

@@ -144,7 +144,33 @@ function automationStudioRefutedResultFailureOf(diagnostic: AutomationStudioFlow
     // Numbers and identifiers only. `providerRefusal` carries the provider's
     // own sentence, which a run record never holds.
     ...(accounting ? { accounting: numericAccounting(accounting) } : {}),
-    ...(diagnostic.evidenceLoop ? { evidenceLoop: JSON.parse(JSON.stringify(diagnostic.evidenceLoop)) as JsonObject } : {})
+    ...(diagnostic.evidenceLoop ? { evidenceLoop: JSON.parse(JSON.stringify(diagnostic.evidenceLoop)) as JsonObject } : {}),
+    ...(diagnostic.ending ? { ending: closedEnding(diagnostic.ending) } : {})
+  };
+}
+
+/**
+ * A build's ending without its words: the message is Core's sentences around
+ * the person's own words for what they asked, and each act's quote is those
+ * words, so neither is written to the run. What is kept is closed -- the kind,
+ * the budget, act ids and codes, counts, and each round's stop and the
+ * no-route case -- which is what says why each round stopped (live run
+ * muqk713g).
+ */
+function closedEnding(ending: NonNullable<AutomationStudioFlowBootstrapFailureDiagnostic["ending"]>): JsonObject {
+  const { tried } = ending;
+  return {
+    kind: ending.kind,
+    ...(ending.bound ? { bound: ending.bound } : {}),
+    notDone: ending.notDone.map(({ id, todo }) => ({ id, todo })),
+    tried: {
+      rounds: tried.rounds,
+      decisions: tried.decisions,
+      stepsInFlow: tried.stepsInFlow,
+      tested: tried.tested,
+      ...(tried.stops ? { stops: tried.stops.map(({ round, stopped }) => ({ round, stopped })) } : {}),
+      ...(tried.noRoute ? { noRoute: { kind: tried.noRoute.kind } } : {})
+    }
   };
 }
 

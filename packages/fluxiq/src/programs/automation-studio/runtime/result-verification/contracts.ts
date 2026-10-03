@@ -167,10 +167,23 @@ export type AutomationStudioResultReadAccount = {
   kept: number;
   /** Whether the step is authored to follow pages. Absent when its authored parameters were not in reach. */
   paginates?: boolean;
-  /** Whether the step is authored to keep one row per key. Absent when its authored parameters were not in reach. */
+  /** Whether the step is authored to keep one row per key, in any form the domain reads a `dedupe` in. Absent when its authored parameters were not in reach. */
   dedupes?: boolean;
   /** The column ids a row is identified by, when the step names them. */
   dedupeBy?: string[];
+  /**
+   * True when the read moves page by page (`next`, numbered), and so leaves out
+   * a row identical, field for field, to one an earlier page yielded, whatever
+   * its `dedupe` says: by its own count, or by its authored paging where the
+   * count did not reach the record. Absent otherwise.
+   */
+  dropsEarlierPageRepeats?: true;
+  /**
+   * How many rows its conditions kept the read left out as such repeats
+   * (live run `run-muqk713g`: 12 kept, 10 stored, the other two these). Absent
+   * where the read did not count them.
+   */
+  earlierPageRepeats?: number;
   /**
    * The step's conditions, in authored order, each with the rows it rejected
    * across the whole read. A row can fail more than one, so the counts need not
@@ -419,6 +432,13 @@ export type AutomationStudioResultVerification = {
    * (`automationStudioResultVerificationFailsRun`): what the run must report.
    */
   failure?: AutomationStudioFailureRecord;
+  /**
+   * The exact code of what stopped the verification: the diagnostic code of a
+   * call that did not come back usable, or the error's own name where there was
+   * none. For a debug reading the record; never put into `reason` or
+   * `observation`, which are said in the chat. Absent when nothing failed.
+   */
+  failureCode?: string;
 };
 
 /**
@@ -434,6 +454,8 @@ export type AutomationStudioResultVerificationSkipped = {
   performed: false;
   code: string;
   reason: string;
+  /** The error's own name, when the verification threw before a verdict. Never in `reason`. */
+  failureCode?: string;
 };
 
 /** What a finished run's verification produced: a verdict, or a stated reason there is none. */

@@ -433,6 +433,43 @@ failed attempt and recovery context independently of the 1,024-character
 failure prose. Persisted result records keep Core's bounded facts; arbitrary
 provider prose is not persisted as repair authority.
 
+### A repair is accepted only after a whole run judged success
+
+The user's rule (2026-10-02): a repair loop may run part of the Flow to test
+it, but the Flow must run whole from its start and be judged a success at least
+once, on the Flow as it finally stands, before it is accepted; an edit after
+that run needs another. The two repair paths stand differently against it.
+
+**Re-author: holds the rule.** A run refuted as not answering the request is
+handed to the build's own loop as an extend build seeded with the Flow it ran
+(`runtime/recovery/refuted-result/reauthor.ts`), and so is an "improve" from
+the chat. That build finishes only on a judge's `yes` about a test of the very
+Flow it finished with, and steps carried from the stored Flow must be rerun
+live before that test can run (`llm_evidence_loop.full_run_required`); see
+[A whole run judged success, on the Flow as it stands](automation-studio/llm-flow-bootstrap.md#a-whole-run-judged-success-on-the-flow-as-it-stands).
+The re-author approves and applies the adaptation only when its build
+finished, so the Flow on disk changes only after the re-authored Flow, carried
+steps included, ran whole and was judged. A rerun keeps the node id of the
+carried step it replaces (`standsFor`) and its `metadata.routeSignatures`
+where it recorded none. Inside that build the model can run part of the Flow
+with `core.run_flow`. An applied extend still cannot be reverted: it overwrites
+the Subflow graph it was given and records nothing to put back.
+
+**The patch ladder: open.** The recovery ladder's exploration has no draft, so
+it is not offered `core.run_flow`, and a runtime patch is still trial-run from
+the changed node (`runtime/flow-change/trial.ts`, `startNodeId`) and, where the
+promotion gates pass on that succeeded trial, applied mid-run by
+`maybePromoteRuntimeAdaptation` (`runtime/service.ts`) before the run resumes
+and before its result is judged. Meeting the rule there needs two changes not
+yet made: an executor stop node (`stopAfterNodeId` on the graph execution
+options, ending a run `succeeded` after that node without following its edge)
+behind a ladder `core.run_flow` that runs the run's current Flow from one node
+to another with the values the run holds there; and an apply deferred until the
+run that trialled the patch finished whole from its start and its result was
+judged to answer the request. In the shipped app automatic promotion applies
+nothing (see [What the shipped app reaches](#what-the-shipped-app-reaches)), so
+this matters for a host that turns it on.
+
 ### The standing authorization, for runs nobody is watching
 
 An interactive model call is paid for by a signed-in person's unlocked key, and
@@ -716,7 +753,15 @@ started" is posted. Every consulted attempt carries a `stateRouting` record
 (`outcome`: `effect_holds`, `routed`, `no_match`, `unobserved`,
 `no_pre_states` or `guard_stopped`; candidate and match counts; target,
 direction and closeness)
-and never a route state or a signature. With no way on, the record stays on the
+and never a route state or a signature. The run detail's action attempt
+carries it as `stateRouting` in closed words only
+(`service/summaries/state-routing.ts`, t250): `{ outcome }` for `routed` and
+`effect_holds`, beside the `skipped` mark that already names the destination;
+`{ outcome, code, toNodeId }` for `guard_stopped`; `{ outcome, code }` for the
+three outcomes that found no way on. `code` is the Core code that asked
+(`executor.ready_state.not_shown` when the readiness gate did, else the
+attempt's failure code); the record's reason sentence and counts stay on the
+trace. With no way on, the record stays on the
 failed attempt and the ladder runs exactly as before. Each failed attempt goes
 through ask and park handling, the waiting status, state routing, the ladder,
 the continuation rule, then failure, and a model is only ever called after the

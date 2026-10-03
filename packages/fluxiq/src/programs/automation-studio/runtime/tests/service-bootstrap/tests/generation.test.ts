@@ -2,13 +2,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceOptions } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA } from "../../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, estimateAutomationStudioDeepSeekInputTokens } from "../../../llm/index.ts";
 import { AutomationStudioAesGcmProjectContentProtection } from "../../../../storage/index.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, isJudgeRequest, judgeReply, JUDGE_USAGE, type DataDirSeed } from "./fixtures.ts";
 
 let tempRoot: string;
@@ -54,6 +56,20 @@ function createService(input: {
   services.add(instance);
   return instance;
 }
+
+/**
+ * A build finishes only once a run of the whole Flow from its start was judged
+ * a success (user, 2026-10-02), so a build these cases finish has to add a step
+ * the Flow keeps. This is the stand-in's answer for a call the model adds: a
+ * read the Flow keeps (`proposes`), as an execution result the build's test can
+ * run again once the domain is wrapped in `automationStudioReplayingBinding`.
+ */
+function keptRead(evidence: JsonObject): AutomationStudioLlmEvidenceToolExecutionResult {
+  return { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, draft: { proposes: true } };
+}
+
+/** The model's decision that reads one area and adds the read to the Flow. */
+const addRead = (callId: string, area: string) => ({ kind: "tool_call", callId, toolId: "inspect", input: { area, keep: true }, add: true });
 
 describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   beforeAll(async () => {
@@ -185,22 +201,25 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const provider = mockProvider(async (request) => {
       requests.push(request);
       if (isJudgeRequest(request)) return judgeReply();
+      // One read the Flow keeps, then the Flow is ready.
+      const decision = requests.length === 1 ? addRead("call.read", "list") : { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } };
       return {
-        response: { kind: "evidence_tool_decision", summary: "Build candidate.", decision: { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } } },
+        response: { kind: "evidence_tool_decision", summary: "Build candidate.", decision },
         usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 }
       };
     });
-    const executeTool = vi.fn().mockResolvedValue({ privatePageContent: "not persisted", factCount: 1 });
+    // The free look answers raw; the read the model adds answers as a step the Flow keeps. Both carry content the trace must not.
+    const executeTool = vi.fn(async (input: { value: JsonObject }) => input.value.keep ? keptRead({ privatePageContent: "not persisted", factCount: 1 }) : { privatePageContent: "not persisted", factCount: 1 });
     const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
-      resolver: () => ({ provider, maxCallsPerRun: 3 }),
-      evidenceRuntime: { domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: { scope: "current" } } }], executeTool }
+      resolver: () => ({ provider, maxCallsPerRun: 4 }), // Four, so its first decision is before the last three, which offer no tools (`llm/loop-budget.ts`).
+      evidenceRuntime: automationStudioReplayingBinding({ domainId: "test.domain", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: { scope: "current" } } }], executeTool })
     });
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
-    // One decision, then the judge of the Flow's test, through the same provider.
-    expect(requests.map((request) => request.taskKind)).toEqual(["evidence_tool_decision", "loop_verification"]);
+    // Two decisions -- the read, and the Flow is ready -- then the judge of the Flow's test, through the same provider.
+    expect(requests.map((request) => request.taskKind)).toEqual(["evidence_tool_decision", "evidence_tool_decision", "loop_verification"]);
     // Within the model's window, the only bound on a request since 2026-09-30; it was 8,000 tokens.
     expect(requests.every((request) => estimateAutomationStudioDeepSeekInputTokens(request) <= 992_000)).toBe(true);
     expect(requests[0]?.context.flowBootstrap?.nodeCatalog.length).toBeGreaterThan(0);
@@ -208,22 +227,22 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ projectId: project.id, flowId: flow.flowId, callId: "initial.inspect", toolId: "inspect", value: { scope: "current" } }));
     // The first observation is not sized: the model is shown the whole page.
     expect(executeTool.mock.calls[0]?.[0]).not.toHaveProperty("maxEvidenceBytes");
-    // The build pays for its judge: the decision's spend and the judge's, together.
-    expect(result.accounting).toMatchObject({ inputTokens: 10 + JUDGE_USAGE.inputTokens, outputTokens: 5 + JUDGE_USAGE.outputTokens, totalTokens: 15 + JUDGE_USAGE.totalTokens });
-    expect(result.accounting.estimatedCostUsd).toBeCloseTo(0.001 + JUDGE_USAGE.estimatedCostUsd, 9);
+    // The build pays for its judge: the decisions' spend and the judge's, together.
+    expect(result.accounting).toMatchObject({ inputTokens: 2 * 10 + JUDGE_USAGE.inputTokens, outputTokens: 2 * 5 + JUDGE_USAGE.outputTokens, totalTokens: 2 * 15 + JUDGE_USAGE.totalTokens });
+    expect(result.accounting.estimatedCostUsd).toBeCloseTo(2 * 0.001 + JUDGE_USAGE.estimatedCostUsd, 9);
     const stored = await instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId);
-    expect(stored?.evidenceTrace).toMatchObject([{ iteration: 0, decision: "tool_call", toolId: "inspect" }, { iteration: 1, decision: "complete" }]);
+    expect(stored?.evidenceTrace).toMatchObject([{ iteration: 0, decision: "tool_call", toolId: "inspect" }, { iteration: 1, decision: "tool_call", toolId: "inspect" }, { iteration: 2, decision: "complete" }]);
     expect(stored?.auditEvents[0]?.detail).toMatchObject({
       evidenceGuided: true,
-      iterationCount: 2,
-      traceStepCount: 2,
-      providerCallCount: 1,
-      decisionCount: 1,
+      iterationCount: 3,
+      traceStepCount: 3,
+      providerCallCount: 2,
+      decisionCount: 2,
       // The judge's one call is a call outside the loop, counted where the
       // accounting already has its spend (t195-w28b).
       additionalProviderCallCount: 1,
-      totalProviderCallCount: 2,
-      toolCallCount: 1,
+      totalProviderCallCount: 3,
+      toolCallCount: 2,
       toolIds: ["inspect"]
     });
     expect(JSON.stringify(stored?.evidenceTrace)).not.toContain("privatePageContent");
@@ -242,21 +261,25 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       requests.push(request);
       if (isJudgeRequest(request)) return judgeReply();
       const iteration = request.context.evidenceLoop?.iteration ?? 0;
-      const decision = iteration <= looks
-        ? { kind: "tool_call", callId: `call.${iteration}`, toolId: "inspect", input: { area: `area.${iteration}` } }
-        : { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } };
+      // The first look is a read the Flow keeps, so a build that finishes has a Flow its test can run whole; it comes
+      // first because a build's last three decisions offer no tools (`llm/loop-budget.ts`).
+      const decision = iteration > looks
+        ? { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } }
+        : iteration === 1
+          ? addRead(`call.${iteration}`, `area.${iteration}`)
+          : { kind: "tool_call", callId: `call.${iteration}`, toolId: "inspect", input: { area: `area.${iteration}` } };
       return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
     });
     const { project, flow } = await seeded(single);
     const instance = createService({
       provider,
       resolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 }),
-      evidenceRuntime: {
+      evidenceRuntime: automationStudioReplayingBinding({
         domainId: "test.domain",
         deniedEvidenceKeys: [],
         tools: [{ toolId: "inspect", description: "Inspect one area.", inputSchema: { type: "object" }, effect: "observe" }],
-        executeTool: async (input) => ({ area: String(input.value.area) })
-      }
+        executeTool: async (input: { value: JsonObject }) => input.value.keep ? keptRead({ area: String(input.value.area) }) : ({ area: String(input.value.area) })
+      })
     });
     const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
@@ -288,15 +311,18 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const selectedEvidence: unknown[] = [];
     const provider = mockProvider(async (request) => {
+      if (isJudgeRequest(request)) return judgeReply();
       requests.push(request);
-      return { response: { kind: "evidence_tool_decision", summary: "Build candidate.", decision: { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } } } };
+      // One read the Flow keeps, then the Flow is ready.
+      const decision = requests.length === 1 ? addRead("call.read", "buttons") : { kind: "complete", result: { summary: "Evidence-guided Flow.", plan: plan() } };
+      return { response: { kind: "evidence_tool_decision", summary: "Build candidate.", decision } };
     });
     const contentProtection = new AutomationStudioAesGcmProjectContentProtection(() => ({ keyId: "test.key", key: Buffer.alloc(32, 6) }));
     const { project, flow } = await seeded(domainTest);
     const instance = createService({
       provider,
-      resolver: () => ({ provider, maxCallsPerRun: 3 }),
-      evidenceRuntime: { domainId: "domain.test", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }], executeTool: async () => ({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) }, // Same domain as the project below: a runtime bound for one domain offers a Flow in another nothing.
+      resolver: () => ({ provider, maxCallsPerRun: 4 }), // Four, so its first decision may still add a step.
+      evidenceRuntime: automationStudioReplayingBinding({ domainId: "domain.test", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect bounded domain evidence.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }], executeTool: async (input: { value: JsonObject }) => input.value.keep ? keptRead({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) : ({ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }) }), // Same domain as the project below: a runtime bound for one domain offers a Flow in another nothing.
       reusableLlmContext: {
         enabled: true,
         contentProtection,
@@ -312,16 +338,20 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"]
     } });
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true, useReusableContext: true });
-    expect(selectedEvidence).toHaveLength(1);
-    // The fresh inspection is the only evidence observed. A three-call build
-    // is inside the wrap-up from its first decision (`llm/loop-budget.ts`), so
-    // that decision also carries the loop's own `core.budget` entry.
+    // Selected before each decision, from what the domain had observed by then: the first, before anything else, from the
+    // fresh creation inspection alone.
+    expect(selectedEvidence).toHaveLength(requests.length);
+    expect(selectedEvidence[0]).toEqual([{ schemaVersion: "evidence.v1", facts: [{ role: "button" }] }]);
+    // The fresh inspection is the only evidence observed before the first
+    // decision; the loop's own `core.budget` entry, where a small build carries
+    // one (`llm/loop-budget.ts`), is Core's.
     // The draft entry is Core's too: it carries the acts checklist from the first decision.
     const observed = (requests[0]?.context.evidenceLoop?.evidence ?? []).filter((entry) => entry.toolId !== "core.budget" && entry.toolId !== "core.flow_draft");
     expect(observed).toEqual([expect.objectContaining({ callId: "initial.inspect", toolId: "inspect" })]);
     expect(requests[0]?.context.reusableContext).toMatchObject({ items: [{ advisory: true, recordId: "context.creation", sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] }] });
     const stored = await instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId);
-    expect(stored?.reusableContext).toMatchObject({ status: "hit", freshContributionCount: 1, reusedContributionCount: 1, sourceRecordIds: ["context.creation"] });
+    // What is recorded is the last selection's: the inspection and the read the Flow kept, both fresh.
+    expect(stored?.reusableContext).toMatchObject({ status: "hit", freshContributionCount: 2, reusedContributionCount: 1, sourceRecordIds: ["context.creation"] });
     expect(stored?.auditEvents[0]?.detail).toMatchObject({ reusableContext: { status: "hit", sourceRunIds: ["run.prior"], sourceAdaptationIds: ["adaptation.prior"] } });
   });
 

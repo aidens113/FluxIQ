@@ -56,6 +56,15 @@ export function automationStudioLlmEvidenceRerunReplaced(
     rerun.routing = replaced.routing;
     delete replaced.routing;
   }
+  // The node the replaced step stood for, and what state routing recorded on
+  // it: a step carried from an earlier Flow must run in the build before the
+  // Flow is tested whole (t244), and the rerun that runs it is a new step. It
+  // keeps that node's id when the Flow is written
+  // (`../node-tools/draft-from-flow.ts`), and the node's signatures where its
+  // own run recorded none.
+  rerun.standsFor = replaced.standsFor ?? automationStudioFlowDraftStepId(replaced);
+  if (replaced.routeSignatures && !rerun.routeSignatures) rerun.routeSignatures = replaced.routeSignatures;
+  delete replaced.standsFor;
   const from = automationStudioFlowDraftStepId(replaced);
   const to = automationStudioFlowDraftStepId(rerun);
   for (const step of steps) if (step.routing) step.routing = renamed(step.routing, from, to);

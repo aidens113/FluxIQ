@@ -10,14 +10,13 @@
 
 import { describe, expect, it } from "vitest";
 import { create, useBootstrapTempRoot } from "./harness.ts";
-import { complete, look, LOOK_TOOL_ID, type Reply } from "./replies.ts";
+import { complete, look, lookAdded, LOOK_TOOL_ID, type Reply } from "./replies.ts";
 
 useBootstrapTempRoot();
 
 describe("creating a Flow through an exploration, with no grant", () => {
   it("asks again after a malformed decision, carries on, and creates the Flow", async () => {
-    const run = await create({ maxCalls: 6, reply: (call, iteration) => call === 1 ? "malformed" : iteration === 2 ? look(2) : complete() });
-
+    const run = await create({ maxCalls: 6, looksAreSteps: true, reply: (call, iteration) => call === 1 ? "malformed" : iteration === 2 ? lookAdded(2) : complete() });
 
     expect(run.failure).toBeUndefined();
     expect(run.result).toMatchObject({ status: "proposed" });
@@ -26,6 +25,8 @@ describe("creating a Flow through an exploration, with no grant", () => {
     // judge says yes at once, so it is asked once (`result-verification/verify.ts` asks again only on anything but yes).
     expect(run.sentIterations).toEqual([1, 2, 3]);
     expect(run.judgeRequests).toHaveLength(1);
+    // What it judged is the test of the whole Flow, which ran the one step added (t244).
+    expect(run.judgeRequests[0]?.stepCount).toBe(1);
     expect(run.revealed).toHaveLength(4);
     expect(run.stored?.evidenceTrace?.map((step) => step.decision)).toEqual(["unusable", "tool_call", "complete"]);
     // A bad reply names no tool and carries no content, but it does say what
@@ -44,7 +45,7 @@ describe("creating a Flow through an exploration, with no grant", () => {
   // The fake endpoint is entered only after the key was released for the call,
   // so this timeout is deterministically a spent provider call.
   it("asks again after a provider decision reaches its deadline", async () => {
-    const run = await create({ maxCalls: 6, reply: (call, iteration) => call === 1 ? "timeout_after_send" : iteration === 2 ? look(2) : complete() });
+    const run = await create({ maxCalls: 6, looksAreSteps: true, reply: (call, iteration) => call === 1 ? "timeout_after_send" : iteration === 2 ? lookAdded(2) : complete() });
 
     expect(run.failure).toBeUndefined();
     expect(run.result).toMatchObject({ status: "proposed" });
@@ -124,8 +125,8 @@ describe("creating a Flow through an exploration, with no grant", () => {
 
   it("does not count bad replies across a good one", async () => {
     // bad, look, bad, look, bad, bad, complete: never three in a row.
-    const script: Reply[] = ["malformed", look(2), "malformed", look(4), "malformed", "malformed", complete()];
-    const run = await create({ maxCalls: 8, reply: (call) => script[call - 1]! });
+    const script: Reply[] = ["malformed", lookAdded(2), "malformed", look(4), "malformed", "malformed", complete()];
+    const run = await create({ maxCalls: 8, looksAreSteps: true, reply: (call) => script[call - 1]! });
 
     expect(run.failure).toBeUndefined();
     expect(run.result).toMatchObject({ status: "proposed" });
@@ -145,7 +146,7 @@ describe("creating a Flow through an exploration, with no grant", () => {
   // exploration that finished could not be saved, and one that ran out lost its
   // named reason to a generic transport failure.
   it("saves a creation that looked more than sixteen times", async () => {
-    const run = await create({ maxCalls: 20, reply: (_call, iteration) => iteration <= 18 ? look(iteration) : complete() });
+    const run = await create({ maxCalls: 20, looksAreSteps: true, reply: (_call, iteration) => iteration === 1 ? lookAdded(1) : iteration <= 18 ? look(iteration) : complete() });
 
     expect(run.failure).toBeUndefined();
     expect(run.sentIterations).toHaveLength(19);
@@ -163,10 +164,11 @@ describe("creating a Flow through an exploration, with no grant", () => {
       // Nine calls at 22,000 is what lets a run's budget reach 100,000; the whole node catalog in each request
       // (2026-09-30) no longer fits the 12,000 it once was.
       maxCalls: 9,
+      looksAreSteps: true,
       tokenLimits: { maxInputTokens: 20_000, maxOutputTokens: 2_000, maxTotalTokens: 22_000 },
       maxTotalTokensPerRun: 100_000,
       billed: { promptTokens: 10_000, completionTokens: 2_000 },
-      reply: (_call, iteration) => iteration <= 4 ? look(iteration) : complete()
+      reply: (_call, iteration) => iteration === 1 ? lookAdded(1) : iteration <= 4 ? look(iteration) : complete()
     });
 
     expect(run.failure).toBeUndefined();

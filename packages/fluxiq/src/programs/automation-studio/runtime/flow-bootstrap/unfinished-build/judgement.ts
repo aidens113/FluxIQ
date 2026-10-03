@@ -22,13 +22,19 @@
 //
 // **A finished round is judged by the judge (t195).** A Flow the model said
 // was ready and whose test passed is judged against the instruction from what
-// that test actually did (the caller's `judge`, `./phases.ts`). One judged
-// wrong is made a judgement here too (`automationStudioFlowBootstrapJudgeFinished`),
-// carrying the judge's own account, so it takes the same repair path as a
-// round that stopped short. The checklist is still read for it, as
-// information: the Flow is judged on what its test does.
+// that test actually did (the caller's `judge`, `./phases.ts`). One not judged
+// to do what was asked is made a judgement here too
+// (`automationStudioFlowBootstrapJudgeFinished`), carrying the judge's own
+// account, so it takes the same repair path as a round that stopped short:
+// a `no`, and since the user's rule of 2026-10-02 -- a build finishes only on
+// a judged success of the Flow as it finally stands -- an unsure verdict, one
+// not judged, and a yes about another version of the Flow or about no test.
+// Such a Flow is said untested unless the verdict was about a test of this
+// very Flow (its `flowSignature`): what ran was another Flow, or nothing. The
+// checklist is still read for it, as information: the Flow is judged on what
+// its test does.
 import type { JsonObject } from "../../../../../core/index.ts";
-import { automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioInstructedActsNotDone, type AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type {
   AutomationStudioFlowBootstrapJudgedWrong,
@@ -108,11 +114,13 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
 }
 
 /**
- * The judgement of a finished round the judge sent back: a `no`, or an unsure
- * verdict where steps carried from an earlier Flow were not run in its test.
- * Nothing is run here: the loop's own test already ran (`replayed_clean`), or
- * ran none of the carried steps (`not_tested`). The seed is the Flow the round
- * finished with, which the repair starts from.
+ * The judgement of a finished round not judged to do what was asked: a `no`,
+ * an unsure verdict, or one not judged (a yes about another version of the
+ * Flow or about no test arrives here as `not_judged`). Nothing is run here: the
+ * loop's own test of this Flow already ran (`replayed_clean`), or ran none of
+ * its carried steps, or the verdict was about another Flow's test or none
+ * (`not_tested`). The seed is the Flow the round finished with, which the
+ * repair starts from.
  */
 export function automationStudioFlowBootstrapJudgeFinished(input: {
   round: number;
@@ -125,7 +133,9 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
   const workedIds = new Set(input.steps.filter((step) => step.replayed?.status === "replayed" && step.id !== undefined).map((step) => step.id));
   const { done, todo, proven } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.id !== undefined && workedIds.has(step.id)).map((step) => step.position)));
   const judge = judgedWrong(input.verdict);
-  const tested: AutomationStudioFlowBootstrapTested = judge.untestedCarried?.length ? "not_tested" : "replayed_clean";
+  // A verdict that judged nothing, or another Flow's test, is no evidence this Flow ran: a `no` is always about the loop's own test.
+  const testedThisFlow = input.verdict.verdict === "no" || input.verdict.flowSignature === automationStudioFlowDraftFlowSignature(input.steps);
+  const tested: AutomationStudioFlowBootstrapTested = judge.untestedCarried?.length || !testedThisFlow ? "not_tested" : "replayed_clean";
   return {
     seed,
     judgement: {

@@ -9,7 +9,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, copyDataDirSeed, caller, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
+import { blankFixture, copyDataDirSeed, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const SEEDING_TIMEOUT_MS = 60_000;
 
@@ -54,6 +55,8 @@ async function build(repairs: "finish" | "refuse") {
   let repairCalls = 0;
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
   const provider = mockProvider(async (request) => {
+    // The judge of a test of the Flow says yes; it is not one of the model's decisions.
+    if (isJudgeRequest(request)) return judgeReply();
     requests.push(request);
     if (repairEntry(request)) repairing = true;
     if (repairing) repairCalls += 1;
@@ -70,12 +73,12 @@ async function build(repairs: "finish" | "refuse") {
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
-    llmEvidenceRuntime: {
+    llmEvidenceRuntime: automationStudioReplayingBinding({
       domainId: "example",
       deniedEvidenceKeys: [],
       tools: [{ toolId: "example.act", description: "Change the target.", inputSchema: { type: "object" }, effect: "mutate" }],
       executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" })
-    }
+    })
   });
   services.add(instance);
   const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
@@ -92,6 +95,8 @@ async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
   let exploringAgain = 0;
   const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
   const provider = mockProvider(async (request) => {
+    // The judge of a test of the Flow says yes; it is not one of the model's decisions.
+    if (isJudgeRequest(request)) return judgeReply();
     requests.push(request);
     const entry = request.context.evidenceLoop?.evidence.find((item) => item.toolId === "core.resumed")?.value as JsonObject | undefined;
     if (entry?.code === "llm_evidence_loop.explore_again") exploringAgain += 1;
@@ -108,12 +113,12 @@ async function buildEmpty(again: "finish" | "same", maxCallsPerRun?: number) {
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2, ...(maxCallsPerRun ? { maxCallsPerRun } : {}) })) as never,
-    llmEvidenceRuntime: {
+    llmEvidenceRuntime: automationStudioReplayingBinding({
       domainId: "example",
       deniedEvidenceKeys: [],
       tools: [{ toolId: "example.act", description: "Change the target.", inputSchema: { type: "object" }, effect: "mutate" }],
       executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" })
-    }
+    })
   });
   services.add(instance);
   const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });

@@ -24,6 +24,7 @@ import {
   automationStudioFlowBootstrapStopSaid,
   automationStudioFlowBootstrapTestSaid
 } from "./not-done.ts";
+import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The size of each budget, as the person is told it. */
 export type AutomationStudioFlowBootstrapBudgetSizes = {
@@ -75,6 +76,8 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined;
   rounds: number;
   decisions: number;
+  /** Why each live round stopped, in order (`./tried.ts`). */
+  stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
   /** Whether the Flow so far was kept for the next build. */
   kept: boolean;
   /**
@@ -103,7 +106,7 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
     message: message.slice(0, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE),
     bound: input.bound,
     notDone,
-    tried: { rounds: input.rounds, decisions: input.decisions, stepsInFlow: input.judgement.stepsInFlow, tested: input.judgement.tested }
+    tried: automationStudioFlowBootstrapTried(input)
   };
 }
 

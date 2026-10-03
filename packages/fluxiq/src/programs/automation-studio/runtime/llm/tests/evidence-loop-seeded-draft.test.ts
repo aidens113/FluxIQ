@@ -41,7 +41,7 @@ describe("a loop that starts from a draft", () => {
       .mockResolvedValueOnce({ kind: "complete", result: { summary: "Searched, then extracted." } });
     const executeTool = vi.fn().mockResolvedValue({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, draft: { actionId: "web.dom.type", proposes: true } });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: seed() } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: seed() }, dryRun: false });
 
     expect(result.ok).toBe(true);
     expect(result.steps.map((step) => [step.id, step.position, step.actionId])).toEqual([
@@ -63,10 +63,24 @@ describe("a loop that starts from a draft", () => {
       .mockResolvedValueOnce({ kind: "complete", result: { summary: "Replaced the extraction." } });
     const executeTool = vi.fn().mockResolvedValue({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, draft: { actionId: "web.dom.extract_list", proposes: true } });
 
-    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: seed() } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: seed() }, dryRun: false });
 
     expect(result.ok).toBe(true);
     expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([["f1", "kept"], ["f2", "dropped"], ["d1", "kept"]]);
+  });
+
+  // t244 (user, 2026-10-02): a Flow is finished only once it has run whole from
+  // its start. The seed's steps never ran in this build, so the test cannot run
+  // them: a completion over them is refused, and nothing is run again, until each
+  // is rerun. The tests above turn the test off; their subject is the seed.
+  it("refuses to finish over seeded steps that never ran in this build, and runs nothing again", async () => {
+    const decide = vi.fn().mockResolvedValue({ kind: "complete", result: { summary: "Kept the Flow as it was." } });
+    const executeTool = vi.fn();
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: seed() }, maxIterations: 2, unusableDecisions: { stalled: () => new Error("stalled") } });
+    expect(result.ok).toBe(false);
+    expect(executeTool).not.toHaveBeenCalled();
+    const shown = decide.mock.calls[1]?.[0].evidence.find((entry: { toolId: string }) => entry.toolId === "core.dry_run");
+    expect(shown?.value).toMatchObject({ code: "llm_evidence_loop.full_run_required", steps: [{ step: 1, replayed: "not_run_in_this_build" }, { step: 2, replayed: "not_run_in_this_build" }] });
   });
 
   it("hands a failed loop the seed back too, so a build that ended early still says what the Flow was", async () => {

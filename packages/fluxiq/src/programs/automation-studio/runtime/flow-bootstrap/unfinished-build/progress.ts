@@ -19,6 +19,14 @@
 // is (t240): rows stored where none were, or fewer refused or incomplete rows
 // while no fewer are stored -- a Flow that stopped reading has fewer refusals
 // and is no further.
+//
+// **A Flow not judged, then judged, progressed (user, 2026-10-02).** A
+// finished round whose Flow was not judged to do what was asked -- the judge
+// unsure or not run, or its yes about a test of another version of the Flow or
+// of none -- is repaired like one judged wrong (`./phases.ts`). A repair whose
+// Flow the judge then did judge got further, whatever the Flow before it was:
+// `judged_after_unjudged`. Its verdict can only be `no` here; a yes about the
+// Flow as it stands finishes the build.
 import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapProgressMeasure } from "./contracts.ts";
 
 /** What `after` measurably did better than `before`; empty when nothing did. */
@@ -31,7 +39,7 @@ export function automationStudioFlowBootstrapJudgementProgress(before: Automatio
   // Without a judge the test is the only report of what the Flow does; with one, the judge's account is.
   if (!before.judge && !after.judge && workingSteps(after) > workingSteps(before)) moved.push("more_working_steps");
   if (!before.judge && after.judge) moved.push("finished_and_judged");
-  if (before.judge && after.judge && before.judge.verdict !== "no" && after.judge.verdict === "no") moved.push("carried_steps_judged");
+  if (before.judge && after.judge && before.judge.verdict !== "no" && after.judge.verdict === "no") moved.push("judged_after_unjudged");
   if (before.judge?.verdict === "no" && after.judge?.verdict === "no") {
     const now = new Set(after.judge.findings);
     if (before.judge.findings.some((finding) => !now.has(finding))) moved.push("judge_findings_resolved");

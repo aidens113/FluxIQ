@@ -224,7 +224,7 @@ read their output:
 
 ```bash
 pnpm check     # structure audit, then per-package type checks
-pnpm test
+pnpm test      # every package's tests; one failing package does not stop the rest
 pnpm build
 ```
 

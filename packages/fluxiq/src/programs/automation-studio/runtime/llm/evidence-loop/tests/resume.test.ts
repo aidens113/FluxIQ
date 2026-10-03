@@ -66,7 +66,7 @@ describe("the entry a continued build starts from", () => {
     const judge = { verdict: "unknown", findings: ["steps 5 to 9 were carried and not run"], untestedCarried: [5, 6, 7, 8, 9] };
     const judgement = { stopped: "judged_wrong", test: "not_tested", stepsInFlow: 9, actsDone: 3, actsTodo: [], judge };
     const instruction = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [], judgement }, [step(1)]).value.instruction as string;
-    expect(instruction).toContain("could not be judged against the instruction");
+    expect(instruction).toContain("was not judged to do what the instruction asks");
     expect(instruction).toContain("Steps 5, 6, 7, 8, 9 were carried from the earlier Flow and not run in this build: rerun them live (amend_draft rerun)");
   });
 

@@ -1,14 +1,15 @@
 // A build's purse: its cost ceiling, held against every call before it is sent.
 //
 // **Why a build needs one of its own.** A build has no run ledger
-// (`../run-budget.ts`); its ceiling -- $0.25, or the Flow's lower setting -- was
+// (`../run-budget.ts`); its ceiling -- the run cost ceiling, $0.25 then and
+// $0.10 by default now, or the Flow's lower setting -- was
 // held only by the loop's arithmetic (`../loop-budget.ts`), which counts
 // decisions left at the *average* reported cost of the ones before. Reported
 // costs are cache-discounted and the request grows every decision, so the
 // average says nothing about the next call. On `run-mup2u8o3-6697c4be` eight
 // decisions averaged $0.019; the ninth was sent with $0.154 spent, re-read
 // 475,714 of its 477,506 input tokens uncached, and cost $0.1429: $0.297 against
-// $0.25, and nothing in Core counted it as a breach.
+// that $0.25, and nothing in Core counted it as a breach.
 //
 // So before a call goes out its worst case is projected from the request
 // actually about to be sent (`./projected-cost.ts`, priced by the harness from

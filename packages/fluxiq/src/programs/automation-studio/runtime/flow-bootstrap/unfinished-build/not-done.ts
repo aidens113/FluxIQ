@@ -41,7 +41,9 @@ const STOP_WORDS: Readonly<Record<AutomationStudioFlowBootstrapUnfinishedStop, s
   // after five refused amendments and no attempt to finish at all.
   unusable_decisions: "too many of its decisions in a row could not be used",
   repeat_without_progress: "it kept repeating itself without getting further",
-  judged_wrong: "the Flow it said was ready was tested from its start and judged not to do what you asked"
+  // A `no`, an unsure verdict, one not judged, or a yes about another version
+  // of the Flow or about no test (user, 2026-10-02): none is a judged success.
+  judged_wrong: "the Flow it said was ready was not judged to do what you asked"
 });
 
 /** The acts and choices not done, as the ending's record keeps them. */
@@ -107,9 +109,11 @@ export function automationStudioFlowBootstrapTestSaid(judgement: AutomationStudi
 }
 
 /**
- * The test of a Flow the model said was ready, which a judge sent back: it
- * ran clean, so it is never said to have failed, nor to have done what was
- * asked; or steps carried from an earlier Flow were not run in it at all.
+ * The test of a Flow the model said was ready, which was not judged a
+ * success: it ran clean and was judged wrong, so it is never said to have
+ * failed, nor to have done what was asked; or it ran clean and the judge could
+ * not say; or steps carried from an earlier Flow were not run in it at all; or
+ * what was judged was not a test of this Flow (user, 2026-10-02).
  */
 function judgedTestSaid(judgement: AutomationStudioFlowBootstrapJudgement): string {
   const steps = `${judgement.stepsInFlow} step${judgement.stepsInFlow === 1 ? "" : "s"}`;
@@ -117,15 +121,22 @@ function judgedTestSaid(judgement: AutomationStudioFlowBootstrapJudgement): stri
   if (carried.length) {
     return `Step${carried.length === 1 ? "" : "s"} ${carried.slice(0, 6).join(", ")}${carried.length > 6 ? " and more" : ""} of the Flow (${steps}) came from the earlier Flow and ${carried.length === 1 ? "was" : "were"} not run when it was tested, so what ${carried.length === 1 ? "it does" : "they do"} could not be judged.`;
   }
-  return `The Flow (${steps}) ran from its start, but what it did was judged not to be what you asked.`;
+  if (judgement.judge?.verdict === "no") return `The Flow (${steps}) ran from its start, but what it did was judged not to be what you asked.`;
+  if (judgement.tested === "not_tested") return `The Flow as it now stands (${steps}) was not run whole from its start and judged, so it was not judged to do what you asked.`;
+  return `The Flow (${steps}) ran from its start, but what it did was not judged to be what you asked.`;
 }
 
-/** The repair's announcement after a judge, naming its reason in its own words, bounded. */
+/**
+ * The repair's announcement after a judge, naming its reason in its own words,
+ * bounded: what it found wrong, or that the Flow was not judged to do what was
+ * asked and why (user, 2026-10-02).
+ */
 export function automationStudioFlowBootstrapRepairingJudgedSaid(judge: NonNullable<AutomationStudioFlowBootstrapJudgement["judge"]>): string {
   const carried = judge.untestedCarried ?? [];
-  if (carried.length) return `Steps ${carried.join(", ")} came from the earlier Flow and were not run when it was tested. Repairing the Flow live, running them again.`;
+  if (carried.length) return `The Flow was not judged to do what you asked: steps ${carried.join(", ")} came from the earlier Flow and were not run when it was tested. Repairing the Flow live, running them again.`;
   const reason = (judge.observed ?? judge.findings[0] ?? "").replace(/\s+/gu, " ").trim();
   const said = reason.length > 160 ? `${reason.slice(0, 157).trimEnd()}...` : reason;
+  if (judge.verdict !== "no") return `The Flow was not judged to do what you asked${said ? `: ${said}` : ""}. Repairing it live, to test it from its start and judge it again.`;
   return `The Flow was tested from its start and judged not to do what you asked${said ? `: ${said}` : ""}. Repairing it live.`;
 }
 

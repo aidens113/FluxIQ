@@ -17,11 +17,12 @@
 // the target. The record beside it keeps the same facts as ids and counts for
 // a reader that counts. Producer and reader share `parse…BuildEnding`, as every
 // other field of this diagnostic does (`./failure-state.ts` says why).
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS } from "../../loop-limits/index.ts";
 import type { AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
 
 /** Which budget ran out. */
 export type AutomationStudioFlowBootstrapBudgetBound =
-  /** The build's spend ceiling ($0.25, or the Flow's lower setting). */
+  /** The build's spend ceiling (the run cost ceiling, $0.10 by default, or the Flow's lower setting). */
   | "cost"
   /** The run's token budget. */
   | "tokens"
@@ -52,9 +53,31 @@ export type AutomationStudioFlowBootstrapBuildEnding = {
   bound?: AutomationStudioFlowBootstrapBudgetBound;
   /** Each act or choice not done, by id, in the person's words, and why, as the checklist's code. */
   notDone: Array<{ id: string; quote: string; todo: string }>;
-  /** What was tried: live rounds (exploration, then each repair), decisions in all, the Flow's steps, and what the last test found. */
-  tried: { rounds: number; decisions: number; stepsInFlow: number; tested: "replayed_clean" | "replay_failed" | "not_tested" };
+  /**
+   * What was tried: live rounds (exploration, then each repair), decisions in
+   * all, the Flow's steps, and what the last test found. `stops` is why each
+   * round stopped, in order (`../unfinished-build/phases.ts`): what a debug
+   * reads to tell which bound ended which round (live run muqk713g). `noRoute`
+   * is which case left no route, on `not_doable` only. Closed words only, so
+   * the run record and the Lab publish them as they are; absent on a record
+   * written before they were kept.
+   */
+  tried: {
+    rounds: number;
+    decisions: number;
+    stepsInFlow: number;
+    tested: "replayed_clean" | "replay_failed" | "not_tested";
+    stops?: Array<{ round: number; stopped: AutomationStudioFlowBootstrapRoundStopped }>;
+    noRoute?: { kind: "no_progress" | "repeated_unchanged" };
+  };
 };
+
+/**
+ * Why one live round stopped: the round's own stop
+ * (`../unfinished-build/contracts.ts`, `AutomationStudioFlowBootstrapUnfinishedStop`),
+ * or `budget` where a budget stopped it.
+ */
+export type AutomationStudioFlowBootstrapRoundStopped = "iterations" | "tool_calls" | "unusable_decisions" | "repeat_without_progress" | "judged_wrong" | "budget";
 
 /** The code each ending is published under. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_CODES: Readonly<Record<AutomationStudioFlowBootstrapBuildEnding["kind"], AutomationStudioFlowBootstrapFailureDiagnostic["code"]>> = Object.freeze({
@@ -72,6 +95,8 @@ const MAX_QUOTE = 200;
 const MAX_COUNT = 10_000;
 const BOUNDS: readonly string[] = ["cost", "tokens", "duration", "calls", "repair_rounds", "rounds"];
 const TESTED: readonly string[] = ["replayed_clean", "replay_failed", "not_tested"];
+const STOPPED: readonly string[] = ["iterations", "tool_calls", "unusable_decisions", "repeat_without_progress", "judged_wrong", "budget"] satisfies readonly AutomationStudioFlowBootstrapRoundStopped[];
+const NO_ROUTE: readonly string[] = ["no_progress", "repeated_unchanged"];
 const ACT_ID = /^a[1-9][0-9]{0,2}(?:\.[a-z]{1,16})?$/u;
 const CODE = /^[a-z0-9_.:-]{1,100}$/iu;
 const CONTROL = /[\u0000-\u001f\u007f]/u;
@@ -95,15 +120,38 @@ export function parseAutomationStudioFlowBootstrapBuildEnding(value: unknown, co
     notDone.push({ id: item.id, quote: item.quote, todo: item.todo });
   }
   const tried = value.tried;
-  if (!isRecord(tried) || !exact(tried, ["rounds", "decisions", "stepsInFlow", "tested"])) return null;
+  if (!isRecord(tried) || !exact(tried, ["rounds", "decisions", "stepsInFlow", "tested", "stops", "noRoute"])) return null;
   if (!count(tried.rounds) || !count(tried.decisions) || !count(tried.stepsInFlow) || typeof tried.tested !== "string" || !TESTED.includes(tried.tested)) return null;
+  const stops = parseStops(tried.stops);
+  if (stops === null) return null;
+  const noRoute = tried.noRoute;
+  if (noRoute !== undefined && (value.kind !== "not_doable" || !isRecord(noRoute) || !exact(noRoute, ["kind"]) || typeof noRoute.kind !== "string" || !NO_ROUTE.includes(noRoute.kind))) return null;
   return {
     kind: value.kind as AutomationStudioFlowBootstrapBuildEnding["kind"],
     message: value.message,
     ...(value.kind === "budget_exhausted" ? { bound: value.bound as AutomationStudioFlowBootstrapBudgetBound } : {}),
     notDone,
-    tried: { rounds: tried.rounds as number, decisions: tried.decisions as number, stepsInFlow: tried.stepsInFlow as number, tested: tried.tested as AutomationStudioFlowBootstrapBuildEnding["tried"]["tested"] }
+    tried: {
+      rounds: tried.rounds as number,
+      decisions: tried.decisions as number,
+      stepsInFlow: tried.stepsInFlow as number,
+      tested: tried.tested as AutomationStudioFlowBootstrapBuildEnding["tried"]["tested"],
+      ...(stops ? { stops } : {}),
+      ...(isRecord(noRoute) ? { noRoute: { kind: noRoute.kind as "no_progress" | "repeated_unchanged" } } : {})
+    }
   };
+}
+
+/** Each round's stop, at most one per live round a build may run; `null` for a list that is not well formed, `undefined` for none. */
+function parseStops(value: unknown): NonNullable<AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"]> | null | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS) return null;
+  const stops: NonNullable<AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"]> = [];
+  for (const item of value) {
+    if (!isRecord(item) || !exact(item, ["round", "stopped"]) || !count(item.round) || typeof item.stopped !== "string" || !STOPPED.includes(item.stopped)) return null;
+    stops.push({ round: item.round as number, stopped: item.stopped as AutomationStudioFlowBootstrapRoundStopped });
+  }
+  return stops;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
