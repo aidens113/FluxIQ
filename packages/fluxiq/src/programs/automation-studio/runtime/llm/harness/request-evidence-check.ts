@@ -128,10 +128,21 @@ function sendableResultSummary(request: AutomationStudioLlmTaskRequest, deniedKe
   return Number.isFinite(serializedBytes(summary));
 }
 
-/** A build's test free of the declared keys in what it observed, and of locators anywhere. */
+/**
+ * A build's test free of the declared keys in what it observed, and of locators
+ * anywhere. Since t252 the domain's values sit in two more places, both held to
+ * the declared keys: each pass of a repeated step (what it observed, and the
+ * row label it names), and each Flow input's test value (`inputs`); an input's
+ * name and the pass's own fields are Core's envelope.
+ */
 function sendableBuildTest(buildTest: NonNullable<NonNullable<AutomationStudioLlmTaskRequest["context"]["resultSummary"]>["buildTest"]>, deniedKeys: readonly string[]): boolean {
-  const observed: unknown[] = Array.isArray(buildTest.steps) ? buildTest.steps.map((step) => (isRecord(step) ? step.observed : undefined)) : [];
-  if (screenAutomationStudioLlmEvidence(observed, deniedKeys).deniedKey) return false;
+  const steps: unknown[] = Array.isArray(buildTest.steps) ? buildTest.steps : [];
+  const observed = steps.map((step) => (isRecord(step) ? step.observed : undefined));
+  const passes = steps.flatMap((step) => (isRecord(step) && Array.isArray(step.passes) ? step.passes : []))
+    .map((pass: unknown) => (isRecord(pass) ? [pass.observed, pass.row] : undefined));
+  const inputs: unknown = (buildTest as { inputs?: unknown }).inputs;
+  const tested = Array.isArray(inputs) ? inputs.map((input: unknown) => (isRecord(input) ? input.test : undefined)) : [];
+  if (screenAutomationStudioLlmEvidence([observed, passes, tested], deniedKeys).deniedKey) return false;
   return !locatorShapedAnywhere(buildTest);
 }
 

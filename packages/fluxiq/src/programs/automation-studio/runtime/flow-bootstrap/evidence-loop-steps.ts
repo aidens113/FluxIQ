@@ -197,7 +197,8 @@ const EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS: {
   bind_not_a_binding: true,
   bind_new_key: true,
   bind_row_outside_loop: true,
-  bind_malformed: true
+  bind_malformed: true,
+  rerun_holds_binding: true
 });
 /**
  * The most refusals one step may report: the most amendments one decision may

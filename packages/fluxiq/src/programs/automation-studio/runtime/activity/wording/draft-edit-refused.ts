@@ -23,8 +23,12 @@ const BECAUSE: Readonly<Record<AutomationStudioFlowDraftAmendmentRefusal["reason
   bind_not_a_binding: "a value can only be made to vary with a placeholder for it",
   bind_new_key: "that step has no such value to make vary",
   bind_row_outside_loop: "that step is not repeated for each item, so there is no item to take the value from",
-  bind_malformed: "the placeholder for that value was not written correctly"
+  bind_malformed: "the placeholder for that value was not written correctly",
+  rerun_holds_binding: "that step takes a value that varies, which is known only when the Flow runs"
 });
+
+/** The reasons that refuse only a step asked to run again, so the card says the step was not run again. */
+const RERUN_REASONS: ReadonlySet<string> = new Set(["changes_nothing", "rerun_holds_binding"]);
 
 /** What an earlier run of the same call came to (`../../llm/repeat-guard/outcomes.ts`), said as why it was not run again. */
 const REPEATED: Readonly<Record<string, string>> = Object.freeze({
@@ -52,7 +56,7 @@ export function automationStudioActivityDraftEditRefused(
   refusal: { reasons: readonly string[] } | { repeated: string },
   summary: string | undefined
 ): { title: string; text: string } {
-  const rerun = "repeated" in refusal || (refusal.reasons.length > 0 && refusal.reasons.every((reason) => reason === "changes_nothing"));
+  const rerun = "repeated" in refusal || (refusal.reasons.length > 0 && refusal.reasons.every((reason) => RERUN_REASONS.has(reason)));
   const said = "repeated" in refusal
     ? [REPEATED[refusal.repeated] ?? REPEATED.same_result!]
     : [...new Set(refusal.reasons.map((reason) => (BECAUSE as Readonly<Record<string, string>>)[reason]).filter((words): words is string => Boolean(words)))].slice(0, 2);

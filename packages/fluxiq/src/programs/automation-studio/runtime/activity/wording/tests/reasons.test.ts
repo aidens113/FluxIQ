@@ -3,6 +3,7 @@ import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../../../flow-draft/index.
 import {
   automationStudioActivityCompletionRefusal,
   automationStudioActivityDecision,
+  automationStudioActivityDraftEditRefused,
   automationStudioActivityReasonText,
   automationStudioActivityRecoveryChoice
 } from "../index.ts";
@@ -71,5 +72,15 @@ describe("automationStudioActivityRecoveryChoice", () => {
     expect(automationStudioActivityRecoveryChoice({ kind: "satisfied", rung: "skip_satisfied_node" }).title).toBe("Moving on: the step's result is already there");
     expect(automationStudioActivityRecoveryChoice({ kind: "stop" }).title).toBe("The quick fixes didn't help");
     for (const kind of ["retry", "satisfied", "stop"]) expect(automationStudioActivityRecoveryChoice({ kind }).text).toMatch(/\.$/u);
+  });
+});
+
+// t252: a rerun refused because the step holds a binding says why in a person's words.
+describe("automationStudioActivityDraftEditRefused for a bound step", () => {
+  it("says the step varies and runs only in the Flow, never the code", () => {
+    const card = automationStudioActivityDraftEditRefused({ reasons: ["rerun_holds_binding"] }, undefined);
+    expect(card.title).toBe("Didn't run the step again");
+    expect(card.text).not.toContain("rerun_holds_binding");
+    expect(card.text).toMatch(/only when the Flow runs/u);
   });
 });

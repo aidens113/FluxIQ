@@ -31,9 +31,11 @@
 //                            and the judge's yes was stored on another.
 //   not_reached           -- a step the test never came to: a written step
 //                            inside a repeat whose list had no rows in the
-//                            test, so it ran zero times (design t252). A
-//                            written step never ran in the build either, so
-//                            nothing has shown it works.
+//                            test, so it ran zero times, or inside a repeat
+//                            the test could not walk row by row, where it did
+//                            not pass on the row the build explored (design
+//                            t252). A written step never ran in the build
+//                            either, so nothing has shown it works.
 //
 // The refusal names those steps and says the one way through: rerun each, in
 // the Flow's order, so it becomes a step that ran, with the consequences it
@@ -59,7 +61,9 @@ const FULL_RUN_REQUIRED_INSTRUCTION = "The Flow is finished only once it has run
   + "not_run_in_this_build: the step came from the Flow being changed and has not run in this build; a rerun of it is first put back where its node started in the run being repaired, where that run recorded it. "
   + "cannot_run_again: its run left nothing to run it again with, or, for the first step, nothing to put the target back where the Flow starts. "
   + "not_a_library_step: it ran through a tool that is not the node library, and a Flow is made only of library nodes that ran: run or write the node that does it with core.run_node (add true, or write true) in its place, and drop this one. "
-  + "not_reached: the test never came to it, because the list its repeat goes over had no items in the test: run the listing where it returns items, or run this step once yourself, so the test can run it. "
+  + "not_reached: it was written, not run, and the test never ran it on an item of the list its repeat goes over, for one of two reasons. "
+  + "Either that list had no items in the test: run the listing where it returns items, or run this step once yourself. "
+  + "Or the test could not go through the list's items, because the listing did not run again cleanly or gave back no items, so it ran the repeat once on the item you explored and this step did not pass there: make the listing run again cleanly (rerun it), or run this step once yourself. "
   + "Rerun each other one, in the Flow's order (amend_draft rerun), adding the consequences it would have to its input ([] when it leaves nothing lasting), so it takes its place as a step that ran; or write it in its place (core.run_node with write true) when running it would do something lasting. "
   + "core.run_flow runs part of the Flow from where the target stands, when the target first has to be brought to where a step starts. "
   + "Then finish again, and the whole Flow is tested.";

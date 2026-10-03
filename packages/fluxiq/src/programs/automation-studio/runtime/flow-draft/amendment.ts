@@ -144,7 +144,7 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID = /^a[1-9][0-9]{0,2}(?:\.[a-z]{
 export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
   reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named"
-    | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed";
+    | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed" | "rerun_holds_binding";
   /**
    * `over_not_before` only: the step the repeat named as `over`, so the
    * telling can say, in the draft's numbers, which step lists the rows and

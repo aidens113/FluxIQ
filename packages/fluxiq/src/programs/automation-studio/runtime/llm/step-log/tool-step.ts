@@ -1,5 +1,6 @@
 import { automationStudioLlmEvidenceToolResultInvalidCode } from "../evidence-loop-decision.ts";
 import { automationStudioLlmStepLogDirectory } from "./directory.ts";
+import { automationStudioLlmStepLogFieldNames } from "./field-names.ts";
 import { automationStudioLlmStepLogWriter } from "./files.ts";
 import { automationStudioLlmStepLogFolderRefused, automationStudioLlmStepLogOpenFolder, type AutomationStudioLlmStepLogFolder } from "./folder.ts";
 import { automationStudioLlmStepLogListStep } from "./listing.ts";
@@ -21,6 +22,7 @@ const DRY_RUN_CALL = /^dryrun\./u;
  * exactly the `evidence` the loop hands the model back (the raw value when the
  * tool did not answer with an execution result; the error's name and code when
  * it threw), `page.txt` the compact page text when the evidence carries one,
+ * a replay's row (`item`) and output values (`outputs`) by field names only,
  * and `meta.json`, last, the timing, the result code and `loopVerdict`: whether
  * Core read the value or refused it, so a refused one is no longer visible only
  * in the next request. `run` itself, untouched, when the step log is off.
@@ -57,7 +59,8 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
   }
   const started = Date.now();
   const files = automationStudioLlmStepLogWriter(folder.path);
-  files.json("call.json", { callId, toolId, input: request.value ?? null });
+  // A replay's row is page data: written as its field names (`./field-names.ts`).
+  files.json("call.json", { callId, toolId, input: automationStudioLlmStepLogFieldNames.call(request.value) ?? null });
   return (result, error) => {
     try {
       const execution = executionOf(result);
@@ -72,6 +75,7 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
       const unread = error === undefined ? automationStudioLlmEvidenceToolResultInvalidCode(result, "observe") : undefined;
       const summary = automationStudioLlmStepLogSummary.tool(evidence, execution?.resultCode, error === undefined ? undefined : thrown(error), unread);
       const finished = Date.now();
+      const outputs = automationStudioLlmStepLogFieldNames.outputs(execution?.outputs);
       files.meta({
         step: folder.step, kind, callId, toolId,
         startedAt: new Date(started).toISOString(), finishedAt: new Date(finished).toISOString(), ms: finished - started,
@@ -82,7 +86,9 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
         effectApplied: typeof execution?.effectApplied === "boolean" ? execution.effectApplied : null,
         // `read`, the code the loop records for a value it refused, or the one for a call that threw.
         loopVerdict: error !== undefined ? "llm_evidence_loop.tool_failed" : unread ?? "read",
-        summary
+        summary,
+        // A replayed read's rows, as each output port's field names only.
+        ...(outputs ? { outputs } : {})
       });
       automationStudioLlmStepLogListStep(directory, { step: folder.step, kind, tool: toolId, summary, costUsd: undefined });
     } catch {
@@ -92,7 +98,7 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
 }
 
 /** The loop's execution result, when the tool answered with one (`../evidence-loop/tool-execution.ts`). */
-function executionOf(result: unknown): { evidence: unknown; resultCode?: unknown; resultReason?: unknown; effectApplied?: unknown } | undefined {
+function executionOf(result: unknown): { evidence: unknown; resultCode?: unknown; resultReason?: unknown; effectApplied?: unknown; outputs?: unknown } | undefined {
   return typeof result === "object" && result !== null && !Array.isArray(result) && (result as { kind?: unknown }).kind === "llm_evidence_tool_execution"
     ? result as { evidence: unknown }
     : undefined;

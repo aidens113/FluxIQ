@@ -25,6 +25,13 @@
 // A host that does not implement the replay answers something this cannot read,
 // and the honest reading of that is "this step was not demonstrably run again",
 // which refuses the proposal rather than waving it through.
+//
+// **A repeat runs as a loop (t252).** A span whose list step returned its rows
+// in this test is run once per row, each member with that row and its bindings
+// resolved for it, and a span over a check runs while the check replays
+// (`./replay-span.ts`). A step outside a repeat has its bindings resolved too,
+// so an input takes its test value; a binding nothing answers fails the step
+// `core.replay.unresolved_binding`, and nothing is sent for it.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
@@ -50,10 +57,17 @@ import {
   AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES,
   automationStudioNodeReplayResetCall,
   automationStudioNodeReplayStatus,
-  automationStudioNodeReplayStepCall,
-  automationStudioNodeReplayToolId,
-  automationStudioNodeReplayVerifyCall
+  automationStudioNodeReplayToolId
 } from "./replay.ts";
+import {
+  AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE,
+  automationStudioFlowDraftReplayPassCall,
+  automationStudioFlowDraftReplaySpanPlan,
+  automationStudioFlowDraftReplaySpanRun,
+  type AutomationStudioFlowDraftReplayAnswer,
+  type AutomationStudioFlowDraftReplayNodeOf,
+  type AutomationStudioFlowDraftReplayObservation
+} from "./replay-span.ts";
 
 /** What the caller has to lend a replay: the executor. */
 export type AutomationStudioFlowDraftReplayInput = {
@@ -69,6 +83,13 @@ export type AutomationStudioFlowDraftReplayInput = {
    * declaration alone.
    */
   lastingActs?: ReadonlySet<string> | undefined;
+  /**
+   * The node each step names, by its `actionId`: what says whether a repeat
+   * walks a list's rows or repeats while a check holds, and which of its steps
+   * take the row (`./replay-span.ts`). Absent, a repeat is sent once and
+   * excused, as before t252.
+   */
+  nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
   signal?: AbortSignal;
 };
 
@@ -92,8 +113,9 @@ export type AutomationStudioFlowDraftReplayResult = {
    * page a press left. A re-anchored step reports its second answer, the one
    * its outcome is read from. Structurally `AutomationStudioFlowDraftTestObservation`
    * (`./dry-run-gate.ts`), declared here so the replay does not import its gate.
+   * A pass of a repeat says which pass, of how many (`./replay-span.ts`).
    */
-  observations: { step: number; stepId?: string; resultCode?: string; evidence: JsonValue }[];
+  observations: AutomationStudioFlowDraftReplayObservation[];
 };
 
 /**
@@ -138,26 +160,37 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
     run: proposed,
     callIdOf: (step) => `dryrun.${input.attempt}.${step.position}`,
     reanchor: true,
-    ...(input.lastingActs ? { lastingActs: input.lastingActs } : {})
+    ...(input.lastingActs ? { lastingActs: input.lastingActs } : {}),
+    ...(input.nodeOf ? { nodeOf: input.nodeOf } : {})
   });
   return { verdict: verdictOf(input, "ok", done.outcomes), observations: done.observations, ...(done.evidence ? { evidence: done.evidence } : {}) };
 }
 
 /** What a run of steps done again needs: the executor, the draft, and the steps. */
-export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal" | "lastingActs"> & {
+export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal" | "lastingActs" | "nodeOf"> & {
   /** The whole draft: what says which steps the Flow would not always run. */
   steps: readonly AutomationStudioFlowDraftStep[];
   /** The proposed steps to do again, in order, from where the target now stands. */
   run: readonly AutomationStudioFlowDraftStep[];
-  /** The call id each step is sent under. */
+  /** The call id each step is sent under; a pass of a repeat is sent under `<it>.pass.<n>`. */
   callIdOf(step: AutomationStudioFlowDraftStep): string;
   /** Whether a step missing right after one left undone is asked once more on its own page (see the header). */
   reanchor: boolean;
+  /**
+   * Whether a step that did not pass ends the run there (a part run,
+   * `./run-flow-part.ts`); `excused` says the Flow does not always run it.
+   * Absent, every step is asked even after one that did not replay.
+   */
+  stopsAt?: ((step: AutomationStudioFlowDraftStep, excused: boolean) => boolean) | undefined;
+  /** Every answer a step's call came back with that could be read, in the order they came. */
+  answered?: ((step: AutomationStudioFlowDraftStep, result: Extract<AutomationStudioFlowDraftReplayAnswer, { readable: true }>["result"]) => void) | undefined;
 };
 
 /** What a run of steps done again answered: one outcome per step, in order, and what the first that did not replay left. */
 export type AutomationStudioFlowDraftReplayStepsResult = Pick<AutomationStudioFlowDraftReplayResult, "observations" | "evidence"> & {
   outcomes: AutomationStudioFlowDraftReplayOutcome[];
+  /** The step the run stopped at, when `stopsAt` stopped it. */
+  stoppedAt?: number;
 };
 
 /**
@@ -179,31 +212,67 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
   // it and does not refuse on its own (`../../flow-draft/verify-only.ts`).
   let withheldBy: number | undefined;
   const conditional = automationStudioFlowDraftConditionalStepIds(input.steps);
-  for (const [index, step] of proposed.entries()) {
+  // Steps of a repeat this run ran once per row: no longer excused (`./replay-span.ts`).
+  const expanded = new Set<string>();
+  const excused = (stepId: string): boolean => conditional.has(stepId) && !expanded.has(stepId);
+  // What each step was asked and answered, for a repeat over it.
+  const asked = new Map<AutomationStudioFlowDraftStep, { answer: ReplayAnswer; mode: AutomationStudioFlowDraftReplayMode }>();
+  const send = async (callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject): Promise<ReplayAnswer> => {
+    const answer = await call(input, callId, automationStudioNodeReplayToolId(step), value);
+    if (answer.readable) input.answered?.(step, answer.result);
+    return answer;
+  };
+  let stoppedAt: number | undefined;
+  for (let index = 0; index < proposed.length && stoppedAt === undefined; index += 1) {
+    const step = proposed[index]!;
+    const plan = input.nodeOf ? automationStudioFlowDraftReplaySpanPlan({ steps: input.steps, run: proposed, index, nodeOf: input.nodeOf, asked: (each) => asked.get(each) }) : undefined;
+    if (plan && input.nodeOf) {
+      const span = await automationStudioFlowDraftReplaySpanRun({
+        plan,
+        nodeOf: input.nodeOf,
+        modeOf: (member) => automationStudioFlowDraftStepReplayMode(member, input.lastingActs),
+        callIdOf: input.callIdOf,
+        send,
+        ...(input.stopsAt ? { stops: (member: AutomationStudioFlowDraftStep) => input.stopsAt!(member, false) } : {}),
+        withheldBy
+      });
+      for (const member of plan.members) expanded.add(automationStudioFlowDraftStepId(member));
+      outcomes.push(...span.outcomes);
+      observations.push(...span.observations);
+      if (!evidence && span.evidence) evidence = span.evidence;
+      if (span.stopped) stoppedAt = span.outcomes.at(-1)?.step;
+      index += plan.members.length - 1;
+      continue;
+    }
     const mode = automationStudioFlowDraftStepReplayMode(step, input.lastingActs);
-    const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step) : automationStudioNodeReplayStepCall(step);
+    const built = automationStudioFlowDraftReplayPassCall(step, mode);
+    const unresolved = built !== undefined && "unresolved" in built;
+    const value = built && "value" in built ? built.value : undefined;
     const callId = input.callIdOf(step);
     const toolId = automationStudioNodeReplayToolId(step);
     const stepId = automationStudioFlowDraftStepId(step);
     // A step with nothing to run it with is a failed step, not a skipped one.
-    let ran: ReplayAnswer = value ? await call(input, callId, toolId, value) : { readable: false };
+    let ran: ReplayAnswer = value ? await send(callId, step, value) : { readable: false };
     let status = statusOf(ran, mode);
     let reanchored = false;
     const previous = outcomes.at(-1);
-    if (input.reanchor && value && status === "unreproducible" && withheldBy === undefined && !conditional.has(stepId) && previous && leftUndone(previous, conditional)) {
+    if (input.reanchor && value && status === "unreproducible" && withheldBy === undefined && !excused(stepId) && previous && leftUndone(previous, excused)) {
       const again = await reanchor(input, step, callId, toolId, value);
       if (again) {
         ran = again;
+        if (ran.readable) input.answered?.(step, ran.result);
         status = statusOf(ran, mode);
         reanchored = true;
       }
     }
+    if (value) asked.set(step, { answer: ran, mode });
+    const resultCode = unresolved ? AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE : ran.readable ? ran.result.resultCode : undefined;
     const outcome: AutomationStudioFlowDraftReplayOutcome = {
       step: step.position,
       stepId,
       actionId: step.actionId,
       status,
-      ...(ran.readable && ran.result.resultCode ? { resultCode: ran.result.resultCode } : {}),
+      ...(resultCode ? { resultCode } : {}),
       ...(mode === "verify" ? { mode } : {}),
       ...(status !== "replayed" && withheldBy !== undefined ? { withheldBy } : {}),
       ...(reanchored ? { reanchored: true as const } : {})
@@ -226,8 +295,10 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     // failure cannot tell one broken step from a draft that stopped making
     // sense halfway, and the difference is what the model needs.
     if (!evidence && ran.readable) evidence = { callId: reanchored ? `${callId}.again` : callId, toolId, value: ran.result.evidence };
+    // A part run is the exception: it stops where the Flow would, and leaves the target there.
+    if (input.stopsAt?.(step, excused(stepId))) stoppedAt = step.position;
   }
-  return { outcomes, observations, ...(evidence ? { evidence } : {}) };
+  return { outcomes, observations, ...(evidence ? { evidence } : {}), ...(stoppedAt === undefined ? {} : { stoppedAt }) };
 }
 
 function verdictOf(
@@ -259,9 +330,9 @@ function statusOf(ran: ReplayAnswer, mode: AutomationStudioFlowDraftReplayMode):
  * The step right after such a step may stand on a page its own exploration
  * step never stood on (`../../flow-draft/site-memory.ts`).
  */
-function leftUndone(outcome: AutomationStudioFlowDraftReplayOutcome, conditional: ReadonlySet<string>): boolean {
+function leftUndone(outcome: AutomationStudioFlowDraftReplayOutcome, excused: (stepId: string) => boolean): boolean {
   if (outcome.withheldBy !== undefined) return true;
-  if (outcome.status !== "replayed") return outcome.stepId !== undefined && conditional.has(outcome.stepId);
+  if (outcome.status !== "replayed") return outcome.stepId !== undefined && excused(outcome.stepId);
   const word = automationStudioFlowDraftReplayOutcomeWord(outcome);
   return word === "verified" || word === "present" || word === "remembered";
 }
@@ -301,9 +372,7 @@ type ReplayCaller = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "
  * the verdict reads as a failed step, refusing the proposal. An absent value
  * here would read as "there was nothing to check", which is the opposite.
  */
-type ReplayAnswer =
-  | { readable: true; result: NonNullable<ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult>> }
-  | { readable: false };
+type ReplayAnswer = AutomationStudioFlowDraftReplayAnswer;
 
 /**
  * One replay call.

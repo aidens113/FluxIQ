@@ -24,6 +24,9 @@ import type { AutomationStudioBootstrapExistingTopology } from "./extend.ts";
 import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } from "../flow-change/index.ts";
 import { AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY, automationStudioRouteSignaturesValue } from "../route-state/signatures/index.ts";
 
+/** Where a Flow node keeps its step's declared consequences, as the plan's plain strings. */
+const DECLARED_CONSEQUENCES_METADATA_KEY = "declaredConsequences";
+
 /**
  * `create` builds a whole topology on a blank Flow; `extend` only adds to an
  * existing one. A record written before modes existed has none: read it as
@@ -221,7 +224,9 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
           // The pages the step ran between as the build saw them, which a run
           // reads to continue at the node whose expected pre-state is the page
           // it finds (`../route-state/signatures/`).
-          ...routeSignaturesMetadata(node.routeSignatures)
+          ...routeSignaturesMetadata(node.routeSignatures),
+          // The step's declaration survives storage, `[]` included (t252, D5); no run reads it yet.
+          ...(node.consequences ? { [DECLARED_CONSEQUENCES_METADATA_KEY]: [...node.consequences] } : {})
         }, input.adaptationId)
       })),
       edges: entry.edges.map((edge) => ({

@@ -205,7 +205,8 @@ describe("the feedback an amendment refusal is shown as", () => {
   const everyReason: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"], true> = {
     no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, over_not_before: true, not_a_kept_step: true,
     did_not_work: true, already_in_flow: true, already_out: true, changes_nothing: true, act_on_a_read: true, act_already_named: true,
-    bind_not_a_binding: true, bind_new_key: true, bind_row_outside_loop: true, bind_malformed: true
+    bind_not_a_binding: true, bind_new_key: true, bind_row_outside_loop: true, bind_malformed: true,
+    rerun_holds_binding: true
   };
 
   it("can say every reason the draft computes, with what the word means", () => {
@@ -231,6 +232,12 @@ describe("the feedback an amendment refusal is shown as", () => {
     expect(malformed.bind_malformed).toContain("$step");
     const notOne = built([{ step: 2, reason: "bind_not_a_binding" }]).reasons as Record<string, string>;
     expect(notOne.bind_not_a_binding).toMatch(/rerun/u);
+  });
+
+  // t252: a recorded step that holds a binding cannot be run live.
+  it("says a bound step runs only in the Flow, and how to rerun or write it", () => {
+    const reasons = built([{ step: 2, reason: "rerun_holds_binding" }]).reasons as Record<string, string>;
+    expect(reasons.rerun_holds_binding).toContain("bound step runs only in the Flow: rerun it with a concrete value for every bound parameter, or write it");
   });
 
   it("explains each distinct reason once, however many amendments met it", () => {

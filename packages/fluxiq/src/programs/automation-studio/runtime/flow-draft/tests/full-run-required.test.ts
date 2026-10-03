@@ -57,4 +57,15 @@ describe("the feedback for a Flow that cannot yet be run whole", () => {
     expect(nothing).toMatch(/write true/u);
     expect(nothing).not.toMatch(/page|click|browser|url|site/iu);
   });
+
+  // t252-w9: a written step is also not reached when the test could not walk
+  // the list's items and ran the repeat once on the explored item, where the
+  // step did not pass. The sentence names both causes and what to do for each.
+  it("says not_reached has two causes and what to do for each", () => {
+    const instruction = automationStudioFlowDraftFullRunRequiredFeedback([{ position: 4, actionId: "node.act", word: "not_reached" }]).instruction as string;
+    expect(instruction).toMatch(/not_reached: .*two reasons/u);
+    expect(instruction).toMatch(/had no items in the test: run the listing where it returns items, or run this step once yourself/u);
+    expect(instruction).toMatch(/could not go through the list's items.*make the listing run again cleanly \(rerun it\), or run this step once yourself/u);
+    expect(instruction).not.toMatch(/page|click|browser|url|site/iu);
+  });
 });
