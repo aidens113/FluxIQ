@@ -28,6 +28,7 @@ import type { AutomationStudioLlmEvidenceRestoredStep } from "./completion-check
 import type { AutomationStudioLlmEvidenceLoopDraftChange } from "./draft-change.ts";
 import type { AutomationStudioLlmEvidenceLoopDraftShown } from "./draft-shown.ts";
 import type { AutomationStudioLlmEvidenceLoopProgress } from "../evidence-progress/index.ts";
+import { automationStudioLlmStepLogAnswer } from "../step-log/index.ts";
 
 export type AutomationStudioLlmEvidenceLoopTrace = {
   iteration: number;
@@ -186,8 +187,13 @@ export type AutomationStudioLlmEvidenceLoopTraceRecorder = {
   record(row: AutomationStudioLlmEvidenceLoopTrace, transition?: AutomationStudioLlmEvidenceRowTransition): void;
 };
 
-/** The recorder that writes a loop's rows into `trace`, which the loop hands on as its record. */
-export function automationStudioLlmEvidenceLoopTraceRecorder(trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStudioLlmEvidenceLoopTraceRecorder {
+/**
+ * The recorder that writes a loop's rows into `trace`, which the loop hands on
+ * as its record. A row Core answered without running a tool -- an amendment, a
+ * call refused as a repeat -- is also written to the step log as Core's
+ * answer (`../step-log/answer-step.ts`) when `env` turns the step log on.
+ */
+export function automationStudioLlmEvidenceLoopTraceRecorder(trace: AutomationStudioLlmEvidenceLoopTrace[], env: Readonly<Record<string, string | undefined>> = process.env): AutomationStudioLlmEvidenceLoopTraceRecorder {
   let draftRevision = 0;
   let previousAnswerability: AutomationStudioLlmEvidenceLoopAnswerability | undefined;
   const recorder: AutomationStudioLlmEvidenceLoopTraceRecorder = {
@@ -220,6 +226,7 @@ export function automationStudioLlmEvidenceLoopTraceRecorder(trace: AutomationSt
         ...(transition.answerability ? { answerability: transition.answerability } : {}),
         at: Date.now()
       });
+      automationStudioLlmStepLogAnswer(trace[trace.length - 1]!, env);
     }
   };
   return recorder;
