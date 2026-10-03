@@ -82,6 +82,14 @@
 // input sets it (`./choice-evidence.ts`), which a plain press of add does not
 // (`choice_is_the_act_step`).
 //
+// **A choice made after its act is said, not refused (live run
+// `run-murwdp4f-35f976d2`, C2).** The towels' "+" (a2.quantity) on step 16
+// came after their Add to cart (a2) on step 12, so the Flow added one pack.
+// The verdict carries such a choice under `choicesAfterAct`, on an accepted
+// verdict as on a refused one, and the checklist carries the same sentence on
+// the choice (`afterAct`, `afterActSaid`), which is how it reaches the model
+// beside its draft and the judge of the build's test (`./choice-order.ts`).
+//
 // **Only a draft is checked.** A plan the model wrote as a script has no steps
 // to name, so it is left where it stood before this check existed.
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -98,7 +106,8 @@ import type {
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
 import { automationStudioInstructedActsOnSaid } from "./object-binding.ts";
 import { AUTOMATION_STUDIO_INSTRUCTED_QUANTITY_INSTRUCTIONS } from "./quantity-fault.ts";
-import { automationStudioInstructedActsStanding } from "./standing.ts";
+import { automationStudioInstructedChoiceAfterAct, type AutomationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
+import { automationStudioInstructedActsStanding, type AutomationStudioInstructedStanding } from "./standing.ts";
 
 /** The issue a missing act refuses completion under. */
 export const AUTOMATION_STUDIO_INSTRUCTED_ACT_MISSING_ISSUE_CODE = "bootstrap.instructed_act_missing";
@@ -186,6 +195,8 @@ export function checkAutomationStudioInstructedActs(input: {
     onlyArrives,
     claimedFor: (id) => (claims.get(id) ?? []).flatMap((claim) => automationStudioInstructedActClaimedStep(steps, claim.step) ?? [])
   });
+  // A choice made after its act's step is said, never refused (`./choice-order.ts`).
+  const afterAct = choicesAfterAct(choices, standing);
   const missing: AutomationStudioInstructedActMissing[] = [];
   // The positions of the steps named for an act, when each of them only reads the page.
   const reads = new Map<string, number[]>();
@@ -209,7 +220,7 @@ export function checkAutomationStudioInstructedActs(input: {
       ...(stood.presses ? { presses: stood.presses } : {})
     });
   }
-  if (!missing.length) return { ok: true, acts };
+  if (!missing.length) return { ok: true, acts, ...afterAct };
   // Each act, then its choices, as the instruction asks for them.
   const order = acts.flatMap((act) => [act.id, ...(act.requires ?? []).map((choice) => choice.id)]);
   missing.sort((left, right) => order.indexOf(left.id) - order.indexOf(right.id));
@@ -217,6 +228,7 @@ export function checkAutomationStudioInstructedActs(input: {
   return {
     ok: false,
     acts,
+    ...afterAct,
     missing,
     issue: {
       severity: "error",
@@ -258,6 +270,19 @@ export function checkAutomationStudioInstructedActs(input: {
         .join("")
       + (missing.some((act) => "of" in act) ? CHOICE_INSTRUCTION : "")
   };
+}
+
+/** The choices made on a step after their act's step, as the verdict carries them, or nothing when none is. */
+function choicesAfterAct(
+  choices: readonly AutomationStudioInstructedChoice[],
+  standing: ReadonlyMap<string, AutomationStudioInstructedStanding>
+): { choicesAfterAct?: AutomationStudioInstructedChoiceAfterAct[] } {
+  const found = choices.flatMap((choice) => {
+    const stood = standing.get(choice.id);
+    if (!stood || !("done" in stood) || !stood.afterAct) return [];
+    return automationStudioInstructedChoiceAfterAct({ id: choice.id, of: choice.of, step: stood.done.position, actStep: stood.afterAct.position }) ?? [];
+  });
+  return found.length ? { choicesAfterAct: found } : {};
 }
 
 /**

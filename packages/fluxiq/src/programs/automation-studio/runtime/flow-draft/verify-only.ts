@@ -22,6 +22,18 @@
 // what a person is asked: a check is not the act, and the act stays gated
 // where it always was.
 //
+// **Lane B's run, the same rule (t193-1002m, merged 2026-10-03).** Live run
+// `run-murwdp4f-35f976d2`'s Add to cart carried act a2 and declared
+// `consequences: []`, so both build tests pressed it and the person's cart went
+// from 2 to 3 to 4 items. Lane B's first fix checked every step naming any act,
+// unless the next step found the target elsewhere (the step moved the page).
+// Merged with lanes A and D it is the rule below and nothing more: the
+// instruction's lasting acts, never every act, and no moved-page exception,
+// because an under-declared lasting act that also moves the page -- a Submit, a
+// Place order -- would be pressed again, which a build never does. A last step
+// that only navigates while claiming a lasting act is therefore checked rather
+// than followed (lane B's run `run-murzln6g-11debe1d`, R2-C8, open).
+//
 // **Why the declaration and not every change.** A press that only opens,
 // filters or navigates is what the steps after it stand on: the chooser a
 // store is picked from is open only because the press before it opened it.
@@ -122,7 +134,8 @@ const NONE = "none";
 
 /**
  * How the dry run treats this step: `verify` when running it again would
- * repeat a lasting effect, `replay` otherwise.
+ * repeat a lasting effect, `replay` otherwise. `steps` is the draft the step
+ * is in, from which its next proposed step is read.
  *
  * The declaration is read from what the Flow keeps (`ranWith`) before what the
  * model wrote (`input`), the same order a replay reads the step's argument in.

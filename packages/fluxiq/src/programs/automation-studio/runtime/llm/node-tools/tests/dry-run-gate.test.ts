@@ -550,3 +550,77 @@ describe("a refusal whose step ran on a page taken steps made", () => {
     expect(run.lastVerdict().notInFlow).toContain("Step 2 changed the page");
   });
 });
+
+// Live run `run-murwdp4f-35f976d2` (t193 1002-M, R1-C1): draft step 11 pressed
+// a chat card's "x" the host marked `interruption: true`. The Flow is written
+// with it optional, but the test judged it mandatory: its replay came back
+// failed (the site remembered the dismissal), and the test refused the Flow on
+// that step alone, while every later step replayed (0064 and 0082). The test
+// runs the Flow the way it will be written.
+describe("a step the host says answered an interruption", () => {
+  it("does not refuse the Flow when its replay failed and every later step replayed", async () => {
+    const steps = [step(2), step(11, { interruption: true }), step(12), step(13, { acts: ["a1"] })];
+    const run = harness(steps, { 11: FAILED });
+    const first = await run.complete();
+    expect(first.answer).toBeUndefined();
+    expect(first.ran).toEqual(["dryrun.1.reset", "dryrun.1.2", "dryrun.1.11", "dryrun.1.12", "dryrun.1.13"]);
+    // The draft is not rewritten: the Flow is written with it optional anyway.
+    expect(steps[1]!.routing).toBeUndefined();
+    expect(run.reports).toHaveLength(1);
+  });
+
+  it("still refuses when that step claims one of the person's acts", async () => {
+    const steps = [step(2), step(11, { interruption: true, acts: ["a2"] }), step(12), step(13, { acts: ["a1"] })];
+    const run = harness(steps, { 11: FAILED });
+    expect((await run.complete()).answer).toEqual(refusedFor(FAILED));
+    expect(run.reports).toEqual([]);
+  });
+});
+
+// Live run `run-murwdp4f-35f976d2` (R1-C3): after the test refused a draft, the
+// model said `complete` again on the unchanged draft (0071, "the Flow
+// replays"), and was shown the identical verdict with nothing saying the Flow
+// had not changed. An unchanged Flow is still replayed twice (a step can fail
+// once on a page still settling); each refusal after the first says so.
+describe("a completion on the very draft the last test refused", () => {
+  it("is replayed once more and told it failed the same way again, then refused without a replay and told it was not run again", async () => {
+    const run = harness([step(2), step(26), step(30)], { 26: FAILED });
+    const first = await run.complete();
+    expect(first.answer).toEqual(refusedFor(FAILED));
+    expect(run.lastVerdict()).not.toHaveProperty("unchanged");
+
+    const second = await run.complete();
+    expect(second.ran).toEqual(["dryrun.2.reset", "dryrun.2.2", "dryrun.2.26", "dryrun.2.30"]);
+    expect(second.answer).toEqual(first.answer);
+    expect(verdictStep(run.lastVerdict(), 26)).toMatchObject({ replayed: "failed", again: true });
+    expect(run.lastVerdict().unchanged).toBe("Nothing in the Flow changed since the last test, and it failed the same way again. Change step 26 (failed) before you say the Flow is ready: rerun it with a corrected argument (amend_draft rerun), mark it optional, or drop it.");
+
+    const third = await run.complete();
+    expect(third.ran).toEqual([]);
+    expect(third.answer).toEqual(first.answer);
+    const verdict = run.lastVerdict();
+    expect(verdict).toMatchObject({ ok: false, code: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, attempt: 2 });
+    expect(verdictStep(verdict, 26)).toMatchObject({ replayed: "failed", again: true });
+    expect(verdict.unchanged).toBe("Nothing in the Flow changed since that test, so it would fail the same way, and it was not run again. Change step 26 (failed) before you say the Flow is ready: rerun it with a corrected argument (amend_draft rerun), mark it optional, or drop it.");
+    expect(run.reports).toEqual([]);
+  });
+
+  it("says only that it failed again when the second test failed on other steps", async () => {
+    const answers: Record<number, string> = { 26: FAILED };
+    const run = harness([step(2), step(26), step(30)], answers);
+    await run.complete();
+    answers[30] = UNREPRODUCIBLE;
+    await run.complete();
+    expect(run.lastVerdict().unchanged).toBe("Nothing in the Flow changed since the last test, and it failed again. Change step 26 (failed) and step 30 (unreproducible) before you say the Flow is ready: rerun each with a corrected argument (amend_draft rerun), mark it optional, or drop it.");
+  });
+
+  it("is tested again once the draft changed, and not told it is unchanged", async () => {
+    const steps = [step(2), step(26), step(30)];
+    const run = harness(steps, { 26: FAILED });
+    expect((await run.complete()).answer).toEqual(refusedFor(FAILED));
+    steps[1] = step(26, { ranWith: { node: "web.click", parameters: { target: "#fixed" }, consequences: [] } });
+    const changed = await run.complete();
+    expect(changed.ran).toEqual(["dryrun.2.reset", "dryrun.2.2", "dryrun.2.26", "dryrun.2.30"]);
+    expect(run.lastVerdict()).not.toHaveProperty("unchanged");
+  });
+});

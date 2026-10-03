@@ -32,6 +32,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
+import type { AutomationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
 
 /**
  * The kinds of lasting act the reader recognises. Closed, so a refusal names a
@@ -214,10 +215,12 @@ export type AutomationStudioInstructedActMissing =
  * asks again on the same budget and guards.
  */
 export type AutomationStudioInstructedActsVerdict =
-  | { ok: true; acts: AutomationStudioInstructedAct[] }
+  | { ok: true; acts: AutomationStudioInstructedAct[]; choicesAfterAct?: AutomationStudioInstructedChoiceAfterAct[] }
   | {
     ok: false;
     acts: AutomationStudioInstructedAct[];
+    /** Choices made on a step after their act's step: information, whatever else is missing (`./choice-order.ts`). */
+    choicesAfterAct?: AutomationStudioInstructedChoiceAfterAct[];
     missing: AutomationStudioInstructedActMissing[];
     issue: AutomationStudioFlowBootstrapIssue;
     /** What is missing, as the model is shown it. */

@@ -4,7 +4,7 @@
 // as the budget it is, never dressed up as "not doable" -- a build that ran
 // out of money had a route it did not get to finish. So the message names the
 // budget and its size, what of the request the Flow already does, what was
-// tried and what blocked it, and whether the Flow so far was kept for the next
+// tried and what blocked it, and whether the steps found so far were kept for the next
 // build to carry on from. It is also how a build that authored nothing ends
 // (supervisor, t208): never as a bare code, always with this message. A cost
 // ending says the figures that stopped it (F41); where one purse holds the
@@ -81,7 +81,7 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   decisions: number;
   /** Why each live round stopped, in order (`./tried.ts`). */
   stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
-  /** Whether the Flow so far was kept for the next build. */
+  /** Whether the steps found so far were kept for the next build. */
   kept: boolean;
   /**
    * The figures that stopped a `cost` ending, said only for one, so the person
