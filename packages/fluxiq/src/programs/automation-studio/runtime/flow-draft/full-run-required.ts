@@ -29,10 +29,18 @@
 //                            one such step sent the Flow to the plan the reply
 //                            wrote out, which never ran -- the test ran one Flow
 //                            and the judge's yes was stored on another.
+//   not_reached           -- a step the test never came to: a written step
+//                            inside a repeat whose list had no rows in the
+//                            test, so it ran zero times (design t252). A
+//                            written step never ran in the build either, so
+//                            nothing has shown it works.
 //
 // The refusal names those steps and says the one way through: rerun each, in
 // the Flow's order, so it becomes a step that ran, with the consequences it
 // would have declared; a step of another tool is run again as its library node.
+// Since t252 a step may also be written rather than run (`core.run_node` with
+// `write: true`), and both tellings say so: writing is how a step whose run
+// would do something lasting takes its place without doing it.
 // Core's words only; what a step acts on is the domain's.
 
 import type { JsonObject } from "../../../../core/index.ts";
@@ -41,19 +49,20 @@ import type { JsonObject } from "../../../../core/index.ts";
 export const AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE = "llm_evidence_loop.full_run_required";
 
 /** Why the test cannot run a step: the word it is shown with, beside a dry run's own words. */
-export type AutomationStudioFlowDraftUnrunnableWord = "not_run_in_this_build" | "cannot_run_again" | "not_a_library_step";
+export type AutomationStudioFlowDraftUnrunnableWord = "not_run_in_this_build" | "cannot_run_again" | "not_a_library_step" | "not_reached";
 
 const FULL_RUN_REQUIRED_INSTRUCTION = "The Flow is finished only once it has run whole from its start and been judged to do what was asked. "
   + "These steps cannot be run again as they stand, so the Flow cannot be tested whole until they can. "
   + "not_run_in_this_build: the step came from the Flow being changed and has not run in this build. "
   + "cannot_run_again: its run left nothing to run it again with, or, for the first step, nothing to put the target back where the Flow starts. "
-  + "not_a_library_step: it ran through a tool that is not the node library, and a Flow is made only of library nodes that ran: run the node that does it with core.run_node (add true) in its place, and drop this one. "
-  + "Rerun each other one, in the Flow's order (amend_draft rerun), adding the consequences it would have to its input ([] when it leaves nothing lasting), so it takes its place as a step that ran. "
+  + "not_a_library_step: it ran through a tool that is not the node library, and a Flow is made only of library nodes that ran: run or write the node that does it with core.run_node (add true, or write true) in its place, and drop this one. "
+  + "not_reached: the test never came to it, because the list its repeat goes over had no items in the test: run the listing where it returns items, or run this step once yourself, so the test can run it. "
+  + "Rerun each other one, in the Flow's order (amend_draft rerun), adding the consequences it would have to its input ([] when it leaves nothing lasting), so it takes its place as a step that ran; or write it in its place (core.run_node with write true) when running it would do something lasting. "
   + "core.run_flow runs part of the Flow from where the target stands, when the target first has to be brought to where a step starts. "
   + "Then finish again, and the whole Flow is tested.";
 
 const NOTHING_RAN_INSTRUCTION = "The Flow is finished only once it has run whole from its start and been judged to do what was asked, and no step of this Flow has run in this build, so there is nothing the test could run. "
-  + "A Flow is made of the steps you run and add as you run them (add true): run each step it needs, add it, and finish again.";
+  + "A Flow is made of the steps you run and add as you run them (add true), or write without running them (core.run_node with write true): run or write each step it needs, add it, and finish again.";
 
 /**
  * The feedback for a completion whose Flow holds `steps`, which the test cannot

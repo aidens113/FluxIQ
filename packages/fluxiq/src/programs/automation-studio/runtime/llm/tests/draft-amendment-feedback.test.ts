@@ -204,7 +204,8 @@ describe("the feedback an amendment refusal is shown as", () => {
   // explained there.
   const everyReason: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"], true> = {
     no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, over_not_before: true, not_a_kept_step: true,
-    did_not_work: true, already_in_flow: true, already_out: true, changes_nothing: true, act_on_a_read: true, act_already_named: true
+    did_not_work: true, already_in_flow: true, already_out: true, changes_nothing: true, act_on_a_read: true, act_already_named: true,
+    bind_not_a_binding: true, bind_new_key: true, bind_row_outside_loop: true, bind_malformed: true
   };
 
   it("can say every reason the draft computes, with what the word means", () => {
@@ -215,6 +216,21 @@ describe("the feedback an amendment refusal is shown as", () => {
       expect(typeof explanation).toBe("string");
       expect(explanation!.length).toBeGreaterThan(20);
     }
+  });
+
+  // t252: a refused bind names the parameter it was refused at, and each reason
+  // says what a bind is for and how to write it.
+  it("names the parameter a refused bind was about, and says how to write a binding", () => {
+    const feedback = built([{ step: 2, reason: "bind_new_key", parameter: "options.sort" }, { step: 3, reason: "bind_row_outside_loop", parameter: "note" }]);
+    expect(feedback.refused).toEqual([{ step: 2, reason: "bind_new_key", parameter: "options.sort" }, { step: 3, reason: "bind_row_outside_loop", parameter: "note" }]);
+    const reasons = feedback.reasons as Record<string, string>;
+    expect(reasons.bind_new_key).toMatch(/already has/u);
+    expect(reasons.bind_row_outside_loop).toMatch(/repeat/u);
+    const malformed = built([{ step: 2, reason: "bind_malformed" }]).reasons as Record<string, string>;
+    expect(malformed.bind_malformed).toContain("$input");
+    expect(malformed.bind_malformed).toContain("$step");
+    const notOne = built([{ step: 2, reason: "bind_not_a_binding" }]).reasons as Record<string, string>;
+    expect(notOne.bind_not_a_binding).toMatch(/rerun/u);
   });
 
   it("explains each distinct reason once, however many amendments met it", () => {

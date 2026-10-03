@@ -43,4 +43,18 @@ describe("the feedback for a Flow that cannot yet be run whole", () => {
     expect(feedback.instruction).toMatch(/not_a_library_step: .*core\.run_node/u);
     expect(automationStudioFlowDraftFullRunRequiredFeedback([])).toMatchObject({ steps: [], instruction: expect.stringContaining("no step of this Flow has run in this build") });
   });
+
+  // t252: a written step inside a repeat whose listing returned no rows in the
+  // test was never run, so the Flow was not tested whole.
+  it("names a step the test never reached, and both tellings say a step may be written", () => {
+    const feedback = automationStudioFlowDraftFullRunRequiredFeedback([{ position: 4, actionId: "node.act", word: "not_reached" }]);
+    expect(feedback.steps).toEqual([{ step: 4, actionId: "node.act", replayed: "not_reached" }]);
+    const instruction = feedback.instruction as string;
+    expect(instruction).toMatch(/not_reached: /u);
+    expect(instruction).toMatch(/write true/u);
+    expect(instruction).not.toMatch(/page|click|browser|url|site/iu);
+    const nothing = automationStudioFlowDraftFullRunRequiredFeedback([]).instruction as string;
+    expect(nothing).toMatch(/write true/u);
+    expect(nothing).not.toMatch(/page|click|browser|url|site/iu);
+  });
 });

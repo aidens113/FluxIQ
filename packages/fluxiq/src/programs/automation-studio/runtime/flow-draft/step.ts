@@ -237,6 +237,23 @@ export type AutomationStudioFlowDraftStep = {
    * a node whose fresh signatures could not be taken.
    */
   routeSignatures?: JsonObject;
+  /**
+   * The step was written, not run (`core.run_node` with `write: true`, design
+   * t252): the domain checked its node and parameters, froze what it names and
+   * performed nothing. Set only when the domain answered that it wrote it, so a
+   * domain that ignored the request and acted leaves an ordinary step that ran,
+   * never a false "written". A written step is proposable whatever
+   * `effectApplied` says -- it changed nothing by construction -- and carries
+   * `ranWith` and `replay`, so the test runs it like any step.
+   */
+  written?: true;
+  /**
+   * The argument the step first ran with, kept when `bind` lifted a value of it
+   * into a binding (`./amendment.ts`): the evidence that the step worked with
+   * that value. Never set on a written step, which never ran with one, and
+   * never replaced by a later `bind`. Carried, never run.
+   */
+  instance?: JsonObject;
 };
 
 /**
@@ -259,10 +276,12 @@ export function automationStudioFlowDraftStepIsProposed(step: AutomationStudioFl
  * A step the model withdrew is still in the draft it is shown, with
  * `inResult: false` beside it rather than silently gone. A step that only
  * looked, or that failed, is never one of these: neither is a thing the model
- * could put in the Flow by changing its mind about it.
+ * could put in the Flow by changing its mind about it. A written step did not
+ * fail: it was never performed (`written`).
  */
 export function automationStudioFlowDraftStepIsProposable(step: AutomationStudioFlowDraftStep): boolean {
-  return automationStudioFlowDraftStepIsAction(step) && step.effectApplied !== false;
+  // A written step did nothing by construction, so "changed nothing" is not a failure of it.
+  return automationStudioFlowDraftStepIsAction(step) && (step.written === true || step.effectApplied !== false);
 }
 
 /**

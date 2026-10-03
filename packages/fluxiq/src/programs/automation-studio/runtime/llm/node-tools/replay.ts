@@ -42,6 +42,20 @@
 // `resultCode` with one of the codes below and nothing else, because Core has
 // to read the answer and knows none of any domain's codes. What actually
 // happened, in the caller's own words, belongs in the evidence beside it.
+//
+// **A test pass (t252).** A step inside a repeat is sent once per row its
+// listing returned in the test, so both calls also take the pass: the row,
+// carried under `item` exactly as the Flow's For Each hands it to a node that
+// declares one, and the step's parameters with their bindings already resolved
+// for that row, in place of the `ranWith.parameters` that hold the bindings
+// themselves. Neither is sent when no pass is given, so every call made before
+// is made unchanged.
+//
+// **A written step (t252).** `core.run_node` with `write: true` asks the host
+// to check a step and freeze what it names without doing it, and the host
+// answers `core.run_node.written`. A list read's rows come back beside the
+// evidence under `outputs`, never shown to the model. These names are Core's,
+// exported here so a host mirrors them rather than restating them.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import {
@@ -55,6 +69,28 @@ import {
 
 /** The key a replay call carries, which no ordinary call of any tool may use. */
 export const AUTOMATION_STUDIO_NODE_REPLAY_KEY = "replay";
+
+/** The key that asks for a step to be written rather than run (`./run-node.ts`). */
+export const AUTOMATION_STUDIO_NODE_WRITE_KEY = "write";
+
+/** The key a test pass's row travels under: the name a For Each pass's row has in run state. */
+export const AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY = "item";
+
+/** The execution result member a node's output values travel in: carried, never shown. */
+export const AUTOMATION_STUDIO_NODE_OUTPUTS_KEY = "outputs";
+
+/**
+ * The code a host answers a written step with: checked, frozen and not done.
+ * Not a replay code: a replay answered with it did not run, so
+ * `automationStudioNodeReplayStatus` reads it as `failed`.
+ */
+export const AUTOMATION_STUDIO_NODE_WRITTEN_CODE = "core.run_node.written";
+
+/**
+ * One pass of a test over a repeat: the row the pass is on, and the step's
+ * parameters with their bindings resolved for it. Either may be absent.
+ */
+export type AutomationStudioNodeReplayPass = { item?: JsonObject; parameters?: JsonObject };
 
 /** What one replay call asks for. */
 export const AUTOMATION_STUDIO_NODE_REPLAY_KINDS = ["reset", "step", "verify"] as const;
@@ -102,12 +138,14 @@ export function automationStudioNodeReplayResetCall(from: JsonObject): JsonObjec
  * means about a list of rows or a downloaded file is not something a framework
  * can judge. `from` is handed back for the same reason: only the caller can
  * say whether the target it stands on now is where this step found it.
+ * `pass`, on a step a test repeats, is the row and the resolved parameters.
  */
-export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDraftStep): JsonObject | undefined {
+export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDraftStep, pass: AutomationStudioNodeReplayPass = {}): JsonObject | undefined {
   const ranWith = step.ranWith;
   if (!ranWith || AUTOMATION_STUDIO_NODE_REPLAY_KEY in ranWith) return undefined;
   return {
     ...ranWith,
+    ...passed(pass),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "step",
     ...(step.replay?.from === undefined ? {} : { from: step.replay.from }),
     ...(step.replay?.produced === undefined ? {} : { produced: step.replay.produced })
@@ -121,15 +159,27 @@ export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDra
  * target the Flow would act on; where the step found the target, so the host
  * can tell an effect already in place from a page the steps before it no
  * longer reach; and no `produced`: nothing is run, so there is nothing to
- * compare.
+ * compare. `pass` as for the step call.
  */
-export function automationStudioNodeReplayVerifyCall(step: AutomationStudioFlowDraftStep): JsonObject | undefined {
+export function automationStudioNodeReplayVerifyCall(step: AutomationStudioFlowDraftStep, pass: AutomationStudioNodeReplayPass = {}): JsonObject | undefined {
   const ranWith = step.ranWith;
   if (!ranWith || AUTOMATION_STUDIO_NODE_REPLAY_KEY in ranWith) return undefined;
   return {
     ...ranWith,
+    ...passed(pass),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "verify",
     ...(step.replay?.from === undefined ? {} : { from: step.replay.from })
+  };
+}
+
+/**
+ * What a pass puts over what the step ran with: its resolved parameters in
+ * place of the bindings, and its row. Nothing for no pass.
+ */
+function passed(pass: AutomationStudioNodeReplayPass): JsonObject {
+  return {
+    ...(pass.parameters === undefined ? {} : { parameters: pass.parameters }),
+    ...(pass.item === undefined ? {} : { [AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY]: pass.item })
   };
 }
 

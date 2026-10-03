@@ -193,7 +193,11 @@ const EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS: {
   already_out: true,
   changes_nothing: true,
   act_on_a_read: true,
-  act_already_named: true
+  act_already_named: true,
+  bind_not_a_binding: true,
+  bind_new_key: true,
+  bind_row_outside_loop: true,
+  bind_malformed: true
 });
 /**
  * The most refusals one step may report: the most amendments one decision may

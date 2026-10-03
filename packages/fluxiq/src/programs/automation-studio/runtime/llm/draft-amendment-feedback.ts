@@ -73,7 +73,11 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   already_in_flow: "That step is already in the Flow (inResult: true). Every step with inResult true is part of the finished Flow as it stands, so there is nothing to confirm: do not keep it again. Run what the Flow still lacks, or complete.",
   already_out: "That step is already out of the Flow (inResult: false), so dropping it again changes nothing. Leave it, or keep it to put it back.",
   act_on_a_read: "That step only reads -- a listing, a look or another read that changes nothing -- so it does no act: the rest of your change to it was made, but the act was not recorded on it. An act is done by the step that changes something, such as the press: name the act there. To do it to every item a listing kept, add the listing without act, add the press with act, then repeat the press over the listing.",
-  act_already_named: "That step already names that act (act beside it in the draft), so naming it again changes nothing. If the acts checklist shows the act done, nothing is left to do for it: go on with the acts and choices the checklist still shows not done. If it still shows the act not done, its todo says why and its step says which step: correct exactly that -- repeat the press over its listing, or rerun a read that names it, since a rerun of a read does not carry the act -- rather than naming the act again."
+  act_already_named: "That step already names that act (act beside it in the draft), so naming it again changes nothing. If the acts checklist shows the act done, nothing is left to do for it: go on with the acts and choices the checklist still shows not done. If it still shows the act not done, its todo says why and its step says which step: correct exactly that -- repeat the press over its listing, or rerun a read that names it, since a rerun of a read does not carry the act -- rather than naming the act again.",
+  bind_not_a_binding: "bind only lifts values into bindings: every value its input sets has to be a binding form, {\"$input\": <name>, \"test\": <value>} or {\"$row\": <field>}, and parameter names the first one that is not. To change a value to another concrete value, rerun the step with it instead.",
+  bind_new_key: "bind lifts a value the step already has into a binding; it never adds one. parameter names a key the step has no value at: name a parameter it already has, as the draft shows it, or rerun the step with the new parameter first.",
+  bind_row_outside_loop: "{\"$row\": <field>} is the field of the row a repeat is on, and this step is in no repeat, so it has no row. Put the step in a repeat over the listing first (repeat, with over the listing), or bind the value as {\"$input\": <name>, \"test\": <value>} when it is the same for every row.",
+  bind_malformed: "That binding is not one bind can write. {\"$input\": <name>, \"test\": <value>}: name starts with a lowercase letter, then letters and digits, at most 32, never item, and test is a value, not null. {\"$row\": <field>}: field is one of the row's own field names, with no dot or space. Nothing else may sit beside either. {\"$step\": ...}, an earlier step's output, cannot be bound yet."
 };
 
 const AMENDMENT_FEEDBACK_INSTRUCTION = "The listed amendments changed nothing, for the reason beside each one, and the draft is as it was for them. "
@@ -126,7 +130,14 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
 }): JsonObject {
   const refused = input.refusals.map((refusal) => {
     const next = nextStep(refusal, input.steps) ?? actDone(refusal, input.actsNotDone);
-    return { step: refusal.step, reason: refusal.reason, ...(refusal.repeated ? { repeated: true } : {}), ...(next ? { next } : {}) };
+    return {
+      step: refusal.step,
+      reason: refusal.reason,
+      // A refused bind names its parameter, in the model's own key names.
+      ...(refusal.parameter === undefined ? {} : { parameter: refusal.parameter }),
+      ...(refusal.repeated ? { repeated: true } : {}),
+      ...(next ? { next } : {})
+    };
   });
   const undone = input.sameDraftAsIteration !== undefined;
   const met = [...new Set(refused.map((refusal) => refusal.reason))];

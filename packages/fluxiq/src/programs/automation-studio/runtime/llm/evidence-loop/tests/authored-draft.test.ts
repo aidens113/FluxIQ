@@ -5,9 +5,24 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
-import { automationStudioLlmEvidenceParseDecision, automationStudioLlmEvidenceParseToolExecutionResult, automationStudioLlmEvidenceToolResultInvalidCode } from "../../evidence-loop-decision.ts";
+import {
+  AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_NEEDS_WRITE_CODE,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS,
+  automationStudioLlmEvidenceDecisionIssueCodes,
+  automationStudioLlmEvidenceParseDecision,
+  automationStudioLlmEvidenceParseToolExecutionResult,
+  automationStudioLlmEvidenceToolResultInvalidCode
+} from "../../evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceCallRecord } from "../call-record.ts";
-import { automationStudioFlowBootstrapDraftNodeStep, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../node-tools/index.ts";
+import {
+  AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
+  AUTOMATION_STUDIO_NODE_OUTPUTS_KEY,
+  AUTOMATION_STUDIO_NODE_WRITTEN_CODE,
+  automationStudioFlowBootstrapDraftNodeStep,
+  automationStudioLlmRunNodeTool
+} from "../../node-tools/index.ts";
 import { automationStudioLlmEvidenceAuthoredProgress } from "../../evidence-progress/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../evidence-loop.ts";
@@ -363,5 +378,169 @@ describe("the draft says which control each step named", () => {
     expect(describeCall).toHaveBeenCalledTimes(3);
     expect(result.steps).toHaveLength(3);
     expect(result.steps.every((step: AutomationStudioFlowDraftStep) => !("words" in step))).toBe(true);
+  });
+});
+
+// t252 (D1): a step written rather than run. The domain checks it, freezes what
+// it names, does nothing, and answers `core.run_node.written`; Core marks the
+// step written only on that answer.
+const writtenRanWith = { node: "web.output.dom-click", parameters: { target: { handle: "t12" } }, consequences: ["send_or_publish"] };
+const writtenAnswer = (over: JsonObject = {}, draft: JsonObject = {}): JsonObject => ({
+  kind: "llm_evidence_tool_execution",
+  evidence: { ok: true, written: true },
+  effectApplied: false,
+  resultCode: AUTOMATION_STUDIO_NODE_WRITTEN_CODE,
+  draft: { actionId: "web.output.dom-click", input: writtenRanWith, ranWith: writtenRanWith, effect: "mutate", proposes: true, written: true, replay: { from: { location: "https://a.example/" } }, ...draft },
+  ...over
+});
+
+describe("a written step's answer", () => {
+  it("is read written only when the domain answered the written code", () => {
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(writtenAnswer(), "mutate")?.draft?.written).toBe(true);
+    const acted = automationStudioLlmEvidenceParseToolExecutionResult(writtenAnswer({ resultCode: "web.node.ran", effectApplied: true }), "mutate");
+    expect(acted?.draft).toBeDefined();
+    expect(acted?.draft).not.toHaveProperty("written");
+    const { resultCode: _dropped, ...uncoded } = writtenAnswer();
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(uncoded, "mutate")?.draft).not.toHaveProperty("written");
+  });
+
+  it("withholds a written flag that is not true, never refusing the call", () => {
+    for (const written of ["yes", 1, false, { yes: true }]) {
+      const answer = writtenAnswer({}, { written });
+      expect(automationStudioLlmEvidenceParseToolExecutionResult(answer, "mutate")?.draft, JSON.stringify(written)).not.toHaveProperty("written");
+      expect(automationStudioLlmEvidenceToolResultInvalidCode(answer, "mutate"), JSON.stringify(written)).toBeUndefined();
+    }
+  });
+
+  it("carries a node's outputs, as an object only, and never inside the evidence the model is shown", () => {
+    const records = [{ name: "Ada" }, { name: "Grace" }];
+    const parsed = automationStudioLlmEvidenceParseToolExecutionResult(writtenAnswer({ outputs: { records } }), "mutate");
+    expect(parsed?.outputs).toEqual({ records });
+    expect(JSON.stringify(parsed?.evidence)).not.toContain("Grace");
+    expect(AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS).toContain(AUTOMATION_STUDIO_NODE_OUTPUTS_KEY);
+    for (const outputs of [[records], "rows", 3, null]) {
+      const answer = writtenAnswer({ outputs: outputs as JsonValue });
+      expect(automationStudioLlmEvidenceToolResultInvalidCode(answer, "mutate"), JSON.stringify(outputs)).toBeUndefined();
+      expect(automationStudioLlmEvidenceParseToolExecutionResult(answer, "mutate"), JSON.stringify(outputs)).not.toHaveProperty("outputs");
+    }
+  });
+
+  it("is copied onto the call's record as the parse path let it through", () => {
+    const parsed = automationStudioLlmEvidenceParseToolExecutionResult(writtenAnswer(), "mutate")!;
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, parsed).written).toBe(true);
+    const acted = automationStudioLlmEvidenceParseToolExecutionResult(writtenAnswer({ resultCode: "web.node.ran", effectApplied: true }), "mutate")!;
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, acted)).not.toHaveProperty("written");
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, {})).not.toHaveProperty("written");
+  });
+
+  it("puts the step into the Flow, written, though nothing was done", async () => {
+    const runNode = automationStudioLlmRunNodeTool({ nodeIds: ["web.output.dom-click"] })!;
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "w1", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, input: { ...writtenRanWith, write: true } })
+      .mockResolvedValueOnce(complete);
+    const executeTool = vi.fn().mockResolvedValue(writtenAnswer());
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [runNode], decide, executeTool, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    expect(executeTool.mock.calls[0]![0]).toMatchObject({ toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, value: { ...writtenRanWith, write: true } });
+    expect(result.steps.map((step: AutomationStudioFlowDraftStep) => [step.disposition, step.written, step.effectApplied])).toEqual([["kept", true, false]]);
+  });
+
+  it("is an ordinary step when the domain ignored write and acted", async () => {
+    const runNode = automationStudioLlmRunNodeTool({ nodeIds: ["web.output.dom-click"] })!;
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "w1", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, input: { ...writtenRanWith, write: true } })
+      .mockResolvedValueOnce(complete);
+    const executeTool = vi.fn().mockResolvedValue(writtenAnswer({ resultCode: "web.node.ran", effectApplied: true }));
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [runNode], decide, executeTool, maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    expect(result.steps[0]).not.toHaveProperty("written");
+    expect(result.steps[0]?.disposition).toBe("kept");
+  });
+});
+
+// t252 (D1, D3): the decision that writes a step, and the one that may not
+// carry a binding because it runs now.
+describe("the decision parse of a node call", () => {
+  const nodeCall = (input: JsonObject, over: JsonObject = {}): JsonObject => ({ kind: "tool_call", callId: "c1", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, input, ...over });
+
+  it("reads write true as add, and translates the binding forms into state bindings before the call is sent", () => {
+    const input = { node: "web.output.dom-fill", parameters: { target: { handle: "t3" }, text: { $input: "query", test: "blue towels" }, labels: [{ $row: "name" }], kept: { $state: { path: "item.id" } } }, consequences: [], write: true };
+    expect(automationStudioLlmEvidenceParseDecision(nodeCall(input))).toEqual({
+      kind: "tool_call", callId: "c1", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, add: true,
+      input: { ...input, parameters: { target: { handle: "t3" }, text: { $state: { path: "query", fallback: "blue towels" } }, labels: [{ $state: { path: "item.name" } }], kept: { $state: { path: "item.id" } } } }
+    });
+    expect(automationStudioLlmEvidenceDecisionIssueCodes(nodeCall(input))).toBeUndefined();
+  });
+
+  it("keeps act beside a written call, and a written call with nothing bound is still a written call", () => {
+    const input = { node: "web.output.dom-click", parameters: { target: { handle: "t3" } }, consequences: [], write: true };
+    expect(automationStudioLlmEvidenceParseDecision(nodeCall(input, { act: "a2" }))).toEqual({ kind: "tool_call", callId: "c1", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, input, add: true, act: "a2" });
+  });
+
+  it("refuses a written call whose binding cannot be read, naming each path and reason", () => {
+    const input = { node: "web.output.dom-fill", parameters: { text: { $input: "query" }, rows: [{ $step: 2, output: "records" }] }, consequences: [], write: true };
+    expect(automationStudioLlmEvidenceParseDecision(nodeCall(input))).toBeUndefined();
+    expect(automationStudioLlmEvidenceDecisionIssueCodes(nodeCall(input))).toEqual([
+      AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE,
+      `${AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE}.malformed:parameters.text`,
+      `${AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE}.step_binding_not_yet:parameters.rows.0`
+    ]);
+  });
+
+  it("refuses a call that runs now with a binding in its parameters", () => {
+    for (const parameters of [{ text: { $input: "query", test: "towels" } }, { deep: [{ $row: "name" }] }, { kept: { $state: { path: "item.id" } } }] as JsonObject[]) {
+      for (const write of [undefined, false]) {
+        const input: JsonObject = { node: "web.output.dom-fill", parameters, consequences: [], ...(write === undefined ? {} : { write }) };
+        expect(automationStudioLlmEvidenceParseDecision(nodeCall(input)), JSON.stringify(input)).toBeUndefined();
+        expect(automationStudioLlmEvidenceDecisionIssueCodes(nodeCall(input)), JSON.stringify(input)).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_NEEDS_WRITE_CODE]);
+      }
+    }
+  });
+
+  it("leaves every other call as it was", () => {
+    const live = { node: "web.output.dom-fill", parameters: { text: "towels" }, consequences: [] };
+    expect(automationStudioLlmEvidenceParseDecision(nodeCall(live))).toEqual({ kind: "tool_call", callId: "c1", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, input: live });
+    const other = { kind: "tool_call", callId: "c1", toolId: "go", input: { text: { $row: "name" }, write: true } };
+    expect(automationStudioLlmEvidenceParseDecision(other)).toEqual(other);
+    expect(automationStudioLlmEvidenceDecisionIssueCodes(other)).toBeUndefined();
+    expect(automationStudioLlmEvidenceDecisionIssueCodes({ kind: "tool_call", callId: "c1" })).toBeUndefined();
+  });
+
+  it("is refused through the loop's unusable-decision path, which tells the model why and asks again", async () => {
+    const runNode = automationStudioLlmRunNodeTool({ nodeIds: ["web.output.dom-fill"] })!;
+    const decide = vi.fn()
+      .mockResolvedValueOnce(nodeCall({ node: "web.output.dom-fill", parameters: { text: { $input: "query", test: "towels" } }, consequences: [] }))
+      .mockResolvedValueOnce(nodeCall({ node: "web.output.dom-fill", parameters: { text: { $input: "query" } }, consequences: [], write: true }, { callId: "c2" }))
+      .mockResolvedValueOnce(complete);
+    const executeTool = vi.fn().mockResolvedValue(worked);
+    await runAutomationStudioLlmEvidenceLoop({ tools: [runNode], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    expect(executeTool).not.toHaveBeenCalled();
+    const first = shownAt(decide, 1).find((entry) => entry.toolId === "core.decision_check")!.value;
+    expect(first.issueCodes).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_NEEDS_WRITE_CODE]);
+    expect(String(first.instruction)).toContain("A binding runs only in the Flow; write the step (write true), or run it with the value and bind it after");
+    const second = shownAt(decide, 2).find((entry) => entry.toolId === "core.decision_check")!.value;
+    expect(second.issueCodes).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE, `${AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE}.malformed:parameters.text`]);
+    expect(String(second.instruction)).toContain("\"test\"");
+  });
+});
+
+// t252 (D8): what the model is told about running, writing and looping.
+describe("the policy where the result is a Flow", () => {
+  it("lets the model run to learn and write what it has learnt, and makes repetitive work a loop", () => {
+    const policy = AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION;
+    expect(policy).not.toContain("run each step it needs once and add it");
+    expect(policy).toContain("run steps to learn what works and add the ones the Flow needs");
+    expect(policy).toContain("write a step without running it (core.run_node with write true)");
+    expect(policy).toContain("repetitive work is a loop, not a sequence");
+    expect(policy).toContain("never doing it to every item");
+    expect(policy).toContain("is bound ({\"$input\": ...}, {\"$row\": ...}), never typed in");
+    // Pinned elsewhere (`../../tests/evidence-loop-provider.test.ts`), kept.
+    expect(policy).toContain("Never mutate merely to perform an eventual workflow step");
+    expect(policy).toContain("never repeat a successful mutation merely to try another eventual-workflow value");
+  });
+
+  it("says add is for a step run or written, and that write implies it", () => {
+    const schema = buildAutomationStudioLlmEvidenceLoopDecisionSchema([go], { type: "object" }, true, false, true);
+    const add = ((schema.oneOf as JsonObject[]).find((variant) => (variant.properties as JsonObject).toolId !== undefined)!.properties as JsonObject).add as JsonObject;
+    expect(add.description).toContain("a step you run or write");
+    expect(add.description).toContain("write true implies add");
   });
 });

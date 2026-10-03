@@ -91,7 +91,12 @@ const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
   "llm_evidence_loop.complete_not_offered": "Finishing was not offered for this decision: the decision schema has no complete variant yet. Run a tool call the instruction needs first.",
   "llm_evidence_loop.amend_not_offered": "Editing the draft was not offered for this decision: the decision schema has no amend_draft variant. Choose one of the variants it does offer.",
   // `./evidence-loop/decision-refusal.ts`: a reply that was JSON, but not a decision of any accepted shape.
-  "llm_evidence_loop.decision_shape_invalid": "The decision was JSON but not one of the accepted shapes: check its kind, write only the keys that shape lists, give input and result as objects, and give every amendment a step number and a change from the list."
+  "llm_evidence_loop.decision_shape_invalid": "The decision was JSON but not one of the accepted shapes: check its kind, write only the keys that shape lists, give input and result as objects, and give every amendment a step number and a change from the list.",
+  // `./evidence-loop-decision.ts` (t252, D1): a node call that runs now with a binding in its parameters.
+  "run_node.binding_needs_write": "A binding runs only in the Flow; write the step (write true), or run it with the value and bind it after (amend_draft bind).",
+  // `./evidence-loop-decision.ts` (t252, D3): a written node call with a binding that cannot be read.
+  "run_node.binding_refused": "A binding in the written step could not be read; each run_node.binding_refused.<reason>:<path> code names where and why. "
+    + "Write {\"$input\": \"<name>\", \"test\": <the value to test with>} with a name of letters and digits that starts lower case, or {\"$row\": \"<field>\"}, and nothing else in that object; {\"$step\": ...} is not available yet."
 };
 
 /**

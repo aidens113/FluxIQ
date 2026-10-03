@@ -140,3 +140,89 @@ describe("a repeat on a listing, run 37", () => {
     expect(change).toContain("that row's own control");
   });
 });
+
+// `bind` generalizes a step that worked: a concrete argument is lifted into a
+// binding the Flow resolves at run time, and the run that worked stays as the
+// step's `instance` (design D2, t252).
+describe("binding a step's arguments", () => {
+  // d1 lists the rows, d2 searches with a typed value, d3 acts on one row and repeats over d1.
+  function loopDraft(): AutomationStudioFlowDraftStep[] {
+    const search = { node: "node.search", parameters: { query: "blue towels", options: { limit: 5 } }, consequences: [] };
+    const act = { node: "node.act", parameters: { target: { handle: "t9" }, note: "ok" }, consequences: ["lasting"] };
+    return [
+      { position: 1, id: "d1", iteration: 1, actionId: "node.list", input: { node: "node.list", parameters: {} }, effect: "observe", proposes: true, effectApplied: true, disposition: "kept" },
+      { position: 2, id: "d2", iteration: 2, actionId: "node.search", input: structuredClone(search), ranWith: structuredClone(search), effect: "mutate", effectApplied: true, disposition: "kept" },
+      { position: 3, id: "d3", iteration: 3, actionId: "node.act", input: structuredClone(act), ranWith: { ...structuredClone(act), parameters: { target: { identity: "frozen" }, note: "ok" } }, effect: "mutate", effectApplied: true, disposition: "kept", routing: { kind: "repeat", through: "d3", over: "d1" } }
+    ];
+  }
+
+  it("is a change the schema offers", () => {
+    const change = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { enum: string[]; description: string }>).change!;
+    expect(change.enum).toContain("bind");
+    expect(change.description).toContain("bind:");
+    const input = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>).input!.description;
+    expect(input).toContain("bind");
+    expect(input).toContain("$input");
+    expect(input).toContain("$row");
+  });
+
+  it("lifts a value into a Flow input, keeps the run that worked as instance, and takes the replaced value as the test value", () => {
+    const draft = loopDraft();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { query: { $input: "query" } } }])).toEqual({ applied: 1, refused: [] });
+    const bound = { $state: { path: "query", fallback: "blue towels" } };
+    expect(draft[1]?.ranWith).toEqual({ node: "node.search", parameters: { query: bound, options: { limit: 5 } }, consequences: [] });
+    expect(draft[1]?.input).toEqual({ node: "node.search", parameters: { query: bound, options: { limit: 5 } }, consequences: [] });
+    expect(draft[1]?.instance).toEqual({ node: "node.search", parameters: { query: "blue towels", options: { limit: 5 } }, consequences: [] });
+    // Bound again with another test value: the first concrete run stays the instance.
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { parameters: { query: { $input: "query", test: "red towels" } } } }]).applied).toBe(1);
+    expect(draft[1]?.ranWith?.parameters).toMatchObject({ query: { $state: { path: "query", fallback: "red towels" } } });
+    expect(draft[1]?.instance?.parameters).toMatchObject({ query: "blue towels" });
+    // The same binding again changes nothing.
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { query: { $input: "query", test: "red towels" } } }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "already_so" }] });
+  });
+
+  it("binds a nested value, and a row field on a step inside a repeat span", () => {
+    const draft = loopDraft();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { options: { limit: { $input: "limit" } } } }]).applied).toBe(1);
+    expect(draft[1]?.ranWith?.parameters).toMatchObject({ options: { limit: { $state: { path: "limit", fallback: 5 } } } });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "bind", input: { note: { $row: "name" } } }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[2]?.ranWith?.parameters).toEqual({ target: { identity: "frozen" }, note: { $state: { path: "item.name" } } });
+    expect(draft[2]?.input.parameters).toEqual({ target: { handle: "t9" }, note: { $state: { path: "item.name" } } });
+  });
+
+  it("refuses a row field on a step outside every repeat span", () => {
+    const draft = loopDraft();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { query: { $row: "name" } } }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "bind_row_outside_loop", parameter: "query" }] });
+    expect(draft[1]?.ranWith?.parameters).toMatchObject({ query: "blue towels" });
+    expect(draft[1]?.instance).toBeUndefined();
+  });
+
+  it("refuses a leaf that is not a binding, a key the step does not have, and a malformed form, changing nothing", () => {
+    const draft = loopDraft();
+    const before = structuredClone(draft);
+    const refusedFor = (input: Record<string, unknown>) => applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: input as never }]).refused;
+    expect(refusedFor({ query: "red towels" })).toEqual([{ step: 2, reason: "bind_not_a_binding", parameter: "query" }]);
+    expect(refusedFor({ query: { $input: "query" }, options: { limit: 7 } })).toEqual([{ step: 2, reason: "bind_not_a_binding", parameter: "options.limit" }]);
+    expect(refusedFor({})).toEqual([{ step: 2, reason: "bind_not_a_binding" }]);
+    expect(refusedFor({ page: { $input: "page", test: 2 } })).toEqual([{ step: 2, reason: "bind_new_key", parameter: "page" }]);
+    expect(refusedFor({ options: { sort: { $input: "sort", test: "asc" } } })).toEqual([{ step: 2, reason: "bind_new_key", parameter: "options.sort" }]);
+    expect(refusedFor({ query: { $input: "Query" } })).toEqual([{ step: 2, reason: "bind_malformed", parameter: "query" }]);
+    expect(refusedFor({ query: { $step: 1, output: "records" } })).toEqual([{ step: 2, reason: "bind_malformed", parameter: "query" }]);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind" }]).refused).toEqual([{ step: 2, reason: "bind_not_a_binding" }]);
+    expect(draft).toEqual(before);
+  });
+
+  it("binds only a step in the Flow", () => {
+    const draft = loopDraft();
+    draft[1]!.disposition = "taken";
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { query: { $input: "query" } } }]).refused).toEqual([{ step: 2, reason: "not_a_kept_step" }]);
+  });
+
+  it("binds a written step without making an instance of it, and never calls a written step did_not_work", () => {
+    const draft = loopDraft();
+    Object.assign(draft[2]!, { written: true, effectApplied: false, resultCode: "core.run_node.written" });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "bind", input: { note: { $row: "name" } } }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[2]?.instance).toBeUndefined();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "optional" }])).toEqual({ applied: 1, refused: [] });
+  });
+});

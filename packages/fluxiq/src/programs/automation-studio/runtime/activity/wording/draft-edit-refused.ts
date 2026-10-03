@@ -19,7 +19,11 @@ const BECAUSE: Readonly<Record<AutomationStudioFlowDraftAmendmentRefusal["reason
   over_not_before: "a repeat goes on what is done to each item, after the list it repeats over",
   no_step_before_it: "there is no step before it",
   run_by_the_loop: "that step could not be tried again this way",
-  act_on_a_read: "that step only reads the page, so it cannot do the action"
+  act_on_a_read: "that step only reads the page, so it cannot do the action",
+  bind_not_a_binding: "a value can only be made to vary with a placeholder for it",
+  bind_new_key: "that step has no such value to make vary",
+  bind_row_outside_loop: "that step is not repeated for each item, so there is no item to take the value from",
+  bind_malformed: "the placeholder for that value was not written correctly"
 });
 
 /** What an earlier run of the same call came to (`../../llm/repeat-guard/outcomes.ts`), said as why it was not run again. */
