@@ -7,8 +7,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 3045
-- Class: 92
+- Public declarations: 3046
+- Class: 93
 - Interface: 2
 - Object: 377
 - Type: 1702
@@ -1580,10 +1580,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioProjectContentWrite` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/content-store.ts:8` | - |
 | `AutomationStudioProjectConversationStore` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/conversations/store.ts:59` | - |
 | `automationStudioProjectCustomNodeRoot` | Object | `packages/fluxiq/src/programs/automation-studio/nodes/layout.ts:11` | - |
-| `AutomationStudioProjectDatabase` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:223` | - |
-| `AutomationStudioProjectDatabaseLease` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:23` | - |
-| `AutomationStudioProjectDatabasePool` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:64` | One open connection per project, shared by every lease on it. With `idleCloseMs` 0 the connection closes on its last release. With a grace period it stays open that long, and a lease taken in the meantime reuses it. A service runs its operations back to back, each releasing before the next acquires, so closing on every release reopened the database once per operation: measured 2026-10-02 (t246), 18 opens for the four calls that install a Flow's primary router and 25-37 per runtime-run test case, each paying an open that creates the WAL and runs its pragmas, the full migration check of every store set (the ready memo is per connection), and a close that checkpoints the WAL to disk and deletes it. Nothing stays open once the project has been idle for the grace period; `closeAll` and `closeIdleProject` close at once, so a caller about to remove a project's files does not wait for it. Every close the pool starts is tracked until it finishes. `closeAll` and `closeIdleProject` wait for those already in flight, an idle close the timer started among them, so neither returns while a connection still holds the files; and a project is not opened again until its previous connection has closed, so one project never has two connections. |
-| `AutomationStudioProjectDatabasePoolOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:29` | - |
+| `AutomationStudioProjectDatabase` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:224` | - |
+| `AutomationStudioProjectDatabaseLease` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:24` | - |
+| `AutomationStudioProjectDatabasePool` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:65` | One open connection per project, shared by every lease on it. With `idleCloseMs` 0 the connection closes on its last release. With a grace period it stays open that long, and a lease taken in the meantime reuses it. A service runs its operations back to back, each releasing before the next acquires, so closing on every release reopened the database once per operation: measured 2026-10-02 (t246), 18 opens for the four calls that install a Flow's primary router and 25-37 per runtime-run test case, each paying an open that creates the WAL and runs its pragmas, the full migration check of every store set (the ready memo is per connection), and a close that checkpoints the WAL to disk and deletes it. Nothing stays open once the project has been idle for the grace period; `closeAll` and `closeIdleProject` close at once, so a caller about to remove a project's files does not wait for it. Every close the pool starts is tracked until it finishes. `closeAll` and `closeIdleProject` wait for those already in flight, an idle close the timer started among them, so neither returns while a connection still holds the files; and a project is not opened again until its previous connection has closed, so one project never has two connections. |
+| `AutomationStudioProjectDatabasePoolOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:30` | - |
 | `AutomationStudioProjectEventChunkStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/event-chunk-store.ts:32` | - |
 | `AutomationStudioProjectEventStreamStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/event-stream-writer.ts:13` | - |
 | `AutomationStudioProjectFlowGraphJudgementStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/graph-judgement-store.ts:36` | - |
@@ -1607,6 +1607,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioProjectRunDatasetStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/run-dataset-store.ts:114` | The rows runs capture per dataset, stored raw in `project.sqlite` (CD16) and kept as long as the project unless deleted (CD17), with the project catalog of tables per Flow (CD21) and typed audit events (CD20). |
 | `AutomationStudioProjectRuntimeRunSummaryPage` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/runtime-stream-store.ts:50` | - |
 | `AutomationStudioProjectRuntimeStreamStore` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/runtime-stream-store.ts:97` | - |
+| `AutomationStudioProjectStoreUnavailableError` | Class | `packages/fluxiq/src/programs/automation-studio/storage/project/store-unavailable-error.ts:13` | The project store cannot be reached at all: its database pool is closing, so every acquire is refused (`./database.ts`). Its message is what the pool always said; the type and `code` exist so a caller can tell "the store is gone" from a store that answered with an error. A run reads it at its end (t258): a run whose store went away records what it still can -- its session lives outside the store -- and ends failed with its own reason, rather than throwing the store's absence at its caller. |
 | `AutomationStudioProjectSummary` | Type | `packages/fluxiq/src/programs/automation-studio/storage/file-store.ts:8` | - |
 | `AutomationStudioProjectUiCacheEntry` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/ui-cache.ts:3` | - |
 | `AutomationStudioProjectUiCachePutEntry` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/ui-cache.ts:12` | - |
@@ -1963,7 +1964,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioSoakEvidence` | Type | `packages/fluxiq/src/programs/automation-studio/testing/scale-certification.ts:31` | - |
 | `automationStudioSourceNodeRoot` | Object | `packages/fluxiq/src/programs/automation-studio/nodes/layout.ts:3` | - |
 | `AutomationStudioSqlAdaptationPolicy` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:37` | - |
-| `AutomationStudioSqlExecutor` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:11` | - |
+| `AutomationStudioSqlExecutor` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:12` | - |
 | `AutomationStudioSqlFlowDetail` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:24` | - |
 | `AutomationStudioSqlFlowError` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:27` | - |
 | `AutomationStudioSqlFlowPort` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:25` | - |
@@ -1982,7 +1983,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioSqlRouterSummary` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:13` | - |
 | `AutomationStudioSqlRouterTargetReference` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:14` | - |
 | `AutomationStudioSqlRouterTargetReferenceBatch` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:15` | - |
-| `AutomationStudioSqlRunResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:7` | - |
+| `AutomationStudioSqlRunResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:8` | - |
 | `AutomationStudioSqlSubflow` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:29` | - |
 | `AutomationStudioSqlSubflowCategory` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:28` | - |
 | `AutomationStudioSqlSubflowTargetPage` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/flow-resource-repository.ts:10` | - |
@@ -2049,8 +2050,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioValidationSeverity` | Type | `packages/fluxiq/src/programs/automation-studio/model/validation/issue.ts:1` | - |
 | `AutomationStudioVersionedFlowDocument` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-version/contracts.ts:68` | The shape this module reads a version off: any Flow document or artifact. |
 | `AutomationStudioViewState` | Type | `packages/fluxiq/src/programs/automation-studio/ui/contracts.ts:8` | - |
-| `AutomationStudioWalCheckpointMode` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:8` | - |
-| `AutomationStudioWalCheckpointResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:9` | - |
+| `AutomationStudioWalCheckpointMode` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:9` | - |
+| `AutomationStudioWalCheckpointResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts:10` | - |
 | `automationStudioWithoutLocators` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/locator-text.ts:120` | - |
 | `AutomationStudioWorkspacePreference` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/hierarchy/repository.ts:23` | - |
 | `AutomationStudioWorkspaceSummary` | Type | `packages/fluxiq/src/programs/automation-studio/storage/file-store.ts:156` | - |

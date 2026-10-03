@@ -2511,8 +2511,8 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const runCaller = input.llmExecution ? { actorUserId: input.llmExecution.actorUserId, actorSessionId: input.llmExecution.actorSessionId } : undefined;
     const runLlm = { ...(input.llmExecution ? { llmExecution: input.llmExecution } : {}), ...(permittedConsequences.length ? { permittedConsequences } : {}) };
     const idempotencyKey = typeof input.idempotencyKey === "string" && input.idempotencyKey.trim() ? input.idempotencyKey.trim() : "";
-    let session: AutomationStudioRuntimeSession | undefined;
-    const judgedPorts = { getFlowRunDetail: (projectId: string, runId: string) => this.getFlowRunDetail(projectId, runId), saveFlowRunDetail: (saved: AutomationStudioFlowRunDetail) => this.saveFlowRunDetail(saved), getFlowAdaptation: (projectId: string, flowId: string, adaptationId: string) => this.getFlowAdaptation(projectId, flowId, adaptationId), saveFlowAdaptation: (adaptation: AutomationStudioFlowAdaptation) => this.saveFlowAdaptation(adaptation), applyFlowAdaptation: (request: { projectId: string; flowId: string; adaptationId: string; reason: string }) => this.reviewFlowAdaptation({ ...request, action: "apply" as const, actorId: "runtime" }) }; // A runtime patch this run trialled is applied, or left unapplied with the reason, only once the run's result is judged (`service/runtime-adaptation/judged-promotion.ts`).
+    let session: AutomationStudioRuntimeSession | undefined; let adaptationContext: AutomationStudioRuntimeAdaptationContext | null = null; // Outside the try, so a run that threw settles under the context it ran with.
+    const judgedPorts = { getFlowRunDetail: (projectId: string, runId: string) => this.getFlowRunDetail(projectId, runId), saveFlowRunDetail: (saved: AutomationStudioFlowRunDetail) => this.saveFlowRunDetail(saved), getFlowAdaptation: (projectId: string, flowId: string, adaptationId: string) => this.getFlowAdaptation(projectId, flowId, adaptationId), saveFlowAdaptation: (adaptation: AutomationStudioFlowAdaptation) => this.saveFlowAdaptation(adaptation), applyFlowAdaptation: (request: { projectId: string; flowId: string; adaptationId: string; reason: string }) => this.reviewFlowAdaptation({ ...request, action: "apply" as const, actorId: "runtime" }), writeRuntimeSession: (projectId: string, written: AutomationStudioRuntimeSession) => this.writeRuntimeSession(projectId, written) }; // A runtime patch this run trialled is applied, or left unapplied with the reason, only once the run's result is judged (`service/runtime-adaptation/judged-promotion.ts`).
     try {
     if (input.projectId && idempotencyKey) {
       // A failed read refuses the run: read as "no sessions", it would start a duplicate under the same key.
@@ -2549,7 +2549,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       generate: (request, brief, costLeftUsd, startPages) => this.generateFlowBootstrapAdaptationInternal(request, brief, costLeftUsd, startPages),
       approve: (review) => this.reviewFlowBootstrapAdaptation({ ...review, action: "approve" }),
       apply: (review) => this.reviewFlowBootstrapAdaptation({ ...review, action: "apply" }) }) };
-    const judged = async (verified: AutomationStudioRuntimeSession) => await settleAutomationStudioRunJudgedPromotions({ ports: judgedPorts, projectId: input.projectId!, flowId: adaptationContext?.flowId, session: verified });
+    const judged = async (verified: AutomationStudioRuntimeSession) => await settleAutomationStudioRunJudgedPromotions({ ports: judgedPorts, projectId: input.projectId!, flowId: adaptationContext?.flowId, context: adaptationContext, session: verified });
     const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = {
       inputs: (input.inputs ?? {}) as Record<string, any>,
       signal: abortController.signal
@@ -2572,7 +2572,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     // Strict: an unreadable canonical Flow fails the run rather than running it without its compilation check and adaptation context.
     const canonical = input.projectId && session.metadata?.canonicalFlow === true ? await this.getFlow(input.projectId, session.flowId) : undefined;
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");
-    let adaptationContext = input.projectId && canonical ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input) : null;
+    adaptationContext = input.projectId && canonical ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input) : null;
     if (adaptationContext && input.llmExecution) adaptationContext = automationStudioRuntimeAdaptationContextForLlmRun(adaptationContext, input.llmExecution.intent);
     if (adaptationContext) { graphOptions.recoveryBudget = recoveryBudgetFromRuntimeAdaptationContext(adaptationContext); graphOptions.allowLlmDiagnosis = adaptationContext.behavior.invokeLlm; }
     // Decided here rather than at the verification call site because the state
@@ -2743,7 +2743,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     return input.projectId ? await judged(await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: next, ...(runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal })) : next;
     } catch (error) {
       // A run that throws before it records an outcome is ended failed, so it neither stays active nor holds off the next adaptive run.
-      throw input.projectId && session ? await endAutomationStudioRuntimeSessionAfterThrow({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), writeRuntimeSession: (projectId, ended) => this.writeRuntimeSession(projectId, ended), settleAfterThrow: (ended) => settleAutomationStudioRunJudgedPromotions({ ports: judgedPorts, projectId: ended.projectId ?? input.projectId!, flowId: ended.flowId, session: ended, reason: "run_errored" }) }, input.projectId, session.runId, error) : error;
+      if (!input.projectId || !session) throw error; const ending = await endAutomationStudioRuntimeSessionAfterThrow({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), writeRuntimeSession: (projectId, ended) => this.writeRuntimeSession(projectId, ended), settleAfterThrow: (ended) => settleAutomationStudioRunJudgedPromotions({ ports: judgedPorts, projectId: ended.projectId ?? input.projectId!, flowId: ended.flowId, context: adaptationContext, session: ended, reason: "run_errored" }) }, input.projectId, session.runId, error); if ("session" in ending) return ending.session; throw ending.error; // A run whose project store went away hands back its ended session (t258).
     } finally {
       if (input.projectId && session) { this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`); this.runControl.close(input.projectId, session.runId); }
     }

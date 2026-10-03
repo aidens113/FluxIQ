@@ -5,8 +5,10 @@ import {
   automationStudioJudgedPromotionCandidate,
   automationStudioJudgedPromotionOutcome,
   automationStudioRunAdaptationIds,
-  settleAutomationStudioJudgedPromotions
+  settleAutomationStudioJudgedPromotions,
+  settleAutomationStudioRunJudgedPromotions
 } from "../judged-promotion.ts";
+import { AutomationStudioProjectStoreUnavailableError } from "../../../../storage/index.ts";
 
 // The rule a runtime patch is kept by (t249): applied only once a whole run
 // that ran it ended `succeeded` with a performed verdict of `answers`.
@@ -210,5 +212,118 @@ describe("settling a run's pending patches", () => {
     const receipt = (settled.metadata?.runtimePatchAttempts as Array<Record<string, unknown>>)[0];
     expect(receipt?.approvalDecision).toMatchObject({ notAppliedReason: "run_errored" });
     expect(receipt).not.toHaveProperty("completedTrace");
+  });
+});
+
+// t258: the record is read only for a run whose context could hold a patch for
+// its judged end. A deterministic run whose project store could not be opened
+// threw "pool is closing" from this read in place of ending failed. A run that
+// could hold one, and whose store went away, notes that on its session -- kept
+// outside the store -- and leaves the patch unapplied, rather than throwing.
+describe("settling a run that has ended, from its stored record", () => {
+  type Gone = "read" | "adaptation" | "save_adaptation" | "apply" | "save_record";
+  const unavailable = () => new AutomationStudioProjectStoreUnavailableError("Automation Studio project database pool is closing.");
+
+  async function settleRun(options: { context: { behavior: { promoteAdaptations: boolean } } | null; reason?: "run_errored"; gone?: Gone; other?: boolean; ended?: AutomationStudioRuntimeSession }) {
+    const reads: string[] = [];
+    const saves: AutomationStudioFlowRunDetail[] = [];
+    const written: AutomationStudioRuntimeSession[] = [];
+    const applied: string[] = [];
+    const stored = new Map([["a.1", adaptation("a.1")]]);
+    const fail = (step: Gone) => { if (options.gone === step) throw options.other ? new Error("constraint failed") : unavailable(); };
+    const ended = options.ended ?? { ...session("failed"), projectId: "project.judged", flowId: "flow.judged" } as AutomationStudioRuntimeSession;
+    const run = async () => await settleAutomationStudioRunJudgedPromotions({
+      ports: {
+        getFlowRunDetail: async (_projectId, runId) => {
+          reads.push(runId);
+          if (!options.context?.behavior.promoteAdaptations) throw unavailable();
+          fail("read");
+          return { adaptationIds: ["a.1"], metadata: { runtimePatchAttempts: [{ adaptationId: "a.1", approvalDecision: pending }], adaptiveRetry: { candidateAdaptationIds: ["a.1"] } } } as unknown as AutomationStudioFlowRunDetail;
+        },
+        saveFlowRunDetail: async (detail) => { fail("save_record"); saves.push(detail); return detail; },
+        writeRuntimeSession: async (_projectId, noted) => { written.push(noted); },
+        getFlowAdaptation: async (_projectId, _flowId, id) => { fail("adaptation"); return stored.get(id) ?? null; },
+        saveFlowAdaptation: async (saved) => { fail("save_adaptation"); stored.set(saved.adaptationId, saved); return saved; },
+        applyFlowAdaptation: async (request) => { applied.push(request.adaptationId); fail("apply"); return { ...stored.get(request.adaptationId)!, status: "applied" }; }
+      },
+      projectId: "project.judged",
+      flowId: "flow.judged",
+      context: options.context as never,
+      session: ended,
+      ...(options.reason ? { reason: options.reason } : {})
+    });
+    return { run, ended, reads, saves, written, applied, stored };
+  }
+
+  it("reads nothing for a run whose context cannot promote, judged or thrown, so an unreadable store cannot make it throw", async () => {
+    for (const context of [null, { behavior: { promoteAdaptations: false } }]) {
+      for (const reason of [undefined, "run_errored" as const]) {
+        const { run, ended, reads, saves, written, stored } = await settleRun({ context, ...(reason ? { reason } : {}) });
+        await expect(run()).resolves.toBe(ended);
+        expect(reads).toEqual([]);
+        expect(saves).toEqual([]);
+        expect(written).toEqual([]);
+        expect(stored.get("a.1")?.metadata?.approvalDecision).toEqual(pending);
+      }
+    }
+  });
+
+  it("reads, settles and saves the record of a run whose context could hold a patch, and notes nothing", async () => {
+    const { run, ended, reads, saves, written, stored } = await settleRun({ context: { behavior: { promoteAdaptations: true } } });
+
+    await expect(run()).resolves.toBe(ended);
+    expect(reads).toEqual([RUN_ID]);
+    expect(stored.get("a.1")?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "run_failed", judgedRunId: RUN_ID });
+    expect(saves).toHaveLength(1);
+    expect(written).toEqual([]);
+  });
+
+  it("notes a record it could not read on the session, applies nothing, and leaves the patch held", async () => {
+    const { run, written, applied, stored } = await settleRun({ context: { behavior: { promoteAdaptations: true } }, gone: "read" });
+
+    const returned = await run();
+    expect(returned.status).toBe("failed");
+    expect(returned.metadata?.judgedPromotionSettlement).toMatchObject({ status: "store_unavailable", step: "read_record", recordSaved: false, adaptations: [], reason: "Automation Studio project database pool is closing." });
+    expect(written).toEqual([returned]);
+    expect(applied).toEqual([]);
+    expect(stored.get("a.1")?.metadata?.approvalDecision).toEqual(pending);
+  });
+
+  it.each(["adaptation", "save_adaptation"] as const)("leaves a patch the store could not take (%s) unapplied for the store, on its receipt and the session", async (gone) => {
+    const { run, saves, written, applied, stored } = await settleRun({ context: { behavior: { promoteAdaptations: true } }, gone });
+
+    const returned = await run();
+    expect(applied).toEqual([]);
+    expect(stored.get("a.1")?.metadata?.approvalDecision).toEqual(pending);
+    expect((saves[0]?.metadata?.runtimePatchAttempts as Array<Record<string, unknown>>)[0]?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "store_unavailable", judgedRunId: RUN_ID });
+    expect(returned.metadata?.judgedPromotionSettlement).toMatchObject({ status: "store_unavailable", step: "settle", recordSaved: true, adaptations: [{ adaptationId: "a.1", applied: false, notAppliedReason: "store_unavailable" }] });
+    expect(written).toEqual([returned]);
+  });
+
+  it("calls an apply the store went away under unapplied for the store, not refused by the gates", async () => {
+    const answered = { ...session("succeeded", { performed: true, verdict: "answers" }), projectId: "project.judged", flowId: "flow.judged" } as AutomationStudioRuntimeSession;
+    const { run, saves, applied } = await settleRun({ context: { behavior: { promoteAdaptations: true } }, gone: "apply", ended: answered });
+
+    const returned = await run();
+    expect(applied).toEqual(["a.1"]);
+    expect((saves[0]?.metadata?.runtimePatchAttempts as Array<Record<string, unknown>>)[0]?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "store_unavailable", autoApplyFailed: true });
+    expect(returned.metadata?.judgedPromotionSettlement).toMatchObject({ step: "settle", adaptations: [{ adaptationId: "a.1", notAppliedReason: "store_unavailable" }] });
+  });
+
+  it("notes what was decided when the record could not be saved", async () => {
+    const { run, written, stored } = await settleRun({ context: { behavior: { promoteAdaptations: true } }, gone: "save_record" });
+
+    const returned = await run();
+    expect(stored.get("a.1")?.metadata?.approvalDecision).toMatchObject({ notAppliedReason: "run_failed" });
+    expect(returned.metadata?.judgedPromotionSettlement).toMatchObject({ step: "save_record", recordSaved: false, adaptations: [{ adaptationId: "a.1", applied: false, notAppliedReason: "run_failed" }] });
+    expect(written).toEqual([returned]);
+  });
+
+  it("still throws a store that answered with an error, which is not the store going away", async () => {
+    for (const gone of ["read", "adaptation", "save_record"] as const) {
+      const { run, written } = await settleRun({ context: { behavior: { promoteAdaptations: true } }, gone, other: true });
+      await expect(run()).rejects.toThrow("constraint failed");
+      expect(written).toEqual([]);
+    }
   });
 });
