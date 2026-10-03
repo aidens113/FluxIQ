@@ -22,7 +22,7 @@ import type { AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnosti
 
 /** Which budget ran out. */
 export type AutomationStudioFlowBootstrapBudgetBound =
-  /** The build's spend ceiling ($0.25, or the Flow's lower setting). */
+  /** The build's spend ceiling (the run cost ceiling, $0.10 by default, or the Flow's lower setting). */
   | "cost"
   /** The run's token budget. */
   | "tokens"

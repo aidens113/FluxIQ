@@ -11,7 +11,8 @@ import { jsonObjectFromUnknown } from "../json-values.ts";
 // described a whole page was refused before it was sent. The user's order on
 // 2026-09-30 -- "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO
 // MODEL. DO NOT HIDE INFORMATION" -- leaves the model's context window as the only
-// bound on one request and the $0.25 per-build ceiling as the bound on spending,
+// bound on one request and the run cost ceiling (then $0.25; now
+// `AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 by default) as the bound on spending,
 // so the default no longer carries a cap. A default is only what gets written,
 // though: every Flow created before then holds the 12,000 in its own metadata.
 //

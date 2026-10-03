@@ -17,9 +17,10 @@ import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
  * sent, with its measured size (`./run.ts`, `../deepseek/provider.ts`), and is
  * never trimmed to fit.
  *
- * Spend is not bounded here. The run's $0.25 cost ceiling and the per-call
- * cost check derived from it (`../flow-execution-limits/`) are what stop a
- * build spending, and they are unchanged.
+ * Spend is not bounded here. The run cost ceiling
+ * (`AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 unless
+ * FLUXIQ_LLM_RUN_COST_CEILING_USD says otherwise) and the per-call cost check
+ * derived from it (`../flow-execution-limits/`) are what stop a build spending.
  *
  * Every other per-request ceiling reads this: the API handler's Flow-settings
  * bound, the provider's pre-flight, the session-key profile and the web app's

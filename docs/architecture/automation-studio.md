@@ -740,7 +740,15 @@ started" is posted. Every consulted attempt carries a `stateRouting` record
 (`outcome`: `effect_holds`, `routed`, `no_match`, `unobserved`,
 `no_pre_states` or `guard_stopped`; candidate and match counts; target,
 direction and closeness)
-and never a route state or a signature. With no way on, the record stays on the
+and never a route state or a signature. The run detail's action attempt
+carries it as `stateRouting` in closed words only
+(`service/summaries/state-routing.ts`, t250): `{ outcome }` for `routed` and
+`effect_holds`, beside the `skipped` mark that already names the destination;
+`{ outcome, code, toNodeId }` for `guard_stopped`; `{ outcome, code }` for the
+three outcomes that found no way on. `code` is the Core code that asked
+(`executor.ready_state.not_shown` when the readiness gate did, else the
+attempt's failure code); the record's reason sentence and counts stay on the
+trace. With no way on, the record stays on the
 failed attempt and the ladder runs exactly as before. Each failed attempt goes
 through ask and park handling, the waiting status, state routing, the ladder,
 the continuation rule, then failure, and a model is only ever called after the

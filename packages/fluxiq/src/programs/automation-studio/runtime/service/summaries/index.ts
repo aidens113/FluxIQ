@@ -8,5 +8,6 @@ export * from "./run-detail-merge.ts";
 export * from "./run-detail-writer.ts";
 export * from "./sql-conversions.ts";
 export * from "./sql-paging.ts";
+export * from "./state-routing.ts";
 export * from "./store.ts";
 export * from "./types.ts";

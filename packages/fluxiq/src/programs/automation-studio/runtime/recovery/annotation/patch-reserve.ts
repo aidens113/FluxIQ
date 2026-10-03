@@ -19,8 +19,8 @@
 // diagnosis, which carried the same failure evidence and context the patch
 // will -- and priced as the provider prices a request, never above the call's
 // cost ceiling. It used to be the per-request token limit, which is now the
-// model's whole window (992,000 tokens): one held call was the whole $0.25
-// purse, so the hold was never affordable and the patch lost its protection.
+// model's whole window (992,000 tokens): one held call was the whole purse
+// (then $0.25), so the hold was never affordable and the patch lost its protection.
 
 import {
   resolveAutomationStudioLlmTokenLimits,
