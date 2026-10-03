@@ -15,12 +15,17 @@
 // entry per condition that removed rows by itself, naming the condition and its
 // rows. Each label is a one-column record `{ column: label }`, as the playback's
 // `conditions.aloneRows` are (`service/summaries/extraction-summary.ts`), so its
-// column can still be screened.
+// column can still be screened. A left-out row may carry a second cell, the
+// column its condition tested and that row's value in it (t195-w34, live run
+// `run-murwcaj0-40e56557`: the judge was shown "Jonas Weber" and not "Aisha
+// Khan and 4 other mutual friends", and read a regex that dropped five mutual
+// friends as one that kept them); a sender that predates it sends one cell.
 //
 // **What the judge is sent.** Each list becomes its labels, screened by the very
 // function the runtime judge's are (`automationStudioResultReadAloneRows`): a
 // label from a denied column, or shaped like a credential, is said as withheld
-// and still counts as a row. That happens before the observation's own
+// and still counts as a row, and a left-out row with its tested value is said
+// `label — column: value`, the value screened on its own. That happens before the observation's own
 // screening, which would otherwise drop a denied column's record silently, or
 // withhold the whole observation -- its counts included -- for one label. A
 // member that is not that shape is left out; the rest of the observation stays.
@@ -49,13 +54,9 @@ export function automationStudioBuildTestReadRows(value: JsonValue, deniedKeys: 
 
 function readRows(sent: JsonObject, deniedKeys: readonly string[]): { value: JsonObject; withheld: boolean } | undefined {
   let withheld = false;
-  const labels = (list: JsonValue | undefined): string[] | undefined => {
-    const said = automationStudioResultReadAloneRows(list, deniedKeys);
-    // A label the screen withheld reads differently from the one sent; both skip the same malformed records.
-    const sentLabels = Array.isArray(list) ? list.flatMap((row) => labelSent(row) ?? []) : [];
-    if (said?.some((label, index) => label !== sentLabels[index])) withheld = true;
-    return said;
-  };
+  const labels = (list: JsonValue | undefined): string[] | undefined => automationStudioResultReadAloneRows(list, deniedKeys, () => {
+    withheld = true;
+  });
   const rows = labels(sent.rows);
   const conditions = Array.isArray(sent.leftOutOnlyByThis) ? sent.leftOutOnlyByThis.flatMap((entry): JsonObject[] => {
     if (!isObject(entry) || typeof entry.condition !== "string" || !entry.condition.trim() || entry.condition.length > CONDITION_NAME_MAX) return [];
@@ -67,13 +68,6 @@ function readRows(sent: JsonObject, deniedKeys: readonly string[]): { value: Jso
     value: { ...(rows ? { rows, ...notShown(sent.rowsNotShown) } : {}), ...(conditions.length ? { leftOutOnlyByThis: conditions } : {}) },
     withheld
   };
-}
-
-/** The label a one-column record carries, as sent. */
-function labelSent(row: JsonValue | undefined): string | undefined {
-  if (!isObject(row)) return undefined;
-  const [cell] = Object.values(row);
-  return typeof cell === "string" ? cell : undefined;
 }
 
 function notShown(value: JsonValue | undefined): { rowsNotShown?: number } {

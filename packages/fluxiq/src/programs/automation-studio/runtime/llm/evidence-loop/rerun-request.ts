@@ -22,6 +22,13 @@
 // `no_such_step`, the same word the draft uses for it, and the feedback lists
 // the numbers that do exist rather than proposing the one the model may have
 // meant.
+//
+// **A rerun of a done act is requested here like any other and run as a check**
+// (live run `run-murwcaj0-40e56557`, R7: a repair rerun of the step that had
+// confirmed Amara's request, act a1, pressed Tom's Confirm instead). It is not
+// refused: the step carries an instructed act its own run already did, so the
+// call that answers it checks the new argument and does not do the act again
+// (`../node-tools/rerun-check.ts`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";

@@ -53,9 +53,19 @@ describe("Automation Studio LLM structured diagnosis channel", () => {
     expect(unknownKey.response).toBeUndefined();
     expect(unknownKey.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.unexpected_field");
 
+    // A text past its bound is read clipped to it, never carried whole and never
+    // voiding the reply (live run murwcmx2, `harness/tests/long-diagnosis-text.test.ts`);
+    // a text that is not a string is still refused.
     const overlong = await diagnose({ kind: "diagnosis", summary: "A diagnosis.", diagnosis: { observed: "x".repeat(501) } });
-    expect(overlong.ok).toBe(false);
-    expect(overlong.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.invalid_diagnosis_text");
+    expect(overlong.ok).toBe(true);
+    expect(overlong.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.diagnosis_text_clipped");
+    const clipped = overlong.response?.kind === "diagnosis" ? (overlong.response.diagnosis?.observed ?? "") : "";
+    expect(clipped.length).toBeLessThanOrEqual(500);
+    expect(clipped.endsWith("[clipped]")).toBe(true);
+
+    const notText = await diagnose({ kind: "diagnosis", summary: "A diagnosis.", diagnosis: { observed: { sql: "DROP TABLE runs" } } });
+    expect(notText.ok).toBe(false);
+    expect(notText.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.invalid_diagnosis_text");
 
     const badVerdict = await diagnose({ kind: "diagnosis", summary: "A diagnosis.", diagnosis: { stillAchievable: "probably" } });
     expect(badVerdict.ok).toBe(false);
@@ -128,9 +138,48 @@ describe("the judges are told what an excluded row is, and what a replayed read'
   });
 
   it("tells the build-test judge what readRows holds, and to read its leftOutOnlyByThis as a read's", () => {
-    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification");
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
     expect(prompt).toContain("readRows");
     expect(prompt).toContain("readRows.leftOutOnlyByThis");
+  });
+
+  // t195-w34, live run `run-murwcaj0-40e56557` (R6): shown only the names a mutual-friends
+  // regex left out, the judge took the regex's intent for what it did.
+  it("tells both judges a left-out row is written with the value its condition tested, and to judge from it", () => {
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("where the value that condition tested on that row is known, written label — column: value");
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("Read each row's tested value against the request yourself rather than trusting what the condition was meant to do");
+    expect(prompt).toContain("each written label — column: value where the test knows the value that condition tested on it");
+  });
+});
+
+// t195-w39, live run `run-murwcaj0-40e56557` (J1): shown a repeated Confirm's
+// target with the card it was built on, the build-test judge called the loop's
+// press "one remembered target repeated, not a per-row confirm". At playback a
+// repeated step acts on each row's own control; the judge is now told so.
+describe("the build-test judge is told a repeated step acts on each row of its listing", () => {
+  it("says a repeated step acts on each row, never only on the row it was built on", () => {
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(prompt).toContain("A repeated step acts on each row that step keeps, finding its control again inside each row, never only on the row it was built on");
+  });
+});
+
+// Run `run-murwd8le-79e735a8` (Cause 9): the post-run checks 0071 and 0072
+// called the playback "a build test", because their system prompt carried the
+// "When resultSummary.buildTest is present ..." paragraph with no buildTest.
+describe("the post-run check is told it judges a finished run, and only a build's test is told it judges one", () => {
+  it("sends the build-test paragraph only with a buildTest", () => {
+    const finished = automationStudioDiagnosisPromptInstruction("loop_verification");
+    expect(finished).not.toContain("resultSummary.buildTest");
+    expect(finished).not.toMatch(/build's test/u);
+    expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true })).toContain("When resultSummary.buildTest is present");
+  });
+
+  // Cause 7: neither judge was shown the page the run or test ended on.
+  it("tells every judge what the page the run or test ended on is, and how to read it", () => {
+    for (const prompt of [automationStudioDiagnosisPromptInstruction("loop_verification"), automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true })]) {
+      expect(prompt).toContain("resultSummary.endView");
+    }
   });
 });
 
@@ -139,7 +188,8 @@ describe("the judges are told what an excluded row is, and what a replayed read'
 // and its second answer asked to "fix or remove the failed step 15".
 describe("the judge's instruction on an excused step", () => {
   it("says an excused step is no defect: never a no for it alone, and never fix or remove it in changed", () => {
-    const instruction = automationStudioDiagnosisPromptInstruction("loop_verification");
+    // Only a build's test has excused steps, so it is said where buildTest is.
+    const instruction = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
     expect(instruction).toMatch(/excused/u);
     expect(instruction).toMatch(/excused[^.]*not a defect/u);
     expect(instruction).toMatch(/never asks? to fix, rerun or remove it/u);

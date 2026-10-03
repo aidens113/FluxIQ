@@ -1,6 +1,8 @@
 // The build's test, a rerun's put-back and a part run all check a step that
-// does one of the person's acts rather than press it again, whatever it
-// declared (`../../../flow-draft/verify-only.ts`, t193-1002m-w6 task G).
+// does one of the person's lasting acts rather than press it again, whatever it
+// declared (`../../../flow-draft/verify-only.ts`: lanes A and D's rule, which
+// lane B's task G merged into on 2026-10-03; the acts come from the
+// instruction's read, `lastingActs`).
 //
 // Live run `run-murwdp4f-35f976d2`: d12 Add to cart carried act a2 and declared
 // `consequences: []`, so both build tests pressed it and the person's cart went
@@ -41,6 +43,9 @@ const DRAFT = [
   step(4, "node.plus", TOWELS, ["a2.quantity"])
 ];
 
+/** The instruction's read: a2, "add ... to my cart", lasts. */
+const LASTING: ReadonlySet<string> = new Set(["a2"]);
+
 /** A site whose cart grows with every Add to cart that is pressed, never with one that is checked. */
 function site() {
   const calls: { callId: string; value: JsonObject }[] = [];
@@ -60,7 +65,7 @@ function site() {
 describe("a step that does one of the person's acts, in the build's test", () => {
   it("is checked and not pressed, and the steps around it are run again", async () => {
     const { state, executeTool, sent } = site();
-    const replayed = await replayAutomationStudioFlowDraft({ steps: DRAFT, attempt: 1, executeTool });
+    const replayed = await replayAutomationStudioFlowDraft({ steps: DRAFT, attempt: 1, executeTool, lastingActs: LASTING });
     expect(sent("node.add_to_cart")).toEqual(["verify"]);
     expect(sent("node.plus")).toEqual(["step"]);
     expect(sent("node.size")).toEqual(["step"]);
@@ -69,10 +74,17 @@ describe("a step that does one of the person's acts, in the build's test", () =>
     expect(replayed.verdict.outcomes.find((outcome) => outcome.step === 3)).toMatchObject({ status: "replayed", mode: "verify", resultCode: "core.replay.verified" });
   });
 
-  it("is pressed as today when the next step found the target on another page", async () => {
+  it("is checked too when the next step found the target on another page: a lasting act is never pressed twice", async () => {
     const moves = [step(1, "node.open_towels", HOME), step(2, "node.add_to_cart", TOWELS, ["a2"]), step(3, "node.read_cart", CART)];
     const { state, executeTool, sent } = site();
-    await replayAutomationStudioFlowDraft({ steps: moves, attempt: 1, executeTool });
+    await replayAutomationStudioFlowDraft({ steps: moves, attempt: 1, executeTool, lastingActs: LASTING });
+    expect(sent("node.add_to_cart")).toEqual(["verify"]);
+    expect(state.cart).toBe(2);
+  });
+
+  it("is pressed by its declaration alone when the build has no read of the instruction", async () => {
+    const { state, executeTool, sent } = site();
+    await replayAutomationStudioFlowDraft({ steps: DRAFT, attempt: 1, executeTool });
     expect(sent("node.add_to_cart")).toEqual(["step"]);
     expect(state.cart).toBe(3);
   });
@@ -81,7 +93,7 @@ describe("a step that does one of the person's acts, in the build's test", () =>
 describe("a step that does one of the person's acts, in a rerun's put-back", () => {
   it("is checked rather than done again before the rerun", async () => {
     const { state, executeTool, sent } = site();
-    const place = await automationStudioNodeRerunFromItsPlace({ step: DRAFT[3]!, steps: DRAFT, now: undefined, callId: "c9", executeTool });
+    const place = await automationStudioNodeRerunFromItsPlace({ step: DRAFT[3]!, steps: DRAFT, now: undefined, callId: "c9", executeTool, lastingActs: LASTING });
     expect(place).toMatchObject({ kind: "put_back", startPage: "step" });
     expect(sent("node.add_to_cart")).toEqual(["verify"]);
     expect(state.cart).toBe(2);
@@ -92,7 +104,7 @@ describe("a step that does one of the person's acts, in a rerun's put-back", () 
 describe("a step that does one of the person's acts, in a part run", () => {
   it("is checked and not pressed", async () => {
     const { state, executeTool, sent } = site();
-    const ran = await runAutomationStudioFlowDraftPart({ steps: DRAFT, value: { from: 2, to: 4 }, callId: "c7", executeTool });
+    const ran = await runAutomationStudioFlowDraftPart({ steps: DRAFT, value: { from: 2, to: 4 }, callId: "c7", executeTool, lastingActs: LASTING });
     expect(sent("node.add_to_cart")).toEqual(["verify"]);
     expect(state.cart).toBe(2);
     expect((ran.evidence as JsonObject).passed).toBe(true);

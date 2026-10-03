@@ -79,6 +79,27 @@ describe("a build's judge", () => {
     expect(buildTest?.steps[0]?.observed).toEqual({ ok: true, read: { value: "$4.99" } });
   });
 
+  // Live run run-murwcaj0-40e56557 (J1): a repeated press's template row is not the row it acts on, and which argument
+  // key holds that row is the domain's declaration (`rowContextKeys`), carried here to the judge's packet.
+  it("leaves the domain's declared row keys out of a repeated step's words, and only those", async () => {
+    const press: AutomationStudioFlowDraftStep = {
+      position: 2, id: "d2", iteration: 2, actionId: "web.output.dom-click", toolId: "core.run_node", effect: "mutate", proposes: true, disposition: "kept",
+      input: { node: "web.output.dom-click", parameters: { element: { accessibleName: "Confirm", context: { row: { text: "Tom Becker1 mutual friend" } } } } },
+      routing: { kind: "repeat", over: "d1", through: "d2" }
+    };
+    const targets: unknown[] = [];
+    for (const rowContextKeys of [["row"], undefined]) {
+      const { provider, seen } = scripted();
+      const judge = automationStudioFlowBootstrapBuildJudge({
+        provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+        instructionText: ASKS_FOR_A_TABLE, plan: () => undefined, rowContextKeys
+      });
+      await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read, press], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
+      targets.push(seen[0]?.context.resultSummary?.buildTest?.steps[1]?.target);
+    }
+    expect(targets).toEqual([["Confirm", "in each row step 1 keeps"], ["Confirm", "Tom Becker1 mutual friend", "in each row step 1 keeps"]]);
+  });
+
   it("is told nothing beside the test when the check found nothing", async () => {
     const { provider, seen } = scripted();
     const judge = automationStudioFlowBootstrapBuildJudge({
@@ -168,6 +189,53 @@ describe("a build's judge", () => {
     expect(text).toContain("the judge's reply could not be read");
     expect(text).not.toContain("llm_output.");
     expect(text).not.toMatch(/\b[a-z_]+\.[a-z_.]+\b/);
+  });
+
+  // Run `run-murwd8le-79e735a8` (t174-w87 Cause 7, wired by t174-w89): the
+  // judges of its tests (0046, 0047) never saw `Cart (3)`, the coupon's
+  // "Collected" or the quantity field. The test captures the page it ended on
+  // and the judge is shown it; a test that captured none is judged without.
+  it("is shown the page the test ended on when the test captured one", async () => {
+    const { provider, seen } = scripted();
+    const judge = automationStudioFlowBootstrapBuildJudge({
+      provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+      instructionText: ASKS_FOR_A_TABLE, plan: () => undefined, observedStateKeys: ["page"]
+    });
+    const page = ["PAGE \"Voltbay USB C Hub\"", "t885 link \"3 Cart\" ~/cart", "t965 field \"Quantity\" =\"3\"", "t970 \"Collected\""].join("\n");
+    judge.roundStarted();
+    judge.observeTest({ ...passed(automationStudioFlowDraftFlowSignature([read])), endView: { after: 1, view: { page } } });
+    await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
+    expect(seen[0]?.context.resultSummary?.endView).toEqual({ after: 1, view: { page } });
+  });
+
+  it("is judged without a page when the test captured none", async () => {
+    const { provider, seen } = scripted();
+    const judge = automationStudioFlowBootstrapBuildJudge({
+      provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+      instructionText: ASKS_FOR_A_TABLE, plan: () => undefined, observedStateKeys: ["page"]
+    });
+    judge.roundStarted();
+    judge.observeTest(passed(automationStudioFlowDraftFlowSignature([read])));
+    const judged = await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
+    expect(judged.verdict).toBe("no");
+    expect(seen[0]?.context.resultSummary).not.toHaveProperty("endView");
+  });
+
+  it("gives the test its look at the page through the build's executor, and none where the domain has no free look", async () => {
+    const { provider } = scripted();
+    const look = { node: "web.output.dom-capture_snapshot", parameters: {}, consequences: [] };
+    const executeTool = async (call: { callId: string; toolId: string; value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { page: `seen by ${call.callId} through ${call.toolId}`, handles: 2 }, effectApplied: false });
+    const judge = automationStudioFlowBootstrapBuildJudge({
+      provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+      instructionText: ASKS_FOR_A_TABLE, plan: () => undefined, observedStateKeys: ["page"],
+      look: { tools: [{ toolId: "core.run_node", initialObservation: { input: look } }], executeTool }
+    });
+    expect(await judge.testEndView?.({ callId: "core.dry_run.1.end_view", after: 2 })).toEqual({ after: 2, view: { page: "seen by core.dry_run.1.end_view through core.run_node" } });
+    const blind = automationStudioFlowBootstrapBuildJudge({
+      provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+      instructionText: ASKS_FOR_A_TABLE, plan: () => undefined, observedStateKeys: ["page"], look: { tools: [{ toolId: "press" }], executeTool }
+    });
+    expect(blind.testEndView).toBeUndefined();
   });
 });
 

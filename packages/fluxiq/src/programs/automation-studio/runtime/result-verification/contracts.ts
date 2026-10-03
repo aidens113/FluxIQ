@@ -57,8 +57,10 @@ export type AutomationStudioResultVerdictBasis =
   | "model_unavailable"
   /**
    * The model judged the result not to answer, or could not tell, was asked
-   * once more with the same evidence, and judged that it does. Two different
-   * answers to one question settle nothing, so neither is taken over the other.
+   * once more with the same evidence, and judged that it does -- or, on a
+   * verification that confirms answers (the build-test judge's `confirmAnswer`),
+   * judged that it answers and then that it does not. Two different answers to
+   * one question settle nothing, so neither is taken over the other.
    */
   | "model_disagreed"
   /**
@@ -148,7 +150,8 @@ export type AutomationStudioResultFlowStepSummary = {
  * the conditions, the paging and the dedupe key are what the Flow authored the
  * step with. Counts, closed words, column ids and the model's own condition
  * wording -- no locator, and no page value but a condition's `leftOutOnlyByThis` row
- * labels and the value its own read found, each screened.
+ * labels with the value it tested on each, and the value its own read found,
+ * each screened.
  */
 export type AutomationStudioResultReadAccount = {
   nodeId: string;
@@ -195,7 +198,11 @@ export type AutomationStudioResultReadAccount = {
    * true answers). Absent where the read did not count it. `leftOutOnlyByThis`
    * names those rows, each by its first text column (its title), whole, so the
    * judge can check them against the request (live run 15: three earbuds "with
-   * Wireless Charging Case"); absent where the read did not send them.
+   * Wireless Charging Case"); absent where the read did not send them. Where
+   * the row holds the column the condition tested, the row is said with that
+   * value after its label, `label — column: value` (t195-w34, live run
+   * `run-murwcaj0-40e56557`: "Jonas Weber — mutualFriends: Aisha Khan and 4
+   * other mutual friends", which a regex for five or more had dropped).
    */
   conditions?: Array<{ condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[] }>;
   /** True when every row failed the conditions and the read answered with the unfiltered rows instead. */
@@ -263,6 +270,25 @@ export type AutomationStudioRunResultSummary = {
    * the test observed of it.
    */
   buildTest?: AutomationStudioBuildTestAccount;
+  /**
+   * The page the run or test ended on, as the domain produced it, screened
+   * (`./result-summary.ts`, `automationStudioResultEndView`). Absent when the
+   * caller held none or it was withheld; a withheld one sets `withheld`.
+   */
+  endView?: AutomationStudioResultEndView;
+};
+
+/**
+ * The view of its target -- for the web domain, the page -- a run or a test
+ * ended on, as the domain produced it (t174-w87). Run `run-murwd8le-79e735a8`'s
+ * judges never saw `Cart (3)`, the coupon's "Collected" or the quantity field,
+ * and one of them invented a quantity that was never committed.
+ */
+export type AutomationStudioResultEndView = {
+  /** What it was taken after: a test's step number, or the node a run ran last. */
+  after?: number | string;
+  /** The domain's view, by its own keys and screened, otherwise as it came. */
+  view: JsonValue;
 };
 
 /**
@@ -401,7 +427,7 @@ export type AutomationStudioResultRepairDirective = {
    * absent advice is still a valid refutation, and a run must never fail because
    * the judgement was terse.
    */
-  judgement?: { expected?: string; observed?: string; advice?: string };
+  judgement?: { expected?: string; observed?: string; advice?: string; /** Whether what was asked can still be had: a build ends "not doable" only on `no` (t195-w37). */ stillAchievable?: "yes" | "no" | "unknown" };
   /** True when something the judgement said was dropped by a screen rather than carried. */
   withheld?: boolean;
 };
@@ -419,7 +445,8 @@ export type AutomationStudioResultVerification = {
   observation: string;
   /**
    * The verdict each verification call returned, in the order asked: one, or
-   * two when the first answered anything but `answers`. Verdict words only,
+   * two when the first answered anything but `answers`, or answered `answers` on
+   * a verification that confirms it (`confirmAnswer`). Verdict words only,
    * never the model's prose. Absent when no model was asked.
    */
   verdicts?: AutomationStudioResultVerdict[];
@@ -434,6 +461,21 @@ export type AutomationStudioResultVerification = {
    * `unsure` for the same reason.
    */
   repair?: AutomationStudioResultRepairDirective;
+  /**
+   * On a verification two checks did not settle (`model_disagreed`,
+   * `model_unconfirmed`), the reading of the call that judged
+   * `does_not_answer`: its expected, observed and advice, as screened for that
+   * call's `repair.judgement`. One judge's reading the other call did not
+   * confirm, and nothing more: never a `repair` or a `failure` record, so it
+   * fails no run (`automationStudioResultVerificationFailsRun`) and builds no
+   * runtime repair. A build's repair is told it (`build-test/judge.ts`), because
+   * dropping it sent live run murwcmx2's repair back with only "unverified"
+   * while one call had said which condition to narrow. Absent when no call
+   * judged `does_not_answer`, or that call said nothing beyond its verdict. Like
+   * `repair.judgement`, it is the model's prose and is not recorded on a run
+   * (`run-outcome.ts`).
+   */
+  unconfirmedReading?: NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
   /**
    * Present exactly when the verification fails the run
    * (`automationStudioResultVerificationFailsRun`): what the run must report.

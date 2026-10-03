@@ -13,6 +13,7 @@ import {
   automationStudioFlowDraftDryRunVerdict,
   automationStudioFlowDraftReplayOutcomeVerified,
   automationStudioFlowDraftReplayOutcomeWord,
+  automationStudioFlowDraftStepActDone,
   automationStudioFlowDraftStepMovedTarget,
   automationStudioFlowDraftStepReplayMode,
   automationStudioFlowDraftWithheldStepIds,
@@ -39,39 +40,93 @@ const step = (over: Partial<AutomationStudioFlowDraftStep> & { consequences?: Js
   };
 };
 
-/** How the dry run treats a step that is the whole draft: none of these name an act, so nothing after it matters. */
-const modeAlone = (alone: AutomationStudioFlowDraftStep) => automationStudioFlowDraftStepReplayMode(alone, [alone]);
-
 describe("which steps a dry run checks rather than runs again", () => {
   it("checks a changing step that declares a lasting consequence", () => {
-    expect(modeAlone(step({ consequences: ["modify_existing"] }))).toBe("verify");
-    expect(modeAlone(step({ consequences: ["send_or_publish", "create_new"] }))).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: ["modify_existing"] }))).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: ["send_or_publish", "create_new"] }))).toBe("verify");
     // The authoring spelling: a comma list, and a class Core does not know is
     // still not "none", so it is not repeated either.
-    expect(modeAlone(step({ consequences: "move_money" }))).toBe("verify");
-    expect(modeAlone(step({ consequences: ["purchase"] }))).toBe("verify");
-    expect(modeAlone(step({ consequences: { move_money: true } }))).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: "move_money" }))).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: ["purchase"] }))).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: { move_money: true } }))).toBe("verify");
   });
 
   it("runs again a changing step that declares nothing lasting", () => {
     for (const consequences of [[], ["none"], "none", "", " none "]) {
-      expect(modeAlone(step({ consequences })), JSON.stringify(consequences)).toBe("replay");
+      expect(automationStudioFlowDraftStepReplayMode(step({ consequences })), JSON.stringify(consequences)).toBe("replay");
     }
   });
 
   it("runs again a step that only reads, whatever it declared", () => {
-    expect(modeAlone(step({ effect: "observe", consequences: ["create_new"] }))).toBe("replay");
+    expect(automationStudioFlowDraftStepReplayMode(step({ effect: "observe", consequences: ["create_new"] }))).toBe("replay");
   });
 
   it("runs again a step that declared nothing at all, as before", () => {
-    expect(modeAlone(step())).toBe("replay");
+    expect(automationStudioFlowDraftStepReplayMode(step())).toBe("replay");
+  });
+
+  // Live run `run-murwcaj0-40e56557` (R3): the step that confirmed a friend
+  // request, act a1, declared `consequences: []`, so every test pressed Confirm
+  // again. The instruction's read quotes "confirm everyone ..." as
+  // modify_existing, so a1 is one of its lasting acts (t174-w83's second
+  // witness, merged 2026-10-03): the step is checked whatever it declared.
+  it("checks the confirm step of run-murwcaj0 whatever it declared, once the read names its act lasting", () => {
+    for (const consequences of [[], ["none"], "none"]) {
+      expect(automationStudioFlowDraftStepReplayMode(step({ consequences, acts: ["a1"] }), new Set(["a1"])), JSON.stringify(consequences)).toBe("verify");
+    }
+    expect(automationStudioFlowDraftStepReplayMode(step({ acts: ["a1"], noRanWith: true }), new Set(["a1"]))).toBe("verify");
+  });
+
+  // R7: a rerun is a check exactly when the dry run would check the step and its own run already did its effect.
+  it("calls a step's effect done only when the dry run would check it and its own run changed the page", () => {
+    const lasting = new Set(["a1"]);
+    expect(automationStudioFlowDraftStepActDone(step({ consequences: [], acts: ["a1"], effectApplied: true }), lasting)).toBe(true);
+    expect(automationStudioFlowDraftStepActDone(step({ consequences: ["modify_existing"], effectApplied: true }))).toBe(true);
+    // Not done yet, a choice of the act, an act the read does not call lasting, and a read: each is run as asked.
+    expect(automationStudioFlowDraftStepActDone(step({ consequences: [], acts: ["a1"], effectApplied: false }), lasting)).toBe(false);
+    expect(automationStudioFlowDraftStepActDone(step({ consequences: [], acts: ["a1.colour"], effectApplied: true }), lasting)).toBe(false);
+    expect(automationStudioFlowDraftStepActDone(step({ consequences: [], acts: ["a2"], effectApplied: true }), lasting)).toBe(false);
+    expect(automationStudioFlowDraftStepActDone(step({ effect: "observe", consequences: [], acts: ["a1"], effectApplied: true }), lasting)).toBe(false);
   });
 
   it("reads the declaration the Flow keeps before the one the model wrote", () => {
     const written = step({ noRanWith: true, input: { node: "node.click", parameters: {}, consequences: ["delete"] } });
-    expect(modeAlone(written)).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(written)).toBe("verify");
     const kept = step({ consequences: [], input: { node: "node.click", parameters: {}, consequences: ["delete"] } });
-    expect(modeAlone(kept)).toBe("replay");
+    expect(automationStudioFlowDraftStepReplayMode(kept)).toBe("replay");
+  });
+});
+
+// Run `run-murwd8le-79e735a8` (Cause 3): the Add to cart step declared
+// `consequences: []` and claimed act `a1`, which the instruction read asks to
+// create something new ("put three of the Voltbay ... in my cart"). Both build
+// tests pressed Add to cart again on the person's cart (0045, 0068).
+describe("a step that does an act the instruction asks to last", () => {
+  const lasting: ReadonlySet<string> = new Set(["a1", "a2"]);
+
+  it("is checked, not run again, though it declared nothing lasting", () => {
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: ["a1"] }), lasting)).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: ["none"], acts: ["a2"] }), lasting)).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(step({ acts: ["a1"] }), lasting)).toBe("verify");
+  });
+
+  it("runs again a step that makes one of the act's choices, which is not the act", () => {
+    // Space Grey and the quantity are claimed as `a1.colour` and `a1.quantity`; the dry run's later steps stand on them.
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: ["a1.colour"] }), lasting)).toBe("replay");
+  });
+
+  it("runs again a step whose act the instruction does not ask to last, or that claims no act", () => {
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: ["a3"] }), lasting)).toBe("replay");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [] }), lasting)).toBe("replay");
+  });
+
+  it("runs again a step that only reads, whatever act it claims", () => {
+    expect(automationStudioFlowDraftStepReplayMode(step({ effect: "observe", consequences: [], acts: ["a1"] }), lasting)).toBe("replay");
+  });
+
+  it("is run again as before when the caller has no reading of the instruction", () => {
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: ["a1"] }))).toBe("replay");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: ["a1"] }), new Set())).toBe("replay");
   });
 });
 
@@ -135,14 +190,13 @@ describe("how a checked step reads beside the replayed ones", () => {
   });
 });
 
-// A step that does one of the person's acts is checked, never pressed again,
-// whatever it declared (`../verify-only.ts`, t193-1002m-w6 task G).
-//
-// Live run `run-murwdp4f-35f976d2`: draft step d12, Add to cart, carried act a2
-// and declared `consequences: []`. Both build tests pressed it, and the
-// person's cart went from 2 to 3 to 4 items where the instruction said "keep
-// what is already in my cart". The model under-declared; its own act claim
-// says the step does what the person asked done.
+// Lane B's run, on the same rule (t193-1002m, merged 2026-10-03). Live run
+// `run-murwdp4f-35f976d2`: draft step d12, Add to cart, carried act a2 and
+// declared `consequences: []`; both build tests pressed it and the person's cart
+// went from 2 to 3 to 4 items. Lane B first checked every step naming any act,
+// unless the next step had moved the page. Merged, the instruction's lasting
+// acts decide, and a lasting act is checked even when it moved the page: an
+// under-declared Submit must never be pressed again.
 const TOWELS = { location: "https://store.test/p/towels" };
 const CART = { location: "https://store.test/cart" };
 
@@ -161,32 +215,20 @@ const actStep = (position: number, over: Partial<AutomationStudioFlowDraftStep> 
   ...over
 });
 
-describe("a step that does one of the person's acts", () => {
-  it("is checked when it changes something and stays on its page, though it declared nothing lasting", () => {
-    const add = actStep(12, { acts: ["a2"] });
-    const draft = [actStep(10, { acts: ["a2.size"] }), add, actStep(16, { acts: ["a2.quantity"] })];
-    expect(automationStudioFlowDraftStepReplayMode(add, draft)).toBe("verify");
-    // The act as the last step of the Flow: nothing after it to have moved.
-    expect(automationStudioFlowDraftStepReplayMode(add, [add])).toBe("verify");
+describe("a step that does one of the person's lasting acts (lane B's run)", () => {
+  const lasting: ReadonlySet<string> = new Set(["a1", "a2", "a3"]);
+
+  it("is checked though it declared nothing lasting, and its choices are run again", () => {
+    expect(automationStudioFlowDraftStepReplayMode(actStep(12, { acts: ["a2"] }), lasting)).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(actStep(16, { acts: ["a2.quantity"] }), lasting)).toBe("replay");
   });
 
-  it("is run again when it names only a choice of an act, which is not an act", () => {
-    const plus = actStep(16, { acts: ["a2.quantity"] });
-    expect(automationStudioFlowDraftStepReplayMode(plus, [actStep(12), plus, actStep(17)])).toBe("replay");
+  it("is checked even when it moved the page, so a lasting act is never pressed twice", () => {
+    expect(automationStudioFlowDraftStepReplayMode(actStep(5, { acts: ["a1"] }, CART), lasting)).toBe("verify");
   });
 
-  it("keeps today's rule when the next proposed step found the target elsewhere: later steps stand on the page it opened", () => {
-    const opens = actStep(5, { acts: ["a1"] });
-    const draft = [opens, actStep(6, { disposition: "taken", proposes: false }, TOWELS), actStep(7, {}, CART)];
-    // The taken step 6 is not in the Flow; the next proposed step, 7, is on another page.
-    expect(automationStudioFlowDraftStepReplayMode(opens, draft)).toBe("replay");
-    // Today's rule still checks it when it declares a lasting consequence.
-    const declared = actStep(5, { acts: ["a1"], ranWith: { node: "web.click", parameters: {}, consequences: ["modify_existing"] } });
-    expect(automationStudioFlowDraftStepReplayMode(declared, [declared, actStep(7, {}, CART)])).toBe("verify");
-  });
-
-  it("is still run again when it only reads, act or not", () => {
-    const read = actStep(3, { acts: ["a1"], effect: "observe" });
-    expect(automationStudioFlowDraftStepReplayMode(read, [read])).toBe("replay");
+  it("is run again when the instruction's read does not say its act lasts, or without the read", () => {
+    expect(automationStudioFlowDraftStepReplayMode(actStep(5, { acts: ["a4"] }), lasting)).toBe("replay");
+    expect(automationStudioFlowDraftStepReplayMode(actStep(12, { acts: ["a2"] }))).toBe("replay");
   });
 });

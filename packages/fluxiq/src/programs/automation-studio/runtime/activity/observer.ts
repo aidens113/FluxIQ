@@ -30,9 +30,6 @@ type ToolCall = Parameters<AutomationStudioLlmEvidenceLoopInput["executeTool"]>[
 /** A code a raw record may carry: no space, so never a sentence or a page's words. */
 const CODE_SHAPED = /^[A-Za-z0-9_.:-]{1,100}$/u;
 
-/** What a passed completion check's card says under "Ready to test": the test from the start is still to come. */
-const READY_TEXT = "It still has to run cleanly from its start.";
-
 /** A call's result code and the caller's reason for it, as the raw record carries them. */
 function resultOf(result: unknown): { code: string | undefined; reason: string | undefined } {
   if (!result || typeof result !== "object" || Array.isArray(result)) return { code: undefined, reason: undefined };
@@ -195,11 +192,12 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
     } satisfies Pick<AutomationStudioLlmEvidenceLoopInput, "unusableDecisions"> : {}),
     ...(checkCompletion ? {
       checkCompletion: async (result, context) => {
-        emitAutomationStudioActivity({ phase: "verifying", label: "Checking the proposed Flow", detail: { kind: "check", title: "Completion check", status: "started" } });
+        // A note, not a check row: it reads the plan and runs nothing, and a
+        // check row was a "Test run · Passed" card before any step was tested
+        // (D4). With no words it is the live line only; refused, a message.
+        emitAutomationStudioActivity({ phase: "verifying", label: "Checking the proposed Flow", detail: { kind: "note", title: "Completion check", status: "started" } });
         const check = await checkCompletion.call(input, result, context);
-        // The card shows the row's text, not its label: a passed check said
-        // only "Passed", and nothing that the test was still to come (C9).
-        emitAutomationStudioActivity({ phase: "verifying", label: check.ok ? "The proposed Flow’s plan checks out; it still has to run cleanly" : "The proposed Flow was sent back to be fixed", detail: { kind: "check", title: "Completion check", status: check.ok ? "succeeded" : "failed", text: check.ok ? READY_TEXT : automationStudioActivityCompletionRefusal(check) } });
+        emitAutomationStudioActivity({ phase: "verifying", label: check.ok ? "The proposed Flow’s plan checks out; it still has to run cleanly" : "The proposed Flow was sent back to be fixed", detail: { kind: "note", title: "Completion check", status: check.ok ? "succeeded" : "failed", ...(check.ok ? {} : { text: automationStudioActivityCompletionRefusal(check) }) } });
         return check;
       }
     } satisfies Pick<AutomationStudioLlmEvidenceLoopInput, "checkCompletion"> : {})

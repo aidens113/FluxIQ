@@ -43,7 +43,8 @@ async function replay(steps: AutomationStudioFlowDraftStep[], answers: Record<nu
     const code = answers[Number(callId.split(".").pop())] ?? (value.replay === "verify" ? "core.replay.verified" : "core.replay.replayed");
     return { kind: "llm_evidence_tool_execution", evidence: { page: callId }, effectApplied: code === "core.replay.replayed", resultCode: code };
   };
-  const result = await replayAutomationStudioFlowDraft({ steps, attempt: 1, executeTool });
+  // The instruction's read in that run: a2, "add ... to my cart", lasts (`../../../flow-draft/verify-only.ts`).
+  const result = await replayAutomationStudioFlowDraft({ steps, attempt: 1, executeTool, lastingActs: new Set(["a2"]) });
   return { result, calls, outcome: (position: number) => result.verdict.outcomes.find((each) => each.step === position) };
 }
 

@@ -625,6 +625,21 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
         resultCode: code
       };
     }
+    // Where this call's step starts: the one address every page reports, and
+    // the state the page was in. A reset here puts back that whole state, not
+    // only the address, so a rerun's put-back has nothing before it to redo.
+    // Since t193 (merge 62d65481, commit 2d45dc80, "rerun put-back redoes the
+    // steps before it") a put-back redoes every proposed step just before the
+    // rerun that started on the same `from` (`../../node-tools/step-place.ts`);
+    // with the address alone every step here shared one `from`, so each rerun
+    // redid every proposed step of the build under call ids the log never ran,
+    // and 32 and 42 ended `rerun_place_unreachable`. That rule is tested by
+    // `../../node-tools/tests/step-place.test.ts` and
+    // `../../evidence-loop/tests/rerun-place.test.ts`; this replay keeps it out,
+    // as it keeps out every step's real address. (On the live pages 32 and 38
+    // had no proposed step before them on the cart page; 42 had 25,
+    // `addkettle1`, pressed there at 34, which today's code would redo first.)
+    const startedIn = world;
     const kind = kindOf(callId, toolId, code);
     const node = nodeFor(callId, kind);
     const refused = code.includes(".rejected.");
@@ -646,7 +661,7 @@ export async function replayRecordedRun(name: RecordedRunName, options: Recorded
       proposes: kind !== "snapshot",
       ...(refused ? {} : {
         ranWith: { node, parameters: { target: { selector: `#${callId}` } }, consequences: [] },
-        ...(kind === "snapshot" ? {} : { replay: { from: { location: START }, ...(reads ? { produced: { records: 3 } } : {}) } })
+        ...(kind === "snapshot" ? {} : { replay: { from: { location: START, state: startedIn }, ...(reads ? { produced: { records: 3 } } : {}) } })
       })
     };
     return {

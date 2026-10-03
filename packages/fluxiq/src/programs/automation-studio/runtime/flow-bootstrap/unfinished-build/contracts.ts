@@ -46,11 +46,23 @@ export type AutomationStudioFlowBootstrapJudgeSpend = { inputTokens: number; out
  * stamped by the build's judge from the round's observed test; absent when no
  * test was judged. A yes finishes a build only when it equals the signature of
  * the Flow the round finished with (user, 2026-10-02; `./phases.ts`).
+ *
+ * `unconfirmedReading` is set only on an `unknown` two checks of the test did
+ * not settle, where one call judged it not to do what was asked: that call's
+ * expected, observed and advice. One judge's reading the other call did not
+ * confirm, kept apart from a `no`'s own fields so nothing reads it as one.
  */
 export type AutomationStudioFlowBootstrapTestVerdict =
   | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
-  | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
-  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
+  | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; unconfirmedReading?: AutomationStudioFlowBootstrapJudgeReading; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
+  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; stillAchievable?: AutomationStudioFlowBootstrapStillAchievable; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
+
+/**
+ * Whether the judge said what was asked can still be had (its diagnosis's
+ * `stillAchievable`). Only a `no` ends a build "not doable" (t195-w37: the
+ * user's rule, "only if there is absolutely no way"); absent is `unknown`.
+ */
+export type AutomationStudioFlowBootstrapStillAchievable = "yes" | "no" | "unknown";
 
 /**
  * What the judged test stored, from the summary the judge read (t240): rows
@@ -59,6 +71,9 @@ export type AutomationStudioFlowBootstrapTestVerdict =
  * reported none.
  */
 export type AutomationStudioFlowBootstrapJudgedRecords = { stored: number; refused: number; missingRequired: number };
+
+/** What one judge call said of a test: what was asked, what the test did, and what to change. Every part optional. */
+export type AutomationStudioFlowBootstrapJudgeReading = { expected?: string; observed?: string; advice?: string };
 
 /**
  * The judge's account of a Flow it sent back to repair, as the repair is told
@@ -70,13 +85,23 @@ export type AutomationStudioFlowBootstrapJudgedRecords = { stored: number; refus
  */
 export type AutomationStudioFlowBootstrapJudgedWrong = {
   verdict: "no" | "unknown" | "not_judged";
+  /** A `no`'s: what was asked, what the test did, what to change. */
   expected?: string;
   observed?: string;
   advice?: string;
   findings: string[];
   untestedCarried?: number[];
+  /**
+   * An `unknown`'s only: the reading of the one judge call that said the test
+   * does not do what was asked, which the other call did not confirm (live run
+   * murwcmx2). Information for the repair to weigh against the rows, never a
+   * verdict.
+   */
+  unconfirmedReading?: AutomationStudioFlowBootstrapJudgeReading;
   /** A `no`'s record counts, where the judge reported them. */
   records?: AutomationStudioFlowBootstrapJudgedRecords;
+  /** A `no`'s word on whether what was asked can still be had, where the judge gave it. */
+  stillAchievable?: AutomationStudioFlowBootstrapStillAchievable;
 };
 
 /** What a stopped round had recorded: its rows and what it spent. */
@@ -155,7 +180,9 @@ export type AutomationStudioFlowBootstrapRoundEnding =
  * - `judge_findings_resolved`: a finding the judge reported before is no longer reported;
  * - `records_stored`: the test stored rows where it stored none;
  * - `fewer_records_refused`: fewer rows were refused, with no fewer stored;
- * - `fewer_records_missing_required`: fewer stored rows lack a required value, with no fewer stored.
+ * - `fewer_records_missing_required`: fewer stored rows lack a required value, with no fewer stored;
+ * - `fewer_steps_not_run`: fewer of the Flow's steps are carried from an earlier Flow and never run in this build (`notRunInThisBuild`);
+ * - `flow_changed_unmeasured`: the round could not be measured -- steps carried into its Flow never ran in this build, so the Flow could not be run from its start -- and its Flow differs from the one before. Never progress between two rounds that were measured: a Flow merely different is not further.
  */
 export type AutomationStudioFlowBootstrapProgressMeasure =
   | "acts_done"
@@ -168,17 +195,32 @@ export type AutomationStudioFlowBootstrapProgressMeasure =
   | "judge_findings_resolved"
   | "records_stored"
   | "fewer_records_refused"
-  | "fewer_records_missing_required";
+  | "fewer_records_missing_required"
+  | "fewer_steps_not_run"
+  | "flow_changed_unmeasured";
 
 /**
- * Why no route is left, as the not-doable ending says it (t240):
- * `no_progress` -- the round measurably did no better than the judged round
- * before it (`before`); `repeated_unchanged` -- the round ended on refused
- * repeats of the same calls and handed back the Flow it started from, so a
- * second round would only repeat it (run 38, cause C8).
+ * Why no route is left, as the not-doable ending says it: the judge said what
+ * was asked can no longer be had (`stillAchievable: "no"`), about a round that
+ * was run from its start. The only case since t195-w37 -- a round that got no
+ * further is not one (live run `run-murwcaj0-40e56557`, whose judge said "still
+ * achievable" and named the fix, and whose build ended "I found no way to"),
+ * and nothing is concluded from a round whose Flow holds steps carried from an
+ * earlier Flow that never ran in this build, which has no measurement
+ * (t194-w70, `./phases.ts`).
  */
-export type AutomationStudioFlowBootstrapNoRouteLeft =
-  | { kind: "no_progress"; before: AutomationStudioFlowBootstrapJudgement }
+export type AutomationStudioFlowBootstrapNoRouteLeft = { kind: "judged_unachievable" };
+
+/**
+ * Why a build with a route still open stopped, as the not-finished ending
+ * says it (t240; t195-w37): `no_progress` -- the last round, and `rounds` in a
+ * row, measurably did no better than the judged round before (`before`, the
+ * judgement before the last); `repeated_unchanged` -- the round ended on
+ * refused repeats of the same calls and handed back the Flow it started from,
+ * so a second round would only repeat it (run 38, cause C8).
+ */
+export type AutomationStudioFlowBootstrapStoodStill =
+  | { kind: "no_progress"; before: AutomationStudioFlowBootstrapJudgement; rounds: number }
   | { kind: "repeated_unchanged" };
 
 /** What the test of the Flow so far found. */
@@ -213,6 +255,16 @@ export type AutomationStudioFlowBootstrapJudgement = {
   todo: string[];
   /** The last refusal codes the model was shown before the round stopped. */
   lastIssueCodes: string[];
+  /**
+   * The positions, in the Flow, of steps carried from an earlier Flow by a
+   * re-author or an extend that have not run in this build
+   * (`not_run_in_this_build`, `../../flow-draft/full-run-required.ts`): no
+   * argument they ran with, nothing to put the target back with. Core does not
+   * run them itself -- the permission gate reads their absent consequence
+   * declaration as "none" -- so a Flow holding one is not tested at a round's
+   * end, and the round has no measurement (t194-w70). Absent when there is none.
+   */
+  notRunInThisBuild?: number[];
   /** A finished round the judge sent back: what it found. Absent for a round that stopped short. */
   judge?: AutomationStudioFlowBootstrapJudgedWrong;
   /**

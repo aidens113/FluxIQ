@@ -19,10 +19,10 @@ const judgedNo: AutomationStudioFlowBootstrapJudgement = {
 const told = { bound: "cost" as const, sizes: { maxCostUsd: 0.1 }, judgement: judgedNo, checklist, rounds: 1, decisions: 30, spending: { spentUsd: 0.089, pendingUsd: 0, ceilingUsd: 0.1 } };
 
 describe("a budget ending", () => {
-  it("says the steps found so far were kept, never that the Flow was", () => {
+  it("says the draft was kept and not put into the Flow, never that the Flow is empty", () => {
     const message = automationStudioFlowBootstrapBudgetExhausted({ ...told, kept: true }).message;
-    expect(message).toContain("The steps found so far were kept, and building again carries on from them, with $0.011 left of this Flow's $0.10.");
-    expect(message).not.toContain("The Flow so far was kept");
+    expect(message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it, with $0.011 left of this Flow's $0.10.");
+    expect(message).not.toContain("empty");
   });
 
   it("says nothing was kept when nothing was", () => {

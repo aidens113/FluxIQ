@@ -13,6 +13,13 @@
 // every other pair that is not a `yes` first leaves it `unverified`. A first
 // call that gave no answer at all is not repeated and fails closed.
 //
+// **A build's test confirms a `yes` as well (`confirmAnswer`).** The build-test
+// judge's `yes` finishes a build, and in live run murwcmx2 one `yes` to a
+// request answered `no` before finished it on rows the playback judge refused.
+// A request that sets `confirmAnswer` asks a first `yes` once more with the same
+// evidence; a second `no` leaves it unsure (`agreement.ts`). The runtime result
+// check does not set it, and a first `yes` there still stands on one call.
+//
 // **Core's own counts are asked first and cost nothing.** A run whose every row
 // was refused, or whose rows lack a value their own schema requires, is settled
 // before a provider is even resolved.
@@ -103,6 +110,12 @@ export type AutomationStudioResultVerificationRequest = {
   runBudget?: AutomationStudioLlmRunBudgetLedger | undefined;
   signal?: AbortSignal | undefined;
   now?: (() => number) | undefined;
+  /**
+   * True to confirm a first `answers` with a second call, as a first answer of
+   * anything else already is (`agreement.ts`). Set only by the build-test judge,
+   * whose `yes` finishes a build; the runtime result check leaves it unset.
+   */
+  confirmAnswer?: boolean | undefined;
 };
 
 /** The outcome, and the intervention record of each call made: none, one, or two. */
@@ -120,9 +133,6 @@ export type AutomationStudioResultVerificationReport = {
 /** Where a verification call's intervention says it came from. */
 const VERIFICATION_SOURCE = "verifyAutomationStudioRunResult";
 
-/** The title of the check's rows in the chat, the same on its start and its end so the two are one card. */
-const RESULT_CHECK_TITLE = "Result check";
-
 export async function verifyAutomationStudioRunResult(request: AutomationStudioResultVerificationRequest): Promise<AutomationStudioResultVerificationReport> {
   const core = automationStudioResultCoreObservation(request.summary);
   if (core) return { outcome: { ...core, performed: true }, interventions: [] };
@@ -138,12 +148,10 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
       }
     };
   }
-  // One title for the check's start and its end: a card is keyed by it, and
-  // "Result check started" opened an empty "Check result" card above the
-  // verdict's (t193 1002-M, `run-murzln6g-11debe1d`, C11).
-  emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: RESULT_CHECK_TITLE, status: "started" } });
+  emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
+  const confirmAnswer = request.confirmAnswer === true;
   const first = await askOnce(request, provider, 1);
-  if (!automationStudioResultVerificationAskAgain(first.verification)) {
+  if (!automationStudioResultVerificationAskAgain(first.verification, { confirmAnswer })) {
     return said({ outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification }), performed: true }, interventions: [first.intervention] });
   }
   const second = await askOnce(request, provider, 2);
@@ -153,7 +161,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
     ? { ...second.intervention, interventionId: `${second.intervention.interventionId}.2` }
     : second.intervention;
   return said({
-    outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification, second: second.verification }), performed: true },
+    outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification, second: second.verification, confirmAnswer }), performed: true },
     interventions: [first.intervention, secondIntervention]
   });
 }
@@ -161,7 +169,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
 /** The check's verdict, said in the chat as the check that was started ends (`check-activity.ts`), and returned unchanged. */
 function said(report: AutomationStudioResultVerificationReport): AutomationStudioResultVerificationReport {
   const words = automationStudioResultCheckActivity(report.outcome);
-  emitAutomationStudioActivity({ phase: "verifying", label: words.label, detail: { kind: "check", title: RESULT_CHECK_TITLE, status: words.status, ...(words.text ? { text: words.text } : {}) } });
+  emitAutomationStudioActivity({ phase: "verifying", label: words.label, detail: { kind: "check", title: "Result check", status: words.status, ...(words.text ? { text: words.text } : {}) } });
   return report;
 }
 

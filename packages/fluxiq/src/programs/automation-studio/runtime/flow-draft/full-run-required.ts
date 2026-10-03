@@ -33,7 +33,10 @@
 // The refusal names those steps and says the one way through: rerun each, in
 // the Flow's order, so it becomes a step that ran, with the consequences it
 // would have declared; a step of another tool is run again as its library node.
-// Core's words only; what a step acts on is the domain's.
+// Core's words only; what a step acts on is the domain's. The re-author's
+// brief and a repair's resume say the same of carried steps in the same words
+// before any completion is refused (`../recovery/refuted-result/brief.ts`,
+// `../llm/evidence-loop/resume.ts`, t194-w70).
 
 import type { JsonObject } from "../../../../core/index.ts";
 
@@ -45,7 +48,7 @@ export type AutomationStudioFlowDraftUnrunnableWord = "not_run_in_this_build" | 
 
 const FULL_RUN_REQUIRED_INSTRUCTION = "The Flow is finished only once it has run whole from its start and been judged to do what was asked. "
   + "These steps cannot be run again as they stand, so the Flow cannot be tested whole until they can. "
-  + "not_run_in_this_build: the step came from the Flow being changed and has not run in this build. "
+  + "not_run_in_this_build: the step came from the Flow being changed and has not run in this build; a rerun of it is first put back where its node started in the run being repaired, where that run recorded it. "
   + "cannot_run_again: its run left nothing to run it again with, or, for the first step, nothing to put the target back where the Flow starts. "
   + "not_a_library_step: it ran through a tool that is not the node library, and a Flow is made only of library nodes that ran: run the node that does it with core.run_node (add true) in its place, and drop this one. "
   + "Rerun each other one, in the Flow's order (amend_draft rerun), adding the consequences it would have to its input ([] when it leaves nothing lasting), so it takes its place as a step that ran. "

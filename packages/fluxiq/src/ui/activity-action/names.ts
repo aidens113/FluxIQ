@@ -9,12 +9,13 @@ const PAIRS: readonly (readonly [ActivityActionKind, string])[] = [
   // Not "Look at page": a look names what it looks at or for (a control's
   // details, a list, words on the page), and the card's target says which.
   ["look", "Look"],
+  // Reads back an earlier result, never the page; the target names which one.
+  ["recall", "Recall result"],
   ["wait", "Wait"],
   ["person_check", "Robot check"],
   ["permission", "Permission"],
   ["draft", "Edit Flow"],
   ["test", "Test run"],
-  ["ready_check", "Ready check"],
   ["result_check", "Check result"],
   ["repair", "Repair"],
   ["join", "Join paths"],

@@ -9,18 +9,17 @@ export type ActivityActionKind =
   | "navigate"
   | "read"
   | "look"
+  /**
+   * Reading an earlier call's result back (`core.recall_result`). It looks at
+   * no page: one that found nothing read "Look · Didn't work: it wasn't on the
+   * page" (t194, `run-murwcmx2-a1c6edf7`).
+   */
+  | "recall"
   | "wait"
   | "person_check"
   | "permission"
   | "draft"
   | "test"
-  /**
-   * A build's completion check: whether the Flow the model says is ready is
-   * one the test from its start can be run on. It runs nothing, so it is no
-   * test run: shown as "Test run · Passed" before the test had run a step, it
-   * read as a test that passed (t193 1002-M, `run-murzln6g-11debe1d`, C9).
-   */
-  | "ready_check"
   /**
    * A check that a run's result answers the request. It runs nothing, so it is
    * no test run: a real run's result check read "Test run · Working on it"
@@ -58,6 +57,20 @@ export type ActivityAction = {
   outcome: ActivityActionOutcome;
   why: string | null;
   tested?: string;
+  /**
+   * Present, and true, for a step a test run of the Flow ran (a build's dry
+   * run, or a part of the Flow run again): the card names the action and adds
+   * that it was a test. Its steps read "Test run · ×" before (t174-w85 D4).
+   */
+  testing?: true;
+  /**
+   * Present, and true, on a result check that could not confirm the result
+   * answers the request, or could not check it at all. `outcome` stays
+   * `failed`, fail-closed, for a client that does not read this; a client that
+   * does says "not confirmed", never "didn't pass": an unverified run that met
+   * its task read "Check result · Didn't pass" in red (t174-w85 D1).
+   */
+  unconfirmed?: true;
 };
 
 /**
@@ -67,6 +80,8 @@ export type ActivityAction = {
  */
 export type ActivityActionEvent = {
   phase: string;
+  /** Core's status sentence; read only to tell a result check's verdicts apart (`./result-check-labels.ts`). */
+  label?: string | undefined;
   detail?: {
     kind: string;
     title: string;

@@ -13,6 +13,7 @@ import {
   automationStudioFlowBootstrapNotDone,
   automationStudioFlowBootstrapNotDoneSaid,
   automationStudioFlowBootstrapProgressSaid,
+  automationStudioFlowBootstrapRepairingJudgedSaid,
   automationStudioFlowBootstrapStopSaid,
   automationStudioFlowBootstrapTestSaid
 } from "../not-done.ts";
@@ -140,6 +141,18 @@ describe("how much of what was asked the ending says is done", () => {
       .toMatch(/^3 of the 4 things you asked worked when the Flow was run from its start; still to do/u);
   });
 
+  // Live run `run-murz83zy-5030820f` asked one thing and was told "1 of the 1
+  // things you asked worked when the Flow was run from its start".
+  it("says the one thing asked as one thing, never \"1 of the 1 things\"", () => {
+    const one = [{ id: "a1", verb: "confirm", quote: "confirm everyone with five mutual friends", done: 1 }];
+    // "Worked" needs the judge's yes (lane B's R2-C3, merged with t195-w37 on 2026-10-03).
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replayed_clean", proven: 1, judge: { verdict: "yes" } })).toBe("The one thing you asked worked when the Flow was run from its start.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replayed_clean", proven: 1 })).toBe("The one thing you asked has a step that ran, or could run, when the Flow was run from its start.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replayed_clean", proven: 1, judge: { verdict: "no" } })).toBe("The one thing you asked has a step that ran, or could run, when the Flow was run from its start, but the Flow was judged not to do what you asked.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replay_failed", proven: 0 })).toBe("The one thing you asked has a step that did not work when the Flow was run from its start.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "not_tested" })).toBe("The one thing you asked has a step in the Flow, not yet shown to work by running it.");
+  });
+
   it("says none is done when no step is named, and nothing when nothing was asked", () => {
     expect(automationStudioFlowBootstrapProgressSaid([{ id: "a1", verb: "add", quote: "add the towels" }], { tested: "replayed_clean", proven: 0 })).toBe("The one thing you asked is not done; still to do: \"add the towels\": nothing I tried did it.");
     expect(automationStudioFlowBootstrapProgressSaid(undefined, undefined)).toBe("");
@@ -163,5 +176,22 @@ describe("how much of what was asked the ending says is done", () => {
     const untested = await automationStudioFlowBootstrapJudgeUnfinished({ round: 0, stopped: "budget", lastIssueCodes: [], steps: [step(1)], replayable: () => true, checklist: () => checklist });
     if (untested.kind !== "judged") throw new Error("not judged");
     expect(untested.judgement.proven).toBeUndefined();
+  });
+});
+
+// Run `run-murwd8le-79e735a8` (UI review D3, screenshot 00010): under a card
+// saying the result was unverified, the person read "The Flow was not judged to
+// do what you asked: The two checks of this result disagreed...".
+describe("the repair's heading after a judge that did not confirm the Flow", () => {
+  const disagreed = "This result was checked twice with the same evidence, and the answers differed: the first was that it does not do what was asked, the second that it does. Neither answer counts for more than the other, so the result is not confirmed, and the run is not marked as failed for it.";
+
+  it("says the Flow is not yet confirmed, in the words of the card above it, and what it does next", () => {
+    const said = automationStudioFlowBootstrapRepairingJudgedSaid({ verdict: "unknown", findings: [disagreed] });
+    expect(said).toBe("The Flow is not yet confirmed to do what you asked: This result was checked twice with the same evidence, and the answers differed: the first was that it does not do what was asked, the second that it does. Repairing it live, to test it from its start and check it again.");
+    expect(said).not.toMatch(/model|status its steps earned|two checks|not judged/iu);
+  });
+
+  it("still says a refuted Flow was judged not to do it", () => {
+    expect(automationStudioFlowBootstrapRepairingJudgedSaid({ verdict: "no", observed: "the cart holds one", findings: [] })).toBe("The Flow was tested from its start and judged not to do what you asked: the cart holds one. Repairing it live.");
   });
 });

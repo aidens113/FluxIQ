@@ -21,7 +21,9 @@ describe("activityActionFailureReason", () => {
     // or answered as busy or too fast, is not a permission refusal (t174 F40, run-muqk4u32).
     ["web.action.refused_by_page", "the page turned it down"],
     ["llm_evidence_loop.rejected.refused_by_page", "the page turned it down"],
-    ["web.action.rate_limited", "the page asked to wait and try again"],
+    // t174-w85 D8 (run-murwd8le, 0081): a press the page answered as busy read "the page turned it down".
+    ["web.action.rate_limited", "the page was busy"],
+    ["web.action.throttled", "the page was busy"],
     ["bootstrap.invalid_parameter_value", "the step wasn't accepted"],
     ["llm_evidence_loop.rejected.repeat_without_progress", "it made no progress"],
     ["core.replay.changed", "it didn't work the same way again"],
@@ -29,6 +31,15 @@ describe("activityActionFailureReason", () => {
     ["core.replay.reset_failed", "it didn't work the same way again"]
   ])("says %s as %s", (code, why) => {
     expect(activityActionFailureReason(code)).toBe(why);
+  });
+
+  // t174-w85 D8 (run-murwd8le, step 0020): the build's "Get coupons" press came back
+  // `web.action.rejected.refused_by_page` with the reason `page_busy_try_later`, and
+  // its card read "Didn't work: the page turned it down" beside a page that was busy.
+  it("says a press the page refused as busy as the page being busy, not as turned down", () => {
+    expect(activityActionFailureReason("web.action.rejected.refused_by_page", "page_busy_try_later")).toBe("the page was busy");
+    expect(activityActionFailureReason("web.action.rejected.refused_by_page", "busy")).toBe("the page was busy");
+    expect(activityActionFailureReason("web.action.rejected.refused_by_page", "please_select_a_color")).toBe("the page turned it down");
   });
 
   it("says nothing for a code that names no reason, and never the code", () => {
@@ -73,5 +84,27 @@ describe("activityActionFailureReason: a call refused for what it was written wi
   ])("says the reason %s as %s, never in page words", (reason, why) => {
     expect(activityActionFailureReason("web.action.rejected.invalid_input", reason)).toBe(why);
     expect(activityActionFailureReason("web.action.rejected.invalid_input", reason)).not.toMatch(/page/u);
+  });
+});
+
+// t194 (`run-murwcmx2-a1c6edf7`, screenshot 00012, step 0036): a recall of a
+// result nobody gave that name read "Didn't work: it wasn't on the page", when
+// it never looked at the page. Core's own codes say what Core missed.
+describe("activityActionFailureReason: Core's own codes are no page miss (t194)", () => {
+  it.each([
+    ["core.recall.not_found", "no earlier result goes by that name"],
+    ["core.check.authorization_absent", "checking had not been turned on for this Flow"],
+    ["core.repair.authorization_absent", "repair had not been allowed for this Flow"],
+    ["core.result.required_values_missing", "the result was missing values the request needs"],
+    ["core.result.verdict_absent", "no verdict came back"]
+  ])("says %s as %s", (code, why) => {
+    expect(activityActionFailureReason(code)).toBe(why);
+  });
+
+  it("never reads a Core code as a page miss, though a page's own code still is", () => {
+    expect(activityActionFailureReason("core.something.missing")).toBeNull();
+    expect(activityActionFailureReason("core.other.not_found")).toBeNull();
+    expect(activityActionFailureReason("core.recall.not_found", "vendor_specific_thing")).toBe("no earlier result goes by that name");
+    expect(activityActionFailureReason("web.target.not_found")).toBe("it wasn't on the page");
   });
 });

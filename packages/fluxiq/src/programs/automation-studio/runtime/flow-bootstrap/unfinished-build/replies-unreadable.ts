@@ -17,6 +17,7 @@ import {
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
+import { automationStudioFlowBootstrapKeptSaid } from "./kept-said.ts";
 import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressSaid, automationStudioFlowBootstrapTestSaid } from "./not-done.ts";
 import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
@@ -38,7 +39,7 @@ export function automationStudioFlowBootstrapRepliesUnreadable(input: {
   const happened = `The build stopped because the model's replies could not be read: ${inARow} in a row came back unreadable${why} and each was asked again with a note of what was wrong.`;
   const tries = `In all, ${total} of ${Math.max(total, input.decisions)} replies could not be read, over ${input.rounds === 1 ? "one live round" : `${input.rounds} live rounds`}; each was paid for and counted in the build's budget.`;
   const progress = automationStudioFlowBootstrapProgressSaid(input.checklist, input.judgement);
-  const kept = input.kept ? "The steps found so far were kept, and building again carries on from them." : "Nothing was kept to carry on from.";
+  const kept = automationStudioFlowBootstrapKeptSaid(input.kept);
   const message = [happened, tries, progress, automationStudioFlowBootstrapTestSaid(input.judgement), kept].filter(Boolean).join(" ");
   return {
     kind: "replies_unreadable",

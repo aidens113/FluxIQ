@@ -218,8 +218,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     });
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), evidenceGuided: true });
 
-    // Two decisions -- the read, and the Flow is ready -- then the judge of the Flow's test, through the same provider.
-    expect(requests.map((request) => request.taskKind)).toEqual(["evidence_tool_decision", "evidence_tool_decision", "loop_verification"]);
+    // Two decisions -- the read, and the Flow is ready -- then the judge of the Flow's test, through the same provider:
+    // its yes, and the second call that confirms it (murwcmx2, C-H).
+    expect(requests.map((request) => request.taskKind)).toEqual(["evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification"]);
     // Within the model's window, the only bound on a request since 2026-09-30; it was 8,000 tokens.
     expect(requests.every((request) => estimateAutomationStudioDeepSeekInputTokens(request) <= 992_000)).toBe(true);
     expect(requests[0]?.context.flowBootstrap?.nodeCatalog.length).toBeGreaterThan(0);
@@ -227,9 +228,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(executeTool).toHaveBeenCalledWith(expect.objectContaining({ projectId: project.id, flowId: flow.flowId, callId: "initial.inspect", toolId: "inspect", value: { scope: "current" } }));
     // The first observation is not sized: the model is shown the whole page.
     expect(executeTool.mock.calls[0]?.[0]).not.toHaveProperty("maxEvidenceBytes");
-    // The build pays for its judge: the decisions' spend and the judge's, together.
-    expect(result.accounting).toMatchObject({ inputTokens: 2 * 10 + JUDGE_USAGE.inputTokens, outputTokens: 2 * 5 + JUDGE_USAGE.outputTokens, totalTokens: 2 * 15 + JUDGE_USAGE.totalTokens });
-    expect(result.accounting.estimatedCostUsd).toBeCloseTo(2 * 0.001 + JUDGE_USAGE.estimatedCostUsd, 9);
+    // The build pays for its judge: the decisions' spend and both judge calls', together.
+    expect(result.accounting).toMatchObject({ inputTokens: 2 * 10 + 2 * JUDGE_USAGE.inputTokens, outputTokens: 2 * 5 + 2 * JUDGE_USAGE.outputTokens, totalTokens: 2 * 15 + 2 * JUDGE_USAGE.totalTokens });
+    expect(result.accounting.estimatedCostUsd).toBeCloseTo(2 * 0.001 + 2 * JUDGE_USAGE.estimatedCostUsd, 9);
     const stored = await instance.getFlowBootstrapAdaptation(project.id, flow.flowId, result.adaptationId);
     expect(stored?.evidenceTrace).toMatchObject([{ iteration: 0, decision: "tool_call", toolId: "inspect" }, { iteration: 1, decision: "tool_call", toolId: "inspect" }, { iteration: 2, decision: "complete" }]);
     expect(stored?.auditEvents[0]?.detail).toMatchObject({
@@ -238,10 +239,11 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       traceStepCount: 3,
       providerCallCount: 2,
       decisionCount: 2,
-      // The judge's one call is a call outside the loop, counted where the
-      // accounting already has its spend (t195-w28b).
-      additionalProviderCallCount: 1,
-      totalProviderCallCount: 3,
+      // The judge's calls -- its yes and the call that confirms it (murwcmx2,
+      // C-H) -- are calls outside the loop, counted where the accounting already
+      // has their spend (t195-w28b).
+      additionalProviderCallCount: 2,
+      totalProviderCallCount: 4,
       toolCallCount: 2,
       toolIds: ["inspect"]
     });
@@ -289,10 +291,11 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     } else {
       await expect(generation).rejects.toThrow();
     }
-    // A build that finishes then asks the judge of its test, once: a provider call that is not a decision.
+    // A build that finishes then asks the judge of its test twice, its yes confirmed by a second call (murwcmx2, C-H):
+    // provider calls that are not decisions.
     const decisions = requests.filter((request) => !isJudgeRequest(request));
     expect(decisions).toHaveLength(calls);
-    expect(requests).toHaveLength(calls + (finishes ? 1 : 0));
+    expect(requests).toHaveLength(calls + (finishes ? 2 : 0));
     // A new Flow's settings carry the run cost ceiling ($0.10 since 2026-10-01;
     // was $0.25), and the build's
     // total is that ceiling, which the resolution's $2 cannot raise. A build has

@@ -2,23 +2,18 @@
 // route left to what was asked.
 //
 // **Only if there is absolutely no way (user, 2026-09-30).** It is reached
-// only after the Flow was tested and judged and a repair then got no further
-// than the judgement before it (`./phases.ts`): the model worked live on
-// exactly what was missing or failing, with the checklist in front of it, and
-// nothing it did advanced. A budget that ran out first is never this ending
-// (`./budget-exhausted.ts`).
+// only when the judge of a tested Flow says what was asked can no longer be
+// had (`stillAchievable: "no"`, `./phases.ts`). A budget that ran out first is
+// never this ending (`./budget-exhausted.ts`), and since t195-w37 neither is a
+// repair that got no further: live run `run-murwcaj0-40e56557` ended "I could
+// not build this Flow, and I found no way to" after one repair the judge had
+// called still achievable, naming the fix. Such a build ends not finished,
+// with the Flow kept and what is left to change (`./not-finished.ts`).
 //
 // **The reason is the evidence the model saw**: the checklist's reason for
 // each act or choice still to do, what the test found when the Flow was run
 // from its start, and why each round stopped -- said in plain words, with the
 // person's own words for what they asked, never a code.
-//
-// **What stood still is said, never a bare "got no further" (t240).** Repairs
-// are bounded by money and progress (`./progress.ts`), so the ending names the
-// measures that did not move -- the same Flow, no more of the request with a
-// step, no more steps that worked, the judge's same findings -- or that the
-// round ended on refused repeats and handed back the Flow it started from
-// (run 38, cause C8).
 //
 // **After a judge, its account comes first (t195).** A Flow the model said was
 // ready, tested and judged wrong, and a repair that handed back the same Flow:
@@ -40,18 +35,20 @@ export function automationStudioFlowBootstrapNotDoable(input: {
   decisions: number;
   /** Why each live round stopped, in order (`./tried.ts`). */
   stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
-  /** Why no route is left (`./phases.ts`): said as the last round's account. Absent: the older "got no further". */
+  /** Why no route is left (`./phases.ts`): the judge said it can no longer be had. Absent: the older "got no further". */
   noRoute?: AutomationStudioFlowBootstrapNoRouteLeft | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const notDone = automationStudioFlowBootstrapNotDone(input.checklist);
   const asked = (input.checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
-  const checklistSaid = notDone.length ? `${notDone.length} of the ${asked} things you asked could not be done: ${automationStudioFlowBootstrapNotDoneSaid(notDone)}.` : "";
+  // One thing asked is a thing, not "1 of the 1 things" (live run `run-murz83zy-5030820f`).
+  const share = asked === 1 ? "the one thing you asked" : `${notDone.length} of the ${asked} things you asked`;
+  const checklistSaid = notDone.length ? `${share} could not be done: ${automationStudioFlowBootstrapNotDoneSaid(notDone)}.` : "";
   const judge = input.judgement.judge;
   const what = judge
     ? [judgedSaid(judge), checklistSaid].filter(Boolean).join(" ")
     : checklistSaid || `the Flow could not be finished: ${automationStudioFlowBootstrapStopSaid(input.judgement.stopped, input.judgement.lastIssueCodes)}.`;
   const repairs = input.rounds - 1;
-  const last = input.noRoute ? noRouteSaid(input.noRoute, input.judgement, asked) : judge ? "handed back the same Flow as the one before it" : "got no further than the one before it";
+  const last = input.noRoute ? noRouteSaid(input.noRoute) : judge ? "handed back the same Flow as the one before it" : "got no further than the one before it";
   const tried = `I tried ${input.rounds === 1 ? "once" : `${input.rounds} times`} live -- exploring${repairs ? `, then ${repairs === 1 ? "one repair" : `${repairs} repairs`} after testing what I had` : ""} -- over ${input.decisions} decisions, and the last ${repairs ? "repair" : "attempt"} ${last}.`;
   const message = [`I could not build this Flow, and I found no way to: ${what}`, automationStudioFlowBootstrapTestSaid(input.judgement), tried]
     .filter(Boolean)
@@ -64,29 +61,11 @@ export function automationStudioFlowBootstrapNotDoable(input: {
   };
 }
 
-/** The last round's account of why no route is left: what it did, and what stood still against the round before it. */
-function noRouteSaid(noRoute: AutomationStudioFlowBootstrapNoRouteLeft, after: AutomationStudioFlowBootstrapJudgement, asked: number): string {
-  if (noRoute.kind === "repeated_unchanged") return "ended on refused repeats of the same calls and handed back the Flow it started from, unchanged, so another round would only repeat it";
-  const before = noRoute.before;
-  const still: string[] = [];
-  if (after.flowSignature !== undefined && after.flowSignature === before.flowSignature) still.push("it handed back the same Flow");
-  if (asked) {
-    // One thing asked is a thing, not "the 1 things" (`run-murdouox-c5294247`).
-    const things = `${asked} thing${asked === 1 ? "" : "s"}`;
-    still.push(after.done < before.done
-      ? `fewer of the ${things} you asked had a step (${after.done}, down from ${before.done})`
-      : `no more of the ${things} you asked had a step (${after.done}, as before)`);
+/** The last round's account of why no route is left. */
+function noRouteSaid(noRoute: AutomationStudioFlowBootstrapNoRouteLeft): string {
+  switch (noRoute.kind) {
+    case "judged_unachievable": return "ended when the judge found that what you asked can no longer be done";
   }
-  if (before.judge && after.judge) {
-    still.push(after.judge.verdict === "no" ? (before.judge.verdict === "no" ? "the judge found the same as before" : "the judge still found it wrong") : "the judge still could not judge it");
-  } else if (before.judge) still.push("it stopped before it was ready, where the round before it had finished");
-  else if (after.tested === "not_tested") still.push("it could not be run from its start");
-  else if (after.tested === "replay_failed") {
-    const failed = after.failedSteps.length;
-    still.push(failed ? `its test still failed at ${failed} step${failed === 1 ? "" : "s"}` : "its test still failed");
-  }
-  else still.push("no more of its steps worked when it was run from its start");
-  return `made no measurable progress on the round before it: ${still.join("; ")}`;
 }
 
 const MAX_JUDGE_WORDS = 200;

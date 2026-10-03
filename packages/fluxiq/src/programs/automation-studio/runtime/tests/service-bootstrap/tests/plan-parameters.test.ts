@@ -225,9 +225,9 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     const run = await create([typingPlan({ handle: NAME_FIELD.handle })], { types: true });
     const result = await run.generation;
 
-    // The typing step, the completion, then the judge of the Flow's test.
-    expect(run.requests).toHaveLength(3);
-    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true]);
+    // The typing step, the completion, then the judge of the Flow's test, twice (a build-finishing yes is confirmed by a second call: murwcmx2, C-H).
+    expect(run.requests).toHaveLength(4);
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true, true]);
     const stored = await run.instance.getFlowBootstrapAdaptation(run.project.id, run.flow.flowId, result.adaptationId);
     const node = stored!.buildPlan.plan.subflows[0]!.nodes.find((item) => item.key === "enter_name");
     expect(node?.parameters).toEqual({ selector: NAME_FIELD.locator, text: "Ada" });
@@ -251,9 +251,9 @@ describe("creating a Flow whose nodes name what the exploration showed", () => {
     const run = await create([typingPlan("input[name=\"Name\"]"), typingPlan({ handle: NAME_FIELD.handle })], { types: true });
     const result = await run.generation;
 
-    // The typing step, the refused plan, the corrected one, then the judge of the Flow's test.
-    expect(run.requests).toHaveLength(4);
-    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, false, true]);
+    // The typing step, the refused plan, the corrected one, then the judge of the Flow's test, twice (a build-finishing yes is confirmed by a second call: murwcmx2, C-H).
+    expect(run.requests).toHaveLength(5);
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, false, true, true]);
     expect(feedbackBefore(run.requests, 2)).toBeUndefined();
     expect(feedbackBefore(run.requests, 3)).toMatchObject({
       ok: false,

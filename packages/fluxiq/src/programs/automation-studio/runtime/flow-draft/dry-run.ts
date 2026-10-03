@@ -82,7 +82,9 @@
 // the site remembers stays remembered, and replaying a save or an add would do
 // it to the person's real account again. Such a step is verified instead --
 // its target could take the action now, or its effect is already in place --
-// and the steps after it are still run (`./verify-only.ts`).
+// and the steps after it are still run (`./verify-only.ts`). A step lasts when
+// it declares so, or when it does an act the person's instruction asks to last,
+// whatever it declared (t174-w83).
 
 import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioFlowDraftExcusedWords, type AutomationStudioFlowDraftExcusedReason } from "./excused.ts";

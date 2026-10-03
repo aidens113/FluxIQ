@@ -601,7 +601,22 @@ runtime judge's `leftOutOnlyByThis` (`build-test/read-rows.ts`), so the judge
 can see an asked row was dropped (live run `run-muqk713g`, cause C3). A judge
 reply that leaves a diagnosis text empty (`changed: ""` beside a yes) has that
 field read as omitted, not refused (`runtime/llm/harness/provider-result.ts`,
-cause C2). The judge's verdict on what the
+cause C2). A diagnosis text (`expected`, `observed`, `changed`) past its
+500-character bound is read clipped to it, at a word boundary and ending
+`… [clipped]`, with a warning `llm_output.diagnosis_text_clipped` naming the
+field; the verdict and the other fields stand, and only a text that is not a
+string is refused. It used to void the whole reply: live run `run-murwcmx2`'s
+second judge call answered a clear `no` with a 581-character `changed`, and the
+refutation was recorded as unconfirmed (t194 cause C-A). The bound stays 500 in
+the instruction and the output schema. When the judge's two calls do not settle
+(`model_disagreed`, `model_unconfirmed`) but one of them judged the test not to
+do what was asked, that call's expected, observed and advice travel on the
+unsettled verification as `unconfirmedReading`, on the build's `unknown`
+verdict, and into the repair's judgement as `judge.unconfirmedReading`; the
+repair is told it is one judge call's reading the second check did not confirm,
+to act on where the rows and the test bear it out (cause C-B). It is never a
+failure record or a repair directive: an unsettled runtime verification still
+does not fail a run, and the reading is not recorded on run records. The judge's verdict on what the
 test actually did decides, and a wrong result is repaired with its reasons. The
 instructed-act check that follows is information the same way, except
 `act_consequence_undeclared`, which is what makes a delete, a payment or a send
@@ -895,6 +910,79 @@ a re-author attempt keeps that ending (`service/runtime-adaptation/reauthor-buil
 so a debug can tell which bound ended which round. A rerun of a draft step says
 where it ran (`rerunPlace`: put back to its start page, or in place and why,
 `runtime/llm/node-tools/step-place.ts`).
+
+A re-author's rerun starts where its node started. A re-author seeds its draft
+from the Flow, and a step carried from the Flow records no `replay.from`, because
+the build never ran it, so its rerun used to run wherever the refuted run had
+left the target: in live run `run-murwcmx2-a1c6edf7` the rerun of the Flow's list
+read ran on results page 5 and read 11 records from 1 page (t194 cause C-D). The
+host may state, on each state snapshot, its own reset token for that state
+(`AutomationStudioHostStateSnapshotRef.from`, the same token as a step's
+`replay.from`; the web writes `{ location }` only when the address holds nothing
+the evidence packet withholds). The re-author build reads each node's first
+`before_action` token off the refuted run (`llm/node-tools/run-start-pages.ts`,
+called in `service/runtime-adaptation/reauthor-build.ts`); the extend seed keeps
+them beside its steps as `startedOnByStepId`, not in `replay.from`, so the
+dry-run gate sees the same draft; the loop receives them as `draft.seedStartedOn`.
+A rerun of a carried step, or of the step that took its place (`standsFor`), with
+no start page of its own is put back there through the ordinary reset before it
+runs, and says `rerunPlace: { place: "put_back", startPage: "seeded_run" }`;
+with no start page known it runs in place and says `start_page_unknown`.
+
+A repair may not complete the Flow its judge refuted, unchanged (t194 cause
+C-C). When a finished round's test is judged `no`, the repair round starts from
+that Flow, and its completion check first asks whether the Flow being completed
+is that same Flow: the draft's Flow signature
+(`automationStudioFlowDraftFlowSignature`) equal to the repair seed's, where the
+draft is what the check builds the Flow from (every step a library
+`core.run_node` step). Such a completion is the identical retry of a failed act
+on an unchanged state, so it is refused with
+`bootstrap.flow_unchanged_since_judged_wrong`, with feedback that testing it
+again tests the same thing, to change what the judge's advice names, and that a
+round that changes nothing ends the build as not doable
+(`runtime/flow-bootstrap/unfinished-build/unchanged-complete.ts`). It never fires
+after an `unknown` or `not_judged` verdict, which refuted nothing, nor for a Flow
+built from the reply's own plan. Each refusal is an unusable decision: a model
+that keeps completing the unchanged Flow ends its round on the stall guard as
+`unusable_decisions`, and the build then ends `not_doable` for no progress
+against the judged round, without asking the judge again. In live run
+`run-murwcmx2` the unchanged Flow was tested again and one lone judge yes
+finished a build its earlier judges had refuted. A repair of a round whose Flow
+was not run from its start (`judgement.test: not_tested`) is told exactly that,
+and the chat's "Testing the Flow so far" note is posted only when that test will
+actually run (causes C-F, UI-4).
+
+A round that could not be measured is never "not doable" (t194-w70). A
+re-author or extend build seeds its draft from a stored Flow. Each step it
+carries (`f<n>`) has nothing it ran with and nothing to put the target back with
+until it is rerun live, and Core never runs such a step itself, because the
+permission gate reads its missing consequence declaration as "none". A round
+whose Flow still holds one is therefore not tested at its end; its judgement
+names those steps (`notRunInThisBuild`), and neither `repeated_unchanged` nor
+`no_progress` is concluded from it, since there is no measurement to compare.
+Live run `run-murwcmx2`'s re-author ended not doable with the advised fix in its
+draft, never run from the Flow's start. Such a round is repaired again under the
+same money and round bounds; its progress is fewer steps not run, or a changed
+Flow, and the announcement says which. The repair's resume names the steps and
+tells the model to rerun each live, in the Flow's order (`amend_draft rerun`),
+before completing, and the re-author's brief says the same up front (its step 5
+no longer says to keep steps as they are without running them). If money or the
+round limit runs out first, the budget ending says the Flow as it stands was
+never run whole and names those steps.
+
+A build's yes is asked twice (t194-w71). The build-test judge's `yes` finishes
+a build, so its verification request sets `confirmAnswer`, and a first `yes` gets
+a second call with the same evidence (`result-verification/agreement.ts`). Two
+`yes` answers are a yes. A `yes` followed by a `no` is `model_disagreed`: unsure,
+carrying the `no` call's expected, observed and advice as `unconfirmedReading`,
+which the build reads as `unknown` and repairs with. A second call that answers
+`unknown`, gives no verdict, does not come back, or is refused by the build's
+purse leaves the first `yes` standing, because on correct results a `yes` was
+measured to flip to `unknown` and never to `no`. In live run `run-murwcmx2`,
+build judges 0032 and 0051 were sent the same request except for one step
+number; they answered `no` and then `yes`, and that single `yes` finished the
+build on rows the playback judge refused. The runtime result check does not set
+the option, and a first `yes` there still stands on one call.
 
 The three explicit endings carry `diagnostic.ending.message`, the outstanding
 acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).

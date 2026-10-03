@@ -121,3 +121,58 @@ describe("the checklist and the check agree on every draft", () => {
     expect(verdicts.filter((ok) => !ok).length).toBeGreaterThanOrEqual(4);
   });
 });
+
+// Live run `run-murz83zy-5030820f` (R10): the last draft kept step 6, a Confirm
+// on Tom Becker's card that did a1 once, beside step 13, the Confirm repeated
+// over the filtered listing at step 7. Playback would accept Tom's request
+// whatever his mutual friends. The schema says to drop such a step; the
+// checklist never said it about these steps. Now a plural act done by a
+// repeated step names, with numbers, every kept step that does the same act to
+// one row, and says to drop it. Information beside a done act, never a todo of
+// its own: the check and the completion gate are unchanged.
+describe("a plural act done by a repeat names the steps that do it to one row", () => {
+  const CONFIRM = "Go through my friend requests and confirm everyone I have at least five mutual friends with, and leave every other request as it is. Then give me a table of every request the list now shows as accepted, in the order the list shows them, with columns name and mutualFriends, where mutualFriends is written exactly as their request shows it.";
+  const press = (position: number, target: string, overrides: Partial<AutomationStudioFlowDraftStep> = {}) =>
+    step(position, { actionId: "web.output.dom-click", words: { target }, input: { consequences: ["modify_existing"] }, ...overrides });
+  const listing = (position: number) => step(position, { actionId: "web.output.dom-extract_list", effect: "observe", proposes: true });
+  const look = (position: number) => step(position, { actionId: "web.output.dom-capture_snapshot", effect: "observe", effectApplied: false, disposition: "taken" });
+  // The run's last draft, steps 1-13, as 0083 showed it.
+  const run = (): AutomationStudioFlowDraftStep[] => [
+    step(1, { actionId: "web.output.browser-navigate" }), press(2, "Decline optional cookies"), press(3, "Friends"), press(4, "Close chat"), press(5, "Friend requests"),
+    press(6, "Confirm"), listing(7), listing(8), look(9), look(10), look(11), look(12),
+    press(13, "Confirm", { acts: ["a1"], routing: { kind: "repeat", through: "d13", over: "d7" } })
+  ];
+
+  it("says to drop the Confirm done once, with the numbers, beside the act done by the repeat", () => {
+    const draft = run();
+    draft[7] = { ...draft[7]!, disposition: "dropped" };
+    const a1 = automationStudioInstructedActsChecklist({ instructionText: CONFIRM, draftSteps: draft })![0]!;
+    expect(a1).toMatchObject({ id: "a1", plural: true, done: 13, drop: [6] });
+    expect(a1.dropSaid).toBe("step 6 does a1 to one row; step 13 does it to each row step 7 keeps: drop step 6");
+    expect(a1.todo).toBeUndefined();
+    // Information only: the check accepts this draft as it did, and a1 counts as done.
+    expect(checkAutomationStudioInstructedActs({ instructionText: CONFIRM, result: { summary: "x" }, draftSteps: draft }).ok).toBe(true);
+    expect(automationStudioInstructedActsNotDone([a1])).toEqual([]);
+  });
+
+  it("names a press of the same control and a step the model named for the act once, and leaves alone a press of another control, a step out of the Flow, one inside the repeat and one claimed for another act", () => {
+    const draft = [
+      press(1, "Friend requests"), press(2, "Confirm"), press(3, "Confirm", { disposition: "dropped" }), press(4, "Confirm", { effectApplied: false }),
+      press(5, "Confirm", { acts: ["a9"] }), listing(6), press(7, "Confirm", { acts: ["a1"], routing: { kind: "repeat", through: "d8", over: "d6" } }), press(8, "Confirm"),
+      press(9, "Accept", { acts: ["a1"] }), press(10, "Delete")
+    ];
+    const a1 = automationStudioInstructedActsChecklist({ instructionText: CONFIRM, draftSteps: draft })![0]!;
+    expect(a1.done).toBe(7);
+    expect(a1.drop).toEqual([2, 9]);
+    expect(a1.dropSaid).toBe("steps 2 and 9 do a1 to one row each; step 7 does it to each row step 6 keeps: drop steps 2 and 9");
+  });
+
+  it("says nothing when no other step does the act, or the act is not done by a repeat", () => {
+    const alone = run().filter((each) => each.position !== 6).map((each, index) => ({ ...each, position: index + 1 }));
+    expect(automationStudioInstructedActsChecklist({ instructionText: CONFIRM, draftSteps: alone })![0]!.drop).toBeUndefined();
+    const once = [press(1, "Confirm"), press(2, "Confirm", { acts: ["a1"] })];
+    const a1 = automationStudioInstructedActsChecklist({ instructionText: CONFIRM, draftSteps: once })![0]!;
+    expect(a1.todo).toBe("act_needs_repeat");
+    expect(a1.drop).toBeUndefined();
+  });
+});

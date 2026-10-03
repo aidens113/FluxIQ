@@ -60,7 +60,7 @@ describe("a build whose model replies kept arriving unreadable", () => {
     expect(message).toContain("each was asked again with a note of what was wrong.");
     expect(message).toContain("In all, 8 of 14 replies could not be read, over one live round; each was paid for and counted in the build's budget.");
     expect(message).toContain("1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it; still to do:");
-    expect(message).toContain("The steps found so far were kept, and building again carries on from them.");
+    expect(message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it.");
     expect(message).not.toMatch(/llm\.|_/u);
     // The round's rows are published with the ending, and its spend with them:
     // they were left out when this ending and the whole-build record first met (t214).

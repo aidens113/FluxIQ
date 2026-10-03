@@ -1,6 +1,7 @@
 // A build whose exploration stops before the Flow is ready (audit A3, cause
-// 1): tested, judged and repaired; "not doable" only when a repair gets no
-// further; a budget that runs out said as exactly that.
+// 1): tested, judged and repaired; a repair that gets no further ends it not
+// finished, the Flow kept (t195-w37: "not doable" only on the judge's word that
+// it can no longer be had); a budget that runs out said as exactly that.
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -21,6 +22,12 @@ function step(position: number, overrides: Partial<AutomationStudioFlowDraftStep
     position, id: `d${position}`, iteration: position, callId: `c${position}`, actionId: "web.dom.click", input: {}, effect: "mutate", effectApplied: true, disposition: "kept",
     ranWith: { target: `t${position}` }, replay: { from: { at: "start" } }, ...overrides
   };
+}
+
+/** A step that carries nothing a replay needs. */
+function withoutReplay(each: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftStep {
+  const { replay: _replay, ...rest } = each;
+  return rest;
 }
 
 function spent(iterations: number, estimatedCostUsd: number): AutomationStudioLlmEvidenceLoopAccounting {
@@ -96,6 +103,23 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(outcome.accounting.estimatedCostUsd).toBeCloseTo(0.11, 5);
   });
 
+  // Live run murwcmx2 (screenshot 00023, UI-4): "Testing the Flow so far ...
+  // Running the Flow as far as it got" was said for a Flow nothing could replay,
+  // and no test followed it.
+  it("announces no test of a Flow so far that cannot be replayed, and runs none", async () => {
+    const { input, tested, announced, requests } = harness([
+      (request) => { throw request.stalled({ issueCodes: ["llm_evidence_loop.repeat_refused"], trace: [], accounting: spent(12, 0.02), steps: [withoutReplay(step(1, { acts: ["a1"] }))] }); },
+      (request) => finished(request.repair!.seed)
+    ]);
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind).toBe("finished");
+    expect(tested).toHaveLength(0);
+    expect(requests[1]!.repair!.resume).toMatchObject({ judgement: { test: "not_tested" } });
+    expect(announced).toEqual(["repairing: Repairing the Flow"]);
+  });
+
   it("repairs a round whose decisions kept coming back unusable, from the draft it stood at", async () => {
     const { input, requests } = harness([
       (request) => { throw request.stalled({ issueCodes: ["bootstrap.instructed_act_missing"], trace: [], accounting: spent(20, 0.04), steps: [step(1, { acts: ["a1"] })] }); },
@@ -108,7 +132,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(requests[1]!.repair!.resume).toMatchObject({ stopped: "unusable_decisions", outstandingIssueCodes: ["bootstrap.instructed_act_missing"] });
   });
 
-  it("ends not doable, with the acts that cannot be done, why, and what was tried, when a repair gets no further", async () => {
+  it("ends not finished, never not doable, with the acts still to do, why, and what was tried, when a repair gets no further", async () => {
     const partial = [step(1, { acts: ["a1"] })];
     const { input, requests, kept } = harness([
       () => outOfDecisions(partial),
@@ -121,18 +145,20 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({
-      kind: "not_doable",
+      kind: "not_finished",
       notDone: [{ id: "a1.quantity", todo: "no_step_added" }, { id: "a2", todo: "no_step_added" }],
       tried: { rounds: 2, decisions: 76, stepsInFlow: 1, tested: "replayed_clean" }
     });
     expect(outcome.ending.notDone[1]!.quote).toContain("Brightline kettle");
     // A message the person reads, in their own words, with no code in it.
-    expect(outcome.ending.message).toMatch(/^I could not build this Flow, and I found no way to: 2 of the 3 things you asked could not be done/u);
+    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet: the last repair made no measurable progress on the round before it: it handed back the same Flow; no more of the 3 things you asked had a step \(1, as before\); no more of its steps worked when it was run from its start\./u);
+    expect(outcome.ending.message).not.toContain("found no way");
     expect(outcome.ending.message).toContain("\"save the Brightline kettle to my saved items\": nothing I tried did it");
     // Two of three things asked are not done, so the clean run is not said to be without failing.
     expect(outcome.ending.message).toContain("ran from its start, but it does not yet do all you asked");
     expect(outcome.ending.message).not.toContain("without failing");
-    expect(outcome.ending.message).toContain("I tried 2 times live -- exploring, then one repair after testing what I had -- over 76 decisions, and the last repair made no measurable progress on the round before it: it handed back the same Flow; no more of the 3 things you asked had a step (1, as before); no more of its steps worked when it was run from its start.");
+    expect(outcome.ending.message).toContain("I tried 2 times live -- exploring, then one repair after testing what I had -- over 76 decisions.");
+    expect(outcome.ending.message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it.");
     expect(outcome.ending.message).not.toMatch(/[a-z]+_[a-z]+|bootstrap\./u);
     expect(outcome.ending.message.length).toBeLessThanOrEqual(1_000);
     expect(outcome.kept).toEqual({ revision: 1, steps: 1 });
@@ -156,7 +182,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1, tested: "not_tested" } });
     expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.250, which left nothing for its next call\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
-    expect(outcome.ending.message).toContain("The steps found so far were kept, and building again carries on from them.");
+    expect(outcome.ending.message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it.");
     expect(outcome.ending.message).not.toContain("not doable");
   });
 

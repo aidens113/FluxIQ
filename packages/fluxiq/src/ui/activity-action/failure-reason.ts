@@ -19,11 +19,15 @@ const REASONS: readonly { words: RegExp; why: string }[] = [
   { words: /_(disabled|not_enabled|readonly|read_only)_/u, why: "it couldn't be used yet" },
   { words: /_(detached|stale|changed|moved)_/u, why: "the page changed before it could" },
   { words: /_(intervention|check_required|human_check)_/u, why: "the page wanted a person" },
+  // A page that said it was busy, by its code or by the refusal's reason
+  // (`page_busy_try_later`): checked before `refused_by_page`, whose "the page
+  // turned it down" was said of a press the page was only too busy to take
+  // (t174-w85 D8, `run-murwd8le-79e735a8`).
+  { words: /_(busy|try_later|rate_limited|throttled|too_many_requests)_/u, why: "the page was busy" },
   // The page's own answer to a press, not a permission: "Please select a
   // Color." beside Add to cart would read "it wasn't allowed" (crossborder
   // `run-muqk4u32-0b36e58f`, t174 F40). Checked before `refused`.
   { words: /_(refused_by_page|declined_by_page)_/u, why: "the page turned it down" },
-  { words: /_(rate_limited|throttled|too_many_requests)_/u, why: "the page asked to wait and try again" },
   { words: /_(denied|forbidden|refused|blocked|not_allowed|permission)_/u, why: "it wasn't allowed" },
   { words: /_(invalid|malformed|rejected|unsupported)_/u, why: "the step wasn't accepted" },
   { words: /_(network|offline|unreachable|navigation_failed|load_failed)_/u, why: "the page didn't load" },
@@ -52,6 +56,28 @@ const REFUSAL_REASONS: readonly { words: RegExp; why: string }[] = [
   { words: /_(nothing_changed|unchanged)_/u, why: "nothing on the page changed" }
 ];
 
+/** Core's own namespace: its tools read what Core holds, never the page. */
+const CORE_NAMESPACE = "core.";
+
+/**
+ * Core's own codes that `REASONS` would read as a page miss, by whole code. A
+ * recall of a result nobody gave that name (`core.recall.not_found`) read
+ * "it wasn't on the page" when it had looked at no page (t194,
+ * `run-murwcmx2-a1c6edf7`, step 0036); the others say a standing
+ * authorization, a result's values or a verdict was absent. Any other Core
+ * code is never read as a page miss either (`CORE_CODE_REASONS`).
+ */
+const CORE_REASONS: ReadonlyMap<string, string> = new Map([
+  ["core.recall.not_found", "no earlier result goes by that name"],
+  ["core.check.authorization_absent", "checking had not been turned on for this Flow"],
+  ["core.repair.authorization_absent", "repair had not been allowed for this Flow"],
+  ["core.result.required_values_missing", "the result was missing values the request needs"],
+  ["core.result.verdict_absent", "no verdict came back"]
+]);
+
+/** `REASONS` without its page miss, for a Core code. */
+const CORE_CODE_REASONS = REASONS.filter((candidate) => !candidate.words.test("_not_found_"));
+
 /** `REASONS`' entry for a code segment or a reason, written `_like_this_`. */
 function reasonFor(table: readonly { words: RegExp; why: string }[], words: string): string | null {
   return table.find((candidate) => candidate.words.test(words))?.why ?? null;
@@ -62,22 +88,27 @@ function reasonFor(table: readonly { words: RegExp; why: string }[], words: stri
  * caller's code for why the call came to its result) decides first, when its
  * words say something; else the result code's last words do
  * ("web.target.not_found" -> "it wasn't on the page"). Null when neither names
- * a reason this knows; never the code or the reason itself.
+ * a reason this knows; never the code or the reason itself. A Core code
+ * (`core.*`) is never a page miss: Core's own words for it come from
+ * `CORE_REASONS`.
  */
 export function activityActionFailureReason(resultCode: string, reason?: string): string | null {
+  const code = resultCode.trim().toLowerCase();
+  const reasons = code.startsWith(CORE_NAMESPACE) ? CORE_CODE_REASONS : REASONS;
   const said = reason?.trim().toLowerCase().replace(/[\s.-]+/gu, "_");
   if (said) {
-    const why = reasonFor(REFUSAL_REASONS, `_${said}_`) ?? reasonFor(REASONS, `_${said}_`);
+    const why = reasonFor(REFUSAL_REASONS, `_${said}_`) ?? reasonFor(reasons, `_${said}_`);
     if (why) return why;
   }
-  const code = resultCode.trim().toLowerCase();
   if (activityActionReplayFailing(code)) return "it didn't work the same way again";
+  const own = CORE_REASONS.get(code);
+  if (own) return own;
   const segments = code.split(".").map((segment) => `_${segment.replace(/[\s-]+/gu, "_")}_`);
   // The last segment first, then each one before it back to the second: the
   // first segment is a namespace, not a reason.
   const ordered = [segments.at(-1) ?? "", ...segments.slice(1, -1).reverse()];
   for (const segment of ordered) {
-    const why = reasonFor(REASONS, segment);
+    const why = reasonFor(reasons, segment);
     if (why) return why;
   }
   return null;
