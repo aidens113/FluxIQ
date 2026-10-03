@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 3001
+- Public declarations: 3003
 - Class: 92
 - Interface: 2
 - Object: 376
-- Type: 1686
+- Type: 1687
 - Type Alias: 1
-- Value: 844
+- Value: 845
 
 ## Public Declarations
 
@@ -236,7 +236,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/decision-context/history-tool-id.ts:7` | The entry a decision's history is shown under. It replaces the call list the context window used to publish under the same id, which listed only tool calls and none of Core's answers to a decision, and is re-exported from `../evidence-loop.ts` under the name it always had. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/loop-limits/evidence-loop.ts:92` | The far backstop on steps in a row that give the loop nothing new, held in `runtime/loop-limits/` with the other numbers two directories read, and re-exported here so the loop's public surface names it. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unreadable-reply.ts:31` | Unreadable replies in a row after which a loop that asks again stops. The live record has runs of up to four followed by a good reply, so this leaves room past that; the budget binds underneath it either way. |
-| `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop.ts:139` | Unusable decisions in a row, however much their issues differ, after which a loop that asks again stops: the far backstop under the no-progress guard. A model fixing one mistake at a time is progress, so this is set well past the handful of refusals a real correction takes; the cost, token and deadline guards still bind underneath it. Held to the loop's own iterations. |
+| `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNUSABLE_DECISIONS_IN_A_ROW` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop.ts:138` | Unusable decisions in a row, however much their issues differ, after which a loop that asks again stops: the far backstop under the no-progress guard. A model fixing one mistake at a time is progress, so this is set well past the handful of refusals a real correction takes; the cost, token and deadline guards still bind underneath it. Held to the loop's own iterations. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/loop-limits/evidence-loop.ts:34` | - |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_MAX_PROVIDER_UNANSWERED_IN_A_ROW` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unanswered-calls.ts:22` | Unanswered decision calls in a row after which the loop ends. |
 | `AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_DESCRIPTION` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-recall/description.ts:11` | - |
@@ -1289,6 +1289,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioLlmEvidenceLoopProgress` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-progress/progress.ts:2` | Content-free state transition measured for one evidence-loop trace row. |
 | `AutomationStudioLlmEvidenceLoopProviderUnavailable` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unanswered-calls.ts:51` | How a loop the provider stopped answering ended. |
 | `AutomationStudioLlmEvidenceLoopResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/result.ts:61` | What the loop's contract is, declared one noun per file in `evidence-loop/` and republished here, because a dozen modules across the runtime import them from this path and the split is meant to be one none of them notices. |
+| `automationStudioLlmEvidenceLoopToolSet` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/loop-tools.ts:27` | - |
+| `AutomationStudioLlmEvidenceLoopToolSet` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/loop-tools.ts:13` | - |
 | `AutomationStudioLlmEvidenceLoopTrace` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop/trace.ts:32` | What the loop's contract is, declared one noun per file in `evidence-loop/` and republished here, because a dozen modules across the runtime import them from this path and the split is meant to be one none of them notices. |
 | `AutomationStudioLlmEvidenceLoopUnreadable` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/unreadable-reply.ts:84` | How many unreadable replies a loop met, and which kinds. |
 | `automationStudioLlmEvidenceRecallBinding` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-recall/binding.ts:39` | - |
@@ -2811,7 +2813,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `runAutomationStudioGraph` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/graph-run.ts:69` | - |
 | `runAutomationStudioLegacyImporterBatch` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts:375` | - |
 | `runAutomationStudioLegacyMigrationOrchestration` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts:407` | - |
-| `runAutomationStudioLlmEvidenceLoop` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop.ts:176` | - |
+| `runAutomationStudioLlmEvidenceLoop` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop.ts:175` | - |
 | `runAutomationStudioLlmHarness` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/run.ts:28` | - |
 | `runAutomationStudioRecoveryExploration` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts:194` | - |
 | `runAutomationStudioRecoveryLadder` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/ladder-run.ts:61` | - |
