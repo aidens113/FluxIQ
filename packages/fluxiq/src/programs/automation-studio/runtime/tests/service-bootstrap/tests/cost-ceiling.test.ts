@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES } from "../../../llm/build-purse/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { blankFixture, caller, mockProvider, plan, rejectedGenerationDiagnostic } from "./fixtures.ts";
 
@@ -48,7 +49,9 @@ describe("a build's cost ceiling", () => {
     }),
     // A provider that prices its requests, as DeepSeek does: each call's worst case is what it then reports.
     // One that does not price is held at nothing, so only a priced call can be bounded before it is sent.
-    estimateCostUsd: () => costPerCall };
+    // A judge-sized hold (its reply reserve) is priced at a hundredth of the ceiling: the judging pair the
+    // purse keeps back from every decision (t254) is that size, and is never spent by a build that never finishes.
+    estimateCostUsd: ({ outputTokens }: { inputTokens: number; outputTokens: number }) => (outputTokens === AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.judgeReplyTokens ? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD * 0.01 : costPerCall) };
     // The host's own resolver defaults (`llm/session-key-provider.ts`).
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
     const instance = new AutomationStudioService({
@@ -76,8 +79,9 @@ describe("a build's cost ceiling", () => {
     // The build ran under the host's default total, which is the ceiling itself.
     expect(defaults.maxTotalEstimatedCostUsd).toBe(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
     // And it stopped on money, not before it: the purse refused only the call
-    // whose worst case no longer fit, so less than one call's worth is unspent.
-    expect(spent).toBeGreaterThan(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD - costPerCall);
+    // whose worst case no longer fit beside the judging pair kept back
+    // (2 x a hundredth), so less than one call's worth and that pair is unspent.
+    expect(spent).toBeGreaterThan(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD - costPerCall - 2 * AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD * 0.01);
     expect(diagnostic.accounting?.estimatedCostUsd).toBeLessThanOrEqual(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
   });
 });

@@ -186,4 +186,30 @@ describe("the run datasets the service wires into a run", () => {
     expect(attempt?.failure).toEqual({ category: "action_failed", code: "record_output.persist_failed", retryable: false });
     expect(JSON.stringify(run.trace)).not.toContain(ROW);
   });
+
+  // t258: the same closed store under the default, fully adaptive mode. The
+  // failed attempt goes on to recovery, which reads the run's conversation, and
+  // the judged end, which reads the run's record -- both out of the closed pool.
+  // Until t258 that threw an AggregateError at the caller; the run now ends
+  // failed for its own step, and its session says what the store could not take.
+  it("ends a fully adaptive run failed for its own step, not by throwing, when its store goes away", { timeout: 120_000 }, async () => {
+    let running: AutomationStudioService | undefined;
+    const service = startService(async () => { await closeProjectStorage(running!); });
+    running = service;
+    const project = await service.createProject({ name: "Datasets fail closed, adaptive", domainId: "example" });
+    const flow = await extractionFlow(service, project.id, "flow.extract-closed-adaptive");
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
+
+    expect(run.status).toBe("failed");
+    expect(run.metadata?.adaptiveMode).toBe("fully_adaptive");
+    expect(run.trace?.attempts.find((entry) => entry.nodeId === "extract")?.failure).toEqual({ category: "action_failed", code: "record_output.persist_failed", retryable: false });
+    // Its own reason stands: the store's absence is noted beside it, not written as the run's failure.
+    expect(run.metadata).not.toHaveProperty("runFailure");
+    expect(run.metadata?.projectStoreUnavailable).toMatchObject({ sessionStatus: "failed", reason: expect.stringContaining("pool is closing") });
+    expect(run.metadata?.judgedPromotionSettlement).toMatchObject({ status: "store_unavailable", step: "read_record", recordSaved: false });
+    expect(JSON.stringify(run.trace)).not.toContain(ROW);
+    // What the caller got back is what is stored.
+    await expect(service.getRuntimeSession(project.id, run.runId)).resolves.toMatchObject({ status: "failed", metadata: { projectStoreUnavailable: { sessionStatus: "failed" } } });
+  });
 });

@@ -158,10 +158,16 @@ describe("a recovery that is part of a repair", () => {
 // each counted a budget breach, which failed both runs. A call now reserves its
 // own worst case, and the purse still binds.
 describe("a recovery call's reservation", () => {
+  // Monday 2026-10-05 02:00 UTC, inside DeepSeek's 01:00-04:00 peak window, and
+  // Saturday 2026-10-03 12:00 UTC, off-peak (`../../../llm/deepseek/pricing.ts`).
+  const PEAK_MS = Date.UTC(2026, 9, 5, 2);
+  const OFF_PEAK_MS = Date.UTC(2026, 9, 3, 12);
+  const peak = () => PEAK_MS;
+  const offPeak = () => OFF_PEAK_MS;
   const live = { maxCallsPerRun: 64, tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 }, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: CEILING };
 
   it("is one call's worst case at the model's peak rates, so an ordinary diagnosis is no breach", () => {
-    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash" });
+    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash", now: peak });
     expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, "deepseek-flash"), 8);
     expect(budget.maxEstimatedCostUsdPerCall).toBeGreaterThan(CEILING / 64);
 
@@ -174,17 +180,86 @@ describe("a recovery call's reservation", () => {
   });
 
   it("is priced for the model the provider calls, and Core's default model when that is not a priced one", () => {
-    const pro = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-v4-pro" });
+    const pro = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-v4-pro", now: peak });
     expect(pro.maxEstimatedCostUsdPerCall).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, "deepseek-v4-pro"), 8);
-    const mock = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "mock" });
+    const mock = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "mock", now: peak });
     expect(mock.maxEstimatedCostUsdPerCall).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000), 8);
   });
 
-  it("never exceeds the purse or the resolver's per-call cost, and the purse still stops the run before it is passed", () => {
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash", costLeftUsd: CEILING * 0.04 }).maxEstimatedCostUsdPerCall).toBe(CEILING * 0.04);
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { ...live, maxEstimatedCostUsd: CEILING * 0.02 }, model: "deepseek-flash" }).maxEstimatedCostUsdPerCall).toBe(CEILING * 0.02);
+  // t254 (user 2026-10-03: "It should be billed at how much it actually
+  // costs"): a call is held at the rate in force when it is held, as the build
+  // purse holds one, so off-peak it is half the peak hold.
+  it("is half the peak worst case off-peak, and the peak one at peak", () => {
+    for (const model of ["deepseek-flash", "deepseek-v4-pro"]) {
+      const atPeak = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model, now: peak });
+      const offPeakBudget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model, now: offPeak });
+      expect(atPeak.maxEstimatedCostUsdPerCall, model).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, model as "deepseek-flash"), 9);
+      expect(offPeakBudget.maxEstimatedCostUsdPerCall, model).toBeCloseTo(atPeak.maxEstimatedCostUsdPerCall / 2, 9);
+      expect(offPeakBudget.maxEstimatedCostUsdPerCall, model).toBeCloseTo(estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, model as "deepseek-flash", OFF_PEAK_MS), 9);
+      // The purse is the same whenever the run is: only what one call holds changes.
+      expect(offPeakBudget.ledger).toEqual(atPeak.ledger);
+    }
+  });
 
-    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash" });
+  // t254: the rate is the one in force when each call is made, not when the
+  // budget was set. A recovery resolved off-peak that ran into the peak window
+  // held its peak calls at half their rate, and the ledger read each as a breach.
+  it("prices each call at the rate in force when that call is made, not when the budget was resolved", () => {
+    for (const model of ["deepseek-flash", "deepseek-v4-pro"] as const) {
+      let clockMs = OFF_PEAK_MS;
+      const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model, now: () => clockMs });
+      const peakWorstCase = estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, model, PEAK_MS);
+      const offPeakWorstCase = estimateAutomationStudioDeepSeekCostUsd(48_000, 8_000, 0, model, OFF_PEAK_MS);
+      // Resolved off-peak: the figure fixed at resolution is the off-peak one.
+      expect(budget.maxEstimatedCostUsdPerCall, model).toBeCloseTo(offPeakWorstCase, 9);
+      expect(budget.maxEstimatedCostUsdPerCallAt(), model).toBeCloseTo(offPeakWorstCase, 9);
+
+      // The run moves into the peak window: the next call is held at the peak rate.
+      clockMs = PEAK_MS;
+      const atPeak = budget.maxEstimatedCostUsdPerCallAt();
+      expect(atPeak, model).toBeCloseTo(peakWorstCase, 9);
+      expect(atPeak, model).toBeCloseTo(budget.maxEstimatedCostUsdPerCall * 2, 9);
+      expect(budget.maxEstimatedCostUsdPerCallAt(OFF_PEAK_MS), model).toBeCloseTo(offPeakWorstCase, 9);
+
+      // And back out of it: an off-peak call is held at the off-peak rate again.
+      clockMs = OFF_PEAK_MS;
+      expect(budget.maxEstimatedCostUsdPerCallAt(), model).toBeCloseTo(offPeakWorstCase, 9);
+
+      // The ledger holds the peak call at its peak price, so a call that costs
+      // its full peak worst case is no breach; held at the resolution-time
+      // figure, it was one.
+      const ledger = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
+      const charged = { inputTokens: 48_000, outputTokens: 8_000, totalTokens: 56_000, estimatedCostUsd: Math.floor(peakWorstCase * 1_000_000_000) / 1_000_000_000 };
+      const held = ledger.reserve({ runId: "run-peak", requestId: "peak-call", estimatedInputTokens: 48_000, maxOutputTokens: 8_000, maxEstimatedCostUsd: atPeak });
+      expect(held.ok).toBe(true);
+      if (held.ok) held.lease.complete(charged);
+      expect(ledger.snapshot("run-peak"), model).toMatchObject({ calls: 1, budgetBreaches: 0 });
+      const stale = ledger.reserve({ runId: "run-stale", requestId: "peak-call", estimatedInputTokens: 48_000, maxOutputTokens: 8_000, maxEstimatedCostUsd: budget.maxEstimatedCostUsdPerCall });
+      if (stale.ok) stale.lease.complete(charged);
+      expect(ledger.snapshot("run-stale"), model).toMatchObject({ calls: 1, budgetBreaches: 1 });
+    }
+  });
+
+  it("keeps the even share, the resolver's per-call cost and the purse as bounds at any hour", () => {
+    let clockMs = OFF_PEAK_MS;
+    const capped = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { ...live, maxEstimatedCostUsd: CEILING * 0.02 }, model: "deepseek-flash", now: () => clockMs });
+    const purse = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash", costLeftUsd: CEILING * 0.04, now: () => clockMs });
+    const shared = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { ...live, maxCallsPerRun: 2 }, model: "deepseek-flash", now: () => clockMs });
+    for (const at of [OFF_PEAK_MS, PEAK_MS]) {
+      clockMs = at;
+      expect(capped.maxEstimatedCostUsdPerCallAt()).toBeLessThanOrEqual(CEILING * 0.02);
+      expect(purse.maxEstimatedCostUsdPerCallAt()).toBeLessThanOrEqual(CEILING * 0.04);
+      expect(shared.maxEstimatedCostUsdPerCallAt()).toBeCloseTo(CEILING / 2, 9);
+    }
+    clockMs = PEAK_MS;
+    expect(capped.maxEstimatedCostUsdPerCallAt()).toBe(CEILING * 0.02);
+  });
+
+  it("never exceeds the purse or the resolver's per-call cost, and the purse still stops the run before it is passed", () => {
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash", costLeftUsd: CEILING * 0.04, now: peak }).maxEstimatedCostUsdPerCall).toBe(CEILING * 0.04);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { ...live, maxEstimatedCostUsd: CEILING * 0.02 }, model: "deepseek-flash", now: peak }).maxEstimatedCostUsdPerCall).toBe(CEILING * 0.02);
+
+    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: live, model: "deepseek-flash", now: peak });
     const ledger = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
     let spent = 0;
     for (let call = 0; call < 64; call += 1) {
@@ -211,7 +286,7 @@ describe("a recovery at the window profile", () => {
   const price = (inputTokens: number, outputTokens: number) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, "deepseek-flash");
 
   it.each([true, false])("admits call after call when each reserves its own size under the ceiling (explicit: %s)", (explicitRunBudget) => {
-    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, resolution: { tokenLimits: WINDOW, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: CEILING }, model: "deepseek-flash" });
+    const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, resolution: { tokenLimits: WINDOW, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: CEILING }, model: "deepseek-flash", now: () => Date.UTC(2026, 9, 5, 2) });
     // The ceiling is the whole purse at this profile ...
     expect(budget.maxEstimatedCostUsdPerCall).toBe(CEILING);
     // ... and the pot holds whole-page calls: no Core default below the window.

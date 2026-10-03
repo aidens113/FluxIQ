@@ -276,3 +276,19 @@ describe("an evidence loop given a budget", () => {
       .resolves.toMatchObject({ ok: false, code: "llm_evidence_loop.invalid_configuration" });
   });
 });
+
+// t254: a build with a judge keeps its judging pair back from every decision,
+// and the count tells the model only what exploration may still spend, so it
+// wraps up while the decision that finishes and the judging after it are paid.
+describe("the cost count beside a judging reserve (t254)", () => {
+  it("takes what is kept back for judging out of what is left, and wraps up sooner for it", () => {
+    const spent = { decisions: 30, reportedDecisions: 30, totalTokens: 600_000, estimatedCostUsd: 0.0889, elapsedMs: 0, nextDecisionCostUsd: 0.0069 };
+    const without = automationStudioLlmEvidenceLoopRemaining({}, { ...spent, purse: { ceilingUsd: 0.1, spentUsd: 0.0889, pendingUsd: 0 } }, 64);
+    const kept = automationStudioLlmEvidenceLoopRemaining({}, { ...spent, purse: { ceilingUsd: 0.1, spentUsd: 0.0889, pendingUsd: 0, keptBackUsd: 0.0068 } }, 64);
+    expect(without.costLeftUsd).toBeCloseTo(0.0111, 3);
+    expect(kept.costLeftUsd).toBeCloseTo(0.0043, 3);
+    expect(without.decisionsLeft).toBeGreaterThan(1);
+    // $0.0043 is less than the next decision's $0.0069: only completion is offered, never a new look the judging could not follow.
+    expect(kept.decisionsLeft).toBe(1);
+  });
+});

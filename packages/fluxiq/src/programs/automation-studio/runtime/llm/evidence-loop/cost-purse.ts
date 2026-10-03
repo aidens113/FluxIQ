@@ -32,7 +32,7 @@ export type AutomationStudioLlmEvidenceLoopPurse = {
   /** The worst case of the last call priced: the least the next, larger one can cost at worst. */
   readonly lastProjectedCostUsd: number | undefined;
   /** The purse's figures now, for the loop's count of decisions left; undefined without a purse. */
-  figures(): { ceilingUsd: number; spentUsd: number; pendingUsd: number } | undefined;
+  figures(): { ceilingUsd: number; spentUsd: number; pendingUsd: number; keptBackUsd: number } | undefined;
   /** Ask for a decision under the purse; throws `AutomationStudioLlmBuildPurseRefused` when it was not sent. */
   run<T>(call: () => Promise<T>): Promise<T>;
   /** The refusal a throw carries, when the throw is the purse's refusal. */
@@ -46,15 +46,20 @@ export function automationStudioLlmEvidenceLoopPurse(budget: AutomationStudioLlm
     spentUsd: () => accounting.estimatedCostUsd
   }));
   const breachesAtStart = purse?.breaches ?? 0;
-  // Breaches on the purse since the loop began; absent while there are none.
+  const overshootAtStart = purse?.overshootUsd ?? 0;
+  // Breaches on the purse since the loop began, and what they cost beyond their holds (t254); absent while there are none.
   const countBreaches = (): void => {
     const breaches = (purse?.breaches ?? 0) - breachesAtStart;
-    if (breaches > 0) accounting.budgetBreaches = breaches;
+    if (breaches > 0) {
+      accounting.budgetBreaches = breaches;
+      accounting.budgetOvershootUsd = (purse?.overshootUsd ?? 0) - overshootAtStart;
+    }
   };
   return {
     get refusal() { return purse?.refusal; },
     get lastProjectedCostUsd() { return purse?.lastProjectedCostUsd; },
-    figures: () => purse ? { ceilingUsd: purse.ceilingUsd, spentUsd: purse.spentUsd(), pendingUsd: purse.pendingUsd() } : undefined,
+    // What is kept back for judging the Flow (t254) is the loop's to leave, so its count of decisions left takes it out.
+    figures: () => purse ? { ceilingUsd: purse.ceilingUsd, spentUsd: purse.spentUsd(), pendingUsd: purse.pendingUsd(), keptBackUsd: purse.keptBackUsd() } : undefined,
     run: async (call) => {
       try {
         return await automationStudioLlmBuildPurseRun(purse, call);

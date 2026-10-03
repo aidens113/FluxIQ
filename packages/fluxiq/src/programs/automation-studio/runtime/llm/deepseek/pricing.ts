@@ -21,14 +21,19 @@ import {
  * https://api-docs.deepseek.com/quick_start/pricing/ on 2026-09-23. Re-read
  * that page before trusting these: DeepSeek says on it that prices may vary.
  *
- * **Peak, deliberately.** DeepSeek charges half of every figure below outside
+ * **Off-peak is half (t254, user 2026-10-03: "It should be billed at how much
+ * it actually costs").** DeepSeek charges half of every figure below outside
  * 01:00-04:00 and 06:00-10:00 UTC, Monday to Friday, excluding Chinese public
  * holidays -- so roughly four fifths of the week, both weekend days included,
- * bills at half price. Core prices at the peak rate anyway, because a call is
- * estimated against the run's budget before it is made, and an estimate that
- * assumed the discount would let a run overspend the moment it started inside
- * peak hours. An
- * off-peak run is therefore billed less than Core estimated, never more.
+ * bills at half price. Core prices a call at the rate in force when it is sent
+ * (`automationStudioDeepSeekOffPeakAt`, read on the UTC clock): a hold before
+ * the call at the rate of that moment, and the charge after it at the rate of
+ * the moment it was sent. Until t254 every figure was peak, and the six live
+ * runs of Saturday 2026-10-03 were counted at about twice what they were
+ * billed. Chinese public holidays are not known to Core, so a call on one is
+ * charged the peak rate: the one place Core still counts more than is billed.
+ * A call sent a moment before a peak window opens is billed by its start, as
+ * Core charges it.
  *
  * **A cache hit is a fiftieth of a miss, not a tenth.** The rates that stood
  * here until 2026-09-23 were 0.44 per million cache-miss input, 0.044 cache hit
@@ -49,6 +54,23 @@ const PEAK_RATES_USD_PER_MILLION_TOKENS: Readonly<Record<AutomationStudioDeepSee
 
 /** How much less an off-peak call costs: exactly half, on every rate and every model. */
 export const AUTOMATION_STUDIO_DEEPSEEK_OFF_PEAK_RATE_MULTIPLIER = 0.5;
+
+/** The peak windows, in UTC hours [from, to), Monday to Friday. */
+const PEAK_HOURS_UTC: ReadonlyArray<readonly [number, number]> = Object.freeze([Object.freeze([1, 4] as const), Object.freeze([6, 10] as const)]);
+
+/**
+ * Whether DeepSeek bills a call sent at `atMs` (epoch milliseconds) at its
+ * off-peak rate: any time on a Saturday or Sunday, and outside 01:00-04:00 and
+ * 06:00-10:00 on a weekday, all on the UTC clock. Chinese public holidays are
+ * not known, so they read as their weekday.
+ */
+export function automationStudioDeepSeekOffPeakAt(atMs: number): boolean {
+  const at = new Date(atMs);
+  const day = at.getUTCDay();
+  if (day === 0 || day === 6) return true;
+  const hour = at.getUTCHours();
+  return !PEAK_HOURS_UTC.some(([from, to]) => hour >= from && hour < to);
+}
 
 // The three published rates below are `deepseek-flash`'s, the built-in default,
 // and stay so whatever `FLUXIQ_LLM_DEFAULT_MODEL` says (`models.ts`): they are
@@ -78,7 +100,9 @@ export const AUTOMATION_STUDIO_DEEPSEEK_PEAK_OUTPUT_USD_PER_MILLION_TOKENS =
 
 /**
  * What one call cost, with the part of its input the provider served from cache
- * priced at the cache-hit rate.
+ * priced at the cache-hit rate, at the rate in force at `atMs` -- half outside
+ * peak hours (`automationStudioDeepSeekOffPeakAt`); the peak rate where no time
+ * is given.
  *
  * `cacheHitInputTokens` is a subset of `inputTokens`, defaulting to none, so
  * every caller that does not know about caching gets exactly the conservative
@@ -93,7 +117,8 @@ export function estimateAutomationStudioDeepSeekCostUsd(
   inputTokens: number,
   outputTokens: number,
   cacheHitInputTokens = 0,
-  model: AutomationStudioDeepSeekModel = AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL
+  model: AutomationStudioDeepSeekModel = AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
+  atMs?: number
 ): number {
   if (!Number.isSafeInteger(inputTokens) || inputTokens < 0 || !Number.isSafeInteger(outputTokens) || outputTokens < 0) {
     throw new RangeError("DeepSeek token counts must be non-negative safe integers.");
@@ -108,9 +133,10 @@ export function estimateAutomationStudioDeepSeekCostUsd(
   const missRateThousandths = Math.round(rates.cacheMissInput * 1_000);
   const hitRateThousandths = Math.round(rates.cacheHitInput * 1_000);
   const outputRateThousandths = Math.round(rates.output * 1_000);
+  const offPeak = atMs !== undefined && Number.isFinite(atMs) && automationStudioDeepSeekOffPeakAt(atMs);
   const estimatedCostUsd = ((inputTokens - cacheHitInputTokens) * missRateThousandths
     + cacheHitInputTokens * hitRateThousandths
-    + outputTokens * outputRateThousandths) / 1_000_000_000;
+    + outputTokens * outputRateThousandths) / 1_000_000_000 * (offPeak ? AUTOMATION_STUDIO_DEEPSEEK_OFF_PEAK_RATE_MULTIPLIER : 1);
   if (!Number.isFinite(estimatedCostUsd)) throw new RangeError("DeepSeek estimated cost must be finite.");
   return estimatedCostUsd;
 }

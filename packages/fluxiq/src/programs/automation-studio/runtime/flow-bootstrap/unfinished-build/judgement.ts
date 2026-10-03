@@ -63,8 +63,14 @@ import type {
 } from "./contracts.ts";
 import { automationStudioFlowBootstrapStepsNotRunInThisBuild } from "./not-run.ts";
 
-/** What the caller's test answers: the loop's dry-run gate, over the steps it is given. */
-export type AutomationStudioFlowBootstrapUnfinishedTest = (steps: AutomationStudioFlowDraftStep[]) => Promise<"cancelled" | "evidence_limit" | { issueCodes: readonly string[] } | undefined>;
+/**
+ * What the caller's test answers: the loop's dry-run gate, over the steps it is
+ * given. `judged` is set for a test the build's judge will read next -- the Flow
+ * a round left when the judging reserve stopped it (`./reserve-judging.ts`) --
+ * so the caller hands what the test observed to its judge; absent, it is the
+ * checklist's test alone.
+ */
+export type AutomationStudioFlowBootstrapUnfinishedTest = (steps: AutomationStudioFlowDraftStep[], options?: { judged: true }) => Promise<"cancelled" | "evidence_limit" | { issueCodes: readonly string[] } | undefined>;
 
 /**
  * The Flow as a round left it, as a repair starts from it: only the steps in
@@ -176,6 +182,28 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
       flowSignature: automationStudioFlowDraftReplaySignature(seed)
     }
   };
+}
+
+/**
+ * A yes that was not about a test of the Flow as it now stands -- about
+ * another version, or about no test -- as what it is for this Flow: not
+ * judged, with Core's words for why. The signature it was about is kept.
+ */
+export function automationStudioFlowBootstrapYesNotAboutThisFlow(verdict: Extract<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>): Extract<AutomationStudioFlowBootstrapTestVerdict, { verdict: "unknown" | "not_judged" }> {
+  const why = verdict.flowSignature === undefined
+    ? "the judge's yes was about no test of the Flow, so the Flow as it now stands was not judged"
+    : "the judge's yes was about a test of another version of the Flow, not of the Flow as it now stands, so the Flow as it stands was not judged";
+  return { verdict: "not_judged", why, spent: verdict.spent, ...(verdict.flowSignature !== undefined ? { flowSignature: verdict.flowSignature } : {}) };
+}
+
+/**
+ * A tested judgement with the judge's account of that test added: what a round
+ * the judging reserve stopped ends with when its Flow was judged and not found
+ * to do what was asked (`./reserve-judging.ts`). Everything else -- what
+ * stopped it, what the test found -- stays the test's.
+ */
+export function automationStudioFlowBootstrapWithJudgeAccount(judgement: AutomationStudioFlowBootstrapJudgement, verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>): AutomationStudioFlowBootstrapJudgement {
+  return { ...judgement, judge: judgedWrong(verdict) };
 }
 
 /** The judge's account, as a judgement keeps it: only what it said. */

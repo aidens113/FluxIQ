@@ -6,7 +6,7 @@ import {
   automationStudioLlmProviderPaidUsage
 } from "../provider-contract.ts";
 import { automationStudioLlmProviderCall, type AutomationStudioLlmProviderRetryAccount } from "../provider-retry/index.ts";
-import { automationStudioLlmBuildPurseHoldCall, automationStudioLlmProjectedCallCostUsd } from "../build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, automationStudioLlmBuildPurseHoldCall, automationStudioLlmProjectedCallCostUsd } from "../build-purse/index.ts";
 import { automationStudioLoopStageTransition } from "../stages/index.ts";
 import { packAutomationStudioLlmContext } from "./context-packet.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
@@ -64,8 +64,11 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
   // estimator (UTF-8 bytes / 3) for the harness and the adapter alike, and the
   // larger of the two measures -- the packed request, and the messages the
   // provider will actually send -- so the adapter can never refuse, without a
-  // size, a request this passed.
-  const { estimatedInputTokens, estimatedInputBytes } = measuredInput(request, input.provider);
+  // size, a request this passed. What the call is *priced* at is the second
+  // alone, `pricedInputTokens` (t254): the packed request carries the whole
+  // node catalog, which is never sent or billed, and pricing it held each
+  // build decision about 12,800 tokens over what the provider would read.
+  const { estimatedInputTokens, estimatedInputBytes, pricedInputTokens } = measuredInput(request, input.provider);
   // The declaration travels beside the context so a provider can re-check every
   // evidence slot before sending. Added after the estimate because it is never
   // sent, and only when one was made: absent stays absent, never an empty list.
@@ -74,6 +77,8 @@ export async function runAutomationStudioLlmHarness(input: AutomationStudioLlmHa
     estimatedInputTokens,
     ...(input.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: Object.freeze([...input.deniedEvidenceKeys]) } : {})
   };
+  // What the reply is held at before the call: no reply is capped (user, 2026-10-03, t254), so it is the largest reply observed for the call's kind with a margin, where Core has observed it (`../build-purse/build-call-reserves.ts`).
+  const replyReserveTokens = replyReserveFor(input.taskKind, request.tokenLimits.maxOutputTokens);
   const budgetDiagnostics = [...tokenLimitResolution.diagnostics, ...timeoutDiagnostics];
   // The stage protocol is enforced here, before a provider is resolved or a
   // budget reserved, so a call that breaks Core's order costs nothing and
@@ -131,13 +136,14 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
       requestId,
       // The request's own measured size, not its limit: the limit is now the
       // model's window (992,000 tokens), and reserving it on every call priced
-      // each one as a full-window request against the run's ledger.
-      estimatedInputTokens,
+      // each one as a full-window request against the run's ledger. What is
+      // sent, never the packed request (t254).
+      estimatedInputTokens: pricedInputTokens,
       maxOutputTokens: request.tokenLimits.maxOutputTokens
       // The request's own worst case, under its ceiling: a small call is not
       // held at the price of a full window, which at the window profile is
       // the whole run purse (then $0.25) and refused every call after the first.
-      , maxEstimatedCostUsd: reservedCostUsd(input.provider, estimatedInputTokens, request.tokenLimits.maxOutputTokens, request.maxEstimatedCostUsd)
+      , maxEstimatedCostUsd: reservedCostUsd(input.provider, pricedInputTokens, replyReserveTokens, request.maxEstimatedCostUsd)
       , ...(input.runBudgetAllowance ? { allowance: input.runBudgetAllowance } : {})
       // What the call is, for its own line on the run's receipt.
       , call: {
@@ -150,10 +156,13 @@ if (input.taskKind === "flow_bootstrap" && context.instructions.instructions.len
     })
     : null;
   // The build's purse, when the call is made under one (`../build-purse/`):
-  // this request's worst case -- its measured input all uncached, its whole
-  // reply allowance -- held against what the build has spent and has in flight,
-  // and the call refused, unsent, when that would cross the build's ceiling.
-  const held = reservation && !reservation.ok ? undefined : automationStudioLlmBuildPurseHoldCall({ provider: input.provider, estimatedInputTokens, maxOutputTokens: request.tokenLimits.maxOutputTokens });
+  // this request's hold -- the input it sends all uncached, at the rate in
+  // force now, and its reply at the observed-maximum reserve -- held against
+  // what the build has spent and has in flight, and the call refused, unsent,
+  // when that would cross the build's ceiling. A judge's call
+  // (`loop_verification`, made only by `../../result-verification/verify.ts`)
+  // draws on the judging reserve the purse keeps back from every other call.
+  const held = reservation && !reservation.ok ? undefined : automationStudioLlmBuildPurseHoldCall({ provider: input.provider, estimatedInputTokens: pricedInputTokens, maxOutputTokens: replyReserveTokens, judge: input.taskKind === "loop_verification" });
   if (held && !held.ok && reservation?.ok) reservation.lease.release();
   // A reservation the run's budget or the build's purse refused ends the call
   // here, before the provider is invoked. Nothing about a provider may be
@@ -342,12 +351,34 @@ function providerRetryDiagnostics(retry: AutomationStudioLlmProviderRetryAccount
 }
 
 /**
- * The request's size by Core's one estimator: the packed request, and -- when
- * the provider says how it will measure it -- the messages it will send,
- * whichever is larger. A provider's measure that throws is not a size; the
- * packed request stands and the provider refuses the request by its own code.
+ * The request's size and its price measure, by Core's one estimator.
+ *
+ * **Size** (`estimatedInputTokens`, `estimatedInputBytes`): the packed request
+ * and -- when the provider says how it will measure it -- the messages it will
+ * send, whichever is larger, so the harness's context-window refusal never
+ * passes a request the adapter's would refuse. Only that refusal reads it.
+ *
+ * **Price** (`pricedInputTokens`, t254): the messages the provider will send,
+ * which is what it reads and bills; the packed request only where the provider
+ * gives no measure, since then nothing better is known. The packed request
+ * carries the full node catalog where the provider sends names and the
+ * described nodes only, and priced as input it put about 30% on every build
+ * decision's hold (`reports/t254-purse-hold-investigation.md` in the extension
+ * repository).
+ *
+ * Both count UTF-8 bytes / 3 (`../token-estimation.ts`). That over-counts every
+ * call observed: across 206 live calls on 2026-10-03 the densest was 3.24
+ * bytes per token (median 3.72), so the price measure ran 1.08-1.32 times the
+ * provider's reported input. It is not a proof -- text that tokenizes more
+ * densely than 3 bytes a token would be under-counted, and the purse would
+ * count the breach only after the call -- but no tokenizer is shipped (t254
+ * P2, declined), and bytes / 3 has held on every call recorded.
+ *
+ * A provider's measure that throws, or is not whole numbers, is not a size; the
+ * packed request stands for both and the provider refuses the request by its
+ * own code.
  */
-function measuredInput(request: AutomationStudioLlmTaskRequest, provider: AutomationStudioLlmProvider | undefined): { estimatedInputTokens: number; estimatedInputBytes: number } {
+function measuredInput(request: AutomationStudioLlmTaskRequest, provider: AutomationStudioLlmProvider | undefined): { estimatedInputTokens: number; estimatedInputBytes: number; pricedInputTokens: number } {
   const packedBytes = Buffer.byteLength(JSON.stringify(request), "utf8");
   const packed = { estimatedInputTokens: estimateAutomationStudioLlmTokensFromUtf8Bytes(packedBytes), estimatedInputBytes: packedBytes };
   let sent: { estimatedInputTokens: number; estimatedInputBytes: number } | undefined;
@@ -356,14 +387,29 @@ function measuredInput(request: AutomationStudioLlmTaskRequest, provider: Automa
   } catch {
     sent = undefined;
   }
-  return sent && Number.isSafeInteger(sent.estimatedInputTokens) && Number.isSafeInteger(sent.estimatedInputBytes) && sent.estimatedInputTokens > packed.estimatedInputTokens
-    ? { estimatedInputTokens: sent.estimatedInputTokens, estimatedInputBytes: sent.estimatedInputBytes }
-    : packed;
+  if (!sent || !Number.isSafeInteger(sent.estimatedInputTokens) || !Number.isSafeInteger(sent.estimatedInputBytes) || sent.estimatedInputTokens < 0) {
+    return { ...packed, pricedInputTokens: packed.estimatedInputTokens };
+  }
+  const size = sent.estimatedInputTokens > packed.estimatedInputTokens ? { estimatedInputTokens: sent.estimatedInputTokens, estimatedInputBytes: sent.estimatedInputBytes } : packed;
+  return { ...size, pricedInputTokens: sent.estimatedInputTokens };
+}
+
+/**
+ * What a call's reply is held at before it is sent (t254). A build decision and
+ * the instruction reading (`evidence_tool_decision`) and a judge
+ * (`loop_verification`) at the largest reply observed for the kind, twice over;
+ * every other kind, which no corpus has measured, at what its context-window
+ * check sets aside for the reply. Never sent as a cap.
+ */
+function replyReserveFor(taskKind: AutomationStudioLlmHarnessInput["taskKind"], windowReplyTokens: number): number {
+  if (taskKind === "evidence_tool_decision") return AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.decisionReplyTokens;
+  if (taskKind === "loop_verification") return AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.judgeReplyTokens;
+  return windowReplyTokens;
 }
 
 /**
  * What the ledger holds for this call: the provider's price for the request's
- * own measured input plus the reply's allowance, never more than the call's
+ * own measured input plus the reply's reserve, never more than the call's
  * cost ceiling. A provider that does not price, or prices nonsense, is held at
  * the ceiling, as every call was before.
  */

@@ -54,7 +54,6 @@
 
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowInstruction, AutomationStudioFlowIntervention, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import {
-  automationStudioLlmJudgeTokenLimits,
   runAutomationStudioLlmHarness,
   type AutomationStudioLlmProvider,
   type AutomationStudioLlmRunBudgetLedger,
@@ -197,8 +196,8 @@ async function askOnce(
     ...(request.policy ? { policy: request.policy } : {}),
     provider,
     ...(request.runBudget ? { runBudget: request.runBudget } : {}),
-    // A judge's reply is held at a judge's size, never the 8,000-token default: under a build's purse the hold is the reply allowance (`../llm/harness/token-limits.ts`, run 38's C7).
-    ...withDefined("tokenLimits", automationStudioLlmJudgeTokenLimits(request.tokenLimits)),
+    // No reply cap (user, 2026-10-03, t254: it was 2,000 since t239). Under a build's purse the judge's reply is held at its observed-maximum reserve (`../llm/build-purse/build-call-reserves.ts`).
+    ...withDefined("tokenLimits", request.tokenLimits),
     ...(request.timeoutMs !== undefined ? { timeoutMs: request.timeoutMs } : {}),
     ...(request.maxEstimatedCostUsd !== undefined ? { maxEstimatedCostUsd: request.maxEstimatedCostUsd } : {}),
     ...(request.signal ? { signal: request.signal } : {}),

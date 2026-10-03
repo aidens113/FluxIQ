@@ -21,8 +21,11 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, caller, copyDataDirSeed, expectNoTopology, isJudgeRequest, JUDGE_USAGE, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const SEEDING_TIMEOUT_MS = 60_000;
@@ -329,5 +332,124 @@ describe("lane A's run 40: the napkins claimed on the towels' Add to cart", () =
     expect(result.status).toBe("proposed");
     expect(isJudgeRequest(run.requests.at(-1)!)).toBe(true);
     expect(JSON.stringify(buildTestOf(run.requests.at(-1))?.steps)).toContain("ValueRidge Everyday Dinner Napkins");
+  }, 60_000);
+});
+
+// A round the judging reserve stopped (t254 stage 2, decision 4). The phases'
+// part is tested where it lives (`flow-bootstrap/unfinished-build/tests/reserve-judging.test.ts`);
+// what only a service shows is that it meets the build's wiring: the Flow so far
+// is tested with the judge reading that test, the completion check writes it as
+// the plan built, and a yes proposes it. The provider is priced at a flat rate
+// per token so the purse keeps a judging reserve, and the stand-in's steps are
+// nodes of its library, so the draft is the Flow's own steps.
+const RESERVE_READ_ID = "domain.example.read";
+/** One dollar per million tokens, in and out: a decision is held at about a cent. */
+const RESERVE_PER_TOKEN_USD = 1e-6;
+const RESERVE_SAID = { observed: "The test read the rows, but no price column was read.", changed: "Read the price of each row as well." };
+
+function reserveDefinition(id: string, label: string): AutomationStudioNodeDefinition {
+  return {
+    schemaVersion: "0.1", id, version: "1.0.0", label, description: `${label} in the active target.`, category: "action",
+    source: { kind: "importer", domainId: "example", packageId: "example.package", implementationKey: id },
+    availability: { kind: "domain", domainId: "example" },
+    requiredRuntimeCapabilities: ["example.actions"],
+    capabilities: { executable: true, codeBacked: true },
+    inputs: [{ id: "in", label: "In", valueType: "any", required: false }],
+    outputs: [{ id: "success", label: "Success", valueType: "any" }],
+    parameters: [{ id: "where", label: "Where", valueType: "string", required: false }],
+    outputAction: { fixedOutputId: id }
+  };
+}
+
+function reserveRuntime() {
+  return new AutomationStudioNativeNodeRuntime({ permissions: [], runtimeCapabilities: ["example.actions"] }).register({
+    schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "example.package", packageVersion: "1.0.0", domainId: "example",
+    nodes: [reserveDefinition(RESERVE_READ_ID, "Read")]
+  }, { packageId: "example.package", packageVersion: "1.0.0", implementations: { [RESERVE_READ_ID]: () => ({ status: "success", route: "success", outputs: { success: true } }) } });
+}
+
+/** The domain: one free look, and the ability to run a node of its library. */
+function reserveBinding(): AutomationStudioLlmEvidenceRuntimeBinding {
+  return {
+    domainId: "example",
+    deniedEvidenceKeys: [],
+    tools: [{ toolId: "example.inspect", description: "Inspect what is in view.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
+    runsNodes: {},
+    executeTool: async ({ toolId, value }) => toolId === "core.run_node"
+      ? { kind: "llm_evidence_tool_execution" as const, evidence: { ran: String(value.node), rows: ["Paper towels"] }, effectApplied: true, draft: { actionId: String(value.node), input: value, proposes: true } }
+      : { rows: ["Paper towels"] }
+  };
+}
+
+/**
+ * A build whose first decision runs the read and costs $0.07, so its second
+ * does not fit beside the judging kept back; the judge answers `judge` in turn.
+ */
+async function reserveBuild(judge: Array<"yes" | "no">) {
+  const runtime = reserveRuntime();
+  const requests: AutomationStudioLlmTaskRequest[] = [];
+  const evidenceRuntime = automationStudioReplayingBinding(reserveBinding());
+  let decided = 0;
+  let judged = 0;
+  const scripted = mockProvider(async (request) => {
+    if (request.metadata?.source === "instructionAuthority") {
+      return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: USAGE };
+    }
+    requests.push(request);
+    if (isJudgeRequest(request)) {
+      const answer = judge[judged++];
+      if (!answer) throw new Error(`The judge was asked ${judged} times; the script answers ${judge.length}.`);
+      return judgeReply(answer, answer === "yes" ? {} : RESERVE_SAID);
+    }
+    decided += 1;
+    if (decided > 1) throw new Error("Only the first decision fits beside the judging kept back.");
+    return { response: { kind: "evidence_tool_decision", summary: "Read the rows.", decision: { kind: "tool_call", callId: "call.read", toolId: "core.run_node", input: { node: RESERVE_READ_ID, parameters: { where: "rows" }, consequences: [] }, add: true } }, usage: { ...USAGE, estimatedCostUsd: 0.07 } };
+  });
+  const provider: AutomationStudioLlmProvider = { ...scripted, estimateCostUsd: ({ inputTokens, outputTokens }) => (inputTokens + outputTokens) * RESERVE_PER_TOKEN_USD };
+  const instance = new AutomationStudioService({
+    dataDir: tempRoot,
+    llmProviderResolver: (() => ({ provider, tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 }, maxCallsPerRun: 24, maxEstimatedCostUsd: 0.1, timeoutMs: 20_000 })) as never,
+    llmEvidenceRuntime: evidenceRuntime
+  });
+  instance.bindNativeNodeRuntime(runtime);
+  services.add(instance);
+  const project = await instance.createProject({ name: "Reserve", domainId: "example" });
+  const flow = await instance.createFlow({ projectId: project.id, flowId: "flow.reserve", name: "Catalog" });
+  const now = Date.now();
+  await instance.saveFlowInstruction(project.id, {
+    schemaVersion: "0.1", instructionId: "instruction.reserve", title: "Read the catalog", body: "Read the rows the catalog lists.",
+    scope: { kind: "flow", projectId: project.id, flowId: flow.flowId }, priority: 100, status: "active", requirement: "required", createdAt: now, updatedAt: now
+  });
+  const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
+  return { instance, project, flow, requests, replays: evidenceRuntime.replays, generation };
+}
+
+describe("a build the judging reserve stopped, through the service (t254 stage 2)", () => {
+  it("tests the Flow so far for the judge and proposes it, written from the draft, when the judge says yes", async () => {
+    const run = await reserveBuild(["yes", "yes"]);
+    const result = await run.generation;
+
+    expect(result.status).toBe("proposed");
+    // One decision, the second refused beside the reserve; then the judge twice about the Flow so far.
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, true, true]);
+    // The judge read the phases' own test of that Flow, run from its start.
+    expect(run.replays.filter((call) => call.value.replay !== "reset").map((call) => call.value.node)).toEqual([RESERVE_READ_ID]);
+    expect(run.requests[1]?.context.resultSummary?.buildTest).toMatchObject({ kind: "build_test", test: "ran" });
+    // The plan built is the draft's: the read it ran.
+    const record = (await run.instance.getFlowBootstrapAdaptation(run.project.id, run.flow.flowId, result.adaptationId))!;
+    expect(record.topology.subflows[0]!.graphFlow.nodes.map((node) => node.definitionId)).toEqual([RESERVE_READ_ID]);
+  }, 60_000);
+
+  it("ends at its budget with the judge's findings and the Flow kept as a draft when the judge says no", async () => {
+    const run = await reserveBuild(["no", "no"]);
+    const diagnostic = await rejectedGenerationDiagnostic(run.generation);
+
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, true, true]);
+    expect(diagnostic.code).toBe("flow_bootstrap.evidence_budget_exhausted");
+    expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
+    expect(diagnostic.ending?.message).toContain("went on testing and judging the Flow as it stood");
+    expect(diagnostic.ending?.message).toContain(`The judge found: ${RESERVE_SAID.observed.replace(/\.$/u, "")}.`);
+    expect(diagnostic.ending?.message).toContain(`What the judge says is left to change: "${RESERVE_SAID.changed.replace(/\.$/u, "")}".`);
+    expect(diagnostic.ending?.message).toContain("The Flow so far was kept as a draft");
   }, 60_000);
 });

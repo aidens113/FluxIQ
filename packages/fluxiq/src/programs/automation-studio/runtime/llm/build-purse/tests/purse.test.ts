@@ -6,6 +6,9 @@ import { automationStudioLlmBuildPurseRun, automationStudioLlmBuildPurseScope, a
 import { automationStudioLlmBuildPurseHoldCall } from "../harness-hold.ts";
 import { createAutomationStudioDeepSeekProvider } from "../../deepseek/index.ts";
 
+/** A peak instant, Wednesday 2026-09-30 02:00 UTC: DeepSeek bills calls at their send time, peak or off-peak (t254), and these figures are peak. */
+const PEAK_CLOCK = (): number => Date.UTC(2026, 8, 30, 2);
+
 const call = (projectedCostUsd: number | undefined) => ({ projectedCostUsd, estimatedInputTokens: 477_506, maxOutputTokens: 8_000 });
 
 describe("a build's purse", () => {
@@ -13,7 +16,7 @@ describe("a build's purse", () => {
     // `run-mup2u8o3-6697c4be`: $0.154 spent, and the ninth decision priced at
     // worst at 477,506 uncached input tokens and 8,000 reply tokens.
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.25, spentUsd: () => 0.1539 });
-    const deepSeek = createAutomationStudioDeepSeekProvider({ secretReference: { kind: "secret_reference", id: "secret:deepseek" }, model: "deepseek-flash", resolveSecret: async () => "unused" });
+    const deepSeek = createAutomationStudioDeepSeekProvider({ now: PEAK_CLOCK, secretReference: { kind: "secret_reference", id: "secret:deepseek" }, model: "deepseek-flash", resolveSecret: async () => "unused" });
     const projected = automationStudioLlmProjectedCallCostUsd(deepSeek, 477_506, 8_000);
     expect(projected).toBeCloseTo(0.1529, 4);
 
@@ -151,5 +154,74 @@ describe("a call made under a purse", () => {
     expect(outcome).toBe("llm_budget.run_cost_limit");
     expect(purse.refusal).toMatchObject({ spentUsd: 0.09, carriedUsd: 0.09, projectedCostUsd: 0.02 });
     expect(automationStudioLlmCurrentBuildPurse()).toBeUndefined();
+  });
+});
+
+// t254: judging is kept back while a build explores, and a reply is held at a
+// reserve, never a cap, so an overshoot is recorded rather than hidden.
+describe("a build's purse keeping its judging back (t254)", () => {
+  /** DeepSeek flash's peak rates, every input token a miss: how the harness prices a hold. */
+  const flash = (inputTokens: number, outputTokens: number) => (inputTokens * 0.3 + outputTokens * 1.2) / 1_000_000;
+  const decision = (projectedCostUsd: number) => ({ projectedCostUsd, estimatedInputTokens: 20_000, maxOutputTokens: 750, price: flash });
+  const judgeCall = (projectedCostUsd: number) => ({ projectedCostUsd, estimatedInputTokens: 6_409, maxOutputTokens: 1_250, judge: true, price: flash });
+  const JUDGING = { calls: 2, unpriced: { inputTokens: 8_000, outputTokens: 1_250 } };
+
+  it("refuses a decision that would fit only by spending the judging pair, and says what was kept back", () => {
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.08 });
+    purse.keepBackForJudging(JUDGING);
+    // Before any judge is priced, each judge call of the pair is held at the standing allowance: 8,000 input and 1,250 reply tokens.
+    expect(purse.keptBackUsd()).toBe(0);
+    const fits = purse.hold(decision(0.01));
+    expect(fits.ok).toBe(true);
+    if (fits.ok) fits.hold.settle({ estimatedCostUsd: 0.004 });
+    expect(purse.keptBackUsd()).toBeCloseTo(2 * flash(8_000, 1_250), 12);
+    // $0.084 spent: a $0.01 decision fits the $0.016 left, but not beside the $0.0078 pair.
+    const refused = purse.hold(decision(0.01));
+    expect(refused).toMatchObject({ ok: false, refusal: { spentUsd: 0.084, pendingUsd: 0, keptBackUsd: expect.closeTo(0.0078, 9), projectedCostUsd: 0.01 } });
+    // The judge draws on the pair: its call fits where the decision did not.
+    const judged = purse.hold(judgeCall(flash(6_409, 1_250)));
+    expect(judged.ok).toBe(true);
+    // Once a judge is priced, the pair is held at the largest judge call priced.
+    expect(purse.judgingHoldUsd()).toBeCloseTo(2 * flash(6_409, 1_250), 12);
+    // The reserve is never charged: what is spent is only what calls settled at.
+    expect(purse.spentUsd()).toBeCloseTo(0.084, 12);
+    expect(purse.leftUsd()).toBeCloseTo(0.016 - flash(6_409, 1_250), 12);
+  });
+
+  it("keeps nothing back for a build the phases gave no judge", () => {
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.08 });
+    expect(purse.hold(decision(0.019)).ok).toBe(true);
+    expect(purse.keptBackUsd()).toBe(0);
+    expect(purse.judgingHoldUsd()).toBeUndefined();
+  });
+
+  it("states the judging reserve in a refused call's message", () => {
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.09 });
+    purse.keepBackForJudging(JUDGING);
+    const diagnostic = (() => {
+      let said: unknown;
+      void automationStudioLlmBuildPurseScope(purse, async () => {
+        const held = automationStudioLlmBuildPurseHoldCall({ provider: { estimateCostUsd: ({ inputTokens, outputTokens }) => flash(inputTokens, outputTokens) }, estimatedInputTokens: 10_000, maxOutputTokens: 750 });
+        said = held && !held.ok ? held.diagnostic.message : undefined;
+      });
+      return said;
+    })();
+    expect(diagnostic).toBe("The build's spending limit of $0.1000 cannot pay for this call: $0.0900 is spent, $0.0000 is held for calls in flight, $0.0078 is kept back for judging the Flow and this request (10000 input tokens, 750 for the reply) would cost up to $0.0039. It was not sent.");
+  });
+
+  it("records a reply that cost more than its reserve as a breach and its overshoot in dollars, never hidden", () => {
+    let told = 0;
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.098, onBreach: () => { told += 1; } });
+    // A decision held at its 750-token reply reserve replied with 1,500 tokens: $0.0009 more than its hold.
+    const held = purse.hold({ projectedCostUsd: flash(1_000, 750), estimatedInputTokens: 1_000, maxOutputTokens: 750 });
+    if (!held.ok) throw new Error("expected the hold to fit");
+    held.hold.settle({ inputTokens: 1_000, outputTokens: 1_500, totalTokens: 2_500, estimatedCostUsd: flash(1_000, 1_500) });
+    expect(purse.breaches).toBe(1);
+    expect(told).toBe(1);
+    expect(purse.overshootUsd).toBeCloseTo(flash(0, 750), 12);
+    // The ceiling was crossed by that overshoot alone, and nothing more fits.
+    expect(purse.spentUsd()).toBeCloseTo(0.098 + flash(1_000, 1_500), 12);
+    expect(purse.leftUsd()).toBe(0);
+    expect(purse.hold({ projectedCostUsd: 0.0001, estimatedInputTokens: 10, maxOutputTokens: 750 }).ok).toBe(false);
   });
 });
