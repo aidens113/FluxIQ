@@ -1,8 +1,6 @@
 "use client";
 
-import { ChevronDown, ChevronRight, Plus, Workflow } from "lucide-react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import type { CSSProperties, KeyboardEvent, UIEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { AutomationSelection } from "../../shared/selection-contracts";
 import { useUiRenderMetric } from "../../../programs/ui-performance";
 import { createAutomationHierarchyCommands } from "../commands";
@@ -13,7 +11,6 @@ import {
 } from "../controller";
 import type { AutomationHierarchyAction, AutomationHierarchyKind, AutomationHierarchyNode } from "../model";
 import type { AutomationHierarchyPageInfo } from "../paged-cache";
-import { automationHierarchyKeyboardAction } from "../keyboard";
 import {
   createAutomationHierarchyProjectionSelector,
   selectAutomationHierarchyEffectiveCollapsedIds,
@@ -25,18 +22,21 @@ import {
   type AutomationHierarchyStore,
   type AutomationHierarchyUiState
 } from "../store";
-import { AutomationHierarchyTreeRow } from "./TreeRows";
-import { useAutomationHierarchyPrimaryTreeNodeId } from "../hooks";
-import { usePostPaintHierarchyReconciliation } from "../hooks";
-import { useSelectionDisclosure } from "../hooks";
 import {
-  AUTOMATION_HIERARCHY_DEFAULT_VIEWPORT_HEIGHT,
+  useAutomationHierarchyPrimaryTreeNodeId,
+  useAutomationHierarchyTreeKeyDown,
+  useAutomationHierarchyTreeViewport,
+  usePostPaintHierarchyReconciliation,
+  useSelectionDisclosure
+} from "../hooks";
+import {
   AUTOMATION_HIERARCHY_ROW_HEIGHT,
-  automationHierarchyRowIndex,
   flattenVisibleAutomationHierarchy,
-  selectAutomationHierarchyVirtualWindow,
-  type AutomationHierarchyFlatRow
+  selectAutomationHierarchyVirtualWindow
 } from "../virtualized-tree";
+import { AutomationHierarchyLoadMoreRow } from "./LoadMoreRow";
+import { AutomationHierarchyRootFlowRow } from "./RootFlowRow";
+import { AutomationHierarchyTreeRow } from "./TreeRows";
 
 export const AutomationProjectTree = memo(function AutomationProjectTree(props: {
   nodes: AutomationHierarchyNode[];
@@ -57,8 +57,6 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
   onUiStateChange?(state: AutomationHierarchyUiState): void;
 }) {
   useUiRenderMetric("AutomationStudioHierarchyBoundary");
-  const viewportRef = useRef<HTMLElement | null>(null);
-  const [viewport, setViewport] = useState({ scrollTop: 0, height: AUTOMATION_HIERARCHY_DEFAULT_VIEWPORT_HEIGHT });
   const incomingUiStateRef = useRef(props.uiState);
   incomingUiStateRef.current = props.uiState;
   const incomingUiStateSignature = automationHierarchyUiStateSignature(props.uiState);
@@ -128,18 +126,6 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
     appliedIncomingUiStateSignatureRef.current = incomingUiStateSignature;
     hierarchyStore.hydrate(incomingUiStateRef.current);
   }, [hierarchyStore, incomingUiStateSignature]);
-  useEffect(() => {
-    const element = viewportRef.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const update = () => {
-      const height = Math.max(AUTOMATION_HIERARCHY_ROW_HEIGHT, element.clientHeight);
-      setViewport((current) => current.height === height ? current : { ...current, height });
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
 
   const primaryTreeNodeId = useAutomationHierarchyPrimaryTreeNodeId({
     nodes: props.nodes,
@@ -149,67 +135,19 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
     store: hierarchyStore
   });
   const focusedTreeNodeId = flatNodeIds.has(uiState.focusedTreeNodeId) ? uiState.focusedTreeNodeId : "root-flow";
-  const virtualWindow = selectAutomationHierarchyVirtualWindow({
-    rows: flatRows,
-    scrollTop: viewport.scrollTop,
-    viewportHeight: viewport.height
-  });
 
   const openFromTree = useCallback((node: AutomationHierarchyNode, mode: "preview" | "new-pane-or-focus") => hierarchyController.openNode(node, mode), [hierarchyController]);
   const openSettingsFromTree = useCallback((node: AutomationHierarchyNode) => hierarchyController.openSettings(node), [hierarchyController]);
   const toggleFolder = useCallback((folderId: string) => hierarchyController.toggleFolder(folderId), [hierarchyController]);
   const focusTreeItem = useCallback((nodeId: string) => hierarchyStore.previewFocus(nodeId), [hierarchyStore]);
 
-  const focusRow = useCallback((id: string) => {
-    const index = automationHierarchyRowIndex(flatRows, id);
-    if (index < 0) return;
-    hierarchyStore.previewFocus(id);
-    const element = viewportRef.current;
-    if (element) {
-      const top = index * AUTOMATION_HIERARCHY_ROW_HEIGHT;
-      const bottom = top + AUTOMATION_HIERARCHY_ROW_HEIGHT;
-      let scrollTop = element.scrollTop;
-      if (top < scrollTop) scrollTop = top;
-      else if (bottom > scrollTop + element.clientHeight) scrollTop = bottom - element.clientHeight;
-      if (scrollTop !== element.scrollTop) {
-        element.scrollTop = scrollTop;
-        setViewport((current) => current.scrollTop === scrollTop ? current : { ...current, scrollTop });
-      }
-    }
-    window.requestAnimationFrame(() => viewportRef.current
-      ?.querySelector<HTMLElement>(`[data-tree-item-id="${CSS.escape(id)}"]`)
-      ?.focus());
-  }, [flatRows, hierarchyStore]);
-
-  const handleTreeKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
-      || (event as KeyboardEvent<HTMLElement> & { isComposing?: boolean }).isComposing
-      || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
-    const item = (event.target as HTMLElement).closest<HTMLElement>('[role="treeitem"]');
-    if (!item || event.target !== item || !event.currentTarget.contains(item)) return;
-    const keyboardRows = flatRows.filter((row): row is Exclude<AutomationHierarchyFlatRow, { kind: "load-more" }> => row.kind !== "load-more");
-    const action = automationHierarchyKeyboardAction({
-      items: keyboardRows.map((row) => ({
-        id: row.id,
-        parentId: row.parentId,
-        expanded: row.isContainer ? !row.collapsed : null
-      })),
-      currentId: item.dataset.treeItemId ?? "root-flow",
-      key: event.key
-    });
-    if (action.type === "none") return;
-    event.preventDefault();
-    if (action.type === "focus") focusRow(action.id);
-    else if (action.type === "toggle" || action.id === "root-flow") toggleFolder(action.id);
-    else {
-      const row = flatRows.find((candidate) => candidate.id === action.id);
-      if (row?.kind === "node") openFromTree(row.node, "preview");
-    }
-  };
-  const handleScroll = (event: UIEvent<HTMLElement>) => {
-    const scrollTop = event.currentTarget.scrollTop;
-    setViewport((current) => current.scrollTop === scrollTop ? current : { ...current, scrollTop });
-  };
+  const { viewportRef, viewport, focusRow, handleScroll } = useAutomationHierarchyTreeViewport({ flatRows, previewFocus: focusTreeItem });
+  const handleTreeKeyDown = useAutomationHierarchyTreeKeyDown({ flatRows, focusRow, toggleFolder, openNode: openFromTree });
+  const virtualWindow = selectAutomationHierarchyVirtualWindow({
+    rows: flatRows,
+    scrollTop: viewport.scrollTop,
+    viewportHeight: viewport.height
+  });
 
   return (
     <nav
@@ -223,7 +161,7 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
           {virtualWindow.rows.map(({ row, top }) => (
             <div className="automation-tree-virtual-row" key={row.id} role="none" style={{ height: `${AUTOMATION_HIERARCHY_ROW_HEIGHT}px`, transform: `translateY(${top}px)` }}>
               {row.kind === "root" ? (
-                <RootFlowRow
+                <AutomationHierarchyRootFlowRow
                   collapsed={row.collapsed}
                   commands={commands}
                   focused={focusedTreeNodeId === row.id}
@@ -231,16 +169,12 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
                   toggleFolder={toggleFolder}
                 />
               ) : row.kind === "load-more" ? (
-                <div aria-label="More project hierarchy items" aria-level={row.level} className="automation-tree-page-more-wrap" role="treeitem" style={{ paddingInlineStart: `${Math.max(0, row.level - 2) * 14}px` } as CSSProperties}>
-                  <button
-                    className="automation-tree-page-more"
-                    disabled={Boolean(row.pageInfo.loading)}
-                    onClick={() => props.loadMoreChildren?.(row.parentId)}
-                    type="button"
-                  >
-                    {row.pageInfo.loading ? "Loading..." : row.pageInfo.invalidated ? "Refresh folder" : "Load more"}
-                  </button>
-                </div>
+                <AutomationHierarchyLoadMoreRow
+                  level={row.level}
+                  pageInfo={row.pageInfo}
+                  parentId={row.parentId}
+                  {...(props.loadMoreChildren ? { loadMoreChildren: props.loadMoreChildren } : {})}
+                />
               ) : (
                 <AutomationHierarchyTreeRow
                   {...(props.activeViewId ? { activeViewId: props.activeViewId } : {})}
@@ -265,36 +199,3 @@ export const AutomationProjectTree = memo(function AutomationProjectTree(props: 
     </nav>
   );
 });
-
-const RootFlowRow = memo(function RootFlowRow(props: {
-  collapsed: boolean;
-  commands: ReturnType<typeof createAutomationHierarchyCommands>;
-  focused: boolean;
-  onFocus(id: string): void;
-  toggleFolder(id: string): void;
-}) {
-  return <div aria-expanded={!props.collapsed} aria-label="Flows" aria-level={1} aria-posinset={1} aria-setsize={1} className="automation-tree-item root-folder automation-tree-virtual-item" data-tree-item-id="root-flow" onFocus={() => props.onFocus("root-flow")} role="treeitem" tabIndex={props.focused ? 0 : -1}>
-    <span className="tree-row-disclosure-slot">
-      <button aria-expanded={!props.collapsed} aria-label={`${props.collapsed ? "Expand" : "Collapse"} Flows`} className="tree-row-disclosure" onClick={() => props.toggleFolder("root-flow")} tabIndex={-1} title={`${props.collapsed ? "Expand" : "Collapse"} Flows`} type="button">
-        {props.collapsed ? <ChevronRight size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
-      </button>
-    </span>
-    <button className="tree-row-main type-folder category-root category-flow" onClick={() => props.toggleFolder("root-flow")} tabIndex={-1} type="button">
-      <Workflow size={14} aria-hidden />
-      <span className="tree-row-label"><strong>Flows</strong><small>Product automations</small></span>
-    </button>
-    <button aria-label="Add Flow" className="tree-row-action" onClick={(event) => { event.preventDefault(); event.stopPropagation(); props.commands.create({ parentId: null, category: "flow" }); }} onPointerDown={(event) => event.stopPropagation()} title="Add Flow" type="button">
-      <Plus size={13} aria-hidden />
-    </button>
-  </div>;
-});
-
-export { AutomationHierarchyTreeRow } from "./TreeRows";
-export {
-  automationHierarchyNodeCanRemainPrimary,
-  automationHierarchyPrimaryNode,
-  automationHierarchyPrimaryNodeId,
-  automationHierarchyRouterPrimaryNode,
-  automationHierarchyRouterPrimaryNodeId,
-  automationHierarchySettingsPrimaryNodeId
-} from "../selectors";

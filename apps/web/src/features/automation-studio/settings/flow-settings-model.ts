@@ -580,9 +580,12 @@ const FLOW_ADAPTATION_POLICY_DEFAULTS = {
   requireApprovalForDestructiveChanges: false,
   requireApprovalForExternalSideEffects: false,
   maxInterventionsPerRun: 3,
-  // Core's run cost ceiling: a build or recovery never spends more than $0.25
-  // whatever is stored here, so the form offers that and lets a person lower it.
-  maxEstimatedCostUsdPerRun: 0.25
+  // Core's default run cost ceiling (AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD,
+  // $0.10 unless FLUXIQ_LLM_RUN_COST_CEILING_USD sets it): a build or recovery
+  // never spends more whatever is stored here, so the form offers that and lets
+  // a person lower it. A literal because Core's only public export holding it
+  // also carries the server runtime; tests/settings-round-trip.test.tsx pins it.
+  maxEstimatedCostUsdPerRun: 0.1
 } as const;
 
 function flowSettingsTrainingMode(value: unknown): FlowSettingsDraft["trainingMode"] {

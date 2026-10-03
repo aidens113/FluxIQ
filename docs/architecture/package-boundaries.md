@@ -145,7 +145,8 @@ Flows; its answer-shape rules stay last. Neither replaces any of Core's rules.
 ### Next minor (unreleased): the model sees the whole page (`fluxiq`)
 
 Core no longer caps, ranks or trims what a model call is shown. Only two
-bounds remain: secret screening, and the $0.25 run cost ceiling. A request
+bounds remain: secret screening, and the run cost ceiling
+(`FLUXIQ_LLM_RUN_COST_CEILING_USD`, $0.10 by default; it was $0.25). A request
 over the model's context window (1,000,000 tokens) is refused before it is
 sent, with its size, and is never trimmed. Read this entry if a domain binds an
 evidence runtime or harness options, a host supplies its own LLM provider, or a
@@ -597,12 +598,13 @@ a grant.
 - **Tokens with a grant.** The per-call total times the declared calls, held to
   the grant's `maxTotalTokensPerRun`. A default adapting grant gets 100,000;
   `diagnose_and_adapt` got 20,000.
-- **Cost.** Without a grant it is still at most $0.25, and with one it is the
+- **Cost.** Without a grant it is still at most the run cost ceiling
+  (`FLUXIQ_LLM_RUN_COST_CEILING_USD`, $0.10 by default), and with one it is the
   grant's total. It is never more than $2.00
   (`AUTOMATION_STUDIO_RECOVERY_MAX_ESTIMATED_COST_USD_PER_RUN`). Each call
   reserves the purse divided by the declared calls, or by 24. So the
   `maxEstimatedCostUsd` a provider receives is smaller. With no grant and no
-  declared count it is about $0.0104, where it was $0.125.
+  declared count it is about $0.0042 ($0.10 / 24), where it was $0.125.
 - **Time and progress.** The whole recovery runs under a fixed 600,000 ms
   deadline (`AUTOMATION_STUDIO_RECOVERY_MAX_DURATION_MS`), new in this release.
   An exploration also stops as `no_progress` after 3 consecutive steps that
