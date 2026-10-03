@@ -10,6 +10,10 @@ import { adaptiveTrainingMetadata, installPrimaryRouter } from "../../service-fi
 // trials and replays earn, and records that tier with its decision. A success
 // followed by a failure is contradicted, and a change with no succeeded trial is
 // never promoted automatically, however many replays it lists.
+//
+// Since t249 the decision never applies anything: a change allowed unattended
+// is held for the judged end of the run that trialled it
+// (`service/runtime-adaptation/judged-promotion.ts`), so the Flow is unchanged here.
 
 type Promoting = {
   maybePromoteRuntimeAdaptation(input: { adaptation: AutomationStudioFlowAdaptation; context: AutomationStudioRuntimeAdaptationContext }): Promise<AutomationStudioFlowAdaptation>;
@@ -63,16 +67,16 @@ async function promoteWith(adaptationId: string, validationResults: AutomationSt
 }
 
 describe("the service's runtime adaptation promotion", () => {
-  it("applies a change whose trial succeeded, and records its tier", async () => {
+  it("allows a change whose trial succeeded unattended, holds the apply for its run's judged end, and records its tier", async () => {
     const promoted = await promoteWith("adaptation.trial", [result("run.1", 20, "succeeded")]);
 
     expect(promoted).toMatchObject({
-      status: "applied",
+      status: "validated",
       metadata: {
-        approvalDecision: { autoApply: true, confidence: "provisional", validationStatus: "validated" },
-        confidence: "provisional"
+        approvalDecision: { autoApply: true, applyAt: "judged_whole_run", applied: false, confidence: "provisional", validationStatus: "validated" }
       }
     });
+    expect(promoted.metadata).not.toHaveProperty("applicationRecord");
     expect(promoted.metadata).not.toHaveProperty("confidenceScore");
   });
 

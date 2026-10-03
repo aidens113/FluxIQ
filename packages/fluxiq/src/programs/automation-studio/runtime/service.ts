@@ -74,7 +74,6 @@ import { routeAutomationStudioRun, startAutomationStudioBuildRouting } from "./r
 import {
   behaviorForAutomationStudioTrainingMode,
   computeAutomationStudioStabilityMetrics,
-  decideAutomationStudioAdaptationPromotionGate,
   decideAutomationStudioTrainingBudget,
 } from "./training-modes.ts";
 import {
@@ -170,7 +169,7 @@ import {
   removeUndefinedSubflowFields,
   uniqueStrings,
   upsertBy,
-  compactJsonObject, decideAutomationStudioAdaptiveRetry, automationStudioFlowPriorManualAdaptationReview, automationStudioRunDetailWithDeclinedAdaptiveRetry,
+  compactJsonObject, decideAutomationStudioAdaptiveRetry, automationStudioRunDetailWithDeclinedAdaptiveRetry,
   errorMessage,
   AutomationStudioProposalGeneration,
   AutomationStudioFlowSubflowMigration,
@@ -265,10 +264,10 @@ import {
   decodeAutomationStudioPageCursor,
   encodeAutomationStudioPageCursor
 } from "../storage/index.ts";
-import { adaptationApprovalModeForStore, adaptationEvidenceForStore, adaptationFromTypedStoreDetail, adaptationPolicySummaryFromPolicy, adaptationSummaryFromAdaptation, approvalDecisionHistory, changeProposalSummaryFromProposal, type AutomationStudioChangeProposalSummaryPage, type ReviewFlowAdaptationInput } from "./service/adaptation-projections/index.ts";
+import { adaptationApprovalModeForStore, adaptationEvidenceForStore, adaptationFromTypedStoreDetail, adaptationPolicySummaryFromPolicy, adaptationSummaryFromAdaptation, changeProposalSummaryFromProposal, type AutomationStudioChangeProposalSummaryPage, type ReviewFlowAdaptationInput } from "./service/adaptation-projections/index.ts";
 import { assertAutomationStudioBootstrapPermissionAnswered, automationStudioFlowBootstrapBuildJudge, automationStudioFlowBootstrapBuiltLoop, automationStudioFlowBootstrapCreationPurse, assertAutomationStudioBootstrapTarget, assertExactObjectFields, automationStudioBootstrapPermissionOutcome, automationStudioBootstrapStateDigestHook, automationStudioFlowBootstrapExtendSubject, automationStudioFlowBootstrapGenerationReadiness, bootstrapAdaptationAuditEvent, bootstrapHarnessAccounting, evidenceTraceAuditDetail, readAutomationStudioFlowBootstrapGenerationRequest, requiredBootstrapCommandId, requiredBootstrapDigest, requiredBootstrapSettingsRevision, sanitizeEvidenceLoopTrace, type AutomationStudioBootstrapPermissionOutcome, type AutomationStudioFlowBootstrapGenerationReadiness, type AutomationStudioGenerateFlowBootstrapAdaptationInput, type AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
 import { flowMapExpansionStatus, nextRouteGroupOrder, nextRouteOrder, removeUndefinedRouteRuleFields, routeConditionFromInput, routeRuleMetadataWithGroup, routeRuleMetadataWithoutGroup, sqlRouterGroupToFlowGroup, sqlRouterRouteToFlowRule, withFlowMapRouteGroups, type AutomationStudioRouterRoutePage, type AutomationStudioRouterTargetReferenceBatch, type AutomationStudioSubflowTargetPage, type UpsertFlowMapRouteGroupInput, type UpsertFlowMapRouteInput } from "./service/flow-map-routes/index.ts";
-import { adaptationPolicyFromFlowMetadata, automationStudioFlowSettingsFingerprint, booleanSetting, mergedFlowSettingsMetadata, trainingModeSettingsFromMetadata } from "./service/flow-settings/index.ts";
+import { adaptationPolicyFromFlowMetadata, automationStudioFlowSettingsFingerprint, mergedFlowSettingsMetadata, trainingModeSettingsFromMetadata } from "./service/flow-settings/index.ts";
 import { normalizeCustomHierarchyNode, requiredHierarchyId } from "./service/hierarchy-nodes/index.ts";
 import { readJsonLinePage } from "./service/json-lines/index.ts";
 import { listAutomationStudioProjectProblems, type AutomationStudioProblemPage } from "./service/problems/index.ts";
@@ -276,7 +275,7 @@ import { executionPublicationDependencyState } from "./service/publication-depen
 import { countRecordingEntryTypes, recordingProposalReplacementBase, recordingSummaryFromSession, recordingUpdatedAt, summaryRecordingSession, type RecordingSummaryItem, type RecordingSummaryList } from "./service/recording-projections/index.ts";
 import { buildRecordingStateIndex, missingRecordingStateLookup, recordingEntryIsActionLike, resolveRecordingStateIndexItem, type RecordingEntryStateLookupInput, type RecordingEntryStateLookupResult, type RepairRecordingStateIndexResult } from "./service/recording-state-index/index.ts";
 import { reusableLlmContextSummary, type AutomationStudioReusableLlmContextFeatureStatus, type AutomationStudioReusableLlmContextFreshEvidenceInput, type AutomationStudioReusableLlmContextHostConfiguration, type AutomationStudioReusableLlmContextOption, type AutomationStudioReusableLlmContextSelection, type AutomationStudioReusableLlmContextSummary } from "./service/reusable-context/index.ts";
-import { automationStudioAdaptationReplayRecorder, automationStudioResultRepairPorts, automationStudioRepairedRunResultCheck, automationStudioRunResultCheck, resolveAutomationStudioResultCheckProvider, resolveAutomationStudioUnattendedRepairAuthority, resolveAutomationStudioRuntimeAdaptationContext, type AutomationStudioResultCheckProviderRequest, type AutomationStudioResultCheckProviderResolution, type AutomationStudioRunResultCheck, normalizeAutomationStudioRuntimeInterventionMode, recoveryBudgetFromRuntimeAdaptationContext, runtimeAdaptationContextDiagnostics, runtimeAdaptationContextWithRunOverride, rerunAutomationStudioSessionAfterRepair, runtimeRunDetailWithAdaptationContext, runtimeTrainingBudgetStateFromSummaries, type AutomationStudioRuntimeAdaptationContext, type AutomationStudioRuntimeInterventionMode } from "./service/runtime-adaptation/index.ts";
+import { automationStudioAdaptationReplayRecorder, automationStudioResultRepairPorts, automationStudioRepairedRunResultCheck, automationStudioRunResultCheck, resolveAutomationStudioResultCheckProvider, resolveAutomationStudioUnattendedRepairAuthority, resolveAutomationStudioRuntimeAdaptationContext, type AutomationStudioResultCheckProviderRequest, type AutomationStudioResultCheckProviderResolution, type AutomationStudioRunResultCheck, normalizeAutomationStudioRuntimeInterventionMode, promoteAutomationStudioRuntimeAdaptation, recoveryBudgetFromRuntimeAdaptationContext, runtimeAdaptationContextDiagnostics, runtimeAdaptationContextWithRunOverride, rerunAutomationStudioSessionAfterRepair, runtimeRunDetailWithAdaptationContext, settleAutomationStudioRunJudgedPromotions, runtimeTrainingBudgetStateFromSummaries, type AutomationStudioRuntimeAdaptationContext, type AutomationStudioRuntimeInterventionMode } from "./service/runtime-adaptation/index.ts";
 import { clampNumber, normalizePositiveInteger } from "./service/scalar-readings/index.ts";
 export type { AutomationStudioChangeProposalSummaryPage, ReviewFlowAdaptationInput } from "./service/adaptation-projections/index.ts";
 export type { AutomationStudioGenerateFlowBootstrapAdaptationInput, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
@@ -2466,80 +2465,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     });
   }
 
-  private async maybePromoteRuntimeAdaptation(input: {
-    adaptation: AutomationStudioFlowAdaptation;
-    context: AutomationStudioRuntimeAdaptationContext;
-  }): Promise<AutomationStudioFlowAdaptation> {
-    const now = Date.now();
-    const patchKinds = input.adaptation.patch.map((patch) => patch.kind);
-    const confidence = adaptationConfidence(input.adaptation);
-    const requireFirstManualReview = input.context.settings.requireFirstManualReviewBeforeAutoPromotion === true
-      || input.context.policy.preset === "autonomous" && booleanSetting(input.context.settings.metadata?.requireFirstManualReviewBeforeAutoPromotion, false);
-    const priorManualReviewExists = requireFirstManualReview
-      ? await automationStudioFlowPriorManualAdaptationReview({ listFlowAdaptationSummaries: (request) => this.listFlowAdaptationSummaries(request), getFlowAdaptation: (projectId, flowId, adaptationId) => this.getFlowAdaptation(projectId, flowId, adaptationId) }, input.adaptation.projectId, input.adaptation.flowId, input.adaptation.adaptationId) === "reviewed"
-      : true;
-    const hasExternalSideEffects = input.adaptation.patch.some((patch) => isJsonRecord(patch.metadata) && patch.metadata.externalSideEffect === true);
-    const decision = decideAutomationStudioAdaptationPromotionGate({
-      approvalMode: input.context.policy.proposalMode,
-      riskLevel: input.adaptation.riskLevel,
-      patchKinds,
-      confidence,
-      promoteAdaptations: input.context.behavior.promoteAdaptations,
-      requireFirstManualReview,
-      priorManualReviewExists,
-      hasExternalSideEffects
-    });
-    const decisionRecord = compactJsonObject({
-      decisionId: `approval.${randomUUID()}`,
-      mode: input.context.policy.proposalMode,
-      risk: input.adaptation.riskLevel,
-      patchKinds,
-      validationStatus: confidence.tier === "unverified" ? "unvalidated" : "validated", confidence: confidence.tier,
-      reason: decision.reason,
-      actor: "runtime",
-      decidedAt: now,
-      autoApply: decision.autoApply,
-      requiresManualApproval: decision.requiresManualApproval,
-      firstManualReviewRequired: requireFirstManualReview,
-      priorManualReviewExists,
-      externalSideEffects: hasExternalSideEffects
-    });
-    const withDecision = await this.saveFlowAdaptation({
-      ...input.adaptation,
-      updatedAt: now,
-      metadata: {
-        ...(input.adaptation.metadata ?? {}),
-        approvalDecision: decisionRecord,
-        approvalDecisions: [
-          ...approvalDecisionHistory(input.adaptation.metadata),
-          decisionRecord
-        ]
-      }
-    });
-    if (!decision.autoApply) return withDecision;
-    try {
-      return await this.reviewFlowAdaptation({
-        projectId: withDecision.projectId,
-        flowId: withDecision.flowId,
-        adaptationId: withDecision.adaptationId,
-        action: "apply",
-        actorId: "runtime",
-        reason: decision.reason
-      });
-    } catch (error) {
-      return await this.saveFlowAdaptation({
-        ...withDecision,
-        updatedAt: Date.now(),
-        metadata: {
-          ...(withDecision.metadata ?? {}),
-          approvalDecision: compactJsonObject({
-            ...decisionRecord,
-            autoApplyFailed: true,
-            error: error instanceof Error ? error.message : String(error)
-          })
-        }
-      });
-    }
+  // Decides and records; never applies. An unattended apply waits for this run's judged end (`service/runtime-adaptation/judged-promotion.ts`).
+  private async maybePromoteRuntimeAdaptation(input: { adaptation: AutomationStudioFlowAdaptation; context: AutomationStudioRuntimeAdaptationContext }): Promise<AutomationStudioFlowAdaptation> {
+    return await promoteAutomationStudioRuntimeAdaptation({ ...input, ports: { listFlowAdaptationSummaries: (request) => this.listFlowAdaptationSummaries(request), getFlowAdaptation: (projectId, flowId, adaptationId) => this.getFlowAdaptation(projectId, flowId, adaptationId), saveFlowAdaptation: (adaptation) => this.saveFlowAdaptation(adaptation) } });
   }
 
   // The re-run both repairs end in, in `./service/runtime-adaptation/repair-rerun.ts`:
@@ -2552,7 +2480,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       listPublishedFlowSnapshots: () => this.catalogue.listPublishedFlowSnapshots(),
       deprecatedPublicationIds: async () => (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`),
       writeRuntimeSession: (projectId, session) => this.writeRuntimeSession(projectId, session),
-      saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail)
+      saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail),
+      getFlowAdaptation: (projectId, flowId, adaptationId) => this.getFlowAdaptation(projectId, flowId, adaptationId), saveFlowAdaptation: (adaptation) => this.saveFlowAdaptation(adaptation),
+      applyFlowAdaptation: (request) => this.reviewFlowAdaptation({ ...request, action: "apply", actorId: "runtime" })
     } });
   }
 
@@ -2583,6 +2513,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     const runLlm = { ...(input.llmExecution ? { llmExecution: input.llmExecution } : {}), ...(permittedConsequences.length ? { permittedConsequences } : {}) };
     const idempotencyKey = typeof input.idempotencyKey === "string" && input.idempotencyKey.trim() ? input.idempotencyKey.trim() : "";
     let session: AutomationStudioRuntimeSession | undefined;
+    const judgedPorts = { getFlowRunDetail: (projectId: string, runId: string) => this.getFlowRunDetail(projectId, runId), saveFlowRunDetail: (saved: AutomationStudioFlowRunDetail) => this.saveFlowRunDetail(saved), getFlowAdaptation: (projectId: string, flowId: string, adaptationId: string) => this.getFlowAdaptation(projectId, flowId, adaptationId), saveFlowAdaptation: (adaptation: AutomationStudioFlowAdaptation) => this.saveFlowAdaptation(adaptation), applyFlowAdaptation: (request: { projectId: string; flowId: string; adaptationId: string; reason: string }) => this.reviewFlowAdaptation({ ...request, action: "apply" as const, actorId: "runtime" }) }; // A runtime patch this run trialled is applied, or left unapplied with the reason, only once the run's result is judged (`service/runtime-adaptation/judged-promotion.ts`).
     try {
     if (input.projectId && idempotencyKey) {
       // A failed read refuses the run: read as "no sessions", it would start a duplicate under the same key.
@@ -2619,6 +2550,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       generate: (request, brief, costLeftUsd) => this.generateFlowBootstrapAdaptationInternal(request, brief, costLeftUsd),
       approve: (review) => this.reviewFlowBootstrapAdaptation({ ...review, action: "approve" }),
       apply: (review) => this.reviewFlowBootstrapAdaptation({ ...review, action: "apply" }) }) };
+    const judged = async (verified: AutomationStudioRuntimeSession) => await settleAutomationStudioRunJudgedPromotions({ ports: judgedPorts, projectId: input.projectId!, flowId: adaptationContext?.flowId, session: verified });
     const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = {
       inputs: (input.inputs ?? {}) as Record<string, any>,
       signal: abortController.signal
@@ -2753,9 +2685,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {})
         }) : null;
         // Verified against the Flow the retry actually ran, and checked *because* it repaired itself: this run is the repair's own product, and the decision taken when it started was about a run nobody knew would be repaired. `resolveProvider` reads this variable, so it is replaced before the verification asks for a model.
-        if (retry?.session) { runResultCheck = automationStudioRepairedRunResultCheck({ context: adaptationContext, check: runResultCheck, nowMs: Date.now() }); return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: retry.session, flow: retry.flow ?? canonicalFlowDocument(selectedFlow ?? runtimeCanonical), ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal }); }
+        if (retry?.session) { runResultCheck = automationStudioRepairedRunResultCheck({ context: adaptationContext, check: runResultCheck, nowMs: Date.now() }); return await judged(await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: retry.session, flow: retry.flow ?? canonicalFlowDocument(selectedFlow ?? runtimeCanonical), ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal })); }
         await this.saveFlowRunDetail(automationStudioRunDetailWithDeclinedAdaptiveRetry(annotatedDetail, retry?.declinedCode));
-        return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: next, flow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical), ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal });
+        return await judged(await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: next, flow: canonicalFlowDocument(selectedFlow ?? runtimeCanonical), ...(route.selectedSubflow ? { subflowId: route.selectedSubflow.subflowId } : {}), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal }));
       }
     }
     const directRepresentation = runtimeCanonical ? this.flowWriter.persistedFlowRepresentation(runtimeCanonical) : undefined;
@@ -2806,13 +2738,13 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         adaptationContext,
         from: "resume"
       });
-      if (retry?.session) { runResultCheck = automationStudioRepairedRunResultCheck({ context: adaptationContext, check: runResultCheck, nowMs: Date.now() }); return await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: retry.session, ...(retry.flow ? { flow: retry.flow } : runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal }); }
+      if (retry?.session) { runResultCheck = automationStudioRepairedRunResultCheck({ context: adaptationContext, check: runResultCheck, nowMs: Date.now() }); return await judged(await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: retry.session, ...(retry.flow ? { flow: retry.flow } : runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal })); }
       await this.saveFlowRunDetail(automationStudioRunDetailWithDeclinedAdaptiveRetry(annotatedDetail, retry?.declinedCode));
     }
-    return input.projectId ? await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: next, ...(runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal }) : next;
+    return input.projectId ? await judged(await verifyAutomationStudioRuntimeSessionResult({ ports: resultPorts, projectId: input.projectId, session: next, ...(runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal })) : next;
     } catch (error) {
       // A run that throws before it records an outcome is ended failed, so it neither stays active nor holds off the next adaptive run.
-      throw input.projectId && session ? await endAutomationStudioRuntimeSessionAfterThrow({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), writeRuntimeSession: (projectId, ended) => this.writeRuntimeSession(projectId, ended) }, input.projectId, session.runId, error) : error;
+      throw input.projectId && session ? await endAutomationStudioRuntimeSessionAfterThrow({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), writeRuntimeSession: (projectId, ended) => this.writeRuntimeSession(projectId, ended), settleAfterThrow: (ended) => settleAutomationStudioRunJudgedPromotions({ ports: judgedPorts, projectId: ended.projectId ?? input.projectId!, flowId: ended.flowId, session: ended, reason: "run_errored" }) }, input.projectId, session.runId, error) : error;
     } finally {
       if (input.projectId && session) { this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`); this.runControl.close(input.projectId, session.runId); }
     }

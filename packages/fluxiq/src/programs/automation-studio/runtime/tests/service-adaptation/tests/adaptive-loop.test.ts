@@ -5,7 +5,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioImporterSdkManifest } from "../../../../nodes/index.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import type { AutomationStudioLlmProvider } from "../../../llm/index.ts";
 import { getPrimarySubflowGraph, installPrimaryRouter, adaptiveTrainingMetadata } from "../../service-fixtures.ts";
+
+const GATE_REASON = "An adaptation whose trial succeeded is applied once a whole run from the Flow's start, which ran it, is judged to answer.";
 
 let tempRoot: string;
 
@@ -28,7 +32,10 @@ describe("AutomationStudioService recording persistence", () => {
     await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
-  it("auto-applies validated low-risk runtime adaptations and records approval decisions", async () => {
+  // Since t249 a patch the gate allows unattended is held until a whole run that
+  // ran it is judged to answer. This run resumed on the candidate and finished,
+  // but nothing judged its result, so the patch stays unapplied with why.
+  it("allows a validated low-risk runtime adaptation unattended, and leaves it unapplied when nothing judged the run that ran it", async () => {
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
@@ -71,29 +78,45 @@ describe("AutomationStudioService recording persistence", () => {
     const adaptation = await service.getFlowAdaptation(project.id, flow.flowId, detail!.adaptationIds[0]!);
 
     expect(adaptation).toMatchObject({
-      status: "applied",
+      status: "validated",
       patch: [{ kind: "edit_expectation", targetId: "constant" }],
       metadata: {
         approvalDecision: {
           autoApply: true,
           requiresManualApproval: false,
-          reason: "An adaptation whose trial succeeded is applied.",
-          confidence: "provisional"
-        },
-        applicationRecord: { durable: true }
+          reason: GATE_REASON,
+          confidence: "provisional",
+          applyAt: "judged_whole_run",
+          applied: false,
+          notAppliedReason: "not_judged",
+          judgedRunId: run.runId
+        }
       }
     });
+    expect(adaptation?.metadata).not.toHaveProperty("applicationRecord");
     await expect(getPrimarySubflowGraph(service, project.id, flow.flowId)).resolves.toMatchObject({
-      nodes: expect.arrayContaining([expect.objectContaining({ id: "constant", parameterValues: { value: "ok", timeoutMs: 250, retryCount: 2 } })])
+      nodes: expect.arrayContaining([expect.objectContaining({ id: "constant", parameterValues: { value: "ok" } })])
     });
     expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
       kind: "temporary_wait_retry",
-      approvalDecision: expect.objectContaining({ autoApply: true })
+      approvalDecision: expect.objectContaining({ autoApply: true, applied: false, notAppliedReason: "not_judged" })
     })]);
+    expect(detail?.metadata?.adaptiveMetrics).toMatchObject({ durableBehaviorChanged: false, adaptationApplyCount: 0 });
   });
 
-  it("completes an adaptive runtime loop and makes the next run deterministic", async () => {
+  // The loop closes only through a judged whole run (t249): the repaired run's
+  // result is checked under the Flow's standing authorization, answers, and
+  // only then is the patch kept for the next run.
+  it("completes an adaptive runtime loop, keeps the patch once the repaired run is judged to answer, and makes the next run deterministic", async () => {
     let llmCalls = 0;
+    const judgeCalls: string[] = [];
+    const judge: AutomationStudioLlmProvider = {
+      metadata: { provider: "mock", model: "judge" },
+      runTask: async (request) => {
+        judgeCalls.push(request.taskKind);
+        return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.0015 } };
+      }
+    };
     const manifest: AutomationStudioImporterSdkManifest = {
       schemaVersion: "0.1",
       sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION,
@@ -147,11 +170,18 @@ describe("AutomationStudioService recording persistence", () => {
               usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 }
             };
         }
-      })
+      }),
+      resultCheckProviderResolver: (request) => ({ provider: judge, maxEstimatedCostUsd: request.maxEstimatedCostUsd })
     }).bindNativeNodeRuntime(nativeRuntime);
     const project = await service.createProject({ name: "Adaptive Loop", domainId: "example" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.adaptive-loop", name: "Adaptive Loop Flow" });
-    await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
+    const base = adaptiveTrainingMetadata();
+    // A repaired run is checked because it repaired itself; a clean run is not checked before the fifth.
+    const resultCheck = {
+      schedule: { enabled: true, shape: "fixed_interval", initialRunCount: 0, interval: 5, decay: 5 },
+      authorization: { authorizedByUserId: "user.aiden", unlockSessionId: "session.unlock.1", keyId: "key.deepseek", maxTotalCostUsd: 1, maxCostUsdPerCall: 0.05, grantedAtMs: Date.now() - 1000, expiresAtMs: Date.now() + 86_400_000 }
+    };
+    await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...base, trainingModeSettings: { ...(base.trainingModeSettings as JsonObject), resultCheck } } } });
     await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
@@ -171,17 +201,20 @@ describe("AutomationStudioService recording persistence", () => {
     const secondDetail = await service.getFlowRunDetail(project.id, second.runId);
 
     expect(first.status).toBe("succeeded");
-    expect(firstDetail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded" } });
+    expect(first.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
+    expect(judgeCalls).toEqual(["loop_verification"]);
+    expect(firstDetail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded", candidateAdaptationIds: firstDetail?.adaptationIds } });
     expect(firstDetail?.metadata?.adaptiveMetrics).toMatchObject({
       durableBehaviorChanged: true,
       deterministicSuccessAfterAdaptation: true,
       adaptationApplyCount: 1
     });
-    expect(firstDetail?.interventions.map((intervention) => intervention.kind)).toEqual(["diagnosis", "diagnosis", "runtime_patch"]);
+    // The diagnosis, the patch request, and the result check that judged the repaired run.
+    expect(firstDetail?.interventions.map((intervention) => intervention.kind)).toEqual(["diagnosis", "diagnosis", "runtime_patch", "diagnosis"]);
     expect(firstDetail?.adaptationIds).toHaveLength(1);
     await expect(service.getFlowAdaptation(project.id, flow.flowId, firstDetail!.adaptationIds[0]!)).resolves.toMatchObject({
       status: "applied",
-      metadata: { approvalDecision: { autoApply: true }, applicationRecord: { durable: true } }
+      metadata: { approvalDecision: { autoApply: true, applyAt: "judged_whole_run", applied: true, judgedRunId: first.runId }, applicationRecord: { durable: true } }
     });
     expect(learnedFlow.nodes.find((node) => node.id === "drift")?.parameterValues).toMatchObject({ retryCount: 2, timeoutMs: 100 });
     expect(second.status).toBe("succeeded");

@@ -320,9 +320,14 @@ describe("a repaired run's result, with nobody watching", () => {
     const found = await harness({ verdict: "no" });
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId });
 
-    // Two agreeing refusals are what refute (`agreement.ts`), so both calls are
-    // the standing authorization's.
-    expect(found.standingCalls).toEqual(["loop_verification", "loop_verification"]);
+    // Two agreeing refusals are what refute (`agreement.ts`), so the calls come
+    // in pairs, all the standing authorization's. Since t249 the patch the
+    // refuted result's own repair writes is re-run from the Flow's start and
+    // judged in its turn, rather than left unjudged; each pass is refuted here,
+    // and the repair's own bound and convergence stop end it.
+    expect(found.standingCalls.length).toBeGreaterThan(2);
+    expect(found.standingCalls.length % 2).toBe(0);
+    expect(found.standingCalls.every((call) => call === "loop_verification")).toBe(true);
     expect(run.metadata?.resultVerification).toMatchObject({ status: "refuted", performed: true, verdict: "does_not_answer", calls: 2 });
     expect(run.metadata?.resultCheck).toMatchObject({ checked: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRepair, status: "refuted" });
     // Every step of the retry succeeded and the run is failed anyway: a repair

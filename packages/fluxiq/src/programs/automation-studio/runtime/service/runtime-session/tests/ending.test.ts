@@ -95,3 +95,39 @@ describe("ending a run that threw", () => {
     expect(access.writeRuntimeSession).not.toHaveBeenCalled();
   });
 });
+
+// t249 follow-up: a run that threw never reached the judgement a runtime patch
+// it trialled waits for, so what it held is settled unapplied as run_errored.
+describe("settling what a run that threw held for its judged end", () => {
+  it("marks the session failed first, then settles, whatever state the session was in", async () => {
+    const order: string[] = [];
+    const access = { ...ports(session({ status: "running" }), async () => { order.push("write"); }), settleAfterThrow: vi.fn(async () => { order.push("settle"); }) };
+    const failure = new Error("boom");
+
+    await expect(endAutomationStudioRuntimeSessionAfterThrow(access, "project.one", "run.one", failure)).resolves.toBe(failure);
+    expect(order).toEqual(["write", "settle"]);
+    expect(access.settleAfterThrow).toHaveBeenCalledWith(expect.objectContaining({ runId: "run.one" }));
+
+    const recorded = { ...ports(session({ status: "succeeded" })), settleAfterThrow: vi.fn(async () => undefined) };
+    await endAutomationStudioRuntimeSessionAfterThrow(recorded, "project.one", "run.one", failure);
+    expect(recorded.writeRuntimeSession).not.toHaveBeenCalled();
+    expect(recorded.settleAfterThrow).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the caller's error beside a settle that failed, and the session still marked failed", async () => {
+    const access = { ...ports(session()), settleAfterThrow: vi.fn(async () => { throw new Error("store closed"); }) };
+    const failure = new Error("boom");
+
+    const returned = await endAutomationStudioRuntimeSessionAfterThrow(access, "project.one", "run.one", failure);
+    expect(returned).toBeInstanceOf(AggregateError);
+    expect((returned as AggregateError).errors[0]).toBe(failure);
+    expect((returned as AggregateError).message).toContain("could not be settled: store closed");
+    expect(access.writeRuntimeSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles nothing for a session that is no longer stored", async () => {
+    const access = { ...ports(null), settleAfterThrow: vi.fn(async () => undefined) };
+    await endAutomationStudioRuntimeSessionAfterThrow(access, "project.one", "run.one", new Error("boom"));
+    expect(access.settleAfterThrow).not.toHaveBeenCalled();
+  });
+});

@@ -57,7 +57,7 @@ import {
   type AutomationStudioResultRepairHistoryEntry,
   type AutomationStudioResultRepairStop
 } from "./history.ts";
-import { automationStudioRefutedResultFlowWasReauthored } from "./reauthor.ts";
+import { automationStudioRefutedResultRerunsFlow } from "./reauthor.ts";
 
 /**
  * The recovery, as the verification reaches it.
@@ -169,7 +169,7 @@ export async function repairAutomationStudioRefutedRunResult(
     maxAttempts
   });
   const after = repaired ?? refuted;
-  const rerunning = input.willRerun === true && automationStudioRefutedResultFlowWasReauthored(after);
+  const rerunning = input.willRerun === true && automationStudioRefutedResultRerunsFlow(after);
   // The marker as this pass wrote it, not as the port answered it: a port that
   // rebuilt the detail from its own reads may carry an older one.
   const saved = withRepairMarker(after, {

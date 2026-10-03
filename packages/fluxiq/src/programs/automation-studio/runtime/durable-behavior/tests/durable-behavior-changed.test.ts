@@ -17,6 +17,14 @@ describe("whether a run changed its Flow's durable behavior", () => {
     ]))).toBe(true);
   });
 
+  // t249: an unattended apply waits for the run's judged end. Until then the
+  // decision says `applied: false`, and the Flow has not changed.
+  it("is false for an unattended apply still waiting for, or refused by, the run's judged end", () => {
+    expect(automationStudioRunChangedDurableBehavior(detail(["a.one"], [{ adaptationId: "a.one", approvalDecision: { autoApply: true, applyAt: "judged_whole_run", applied: false } }]))).toBe(false);
+    expect(automationStudioRunChangedDurableBehavior(detail(["a.one"], [{ adaptationId: "a.one", approvalDecision: { autoApply: true, applied: false, notAppliedReason: "refuted" } }]))).toBe(false);
+    expect(automationStudioRunChangedDurableBehavior(detail(["a.one"], [{ adaptationId: "a.one", approvalDecision: { autoApply: true, applyAt: "judged_whole_run", applied: true } }]))).toBe(true);
+  });
+
   it("is false for an adaptation that waits for review", () => {
     expect(automationStudioRunChangedDurableBehavior(detail(["a.one"], [{ adaptationId: "a.one", approvalDecision: { autoApply: false } }]))).toBe(false);
     expect(automationStudioRunChangedDurableBehavior(detail(["a.one"], [{ adaptationId: "a.one" }]))).toBe(false);

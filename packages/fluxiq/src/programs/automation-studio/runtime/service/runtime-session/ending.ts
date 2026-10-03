@@ -5,6 +5,12 @@ import { errorMessage } from "../error-message.ts";
 export type AutomationStudioRuntimeSessionEndingPorts = {
   getRuntimeSession(projectId: string, runId: string): Promise<AutomationStudioRuntimeSession | null>;
   writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<void>;
+  /**
+   * Settles what the run left waiting on its judged end -- a runtime patch held
+   * for it (t249) -- once the run is known to have thrown. Handed the session as
+   * it now stands. A failure here joins the caller's error rather than hiding it.
+   */
+  settleAfterThrow?: (session: AutomationStudioRuntimeSession) => Promise<unknown>;
   now?: () => number;
 };
 
@@ -34,31 +40,43 @@ export async function endAutomationStudioRuntimeSessionAfterThrow(
   error: unknown
 ): Promise<unknown> {
   const reason = errorMessage(error, String(error));
+  let current: AutomationStudioRuntimeSession | null;
   try {
-    const current = await ports.getRuntimeSession(projectId, runId);
-    if (current?.status !== "queued" && current?.status !== "running") return error;
-    const failedAt = (ports.now ?? Date.now)();
-    await ports.writeRuntimeSession(projectId, {
-      ...current,
-      status: "failed",
-      finishedAt: failedAt,
-      trace: {
-        attempts: [],
-        values: {},
-        effects: [],
-        ...current.trace,
-        status: "failed",
-        startedAt: current.trace?.startedAt ?? current.startedAt ?? current.queuedAt,
-        finishedAt: failedAt,
-        message: reason
-      },
-      metadata: { ...(current.metadata ?? {}), runFailure: { at: failedAt, sessionStatus: current.status, reason } }
-    });
-    return error;
+    current = await ports.getRuntimeSession(projectId, runId);
+    if (current?.status === "queued" || current?.status === "running") await markFailed(ports, projectId, current, reason);
   } catch (endingError) {
     return new AggregateError(
       [error, endingError],
       `${reason} The run's session could not be marked failed: ${errorMessage(endingError, String(endingError))}`
     );
   }
+  // Settled whatever the session said: a run that threw after it recorded an
+  // outcome still never reached the judgement its held patch waits for.
+  if (!current || !ports.settleAfterThrow) return error;
+  try {
+    await ports.settleAfterThrow(current);
+    return error;
+  } catch (settleError) {
+    return new AggregateError([error, settleError], `${reason} What the run held for its judged end could not be settled: ${errorMessage(settleError, String(settleError))}`);
+  }
+}
+
+async function markFailed(ports: AutomationStudioRuntimeSessionEndingPorts, projectId: string, current: AutomationStudioRuntimeSession, reason: string): Promise<void> {
+  const failedAt = (ports.now ?? Date.now)();
+  await ports.writeRuntimeSession(projectId, {
+    ...current,
+    status: "failed",
+    finishedAt: failedAt,
+    trace: {
+      attempts: [],
+      values: {},
+      effects: [],
+      ...current.trace,
+      status: "failed",
+      startedAt: current.trace?.startedAt ?? current.startedAt ?? current.queuedAt,
+      finishedAt: failedAt,
+      message: reason
+    },
+    metadata: { ...(current.metadata ?? {}), runFailure: { at: failedAt, sessionStatus: current.status, reason } }
+  });
 }

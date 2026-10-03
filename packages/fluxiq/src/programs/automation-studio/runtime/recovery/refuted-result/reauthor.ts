@@ -41,6 +41,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../../result-verification/index.ts";
+import { automationStudioRunHasUntriedPatch } from "../../durable-behavior/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "./history.ts";
 
 /**
@@ -309,6 +310,18 @@ export type AutomationStudioRefutedResultFailure = {
  */
 export function automationStudioRefutedResultFlowWasReauthored(detail: AutomationStudioFlowRunDetail): boolean {
   return reauthorMarker(detail)?.applied === true;
+}
+
+/**
+ * Whether the repair left something a whole-Flow re-run from the start would
+ * judge: a re-authored Flow, or a runtime patch the patch ladder wrote and the
+ * gate allowed unattended, held for a judged whole run and not yet run by any
+ * pass (t249). A refuted result has no failed step to resume from, so such a
+ * patch is run from the Flow's start on the unapplied candidate, or it would
+ * never be judged and never kept.
+ */
+export function automationStudioRefutedResultRerunsFlow(detail: AutomationStudioFlowRunDetail): boolean {
+  return automationStudioRefutedResultFlowWasReauthored(detail) || automationStudioRunHasUntriedPatch(detail);
 }
 
 function reauthorMarker(detail: AutomationStudioFlowRunDetail): JsonObject | undefined {

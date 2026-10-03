@@ -16,6 +16,13 @@ import type { AutomationStudioDefenceSummary, AutomationStudioFaultAssessment } 
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
 
+/**
+ * Why a run that ended `succeeded` stopped short of the Flow's end.
+ * `stopped_at_node`: it was a partial run (`stopAfterNodeId`) and reached its
+ * stop node, or a state route would have taken it past that node.
+ */
+export type AutomationStudioGraphRunStopReason = "stopped_at_node";
+
 export type AutomationStudioTransitionComparisonStatus =
   | "matched"
   | "tolerated"
@@ -343,6 +350,8 @@ export type AutomationStudioGraphExecutionTrace = {
    * from a list of attempt records.
    */
   defence?: AutomationStudioDefenceSummary;
+  /** Present only on a partial run that ended at its stop node (`AutomationStudioGraphExecutionOptions.stopAfterNodeId`). */
+  stopReason?: AutomationStudioGraphRunStopReason;
   message?: string;
 };
 
@@ -378,6 +387,15 @@ export type AutomationStudioRecordBatch = {
 
 export type AutomationStudioGraphExecutionOptions = {
   startNodeId?: string;
+  /**
+   * A partial run: the node after which the run ends `succeeded` with
+   * `stopReason: "stopped_at_node"`, once that node has run and its outcome is
+   * recorded, without leaving it by any way -- an edge, a failed route, a
+   * continuation, or a forward state route. A state route that would take the
+   * run past it stops the run as well; one back to an earlier step is followed.
+   * Root graph only, like `startNodeId`: a Call Flow child never receives it.
+   */
+  stopAfterNodeId?: string;
   /** Attempts the run kept before this execution (a repair's re-run, same run id); ids are numbered after them so none repeats, as the store drops a repeated id. */
   priorAttemptCount?: number;
   inputs?: Record<string, JsonValue>;

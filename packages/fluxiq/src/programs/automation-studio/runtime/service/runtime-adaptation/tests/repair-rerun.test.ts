@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowArtifact, type AutomationStudioFlowDocument, type AutomationStudioFlowRunDetail, type AutomationStudioRuntimeSession } from "../../../../model/index.ts";
+import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowAdaptation, type AutomationStudioFlowArtifact, type AutomationStudioFlowDocument, type AutomationStudioFlowRunDetail, type AutomationStudioRuntimeSession } from "../../../../model/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../../summaries/index.ts";
 import { recoveryBudgetFromRuntimeAdaptationContext } from "../context.ts";
@@ -84,30 +84,47 @@ const readFails: NonNullable<AutomationStudioGraphExecutionOptions["effectDispat
   ? { status: "failed", route: "failed", message: "No target resolved.", failure: { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" } }
   : checkPassed(effect);
 
-async function rerun(options: { dispatcher?: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>; detailMetadata?: NonNullable<AutomationStudioFlowRunDetail["metadata"]> } = {}) {
+async function rerun(options: {
+  dispatcher?: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>;
+  detailMetadata?: NonNullable<AutomationStudioFlowRunDetail["metadata"]>;
+  sessionMetadata?: NonNullable<AutomationStudioRuntimeSession["metadata"]>;
+  adaptations?: AutomationStudioFlowAdaptation[];
+  from?: "start" | "resume";
+  /** A re-run from the start follows a re-authored Flow unless told otherwise (t249: else it re-runs an untried ladder patch). */
+  reauthored?: boolean;
+} = {}) {
   const context = await adaptationContext();
-  const session = await refutedSession();
+  const first = await refutedSession();
+  const session = options.sessionMetadata ? { ...first, metadata: { ...(first.metadata ?? {}), ...options.sessionMetadata } } : first;
   const firstDetail = runtimeSessionToFlowRunDetail(session, PROJECT_ID);
+  const reauthorMarker = (options.from ?? "start") === "start" && options.reauthored !== false ? { resultReauthor: { routed: true, applied: true, adaptationId: "adaptation.bootstrap.1", attempt: 1, attempts: [] } } : {};
   const written: AutomationStudioRuntimeSession[] = [];
   const saved: AutomationStudioFlowRunDetail[] = [];
+  const savedAdaptations: AutomationStudioFlowAdaptation[] = [];
+  const applied: string[] = [];
+  // The stored Flow: a fresh copy each read, so a write onto it would show.
+  const stored = structuredClone(flow);
   const result = await rerunAutomationStudioSessionAfterRepair({
     ports: {
       getFlowSubflow: async () => null,
-      getFlow: async () => flow,
+      getFlow: async () => stored,
       assertOwnedSubflowGraph: async () => undefined,
       listPublishedFlowSnapshots: async () => [],
       deprecatedPublicationIds: async () => [],
       writeRuntimeSession: async (_projectId, next) => { written.push(next); },
-      saveFlowRunDetail: async (detail) => { saved.push(detail); }
+      saveFlowRunDetail: async (detail) => { saved.push(detail); },
+      getFlowAdaptation: async (_projectId, _flowId, adaptationId) => options.adaptations?.find((adaptation) => adaptation.adaptationId === adaptationId) ?? null,
+      saveFlowAdaptation: async (adaptation) => { savedAdaptations.push(adaptation); return adaptation; },
+      applyFlowAdaptation: async (request) => { applied.push(request.adaptationId); throw new Error("A re-run never applies a patch."); }
     },
     projectId: PROJECT_ID,
     session,
-    detail: options.detailMetadata ? { ...firstDetail, metadata: { ...(firstDetail.metadata ?? {}), ...options.detailMetadata } } : firstDetail,
+    detail: { ...firstDetail, metadata: { ...(firstDetail.metadata ?? {}), ...reauthorMarker, ...(options.detailMetadata ?? {}) } },
     graphOptions: { effectDispatcher: options.dispatcher ?? checkPassed, delay: async () => undefined, recoveryBudget: recoveryBudgetFromRuntimeAdaptationContext(context) },
     adaptationContext: context,
-    from: "start"
+    from: options.from ?? "start"
   });
-  return { context, session, result, written, saved };
+  return { context, session, result, written, saved, savedAdaptations, applied, stored };
 }
 
 describe("a repaired re-run of an optional press whose target is gone", () => {
@@ -180,5 +197,154 @@ describe("the recovery marker on a finished repair re-run", () => {
     const { saved } = await rerun({ dispatcher: readFails, detailMetadata: { recoveryState: { state: "running", startedAt: 5 } } });
 
     expect((saved.at(-1)?.metadata as Record<string, any> | undefined)?.recoveryState).toMatchObject({ state: "ended" });
+  });
+});
+
+// t249: a runtime patch reaches the stored Flow only after a whole run that ran
+// it was judged to answer. The resume after a patch therefore runs the
+// unapplied candidate -- the stored Flow with the run's pending patches written
+// onto it in memory -- and never writes the stored Flow. A re-run from the
+// start follows a re-authored Flow and settles a still-pending patch first,
+// unapplied, with the reason its own run gave.
+describe("a re-run and a runtime patch still waiting for its judged run", () => {
+  const ADAPTATION_ID = "adaptation.read-target";
+  const pendingDecision = { autoApply: true, applyAt: "judged_whole_run", applied: false, reason: "trial succeeded" };
+  const receipt = { kind: "temporary_target_override", adaptationId: ADAPTATION_ID, retryOriginalAction: true, resumable: true, resumeFrom: { nodeId: "search", route: "success" }, approvalDecision: pendingDecision };
+  const adaptation = (targetId = "read"): AutomationStudioFlowAdaptation => ({
+    schemaVersion: "0.1",
+    adaptationId: ADAPTATION_ID,
+    flowId: flow.flowId,
+    projectId: PROJECT_ID,
+    sourceRunId: "run.rerun",
+    trigger: "Runtime patch temporary_target_override restored expected state.",
+    patch: [{ kind: "edit_action_target", targetId, summary: "The results moved.", after: { selector: "#results-v2" } }],
+    status: "validated",
+    author: "runtime",
+    riskLevel: "low",
+    createdAt: 1,
+    updatedAt: 1,
+    metadata: { approvalDecision: pendingDecision }
+  });
+  /** The read lands only on the repaired target. */
+  const readNeedsRepair: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> = (effect) => {
+    const payload = JSON.stringify(effect.payload ?? null);
+    if (payload.includes("results") && !payload.includes("results-v2")) return { status: "failed", route: "failed", message: "No target resolved.", failure: { category: "target_not_found", code: "web.target.not_found", retryable: false, stage: "target_resolution" } };
+    return { status: "success", route: "success", outputs: { ok: true } };
+  };
+
+  it("resumes on the candidate with the patch written in, and leaves the stored Flow as it was", async () => {
+    const { result, saved, savedAdaptations, applied, stored } = await rerun({ from: "resume", dispatcher: readNeedsRepair, adaptations: [adaptation()], detailMetadata: { runtimePatchAttempts: [receipt] } });
+
+    expect(result?.session?.status).toBe("succeeded");
+    // The resume began at the trial's resume point and pressed the repaired target.
+    expect(result?.session?.trace?.attempts.slice(4).map((attempt) => attempt.nodeId)).toEqual(["search", "check", "join", "read"]);
+    expect(result?.session?.trace?.attempts.at(-1)).toMatchObject({ nodeId: "read", status: "succeeded" });
+    expect(result?.flow?.nodes.find((node) => node.id === "read")?.parameterValues).toMatchObject({ parameters: { elementId: "results", target: { selector: "#results-v2" } } });
+    // Nothing was written: not the Flow, not the adaptation.
+    expect(stored.nodes.find((node) => node.id === "read")?.parameterValues).toEqual({ outputId: "activate-element", parameters: { elementId: "results" } });
+    expect(savedAdaptations).toEqual([]);
+    expect(applied).toEqual([]);
+    // The run says which pending patches the pass ran, for the judged settle.
+    expect(saved.at(-1)?.metadata?.adaptiveRetry).toMatchObject({ attempted: true, status: "succeeded", candidateAdaptationIds: [ADAPTATION_ID] });
+  });
+
+  it("declines the resume when a pending patch cannot be written onto the Flow, rather than running a Flow without it", async () => {
+    const { result, written } = await rerun({ from: "resume", dispatcher: readNeedsRepair, adaptations: [adaptation("gone")], detailMetadata: { runtimePatchAttempts: [receipt] } });
+
+    expect(result).toEqual({ declinedCode: "repair_rerun.candidate_unwritable" });
+    expect(written).toEqual([]);
+  });
+
+  // A re-authored Flow is run as stored: a pending patch was written for the graph before.
+  const reauthoredMarker = { resultReauthor: { routed: true, applied: true, adaptationId: "adaptation.bootstrap.1", attempt: 1, attempts: [] } };
+
+  it("settles a pending patch unapplied before a re-authored Flow's re-run from the start, with its run's reason", async () => {
+    const { result, saved, savedAdaptations, applied } = await rerun({
+      adaptations: [adaptation()],
+      detailMetadata: { ...reauthoredMarker, runtimePatchAttempts: [receipt], adaptiveRetry: { attempted: true, status: "succeeded", candidateAdaptationIds: [ADAPTATION_ID] } },
+      sessionMetadata: { resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer" } }
+    });
+
+    expect(result?.session?.status).toBe("succeeded");
+    expect(applied).toEqual([]);
+    expect(savedAdaptations).toHaveLength(1);
+    expect(savedAdaptations[0]?.metadata?.approvalDecision).toMatchObject({ autoApply: true, applied: false, notAppliedReason: "refuted", judgedRunId: "run.rerun" });
+    // The re-run ran the re-authored Flow as stored, without the patch.
+    expect(result?.flow?.nodes.find((node) => node.id === "read")?.parameterValues).toEqual({ outputId: "activate-element", parameters: { elementId: "results" } });
+    const kept = saved.at(-1)?.metadata?.runtimePatchAttempts as Array<Record<string, any>> | undefined;
+    expect(kept?.[0]?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "refuted" });
+  });
+
+  it("settles a patch no pass ran as never re-run when the Flow was re-authored", async () => {
+    const { savedAdaptations } = await rerun({ adaptations: [adaptation()], detailMetadata: { ...reauthoredMarker, runtimePatchAttempts: [receipt] } });
+
+    expect(savedAdaptations[0]?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "not_rerun" });
+  });
+
+  // t249 follow-up: the patch ladder after a refuted result writes a patch with
+  // no failed step to resume from. The whole Flow is run again from its start,
+  // on the unapplied candidate, so the patch can be judged -- and kept.
+  it("runs a patch no pass has run yet as the candidate of a whole-Flow re-run from the start", async () => {
+    const { result, saved, savedAdaptations, applied, stored } = await rerun({ reauthored: false, dispatcher: readNeedsRepair, adaptations: [adaptation()], detailMetadata: { runtimePatchAttempts: [receipt] } });
+
+    expect(result?.session?.status).toBe("succeeded");
+    expect(result?.session?.trace?.attempts.slice(4).map((attempt) => attempt.nodeId)).toEqual(["search", "check", "join", "read"]);
+    expect(result?.flow?.nodes.find((node) => node.id === "read")?.parameterValues).toMatchObject({ parameters: { target: { selector: "#results-v2" } } });
+    expect(stored.nodes.find((node) => node.id === "read")?.parameterValues).toEqual({ outputId: "activate-element", parameters: { elementId: "results" } });
+    expect(savedAdaptations).toEqual([]);
+    expect(applied).toEqual([]);
+    expect(saved.at(-1)?.metadata?.repairedRerun).toMatchObject({ attempted: true, status: "succeeded", candidateAdaptationIds: [ADAPTATION_ID] });
+  });
+
+  it("settles the earlier pass's patch on that pass's verdict before running the new one", async () => {
+    const earlier = { ...adaptation(), adaptationId: "adaptation.earlier" };
+    const { result, savedAdaptations } = await rerun({
+      reauthored: false,
+      dispatcher: readNeedsRepair,
+      adaptations: [earlier, adaptation()],
+      detailMetadata: { runtimePatchAttempts: [{ ...receipt, adaptationId: "adaptation.earlier" }, receipt], adaptiveRetry: { attempted: true, status: "succeeded", candidateAdaptationIds: ["adaptation.earlier"] } },
+      sessionMetadata: { resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer" } }
+    });
+
+    expect(savedAdaptations.map((saved) => [saved.adaptationId, (saved.metadata?.approvalDecision as Record<string, unknown> | undefined)?.notAppliedReason])).toEqual([["adaptation.earlier", "refuted"]]);
+    expect(result?.session?.status).toBe("succeeded");
+  });
+
+  it("declines a re-run from the start that would change nothing", async () => {
+    const { result, written } = await rerun({ reauthored: false, adaptations: [], detailMetadata: {} });
+
+    expect(result).toEqual({ declinedCode: "repair_rerun.nothing_to_rerun" });
+    expect(written).toEqual([]);
+  });
+
+  // t249 follow-up: a trial that ran the Flow to its end began at the Flow's
+  // start and finished on the candidate. It is adopted as the resumed pass,
+  // and nothing runs again.
+  it("adopts a trial that ran the Flow to its end as the resumed pass, running nothing again", async () => {
+    const trialAttempt = { attemptId: "read.attempt.5", nodeId: "read", definitionId: "builtin.policy.action", startedAt: 3, finishedAt: 4, status: "succeeded", route: "success", inputs: {}, outputs: { ok: true }, effects: [] };
+    const completedTrace = { status: "succeeded", startedAt: 3, finishedAt: 4, attempts: [trialAttempt], values: { ok: true }, effects: [] };
+    const dispatched: string[] = [];
+    const { result, saved, written } = await rerun({
+      from: "resume",
+      dispatcher: (effect) => { dispatched.push(JSON.stringify(effect.payload ?? null)); return { status: "success", route: "success", outputs: { ok: true } }; },
+      adaptations: [adaptation()],
+      detailMetadata: { runtimePatchAttempts: [{ ...receipt, resumeFrom: { completed: true }, completedTrace }] }
+    });
+
+    expect(dispatched).toEqual([]);
+    expect(result?.session?.status).toBe("succeeded");
+    expect(result?.session?.trace?.attempts.map((attempt) => attempt.attemptId)).toEqual(["search.attempt.1", "check.attempt.2", "join.attempt.3", "read.attempt.4", "read.attempt.5"]);
+    expect(written.at(-1)?.status).toBe("succeeded");
+    const kept = saved.at(-1)?.metadata as Record<string, any> | undefined;
+    expect(kept?.adaptiveRetry).toMatchObject({ attempted: true, status: "succeeded", trialCompleted: true, candidateAdaptationIds: [ADAPTATION_ID] });
+    // The trial's pass now lives in the run's own trace, not on its receipt.
+    expect(kept?.runtimePatchAttempts?.[0]).not.toHaveProperty("completedTrace");
+  });
+
+  it("still declines a completed trial whose receipt carries no pass to adopt", async () => {
+    const { result, written } = await rerun({ from: "resume", adaptations: [adaptation()], detailMetadata: { runtimePatchAttempts: [{ ...receipt, resumeFrom: { completed: true } }] } });
+
+    expect(result).toEqual({ declinedCode: "resume_point_completed" });
+    expect(written).toEqual([]);
   });
 });
