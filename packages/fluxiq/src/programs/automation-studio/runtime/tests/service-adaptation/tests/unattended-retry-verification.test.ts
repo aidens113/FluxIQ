@@ -22,12 +22,6 @@
 // Every assertion below is on a run nobody asked the model into, except the
 // last two, which pin a run a person asked for behaving as it did before any
 // of this.
-//
-// The service is imported first. Imported after `result-check-authorization/`
-// and `result-check-schedule/`, a module cycle on dev (seen at c49b3e7a, t249)
-// leaves `automationStudioLlmResolutionWithinFlowSettings` undefined when the
-// recovery calls it, and every test here fails on that, not on what it asserts.
-import { AutomationStudioService } from "../../../service.ts";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -40,6 +34,7 @@ import type { AutomationStudioRuntimeSessionLlm } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_CODES } from "../../../result-check-authorization/index.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../result-check-schedule/index.ts";
+import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 
 const RECORD_OUTPUT: JsonObject = {

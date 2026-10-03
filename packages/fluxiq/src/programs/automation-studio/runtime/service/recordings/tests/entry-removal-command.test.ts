@@ -8,7 +8,10 @@ import { AutomationStudioService } from "../../../service.ts";
 // one gateway event leave the open recording, and stay gone after a reload.
 describe("removing a recorded step through the service", () => {
   const roots: string[] = [];
+  const services: AutomationStudioService[] = [];
   afterEach(async () => {
+    // A service keeps an idle project database open for a moment; closing it releases the files.
+    await Promise.all(services.splice(0).map((service) => service.close()));
     await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });
 
@@ -16,6 +19,7 @@ describe("removing a recorded step through the service", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-entry-removal-"));
     roots.push(root);
     const service = new AutomationStudioService({ dataDir: root, seedFixture: false });
+    services.push(service);
     const project = await service.createProject({ name: "Removal" });
     const recording = await service.createRecording({ projectId: project.id, recordingId: "recording.removal", startedAt: 1, initialState: { timestamp: 1, namespaces: {} } });
     const step = (eventId: string) => ({ type: "observation", observationType: "input.action", payload: { step: eventId }, sourceId: "input.action", metadata: { policyEligible: false, eventId } }) as never;
@@ -30,6 +34,7 @@ describe("removing a recorded step through the service", () => {
     expect((await service.recordingEntryRemoval.remove({ projectId: project.id, recordingId: recording.recordingId, eventId: "web.9.900" })).removedCount).toBe(0);
 
     const reloaded = new AutomationStudioService({ dataDir: root, seedFixture: false });
+    services.push(reloaded);
     expect(eventIds(await reloaded.getRecordingSession(recording.recordingId, project.id))).toEqual(["web.2.200"]);
   });
 });

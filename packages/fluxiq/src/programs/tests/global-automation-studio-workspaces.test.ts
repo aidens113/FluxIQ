@@ -11,9 +11,13 @@ import { AutomationStudioService } from "../automation-studio/index.ts";
 describe("global program services", () => {
   it("creates only populated documents in legacy folder-backed project workspaces", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-folders-"));
+    // Closed before the root is removed: the service keeps a project's database
+    // open for a moment after each operation, and Windows refuses to delete an
+    // open database file.
+    let service: AutomationStudioService | undefined;
     try {
       const dataDir = path.join(root, ".fluxiq", "data");
-      const service = new AutomationStudioService({ dataDir, seedFixture: false });
+      service = new AutomationStudioService({ dataDir, seedFixture: false });
       const project = await service.createProject({ name: "Folder Project", description: "Uses folders" });
       await service.saveProjectHierarchy(project.id, {
         customHierarchyNodes: [{ id: "folder-1", label: "Ops", kind: "folder", category: "task", parentId: null }],
@@ -38,12 +42,14 @@ describe("global program services", () => {
       await expect(stat(path.join(projectRoot, "artifacts"))).rejects.toMatchObject({ code: "ENOENT" });
       await expect(stat(path.join(dataDir, "programs", "automation-studio", "nodes"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
+      await service?.close();
       await rm(root, { recursive: true, force: true });
     }
   });
 
   it("migrates legacy Automation Studio projects.json into project folders", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-legacy-projects-"));
+    let service: AutomationStudioService | undefined;
     try {
       const dataDir = path.join(root, ".fluxiq", "data");
       const legacyPath = path.join(dataDir, "programs", "automation-studio", "projects.json");
@@ -66,7 +72,7 @@ describe("global program services", () => {
         }
       }, null, 2)}\n`, "utf8");
 
-      const service = new AutomationStudioService({ dataDir, seedFixture: false });
+      service = new AutomationStudioService({ dataDir, seedFixture: false });
       await expect(service.listProjects()).resolves.toMatchObject({
         categories: [{ id: "cat-1", name: "Legacy" }],
         projects: [{ id: "legacy-project", name: "Legacy Project" }]
@@ -78,6 +84,7 @@ describe("global program services", () => {
       });
       await expect(readFile(path.join(dataDir, "programs", "automation-studio", "projects", "legacy-project", "manifest.json"), "utf8")).resolves.toContain("Legacy Project");
     } finally {
+      await service?.close();
       await rm(root, { recursive: true, force: true });
     }
   });

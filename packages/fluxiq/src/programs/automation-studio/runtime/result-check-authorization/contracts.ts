@@ -45,7 +45,11 @@
 // as `redeem.ts` is about `loop_verification`: neither takes the kinds as an
 // argument, so no settings field and no caller can widen either.
 
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../llm/flow-execution-limits/index.ts";
+// The ceiling is read from the model's own resolver, not `../llm/flow-execution-limits/`:
+// that barrel reaches the LLM harness, which reaches back here, and the cycle left
+// `automationStudioLlmResolutionWithinFlowSettings` undefined for any importer that
+// loaded this module first. Both read FLUXIQ_LLM_RUN_COST_CEILING_USD once, at load.
+import { resolveAutomationStudioLlmRunCostCeilingUsd } from "../../model/run-cost-ceiling/index.ts";
 
 /** The one task kind a standing check authorization can ever be redeemed for. */
 export const AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND = "loop_verification" as const;
@@ -160,7 +164,7 @@ export const AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS = Object.free
    * the ceiling it claimed to equal. Note it is **not** a default for
    * `enabled`: repair stays off until somebody turns it on.
    */
-  repairMaxCostUsdPerRun: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD
+  repairMaxCostUsdPerRun: resolveAutomationStudioLlmRunCostCeilingUsd()
 });
 
 /** Why a standing authorization was not redeemed. One code per reason, so a reader can act on it. */

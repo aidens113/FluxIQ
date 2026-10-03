@@ -95,8 +95,13 @@ describe("FluxIQ", () => {
 
   it("shares global editor state across importer-defined domain identities without eager trees", async () => {
     const root = await tempRoot();
+    // Closed before the root is removed: Automation Studio keeps a project's
+    // database open for a moment after each operation, and Windows refuses to
+    // delete an open database file.
+    const opened: FluxIQ[] = [];
     try {
       const first = FluxIQ.create({ rootDir: root, domainId: "Importer Alpha", loadEnv: false });
+      opened.push(first);
       await first.setup();
       const project = await first.programs.automationStudio.createProject({ name: "Importer-owned project" });
       await first.programs.automationStudio.createRecording({
@@ -111,10 +116,12 @@ describe("FluxIQ", () => {
         .then((entries) => entries.filter((entry) => entry.isDirectory()), () => []);
       expect(directories.length).toBeLessThan(10);
       const second = FluxIQ.create({ rootDir: root, domainId: "Importer Beta", loadEnv: false });
+      opened.push(second);
       expect((await second.programs.automationStudio.listProjects()).projects).toContainEqual(expect.objectContaining({ id: project.id }));
       expect((await second.programs.automationStudio.getRecordingSession("recording.shared", project.id)).recordingId).toBe("recording.shared");
       expect(second.paths.databases).toBe(path.join(root, ".fluxiq"));
     } finally {
+      await Promise.all(opened.map((fluxiq) => fluxiq.close()));
       await rm(root, { recursive: true, force: true });
     }
   });
@@ -270,6 +277,7 @@ describe("FluxIQ", () => {
 
   it("binds Automation Studio native runtimes through framework options and host modules", async () => {
     const root = await tempRoot();
+    const opened: FluxIQ[] = [];
     try {
       const definition: AutomationStudioNodeDefinition = {
         schemaVersion: "0.1",
@@ -299,17 +307,21 @@ describe("FluxIQ", () => {
         implementations: { echo: () => ({ outputs: { value: "ok" } }) }
       });
       const fluxiq = FluxIQ.create({ rootDir: root, loadEnv: false, domainId: "example", nativeNodeRuntime: nativeRuntime });
+      opened.push(fluxiq);
       await fluxiq.setup();
       const project = await fluxiq.programs.automationStudio.createProject({ name: "Native project", domainId: "example" });
 
       await expect(fluxiq.programs.automationStudio.listNativeNodeDefinitions(project.id)).resolves.toContainEqual(expect.objectContaining({ id: "example.echo" }));
 
       const lateBound = FluxIQ.create({ rootDir: root, loadEnv: false, domainId: "example" });
+      opened.push(lateBound);
       await lateBound.setup();
       const lateProject = await lateBound.programs.automationStudio.createProject({ name: "Late native project", domainId: "example" });
       lateBound.bindAutomationStudioNativeNodeRuntime(nativeRuntime);
       await expect(lateBound.programs.automationStudio.listNativeNodeDefinitions(lateProject.id)).resolves.toContainEqual(expect.objectContaining({ id: "example.echo" }));
     } finally {
+      // Closed first, as in the shared editor state case above.
+      await Promise.all(opened.map((instance) => instance.close()));
       await rm(root, { recursive: true, force: true });
     }
   });

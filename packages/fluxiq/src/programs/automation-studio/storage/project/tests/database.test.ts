@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -164,5 +164,177 @@ describe("AutomationStudioStatementCache through a project connection", () => {
     expect(recounted).toEqual({ count: 2 });
     await lease.release();
     await pool.closeAll();
+  });
+});
+
+// A pool with an idle grace period keeps a project's connection open for that
+// long after its last release, so back-to-back operations share it (t246). These
+// cases pin when it is reused and when it closes; the cases above pin the
+// default, which closes on the last release.
+const GRACE_MS = 60;
+
+async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("Condition was not met in time.");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+describe("AutomationStudioProjectDatabasePool idle grace period", () => {
+  beforeEach(async () => {
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-database-test-"));
+  });
+
+  afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+
+  it("reuses the connection for a lease taken within the grace period, and closes it once idle", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: GRACE_MS });
+    const first = await pool.acquire("project.idle");
+    await first.database.run("create table items (id text primary key)");
+    await first.release();
+    expect(pool.stats().openProjects).toBe(1);
+
+    const second = await pool.acquire("project.idle");
+    expect(second.database).toBe(first.database);
+    // A lease held past the grace period keeps the connection open.
+    await new Promise((resolve) => setTimeout(resolve, GRACE_MS * 3));
+    expect(pool.stats().openProjects).toBe(1);
+    await expect(second.database.get("select count(*) as count from items")).resolves.toEqual({ count: 0 });
+    await second.release();
+
+    await waitFor(() => pool.stats().openProjects === 0);
+    await expect(first.database.get("select 1")).rejects.toThrow(/is closed/);
+    const reopened = await pool.acquire("project.idle");
+    expect(reopened.database).not.toBe(first.database);
+    await reopened.release();
+    await pool.closeAll();
+  });
+
+  it("closes an idle project at once on request, and leaves a held one open", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 60_000 });
+    const idle = await pool.acquire("project.idle");
+    await idle.release();
+    const held = await pool.acquire("project.held");
+
+    await pool.closeIdleProject("project.idle");
+    await pool.closeIdleProject("project.held");
+    await pool.closeIdleProject("project.never-opened");
+
+    expect(pool.stats().openProjects).toBe(1);
+    await expect(idle.database.get("select 1")).rejects.toThrow(/is closed/);
+    await expect(held.database.get<{ one: number }>("select 1 as one")).resolves.toEqual({ one: 1 });
+    // With the idle connection closed its files can be removed, which Windows refuses while it is open.
+    await rm(path.join(rootDir, "projects", "project.idle"), { recursive: true });
+    await held.release();
+    await pool.closeAll();
+  });
+
+  it("closes idle connections on closeAll without waiting for their grace period", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 60_000 });
+    const lease = await pool.acquire("project.idle");
+    await lease.release();
+    const started = Date.now();
+    await pool.closeAll();
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(pool.stats().openProjects).toBe(0);
+    await expect(lease.database.get("select 1")).rejects.toThrow(/is closed/);
+    await expect(pool.acquire("project.idle")).rejects.toThrow(/closing/);
+  });
+});
+
+// Races between the idle timer and the calls that close or reopen a project.
+// Each case holds a connection's close open with `holdClose`, so the moment
+// between the timer starting a close and the close finishing can be observed.
+function holdClose(database: { close(): Promise<void> }): { started(): boolean; finish(): void } {
+  let finish = () => {};
+  const gate = new Promise<void>((resolve) => { finish = resolve; });
+  let started = false;
+  const close = database.close.bind(database);
+  database.close = () => {
+    started = true;
+    return gate.then(close);
+  };
+  return { started: () => started, finish };
+}
+
+async function settlesWithin(promise: Promise<unknown>, ms = 100): Promise<boolean> {
+  let settled = false;
+  void promise.then(() => { settled = true; }, () => { settled = true; });
+  await new Promise((resolve) => setTimeout(resolve, ms));
+  return settled;
+}
+
+describe("AutomationStudioProjectDatabasePool idle close races", () => {
+  beforeEach(async () => {
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-database-test-"));
+  });
+
+  afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+
+  it("closeAll waits for an idle close the timer has already started", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 20 });
+    const lease = await pool.acquire("project.race");
+    const held = holdClose(lease.database);
+    await lease.release();
+    await waitFor(() => held.started());
+    expect(pool.stats().openProjects).toBe(0);
+
+    const closing = pool.closeAll();
+    expect(await settlesWithin(closing)).toBe(false);
+    held.finish();
+    await closing;
+    await expect(lease.database.get("select 1")).rejects.toThrow(/is closed/);
+    await rm(path.join(rootDir, "projects", "project.race"), { recursive: true });
+  });
+
+  it("closeIdleProject waits for an idle close the timer has already started", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 20 });
+    const lease = await pool.acquire("project.race");
+    const held = holdClose(lease.database);
+    await lease.release();
+    await waitFor(() => held.started());
+
+    const closing = pool.closeIdleProject("project.race");
+    expect(await settlesWithin(closing)).toBe(false);
+    held.finish();
+    await closing;
+    await expect(lease.database.get("select 1")).rejects.toThrow(/is closed/);
+    await rm(path.join(rootDir, "projects", "project.race"), { recursive: true });
+    await pool.closeAll();
+  });
+
+  it("opens a project again only once its idle close has finished", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 20 });
+    const lease = await pool.acquire("project.race");
+    const held = holdClose(lease.database);
+    await lease.release();
+    await waitFor(() => held.started());
+
+    const acquiring = pool.acquire("project.race");
+    expect(await settlesWithin(acquiring)).toBe(false);
+    held.finish();
+    const reopened = await acquiring;
+    expect(reopened.database).not.toBe(lease.database);
+    await expect(lease.database.get("select 1")).rejects.toThrow(/is closed/);
+    await expect(reopened.database.get<{ one: number }>("select 1 as one")).resolves.toEqual({ one: 1 });
+    await reopened.release();
+    await pool.closeAll();
+  });
+
+  it("gives a failed open's error to the lease that asked, not to closeIdleProject or closeAll", async () => {
+    // A file where the project's folder belongs makes the open fail.
+    await mkdir(path.join(rootDir, "projects"), { recursive: true });
+    await writeFile(path.join(rootDir, "projects", "project.blocked"), "not a folder");
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 60_000 });
+
+    const acquiring = pool.acquire("project.blocked");
+    const closingIdle = pool.closeIdleProject("project.blocked");
+    const closingAll = pool.closeAll();
+
+    await expect(acquiring).rejects.toThrow();
+    await expect(closingIdle).resolves.toBeUndefined();
+    await expect(closingAll).resolves.toBeUndefined();
+    expect(pool.stats().openProjects).toBe(0);
   });
 });

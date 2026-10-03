@@ -17,7 +17,15 @@ beforeEach(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "automation-studio-client-gateway-bridge-test-"));
 });
 
+// Closed before its data directory is removed: an idle project database stays open briefly.
+const services: AutomationStudioService[] = [];
+function closedAfterEach(service: AutomationStudioService): AutomationStudioService {
+  services.push(service);
+  return service;
+}
+
 afterEach(async () => {
+  await Promise.all(services.splice(0).map((service) => service.close()));
   await rm(tempRoot, { recursive: true, force: true });
 });
 
@@ -240,7 +248,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
 
   it("creates and finalizes recordings from client-initiated websocket lifecycle messages", async () => {
     const gateway = new ClientGatewayService();
-    const automationStudio = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const automationStudio = closedAfterEach(new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }));
     const project = await automationStudio.createProject({ name: "Open Project" });
     const flow = await automationStudio.createFlow({ projectId: project.id, name: "Recorded Flow" });
     new AutomationStudioClientGatewayBridge({
@@ -277,7 +285,7 @@ describe("AutomationStudioClientGatewayBridge", () => {
 
   it("batches high-frequency client snapshots before finalizing", async () => {
     const gateway = new ClientGatewayService();
-    const automationStudio = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+    const automationStudio = closedAfterEach(new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }));
     const appendBatchSpy = vi.spyOn(automationStudio, "appendRecordingEvents");
     const project = await automationStudio.createProject({ name: "Buffered Project" });
     new AutomationStudioClientGatewayBridge({
@@ -729,7 +737,7 @@ function timelineKinds(recording: Awaited<ReturnType<AutomationStudioService["ge
  */
 async function clientStartInFlight(clientId: string, options: { refuse?: boolean } = {}) {
   const gateway = new ClientGatewayService();
-  const automationStudio = new AutomationStudioService({ dataDir: tempRoot, seedFixture: false });
+  const automationStudio = closedAfterEach(new AutomationStudioService({ dataDir: tempRoot, seedFixture: false }));
   const project = await automationStudio.createProject({ name: "Slow start" });
   let release = () => {};
   const held = new Promise<void>((resolve) => { release = () => resolve(); });

@@ -329,7 +329,7 @@ describe("Automation Studio run inputs at rest", () => {
     const envelopes = (await runtimeEventChunks(dataDir, run.runId)).flatMap((chunk) => chunk.events.filter((event) => event.eventKind === "run_summary"));
     expect(envelopes.length).toBeGreaterThan(0);
     for (const envelope of envelopes) expect(envelope.payload?.inputs).toEqual({ "web.secret.password": AUTOMATION_STUDIO_WITHHELD_VALUE });
-    expect(await filesHolding(dataDir, SUPPLIED_RUN_INPUT)).toEqual([]);
+    expect(await filesHolding(service, dataDir, SUPPLIED_RUN_INPUT)).toEqual([]);
   });
 
   it("runs a queued session with the inputs its run request supplies, never the withheld values its record holds", async () => {
@@ -397,7 +397,7 @@ describe("Automation Studio live-patch reruns and run inputs", () => {
       })]);
       const saved = await service.getRuntimeSession(project.id, run.runId);
       expect(saved?.trace?.attempts.find((attempt) => attempt.nodeId === "gate")).toMatchObject({ status: "failed", inputs: { left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE, note: AUTOMATION_STUDIO_WITHHELD_VALUE } });
-      expect(await filesHolding(dataDir, LIVE_PATCH_NOTE)).toEqual([]);
+      expect(await filesHolding(service, dataDir, LIVE_PATCH_NOTE)).toEqual([]);
     });
   }
 });
@@ -486,7 +486,12 @@ async function runtimeEventChunks(root: string, runId: string): Promise<RuntimeE
   return chunks;
 }
 
-async function filesHolding(root: string, literal: string): Promise<string[]> {
+// Closes the service first: its project database stays open briefly after each
+// operation, and closing it checkpoints the WAL into the database file and removes
+// the WAL and shared-memory files, so the scan reads every file at rest and none
+// vanishes under it.
+async function filesHolding(service: AutomationStudioService, root: string, literal: string): Promise<string[]> {
+  await service.close();
   const needles = [Buffer.from(literal, "utf8"), Buffer.from(literal, "utf16le")];
   const holding: string[] = [];
   for (const file of await filesUnder(root)) {
