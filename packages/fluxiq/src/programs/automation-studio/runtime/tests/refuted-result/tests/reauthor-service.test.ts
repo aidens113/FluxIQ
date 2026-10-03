@@ -481,9 +481,10 @@ describe("refuted-result service composition", () => {
       // anything here, and the run's own repair finishes.
       // The re-author is a build, so its own test is judged before it is proposed
       // (lane D F43: a re-authored Flow is judged on its own test); its two
-      // decisions rerun the carried step and finish (t244); the repaired run is
-      // then verified as before.
-      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification"]);
+      // decisions rerun the carried step and finish (t244); its judge's yes is
+      // confirmed by a second call, as a build-finishing yes always is (murwcmx2,
+      // C-H); the repaired run is then verified as before.
+      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification", "loop_verification"]);
       expect(completed.status).toBe("succeeded");
       const detail = await harness.service.getFlowRunDetail(harness.projectId, completed.runId);
       expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true });
@@ -513,13 +514,15 @@ describe("refuted-result service composition", () => {
 
       // The re-author is a build, so its own test is judged before it is proposed
       // (lane D F43: a re-authored Flow is judged on its own test); its two
-      // decisions rerun the carried step and finish (t244); the repaired run is
-      // then verified as before.
+      // decisions rerun the carried step and finish (t244); its judge's yes is
+      // confirmed by a second call, as a build-finishing yes always is (murwcmx2,
+      // C-H); the repaired run is then verified as before.
       expect(harness.taskKinds).toEqual([
         "loop_verification",
         "loop_verification",
         "evidence_tool_decision",
         "evidence_tool_decision",
+        "loop_verification",
         "loop_verification",
         "loop_verification",
       ]);

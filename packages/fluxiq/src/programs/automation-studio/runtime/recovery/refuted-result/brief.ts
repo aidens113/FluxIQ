@@ -25,6 +25,16 @@
 // It is marked as Core's (`instructionId`, `tags`) so it is never mistaken for
 // something the person wrote, and it is never stored: it exists for one build.
 //
+// **It says up front that the draft's steps have not run (t194-w70).** The
+// draft is seeded from the stored Flow (`../../llm/node-tools/draft-from-flow.ts`),
+// so none of its steps has run in this repair, and the Flow is tested -- and the
+// repair finished -- only by a run of the whole Flow from its start, which
+// needs each of them rerun live first (`../../flow-draft/full-run-required.ts`;
+// Core never runs a carried step itself). Live run murwcmx2's brief said none
+// of this, and its step 5 said to keep the steps that reach the page as they
+// are: the re-author reran only the read it fixed, both rounds stopped
+// untested, and the fix never ran from the Flow's start.
+//
 // **What it deliberately does not name.** Core does not know what a filter
 // condition, a page or a column is called in the bound domain, so the brief
 // speaks of "the step that reads the items" and "its own parameters", and the
@@ -56,7 +66,7 @@ const READ_STEPS: readonly string[] = [
   "2. Where a column holds the wrong kind of value (an address where text was asked for, one field where another was meant), change that step's column mapping so the column holds what the request asked for.",
   "3. Act on the check's findings and advice above. Where the advice names a fix, make it -- but where \"How the read went\" shows the step already pages, deduplicates or filters, change that setting or condition in place instead of adding a step for it. A condition that rejected rows the request wanted is the one to correct.",
   "4. If the step has no parameter that can express a clause, keep the rest of the fix and say which clause in your completion summary rather than dropping it silently.",
-  "5. Change only what the findings require; keep the steps that reach the page as they are unless the findings say they are wrong."
+  "5. Change only what the findings require: the steps that reach the page keep their parameters unless the findings say they are wrong, but each is still rerun live (amend_draft rerun), in the Flow's order, so the whole Flow can be tested."
 ];
 
 /**
@@ -69,7 +79,20 @@ const ACT_STEPS: readonly string[] = [
   "2. Act on the check's findings and advice above: where an act is missing, add the step that does it; where a step did its act differently (another item, option, size or quantity, or once where twice was asked), correct that step's parameters.",
   "3. The Flow stores nothing and that is not what was judged wrong: do not add a step that reads or stores anything unless the request asks for something to be read back.",
   "4. If no step can do an act, keep the rest of the fix and say which act in your completion summary rather than dropping it silently.",
-  "5. Change only what the findings require; keep the steps that did their act as they are."
+  "5. Change only what the findings require: the steps that did their act keep their parameters, but each is still rerun live (amend_draft rerun), in the Flow's order, so the whole Flow can be tested."
+];
+
+/**
+ * Said before the findings: none of the draft's steps has run in this repair,
+ * and how the Flow comes to be tested whole, in the words of the test's own
+ * refusal (`../../flow-draft/full-run-required.ts`). A rerun of a carried step
+ * is put back where its node started in the refuted run, where that run
+ * recorded it (`../../llm/node-tools/step-place.ts`).
+ */
+const NOT_RUN_LINES: readonly string[] = [
+  "None of your draft's steps has run in this repair: they came from the Flow being repaired (not_run_in_this_build), and the Flow is tested -- and this repair finished -- only by a run of the whole Flow from its start.",
+  "So once your change is made, rerun each step of your draft live, in the Flow's order (amend_draft rerun), adding the consequences it would have to its input ([] when it leaves nothing lasting), so it takes its place as a step that ran; a rerun of a carried step is first put back where its node started in the run being repaired, where that run recorded it. A step you rerun with a change is run with that change.",
+  "Then complete: the whole Flow is tested from its start and judged."
 ];
 
 /**
@@ -90,6 +113,8 @@ export function automationStudioReauthorBrief(input: {
 }): AutomationStudioFlowInstruction {
   const lines: string[] = [
     `This build is repair attempt ${input.current.attempt} of at most ${input.maxAttempts}. The Flow you start from (your draft) has already run, and its answer was judged NOT to answer the request. Change the Flow so that it does. Rebuilding the same Flow will produce the same answer and be judged wrong again.`,
+    "",
+    ...NOT_RUN_LINES,
     "",
     "What the last run produced and why it was judged wrong:",
     ...refutationLines(input.current),

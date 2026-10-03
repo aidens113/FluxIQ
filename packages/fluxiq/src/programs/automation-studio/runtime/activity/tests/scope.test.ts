@@ -6,7 +6,7 @@ import { automationStudioActivityHub } from "../default-hub.ts";
 import { emitAutomationStudioActivity } from "../emit.ts";
 import { withAutomationStudioRunActivity } from "../run.ts";
 import { runWithAutomationStudioActivity } from "../scope.ts";
-import { emitAutomationStudioActivityStep } from "../step.ts";
+import { emitAutomationStudioActivityStep } from "../step/index.ts";
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

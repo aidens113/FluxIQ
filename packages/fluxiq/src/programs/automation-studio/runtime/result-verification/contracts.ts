@@ -57,8 +57,10 @@ export type AutomationStudioResultVerdictBasis =
   | "model_unavailable"
   /**
    * The model judged the result not to answer, or could not tell, was asked
-   * once more with the same evidence, and judged that it does. Two different
-   * answers to one question settle nothing, so neither is taken over the other.
+   * once more with the same evidence, and judged that it does -- or, on a
+   * verification that confirms answers (the build-test judge's `confirmAnswer`),
+   * judged that it answers and then that it does not. Two different answers to
+   * one question settle nothing, so neither is taken over the other.
    */
   | "model_disagreed"
   /**
@@ -268,6 +270,25 @@ export type AutomationStudioRunResultSummary = {
    * the test observed of it.
    */
   buildTest?: AutomationStudioBuildTestAccount;
+  /**
+   * The page the run or test ended on, as the domain produced it, screened
+   * (`./result-summary.ts`, `automationStudioResultEndView`). Absent when the
+   * caller held none or it was withheld; a withheld one sets `withheld`.
+   */
+  endView?: AutomationStudioResultEndView;
+};
+
+/**
+ * The view of its target -- for the web domain, the page -- a run or a test
+ * ended on, as the domain produced it (t174-w87). Run `run-murwd8le-79e735a8`'s
+ * judges never saw `Cart (3)`, the coupon's "Collected" or the quantity field,
+ * and one of them invented a quantity that was never committed.
+ */
+export type AutomationStudioResultEndView = {
+  /** What it was taken after: a test's step number, or the node a run ran last. */
+  after?: number | string;
+  /** The domain's view, by its own keys and screened, otherwise as it came. */
+  view: JsonValue;
 };
 
 /**
@@ -417,7 +438,8 @@ export type AutomationStudioResultVerification = {
   observation: string;
   /**
    * The verdict each verification call returned, in the order asked: one, or
-   * two when the first answered anything but `answers`. Verdict words only,
+   * two when the first answered anything but `answers`, or answered `answers` on
+   * a verification that confirms it (`confirmAnswer`). Verdict words only,
    * never the model's prose. Absent when no model was asked.
    */
   verdicts?: AutomationStudioResultVerdict[];
@@ -432,6 +454,21 @@ export type AutomationStudioResultVerification = {
    * `unsure` for the same reason.
    */
   repair?: AutomationStudioResultRepairDirective;
+  /**
+   * On a verification two checks did not settle (`model_disagreed`,
+   * `model_unconfirmed`), the reading of the call that judged
+   * `does_not_answer`: its expected, observed and advice, as screened for that
+   * call's `repair.judgement`. One judge's reading the other call did not
+   * confirm, and nothing more: never a `repair` or a `failure` record, so it
+   * fails no run (`automationStudioResultVerificationFailsRun`) and builds no
+   * runtime repair. A build's repair is told it (`build-test/judge.ts`), because
+   * dropping it sent live run murwcmx2's repair back with only "unverified"
+   * while one call had said which condition to narrow. Absent when no call
+   * judged `does_not_answer`, or that call said nothing beyond its verdict. Like
+   * `repair.judgement`, it is the model's prose and is not recorded on a run
+   * (`run-outcome.ts`).
+   */
+  unconfirmedReading?: NonNullable<AutomationStudioResultRepairDirective["judgement"]>;
   /**
    * Present exactly when the verification fails the run
    * (`automationStudioResultVerificationFailsRun`): what the run must report.

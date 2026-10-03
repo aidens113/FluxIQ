@@ -22,6 +22,17 @@ describe("activityActionKey", () => {
     expect(activityActionKey({ phase: "verifying", detail: { kind: "check", title: "Completion check", status: "started" } })).toBe("check:Completion check");
   });
 
+  // t174-w85 D1 (run-murwd8le, 00019): the result check starts as "Result check started"
+  // and ends as "Result check" (`result-verification/verify.ts`), and the start was left
+  // as an orphan grey "Check result" card above the verdict.
+  it("ties a result check's start to its end, though the two rows carry different titles", () => {
+    const started = activityActionKey({ phase: "verifying", detail: { kind: "check", title: "Result check started", status: "started" } });
+    const ended = activityActionKey({ phase: "verifying", detail: { kind: "check", title: "Result check", status: "failed", text: "Not confirmed." } });
+    expect(started).not.toBeNull();
+    expect(ended).toBe(started);
+    expect(activityActionKey({ phase: "verifying", detail: { kind: "check", title: "Completion check", status: "started" } })).not.toBe(started);
+  });
+
   it("is null for rows that are their own card, or no card", () => {
     expect(activityActionKey({ phase: "running" })).toBeNull();
     expect(activityActionKey({ phase: "running", detail: { kind: "step", title: "Open the listing", status: "started", ref: "n2" } })).toBeNull();

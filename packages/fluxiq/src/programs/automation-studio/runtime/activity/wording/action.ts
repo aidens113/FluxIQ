@@ -7,7 +7,12 @@ type Phrase = {
   named?: (name: string) => string;
   /** The words the call types or looks for, with the control's name when there is one. */
   said?: (text: string, name: string | undefined) => string;
-  also?: { word: RegExp; plain: string; named?: (name: string) => string };
+  /**
+   * A second sentence for a word later in the id. `byWords` names it only from
+   * the domain's own words for the call, never from an element it carries: a
+   * list read's subject is what it reads, not a control.
+   */
+  also?: { word: RegExp; plain: string; named?: (name: string) => string; byWords?: true };
 };
 
 /** What a call names, in words a person reads (`AutomationStudioLlmEvidenceCallWords`): the control, and the words it types or looks for. */
@@ -42,7 +47,10 @@ const PHRASES: readonly Phrase[] = [
   { verb: "select", plain: "Choosing an option", named: (name) => `Choosing an option in ${quoted(name)}` },
   { verb: "check", plain: "Ticking a box", named: (name) => `Ticking ${quoted(name)}` },
   { verb: "upload", plain: "Adding a file", named: (name) => `Adding a file to ${quoted(name)}` },
-  { verb: "read", plain: "Reading from the page", also: { word: /^(list|rows|records|items)$/u, plain: "Reading the list" } },
+  // A list read named nothing: in a build's test, where every other step's card
+  // named its subject, its card read a bare "Test run" (t194,
+  // `run-murwcmx2-a1c6edf7`, screenshot 00016). The domain says what it reads.
+  { verb: "read", plain: "Reading from the page", also: { word: /^(list|rows|records|items)$/u, plain: "Reading the list", named: (name) => `Reading the list of ${quoted(name)}`, byWords: true } },
   { verb: "describe", plain: "Reading the details of a control", named: (name) => `Reading the details of ${quoted(name)}` },
   {
     verb: "detect",
@@ -178,7 +186,7 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
     // The domain's own reading of the call first (the control a handle names,
     // the words it types), then the element a resolved node carries.
     const name = automationStudioActivityHumanLabel(input.words?.target, 60)
-      ?? (verb.verb === "navigate" ? pageName(input.parameters) : verb.named || verb.also?.named ? elementName(input.parameters) : undefined);
+      ?? (verb.verb === "navigate" ? pageName(input.parameters) : verb.named || (verb.also?.named && !verb.also.byWords) ? elementName(input.parameters) : undefined);
     if (verb.also && words.slice(index + 1).some((rest) => verb.also!.word.test(rest))) return name && verb.also.named ? verb.also.named(name) : verb.also.plain;
     const text = saidText(input.words?.text);
     if (text !== undefined && verb.said) return verb.said(text, name);

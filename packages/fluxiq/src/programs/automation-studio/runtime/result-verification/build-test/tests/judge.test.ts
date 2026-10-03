@@ -212,14 +212,15 @@ describe("a judge under the build's purse (t234)", () => {
     // Priced on the reply alone, at a rate that makes the default 8,000-token allowance the $0.011 hold run 38 refused.
     const outputRateUsd = 0.0112 / 8_000;
     const asked: number[] = [];
-    const llm = scripted(["yes"]);
+    const llm = scripted(["yes", "yes"]);
     const provider: AutomationStudioLlmProvider = { ...llm.provider, estimateCostUsd: ({ outputTokens }) => { asked.push(outputTokens); return outputTokens * outputRateUsd; } };
     const purse = purseWith(0.009);
 
     const verdict = await automationStudioLlmBuildPurseScope(purse, () => judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: purse.leftUsd() } }));
 
     expect(verdict).toMatchObject({ verdict: "yes" });
-    expect(llm.seen).toHaveLength(1);
+    // The yes is confirmed by a second call (live run murwcmx2); two judge-sized holds still fit in $0.009.
+    expect(llm.seen).toHaveLength(2);
     expect(llm.seen[0]?.tokenLimits.maxOutputTokens).toBe(AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS);
     expect(asked.length).toBeGreaterThan(0);
     expect(new Set(asked)).toEqual(new Set([AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS]));
@@ -227,7 +228,7 @@ describe("a judge under the build's purse (t234)", () => {
   });
 
   it("a reply allowance a resolver named smaller than the judge's cap is kept", async () => {
-    const { provider, seen } = scripted(["yes"]);
+    const { provider, seen } = scripted(["yes", "yes"]);
     await judge(PICKUP_CART, { provider, verify: (request) => verifyAutomationStudioRunResult({ ...request, tokenLimits: { maxOutputTokens: 500 } }) })({ summary: run40Summary() });
     expect(seen[0]?.tokenLimits.maxOutputTokens).toBe(500);
   });
@@ -241,5 +242,107 @@ describe("a judge under the build's purse (t234)", () => {
 
     expect(seen).toHaveLength(1);
     expect(verdict).toMatchObject({ verdict: "not_judged", why: expect.stringContaining("spending limit"), spent: { totalTokens: USAGE.totalTokens, estimatedCostUsd: USAGE.estimatedCostUsd } });
+  });
+});
+
+// Live run murwcmx2: the judge's first call judged `no` with its advice; the
+// second judged `no` too, but its `changed` ran to 581 characters and the whole
+// reply was refused. Both halves of that are fixed: a long text is read clipped
+// (so two noes refute), and a reading of a call that judged `no` reaches the
+// build on an unsettled `unknown` instead of being dropped.
+describe("run murwcmx2: the judge's reading reaches the build", () => {
+  const FIRST = {
+    expected: "Every wireless earbuds pair under $50 across all pages, excluding sponsored placements and accessories.",
+    observed: "The name condition alone left out earbuds sold with a charging case.",
+    changed: "In s7's extractList.where, narrow the name condition so it excludes only accessory items."
+  };
+  const LONG_CHANGED = "The name condition in s7 (extractList.where name contains ear tips/charging case/eartips, not) is over-broad: it excludes earbuds that merely include a charging case. Narrow it to accessory-only titles (e.g. require the title to start with or be dominated by accessory terms, or exclude only when the item is not earbuds). The ad condition (data-ad-id absent) also removed genuine earbuds; verify the ad attribute selector or use a more specific sponsored marker. Also confirm the 5-page stop is the true end of results, not a page limit, since the instructions require every page.";
+
+  /** A provider answering each call with its own diagnosis. */
+  const answering = (...diagnoses: Record<string, unknown>[]): AutomationStudioLlmProvider => {
+    let call = 0;
+    return {
+      metadata: { provider: "mock", model: "debug-model" },
+      runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: diagnoses[call++] ?? {} }, usage: USAGE })
+    };
+  };
+
+  it("two noes refute although the second's advice ran past its bound: a no, with the first call's reading", async () => {
+    const provider = answering({ answersRequest: "no", ...FIRST }, { answersRequest: "no", expected: FIRST.expected, changed: LONG_CHANGED });
+    const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(verdict).toMatchObject({ verdict: "no", expected: FIRST.expected, observed: FIRST.observed, advice: FIRST.changed });
+    expect(verdict.spent.calls).toBe(2);
+  });
+
+  it("a no the second call did not confirm is unknown, carrying that no's expected, observed and advice as one unconfirmed reading", async () => {
+    const provider = answering({ answersRequest: "no", ...FIRST }, { answersRequest: "unknown" });
+    const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(verdict).toMatchObject({ verdict: "unknown", why: expect.stringContaining("nor were both that it does not"), unconfirmedReading: { expected: FIRST.expected, observed: FIRST.observed, advice: FIRST.changed } });
+    expect(verdict).not.toHaveProperty("advice");
+  });
+
+  it("an unknown that no call judged no carries no reading", async () => {
+    const verdict = await judge(PICKUP_CART, { provider: answering({ answersRequest: "unknown", observed: "unclear" }, { answersRequest: "unknown" }) })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(verdict.verdict).toBe("unknown");
+    expect(verdict).not.toHaveProperty("unconfirmedReading");
+  });
+});
+
+// Live run murwcmx2 (build judges 0032 and 0051): one request, answered `no`
+// once and `yes` once; the one `yes` finished the build on rows the playback
+// judge refused. The build-test judge confirms a first yes with a second call.
+describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
+  const NO = {
+    answersRequest: "no",
+    expected: "Every wireless earbuds pair under $50; an item sold with a charging case is still earbuds.",
+    observed: "Three earbuds listed 'with Wireless Charging Case' were left out by the name condition.",
+    changed: "Narrow the name condition so it excludes only accessory items."
+  };
+  const answering = (...diagnoses: Record<string, unknown>[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } => {
+    const seen: AutomationStudioLlmTaskRequest[] = [];
+    return { seen, provider: { metadata: { provider: "mock", model: "debug-model" }, runTask: async (request) => { const diagnosis = diagnoses[seen.length] ?? {}; seen.push(request); return { response: { kind: "diagnosis", summary: "Judged.", diagnosis }, usage: USAGE }; } } };
+  };
+
+  it("yes, yes is yes, and both calls are paid for", async () => {
+    const { provider, seen } = answering({ answersRequest: "yes" }, { answersRequest: "yes" });
+    const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(seen).toHaveLength(2);
+    expect(verdict).toEqual({ verdict: "yes", spent: { inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.002, calls: 2 } });
+    // The same evidence both times, each call under half of what the build has left.
+    expect(seen[1]?.context).toEqual(seen[0]?.context);
+    expect(seen.map((call) => call.maxEstimatedCostUsd)).toEqual([0.1, 0.1]);
+  });
+
+  it("yes, then no, is unknown carrying the no's reading, so the build repairs instead of finishing", async () => {
+    const { provider } = answering({ answersRequest: "yes" }, NO);
+    const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(verdict).toMatchObject({ verdict: "unknown", unconfirmedReading: { expected: NO.expected, observed: NO.observed, advice: NO.changed }, spent: { calls: 2 } });
+  });
+
+  it("yes, then unknown or a call that did not come back, leaves the yes standing", async () => {
+    for (const second of [{ answersRequest: "unknown" }, {}]) {
+      const { provider } = answering({ answersRequest: "yes" }, second);
+      const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+      expect(verdict).toMatchObject({ verdict: "yes", spent: { calls: 2 } });
+    }
+  });
+
+  it("asks verify to confirm a yes; the runtime result check, called without it, asks once", async () => {
+    const calls: AutomationStudioResultVerificationRequest[] = [];
+    await judge(PICKUP_CART, { verify: async (request) => { calls.push(request); return { outcome: { schemaVersion: "automation-studio.result-verification.v1", performed: true, verdict: "answers", basis: "model", code: "c", reason: "r", observation: "o" }, interventions: [] }; } })({ summary: run40Summary() });
+    expect(calls[0]?.confirmAnswer).toBe(true);
+    const { provider, seen } = answering({ answersRequest: "yes" }, NO);
+    const report = await verifyAutomationStudioRunResult({ projectId: "project-1", flowId: "flow-1", runId: "run-1", summary: run40Summary(), instructions: [instruction(PICKUP_CART)], deniedEvidenceKeys: DENIED, provider });
+    expect(seen).toHaveLength(1);
+    expect(report.outcome).toMatchObject({ verdict: "answers", calls: 1 });
+  });
+
+  it("a confirming call the purse refuses leaves the first yes standing, and its spend is returned", async () => {
+    const llm = answering({ answersRequest: "yes" }, NO);
+    const provider: AutomationStudioLlmProvider = { ...llm.provider, estimateCostUsd: () => (llm.seen.length === 0 ? 0.05 * AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD : 0.5 * AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD) };
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, carriedUsd: 0.9 * AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD });
+    const verdict = await automationStudioLlmBuildPurseScope(purse, () => judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: purse.leftUsd() } }));
+    expect(llm.seen).toHaveLength(1);
+    expect(verdict).toMatchObject({ verdict: "yes", spent: { totalTokens: USAGE.totalTokens, calls: 2 } });
   });
 });

@@ -13,6 +13,13 @@
 // every other pair that is not a `yes` first leaves it `unverified`. A first
 // call that gave no answer at all is not repeated and fails closed.
 //
+// **A build's test confirms a `yes` as well (`confirmAnswer`).** The build-test
+// judge's `yes` finishes a build, and in live run murwcmx2 one `yes` to a
+// request answered `no` before finished it on rows the playback judge refused.
+// A request that sets `confirmAnswer` asks a first `yes` once more with the same
+// evidence; a second `no` leaves it unsure (`agreement.ts`). The runtime result
+// check does not set it, and a first `yes` there still stands on one call.
+//
 // **Core's own counts are asked first and cost nothing.** A run whose every row
 // was refused, or whose rows lack a value their own schema requires, is settled
 // before a provider is even resolved.
@@ -103,6 +110,12 @@ export type AutomationStudioResultVerificationRequest = {
   runBudget?: AutomationStudioLlmRunBudgetLedger | undefined;
   signal?: AbortSignal | undefined;
   now?: (() => number) | undefined;
+  /**
+   * True to confirm a first `answers` with a second call, as a first answer of
+   * anything else already is (`agreement.ts`). Set only by the build-test judge,
+   * whose `yes` finishes a build; the runtime result check leaves it unset.
+   */
+  confirmAnswer?: boolean | undefined;
 };
 
 /** The outcome, and the intervention record of each call made: none, one, or two. */
@@ -136,8 +149,9 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
     };
   }
   emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
+  const confirmAnswer = request.confirmAnswer === true;
   const first = await askOnce(request, provider, 1);
-  if (!automationStudioResultVerificationAskAgain(first.verification)) {
+  if (!automationStudioResultVerificationAskAgain(first.verification, { confirmAnswer })) {
     return said({ outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification }), performed: true }, interventions: [first.intervention] });
   }
   const second = await askOnce(request, provider, 2);
@@ -147,7 +161,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
     ? { ...second.intervention, interventionId: `${second.intervention.interventionId}.2` }
     : second.intervention;
   return said({
-    outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification, second: second.verification }), performed: true },
+    outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification, second: second.verification, confirmAnswer }), performed: true },
     interventions: [first.intervention, secondIntervention]
   });
 }

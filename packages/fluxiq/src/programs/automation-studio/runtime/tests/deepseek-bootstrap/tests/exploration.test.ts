@@ -20,14 +20,15 @@ describe("creating a Flow through an exploration, with no grant", () => {
 
     expect(run.failure).toBeUndefined();
     expect(run.result).toMatchObject({ status: "proposed" });
-    // The caller's key paid for all three decisions and the judge's one call, one release per call: the bad reply did not
-    // end the build. A Flow the model says is ready is judged (F43, `flow-bootstrap/unfinished-build/phases.ts`), and this
-    // judge says yes at once, so it is asked once (`result-verification/verify.ts` asks again only on anything but yes).
+    // The caller's key paid for all three decisions and the judge's two calls, one release per call: the bad reply did not
+    // end the build. A Flow the model says is ready is judged (F43, `flow-bootstrap/unfinished-build/phases.ts`), and a
+    // yes that would finish a build is asked once more with the same evidence before it stands (t194-w71, live run
+    // murwcmx2: one lone yes finished a build its other judges refuted; `result-verification/verify.ts` `confirmAnswer`).
     expect(run.sentIterations).toEqual([1, 2, 3]);
-    expect(run.judgeRequests).toHaveLength(1);
-    // What it judged is the test of the whole Flow, which ran the one step added (t244).
-    expect(run.judgeRequests[0]?.stepCount).toBe(1);
-    expect(run.revealed).toHaveLength(4);
+    expect(run.judgeRequests).toHaveLength(2);
+    // What it judged is the test of the whole Flow, which ran the one step added (t244), both times.
+    expect(run.judgeRequests.map((request) => request.stepCount)).toEqual([1, 1]);
+    expect(run.revealed).toHaveLength(5);
     expect(run.stored?.evidenceTrace?.map((step) => step.decision)).toEqual(["unusable", "tool_call", "complete"]);
     // A bad reply names no tool and carries no content, but it does say what
     // was wrong with it: the stored trace keeps the result code, so a reader of
@@ -39,7 +40,7 @@ describe("creating a Flow through an exploration, with no grant", () => {
     expect(run.stored?.evidenceTrace?.[0]?.at).toEqual(expect.any(Number));
     expect(run.stored?.evidenceTrace?.[1]).toMatchObject({ iteration: 2, callId: "call.2", toolId: LOOK_TOOL_ID });
     // The judge's call is paid for and counted, but apart from the decisions: never in `providerCallCount`.
-    expect(run.stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 3, additionalProviderCallCount: 1, totalProviderCallCount: 4, decisionCount: 3, toolCallCount: 1 });
+    expect(run.stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 3, additionalProviderCallCount: 2, totalProviderCallCount: 5, decisionCount: 3, toolCallCount: 1 });
   }, 60_000);
 
   // The fake endpoint is entered only after the key was released for the call,
@@ -49,11 +50,11 @@ describe("creating a Flow through an exploration, with no grant", () => {
 
     expect(run.failure).toBeUndefined();
     expect(run.result).toMatchObject({ status: "proposed" });
-    // Three decisions and the judge's one call, each released once.
+    // Three decisions and the judge's two calls (a finishing yes is confirmed, t194-w71), each released once.
     expect(run.sentIterations).toEqual([1, 2, 3]);
-    expect(run.judgeRequests).toHaveLength(1);
-    expect(run.revealed).toHaveLength(4);
-    expect(run.stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 3, additionalProviderCallCount: 1, totalProviderCallCount: 4, decisionCount: 3 });
+    expect(run.judgeRequests).toHaveLength(2);
+    expect(run.revealed).toHaveLength(5);
+    expect(run.stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 3, additionalProviderCallCount: 2, totalProviderCallCount: 5, decisionCount: 3 });
   }, 30_000);
 
   // **The guard stops this, and until 2026-09-28 it could not.** It used to stop
@@ -173,11 +174,11 @@ describe("creating a Flow through an exploration, with no grant", () => {
 
     expect(run.failure).toBeUndefined();
     expect(run.sentIterations).toHaveLength(5);
-    // Five decisions at 10,000 in and 2,000 out, and the judge's one call at 400 and 40: the judge's spend is the build's
-    // too (F43), so it is in the totals, though not among the decisions.
-    expect(run.judgeRequests).toHaveLength(1);
-    expect(run.result?.accounting).toMatchObject({ inputTokens: 50_400, outputTokens: 10_040, totalTokens: 60_440 });
-    expect(run.stored?.accounting).toMatchObject({ totalTokens: 60_440 });
+    // Five decisions at 10,000 in and 2,000 out, and the judge's two calls at 400 and 40 each (a finishing yes is
+    // confirmed, t194-w71): the judge's spend is the build's too (F43), so it is in the totals, though not among the decisions.
+    expect(run.judgeRequests).toHaveLength(2);
+    expect(run.result?.accounting).toMatchObject({ inputTokens: 50_800, outputTokens: 10_080, totalTokens: 60_880 });
+    expect(run.stored?.accounting).toMatchObject({ totalTokens: 60_880 });
   }, 60_000);
 
   it("names the ending of an exploration that ran out after more than sixteen decisions", async () => {

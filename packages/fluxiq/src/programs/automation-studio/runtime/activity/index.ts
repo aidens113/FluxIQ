@@ -15,7 +15,7 @@ export { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "./limits.ts";
 export { observeAutomationStudioEvidenceLoop } from "./observer.ts";
 export { withAutomationStudioRunActivity } from "./run.ts";
 export { runWithAutomationStudioActivity } from "./scope.ts";
-export { emitAutomationStudioActivityStep } from "./step.ts";
+export { automationStudioActivityStepNumbers, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepRecovering } from "./step/index.ts";
 export { emitAutomationStudioActivityThought } from "./thought.ts";
 export {
   automationStudioActivityAction,

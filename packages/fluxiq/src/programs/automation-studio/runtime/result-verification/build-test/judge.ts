@@ -4,12 +4,19 @@
 // It is the same call, not a second judge: `verifyAutomationStudioRunResult`
 // with a summary that carries `buildTest` (`./summary.ts`), under the same
 // deadline (`../deadline.ts`), asked again on anything but yes and reconciled
-// the same way (`../agreement.ts`). What is new is only how its outcome is read
-// by a build:
+// the same way (`../agreement.ts`). Two things differ. Its first yes is asked
+// again too (`confirmAnswer`), because a yes finishes the build: in live run
+// murwcmx2 build judges 0032 and 0051 got the same request but for one step
+// number, answered no and then yes, and the one yes finished the build on rows
+// the playback judge refused. And its outcome is read as a build's verdict:
 //
-//   answers                                           -> yes
+//   answers (twice, or a second call that said nothing) -> yes
+//   answers, then does_not_answer                     -> unknown, with the second
+//                                                         call's reading, unconfirmed
 //   does_not_answer that fails a run                  -> no, with the judgement and Core's finding codes
-//   unsure, or a second ask that did not settle it     -> unknown
+//   unsure, or a second ask that did not settle it     -> unknown, with the
+//                                                         reading of a call that
+//                                                         judged no, unconfirmed
 //   not performed (no model), or the deadline passed  -> not_judged
 //   a call the build's purse would not pay for        -> not_judged, saying the spending limit stopped it
 //
@@ -17,9 +24,11 @@
 // cost left is not asked at all. A build that runs under its purse
 // (`../../llm/build-purse/run.ts`, t234) has each judge call held there at its
 // true worst case, so the judge sets no cap of its own; one made outside any
-// purse is still capped at half of what is left per call, as verify may ask
-// twice. A refused call never surfaces as a throw or as an unsure verdict: the
-// test was not judged, and the reason says the money ran out. A cancelled
+// purse is still capped at half of what is left per call, as verify asks twice
+// after any first answer. A refused call never surfaces as a throw or as an
+// unsure verdict: the test was not judged, and the reason says the money ran
+// out -- except a refused confirmation of a first yes, which, like any second
+// call that said nothing, leaves that yes standing. A cancelled
 // build is not a verdict: the cancellation is thrown, for the phases to end the
 // build as cancelled.
 
@@ -40,7 +49,7 @@ import { automationStudioBuildTestUntestedCarried } from "./summary.ts";
 /** What the judge's calls cost. */
 export type AutomationStudioBuildTestJudgeSpend = {
   inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number;
-  /** Provider calls made: verify asks once, and again when the first answer is not yes (one intervention each). A build counts them with its other calls outside the loop. */
+  /** Provider calls made: verify asks once, and again after any first answer the model gave, yes included (one intervention each). A build counts them with its other calls outside the loop. */
   calls: number;
 };
 
@@ -62,7 +71,17 @@ export type AutomationStudioBuildTestRecordCounts = { stored: number; refused: n
  */
 export type AutomationStudioBuildTestVerdict =
   | { verdict: "yes"; spent: AutomationStudioBuildTestJudgeSpend }
-  | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; spent: AutomationStudioBuildTestJudgeSpend }
+  | {
+    verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[];
+    /**
+     * Only on an `unknown` two checks did not settle, where one call judged the
+     * test not to do what was asked: that call's expected, observed and advice
+     * (`AutomationStudioResultVerification.unconfirmedReading`). One judge's
+     * reading the other call did not confirm -- never a `no`.
+     */
+    unconfirmedReading?: { expected?: string; observed?: string; advice?: string };
+    spent: AutomationStudioBuildTestJudgeSpend;
+  }
   | { verdict: "no"; expected?: string; observed?: string; advice?: string; stillAchievable?: "yes" | "no" | "unknown"; findings: string[]; records: AutomationStudioBuildTestRecordCounts; spent: AutomationStudioBuildTestJudgeSpend };
 
 /** One question to the judge: the test's summary, and what the build has left to spend. */
@@ -114,7 +133,9 @@ export function automationStudioBuildTestJudge(deps: {
         instructions: deps.instructions,
         ...(deps.deniedEvidenceKeys ? { deniedEvidenceKeys: deps.deniedEvidenceKeys } : {}),
         ...(deps.provider ? { provider: deps.provider } : {}),
-        // Under a purse each call is held at its true worst case there. Outside one, verify may ask twice (`../verify.ts`), each call under this cap: half each, so the judgement never spends more than the build has left.
+        // A yes finishes the build, so it is confirmed by a second call like any other answer (`../agreement.ts`).
+        confirmAnswer: true,
+        // Under a purse each call is held at its true worst case there. Outside one, verify asks twice after any answer (`../verify.ts`), each call under this cap: half each, so the judgement never spends more than the build has left.
         ...(maxCostUsd !== undefined && !purse ? { maxEstimatedCostUsd: maxCostUsd / 2 } : {}),
         ...(deps.signal ? { signal: deps.signal } : {}),
         ...(deps.now ? { now: deps.now } : {})
@@ -123,7 +144,9 @@ export function automationStudioBuildTestJudge(deps: {
     if (deps.signal?.aborted) throw deps.signal.reason ?? new DOMException("The build was cancelled.", "AbortError");
     // A call the purse refused reaches verify as a harness failure, which it reads as an unsure verdict; the judge says what it was.
     const refused = purse?.refusal !== undefined && purse.refusal !== refusedBefore ? purse.refusal : undefined;
-    if (refused) return { verdict: "not_judged", why: refusedSaid(refused), ...carried, spent: bounded.settled ? spentBy(bounded.value.interventions) : { ...NOTHING_SPENT } };
+    // A refused confirmation of a first yes contradicts nothing (`../agreement.ts`): the yes stands, and is read below.
+    const yesStood = bounded.settled && bounded.value.outcome.performed && bounded.value.outcome.verdict === "answers";
+    if (refused && !yesStood) return { verdict: "not_judged", why: refusedSaid(refused), ...carried, spent: bounded.settled ? spentBy(bounded.value.interventions) : { ...NOTHING_SPENT } };
     if (!bounded.settled) {
       // An abandoned call's spend is not known: it is still running, and its
       // interventions arrive only with its answer.
@@ -151,7 +174,9 @@ export function automationStudioBuildTestJudge(deps: {
         spent
       };
     }
-    return { verdict: "unknown", why: outcome.reason, ...carried, spent };
+    // An unsettled check keeps the reading of the call that judged no (live run murwcmx2: the repair was told only "unverified").
+    const reading = outcome.unconfirmedReading;
+    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), spent };
   };
 }
 

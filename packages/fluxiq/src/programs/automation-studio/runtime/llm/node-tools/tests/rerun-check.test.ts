@@ -46,8 +46,10 @@ function requests(options: { ranWith?: boolean } = {}) {
   return { accepted, executeTool };
 }
 
-const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof requests>["executeTool"]) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") }
+// The instruction's read names a1 ("confirm everyone ...") lasting, as the service asks it (t174-w83); `lasting: null` is a build with no reading of the instruction.
+const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof requests>["executeTool"], lasting: ReadonlySet<string> | null = new Set(["a1"])) => runAutomationStudioLlmEvidenceLoop({
+  tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") },
+  ...(lasting ? { lastingActs: async () => lasting } : {})
 });
 const confirmAmara = { kind: "tool_call", callId: "confirm-amara-1", toolId: "press", input: { target: "Confirm Amara" }, add: true, act: "a1" };
 const rerun = (target: string, more: JsonObject[] = []) => ({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { target } }, ...more] });
@@ -157,5 +159,20 @@ describe("a rerun of a step whose act was already done while building", () => {
 
     expect(site.executeTool.mock.calls.map(([call]) => call.value.replay ?? null)).toEqual([null, "reset", null]);
     expect([...site.accepted].sort()).toEqual(["Amara", "Tom"]);
+  });
+
+  // Merged with t174-w83 (2026-10-03): a rerun is a check exactly when the dry run would check the step. A build whose
+  // instruction read named no lasting act, and whose step declared nothing lasting, runs the rerun as asked, as its
+  // dry run would replay the step.
+  it("runs the rerun as asked when neither the step's declaration nor the instruction's read says its act lasts", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(confirmAmara)
+      .mockResolvedValueOnce(rerun("Confirm Tom"))
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const site = requests();
+
+    await loop(decide, site.executeTool, null).catch(() => undefined);
+
+    expect(site.executeTool.mock.calls.map(([call]) => call.value.replay ?? null)).toEqual([null, "reset", null]);
   });
 });

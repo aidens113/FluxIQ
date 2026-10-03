@@ -175,7 +175,7 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(requests).toHaveLength(2);
     expect(outcome).toMatchObject({ kind: "finished", rounds: 2, judged: { verdict: "yes" } });
     expect(requests[1]!.repair!.resume).toMatchObject({ stopped: "judged_wrong", judgement: { stopped: "judged_wrong", test: "replayed_clean", judge: { verdict: "unknown", findings: ["the test read no cart"] } } });
-    expect(announced[1]).toBe("repairing: Repairing the Flow: The Flow was not judged to do what you asked: the test read no cart. Repairing it live, to test it from its start and judge it again.");
+    expect(announced[1]).toBe("repairing: Repairing the Flow: The Flow is not yet confirmed to do what you asked: the test read no cart. Repairing it live, to test it from its start and check it again.");
   });
 
   it("is not the build's result when its Flow was not judged, and repairs it", async () => {
@@ -208,7 +208,7 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(requests[1]!.repair!.resume.judgement).toMatchObject({ stopped: "judged_wrong", test: "not_tested", judge: { verdict: "not_judged" } });
     const judge = requests[1]!.repair!.resume.judgement!.judge as { findings: string[] };
     expect(judge.findings[0]).toMatch(/^the judge's yes was about a test of another version of the Flow, not of the Flow as it now stands, so the Flow as it stands was not judged/u);
-    expect(announced[1]).toMatch(/^repairing: Repairing the Flow: The Flow was not judged to do what you asked: the judge's yes was about a test of another version/u);
+    expect(announced[1]).toMatch(/^repairing: Repairing the Flow: The Flow is not yet confirmed to do what you asked: the judge's yes was about a test of another version/u);
   });
 
   it("is not the build's result on a yes about no test at all", async () => {

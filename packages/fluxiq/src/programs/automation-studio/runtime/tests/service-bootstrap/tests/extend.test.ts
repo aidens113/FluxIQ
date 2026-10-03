@@ -251,9 +251,10 @@ describe("extending a Flow that already exists", () => {
     // The model was asked, and the loop it was asked through is the build's own.
     expect(requests.some((request) => request.taskKind === "evidence_tool_decision")).toBe(true);
     // And the extended Flow was tested whole from its start -- both steps run
-    // again by the build's test -- and judged, once, after the model said it was ready.
+    // again by the build's test -- and judged after the model said it was ready:
+    // one yes, confirmed by a second call, as a build-finishing yes always is (murwcmx2, C-H).
     expect(replays.filter((call) => call.value.replay !== "reset").map((call) => call.value.node)).toEqual([OPEN_ID, READ_ID]);
-    expect(requests.filter(isJudgeRequest)).toHaveLength(1);
+    expect(requests.filter(isJudgeRequest)).toHaveLength(2);
     expect(isJudgeRequest(requests.at(-1)!)).toBe(true);
   }, 60_000);
 

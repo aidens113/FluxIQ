@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityActionOf, type ActivityAction, type ActivityActionEvent, type ActivityActionKind } from "../index.ts";
+import { ACTIVITY_RESULT_CHECK_LABELS, activityActionOf, type ActivityAction, type ActivityActionEvent, type ActivityActionKind } from "../index.ts";
 
 const RUN_NODE = "core.run_node";
 const DOTTED = /[A-Za-z_][\w-]*\.[A-Za-z_][\w-]*/u;
@@ -72,7 +72,7 @@ describe("activityActionOf: every kind", () => {
     ["permission", tool("Opening a page", "Result: example.permission_required")],
     ["draft", { phase: "building", detail: { kind: "tool", title: "Updating the draft Flow", status: "started", ref: "core.flow_draft" } }],
     ["test", { phase: "verifying", detail: { kind: "check", title: "Completion check", status: "started" } }],
-    ["test", tool("Clicking “Next”", "Result: core.replay.replayed · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying")],
+    ["click", tool("Clicking “Next”", "Result: core.replay.replayed · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying")],
     ["test", { phase: "verifying", detail: { kind: "note", title: "Putting the page back to where the Flow starts", status: "started", ref: RUN_NODE } }],
     ["test", tool("Working on the page", undefined, "succeeded", "core.dry_run")],
     ["repair", { phase: "repairing", detail: { kind: "step", title: "Trying another way to reach the list", status: "started" } }],
@@ -205,7 +205,22 @@ describe("activityActionOf: no output carries an id or a result code", () => {
 describe("activityActionOf: looks name what they look at (t193)", () => {
   it("reads Core's look-ups as looks, named by what they look up", () => {
     expect(outputsOf(activityActionOf(tool("Looking up how to use “Type”", undefined, "started", "core.describe_nodes")))).toEqual(["look", "Type", "working", ""]);
-    expect(outputsOf(activityActionOf(tool("Looking again at what an earlier step found", "Result: core.recall.succeeded", "succeeded", "core.recall_result")))).toEqual(["look", "", "done", ""]);
+    expect(outputsOf(activityActionOf(tool("Looking again at what “open store picker 1” found", "Result: core.recall.restored", "succeeded", "core.recall_result")))).toEqual(["recall", "open store picker 1", "done", ""]);
+  });
+
+  // t194 (`run-murwcmx2-a1c6edf7`, 00012): a recall that found nothing read
+  // "Look · Didn't work: it wasn't on the page". It looks at no page; it reads
+  // back an earlier result, and says that nothing went by the name it gave.
+  it("reads a recall as a recall, and one that found nothing as no page miss", () => {
+    expect(outputsOf(activityActionOf(tool("Looking again at what an earlier step found", "Result: core.recall.not_found", "succeeded", "core.recall_result")))).toEqual(["recall", "", "failed", "no earlier result goes by that name"]);
+  });
+
+  // t194 (`run-murwcmx2-a1c6edf7`, 00016): the test's list read was a bare "Test run".
+  // A test run's step reads by its action, marked as part of a test (D4, below).
+  it("names a test run's list read by what it reads", () => {
+    const read = activityActionOf(tool("Reading the list of “name, price and rating”", "Result: core.replay.replayed · Node: web.output.dom-extract_list", "succeeded", RUN_NODE, "verifying"));
+    expect(outputsOf(read)).toEqual(["read", "name, price and rating", "done", ""]);
+    expect(read?.testing).toBe(true);
   });
 
   it("names a look by the words it looks for, in their quotes, when it names no control", () => {
@@ -232,7 +247,7 @@ describe("activityActionOf: what each card says (t193 chat wording)", () => {
 
   it("keeps a build's dry run and its completion check as a test run", () => {
     expect(activityActionOf({ phase: "verifying", detail: { kind: "check", title: "Completion check", status: "started" } })?.kind).toBe("test");
-    expect(activityActionOf(tool("Clicking “Next”", "Result: core.replay.replayed · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying"))?.kind).toBe("test");
+    expect(activityActionOf(tool("Working on the page", undefined, "succeeded", "core.dry_run"))?.kind).toBe("test");
   });
 
   // 00020 (`S/0090`): a press refused because the call named no handle read
@@ -252,5 +267,60 @@ describe("activityActionOf: what each card says (t193 chat wording)", () => {
     expect(activityActionOf(tool("Opening “Home page”", "Node: web.output.browser-navigate"))?.target).toBe("Home page");
     // An address path is shown only on a navigate: a click's quoted id stays hidden.
     expect(activityActionOf(tool("Clicking “/web.output.dom-click”", "Node: web.output.dom-click"))?.target).toBeNull();
+  });
+});
+
+// t174-w85 (run-murwd8le-79e735a8, UI review t174-w81): cards that said nothing
+// a person could use, and a verdict that contradicted the page.
+describe("activityActionOf: a test run's steps name their action (D4)", () => {
+  // 00011, 00014: every step of the build's test read "Test run · ×" or "Test run ·
+  // Autumn Mega Sale: up to 70…" (the search box's placeholder, not what was typed).
+  it("reads a dry run's step by its verb and target, marked as part of a test", () => {
+    const pressed = activityActionOf(tool("Clicking “×”", "Result: core.replay.replayed · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying"));
+    expect(pressed).toEqual({ kind: "click", target: "×", outcome: "done", why: null, testing: true });
+    const typed = activityActionOf(tool('Typing "Voltbay USB-C hub" into “Autumn Mega Sale: up to 70% off”', "Node: web.output.fill-field", "started", RUN_NODE, "verifying"));
+    expect(typed).toEqual({ kind: "type", target: '"Voltbay USB-C hub" into Autumn Mega Sale: up to 70% off', outcome: "working", why: null, testing: true });
+  });
+
+  it("keeps a test step it cannot name, the reset and the completion check as a test run, and marks no other row", () => {
+    expect(activityActionOf(tool("Working on the page", undefined, "succeeded", RUN_NODE, "verifying"))?.kind).toBe("test");
+    expect(activityActionOf({ phase: "verifying", detail: { kind: "check", title: "Completion check", status: "started" } })).not.toHaveProperty("testing");
+    expect(activityActionOf(tool("Clicking “×”", "Node: web.output.dom-click"))).not.toHaveProperty("testing");
+  });
+
+  it("names what a test typed, in its quotes, and leaves a build's typed words to the decision above its card", () => {
+    expect(activityActionOf(tool('Typing "3"', "Node: web.output.fill-field", "succeeded", RUN_NODE, "verifying"))?.target).toBe('"3"');
+    expect(activityActionOf(tool("Typing into “Quantity”", "Node: web.output.fill-field", "succeeded", RUN_NODE, "verifying"))?.target).toBe("Quantity");
+    expect(activityActionOf(tool('Typing "3" into “Quantity”', "Node: web.output.fill-field"))?.target).toBe("Quantity");
+  });
+});
+
+describe("activityActionOf: a look says what it looked at (D5)", () => {
+  // 00010, 00011: "Look · Done" under "Looking over the whole page".
+  it("names a look by what its title says it looked over, at or for", () => {
+    expect(activityActionOf(tool("Looking over the whole page", undefined, "succeeded", "web.capture_snapshot"))?.target).toBe("the whole page");
+    expect(activityActionOf(tool("Looking for the repeating list on the page", undefined, "succeeded", "web.detect_repeating_structure"))?.target).toBe("the repeating list on the page");
+  });
+
+  it("never names a look by the bare page, an id, or anything but a look", () => {
+    expect(activityActionOf(tool("Looking at the page", undefined, "succeeded", "web.capture_snapshot"))?.target).toBeNull();
+    expect(activityActionOf(tool("Looking at web.output.x", undefined, "succeeded", "web.capture_snapshot"))?.target).toBeNull();
+    expect(activityActionOf(tool("Looking again at what an earlier step found", "Result: core.recall.succeeded", "succeeded", "core.recall_result"))?.target).toBeNull();
+  });
+});
+
+describe("activityActionOf: a result check that could not confirm (D1)", () => {
+  const ended = (label: string, status: "succeeded" | "failed"): ActivityActionEvent => ({ phase: "verifying", label, detail: { kind: "check", title: "Result check", status, text: "Two checks disagreed." } });
+
+  // 00019, 00021: an unverified result read "Check result · Didn't pass" in red, on a run that met the task.
+  it("reads a check that could not confirm the result, or could not run, as unconfirmed, never a plain failure", () => {
+    expect(activityActionOf(ended(ACTIVITY_RESULT_CHECK_LABELS.unconfirmed, "failed"))).toEqual({ kind: "result_check", target: null, outcome: "failed", why: null, unconfirmed: true });
+    expect(activityActionOf(ended(ACTIVITY_RESULT_CHECK_LABELS.unchecked, "failed"))).toMatchObject({ outcome: "failed", unconfirmed: true });
+  });
+
+  it("keeps a refuted result a failure and an answered one a pass", () => {
+    expect(activityActionOf(ended(ACTIVITY_RESULT_CHECK_LABELS.refuted, "failed"))).toEqual({ kind: "result_check", target: null, outcome: "failed", why: null });
+    expect(activityActionOf(ended(ACTIVITY_RESULT_CHECK_LABELS.answers, "succeeded"))).toEqual({ kind: "result_check", target: null, outcome: "done", why: null });
+    expect(activityActionOf({ ...ended(ACTIVITY_RESULT_CHECK_LABELS.unconfirmed, "failed"), detail: { kind: "check", title: "Completion check", status: "failed" } })).not.toHaveProperty("unconfirmed");
   });
 });

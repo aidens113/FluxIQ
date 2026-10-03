@@ -194,14 +194,15 @@ describe("creating a Flow through an exploration, with no grant", () => {
     });
 
     expect(run.sentIterations).toEqual([...Array.from({ length: 10 }, (_, index) => index + 1), 1, 2]);
-    // The first Flow is judged no twice; the corrected one yes, once.
-    expect(run.judgeRequests).toHaveLength(3);
-    expect(run.revealed).toHaveLength(15);
+    // The first Flow is judged no twice; the corrected one yes, twice (a finishing yes is confirmed, t194-w71).
+    expect(run.judgeRequests).toHaveLength(4);
+    expect(run.revealed).toHaveLength(16);
     expect(run.judgeRequests[0]?.notes).toEqual([expect.objectContaining({ code: "bootstrap.cannot_answer_instruction", columns: ["name", "price"] })]);
     // The corrected Flow produces the records, so the check has nothing to note.
     expect(run.judgeRequests[2]?.notes).toEqual([]);
+    expect(run.judgeRequests[3]?.notes).toEqual([]);
     // Each judge read a test of the whole Flow, its six added steps run again from the start.
-    expect(run.judgeRequests.map((request) => request.stepCount)).toEqual([6, 6, 6]);
+    expect(run.judgeRequests.map((request) => request.stepCount)).toEqual([6, 6, 6, 6]);
     expect(run.observations.every((observation) => observation.completionFeedback.length === 0)).toBe(true);
     expect(run.observations[11]).toMatchObject({
       iteration: 2,
@@ -229,12 +230,12 @@ describe("creating a Flow through an exploration, with no grant", () => {
     });
     expect(run.observations[11]!.draft.bytes).toBeLessThanOrEqual(run.observations[11]!.draft.budget);
     expect(run.failure).toBeUndefined();
-    // Twelve decisions at 1,200 in and 150 out, and three judge calls at 400 and 40.
-    expect(run.result).toMatchObject({ status: "proposed", accounting: { inputTokens: 15_600, outputTokens: 1_920, totalTokens: 17_520 } });
+    // Twelve decisions at 1,200 in and 150 out, and four judge calls at 400 and 40 (the finishing yes confirmed, t194-w71).
+    expect(run.result).toMatchObject({ status: "proposed", accounting: { inputTokens: 16_000, outputTokens: 1_960, totalTokens: 17_960 } });
     expect(run.stored).toBeDefined();
     expect(run.adaptationCount).toBe(1);
     expect(run.stored?.buildPlan.plan.subflows.flatMap((subflow) => subflow.nodes).map((node) => node.definitionId)).toContain("web.output.dom-extract_list");
-    expect(run.stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 12, decisionCount: 12, additionalProviderCallCount: 3, totalProviderCallCount: 15 });
+    expect(run.stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 12, decisionCount: 12, additionalProviderCallCount: 4, totalProviderCallCount: 16 });
     // Both completions are in the record, numbered across the build; neither was refused.
     expect(run.stored?.evidenceTrace).toEqual(expect.arrayContaining([
       expect.objectContaining({ iteration: 10, decision: "complete" }),

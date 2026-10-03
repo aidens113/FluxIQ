@@ -11,8 +11,9 @@
 // act once; the rerun did it a second time, to someone else.
 //
 // **The rule (decision D1, `../../flow-draft/verify-only.ts`).** A build never
-// repeats a lasting effect while it builds. A rerun of a step that carries an
-// instructed act and whose own run already did it
+// repeats a lasting effect while it builds. A rerun of a step the dry run
+// would check -- lasting by its declaration or by the instruction's lasting
+// acts (`lastingActs`, t174-w83) -- whose own run already did its effect
 // (`automationStudioFlowDraftStepActDone`) is sent, after the usual put-back
 // (`./step-place.ts`), as the dry run's check: the new argument with
 // `replay: "verify"` and where the step found the page (`./replay.ts`). The host
@@ -74,9 +75,11 @@ export async function automationStudioNodeRerunAnswer(input: {
   words?: AutomationStudioFlowDraftStepWords | undefined;
   executeTool(request: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<Answer>;
   signal?: AbortSignal | undefined;
+  /** The instruction's lasting acts, as the dry run reads them (`../../flow-draft/verify-only.ts`, t174-w83). */
+  lastingActs?: ReadonlySet<string> | undefined;
 }): Promise<{ ran: Answer; took: boolean }> {
   if (input.place?.kind === "unreachable") return { ran: input.place.result, took: false };
-  const step = input.replaces !== undefined && automationStudioFlowDraftStepActDone(input.replaces) ? input.replaces : undefined;
+  const step = input.replaces !== undefined && automationStudioFlowDraftStepActDone(input.replaces, input.lastingActs) ? input.replaces : undefined;
   const value = step ? checkCall(step, input.call.value) : input.call.value;
   const ran = automationStudioNodeRerunPlaceNoted(input.place, await input.executeTool({ callId: input.call.callId, toolId: input.call.toolId, value, ...(input.signal ? { signal: input.signal } : {}) }));
   return step ? checked(step, input.call.value, input.words, ran) : { ran, took: false };
@@ -104,7 +107,8 @@ function checked(step: AutomationStudioFlowDraftStep, value: JsonObject, words: 
     // The words of the control the earlier run pressed: the old target's, not this one's.
     delete step.control;
   }
-  const why = `Step ${position} does ${acts.join(", ")} and already did it once while this Flow was being built, so this rerun was checked and not done again: running it would do that act a second time.`;
+  const does = acts.length ? `does ${acts.join(", ")}` : "changes something that lasts";
+  const why = `Step ${position} ${does} and already did it once while this Flow was being built, so this rerun was checked and not done again: running it would do that a second time.`;
   const found = code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE
     ? "The check found the step's effect already in place on the page it started on"
     : "The check found the step could run now with the new argument";

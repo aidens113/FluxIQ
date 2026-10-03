@@ -39,16 +39,29 @@
 // ends a build "not doable" (`./phases.ts`). Live run `run-murwcaj0-40e56557`
 // had a judge say "still achievable" twice, and the build ended "I found no
 // way to" all the same, because the judgement never carried it.
+//
+// **Steps that never ran in this build are named (t194-w70).** A re-author or
+// an extend seeds its draft from a stored Flow, and a step carried from it has
+// nothing it ran with and nothing to put the target back with until it is
+// rerun live (`not_run_in_this_build`, `../../flow-draft/full-run-required.ts`).
+// Core never runs such a step itself, so a Flow holding one is not tested here,
+// and its judgement says which they are (`notRunInThisBuild`): the round has no
+// measurement, which `./phases.ts` never concludes "not doable" from, and the
+// repair is told to rerun them (`../../llm/evidence-loop/resume.ts`). Live run
+// murwcmx2's re-author was judged `not_tested` twice with nothing saying why,
+// and ended not doable with the advised fix in its draft, never run.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioInstructedActsNotDone, type AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type {
+  AutomationStudioFlowBootstrapJudgeReading,
   AutomationStudioFlowBootstrapJudgedWrong,
   AutomationStudioFlowBootstrapJudgement,
   AutomationStudioFlowBootstrapTested,
   AutomationStudioFlowBootstrapTestVerdict,
   AutomationStudioFlowBootstrapUnfinishedStop
 } from "./contracts.ts";
+import { automationStudioFlowBootstrapStepsNotRunInThisBuild } from "./not-run.ts";
 
 /** What the caller's test answers: the loop's dry-run gate, over the steps it is given. */
 export type AutomationStudioFlowBootstrapUnfinishedTest = (steps: AutomationStudioFlowDraftStep[]) => Promise<"cancelled" | "evidence_limit" | { issueCodes: readonly string[] } | undefined>;
@@ -100,6 +113,7 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
   // A step named for an act is a claim; the same step working when the Flow
   // ran from its start is the nearest thing to a result Core can see (`proven`).
   const { done, todo, proven } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.replayed?.status === "replayed").map((step) => step.position)));
+  const notRun = automationStudioFlowBootstrapStepsNotRunInThisBuild(seed);
   return {
     kind: "judged",
     seed,
@@ -114,6 +128,7 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
       ...(tested === "not_tested" ? {} : { proven }),
       todo,
       lastIssueCodes: [...new Set(input.lastIssueCodes)],
+      ...(notRun.length ? { notRunInThisBuild: notRun } : {}),
       flowSignature: automationStudioFlowDraftReplaySignature(seed)
     }
   };
@@ -141,7 +156,8 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
   const judge = judgedWrong(input.verdict);
   // A verdict that judged nothing, or another Flow's test, is no evidence this Flow ran: a `no` is always about the loop's own test.
   const testedThisFlow = input.verdict.verdict === "no" || input.verdict.flowSignature === automationStudioFlowDraftFlowSignature(input.steps);
-  const tested: AutomationStudioFlowBootstrapTested = judge.untestedCarried?.length || !testedThisFlow ? "not_tested" : "replayed_clean";
+  const notRun = automationStudioFlowBootstrapStepsNotRunInThisBuild(seed);
+  const tested: AutomationStudioFlowBootstrapTested = judge.untestedCarried?.length || notRun.length || !testedThisFlow ? "not_tested" : "replayed_clean";
   return {
     seed,
     judgement: {
@@ -155,6 +171,7 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
       ...(tested === "not_tested" ? {} : { proven }),
       todo,
       lastIssueCodes: [],
+      ...(notRun.length ? { notRunInThisBuild: notRun } : {}),
       judge,
       flowSignature: automationStudioFlowDraftReplaySignature(seed)
     }
@@ -164,7 +181,13 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
 /** The judge's account, as a judgement keeps it: only what it said. */
 function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>): AutomationStudioFlowBootstrapJudgedWrong {
   if (verdict.verdict !== "no") {
-    return { verdict: verdict.verdict, findings: verdict.why ? [verdict.why] : [], ...(verdict.untestedCarried?.length ? { untestedCarried: [...verdict.untestedCarried] } : {}) };
+    const reading = verdict.verdict === "unknown" ? readingOf(verdict.unconfirmedReading) : undefined;
+    return {
+      verdict: verdict.verdict,
+      findings: verdict.why ? [verdict.why] : [],
+      ...(verdict.untestedCarried?.length ? { untestedCarried: [...verdict.untestedCarried] } : {}),
+      ...(reading ? { unconfirmedReading: reading } : {})
+    };
   }
   return {
     verdict: "no",
@@ -176,6 +199,17 @@ function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, 
     // Whether what was asked can still be had: only a `no` here ends the build "not doable" (t195-w37, `./phases.ts`).
     ...(verdict.stillAchievable ? { stillAchievable: verdict.stillAchievable } : {})
   };
+}
+
+/** A copy of a judge's reading, keeping only what it said; nothing when it said nothing. */
+function readingOf(reading: AutomationStudioFlowBootstrapJudgeReading | undefined): AutomationStudioFlowBootstrapJudgeReading | undefined {
+  if (!reading) return undefined;
+  const said: AutomationStudioFlowBootstrapJudgeReading = {
+    ...(reading.expected ? { expected: reading.expected } : {}),
+    ...(reading.observed ? { observed: reading.observed } : {}),
+    ...(reading.advice ? { advice: reading.advice } : {})
+  };
+  return Object.keys(said).length ? said : undefined;
 }
 
 /** Acts and choices done, and the ids of those still to do, by the checklist's rule. */
@@ -197,11 +231,16 @@ export function automationStudioFlowBootstrapJudgementValue(judgement: Automatio
     actsDone: judgement.done,
     actsTodo: [...judgement.todo],
     ...(judgement.lastIssueCodes.length ? { lastRefusedFor: [...judgement.lastIssueCodes] } : {}),
+    ...(judgement.notRunInThisBuild?.length ? { notRunInThisBuild: [...judgement.notRunInThisBuild] } : {}),
     ...(judgement.judge ? { judge: judgeValue(judgement.judge) } : {})
   };
 }
 
-/** The judge's account as the repair reads it: its words are the model's own, already screened by the judge. */
+/**
+ * The judge's account as the repair reads it: its words are the model's own,
+ * already screened by the judge -- a `no`'s, and an `unknown`'s one
+ * unconfirmed reading.
+ */
 function judgeValue(judge: AutomationStudioFlowBootstrapJudgedWrong): JsonObject {
   return {
     verdict: judge.verdict,
@@ -209,6 +248,8 @@ function judgeValue(judge: AutomationStudioFlowBootstrapJudgedWrong): JsonObject
     ...(judge.observed ? { observed: judge.observed } : {}),
     ...(judge.advice ? { advice: judge.advice } : {}),
     findings: [...judge.findings],
-    ...(judge.untestedCarried?.length ? { untestedCarried: [...judge.untestedCarried] } : {})
+    ...(judge.untestedCarried?.length ? { untestedCarried: [...judge.untestedCarried] } : {}),
+    // An unknown's one unconfirmed reading, under its own key so it is never read as a no (`resume.ts` says what it is).
+    ...(judge.unconfirmedReading ? { unconfirmedReading: { ...judge.unconfirmedReading } } : {})
   };
 }

@@ -88,7 +88,8 @@ function coreTaskProse(request: AutomationStudioLlmTaskRequest): string[] {
   // which is the one shape that carries them. Asking for them is the other half
   // of opening the channel: the schema permits the object, and this is what
   // makes a model fill it rather than putting everything into the summary.
-  if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) prose.push(automationStudioDiagnosisPromptInstruction(request.taskKind));
+  // A verification is told how to read a build's test only when it judges one (run-murwd8le's Cause 9).
+  if (automationStudioLlmTaskExpectsDiagnosis(request.taskKind)) prose.push(automationStudioDiagnosisPromptInstruction(request.taskKind, { buildTest: request.context.resultSummary?.buildTest !== undefined }));
   // An evidence decision is told it whether or not this call carries reusable
   // context: the context is looked up again for each decision's fresh evidence,
   // so it can appear between one call and the next, and a system message that

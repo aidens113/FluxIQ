@@ -24,6 +24,12 @@ function step(position: number, overrides: Partial<AutomationStudioFlowDraftStep
   };
 }
 
+/** A step that carries nothing a replay needs. */
+function withoutReplay(each: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftStep {
+  const { replay: _replay, ...rest } = each;
+  return rest;
+}
+
 function spent(iterations: number, estimatedCostUsd: number): AutomationStudioLlmEvidenceLoopAccounting {
   return { iterations, toolCalls: iterations, evidenceBytes: 100, inputTokens: 1_000 * iterations, cacheHitInputTokens: 0, outputTokens: 100 * iterations, totalTokens: 1_100 * iterations, estimatedCostUsd };
 }
@@ -95,6 +101,23 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(requests[1]!.budget.maxCostUsd).toBeCloseTo(0.17, 5);
     expect(outcome.accounting).toMatchObject({ iterations: 74 });
     expect(outcome.accounting.estimatedCostUsd).toBeCloseTo(0.11, 5);
+  });
+
+  // Live run murwcmx2 (screenshot 00023, UI-4): "Testing the Flow so far ...
+  // Running the Flow as far as it got" was said for a Flow nothing could replay,
+  // and no test followed it.
+  it("announces no test of a Flow so far that cannot be replayed, and runs none", async () => {
+    const { input, tested, announced, requests } = harness([
+      (request) => { throw request.stalled({ issueCodes: ["llm_evidence_loop.repeat_refused"], trace: [], accounting: spent(12, 0.02), steps: [withoutReplay(step(1, { acts: ["a1"] }))] }); },
+      (request) => finished(request.repair!.seed)
+    ]);
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind).toBe("finished");
+    expect(tested).toHaveLength(0);
+    expect(requests[1]!.repair!.resume).toMatchObject({ judgement: { test: "not_tested" } });
+    expect(announced).toEqual(["repairing: Repairing the Flow"]);
   });
 
   it("repairs a round whose decisions kept coming back unusable, from the draft it stood at", async () => {
