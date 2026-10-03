@@ -307,6 +307,18 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    */
   dryRun?: false;
   /**
+   * This loop authors a Flow that is finished only once a run of the whole
+   * Flow from its start was judged to do what was asked (user, 2026-10-02,
+   * t244): the build's every round. A completion whose Flow the dry run cannot
+   * run whole -- a step that left nothing to run it again with, or no step
+   * that ran in this build at all -- is refused `llm_evidence_loop.full_run_required`,
+   * where it used to be passed untested (`node-tools/dry-run-gate.ts`). Absent,
+   * a loop that runs a dry run still refuses steps carried from an earlier Flow
+   * and otherwise passes what it cannot run, as the recovery ladder's
+   * exploration -- which authors no Flow -- needs.
+   */
+  fullRunRequired?: true;
+  /**
    * What the dry run observed, each time it passes: the replay it passed on and
    * what each step answered, for a judge of what the build actually did. Never
    * called on a refusal (`node-tools/dry-run-gate.ts`).

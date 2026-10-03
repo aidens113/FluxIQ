@@ -83,6 +83,29 @@ describe("a rerun taking the replaced step's place", () => {
     expect(steps[2]!.routing).toEqual({ kind: "repeat", through: "d16", over: "d17" });
   });
 
+  // t244: a re-authored Flow's carried steps (`f<n>`) must each run in the build
+  // before the Flow can be tested whole, and a rerun is a new step with an id of
+  // its own. It stands for what the step it replaced stood for, so the written
+  // Flow keeps that node -- its id and what state routing recorded on it.
+  it("stands for the step it replaced, and for what that step stood for", () => {
+    const signatures = { before: { page: "p1" }, after: { page: "p2" } };
+    const steps = [step("f1", 1, { routeSignatures: signatures }), step("d1", 2, { disposition: "taken" })];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    expect(steps.map((entry) => [entry.id, entry.disposition, entry.standsFor])).toEqual([["d1", "kept", "f1"], ["f1", "dropped", undefined]]);
+    expect(steps[0]!.routeSignatures).toEqual(signatures);
+    // Rerun again: the newest still stands for the node the first was carried from.
+    steps.push(step("d2", 3, { disposition: "taken" }));
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    expect(steps.find((entry) => entry.id === "d2")).toMatchObject({ disposition: "kept", standsFor: "f1", routeSignatures: signatures });
+  });
+
+  it("keeps a rerun's own route signatures over the ones it replaced", () => {
+    const own = { before: { page: "fresh" } };
+    const steps = [step("f1", 1, { routeSignatures: { before: { page: "old" } } }), step("d1", 2, { disposition: "taken", routeSignatures: own })];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    expect(steps[0]!.routeSignatures).toEqual(own);
+  });
+
   it("carries the acts onto a rerun that changes something", () => {
     const steps = [step("d1", 1, { acts: ["a1"] }), step("d2", 2, { disposition: "taken" })];
     automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });

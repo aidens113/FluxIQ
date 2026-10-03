@@ -21,6 +21,8 @@ const DONE_AGAIN = /^rerun\.\d+(?:\.\d+)?\.place\.\d+$/u;
 const RERUN_RESET = "Putting the page back to where the step starts";
 
 const FROM_THE_START = "Trying the Flow from the start";
+/** A step a part run sends (`core.run_flow`, `../../llm/node-tools/run-flow-part.ts`): part of a test, never exploring. */
+const PART_OF_THE_FLOW = "Trying part of the Flow";
 /** The opening call when it goes to where the Flow starts rather than looks. */
 const ARRIVAL = "Opening where the Flow starts";
 /** The opening call when it looks at the page the Flow starts on. */
@@ -52,8 +54,8 @@ function unnamed(toolId: string, node: string | undefined): string {
  *   before the first decision, and a dry run or a rerun putting the page
  *   back), which a reader may hide, and `tool` for a step that is part of the
  *   work -- the opening call that goes to where the Flow starts among them;
- * - `phase` is `verifying` for a dry run's calls, `building` for the draft
- *   tool and `exploring` for everything else;
+ * - `phase` is `verifying` for a dry run's calls and the steps a part run
+ *   sends, `building` for the draft tool and `exploring` for everything else;
  * - `node` is the node id a run-node call names, for the raw record.
  */
 export function automationStudioActivityToolCall(call: { callId: string; toolId: string; value?: unknown }, words?: AutomationStudioActivityCallWords): {
@@ -92,10 +94,18 @@ export function automationStudioActivityToolCall(call: { callId: string; toolId:
     // node, with nothing to name but the page it looks at.
     return { phase: "exploring", kind: "note", title: OPENING_LOOK, label: OPENING_LOOK, dryRun: false, ...named };
   }
+  const rerun = RERUN.exec(call.callId)?.[1];
+  // A step run again under the model's own call id: one a part run sends, with
+  // the replay key a dry run's steps carry (t244). A rerun's steps carry the key
+  // too -- its reset and the earlier steps it does again first (t193) -- and are
+  // answered below.
+  if (!rerun && (value[REPLAY_KEY] === "step" || value[REPLAY_KEY] === "verify")) {
+    const title = action ?? unnamed(call.toolId, node);
+    return { phase: "verifying", kind: "tool", title, label: `${PART_OF_THE_FLOW}: ${lowerFirst(title)}`, dryRun: true, ...named };
+  }
   // A rerun's words name no step number: the person never sees the draft's
   // numbering, and "Trying step 12 again" on the page's status overlay told
   // them nothing (t195, `run-murdouox-c5294247`, UI review).
-  const rerun = RERUN.exec(call.callId)?.[1];
   if (value[REPLAY_KEY] === "reset") {
     // A rerun puts the page back where its step starts before running it
     // again: bookkeeping, like a dry run's reset. Its row read "Action · the

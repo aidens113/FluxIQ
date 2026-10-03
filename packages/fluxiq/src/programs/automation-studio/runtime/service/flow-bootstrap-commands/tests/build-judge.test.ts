@@ -6,8 +6,9 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
+import { automationStudioFlowBootstrapJudgeFinished, automationStudioFlowBootstrapRepairingJudgedSaid } from "../../../flow-bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { automationStudioFlowBootstrapBuildJudge } from "../build-judge.ts";
 
@@ -62,7 +63,8 @@ describe("a build's judge", () => {
     judge.observeTest({
       verdict: { attempt: 1, reset: "ok", outcomes: [{ step: 1, stepId: "d1", actionId: read.actionId, status: "replayed" }], providerCalls: 0, ok: true },
       observations: [{ step: 1, stepId: "d1", evidence: { ok: true, page: "PAGE \"Shop\"\nt1 heading \"Products\"", read: { value: "$4.99" } } }],
-      reused: false
+      reused: false,
+      signature: automationStudioFlowDraftFlowSignature([read])
     } satisfies AutomationStudioFlowDraftTestReport);
 
     const judged = await judge.judge({ round: 1, loop: { ok: true, result: { summary: "Read the price" }, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
@@ -109,6 +111,41 @@ describe("a build's judge", () => {
     expect(judge.calls()).toBe(4);
   });
 
+  // The user's rule (2026-10-02): a build finishes only on a yes about a test of
+  // the Flow as it finally stands. Each verdict says which Flow it judged: the
+  // signature of this round's observed test, and none where no test was
+  // observed this round (`../../../flow-bootstrap/unfinished-build/phases.ts`).
+  it("stamps every verdict with the Flow signature of this round's observed test", async () => {
+    const { provider } = scripted();
+    const judge = automationStudioFlowBootstrapBuildJudge({
+      provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+      instructionText: ASKS_FOR_A_TABLE, plan: () => undefined
+    });
+    const signature = automationStudioFlowDraftFlowSignature([read]);
+    judge.roundStarted();
+    judge.observeTest(passed(signature));
+    const round = { round: 0, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never;
+    expect(await judge.judge(round)).toMatchObject({ verdict: "no", flowSignature: signature });
+    // Not judged for want of cost: still about that test.
+    expect(await judge.judge({ round: 0, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 0 } } as never)).toMatchObject({ verdict: "not_judged", flowSignature: signature });
+  });
+
+  it("stamps no signature when no test was observed this round, even where an earlier round's was", async () => {
+    const { provider } = scripted();
+    const judge = automationStudioFlowBootstrapBuildJudge({
+      provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+      instructionText: ASKS_FOR_A_TABLE, plan: () => undefined
+    });
+    judge.roundStarted();
+    judge.observeTest(passed(automationStudioFlowDraftFlowSignature([read])));
+    judge.roundStarted();
+    const judged = await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
+    expect(judged.verdict).toBe("no");
+    expect(judged).not.toHaveProperty("flowSignature");
+    const unjudged = await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 0 } } as never);
+    expect(unjudged).not.toHaveProperty("flowSignature");
+  });
+
   // Live run muqk713g (screenshot 00013): a judge reply the harness could not
   // read put "(llm_output.invalid_diagnosis_text)" into the chat. The chat says
   // what happened in words; the code stays on the verification record.
@@ -123,12 +160,23 @@ describe("a build's judge", () => {
     });
     const judged = await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
     expect(judged.verdict).toBe("unknown");
-    const said: Array<{ label?: string; text?: string }> = [];
-    judge.unverified({ kind: "finished", judged } as never, ((entry: { label?: string; text?: string }) => { said.push(entry); }) as never);
-    expect(said).toHaveLength(1);
-    const text = said[0]?.text ?? "";
+    // A build no longer finishes unverified (t244): an unsure verdict opens a
+    // repair round, and that round's announcement is what the chat says.
+    if (judged.verdict === "yes") throw new Error("expected an unsure verdict");
+    const { judgement } = automationStudioFlowBootstrapJudgeFinished({ round: 1, steps: [read], verdict: judged, checklist: () => undefined });
+    const text = automationStudioFlowBootstrapRepairingJudgedSaid(judgement.judge!);
     expect(text).toContain("the judge's reply could not be read");
     expect(text).not.toContain("llm_output.");
     expect(text).not.toMatch(/\b[a-z_]+\.[a-z_.]+\b/);
   });
 });
+
+/** A passing test of the one-step Flow, under `signature`. */
+function passed(signature: string): AutomationStudioFlowDraftTestReport {
+  return {
+    verdict: { attempt: 1, reset: "ok", outcomes: [{ step: 1, stepId: "d1", actionId: read.actionId, status: "replayed" }], providerCalls: 0, ok: true },
+    observations: [{ step: 1, stepId: "d1", evidence: { ok: true, read: { value: "$4.99" } } }],
+    reused: false,
+    signature
+  };
+}

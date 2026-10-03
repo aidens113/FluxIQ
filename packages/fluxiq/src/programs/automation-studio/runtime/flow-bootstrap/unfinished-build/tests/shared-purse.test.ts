@@ -4,7 +4,7 @@
 // the Flow spent, named, and what of the Flow's ceiling building again has left.
 // Rounds are scripted: each charges the purse it is handed as its calls would.
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { AutomationStudioLlmBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../../llm/build-purse/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
@@ -151,7 +151,7 @@ describe("a build's rounds draw from one purse", () => {
         return finished([step(1, { acts: ["a1"] }), step(2, { acts: ["a1.quantity"] }), step(3, { acts: ["a2"] })], spent(10, 0.2 * CEILING));
       }
     ], {
-      judge: async ({ budget }) => { budgets.push(budget); return { verdict: "yes", spent: { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 } }; }
+      judge: async ({ budget, loop }) => { budgets.push(budget); return { verdict: "yes", spent: { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) }; }
     });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);

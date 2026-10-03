@@ -93,7 +93,14 @@ const MAX_JUDGE_WORDS = 200;
 
 /** What the judge found, in the person's terms: what they asked, and what the test did. Its words are the judge's own, already screened. */
 function judgedSaid(judge: AutomationStudioFlowBootstrapJudgedWrong): string {
-  if (judge.verdict !== "no") return "the steps it carried from the earlier Flow were never run in this build, so it could not be judged to do what you asked.";
+  // Not judged to do it, for any reason (t244): an unsure judge, one that could
+  // not answer, or a yes about another version or no test. Steps carried from
+  // an earlier Flow and never run are one such reason, named when they are it.
+  if (judge.verdict !== "no") {
+    if (judge.untestedCarried?.length) return "the steps it carried from the earlier Flow were never run in this build, so it could not be judged to do what you asked.";
+    const why = judge.findings[0];
+    return `it was never judged to do what you asked${why ? ` -- "${bounded(why)}"` : ""}.`;
+  }
   const told = [
     judge.expected ? `what you asked: "${bounded(judge.expected)}"` : "",
     judge.observed ? `what its test did: "${bounded(judge.observed)}"` : "",

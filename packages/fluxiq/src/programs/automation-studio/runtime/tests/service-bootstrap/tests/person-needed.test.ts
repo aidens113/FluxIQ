@@ -17,6 +17,7 @@ import { automationStudioActivityHub } from "../../../activity/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_PERSON_NEEDED_TEXT, type AutomationStudioParkingPort } from "../../../parking/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 /** Only the domain's account of the check carries this; the model must never be sent it. */
@@ -160,7 +161,8 @@ async function build(options: { noThread?: boolean; port?: (real: AutomationStud
   const requests: string[] = [];
   const calls: string[] = [];
   const decisions: JsonObject[] = [
-    { kind: "tool_call", callId: "call.open", toolId: "example.act", input: {} },
+    // Added to the Flow as it runs (`add`): a Flow is made of the steps that ran in its build, which its test runs whole.
+    { kind: "tool_call", callId: "call.open", toolId: "example.act", input: {}, add: true },
     { kind: "complete", result: { summary: "Built.", plan: plan() } }
   ];
   let decision = 0;
@@ -194,7 +196,8 @@ async function build(options: { noThread?: boolean; port?: (real: AutomationStud
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
-    llmEvidenceRuntime: binding
+    // Said how to run its steps again, so the build's test can run the Flow whole; its replay calls never reach `calls`.
+    llmEvidenceRuntime: automationStudioReplayingBinding(binding)
   });
   services.add(instance);
   if (options.noThread) (instance.conversations as { available: boolean }).available = false;

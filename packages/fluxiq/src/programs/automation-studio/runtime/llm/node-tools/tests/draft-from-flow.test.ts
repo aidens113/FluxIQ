@@ -80,6 +80,26 @@ describe("a Flow read back as a draft", () => {
   });
 });
 
+describe("what state routing recorded on a node, carried through the re-seed", () => {
+  // Supervisor (t243 -> t244): a node keeps `metadata.routeSignatures`, the
+  // pages it ran between as the build signed them. A re-seed that dropped them
+  // left a re-authored Flow routing by the ladder alone.
+  it("carries a node's route signatures onto its step, unread", () => {
+    const signatures = { before: { h: "1" }, after: { h: "2" }, effect: { added: ["x"] } };
+    const nodes = flow().nodes.map((each) => each.id === "node.navigate" ? { ...each, metadata: { routeSignatures: signatures, other: 1 } } : each);
+    const seeded = automationStudioFlowDraftSeedFromFlow({ ...flow(), nodes }).steps;
+    expect(seeded[0]!.routeSignatures).toEqual(signatures);
+    expect(seeded[1]!.routeSignatures).toBeUndefined();
+  });
+
+  it("carries nothing that is not an object of signatures", () => {
+    for (const routeSignatures of [null, "sig", [{ h: "1" }], {}]) {
+      const nodes = flow().nodes.map((each) => ({ ...each, metadata: { routeSignatures } as never }));
+      expect(automationStudioFlowDraftSeedFromFlow({ ...flow(), nodes }).steps.every((each) => each.routeSignatures === undefined)).toBe(true);
+    }
+  });
+});
+
 // `run-muqk713g-d08ad3dc` (C6): every rerun of a seeded read ran on the page the
 // refuted run had left it on. The run had recorded where each node started; the
 // seed now keeps that beside its steps, for a rerun to put the page back to.
@@ -128,6 +148,19 @@ describe("the plan keys an amended draft maps back to", () => {
     ];
     expect(automationStudioFlowDraftPlanNodeIds({ steps, nodeIdByStepId: seed.nodeIdByStepId }))
       .toEqual({ s1: "node.navigate", s3: "node.extract" });
+  });
+
+  // t244: every carried step must run in the build before the Flow is tested
+  // whole, and the rerun that does it is a new step. It keeps the node.
+  it("names the existing node for a rerun that took a carried step's place", () => {
+    const seed = automationStudioFlowDraftSeedFromFlow(flow());
+    const steps = [
+      { ...seed.steps[0]!, disposition: "dropped" as const, position: 2 },
+      { ...seed.steps[0]!, id: "d4", position: 1, standsFor: seed.steps[0]!.id! },
+      { ...seed.steps[1]!, position: 3 }
+    ];
+    expect(automationStudioFlowDraftPlanNodeIds({ steps, nodeIdByStepId: seed.nodeIdByStepId }))
+      .toEqual({ s1: "node.navigate", s2: "node.extract" });
   });
 
   it("lets go of the id of a step the model dropped", () => {

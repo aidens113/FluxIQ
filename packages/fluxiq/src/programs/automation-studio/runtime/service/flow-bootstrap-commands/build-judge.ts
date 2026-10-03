@@ -6,10 +6,16 @@
 // the start (the loop's dry-run gate), and then to a judge that reads what that
 // test actually did and read -- each step's target, outcome and observation --
 // against the instruction (`../../result-verification/build-test/`). Its
-// verdict decides (`../../flow-bootstrap/unfinished-build/phases.ts`): yes
-// proposes the Flow, no repairs it with the judge's reasons, and a judge that
-// could not settle it proposes the Flow said to be unverified -- except a
-// re-authored Flow whose carried steps were never run in this build.
+// verdict decides (`../../flow-bootstrap/unfinished-build/phases.ts`).
+//
+// **A verdict says which Flow it judged (user, 2026-10-02).** A build cannot
+// finish until a whole-Flow run from its start was judged success on the Flow
+// as it finally stands. So every verdict carries `flowSignature`: the Flow
+// signature of the test it judged -- this round's observed test, never an
+// earlier round's -- and none when no test was observed this round. Only a yes
+// whose signature is the finished Flow's proposes the Flow; anything else,
+// an unsure verdict or one not judged included, is repaired. There is no
+// "finished unverified" any more, so nothing here says one.
 //
 // **What the judge is told beside the test (t195-w28a).** What the completion
 // check's capability questions found of the accepted Flow -- no step producing
@@ -25,12 +31,11 @@
 // one place the tests can read, and keeps `../../service.ts` from growing.
 
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode } from "../../../model/index.ts";
-import type { AutomationStudioFlowBootstrapBuildPhasesInput, AutomationStudioFlowBootstrapBuildPhasesOutcome, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioFlowBootstrapBuildPhasesInput, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioFlowDraftTestReport, AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge, automationStudioBuildTestResultSummary, type AutomationStudioBuildTestNote } from "../../result-verification/index.ts";
 
 type BuildJudge = NonNullable<AutomationStudioFlowBootstrapBuildPhasesInput["judge"]>;
-type Announce = NonNullable<AutomationStudioFlowBootstrapBuildPhasesInput["announce"]>;
 
 /** One build's judge: the round's own test is kept as it passes, and read when the round's Flow is judged. */
 export type AutomationStudioFlowBootstrapBuildJudge = {
@@ -38,10 +43,8 @@ export type AutomationStudioFlowBootstrapBuildJudge = {
   roundStarted(): void;
   /** The loop's `observeTest`: the test the round's Flow last passed. */
   observeTest(report: AutomationStudioFlowDraftTestReport): void;
-  /** The phases' `judge`. */
+  /** The phases' `judge`: each verdict stamped with the Flow signature of the test it judged, where this round observed one. */
   judge: BuildJudge;
-  /** Says so in the chat when the build ends with a Flow no judge said yes to. */
-  unverified(built: AutomationStudioFlowBootstrapBuildPhasesOutcome, announce: Announce): void;
   /**
    * The provider calls every judgement of this build made. They are calls made
    * outside the loop, so a build counts them where it counts the authority's
@@ -82,21 +85,20 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
   return {
     roundStarted: () => { lastTest = undefined; },
     observeTest: (report) => { lastTest = report; },
-    judge: async ({ loop, budget }) => counted(await ask({
-      summary: automationStudioBuildTestResultSummary({
-        steps: loop.steps, report: lastTest, nodes: planNodes(input.plan()), instructionText: input.instructionText,
-        result: loop.result, startLocation: input.startLocation, deniedEvidenceKeys: input.deniedEvidenceKeys,
-        observedStateKeys: input.observedStateKeys, notes: input.notes?.()
-      }),
-      budget
-    })),
-    calls: () => calls,
-    unverified: (built, announce) => {
-      if (built.kind !== "finished" || (built.judged?.verdict !== "unknown" && built.judged?.verdict !== "not_judged")) return;
-      const carried = built.judged.untestedCarried ?? [];
-      const untested = carried.length ? ` Step${carried.length === 1 ? "" : "s"} ${carried.join(", ")} came from the earlier Flow and ${carried.length === 1 ? "was" : "were"} not run in this build's test.` : "";
-      announce({ phase: "verifying", label: "Flow not verified", text: `Its test was not judged to answer what you asked: ${built.judged.why}${untested} Its first run is judged again.` });
-    }
+    judge: async ({ loop, budget }) => {
+      // The test this verdict is about, read once: the round's own, never an earlier round's.
+      const judgedTest = lastTest;
+      const verdict = counted(await ask({
+        summary: automationStudioBuildTestResultSummary({
+          steps: loop.steps, report: judgedTest, nodes: planNodes(input.plan()), instructionText: input.instructionText,
+          result: loop.result, startLocation: input.startLocation, deniedEvidenceKeys: input.deniedEvidenceKeys,
+          observedStateKeys: input.observedStateKeys, notes: input.notes?.()
+        }),
+        budget
+      }));
+      return judgedTest ? { ...verdict, flowSignature: judgedTest.signature } : verdict;
+    },
+    calls: () => calls
   };
 }
 
