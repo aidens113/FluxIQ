@@ -51,7 +51,9 @@ async function requestSent(observedStateKeys?: readonly string[]): Promise<Autom
     startLocation: fixture.startLocation, deniedEvidenceKeys: DENIED, ...(observedStateKeys ? { observedStateKeys } : {})
   });
   await automationStudioBuildTestJudge({ instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project-1", flowId: "flow-1", provider })({ summary, budget: { maxCostUsd: 1 } });
-  expect(seen).toHaveLength(1);
+  // A yes is confirmed by a second call with the same evidence (`../judge.ts`, live run murwcmx2).
+  expect(seen).toHaveLength(2);
+  expect(seen[1]?.context).toEqual(seen[0]?.context);
   return seen[0]!;
 }
 
