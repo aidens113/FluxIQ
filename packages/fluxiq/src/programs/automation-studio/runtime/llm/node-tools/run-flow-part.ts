@@ -48,6 +48,8 @@ export type AutomationStudioFlowDraftPartRunInput = {
   /** The model's call; each step is sent as `<callId>.<position>`. */
   callId: string;
   executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /** The build's lasting acts, as the dry run is given them (`./replay-draft.ts`): a step claiming one is checked, not repeated. */
+  lastingActs?: ReadonlySet<string> | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -74,7 +76,7 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
   let after: string | undefined;
   let first = true;
   for (const step of proposed.filter((each) => each.position >= range.from && each.position <= to)) {
-    const mode = automationStudioFlowDraftStepReplayMode(step);
+    const mode = automationStudioFlowDraftStepReplayMode(step, input.lastingActs);
     const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step) : automationStudioNodeReplayStepCall(step);
     if (!value) {
       ran.push({ step: step.position, actionId: step.actionId, ran: NOT_RUN });

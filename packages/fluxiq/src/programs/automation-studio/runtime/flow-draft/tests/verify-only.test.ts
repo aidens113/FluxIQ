@@ -72,6 +72,39 @@ describe("which steps a dry run checks rather than runs again", () => {
   });
 });
 
+// Run `run-murwd8le-79e735a8` (Cause 3): the Add to cart step declared
+// `consequences: []` and claimed act `a1`, which the instruction read asks to
+// create something new ("put three of the Voltbay ... in my cart"). Both build
+// tests pressed Add to cart again on the person's cart (0045, 0068).
+describe("a step that does an act the instruction asks to last", () => {
+  const lasting: ReadonlySet<string> = new Set(["a1", "a2"]);
+
+  it("is checked, not run again, though it declared nothing lasting", () => {
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: ["a1"] }), lasting)).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: ["none"], acts: ["a2"] }), lasting)).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(step({ acts: ["a1"] }), lasting)).toBe("verify");
+  });
+
+  it("runs again a step that makes one of the act's choices, which is not the act", () => {
+    // Space Grey and the quantity are claimed as `a1.colour` and `a1.quantity`; the dry run's later steps stand on them.
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: ["a1.colour"] }), lasting)).toBe("replay");
+  });
+
+  it("runs again a step whose act the instruction does not ask to last, or that claims no act", () => {
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: ["a3"] }), lasting)).toBe("replay");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [] }), lasting)).toBe("replay");
+  });
+
+  it("runs again a step that only reads, whatever act it claims", () => {
+    expect(automationStudioFlowDraftStepReplayMode(step({ effect: "observe", consequences: [], acts: ["a1"] }), lasting)).toBe("replay");
+  });
+
+  it("is run again as before when the caller has no reading of the instruction", () => {
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: ["a1"] }))).toBe("replay");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: ["a1"] }), new Set())).toBe("replay");
+  });
+});
+
 describe("whether a step's own run moved the target", () => {
   const at = (location: string) => ({ replay: { from: { location } } });
 
