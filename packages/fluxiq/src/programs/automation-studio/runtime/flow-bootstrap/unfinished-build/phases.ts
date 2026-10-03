@@ -55,20 +55,26 @@
 // reached from an empty Flow: it needs the evidence of a repair that got no
 // further than a judged Flow.
 //
-// **A Flow the model says is ready is judged (t195).** With a `judge`, what
-// the loop's test of it did is judged against the instruction: `yes` is the
-// result; `no` is repaired as a round that stopped short is, "not doable" only
-// when a repair hands back the same Flow; an unsure verdict is the result,
-// unverified. That includes a re-authored or improved Flow whose steps carried
-// from the earlier Flow were never run in this build's test: they cannot be
-// (an extended draft has no replay, `../../llm/node-tools/draft-from-flow.ts`),
-// so repairing for them could only end "not doable" for every improvement the
-// judge could not see whole -- the extension chat's "improve an automation"
-// did. Its claims are never what decides (run 41, `run-muq70foz-74caa189`): the
-// judge marks those steps not run, the person is told so, and the Flow's first
-// real run, which runs them, is judged. The judge's calls are held against the
-// build's purse like every other call, and it is asked within what the purse
-// has left.
+// **A build finishes only on a judged success of the Flow as it finally
+// stands (user, 2026-10-02, binding).** With a `judge`, what the loop's test of
+// the Flow did is judged against the instruction, and a finished round is the
+// build's result only when the verdict is `yes` *and* its `flowSignature` -- the
+// Flow signature of the test it judged (`../../flow-draft/flow-signature.ts`,
+// stamped by the service's judge) -- is the signature of the Flow the round
+// finished with. Every other verdict is a round judged wrong and is repaired
+// as a round that stopped short is, under the same funding, progress and round
+// bounds, with the judge's account: `no`; `unknown` and `not_judged` as they
+// are; and a `yes` about another version of the Flow, or about no test at all,
+// as `not_judged` in Core's words. An unsure verdict used to finish the build
+// "unverified", and a re-authored Flow whose carried steps were never run was
+// approved and applied before anything ran it whole (run 41,
+// `run-muq70foz-74caa189`); now those steps are run again live in a repair
+// until a test of the whole Flow is judged. A purse that cannot fund another
+// decision and judge ends the build at its budget, with the Flow kept; "not
+// doable" still needs a repair that got no further. A build given no `judge`
+// is unchanged: a Flow the loop accepts is its result, unjudged. The judge's
+// calls are held against the build's purse like every other call, and it is
+// asked within what the purse has left.
 //
 // **Unreadable replies end the build only as that (t211).** Each reply the
 // loop could not read is asked again; an unbroken run of them ends the round
@@ -99,7 +105,7 @@
 // this module never calls a provider or runs a tool itself, and every ending
 // the caller's loop raises that is not a stall -- a permission ask, a person
 // needed, a provider failure -- passes through untouched.
-import { automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopBudget, AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmEvidenceLoopProviderUnavailable, AutomationStudioLlmEvidenceLoopResult, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "../../llm/evidence-loop/index.ts";
 import type { AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
@@ -226,8 +232,8 @@ export type AutomationStudioFlowBootstrapBuildPhasesOutcome =
      * repaired kept only its repair's decisions (t214).
      */
     trace: AutomationStudioLlmEvidenceLoopTrace[];
-    /** The judge's verdict, where a judge was given: `yes`, or an unsure one, which marks the Flow unverified. */
-    judged?: AutomationStudioFlowBootstrapTestVerdict;
+    /** The judge's verdict, where a judge was given: always `yes`, about a test of this very Flow (its `flowSignature`). */
+    judged?: Extract<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>;
   }
   /**
    * An ending this lifecycle does not reach past, as the round's loop reported
@@ -310,10 +316,12 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
         return { kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.loop.trace], steps: ending.loop.steps, accounting: { ...ending.loop.accounting } }, accounting: spent, rounds, trace: [...record] };
       }
       addAccounting(spent, judgeAccounting(verdict.spent));
-      if (verdict.verdict !== "no") {
+      // Only a yes about a test of the Flow as it now stands finishes the build (user, 2026-10-02).
+      const standing = automationStudioFlowDraftFlowSignature(ending.loop.steps);
+      if (verdict.verdict === "yes" && verdict.flowSignature === standing) {
         return { kind: "finished", loop: ending.loop, accounting: spent, rounds, trace: [...record], judged: verdict };
       }
-      const judged = automationStudioFlowBootstrapJudgeFinished({ round, steps: ending.loop.steps, verdict, checklist: input.checklist });
+      const judged = automationStudioFlowBootstrapJudgeFinished({ round, steps: ending.loop.steps, verdict: verdict.verdict === "yes" ? yesNotAboutThisFlow(verdict) : verdict, checklist: input.checklist });
       const completionAttempts = ending.loop.trace.filter((row) => row.decision === "complete").length;
       phase2 = { stopped: "judged_wrong", ...judged, lastIssueCodes: [], completionAttempts, progress: { trace: ending.loop.trace, accounting: ending.loop.accounting } };
     } else {
@@ -403,6 +411,18 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
 
 /** What the purse last priced a decision and a judge call at, each at its reply cap. */
 type CallHolds = { decisionUsd?: number; judgeUsd?: number };
+
+/**
+ * A yes that was not about a test of the Flow as it now stands -- about
+ * another version, or about no test -- as what it is for this Flow: not
+ * judged, with Core's words for why. The signature it was about is kept.
+ */
+function yesNotAboutThisFlow(verdict: Extract<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>): Extract<AutomationStudioFlowBootstrapTestVerdict, { verdict: "unknown" | "not_judged" }> {
+  const why = verdict.flowSignature === undefined
+    ? "the judge's yes was about no test of the Flow, so the Flow as it now stands was not judged"
+    : "the judge's yes was about a test of another version of the Flow, not of the Flow as it now stands, so the Flow as it stands was not judged";
+  return { verdict: "not_judged", why, spent: verdict.spent, ...(verdict.flowSignature !== undefined ? { flowSignature: verdict.flowSignature } : {}) };
+}
 
 /**
  * One more round's worst case: its next decision and, where the build has a

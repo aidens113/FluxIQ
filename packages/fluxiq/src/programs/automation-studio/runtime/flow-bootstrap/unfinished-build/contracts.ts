@@ -23,9 +23,11 @@ export type AutomationStudioFlowBootstrapUnfinishedStop =
   | "repeat_without_progress"
   /**
    * It finished: the model said the Flow was ready and its test passed, but
-   * the judge of the test's results said the Flow does not do what was asked,
-   * or could not judge it because steps carried from an earlier Flow were not
-   * run in this test (`./phases.ts`).
+   * the Flow was not judged to do what was asked (`./phases.ts`): the judge
+   * said it does not, was unsure, or did not judge it, or its yes was about a
+   * test of another version of the Flow or about no test at all. Only a yes
+   * about a test of the Flow as it now stands finishes a build (user,
+   * 2026-10-02).
    */
   | "judged_wrong";
 
@@ -38,11 +40,17 @@ export type AutomationStudioFlowBootstrapJudgeSpend = { inputTokens: number; out
  * that could not run -- no cost left, the deadline passed, or it was stopped.
  * `untestedCarried` is the positions of steps carried from an earlier Flow
  * that this test did not run, whose acts it therefore has no evidence of.
+ *
+ * `flowSignature` is the Flow signature
+ * (`automationStudioFlowDraftFlowSignature`) of the test the verdict judged,
+ * stamped by the build's judge from the round's observed test; absent when no
+ * test was judged. A yes finishes a build only when it equals the signature of
+ * the Flow the round finished with (user, 2026-10-02; `./phases.ts`).
  */
 export type AutomationStudioFlowBootstrapTestVerdict =
-  | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend }
-  | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; spent: AutomationStudioFlowBootstrapJudgeSpend }
-  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; spent: AutomationStudioFlowBootstrapJudgeSpend };
+  | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
+  | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
+  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
 
 /**
  * What the judged test stored, from the summary the judge read (t240): rows
@@ -54,8 +62,11 @@ export type AutomationStudioFlowBootstrapJudgedRecords = { stored: number; refus
 
 /**
  * The judge's account of a Flow it sent back to repair, as the repair is told
- * it. `no` with what it did not do; `unknown` or `not_judged` only where steps
- * carried from an earlier Flow were not run, with `findings` holding why.
+ * it. `no` with what it did not do; `unknown` or `not_judged` for a Flow not
+ * judged to do it -- the judge unsure, not run, or its yes about a test of
+ * another version of the Flow or of none -- with `findings` holding why, and
+ * `untestedCarried` naming steps carried from an earlier Flow that its test
+ * did not run.
  */
 export type AutomationStudioFlowBootstrapJudgedWrong = {
   verdict: "no" | "unknown" | "not_judged";
@@ -140,7 +151,7 @@ export type AutomationStudioFlowBootstrapRoundEnding =
  * - `fewer_failed_steps`: it still fails, but at fewer steps;
  * - `more_working_steps`: with no judge on either side, more steps worked when it ran;
  * - `finished_and_judged`: the model said it was ready and its test passed, where the round before stopped short;
- * - `carried_steps_judged`: the judge could not judge the Flow before (steps carried and never run) and now judged it;
+ * - `judged_after_unjudged`: the Flow before was not judged to do what was asked or not to (the judge unsure, not run, its yes about another version or no test, steps carried and never run), and this one was judged: a `no` (a `yes` about this Flow finishes the build and never reaches a measure);
  * - `judge_findings_resolved`: a finding the judge reported before is no longer reported;
  * - `records_stored`: the test stored rows where it stored none;
  * - `fewer_records_refused`: fewer rows were refused, with no fewer stored;
@@ -153,7 +164,7 @@ export type AutomationStudioFlowBootstrapProgressMeasure =
   | "fewer_failed_steps"
   | "more_working_steps"
   | "finished_and_judged"
-  | "carried_steps_judged"
+  | "judged_after_unjudged"
   | "judge_findings_resolved"
   | "records_stored"
   | "fewer_records_refused"

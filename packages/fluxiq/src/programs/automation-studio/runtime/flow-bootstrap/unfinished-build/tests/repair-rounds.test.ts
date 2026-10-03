@@ -6,7 +6,7 @@
 // Flow it started from ends it too (run 38, cause C8). Rounds and judges are
 // scripted: each charges the purse it is handed as its calls would.
 import { describe, expect, it } from "vitest";
-import { automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
@@ -98,7 +98,7 @@ describe("a repair round opens only when the purse can fund it", () => {
     // Five decisions held at $0.02 each, charged $0.017: $0.015 is left, under a decision and a judge at $0.02 each.
     const { input, requests } = harness([
       (request) => { calls(request.purse, 5, 0.02, 0.017); return outOfDecisions([step(1, { acts: ["a1"] })], spent(5, 0.085)); }
-    ], { purse, judge: async () => ({ verdict: "yes", spent: NOTHING_SPENT }) });
+    ], { purse, judge: async ({ loop }) => ({ verdict: "yes", spent: NOTHING_SPENT, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) }) });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
@@ -232,15 +232,18 @@ describe("a round that ended on refused repeats and handed back the Flow it star
 // summary's counts on a no, so a repair that stored rows where none were, or
 // refused fewer or left fewer incomplete while storing no fewer, progressed.
 describe("a repair judged wrong for the same findings, measured by what its test stored", () => {
-  const YES: AutomationStudioFlowBootstrapTestVerdict = { verdict: "yes", spent: NOTHING_SPENT };
-  /** Three rounds, each a different Flow; the first two judged no with these counts and the same finding, the third yes. */
+  /** Three rounds, each a different Flow; the first two judged no with these counts and the same finding, the third yes about its own test. */
   async function judgedTwice(first: { stored: number; refused: number; missingRequired: number }, second: { stored: number; refused: number; missingRequired: number }) {
-    const verdicts = [no(["result.required_values_missing"], first), no(["result.required_values_missing"], second), YES];
+    const verdicts: Array<(steps: readonly AutomationStudioFlowDraftStep[]) => AutomationStudioFlowBootstrapTestVerdict> = [
+      () => no(["result.required_values_missing"], first),
+      () => no(["result.required_values_missing"], second),
+      (steps) => ({ verdict: "yes", spent: NOTHING_SPENT, flowSignature: automationStudioFlowDraftFlowSignature(steps) })
+    ];
     const { input, requests } = harness([
       () => finished(wholeFlow(), spent(2, 0.01)),
       (request) => finished([...request.repair!.seed.slice(0, 2), step(3, { id: "d9", acts: ["a2"], ranWith: { target: "kettle" } })], spent(2, 0.01)),
       (request) => finished([...request.repair!.seed.slice(0, 2), step(3, { id: "d10", acts: ["a2"], ranWith: { target: "kettle-card" } })], spent(2, 0.01))
-    ], { judge: async () => verdicts.shift()! });
+    ], { judge: async ({ loop }) => verdicts.shift()!(loop.steps) });
     return { outcome: await runAutomationStudioFlowBootstrapBuildPhases(input), requests };
   }
 

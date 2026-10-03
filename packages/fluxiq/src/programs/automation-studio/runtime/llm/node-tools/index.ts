@@ -8,6 +8,9 @@ export * from "./replay.ts";
 export * from "./replay-draft.ts";
 export * from "./dry-run-gate.ts";
 export * from "./step-place.ts";
+// Running part of the Flow again from a chosen step, never the Flow's test (t244).
+export * from "./run-flow-part.ts";
+export * from "./run-flow.ts";
 // The nodes one build has been shown whole, and the option that asks for them.
 export * from "./node-descriptions.ts";
 export * from "./describe-nodes.ts";

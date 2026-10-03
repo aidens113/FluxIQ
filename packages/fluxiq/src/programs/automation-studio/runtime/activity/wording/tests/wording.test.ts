@@ -88,6 +88,22 @@ describe("automationStudioActivityToolCall", () => {
     expect(automationStudioActivityToolCall(call("r2", { callId: "initial.core.run_node" }, "core.recall_result")).title).toBe("Looking again at what an earlier step found");
   });
 
+  it("says which steps of the Flow a part run runs (t244)", () => {
+    expect(automationStudioActivityToolCall(call("p1", { from: 3, to: 5 }, "core.run_flow"))).toMatchObject({ kind: "tool", phase: "exploring", title: "Running steps 3 to 5 of the Flow", dryRun: false });
+    expect(automationStudioActivityToolCall(call("p2", { from: 3 }, "core.run_flow")).title).toBe("Running the Flow from step 3");
+    expect(automationStudioActivityToolCall(call("p3", { from: 4, to: 4 }, "core.run_flow")).title).toBe("Running step 4 of the Flow");
+    expect(automationStudioActivityToolCall(call("p4", {}, "core.run_flow")).title).toBe("Running part of the Flow");
+  });
+
+  // t244: the steps a part run sends carry the replay key, as a dry run's do, under
+  // the model's own call id; they are part of a test, never exploring.
+  it("marks the steps a part run sends as trying part of the Flow", () => {
+    expect(automationStudioActivityToolCall(call("p1.3", { replay: "step", node: CLICK, parameters: { element: QUOTE }, consequences: [] }))).toEqual({
+      phase: "verifying", kind: "tool", title: "Clicking “Get a free quote”", label: "Trying part of the Flow: clicking “Get a free quote”", dryRun: true, node: CLICK
+    });
+    expect(automationStudioActivityToolCall(call("p1.4", { replay: "verify", node: CLICK, parameters: { element: QUOTE } }))).toMatchObject({ phase: "verifying", label: "Trying part of the Flow: clicking “Get a free quote”", dryRun: true });
+  });
+
   it("says a rerun's reset as bookkeeping for its step, and the rerun as that step tried again (t193: Action · the page)", () => {
     expect(automationStudioActivityToolCall(call("rerun.10.place", { replay: "reset", from: { location: "https://x.example/p" } }))).toEqual({
       phase: "exploring", kind: "note", title: "Putting the page back to where step 10 starts", label: "Putting the page back to where step 10 starts", dryRun: false

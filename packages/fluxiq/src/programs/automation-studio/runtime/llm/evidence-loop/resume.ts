@@ -85,7 +85,11 @@ const JUDGED_INSTRUCTION = "The Flow you said was ready was tested from its star
   + "The acts checklist is the build's own reading and is information, not the bar: the Flow is judged on what its test does. "
   + "The whole Flow is tested again from where it starts and judged again when you complete: complete when the Flow does what the instruction asks.";
 
-const UNJUDGED_INSTRUCTION = "The Flow you said was ready could not be judged against the instruction: its test did not run every step, so there is no evidence that what those steps claim is done (judgement.judge.findings says why). "
+// Not judged to do it: the judge was unsure, could not answer, or its yes was
+// about another version of the Flow or about no test at all. A Flow is finished
+// only once a run of the whole Flow from its start was judged to do what was
+// asked, on the Flow as it stands (user, 2026-10-02, t244).
+const UNJUDGED_INSTRUCTION = "The Flow you said was ready was not judged to do what the instruction asks (judgement.judge.findings says why), and a Flow is finished only once a run of the whole Flow from its start is judged to do it. "
   + "Your draft is that Flow. The page is where the test left it: look first. "
   + "Do not repeat work the draft already holds. "
   + "The acts checklist is the build's own reading and is information, not the bar: the Flow is judged on what its test does. "

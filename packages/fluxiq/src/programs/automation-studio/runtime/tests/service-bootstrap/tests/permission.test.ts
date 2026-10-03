@@ -18,6 +18,7 @@ import type { AutomationStudioActionConsequence } from "../../../action-permissi
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, expectNoTopology, caller, isJudgeRequest, judgeReply, mockProvider, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const PRESS_ID = "domain.example.press";
@@ -63,14 +64,15 @@ afterEach(async () => {
 
 describe("building a Flow that needs an action a person has not allowed", () => {
   it("carries on when an exploration step needs it, proposes what it could build, and brings the request with it", async () => {
-    const run = await build([pressDecision(REFUND.handle), complete(pressPlan(OPEN.handle))]);
+    // What it could build is the step it could run: a Flow is finished only once a run of it whole was judged (user, 2026-10-02).
+    const run = await build([pressDecision(REFUND.handle), pressDecision(OPEN.handle), complete(pressPlan(OPEN.handle))]);
     const result = await run.generation;
 
-    // The action itself is still never taken.
-    expect(run.pressed).toEqual([]);
+    // The action itself is still never taken: only the press that needed nobody's permission.
+    expect(run.pressed).toEqual([OPEN.handle]);
     // Recoverable: the model was asked again and built the Flow it could, and its test was judged.
-    expect(run.requests).toHaveLength(3);
-    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true]);
+    expect(run.requests).toHaveLength(4);
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, false, true]);
     expect(result.status).toBe("proposed");
     expect(result.permissionRequest).toMatchObject({
       schemaVersion: "automation-studio.action-permission-request.v1",
@@ -163,7 +165,7 @@ describe("the same build, when the instruction itself asks for it", () => {
     await run.instance.reviewFlowBootstrapAdaptation({ projectId: run.project.id, flowId: run.flow.flowId, adaptationId: result.adaptationId, action: "apply" });
     const applied = await run.instance.getFlow(run.project.id, run.flow.flowId);
     expect(applied.metadata?.bootstrapInstructedConsequences).toEqual(stored!.instructedConsequences);
-  });
+  }, 30_000); // A build, its test, its judge, then approval and apply: about 6 s alone, past 15 s beside other files.
 
   it("still asks for a consequence the instruction did not ask for", async () => {
     const run = await build([pressDecision(REFUND.handle)], undefined, [{ consequence: "modify_existing", quote: "refund the first line of Ada Lovelace's order" }]);
@@ -246,7 +248,8 @@ async function build(decisions: JsonObject[], permittedConsequences?: Automation
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
-    llmEvidenceRuntime: refundingBinding(pressed)
+    // Said how to run its steps again, so the build's test can run the Flow whole; its replay calls never press anything.
+    llmEvidenceRuntime: automationStudioReplayingBinding(refundingBinding(pressed))
   }).bindNativeNodeRuntime(pressRuntime());
   services.add(instance);
   const instruction = await instance.getFlowInstruction(project.id, "instruction.build");

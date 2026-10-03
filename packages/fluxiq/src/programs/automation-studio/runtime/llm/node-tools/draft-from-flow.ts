@@ -135,7 +135,9 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
       disposition: "kept",
       // What the Flow already says about when this node runs. Without it the
       // re-authored Flow would run it unconditionally.
-      ...(optional.has(node.id) ? { routing: { kind: "optional" as const } } : {})
+      ...(optional.has(node.id) ? { routing: { kind: "optional" as const } } : {}),
+      // What state routing recorded on the node, carried unread (see below).
+      ...routeSignaturesOf(node)
     });
     nodeIdByStepId[id] = node.id;
   }
@@ -164,10 +166,33 @@ export function automationStudioFlowDraftPlanNodeIds(input: {
   const nodeIdByKey: Record<string, string> = {};
   const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
   for (const [index, step] of proposed.entries()) {
-    const nodeId = input.nodeIdByStepId[automationStudioFlowDraftStepId(step)];
+    // A rerun that took a carried step's place stands for that step's node (t244).
+    const nodeId = input.nodeIdByStepId[step.standsFor ?? automationStudioFlowDraftStepId(step)];
     if (nodeId !== undefined) nodeIdByKey[`s${index + 1}`] = nodeId;
   }
   return nodeIdByKey;
+}
+
+/** Where a node keeps what state routing recorded on it (`route-state/`, t243). */
+const ROUTE_SIGNATURES_KEY = "routeSignatures";
+
+/**
+ * What state routing recorded on a node, for its seeded step, or nothing.
+ *
+ * **Why (supervisor, t243 -> t244).** A node built by the build carries
+ * `metadata.routeSignatures`: the pages it ran between and what it did, as the
+ * domain signed them, which is what lets a run route by state to that node. A
+ * re-seed that dropped them left a re-authored or extended Flow routing by the
+ * ladder alone. Since t244 every carried step runs again in the build, and the
+ * step that runs it records fresh ones; these are what stands in where it could
+ * not. Carried unread: only `route-state/` knows what a signature holds, and it
+ * reads them where the Flow is written. Anything but a non-empty object is not
+ * signatures, and nothing is carried.
+ */
+function routeSignaturesOf(node: AutomationStudioFlowNode): { routeSignatures?: JsonObject } {
+  const value = node.metadata?.[ROUTE_SIGNATURES_KEY];
+  if (!value || typeof value !== "object" || Array.isArray(value) || !Object.keys(value).length) return {};
+  return { routeSignatures: structuredClone(value) };
 }
 
 /**
