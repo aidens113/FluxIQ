@@ -142,6 +142,22 @@ describe("a Flow input's name", () => {
     expect(errors(assembled).map((issue) => [issue.code, issue.path])).toEqual([["flow_draft.input_shadowed", "draft.steps.2"]]);
   });
 
+  it("is refused when two steps test it with different values, naming both values and the steps", () => {
+    const assembled = assemble([
+      step(1, "web.output.dom-type", { selector: "#search", text: { $state: { path: "query", fallback: "blue towels" } } }),
+      step(2, "web.output.dom-type", { selector: "#again", text: { $state: { path: "query", fallback: "red towels" } } })
+    ]);
+    expect(assembled.plan).toBeUndefined();
+    const refused = errors(assembled).filter((issue) => issue.code === "flow_draft.input_conflict");
+    expect(refused.map((issue) => issue.path)).toEqual(["draft.steps.1"]);
+    expect(refused[0]!.message).toContain("\"blue towels\" and \"red towels\"");
+    expect(refused[0]!.message).toContain("steps 1, 2");
+  });
+
+  it("is free when every step tests it with the same value", () => {
+    expect(errors(assemble(LOOPED))).toEqual([]);
+  });
+
   it("is free when no node of the plan declares that output", () => {
     const assembled = assemble([step(1, "web.output.dom-type", { selector: "#search", text: { $state: { path: "records", fallback: "x" } } })]);
     expect(errors(assembled)).toEqual([]);

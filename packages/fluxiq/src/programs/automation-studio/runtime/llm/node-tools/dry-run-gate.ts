@@ -76,7 +76,7 @@ import {
 import { automationStudioFlowDraftStepCarried } from "./draft-from-flow.ts";
 import { automationStudioFlowBootstrapDraftStepIsWritable } from "./draft-step.ts";
 import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "./replay-draft.ts";
-import type { AutomationStudioFlowDraftReplayObservation } from "./replay-span.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE, type AutomationStudioFlowDraftReplayObservation } from "./replay-span.ts";
 
 /**
  * What a gate answers.
@@ -379,8 +379,12 @@ export function automationStudioFlowDraftDryRunGate(
  *
  * Either way nothing ran the step, since a written step never ran in the build.
  * A recorded step in the same span ran live while exploring, so it answers as
- * any conditional step does. A step withheld behind a lasting act is excused
- * for that (`withheldBy`), not refused here.
+ * any conditional step does -- unless the test could not walk the span and the
+ * step's call failed `core.replay.unresolved_binding`: it is bound to the row
+ * (`$row`), so its bound form has never run on one, and excusing it would
+ * propose a loop body nothing ever tested (t252-w7b's proof without `nodeOf`).
+ * A step withheld behind a lasting act is excused for that (`withheldBy`), not
+ * refused here.
  */
 function notReached(steps: readonly AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun): { position: number; actionId: string; word: AutomationStudioFlowDraftUnrunnableWord }[] {
   const repeated = repeatedStepIds(steps);
@@ -389,7 +393,9 @@ function notReached(steps: readonly AutomationStudioFlowDraftStep[], verdict: Au
     const unwalked = outcome.passes === undefined && outcome.withheldBy === undefined && outcome.status !== "replayed";
     if (!zeroPasses && !unwalked) return [];
     const step = steps.find((candidate) => candidate.position === outcome.step);
-    if (!step?.written || (unwalked && !repeated.has(automationStudioFlowDraftStepId(step)))) return [];
+    if (!step) return [];
+    const rowNeverGiven = unwalked && outcome.resultCode === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE;
+    if (!(step.written || rowNeverGiven) || (unwalked && !repeated.has(automationStudioFlowDraftStepId(step)))) return [];
     return [{ position: step.position, actionId: step.actionId, word: "not_reached" as const }];
   });
 }

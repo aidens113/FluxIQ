@@ -30,7 +30,7 @@
 // it unchanged.
 
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
-import { automationStudioFlowDraftStepId, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftInputs, automationStudioFlowDraftStepId, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
@@ -151,11 +151,22 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
       resolution: input.resolution
     }));
   }
+  // One Flow input tested with two values: a run that supplies nothing would
+  // use one value at one step and another at the next, and the build's test
+  // would have run neither Flow (`../../flow-draft/flow-inputs.ts`, design t252 D3).
+  for (const conflict of automationStudioFlowDraftInputs(input.steps).conflicts) {
+    issues.push(authoringError(
+      "flow_draft.input_conflict",
+      `The Flow input "${conflict.name}" is given different test values by steps ${conflict.steps.join(", ")}: ${conflict.tests.map((test) => JSON.stringify(test)).join(" and ")}. A run that supplies no value would use one at one step and another at the next. Give every binding of "${conflict.name}" the same test value, or give the inputs different names.`,
+      `draft.steps.${conflict.steps[0]}`
+    ));
+  }
   const all = [...issues, ...assembled.issues];
   // A step nothing could write down refuses the plan: it is a step that was
   // performed and would be absent from the result, which is the one outcome
   // the draft exists to make impossible. So does a binding the graph cannot
-  // honour, since the Flow would run the step on nothing or on the wrong value.
+  // honour, since the Flow would run the step on nothing or on the wrong value,
+  // and an input tested with two values.
   if (issues.length) return { issues: all, ...(built ? { refusedPlan: built } : {}) };
   return {
     ...(assembled.plan ? { plan: assembled.plan, draftStepIdByNodeKey: draftStepIdByNodeKey(steps, assembled.plan) } : {}),

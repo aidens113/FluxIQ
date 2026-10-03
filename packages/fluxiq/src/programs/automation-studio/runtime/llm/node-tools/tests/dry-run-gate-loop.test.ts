@@ -166,3 +166,38 @@ describe("the unchanged line over a repeat the test walked", () => {
     expect(lines[0]).not.toContain("step 3");
   });
 });
+
+// t252-w7b: the confirm-requests proof without `nodeOf` proposed its Confirm,
+// recorded on one row and bound to `$row`, untested: the span was sent once on
+// the explored row, the binding had no row to resolve against, nothing was sent
+// for it (`core.replay.unresolved_binding`), and the failure was excused as a
+// repeat's. Its bound form has never run on a row, so it is not reached.
+describe("a recorded step bound to the row, in a repeat the test could not walk", () => {
+  const boundLoop = (parameters: JsonObject) => [
+    step(1, "node.list"),
+    // A recorded press that worked while exploring, so the draft proposes it.
+    step(2, "node.press", { routing: { kind: "repeat", over: "d1", through: "d2" }, effectApplied: true, ranWith: { node: "node.press", parameters, consequences: [] } })
+  ];
+
+  it("is refused not_reached: its $row value had no row, so nothing was sent for it", async () => {
+    const steps = boundLoop({ target: "#s2", person: { $state: { path: "item.name" } } });
+    const run = harness(steps, [], { nodeOf: false });
+    expect(await run.gate()).toEqual({ issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] });
+    expect(run.shown.at(-1)!.value).toMatchObject({ code: AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE, steps: [{ step: 2, replayed: "not_reached" }] });
+    expect(steps[1]!.replayed).toMatchObject({ status: "failed", resultCode: "core.replay.unresolved_binding" });
+    expect(run.reports).toEqual([]);
+  });
+
+  it("passes once the test walks the rows and the binding resolves on each", async () => {
+    const steps = boundLoop({ target: "#s2", person: { $state: { path: "item.name" } } });
+    const run = harness(steps, [{ name: "Ada" }, { name: "Ben" }]);
+    expect(await run.gate()).toBeUndefined();
+    expect(steps[1]!.replayed).toMatchObject({ status: "replayed", passes: [{ pass: 1 }, { pass: 2 }] });
+  });
+
+  it("stays excused when its only binding is an input, which resolves to its test value", async () => {
+    const run = harness(boundLoop({ target: "#s2", query: { $state: { path: "query", fallback: "towels" } } }), [], { nodeOf: false, pressCode: "core.replay.failed" });
+    expect(await run.gate()).toBeUndefined();
+    expect(run.reports).toHaveLength(1);
+  });
+});

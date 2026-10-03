@@ -8,7 +8,7 @@
 //
 // One name with two test values is a conflict: a run that supplies nothing
 // would use one value at one step and another at the next, so the assembler
-// refuses it (`flow_draft.input_conflict`) and the draft names it.
+// refuses it (`flow_draft.input_conflict`, `../flow-bootstrap/authoring/assemble-draft.ts`).
 
 import type { JsonValue } from "../../../../core/index.ts";
 import { automationStudioFlowDraftStoredBindings } from "./binding-forms.ts";
