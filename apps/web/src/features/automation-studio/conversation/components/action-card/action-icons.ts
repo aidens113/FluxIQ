@@ -30,6 +30,7 @@ export const CONVERSATION_ACTION_ICONS: Readonly<Record<ActivityActionKind, Luci
   navigate: Globe,
   read: Table,
   look: ScanSearch,
+  recall: ScanSearch,
   wait: Hourglass,
   person_check: ShieldCheck,
   permission: Hand,
