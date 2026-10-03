@@ -86,7 +86,7 @@ export async function resolveAutomationStudioUnattendedRepairAuthority(input: {
       // The whole repair's purse, not a per-call figure: `run-budget.ts` divides
       // it into shares itself, and a per-call number there would be multiplied
       // back up into a purse nobody chose. It is a ceiling over the policy's own
-      // $0.25, never a widening of it -- that function takes the smaller.
+      // per-run figure, never a widening of it -- that function takes the smaller.
       maxTotalEstimatedCostUsd: Math.min(resolved.maxEstimatedCostUsd ?? redemption.maxEstimatedCostUsdPerRun, redemption.maxEstimatedCostUsdPerRun),
       ...(resolved.tokenLimits ? { tokenLimits: resolved.tokenLimits } : {}),
       ...(resolved.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {})

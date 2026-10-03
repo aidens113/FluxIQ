@@ -20,7 +20,8 @@
 // the build again after a failure that may pass, and the patch ladder it falls
 // back to were each held to $0.25 on their own, so one repair could spend about
 // $0.75. They now spend from one purse (`recovery/refuted-result/purse.ts`):
-// $0.25, lowered by the Flow's own setting. Each part is handed what is left as
+// the run cost ceiling (`AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 by
+// default), lowered by the Flow's own setting. Each part is handed what is left as
 // its total -- the build's loop budget, the recovery's ledger -- once the parts
 // before it are charged what they reported. A part with nothing left -- less
 // than one more call at what the repair's calls have cost so far -- is not

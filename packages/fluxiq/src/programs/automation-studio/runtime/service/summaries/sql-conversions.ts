@@ -1,4 +1,5 @@
 import type { AutomationStudioFlowAdaptation } from "../../../model/index.ts";
+import type { AutomationStudioJudgedApplication } from "../../durable-behavior/index.ts";
 import type { AutomationStudioAdaptationSummary } from "../indexes/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import type {
@@ -72,7 +73,7 @@ export function flowExpansionStatusFromSql(status: string): AutomationStudioFlow
   return status === "archived" ? "archived" : "active";
 }
 
-export function adaptationSummaryFromTypedStore(adaptation: { adaptationId: string; flowId: string; projectId: string; subflowId: string | null; status: AutomationStudioFlowAdaptation["status"]; riskLevel: AutomationStudioFlowAdaptation["riskLevel"]; trigger: string; updatedAt: number; patchCount?: number; evidenceCount?: number; approvalMode?: string; baseRevision?: number; appliedRevision?: number | null }): AutomationStudioAdaptationSummary {
+export function adaptationSummaryFromTypedStore(adaptation: { adaptationId: string; flowId: string; projectId: string; subflowId: string | null; status: AutomationStudioFlowAdaptation["status"]; riskLevel: AutomationStudioFlowAdaptation["riskLevel"]; trigger: string; updatedAt: number; patchCount?: number; evidenceCount?: number; approvalMode?: string; baseRevision?: number; appliedRevision?: number | null; judgedApplication?: AutomationStudioJudgedApplication }): AutomationStudioAdaptationSummary {
   return compactJsonObject({
     adaptationId: adaptation.adaptationId,
     flowId: adaptation.flowId,
@@ -86,6 +87,7 @@ export function adaptationSummaryFromTypedStore(adaptation: { adaptationId: stri
     evidenceCount: adaptation.evidenceCount,
     approvalMode: adaptation.approvalMode,
     baseRevision: adaptation.baseRevision,
-    appliedRevision: adaptation.appliedRevision ?? undefined
+    appliedRevision: adaptation.appliedRevision ?? undefined,
+    judgedApplication: adaptation.judgedApplication
   }) as unknown as AutomationStudioAdaptationSummary;
 }

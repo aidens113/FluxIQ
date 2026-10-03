@@ -1,4 +1,5 @@
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowAdaptation, AutomationStudioFlowChangeProposal } from "../../../model/index.ts";
+import { automationStudioJudgedApplication } from "../../durable-behavior/index.ts";
 import type { AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioChangeProposalSummary } from "../indexes/index.ts";
 
 // The listing rows a change proposal, an adaptation and an adaptation policy
@@ -18,6 +19,7 @@ export function changeProposalSummaryFromProposal(proposal: AutomationStudioFlow
   };
 }
 export function adaptationSummaryFromAdaptation(adaptation: AutomationStudioFlowAdaptation): AutomationStudioAdaptationSummary {
+  const judgedApplication = automationStudioJudgedApplication(adaptation.metadata?.approvalDecision);
   return {
     adaptationId: adaptation.adaptationId,
     flowId: adaptation.flowId,
@@ -26,7 +28,8 @@ export function adaptationSummaryFromAdaptation(adaptation: AutomationStudioFlow
     status: adaptation.status,
     riskLevel: adaptation.riskLevel,
     trigger: adaptation.trigger,
-    updatedAt: adaptation.updatedAt
+    updatedAt: adaptation.updatedAt,
+    ...(judgedApplication ? { judgedApplication } : {})
   };
 }
 

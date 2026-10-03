@@ -4,6 +4,7 @@ import { Combobox, DataTable, Field, Menu, Modal, StatusBadge, StatusText, Summa
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, AlertTriangle, ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, CircleCheck, Copy, Info, ListChecks, MoreHorizontal, Search, Pencil, Plus, Power, Route, Trash2, Workflow, X } from "lucide-react";
 import { JsonToggle, compactConditionLabel, flowMapFallbackLabel, formatRuntimeTimestamp } from "../runtime";
+import { adaptationApplication } from "./application-state";
 import { adaptationReviewActions, adaptationReviewCopy, type AdaptationObjectTarget, type AdaptationReviewAction } from "./adaptation-model";
 import { useAdaptationCommands, type AdaptationCommands } from "./adaptation-host";
 import { AdaptationChangeCard, AdaptationTargetAction } from "./AdaptationChangeCard";
@@ -171,6 +172,7 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
   };
   const nextOffset = page.offset + page.limit;
   const previousOffset = Math.max(0, page.offset - page.limit);
+  const selectedApplication = adaptationApplication(selectedAdaptation);
   const phase9 = selectedAdaptation?.metadata?.phase9 && typeof selectedAdaptation.metadata.phase9 === "object" ? selectedAdaptation.metadata.phase9 : {};
   const phase9Artifacts = Array.isArray(phase9.artifacts) ? phase9.artifacts : [];
   const phase9AuditEvents = Array.isArray(phase9.auditEvents) ? phase9.auditEvents : [];
@@ -206,7 +208,7 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
           </div>
           <div aria-busy={loading} aria-label="Adaptations" className="automation-adaptation-table" role="table">
             <div className="automation-adaptation-table-head" role="row"><span role="columnheader">Trigger</span><span role="columnheader">Risk</span><span role="columnheader">Updated</span><span role="columnheader">Status</span></div>
-            {!loading && adaptations.map((adaptation) => <button aria-selected={selectedAdaptation?.adaptationId === adaptation.adaptationId} className={selectedAdaptation?.adaptationId === adaptation.adaptationId ? "selected" : ""} key={adaptation.adaptationId} onClick={() => openAdaptation(adaptation.adaptationId)} role="row" type="button"><span role="cell"><strong>{adaptation.trigger || "Untitled adaptation"}</strong><small>{adaptation.adaptationId}</small></span><span role="cell"><StatusBadge value={adaptation.riskLevel ?? "low"} /></span><span role="cell">{formatRuntimeTimestamp(adaptation.updatedAt)}</span><span role="cell"><StatusBadge value={adaptation.status ?? "proposed"} /></span></button>)}
+            {!loading && adaptations.map((adaptation) => { const application = adaptationApplication(adaptation); return <button aria-selected={selectedAdaptation?.adaptationId === adaptation.adaptationId} className={selectedAdaptation?.adaptationId === adaptation.adaptationId ? "selected" : ""} key={adaptation.adaptationId} onClick={() => openAdaptation(adaptation.adaptationId)} role="row" type="button"><span role="cell"><strong>{adaptation.trigger || "Untitled adaptation"}</strong><small>{adaptation.adaptationId}</small></span><span role="cell"><StatusBadge value={adaptation.riskLevel ?? "low"} /></span><span role="cell">{formatRuntimeTimestamp(adaptation.updatedAt)}</span><span role="cell"><StatusBadge value={adaptation.status ?? "proposed"} />{application ? <small>{application.short}</small> : null}</span></button>; })}
             {loading ? <div className="automation-runtime-empty" role="row"><span aria-colspan={4} aria-live="polite" role="cell">Loading adaptations...</span></div> : null}
             {!loading && !adaptations.length ? <div className="automation-runtime-empty" role="row"><span aria-colspan={4} role="cell">{search || status || risk ? "No suggested changes match these filters. Clear them to see the rest." : flowId ? "No suggested changes yet. FluxIQ adds one here whenever a run finds something it would change." : "Select a Flow to review adaptations. Choose an automation from the list on the left."}</span></div> : null}
           </div>
@@ -248,8 +250,12 @@ export function AdaptationsViewContent(props: AdaptationsViewProps & { commands:
                 <header><strong>Scope</strong><span>Where this change belongs</span></header>
                 <DataTable label="Adaptation scope" columns={["Flow", "Subflow", "Created", "Updated"]} rows={[[selectedAdaptation.flowId ?? "-", selectedAdaptation.subflowId ?? "Top-level Flow", formatRuntimeTimestamp(selectedAdaptation.createdAt), formatRuntimeTimestamp(selectedAdaptation.updatedAt)]]} empty="No scope information." />
               </section>
+              {selectedApplication ? <section aria-label="Whether this change is in the Flow" className="automation-runtime-log-section">
+                <header><strong>In The Flow</strong><span>{selectedApplication.title}</span></header>
+                <p className="automation-adaptation-copy">{selectedApplication.detail}</p>
+              </section> : null}
               {selectedAdaptation.metadata?.approvalDecision ? <section className="automation-runtime-log-section">
-                <header><strong>Current Decision</strong><span>{selectedAdaptation.metadata.approvalDecision.autoApply === true ? "Automatically allowed" : selectedAdaptation.metadata.approvalDecision.requiresManualApproval ? "Manual review required" : "Recorded"}</span></header>
+                <header><strong>Current Decision</strong><span>{selectedApplication?.decision ?? (selectedAdaptation.metadata.approvalDecision.autoApply === true ? "Automatically allowed" : selectedAdaptation.metadata.approvalDecision.requiresManualApproval ? "Manual review required" : "Recorded")}</span></header>
                 <p className="automation-adaptation-copy">{selectedAdaptation.metadata.approvalDecision.reason ?? "No decision explanation was recorded."}</p>
               </section> : null}
             </div> : null}
