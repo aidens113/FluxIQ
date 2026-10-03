@@ -102,7 +102,7 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     }
   }
   if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) return undefined;
-  if (kind === "diagnosis" && isRecord(value.diagnosis)) return { ...value, diagnosis: withoutBlankDiagnosisText(value.diagnosis) } as unknown as AutomationStudioLlmStructuredResponse;
+  if (kind === "diagnosis" && isRecord(value.diagnosis)) return { ...value, diagnosis: readDiagnosisText(value.diagnosis) } as unknown as AutomationStudioLlmStructuredResponse;
   return value as unknown as AutomationStudioLlmStructuredResponse;
 }
 
@@ -112,16 +112,52 @@ function isBlankText(value: unknown): boolean {
   return typeof value === "string" && !value.trim();
 }
 
+/** What ends a clipped diagnosis text, so a reader sees it was cut. */
+const CLIPPED_MARK = "… [clipped]";
+
+/** Whether a diagnosis text runs past its bound once its surrounding whitespace is set aside. */
+function isOverLongText(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH;
+}
+
 /**
- * The parsed diagnosis without the texts the model left blank. A blank text is
- * a field it did not answer -- a judge that finds nothing to change says so
- * with `changed: ""` -- so it is dropped rather than refused, and no consumer
- * is handed an empty description. A copy, so the provider's reply is left as
- * it came.
+ * A text cut to the bound, mark included: at the last word boundary in the
+ * second half of the room, or at the room itself when the text has none there.
  */
-function withoutBlankDiagnosisText(diagnosis: Record<string, unknown>): Record<string, unknown> {
+function clippedText(value: string): string {
+  const text = value.trim();
+  const room = AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH - CLIPPED_MARK.length;
+  let head = text.slice(0, room);
+  if (!/\s/u.test(text.charAt(room))) {
+    const boundary = head.search(/\s\S*$/u);
+    if (boundary >= room / 2) head = head.slice(0, boundary);
+  }
+  return `${head.trimEnd()}${CLIPPED_MARK}`;
+}
+
+/**
+ * The parsed diagnosis as every consumer reads it: without the texts the model
+ * left blank, and with an over-long one clipped.
+ *
+ * A blank text is a field it did not answer -- a judge that finds nothing to
+ * change says so with `changed: ""` -- so it is dropped rather than refused, and
+ * no consumer is handed an empty description.
+ *
+ * A text past the bound is read cut to it, at a word boundary and marked, with
+ * a warning naming the field (`validateUnknownDiagnosisFields`). It used to void
+ * the whole reply: live run murwcmx2's judge answered a clear `no` with a
+ * 581-character `changed`, verify read the refused reply as a call that never
+ * came back, and the refutation both calls gave was recorded as unconfirmed.
+ * The bound stays 500 in the instruction and the output schema. Whitespace
+ * alone past the bound is trimmed, not clipped. A copy: the reply stays as it came.
+ */
+function readDiagnosisText(diagnosis: Record<string, unknown>): Record<string, unknown> {
   const copy = { ...diagnosis };
-  for (const field of DIAGNOSIS_TEXT_FIELDS) if (isBlankText(copy[field])) delete copy[field];
+  for (const field of DIAGNOSIS_TEXT_FIELDS) {
+    const text = copy[field];
+    if (isBlankText(text)) delete copy[field];
+    else if (typeof text === "string" && text.length > AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH) copy[field] = isOverLongText(text) ? clippedText(text) : text.trim();
+  }
   return copy;
 }
 
@@ -143,9 +179,13 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
   rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "explorationNeeded", "patchNeeded"], path, diagnostics);
   for (const field of DIAGNOSIS_TEXT_FIELDS) {
     // Blank is omitted, not invalid: the instruction asks for an unanswerable field to be left out.
-    if (value[field] === undefined || isBlankText(value[field])) continue;
-    if (typeof value[field] !== "string" || (value[field] as string).length > AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH) {
-      diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_text", message: `Diagnosis ${field} must be a string of at most ${AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH} characters.`, path: `${path}.${field}` });
+    const text = value[field];
+    if (text === undefined || isBlankText(text)) continue;
+    if (typeof text !== "string") {
+      diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_text", message: `Diagnosis ${field} must be a string.`, path: `${path}.${field}` });
+    } else if (isOverLongText(text)) {
+      // Too long is read clipped, not refused (`readDiagnosisText`): the verdict and the other fields stand.
+      diagnostics.push({ severity: "warning", code: "llm_output.diagnosis_text_clipped", message: `Diagnosis ${field} ran to ${text.trim().length} characters, past the ${AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH}-character bound, and was read clipped to it.`, path: `${path}.${field}` });
     }
   }
   for (const field of ["stillAchievable", "deterministicRecoveryPossible", "answersRequest"] as const) {
