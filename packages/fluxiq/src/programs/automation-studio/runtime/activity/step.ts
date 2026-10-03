@@ -3,7 +3,8 @@ import { automationStudioActivityAction, automationStudioActivityHumanLabel } fr
 
 /**
  * Says the executor is about to run one node: "Running step N of M: action".
- * `count` is how many nodes the Flow has; a loop can take a run past it, and
+ * `count` is how many steps a person sees in the Flow (every node but a merge,
+ * which the executor never announces); a loop can take a run past it, and
  * then the sentence says "step N" plainly rather than a count it has passed.
  *
  * The action is the node's authored label, which the panel already shows, or

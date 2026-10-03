@@ -48,6 +48,14 @@ const withheldBySavedTrace = new WeakMap<AutomationStudioGraphExecutionTrace, Fl
 const capturedBySavedTrace = new WeakMap<AutomationStudioGraphExecutionTrace, AutomationStudioCapturedRecords>();
 
 /**
+ * Whether a node is a step a person sees. A merge joins paths and does nothing
+ * on the page, so a run says no step card for it and leaves it out of "Step N
+ * of M" both ways: five acts and two merges read "Step 5 of 5", not "Step 7 of
+ * 7" over five cards (UI-3). A branch, a check and every other node are shown.
+ */
+const shownAsStep = (node: { definitionId: string }): boolean => node.definitionId !== "builtin.control.merge";
+
+/**
  * The one place a run trace is produced, and therefore the one place values a
  * run resolved out of state are withheld from it.
  *
@@ -372,6 +380,12 @@ async function executeAutomationStudioGraph(
   // again: that pass does nothing but leave it by the route the answer chose,
   // so whatever the node already did happened once.
   let resumedRoute = seed?.route;
+  // The step card's "N of M": M is the Flow's shown nodes, and N leaves out every
+  // merge the run has passed, those before a park included, which its attempts
+  // carry. A resumed run's first pass only leaves the parked node, which its
+  // `stepsTaken` already counted, so it is not a second step either.
+  const shownStepCount = flow.nodes.filter(shownAsStep).length;
+  let hiddenSteps = seed ? 1 + seed.attempts.filter((attempt) => !shownAsStep(attempt)).length : 0;
   for (let step = seed?.stepsTaken ?? 0; step < maxSteps; step += 1) {
     if (options.signal?.aborted) {
       return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
@@ -414,7 +428,8 @@ async function executeAutomationStudioGraph(
       if (options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
       }
-      emitAutomationStudioActivityStep({ index: step + 1, count: flow.nodes.length, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues });
+      if (!shownAsStep(currentNode)) hiddenSteps += 1;
+      else emitAutomationStudioActivityStep({ index: step + 1 - hiddenSteps, count: shownStepCount, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues });
       const notShown: AutomationStudioNodeAttemptTrace | undefined = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? automationStudioNotShownAttempt(currentNode, `${currentNode.id}.attempt.${nextAttemptNumber()}`, now()) : undefined;
       let routing: AutomationStudioStateRouteDecision | undefined = notShown ? await decideAutomationStudioStateRoute({ flow, node: currentNode, attempt: notShown, attempts, options, guard: routeGuard }) : undefined;
       const executed = notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
