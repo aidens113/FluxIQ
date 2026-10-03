@@ -422,7 +422,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const words = automationStudioFlowDraftStepWordsOf(input.describeCall, { toolId: decision.toolId, value: decision.input }); // Asked before the call: a click that closes its popup leaves its handle naming nothing (`../flow-draft/step-words.ts`).
     try {
       // A rerun runs from its step's own page, never from where the last call left it (`./node-tools/step-place.ts`).
-      const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
+      const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, steps: draftSteps, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
       // The rerun's answer says where it ran (`rerunPlace`): run `run-muqk713g`'s re-author reran a seeded read on the
       // results page the refuted run left, and nothing said so (C6).

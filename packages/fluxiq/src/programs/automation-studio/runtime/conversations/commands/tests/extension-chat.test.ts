@@ -376,7 +376,9 @@ describe("the extension's chat, end to end in Core", () => {
     await automationStudioConversationCommandWork.idle();
     const [result] = resultTurns((await world.thread()).turns, "flow.createHere");
     expect(result?.text).toMatch(/stopped because/u);
-    expect(result?.text).toMatch(/created the Flow/u);
+    // How far it got: the Flow it made, empty, never "created" as work done after a failed build.
+    expect(result?.text).toMatch(/What is left: the Flow "[^"]+", empty/u);
+    expect(result?.text).not.toMatch(/Before that I created the Flow/u);
     expect(result?.text).toMatch(/model key is locked/u);
   }, 60_000);
 });

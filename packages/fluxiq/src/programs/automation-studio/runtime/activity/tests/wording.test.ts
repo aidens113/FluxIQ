@@ -48,6 +48,21 @@ describe("observed tool calls", () => {
     expect(seen[1]!.label).toBe("Clicking on the page — didn't work");
   });
 
+  // t193 (`run-muqiojz4-04a7a8fc`, `S/0090`): a press refused for naming no
+  // handle read "it wasn't on the page", because the reason never reached the card.
+  it("carry a refusal's own reason in the raw record, and only a code-shaped one", async () => {
+    const refusedWith = (resultReason: string) => observeAutomationStudioEvidenceLoop({
+      tools: [],
+      decide: async () => ({}),
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false, resultCode: "web.action.rejected.target_unobserved", resultReason })
+    });
+    await inBuild(() => refusedWith("target_not_a_handle").executeTool(call("fix.add", { node: CLICK, parameters: { element: QUOTE } })));
+    expect(seen[1]!.detail?.text).toBe(`Result: web.action.rejected.target_unobserved · Reason: target_not_a_handle · Node: ${CLICK}`);
+    seen = [];
+    await inBuild(() => refusedWith("the page said: card 4111 declined").executeTool(call("fix.add", { node: CLICK, parameters: { element: QUOTE } })));
+    expect(seen[1]!.detail?.text).toBe(`Result: web.action.rejected.target_unobserved · Node: ${CLICK}`);
+  });
+
   // Live run `run-muqiojz4-04a7a8fc`: "Set as my store" was gone because the site remembered the store.
   it("say a dry run step the site remembered, or whose effect was already there, as done", async () => {
     for (const code of ["core.replay.remembered", "core.replay.present", "core.replay.verified"]) {

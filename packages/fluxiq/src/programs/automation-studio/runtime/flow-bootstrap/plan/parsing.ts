@@ -6,6 +6,7 @@
 // passed in by a caller that has the Flow and the setting's default otherwise,
 // and a plan over one is refused naming the setting that bounds it.
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "./contracts.ts";
+import { automationStudioRouteSignaturesValue } from "../../route-state/signatures/index.ts";
 import { boundedText, error, identifier, rejectFields, symbolic } from "./issues.ts";
 import { isJsonObject, isRecord, safeByteLength } from "./json-guards.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
@@ -103,7 +104,7 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
     issues.push(error("bootstrap.invalid_node", "Bootstrap node must be an object.", path));
     return;
   }
-  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences"], path, issues);
+  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences", "routeSignatures"], path, issues);
   symbolic(value.key, `${path}.key`, issues);
   identifier(value.definitionId, `${path}.definitionId`, issues);
   boundedText(value.definitionVersion, `${path}.definitionVersion`, issues);
@@ -116,6 +117,11 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
     && (!Array.isArray(value.consequences) || value.consequences.length > 10
       || !value.consequences.every((item) => typeof item === "string" && item.length > 0 && item.length <= 40))) {
     issues.push(error("bootstrap.invalid_consequences", "Node consequences must be a bounded string array.", `${path}.consequences`));
+  }
+  // Read by the one test a running node's metadata is read by, so a plan never
+  // carries a value the node would read as nothing (`../../route-state/signatures/`).
+  if (value.routeSignatures !== undefined && !automationStudioRouteSignaturesValue(value.routeSignatures)) {
+    issues.push(error("bootstrap.invalid_route_signatures", "Node routeSignatures must hold a before and/or an after, each a small JSON object.", `${path}.routeSignatures`));
   }
 }
 

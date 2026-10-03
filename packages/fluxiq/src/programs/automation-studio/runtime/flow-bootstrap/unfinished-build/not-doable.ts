@@ -71,9 +71,11 @@ function noRouteSaid(noRoute: AutomationStudioFlowBootstrapNoRouteLeft, after: A
   const still: string[] = [];
   if (after.flowSignature !== undefined && after.flowSignature === before.flowSignature) still.push("it handed back the same Flow");
   if (asked) {
+    // One thing asked is a thing, not "the 1 things" (`run-murdouox-c5294247`).
+    const things = `${asked} thing${asked === 1 ? "" : "s"}`;
     still.push(after.done < before.done
-      ? `fewer of the ${asked} things you asked had a step (${after.done}, down from ${before.done})`
-      : `no more of the ${asked} things you asked had a step (${after.done}, as before)`);
+      ? `fewer of the ${things} you asked had a step (${after.done}, down from ${before.done})`
+      : `no more of the ${things} you asked had a step (${after.done}, as before)`);
   }
   if (before.judge && after.judge) {
     still.push(after.judge.verdict === "no" ? (before.judge.verdict === "no" ? "the judge found the same as before" : "the judge still found it wrong") : "the judge still could not judge it");

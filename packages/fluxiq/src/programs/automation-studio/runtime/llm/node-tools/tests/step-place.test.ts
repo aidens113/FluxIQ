@@ -55,7 +55,7 @@ function refutedRun(): { actionAttempts: AutomationStudioFlowRunActionAttemptRec
 
 /** The rerun the evidence loop makes: put the page back, then run the step's own call. */
 async function rerun(step: AutomationStudioFlowDraftStep, startedOn: JsonObject | undefined, executeTool: ReturnType<typeof site>) {
-  const place = await automationStudioNodeRerunFromItsPlace({ step, startedOn, now: "page=5", callId: "rerun.5", executeTool });
+  const place = await automationStudioNodeRerunFromItsPlace({ steps: [], step, startedOn, now: "page=5", callId: "rerun.5", executeTool });
   const ran = place.kind === "unreachable" ? place.result : await executeTool({ callId: "rerun.5", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, value: { node: "web.output.dom-extract_list" } });
   return { place, ran: automationStudioNodeRerunPlaceNoted(place, ran) as { evidence: JsonObject } };
 }
@@ -72,7 +72,7 @@ describe("a rerun of a step seeded from the Flow, after the refuted run left the
       ["rerun.5.place", { replay: "reset", from: { location: "page=1" } }],
       ["rerun.5", { node: "web.output.dom-extract_list" }]
     ]);
-    expect(place).toEqual({ kind: "put_back", callId: "rerun.5.place", startPage: "seeded_run" });
+    expect(place).toEqual({ kind: "put_back", callId: "rerun.5.place", startPage: "seeded_run", doneAgain: [] });
     expect(ran.evidence).toMatchObject({ rows: 13, unfiltered: false, pagesRead: 5, rerunPlace: { place: "put_back", startPage: "seeded_run" } });
   });
 
@@ -95,16 +95,26 @@ describe("where a rerun runs", () => {
     position: 1, id: "d1", iteration: 1, actionId: "read", toolId: "read", input: {}, effect: "observe", disposition: "kept", ...fields
   });
 
+  // t193 x t194: a rerun put back says which steps before it were done again,
+  // so the model reads the rerun as running after them.
+  it("names the steps done again in the put-back note, and nothing when there were none", () => {
+    const doneAgain = [{ step: 9, stepId: "d9", actionId: "web.output.dom-click", callId: "r.place.9", outcome: "verified" }];
+    expect(automationStudioNodeRerunPlaceNoted({ kind: "put_back", callId: "r.place", startPage: "step", doneAgain }, { rows: 1 }))
+      .toEqual({ rows: 1, rerunPlace: { place: "put_back", startPage: "step", doneAgain: [{ step: 9, actionId: "web.output.dom-click", outcome: "verified" }] } });
+    expect(automationStudioNodeRerunPlaceNoted({ kind: "put_back", callId: "r.place", startPage: "step", doneAgain: [] }, { rows: 1 }))
+      .toEqual({ rows: 1, rerunPlace: { place: "put_back", startPage: "step" } });
+  });
+
   it("puts back the step's own recorded page before the seeded one", async () => {
     const executeTool = site(5);
-    const place = await automationStudioNodeRerunFromItsPlace({ step: step({ replay: { from: { location: "page=2" } } }), startedOn: { location: "page=1" }, now: "page=5", callId: "r", executeTool });
-    expect(place).toEqual({ kind: "put_back", callId: "r.place", startPage: "step" });
+    const place = await automationStudioNodeRerunFromItsPlace({ steps: [], step: step({ replay: { from: { location: "page=2" } } }), startedOn: { location: "page=1" }, now: "page=5", callId: "r", executeTool });
+    expect(place).toEqual({ kind: "put_back", callId: "r.place", startPage: "step", doneAgain: [] });
     expect(executeTool.mock.calls[0]![0].value).toEqual({ replay: "reset", from: { location: "page=2" } });
   });
 
   it("runs where it is, and says so, when the page is still the one its step started on", async () => {
     const executeTool = site(1);
-    const place = await automationStudioNodeRerunFromItsPlace({ step: step({ replay: { from: { location: "page=1" } }, stateBefore: "page=1" }), now: "page=1", callId: "r", executeTool });
+    const place = await automationStudioNodeRerunFromItsPlace({ steps: [], step: step({ replay: { from: { location: "page=1" } }, stateBefore: "page=1" }), now: "page=1", callId: "r", executeTool });
     expect(place).toEqual({ kind: "in_place", why: "already_there" });
     expect(executeTool).not.toHaveBeenCalled();
     expect(automationStudioNodeRerunPlaceNoted(place, { rows: 13 })).toEqual({ rows: 13, rerunPlace: { place: "in_place", reason: "already_on_start_page" } });
@@ -112,7 +122,7 @@ describe("where a rerun runs", () => {
 
   it("does not put a seeded step back when nothing recorded where its node started", async () => {
     const executeTool = site(5);
-    expect(await automationStudioNodeRerunFromItsPlace({ step: step(), now: "page=5", callId: "r", executeTool })).toEqual({ kind: "in_place", why: "start_page_unknown" });
+    expect(await automationStudioNodeRerunFromItsPlace({ steps: [], step: step(), now: "page=5", callId: "r", executeTool })).toEqual({ kind: "in_place", why: "start_page_unknown" });
     expect(executeTool).not.toHaveBeenCalled();
   });
 });

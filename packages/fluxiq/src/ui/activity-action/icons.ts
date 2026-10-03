@@ -13,6 +13,8 @@ const PAIRS: readonly (readonly [ActivityActionKind, string])[] = [
   ["permission", "hand"],
   ["draft", "pencil"],
   ["test", "flask-conical"],
+  // A look at what the run left: the look's icon, so no client has to draw a new one.
+  ["result_check", "scan-search"],
   ["repair", "wrench"],
   ["join", "git-merge"],
   ["branch", "git-branch"],

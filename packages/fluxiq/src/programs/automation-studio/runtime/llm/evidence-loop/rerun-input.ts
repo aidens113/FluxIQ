@@ -81,6 +81,22 @@
 // member merges as before, so what the model was never shown (the selector) is
 // still kept. A kind whose own member is named otherwise -- a table column's
 // `header` -- is not recognised here, and its member is kept, as before.
+//
+// **A key the patch adds with a left-out key's own value renames it
+// (`run-murdouox-c5294247`, steps 0047 and 0051).** A list read named its columns
+// by a detection's keys, `fields: {name: "kA", mutual: "kB", confirm: "kC"}`, and
+// the repair restated the map with `mutual` renamed to the instruction's
+// `mutualFriends: "kB"`. The merge kept both, so the call that ran was not the one
+// the model wrote; and its next rerun, which also left `confirm` out, merged back
+// into that same call and was refused as an exact repeat the model never made. So
+// when the patch adds a key whose value is the word a key it leaves out holds --
+// or an object that restates that key's stored object -- and no other left-out
+// key's, that key is renamed: it leaves, and the new key takes its stored value
+// merged with what the patch wrote, so a renamed column keeps the selector the
+// model was never shown. A number or a flag is no name (`maxScrolls: 3` beside a
+// stored `maxPages: 3` is a second bound), and a value several left-out keys could
+// be renames none. This cannot remove a withheld key: the model cannot write the
+// value of one it never saw. Leaving a key out still keeps it; `null` removes it.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 
 /** The keys of a `core.run_node` argument (`../node-tools/run-node.ts`). */
@@ -108,12 +124,15 @@ function mergePatch(target: JsonObject, patch: JsonObject): JsonObject {
   const merged: JsonObject = { ...target };
   const leaving = oldKindMember(target, patch);
   if (leaving !== undefined) delete merged[leaving];
+  const renamed = renamedKeys(target, patch);
+  for (const from of renamed.values()) delete merged[from];
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) {
       delete merged[key];
       continue;
     }
-    const current = merged[key];
+    const from = renamed.get(key);
+    const current = from === undefined ? merged[key] : target[from];
     merged[key] = isObject(value) ? mergePatch(isObject(current) ? current : {}, value) : structuredClone(value);
   }
   // After every key is merged, so a list item is read against its maps as they
@@ -123,6 +142,24 @@ function mergePatch(target: JsonObject, patch: JsonObject): JsonObject {
     if (Array.isArray(value) && Array.isArray(stored)) merged[key] = restoredList(value, stored, merged);
   }
   return merged;
+}
+
+/**
+ * Each key the patch adds that renames one it leaves out, as `added -> stored`:
+ * the added value is the left-out entry's own word, or an object that restates
+ * it, and no other left-out entry. A number or a flag is no name, and a value two
+ * left-out entries could be is no rename (see the header).
+ */
+function renamedKeys(target: JsonObject, patch: JsonObject): Map<string, string> {
+  const leftOut = Object.keys(target).filter((key) => !Object.hasOwn(patch, key));
+  const renamed = new Map<string, string>();
+  for (const [key, value] of Object.entries(patch)) {
+    if (Object.hasOwn(target, key)) continue;
+    const sources = leftOut.filter((from) => typeof value === "string" ? target[from] === value : isObject(value) && restates(value, target[from]));
+    const from = sources.length === 1 ? sources[0]! : undefined;
+    if (from !== undefined && ![...renamed.values()].includes(from)) renamed.set(key, from);
+  }
+  return renamed;
 }
 
 /**

@@ -1552,7 +1552,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         const authority = automationStudioFlowBootstrapInstructionAuthority({ run: creation.reading(runHarness), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider });
         // The gate belongs to the build, not to the loop: a build that explored and one that wrote its Flow in a single call both put a step with a lasting consequence to the same person, through the Flow's own thread.
         const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences, instructionIds: resolvedInstructions.instructionIds, executeTool: harnessOptions.executeTool, deriveInstructed: authority.derive,
-          ...(this.conversations.available ? { ask: { port: creation.askPort(this.conversations.parkingPort({ projectId, subject: { kind: "flow", id: flowId } })), timeoutMs: input.permissionAskTimeoutMs } } : {}) });
+          ...(this.conversations.available ? { ask: { port: creation.askPort(this.conversations.parkingPort({ projectId, subject: { kind: "flow", id: flowId } })), timeoutMs: input.permissionAskTimeoutMs }, say: (text: string) => this.conversations.writerFor({ projectId, subject: { kind: "flow", id: flowId } }).say(text) } : {}) }); // A finding no person is asked about is said, not asked (`flow-bootstrap/action-permissions.ts`).
         // A check only a person can get past goes to the person in the same thread, never to the model; not getting past it ends the build (`flow-bootstrap/person-needed.ts`).
         const personNeeded = automationStudioFlowBootstrapPersonNeeded({ executeTool: permissions.executeTool, tools: harnessOptions.tools, signal: permissions.signal, clearedResultCode: automationStudioFlowDraftReplayClearedCode,
           ...(this.conversations.available ? { ask: { port: this.conversations.parkingPort({ projectId, subject: { kind: "flow", id: flowId } }) } } : {}) });
@@ -1574,7 +1574,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
             // A completed plan is checked while the model can still correct it: a refused one is fed back and asked for again.
             checkCompletion: async (result, context) => {
               keeper.attempted(context.steps);
-              const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, size, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, draftSteps: context.steps, instructionText: bootstrapInstructionText, ...(startLocation === undefined ? {} : { startLocation }) });
+              const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result, projectId, flowId, registry, resolution, size, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, draftSteps: context.steps, routeSignaturesOf: routing.signaturesOf, instructionText: bootstrapInstructionText, ...(startLocation === undefined ? {} : { startLocation }) });
               accepted.verdict = verdict.ok ? verdict : undefined;
               return verdict.check;
             },
