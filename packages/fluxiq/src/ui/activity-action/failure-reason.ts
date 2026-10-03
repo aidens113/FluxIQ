@@ -41,6 +41,13 @@ const REASONS: readonly { words: RegExp; why: string }[] = [
 const REFUSAL_REASONS: readonly { words: RegExp; why: string }[] = [
   { words: /_(not_a_handle|malformed_handle|handle_in_wrong_parameter)_/u, why: "it didn't name a control from the page" },
   { words: /_(no_longer_on_page)_/u, why: "it was no longer on the page" },
+  // What the call was written with, never the page: a press refused for
+  // leaving out `consequences` read "it wasn't on the page", from the word
+  // `missing` in `missing_input_keys` (t193 1002-M, `run-murzln6g-11debe1d`, C12).
+  // Before `REASONS`, whose `missing` is a page word.
+  { words: /_(missing_input_keys|missing_keys|missing_input)_/u, why: "the request left out something it needs" },
+  { words: /_(unexpected_input_keys|unexpected_keys)_/u, why: "the request had something it doesn't take" },
+  { words: /_(not_a_number|not_a_url|value_not_text)_/u, why: "a value in the request was the wrong kind" },
   // Before `REASONS`, whose `changed` would say the opposite of "nothing changed".
   { words: /_(nothing_changed|unchanged)_/u, why: "nothing on the page changed" }
 ];

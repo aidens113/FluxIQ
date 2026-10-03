@@ -6,7 +6,7 @@
 // checklist's reason put into a plain clause. Nothing here is page content.
 import type { AutomationStudioInstructedActChecklistItem, AutomationStudioInstructedActObjectTodo, AutomationStudioInstructedActTodo } from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
-import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
+import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
 
 const MAX_QUOTE = 200;
 const MAX_SAID_QUOTE = 90;
@@ -149,10 +149,18 @@ export function automationStudioFlowBootstrapRepairingJudgedSaid(judge: NonNulla
  * step that worked when the Flow was run from its start
  * (`AutomationStudioFlowBootstrapJudgement.proven`), and the rest is said as a
  * step not yet shown to work. Empty when the instruction asked for no act.
+ *
+ * **"Worked" needs the judge's yes (t193 R2-C3).** A proven step is one that
+ * replayed or, since verify-only steps (`../../flow-draft/verify-only.ts`), one
+ * the test only checked could run; and live run `run-murzln6g-11debe1d` said
+ * "5 of the 6 things you asked worked" straight before "what it did was judged
+ * not to be what you asked". So without a judged yes a proven step is said as
+ * one that ran, or could run, and a judged no or an unjudged Flow is said with
+ * it.
  */
 export function automationStudioFlowBootstrapProgressSaid(
   checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined,
-  judgement: Pick<AutomationStudioFlowBootstrapJudgement, "tested" | "proven"> | undefined
+  judgement: (Pick<AutomationStudioFlowBootstrapJudgement, "tested" | "proven"> & { judge?: { verdict: "yes" | AutomationStudioFlowBootstrapJudgedWrong["verdict"] } | undefined }) | undefined
 ): string {
   const asked = (checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
   if (!asked) return "";
@@ -164,7 +172,10 @@ export function automationStudioFlowBootstrapProgressSaid(
   if (!judgement || judgement.tested === "not_tested") return `${named} of the ${asked} things you asked ${have(named)} a step in the Flow, not yet shown to work by running it${still}.`;
   const proven = Math.min(named, judgement.proven ?? 0);
   const rest = named > proven ? `, and ${named - proven} more ${have(named - proven)} a step that did not work in that run` : "";
-  return `${proven} of the ${asked} things you asked worked when the Flow was run from its start${rest}${still}.`;
+  const verdict = judgement.judge?.verdict;
+  if (verdict === "yes") return `${proven} of the ${asked} things you asked worked when the Flow was run from its start${rest}${still}.`;
+  const judged = verdict === "no" ? ", but the Flow was judged not to do what you asked" : verdict ? ", but the Flow was not judged to do what you asked" : "";
+  return `${proven} of the ${asked} things you asked ${have(proven)} a step that ran, or could run, when the Flow was run from its start${rest}${judged}${still}.`;
 }
 
 /**

@@ -64,12 +64,33 @@ describe("observed tool calls", () => {
   });
 
   // Live run `run-muqiojz4-04a7a8fc`: "Set as my store" was gone because the site remembered the store.
-  it("say a dry run step the site remembered, or whose effect was already there, as done", async () => {
-    for (const code of ["core.replay.remembered", "core.replay.present", "core.replay.verified"]) {
+  // Live run `run-murzln6g-11debe1d` (C10): six steps the test did not press all read "done".
+  it("say a dry run step the site remembered, or whose effect was already there, as already done, and one only checked as not pressed", async () => {
+    for (const [code, said] of [["core.replay.remembered", "already done on the site"], ["core.replay.present", "already done on the site"], ["core.replay.verified", "checked, not pressed"], ["core.replay.replayed", "done"]] as const) {
       seen = [];
       await inBuild(() => observed(code).executeTool(call("dryrun.1.5", { replay: "step", node: CLICK, parameters: { element: QUOTE } })));
-      expect(seen[1]!.label).toBe("Trying the Flow from the start: clicking “Get a free quote” — done");
+      expect(seen[1]!.label).toBe(`Trying the Flow from the start: clicking “Get a free quote” — ${said}`);
     }
+  });
+
+  // Live run `run-murzln6g-11debe1d` (C10): the drawer's "×" the host marked an
+  // interruption failed, the Flow passes over it, and the card said "Didn't
+  // work: it didn't work the same way again".
+  it("say a dry run step the Flow passes over as skipped, and record why for the card, without passing the mark on", async () => {
+    const sent: unknown[] = [];
+    const loop = observeAutomationStudioEvidenceLoop({
+      tools: [],
+      decide: async () => ({}),
+      executeTool: async (input) => { sent.push(input); return { kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false, resultCode: "core.replay.failed" }; }
+    });
+    await inBuild(() => loop.executeTool({ ...call("dryrun.1.15", { replay: "step", node: CLICK, parameters: { element: QUOTE } }), excusable: "interruption" } as never));
+    expect(seen[1]!.label).toBe("Trying the Flow from the start: clicking “Get a free quote” — skipped: not there, optional");
+    expect(seen[1]!.detail?.text).toBe(`Result: core.replay.failed · Excused: interruption · Node: ${CLICK}`);
+    expect(sent[0]).not.toHaveProperty("excusable");
+    // A step that held is not excused, whatever the call said it would be.
+    seen = [];
+    await inBuild(() => observed("core.replay.replayed").executeTool({ ...call("dryrun.1.15", { replay: "step", node: CLICK, parameters: { element: QUOTE } }), excusable: "interruption" } as never));
+    expect(seen[1]!.detail?.text).toBe(`Result: core.replay.replayed · Node: ${CLICK}`);
   });
 
   it("say a dry run step that did not repeat, as verifying", async () => {
@@ -83,6 +104,8 @@ describe("observed tool calls", () => {
     await inBuild(async () => await loop.checkCompletion!({}, { steps: [] }));
     expect(seen.map((event) => event.label)).toEqual(["Checking the proposed Flow", "The proposed Flow’s plan checks out; it still has to run cleanly"]);
     expect(seen[1]!.label).not.toMatch(/passed/u);
+    // The card shows the sentence, not only the label (C9): "it still has to run cleanly" was dropped.
+    expect(seen[1]!.detail?.text).toBe("It still has to run cleanly from its start.");
   });
 });
 

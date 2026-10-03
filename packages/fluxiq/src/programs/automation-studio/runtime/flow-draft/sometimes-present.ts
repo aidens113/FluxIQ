@@ -41,13 +41,15 @@
 // it is drafted, under the same exclusions as above: it does none of the
 // person's acts and says nothing else about when it runs. The draft is not
 // rewritten; the routing the Flow is written from reads it
-// (`../flow-bootstrap/authoring/draft-routing.ts`).
+// (`../flow-bootstrap/authoring/draft-routing.ts`), and so does every
+// judgement of the draft, through the steps the Flow would not always run
+// (`./routing.ts`). Both read one predicate (`./interruption.ts`).
 
 import type { AutomationStudioFlowDraftDryRun } from "./dry-run.ts";
 import { automationStudioFlowDraftReplayOutcomeBlocks } from "./dry-run.ts";
+import { automationStudioFlowDraftStepAnsweredInterruption } from "./interruption.ts";
 import { automationStudioFlowDraftConditionalStepIds, automationStudioFlowDraftStepById, automationStudioFlowDraftStepId } from "./routing.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
-import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
 import { automationStudioFlowDraftWithheldStepIds } from "./verify-only.ts";
 
 /**
@@ -88,14 +90,8 @@ export function automationStudioFlowDraftSometimesPresentStepIds(input: {
  * The ids of the proposed steps the host says answered an interruption and
  * that may therefore be skipped when it is not there: `interruption` set, no
  * act claimed, and no routing of their own -- the same exclusions as a step
- * the replay proved only sometimes there.
+ * the replay proved only sometimes there (`./interruption.ts`).
  */
 export function automationStudioFlowDraftInterruptionStepIds(steps: readonly AutomationStudioFlowDraftStep[]): ReadonlySet<string> {
-  const found = new Set<string>();
-  for (const step of steps) {
-    if (step.interruption !== true || step.acts?.length || step.routing !== undefined) continue;
-    if (!automationStudioFlowDraftStepIsProposed(step)) continue;
-    found.add(automationStudioFlowDraftStepId(step));
-  }
-  return found;
+  return new Set(steps.filter(automationStudioFlowDraftStepAnsweredInterruption).map(automationStudioFlowDraftStepId));
 }

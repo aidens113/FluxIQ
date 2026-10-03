@@ -7,8 +7,8 @@
 // with the same context and a note of what could not be read, and only an
 // unbroken run of them (`../../llm/unreadable-reply.ts`) ends the build -- as
 // this message: what happened, how many tries, which kind of damage it was
-// most often, what of the request the Flow already does, and whether the Flow
-// so far was kept. It is neither "not doable" -- nothing says the task cannot
+// most often, what of the request the Flow already does, and whether the steps
+// found so far were kept. It is neither "not doable" -- nothing says the task cannot
 // be done -- nor a budget: the budget had room left.
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
@@ -29,7 +29,7 @@ export function automationStudioFlowBootstrapRepliesUnreadable(input: {
   decisions: number;
   /** Why each live round stopped, in order (`./tried.ts`). */
   stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
-  /** Whether the Flow so far was kept for the next build. */
+  /** Whether the steps found so far were kept for the next build. */
   kept: boolean;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const { inARow, total, cases, said } = input.unreadable;
@@ -38,7 +38,7 @@ export function automationStudioFlowBootstrapRepliesUnreadable(input: {
   const happened = `The build stopped because the model's replies could not be read: ${inARow} in a row came back unreadable${why} and each was asked again with a note of what was wrong.`;
   const tries = `In all, ${total} of ${Math.max(total, input.decisions)} replies could not be read, over ${input.rounds === 1 ? "one live round" : `${input.rounds} live rounds`}; each was paid for and counted in the build's budget.`;
   const progress = automationStudioFlowBootstrapProgressSaid(input.checklist, input.judgement);
-  const kept = input.kept ? "The Flow so far was kept, and building again carries on from it." : "Nothing was kept to carry on from.";
+  const kept = input.kept ? "The steps found so far were kept, and building again carries on from them." : "Nothing was kept to carry on from.";
   const message = [happened, tries, progress, automationStudioFlowBootstrapTestSaid(input.judgement), kept].filter(Boolean).join(" ");
   return {
     kind: "replies_unreadable",

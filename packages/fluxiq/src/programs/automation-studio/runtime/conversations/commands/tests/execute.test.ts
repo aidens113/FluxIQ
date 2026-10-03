@@ -197,6 +197,45 @@ describe("conversation commands", () => {
     expect(result?.text).toContain('What is left: the Flow "Kettles", empty, with what you asked saved on it, so it can be built again.');
   });
 
+  // t193 R2-C3 (`run-murzln6g-11debe1d`, 09-failure-panel): "The Flow so far was
+  // kept, and building again carries on from it ... What is left: the Flow ...,
+  // empty". The build had kept its draft (`diagnostic.evidenceLoop.incompleteDraft`).
+  it("does not call the Flow empty when the build kept the steps it found, and says so once", async () => {
+    const conversations = openConversations();
+    const conversationId = await chat(conversations);
+    const ending = "The build stopped at its spending limit of $0.10 before the Flow was finished. The steps found so far were kept, and building again carries on from them.";
+    const { port } = fakePort({
+      "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.kettle" } } }),
+      "save-flow-generation-instruction": () => ({ ok: true }),
+      "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: "Flow Bootstrap generation failed.", payload: { diagnostic: { code: "flow_bootstrap.budget_exhausted", stage: "provider_output_validation", evidenceLoop: { iterationCount: 30, decisionCount: 30, toolCallCount: 20, evidenceBytes: 1, incompleteDraft: { revision: 2, steps: 13 } }, ending: { message: ending } } } })
+    });
+
+    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
+    await automationStudioConversationCommandWork.idle();
+
+    const [result] = await turnsOf(conversations, conversationId);
+    expect(result?.text).not.toContain("empty");
+    expect(result?.text).toContain('What is left: the Flow "Kettles", with what you asked saved on it.');
+    expect(result?.text.split("carries on from")).toHaveLength(2);
+  });
+
+  it("says the steps found so far were kept when the build kept them and gave no account", async () => {
+    const conversations = openConversations();
+    const conversationId = await chat(conversations);
+    const { port } = fakePort({
+      "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.kettle" } } }),
+      "save-flow-generation-instruction": () => ({ ok: true }),
+      "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: "Flow Bootstrap generation failed.", payload: { diagnostic: { code: "flow_bootstrap.evidence_iteration_limit", stage: "provider_output_validation", evidenceLoop: { iterationCount: 30, decisionCount: 30, toolCallCount: 20, evidenceBytes: 1, incompleteDraft: { revision: 1, steps: 4 } } } } })
+    });
+
+    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
+    await automationStudioConversationCommandWork.idle();
+
+    const [result] = await turnsOf(conversations, conversationId);
+    expect(result?.text).not.toContain("empty");
+    expect(result?.text).toContain('What is left: the Flow "Kettles", with what you asked saved on it and the steps found so far kept, so building again carries on from them.');
+  });
+
   it("routes the work's own questions and activity into the chat thread", async () => {
     const conversations = openConversations();
     const conversationId = await chat(conversations);

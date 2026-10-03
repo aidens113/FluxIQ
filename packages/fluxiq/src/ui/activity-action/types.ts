@@ -15,6 +15,13 @@ export type ActivityActionKind =
   | "draft"
   | "test"
   /**
+   * A build's completion check: whether the Flow the model says is ready is
+   * one the test from its start can be run on. It runs nothing, so it is no
+   * test run: shown as "Test run · Passed" before the test had run a step, it
+   * read as a test that passed (t193 1002-M, `run-murzln6g-11debe1d`, C9).
+   */
+  | "ready_check"
+  /**
    * A check that a run's result answers the request. It runs nothing, so it is
    * no test run: a real run's result check read "Test run · Working on it"
    * (t193, `run-muqiojz4-04a7a8fc`).
@@ -40,13 +47,17 @@ export type ActivityActionOutcome = "working" | "done" | "failed" | "waiting";
  * One action, ready for a card. `target` is the name of what it acted on as
  * the event already carried it, or null when it named none (the client says
  * "the page" in its own words). `why` is a short human reason for a failure,
- * or null; never a result code.
+ * or null; never a result code. `tested` is set only on a step a test of the
+ * Flow did not simply do again, and says what it did instead, in words a card
+ * shows in place of "Done" ("Checked, not pressed", "Already done on the
+ * site", "Skipped: not there, optional"; `./tested.ts`).
  */
 export type ActivityAction = {
   kind: ActivityActionKind;
   target: string | null;
   outcome: ActivityActionOutcome;
   why: string | null;
+  tested?: string;
 };
 
 /**

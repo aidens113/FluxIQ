@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTIVITY_ACTION_ICONS, type ActivityActionKind } from "../index.ts";
 
-const KINDS: readonly ActivityActionKind[] = ["click", "type", "navigate", "read", "look", "wait", "person_check", "permission", "draft", "test", "result_check", "repair", "join", "branch", "repeat", "other"];
+const KINDS: readonly ActivityActionKind[] = ["click", "type", "navigate", "read", "look", "wait", "person_check", "permission", "draft", "test", "ready_check", "result_check", "repair", "join", "branch", "repeat", "other"];
 
 describe("ACTIVITY_ACTION_ICONS", () => {
   it("gives every kind a lucide icon name, and nothing else", () => {
@@ -12,7 +12,7 @@ describe("ACTIVITY_ACTION_ICONS", () => {
   it("holds the pinned names", () => {
     expect(ACTIVITY_ACTION_ICONS).toEqual({
       click: "mouse-pointer-click", type: "keyboard", navigate: "globe", read: "table", look: "scan-search", wait: "hourglass",
-      person_check: "shield-check", permission: "hand", draft: "pencil", test: "flask-conical", result_check: "scan-search", repair: "wrench", join: "git-merge", branch: "git-branch", repeat: "repeat", other: "circle-dot"
+      person_check: "shield-check", permission: "hand", draft: "pencil", test: "flask-conical", ready_check: "scan-search", result_check: "scan-search", repair: "wrench", join: "git-merge", branch: "git-branch", repeat: "repeat", other: "circle-dot"
     });
   });
 

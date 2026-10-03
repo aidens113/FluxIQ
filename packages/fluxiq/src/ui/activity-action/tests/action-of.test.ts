@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityActionOf, type ActivityAction, type ActivityActionEvent, type ActivityActionKind } from "../index.ts";
+import { ACTIVITY_ACTION_NAMES, activityActionOf, type ActivityAction, type ActivityActionEvent, type ActivityActionKind } from "../index.ts";
 
 const RUN_NODE = "core.run_node";
 const DOTTED = /[A-Za-z_][\w-]*\.[A-Za-z_][\w-]*/u;
@@ -71,7 +71,7 @@ describe("activityActionOf: every kind", () => {
     ["permission", { phase: "waiting_permission", detail: { kind: "ask", title: "Run is waiting for an answer", status: "started" } }],
     ["permission", tool("Opening a page", "Result: example.permission_required")],
     ["draft", { phase: "building", detail: { kind: "tool", title: "Updating the draft Flow", status: "started", ref: "core.flow_draft" } }],
-    ["test", { phase: "verifying", detail: { kind: "check", title: "Completion check", status: "started" } }],
+    ["ready_check", { phase: "verifying", detail: { kind: "check", title: "Completion check", status: "started" } }],
     ["test", tool("Clicking “Next”", "Result: core.replay.replayed · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying")],
     ["test", { phase: "verifying", detail: { kind: "note", title: "Putting the page back to where the Flow starts", status: "started", ref: RUN_NODE } }],
     ["test", tool("Working on the page", undefined, "succeeded", "core.dry_run")],
@@ -230,8 +230,7 @@ describe("activityActionOf: what each card says (t193 chat wording)", () => {
     expect(outputsOf(activityActionOf(ended))).toEqual(["result_check", "", "done", ""]);
   });
 
-  it("keeps a build's dry run and its completion check as a test run", () => {
-    expect(activityActionOf({ phase: "verifying", detail: { kind: "check", title: "Completion check", status: "started" } })?.kind).toBe("test");
+  it("keeps a build's dry run as a test run", () => {
     expect(activityActionOf(tool("Clicking “Next”", "Result: core.replay.replayed · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying"))?.kind).toBe("test");
   });
 
@@ -252,5 +251,38 @@ describe("activityActionOf: what each card says (t193 chat wording)", () => {
     expect(activityActionOf(tool("Opening “Home page”", "Node: web.output.browser-navigate"))?.target).toBe("Home page");
     // An address path is shown only on a navigate: a click's quoted id stays hidden.
     expect(activityActionOf(tool("Clicking “/web.output.dom-click”", "Node: web.output.dom-click"))?.target).toBeNull();
+  });
+});
+
+// t193 1002-M (`run-murzln6g-11debe1d`, C9 and C10): a test step the test only
+// checked, one already done on the site, and one the Flow passes over all read
+// "Done" or "Didn't work: it didn't work the same way again", and the
+// completion check read "Test run · Passed" before the test had run a step.
+describe("activityActionOf: what a test of the Flow did with each step (C9, C10)", () => {
+  const dry = (code: string, extra = "", title = "Clicking “Add to cart”") => tool(title, `Result: ${code}${extra} · Node: web.output.dom-click`, "succeeded", RUN_NODE, "verifying");
+
+  it("says a step checked and not pressed, and one already done on the site, and nothing more for one done again", () => {
+    expect(activityActionOf(dry("core.replay.verified"))).toMatchObject({ kind: "test", outcome: "done", why: null, tested: "Checked, not pressed" });
+    expect(activityActionOf(dry("core.replay.verified", "", "Typing “towels” into “Search”"))?.tested).toBe("Checked, not typed");
+    expect(activityActionOf(dry("core.replay.present"))?.tested).toBe("Already done on the site");
+    expect(activityActionOf(dry("core.replay.remembered"))?.tested).toBe("Already done on the site");
+    expect(activityActionOf(dry("core.replay.replayed"))).not.toHaveProperty("tested");
+  });
+
+  it("says a step the Flow passes over as skipped, with why, never as a failure", () => {
+    expect(activityActionOf(dry("core.replay.failed", " · Excused: interruption"))).toMatchObject({ outcome: "done", why: null, tested: "Skipped: not there, optional" });
+    expect(activityActionOf(dry("core.replay.failed", " · Excused: optional"))?.tested).toBe("Skipped: not there, optional");
+    expect(activityActionOf(dry("core.replay.unreproducible", " · Excused: withheld"))?.tested).toBe("Skipped: it needed a step the test only checked");
+    expect(activityActionOf(dry("core.replay.failed", " · Excused: repeat"))?.tested).toBe("Skipped: it only runs sometimes");
+    // Not excused, it is still a step that did not hold.
+    expect(activityActionOf(dry("core.replay.failed"))).toMatchObject({ outcome: "failed", why: "it didn't work the same way again" });
+    expect(activityActionOf(dry("core.replay.failed"))).not.toHaveProperty("tested");
+  });
+
+  it("reads the completion check as a ready check, never a test run", () => {
+    for (const status of ["started", "succeeded", "failed"]) {
+      expect(activityActionOf({ phase: "verifying", detail: { kind: "check", title: "Completion check", status } })?.kind).toBe("ready_check");
+    }
+    expect(ACTIVITY_ACTION_NAMES.ready_check).toBe("Ready check");
   });
 });

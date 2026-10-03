@@ -1,6 +1,7 @@
 import { activityActionFailureReason } from "./failure-reason.ts";
 import { activityActionRecordOf } from "./record.ts";
 import { activityActionReplayFailing } from "./replay-failing.ts";
+import { activityActionTested } from "./tested.ts";
 import type { ActivityAction, ActivityActionEvent, ActivityActionKind, ActivityActionOutcome } from "./types.ts";
 import { activityActionVerb } from "./verb.ts";
 
@@ -15,7 +16,7 @@ const CORE_TOOL_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
   ["core.flow_draft", "draft"],
   ["core.dry_run", "test"],
   ["core.dry_run.page", "test"],
-  ["core.completion_check", "test"],
+  ["core.completion_check", "ready_check"],
   ["core.observe", "look"],
   // Reading how a step is used, and an earlier result again: looks at what
   // Core holds rather than actions on the page.
@@ -55,11 +56,19 @@ const QUOTED = /“([^”]+)”/u;
 /** Words a look searches for, which Core says in straight quotes: Looking for "USB-C hub" on the page. */
 const SAID = /"([^"]+)"/u;
 /**
- * The title a result check's rows carry ("Result check started", "Result
- * check": `programs/automation-studio/runtime/result-verification/verify.ts`).
- * It checks what a run left; it runs nothing, so it is no test run.
+ * The title a result check's rows carry ("Result check":
+ * `programs/automation-studio/runtime/result-verification/verify.ts`; an older
+ * Core titled its start "Result check started"). It checks what a run left; it
+ * runs nothing, so it is no test run.
  */
 const RESULT_CHECK_TITLE = /^Result check\b/u;
+/**
+ * The title a build's completion check's rows carry
+ * (`programs/automation-studio/runtime/activity/observer.ts`). It checks the
+ * plan before the test runs it, so it is no test run: it read "Test run ·
+ * Passed" before the test had run a step (t193 1002-M, C9).
+ */
+const COMPLETION_CHECK_TITLE = /^Completion check\b/u;
 /**
  * A page's address path as the navigate wording names it ("/ip/napkins", or
  * "…/ip/napkins" cut at the front): a dot in it ("/help/index.html") is not an id.
@@ -126,6 +135,7 @@ function kindOf(event: ActivityActionEvent, detail: Detail, code: string | undef
   if (code !== undefined && PERSON_CODE.test(code)) return "person_check";
   if (code !== undefined && PERMISSION_CODE.test(code)) return "permission";
   if (detail.kind === "check" && RESULT_CHECK_TITLE.test(detail.title)) return "result_check";
+  if (core === "ready_check" || (detail.kind === "check" && COMPLETION_CHECK_TITLE.test(detail.title))) return "ready_check";
   if (detail.kind === "check" || event.phase === "verifying" || core === "test") return "test";
   if (core) return core;
   const control = node ? CORE_NODE_KINDS.get(node) : undefined;
@@ -142,11 +152,12 @@ function kindOf(event: ActivityActionEvent, detail: Detail, code: string | undef
   return null;
 }
 
-function failingCode(code: string): boolean {
-  return code.startsWith("core.replay.") ? activityActionReplayFailing(code) : FAILING.test(code);
+/** A failing code, unless it is a replay's for a step the test passes over (`excused`), which did not stand in the way. */
+function failingCode(code: string, excused: string | undefined): boolean {
+  return code.startsWith("core.replay.") ? activityActionReplayFailing(code) && excused === undefined : FAILING.test(code);
 }
 
-function outcomeOf(event: ActivityActionEvent, detail: Detail, code: string | undefined): ActivityActionOutcome {
+function outcomeOf(event: ActivityActionEvent, detail: Detail, code: string | undefined, excused: string | undefined): ActivityActionOutcome {
   if (detail.kind === "ask") {
     // Only the row that settles the wait says it is over; nothing after it is read for that.
     if (detail.resolution !== undefined && RESOLVED_DONE.has(detail.resolution)) return "done";
@@ -155,7 +166,7 @@ function outcomeOf(event: ActivityActionEvent, detail: Detail, code: string | un
   }
   if (event.phase === "waiting_permission") return "waiting";
   if (detail.status === "failed") return "failed";
-  if (code !== undefined && failingCode(code)) return "failed";
+  if (code !== undefined && failingCode(code, excused)) return "failed";
   if (code !== undefined && (PERSON_CODE.test(code) || PERMISSION_CODE.test(code))) return "waiting";
   if (detail.status === "succeeded") return "done";
   return "working";
@@ -188,11 +199,12 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * an action ("Run started", "Build finished").
  *
  * The kind is decided in this order: Core's own tool ids (`core.flow_draft`
- * is an edit to the Flow; a dry run or a completion check is a test run); a
- * wait on a person (a check they have to complete, else a permission); the
- * `repairing` phase; a result code that says the page needs a person, or a
- * permission; a result check's rows (`result_check`, checking what a run
- * left); any other check row or a `verifying` row (a dry run's steps); and
+ * is an edit to the Flow; a dry run is a test run, a completion check a
+ * ready check); a wait on a person (a check they have to complete, else a
+ * permission); the `repairing` phase; a result code that says the page needs
+ * a person, or a permission; a result check's rows (`result_check`, checking
+ * what a run left); a completion check's rows (`ready_check`, checking the
+ * plan before the test runs it); any other check row or a `verifying` row (a dry run's steps); and
  * otherwise the verb named by the node id's last segment, the tool id, the
  * step's label, the result code's action word, or the title Core already said
  * it in. Generic verbs only; see `./verb.ts`.
@@ -205,7 +217,9 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * `target` is the name Core quoted in the title, else the step's label, else
  * for a look the words it looked for, in straight quotes, else null; never an
  * id, though a navigate's address path ("/help/index.html") is not one. A replay code that says the step held (`./replay-failing.ts`: replayed,
- * verified, present, remembered) is done, not failed. `why` is set only for a failure: a settled ask's
+ * verified, present, remembered) is done, not failed, and so is one for a step
+ * the test passes over (its record's `Excused`); `tested` says which in words
+ * (`./tested.ts`), for each of them but a step done again. `why` is set only for a failure: a settled ask's
  * resolution in words ("you pressed Stop", "nobody answered in time"), or
  * else the refusal's own reason or the result code's last words
  * (`./failure-reason.ts`), and never is the code or the reason.
@@ -216,9 +230,11 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const record = activityActionRecordOf(detail.text);
   const kind = kindOf(event, detail, record.resultCode, record.node);
   if (!kind) return null;
-  const outcome = outcomeOf(event, detail, record.resultCode);
+  const outcome = outcomeOf(event, detail, record.resultCode, record.excused);
   const why = outcome !== "failed" ? null
     : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
       : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason) : null;
-  return { kind, target: targetOf(event, detail, kind), outcome, why };
+  // A test's step has the test's own kind; what it did is the verb of its title.
+  const tested = outcome === "done" && record.resultCode ? activityActionTested(record.resultCode, { excused: record.excused, kind: kindOfTitle(detail.title) }) : null;
+  return { kind, target: targetOf(event, detail, kind), outcome, why, ...(tested ? { tested } : {}) };
 }

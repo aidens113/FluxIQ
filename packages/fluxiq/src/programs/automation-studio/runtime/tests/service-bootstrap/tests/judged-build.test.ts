@@ -260,7 +260,7 @@ describe("a Flow the model says is ready", () => {
     expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1, stepsInFlow: 1, tested: "replayed_clean" } });
     // The person is told the Flow ran but was not judged, and that it was kept.
     expect(diagnostic.ending?.message).toContain("not judged");
-    expect(diagnostic.ending?.message).toContain("The Flow so far was kept");
+    expect(diagnostic.ending?.message).toContain("The steps found so far were kept");
     expect(diagnostic.evidenceLoop?.incompleteDraft).toMatchObject({ revision: 1, steps: 1 });
     await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
     expect(activity.some((event) => event.label === "Flow not verified")).toBe(false);

@@ -55,8 +55,9 @@ export function automationStudioInstructedActSpanStopsShort(
       .filter((each) => each.position > span.to && automationStudioFlowDraftStepIsProposed(each))
       .sort((left, right) => left.position - right.position)[0];
     if (!after) continue;
-    // `verify` is the dry run's word for a step that changed something and declared it lasting.
-    if (automationStudioFlowDraftStepReplayMode(after) !== "verify") continue;
+    // `verify` is the dry run's word for a step that changed something and declared it lasting, or
+    // that does an act in place; a step named for an act is the next act, and passed over below anyway.
+    if (automationStudioFlowDraftStepReplayMode(after, steps) !== "verify") continue;
     if (automationStudioInstructedActRepeatSpans(after, steps).length || claimed(after)) continue;
     return { span, after };
   }

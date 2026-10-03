@@ -9,7 +9,7 @@ describe("ACTIVITY_ACTION_NAMES", () => {
   it("holds the pinned card labels", () => {
     expect(ACTIVITY_ACTION_NAMES).toEqual({
       click: "Click", type: "Type", navigate: "Open page", read: "Read list", look: "Look", wait: "Wait",
-      person_check: "Robot check", permission: "Permission", draft: "Edit Flow", test: "Test run", result_check: "Check result", repair: "Repair", join: "Join paths", branch: "Choose path", repeat: "Repeat", other: "Action"
+      person_check: "Robot check", permission: "Permission", draft: "Edit Flow", test: "Test run", ready_check: "Ready check", result_check: "Check result", repair: "Repair", join: "Join paths", branch: "Choose path", repeat: "Repeat", other: "Action"
     });
     expect(Object.isFrozen(ACTIVITY_ACTION_NAMES)).toBe(true);
   });

@@ -74,7 +74,10 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
   let after: string | undefined;
   let first = true;
   for (const step of proposed.filter((each) => each.position >= range.from && each.position <= to)) {
-    const mode = automationStudioFlowDraftStepReplayMode(step);
+    // Checked, not run, when it declares a lasting effect or does one of the
+    // person's acts on the page it found (`../../flow-draft/verify-only.ts`);
+    // the whole draft says which proposed step comes next.
+    const mode = automationStudioFlowDraftStepReplayMode(step, input.steps);
     const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step) : automationStudioNodeReplayStepCall(step);
     if (!value) {
       ran.push({ step: step.position, actionId: step.actionId, ran: NOT_RUN });

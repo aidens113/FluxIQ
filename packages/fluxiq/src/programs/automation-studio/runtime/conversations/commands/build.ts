@@ -20,8 +20,15 @@ export type AutomationStudioConversationBuildResult =
       /** True when the build finished holding a question: the change cannot be applied until it is answered. */
       awaitingPermission: boolean;
     }
-  /** `ending` is the build's own account for the person, when it gave one; the answer opens with it (`./progress.ts`). */
-  | { ok: false; cause: string; ending?: string };
+  /**
+   * `ending` is the build's own account for the person, when it gave one; the
+   * answer opens with it (`./progress.ts`). `kept` is true when the build kept
+   * the steps it had found as an incomplete draft that building again carries
+   * on from, though the Flow itself holds none of them
+   * (`diagnostic.evidenceLoop.incompleteDraft`,
+   * `../../flow-bootstrap/generation-failure/diagnostic.ts`).
+   */
+  | { ok: false; cause: string; ending?: string; kept: boolean };
 
 export async function buildAutomationStudioFlowFromConversation(
   context: AutomationStudioConversationCommandContext,
@@ -39,11 +46,11 @@ export async function buildAutomationStudioFlowFromConversation(
   });
   if (!response.ok) {
     const ending = buildEnding(response);
-    return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}) };
+    return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), kept: keptDraft(response) };
   }
   const adaptation = (response.payload as { adaptation?: { adaptationId?: unknown; permissionRequest?: unknown } } | undefined)?.adaptation;
   if (!adaptation || typeof adaptation.adaptationId !== "string" || !adaptation.adaptationId) {
-    return { ok: false, cause: "the build answered without the change it made" };
+    return { ok: false, cause: "the build answered without the change it made", kept: false };
   }
   return { ok: true, adaptationId: adaptation.adaptationId, awaitingPermission: Boolean(adaptation.permissionRequest) };
 }
@@ -57,4 +64,10 @@ export async function buildAutomationStudioFlowFromConversation(
 function buildEnding(response: AutomationStudioConversationCommandCallResult): string | undefined {
   const ending = (response.payload as { diagnostic?: { ending?: { message?: unknown } } } | undefined)?.diagnostic?.ending?.message;
   return typeof ending === "string" && ending.trim() ? ending.trim() : undefined;
+}
+
+/** Whether the failed build kept an incomplete draft for the next build to carry on from: its diagnostic names one with at least one step. */
+function keptDraft(response: AutomationStudioConversationCommandCallResult): boolean {
+  const draft = (response.payload as { diagnostic?: { evidenceLoop?: { incompleteDraft?: { steps?: unknown } } } } | undefined)?.diagnostic?.evidenceLoop?.incompleteDraft;
+  return typeof draft?.steps === "number" && draft.steps > 0;
 }

@@ -35,6 +35,7 @@ export const CONVERSATION_ACTION_ICONS: Readonly<Record<ActivityActionKind, Luci
   permission: Hand,
   draft: Pencil,
   test: FlaskConical,
+  ready_check: ScanSearch,
   result_check: ScanSearch,
   repair: Wrench,
   join: GitMerge,

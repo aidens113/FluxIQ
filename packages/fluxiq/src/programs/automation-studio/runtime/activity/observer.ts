@@ -16,7 +16,7 @@
 // codes go to `detail.ref` and `detail.text` of the tool rows only.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import { activityActionReplayFailing } from "../../../../ui/index.ts";
+import { activityActionReplayFailing, activityActionTested, activityActionVerb } from "../../../../ui/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../llm/index.ts";
 import { emitAutomationStudioActivityWaitedOut } from "./ask/index.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
@@ -30,6 +30,9 @@ type ToolCall = Parameters<AutomationStudioLlmEvidenceLoopInput["executeTool"]>[
 /** A code a raw record may carry: no space, so never a sentence or a page's words. */
 const CODE_SHAPED = /^[A-Za-z0-9_.:-]{1,100}$/u;
 
+/** What a passed completion check's card says under "Ready to test": the test from the start is still to come. */
+const READY_TEXT = "It still has to run cleanly from its start.";
+
 /** A call's result code and the caller's reason for it, as the raw record carries them. */
 function resultOf(result: unknown): { code: string | undefined; reason: string | undefined } {
   if (!result || typeof result !== "object" || Array.isArray(result)) return { code: undefined, reason: undefined };
@@ -40,14 +43,40 @@ function resultOf(result: unknown): { code: string | undefined; reason: string |
   return { code, reason };
 }
 
-/** How a call ended, in a person's words; the code itself goes to the raw record. */
-function outcomeOf(status: "succeeded" | "failed", resultCode: string | undefined, dryRun: boolean): string {
+/** A replay's result codes (`../llm/node-tools/replay.ts`): a step a test of the Flow ran, checked or passed over. */
+const REPLAY_PREFIX = "core.replay.";
+
+/**
+ * How a call ended, in a person's words; the code itself goes to the raw
+ * record. A replayed step says what the test did with it, as its card does
+ * (`activityActionTested`): a step the site remembered, or whose effect was
+ * already there, read "didn't work the same way again" (t193), and then a
+ * step only checked, or one the Flow passes over, read "done" or "didn't
+ * work" (t193 1002-M, C10). `excused` is set only for a replayed step that did
+ * not hold and that the test passes over; `title` is the call's own words,
+ * whose opening verb says whether a checked step was pressed or typed.
+ */
+function outcomeOf(status: "succeeded" | "failed", resultCode: string | undefined, excused: string | undefined, title: string): string {
   if (status === "failed") return "didn't work";
   if (!resultCode) return "done";
-  // A step the site remembered, or whose effect was already there, held:
-  // `remembered` read "didn't work the same way again" (t193).
-  if (dryRun && resultCode.startsWith("core.replay.")) return activityActionReplayFailing(resultCode) ? "didn't work the same way again" : "done";
+  if (resultCode.startsWith(REPLAY_PREFIX)) {
+    const tested = activityActionTested(resultCode, { excused, kind: activityActionVerb(title.split(" ")[0] ?? "", "gerund")?.kind });
+    if (tested) return `${tested.charAt(0).toLowerCase()}${tested.slice(1)}`;
+    return activityActionReplayFailing(resultCode) ? "didn't work the same way again" : "done";
+  }
   return /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved/u.test(resultCode) ? "didn't work" : "done";
+}
+
+/**
+ * Why a test passes over the step a call runs, if the step does not hold: what
+ * the replay put on the call it sends (`excusable`, `../llm/node-tools/replay-draft.ts`),
+ * read by shape and taken off before the call goes on, so no host ever sees it.
+ * A call without it is passed on as it came.
+ */
+function excusableOf(call: ToolCall): { call: ToolCall; excusable: string | undefined } {
+  if (!("excusable" in call)) return { call, excusable: undefined };
+  const { excusable, ...plain } = call as ToolCall & { excusable?: unknown };
+  return { call: plain as ToolCall, excusable: typeof excusable === "string" && CODE_SHAPED.test(excusable) ? excusable : undefined };
 }
 
 /**
@@ -88,15 +117,18 @@ function decisionFailed(error: unknown): void {
  * before the call runs and kept for its end: asked again after a click, a
  * handle on the page the click left was no longer there, so the row that ended
  * a press of "No thanks" read "Clicking on the page" and its card "Click · the
- * page" (t193, `run-muqiojz4-04a7a8fc`).
+ * page" (t193, `run-muqiojz4-04a7a8fc`). A replayed step that did not hold
+ * and that the test passes over (`excusable`) carries "Excused: <why>" after
+ * the reason, so its card says it was skipped rather than that it failed.
  */
-function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed", result: { code: string | undefined; reason?: string | undefined }, described: AutomationStudioActivityCallWords | undefined): void {
+function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed", result: { code: string | undefined; reason?: string | undefined }, described: AutomationStudioActivityCallWords | undefined, excusable?: string): void {
   const words = automationStudioActivityToolCall(call, described);
   const resultCode = result.code;
-  const record = [resultCode ? `Result: ${resultCode}` : "", result.reason ? `Reason: ${result.reason}` : "", words.node ? `Node: ${words.node}` : ""].filter(Boolean).join(" · ");
+  const excused = excusable && resultCode?.startsWith(REPLAY_PREFIX) && activityActionReplayFailing(resultCode) ? excusable : undefined;
+  const record = [resultCode ? `Result: ${resultCode}` : "", result.reason ? `Reason: ${result.reason}` : "", excused ? `Excused: ${excused}` : "", words.node ? `Node: ${words.node}` : ""].filter(Boolean).join(" · ");
   emitAutomationStudioActivity({
     phase: words.phase,
-    label: status === "started" ? words.label : `${words.label} — ${outcomeOf(status, resultCode, words.dryRun)}`,
+    label: status === "started" ? words.label : `${words.label} — ${outcomeOf(status, resultCode, excused, words.title)}`,
     detail: { kind: words.kind, title: words.title, status, ref: call.toolId, ...(record ? { text: record } : {}) }
   });
 }
@@ -143,14 +175,15 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
       else if (chose) emitAutomationStudioActivityThought({ phase: chose.phase, title: chose.title, text: reason });
       return decision;
     },
-    executeTool: async (call): Promise<JsonValue | Awaited<ReturnType<AutomationStudioLlmEvidenceLoopInput["executeTool"]>>> => {
+    executeTool: async (sent): Promise<JsonValue | Awaited<ReturnType<AutomationStudioLlmEvidenceLoopInput["executeTool"]>>> => {
       edit.ran();
+      const { call, excusable } = excusableOf(sent);
       const described = describeSafely(input.describeCall, call);
       toolActivity(call, "started", { code: undefined }, described);
       try {
         const result = await executeTool.call(input, call);
         emitAutomationStudioActivityWaitedOut(call.callId, result, automationStudioActivityToolCall(call).phase);
-        toolActivity(call, "succeeded", resultOf(result), described);
+        toolActivity(call, "succeeded", resultOf(result), described, excusable);
         return result;
       } catch (error) {
         toolActivity(call, "failed", { code: undefined }, described);
@@ -164,7 +197,9 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
       checkCompletion: async (result, context) => {
         emitAutomationStudioActivity({ phase: "verifying", label: "Checking the proposed Flow", detail: { kind: "check", title: "Completion check", status: "started" } });
         const check = await checkCompletion.call(input, result, context);
-        emitAutomationStudioActivity({ phase: "verifying", label: check.ok ? "The proposed Flow’s plan checks out; it still has to run cleanly" : "The proposed Flow was sent back to be fixed", detail: { kind: "check", title: "Completion check", status: check.ok ? "succeeded" : "failed", ...(check.ok ? {} : { text: automationStudioActivityCompletionRefusal(check) }) } });
+        // The card shows the row's text, not its label: a passed check said
+        // only "Passed", and nothing that the test was still to come (C9).
+        emitAutomationStudioActivity({ phase: "verifying", label: check.ok ? "The proposed Flow’s plan checks out; it still has to run cleanly" : "The proposed Flow was sent back to be fixed", detail: { kind: "check", title: "Completion check", status: check.ok ? "succeeded" : "failed", text: check.ok ? READY_TEXT : automationStudioActivityCompletionRefusal(check) } });
         return check;
       }
     } satisfies Pick<AutomationStudioLlmEvidenceLoopInput, "checkCompletion"> : {})

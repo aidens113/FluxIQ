@@ -120,6 +120,9 @@ export type AutomationStudioResultVerificationReport = {
 /** Where a verification call's intervention says it came from. */
 const VERIFICATION_SOURCE = "verifyAutomationStudioRunResult";
 
+/** The title of the check's rows in the chat, the same on its start and its end so the two are one card. */
+const RESULT_CHECK_TITLE = "Result check";
+
 export async function verifyAutomationStudioRunResult(request: AutomationStudioResultVerificationRequest): Promise<AutomationStudioResultVerificationReport> {
   const core = automationStudioResultCoreObservation(request.summary);
   if (core) return { outcome: { ...core, performed: true }, interventions: [] };
@@ -135,7 +138,10 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
       }
     };
   }
-  emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
+  // One title for the check's start and its end: a card is keyed by it, and
+  // "Result check started" opened an empty "Check result" card above the
+  // verdict's (t193 1002-M, `run-murzln6g-11debe1d`, C11).
+  emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: RESULT_CHECK_TITLE, status: "started" } });
   const first = await askOnce(request, provider, 1);
   if (!automationStudioResultVerificationAskAgain(first.verification)) {
     return said({ outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification }), performed: true }, interventions: [first.intervention] });
@@ -155,7 +161,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
 /** The check's verdict, said in the chat as the check that was started ends (`check-activity.ts`), and returned unchanged. */
 function said(report: AutomationStudioResultVerificationReport): AutomationStudioResultVerificationReport {
   const words = automationStudioResultCheckActivity(report.outcome);
-  emitAutomationStudioActivity({ phase: "verifying", label: words.label, detail: { kind: "check", title: "Result check", status: words.status, ...(words.text ? { text: words.text } : {}) } });
+  emitAutomationStudioActivity({ phase: "verifying", label: words.label, detail: { kind: "check", title: RESULT_CHECK_TITLE, status: words.status, ...(words.text ? { text: words.text } : {}) } });
   return report;
 }
 

@@ -33,6 +33,16 @@
 //     a draft this gate applies to": it was never tested, the judge answered
 //     `unknown` or a yes about no test, and a re-authored Flow was approved and
 //     applied before anything ran it whole.
+//
+// **A refused Flow completed again unchanged is told so.** An unchanged Flow
+// is replayed twice -- a step can fail once on a page still settling -- and
+// then refused from those replays without a third. Each refusal of a Flow
+// whose signature equals the last refused one carries one more line,
+// `unchanged`: nothing changed since the last test, whether it was run again
+// and failed the same way or was not run again, and which steps to change. In
+// live run `run-murwdp4f-35f976d2` (0071) the model answered a refusal with
+// `complete` on the unchanged draft ("the Flow replays") and was shown the
+// identical verdict with nothing saying the Flow had not changed.
 
 import type { JsonValue } from "../../../../../core/index.ts";
 import {
@@ -47,6 +57,7 @@ import {
   automationStudioFlowDraftFullRunRequiredFeedback,
   automationStudioFlowDraftReplayable,
   automationStudioFlowDraftReplayFrom,
+  automationStudioFlowDraftReplayOutcomeBlocks,
   automationStudioFlowDraftReplayOutcomeKey,
   automationStudioFlowDraftSometimesPresentStepIds,
   automationStudioFlowDraftStepId,
@@ -225,7 +236,9 @@ export function automationStudioFlowDraftDryRunGate(
     if (refused?.signature === signature && refused.replays >= MAX_REPLAYS_OF_ONE_DRAFT) {
       // The same Flow those replays refused, so the same verdict: its steps
       // that did not replay are marked `again`, and its issues are the same.
-      const feedback = automationStudioFlowDraftDryRunFeedback(refused.verdict, asked, input.steps);
+      // One line says nothing changed, that it was not run again, and what to
+      // change. Nothing is replayed, so the target has not moved.
+      const feedback = { ...automationStudioFlowDraftDryRunFeedback(refused.verdict, asked, input.steps), unchanged: unchangedLine(input.steps, refused.verdict, "not_replayed") };
       input.accountEvidence(feedback);
       input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}.again`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
       return { issueCodes: automationStudioFlowDraftDryRunIssueCodes(refused.verdict) };
@@ -267,14 +280,18 @@ export function automationStudioFlowDraftDryRunGate(
       cleanSignature = automationStudioFlowDraftFlowSignature(input.steps);
       return passed(optional, replay.observations, false, cleanSignature);
     }
-    refused = { signature, verdict: replay.verdict, replays: refused?.signature === signature ? refused.replays + 1 : 1 };
+    // A Flow the last refused test was also a test of: run again unchanged.
+    const again = refused?.signature === signature;
+    const previous = again ? refused?.verdict : undefined;
+    refused = { signature, verdict: replay.verdict, replays: again && refused ? refused.replays + 1 : 1 };
     // The target as it was when the replay broke, which is what a correction
     // has to be made from, and then the verdict that says what to do about it.
     if (replay.evidence) {
       input.accountEvidence(replay.evidence.value);
       input.showEvidence({ callId: replay.evidence.callId, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID, value: replay.evidence.value });
     }
-    const feedback = automationStudioFlowDraftDryRunFeedback(replay.verdict, asked, input.steps);
+    const verdictFeedback = automationStudioFlowDraftDryRunFeedback(replay.verdict, asked, input.steps);
+    const feedback = again ? { ...verdictFeedback, unchanged: unchangedLine(input.steps, replay.verdict, sameFailures(previous, replay.verdict) ? "replayed" : "replayed_differently") } : verdictFeedback;
     for (const outcome of replay.verdict.outcomes) {
       if (outcome.status !== "replayed") asked.add(automationStudioFlowDraftReplayOutcomeKey(outcome));
     }
@@ -282,6 +299,35 @@ export function automationStudioFlowDraftDryRunGate(
     input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
     return { issueCodes: automationStudioFlowDraftDryRunIssueCodes(replay.verdict) };
   };
+}
+
+/**
+ * The line a refusal of an unchanged refused Flow carries: nothing changed
+ * since the last test, it was run again and failed the same way or was not run
+ * again, and the steps that stood in the way -- those that did not replay and
+ * that the Flow does not pass over -- are what to change, in the refusal's own
+ * words.
+ */
+function unchangedLine(steps: readonly AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun, test: "replayed" | "replayed_differently" | "not_replayed"): string {
+  const excused = new Set([...automationStudioFlowDraftConditionalStepIds(steps), ...automationStudioFlowDraftWithheldStepIds(verdict.outcomes)]);
+  const failing = verdict.outcomes
+    .filter((outcome) => automationStudioFlowDraftReplayOutcomeBlocks(outcome) && !(outcome.stepId !== undefined && excused.has(outcome.stepId)))
+    .map((outcome) => `step ${outcome.step} (${outcome.status})`);
+  const head = test === "replayed"
+    ? "Nothing in the Flow changed since the last test, and it failed the same way again."
+    : test === "replayed_differently"
+      ? "Nothing in the Flow changed since the last test, and it failed again."
+      : "Nothing in the Flow changed since that test, so it would fail the same way, and it was not run again.";
+  if (!failing.length) return `${head} Change the Flow before you say it is ready.`;
+  const one = failing.length === 1;
+  const named = one ? failing[0] : `${failing.slice(0, -1).join(", ")} and ${failing[failing.length - 1]}`;
+  return `${head} Change ${named} before you say the Flow is ready: rerun ${one ? "it" : "each"} with a corrected argument (amend_draft rerun), mark it optional, or drop it.`;
+}
+
+/** Whether two refused replays of one Flow failed on the same steps with the same answers. */
+function sameFailures(before: AutomationStudioFlowDraftDryRun | undefined, after: AutomationStudioFlowDraftDryRun): boolean {
+  const failures = (verdict: AutomationStudioFlowDraftDryRun) => JSON.stringify([verdict.reset, verdict.outcomes.filter(automationStudioFlowDraftReplayOutcomeBlocks).map((outcome) => [outcome.step, outcome.status])]);
+  return before !== undefined && failures(before) === failures(after);
 }
 
 /** Why the test cannot run `step`: carried and never run, off the library, or nothing to run it again with. */

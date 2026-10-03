@@ -28,6 +28,11 @@
 // `step_claimed_twice`: a step named for two acts is told which one it acted
 // for, which is what the model needs to move the claim.
 //
+// **A choice made after its act (live run `run-murwdp4f-35f976d2`, C2).** A
+// choice done by a step positioned after the step that does its act stays
+// done, and carries that act step as `afterAct`: the act ran before its choice,
+// and the check and the checklist say so as information (`./choice-order.ts`).
+//
 // Nothing here calls a provider or reads a page; it is the draft and the claims.
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioInstructedChoiceSetBy } from "./choice-evidence.ts";
@@ -50,7 +55,8 @@ type Judged = { fault: Fault; actsOn?: string; presses?: number[] };
  * `presses` for `quantity_presses_differ`.
  */
 export type AutomationStudioInstructedStanding =
-  | { done: Step }
+  /** `afterAct`: for a choice, the step that does its act when that step comes before this one (`./choice-order.ts`). */
+  | { done: Step; afterAct?: Step }
   | { fault: Fault; step: Step; after?: number; reads?: number[]; actsOn?: string; presses?: number[] };
 
 /**
@@ -114,7 +120,7 @@ export function automationStudioInstructedActsStanding(input: {
     // A choice is a setting, held to what any act of setting is and never repeated.
     const asAct: AutomationStudioInstructedAct = { id: choice.id, kind: "set", verb: choice.choice, quote: choice.quote };
     const act = input.acts.find((each) => each.id === choice.of);
-    settle(choice.id, (step) => {
+    const made = settle(choice.id, (step) => {
       const fault = automationStudioInstructedActStepFault(asAct, step, input.steps, input.onlyArrives, claimed);
       if (fault) return { fault };
       const elsewhere = another(act, step);
@@ -124,6 +130,9 @@ export function automationStudioInstructedActsStanding(input: {
       if (!used.has(step) || automationStudioInstructedChoiceSetBy(step, choice)) return undefined;
       return { fault: actSteps.get(choice.of) === step ? "choice_is_the_act_step" : "step_claimed_twice" };
     });
+    // A choice made after the step that does its act: information, never a fault (`./choice-order.ts`).
+    const actStep = actSteps.get(choice.of);
+    if (made && actStep && made.position > actStep.position) standing.set(choice.id, { done: made, afterAct: actStep });
   }
   return standing;
 }

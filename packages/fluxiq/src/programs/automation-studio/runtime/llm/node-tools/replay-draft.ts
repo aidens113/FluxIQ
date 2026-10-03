@@ -20,6 +20,15 @@
 // asked for. Counting these would end long builds early and would make a
 // refused dry run cost the model the calls it needs to fix it.
 //
+// **A step the Flow passes over says so (t193 1002-M, C6 and C10).** One that
+// did not replay and does not stand in the way -- the draft says the Flow does
+// not always run it, or it needed a withheld effect -- carries `excused` on its
+// outcome, naming why (`../../flow-draft/excused.ts`), and its call carries
+// `excusable` before it is sent, so the activity row that ends with it can say
+// it was skipped (`../../activity/observer.ts` takes it off the call; no host
+// sees it). Live run `run-murzln6g-11debe1d` showed one such step to the judge
+// as `failed` and in the chat as "Didn't work".
+//
 // **A step that comes back unreadable is a failed step**, never a skipped one.
 // A host that does not implement the replay answers something this cannot read,
 // and the honest reading of that is "this step was not demonstrably run again",
@@ -28,6 +37,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
   automationStudioFlowDraftConditionalStepIds,
+  automationStudioFlowDraftConditionalStepReasons,
   automationStudioFlowDraftDryRunVerdict,
   automationStudioFlowDraftReplayFrom,
   automationStudioFlowDraftReplayOutcomeVerified,
@@ -38,6 +48,7 @@ import {
   automationStudioFlowDraftStepWithholdsLater,
   automationStudioFlowDraftWithheldStepIds,
   type AutomationStudioFlowDraftDryRun,
+  type AutomationStudioFlowDraftExcusedReason,
   type AutomationStudioFlowDraftReplayMode,
   type AutomationStudioFlowDraftReplayOutcome,
   type AutomationStudioFlowDraftStep
@@ -59,7 +70,12 @@ export type AutomationStudioFlowDraftReplayInput = {
   steps: readonly AutomationStudioFlowDraftStep[];
   /** 1 for the first replay of this build. */
   attempt: number;
-  executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /**
+   * `excusable`, on a step's call, is why the test passes over that step if it
+   * does not hold (see the header): read by the activity observer, which takes
+   * it off before the call goes on. An executor that is not observed ignores it.
+   */
+  executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal; excusable?: AutomationStudioFlowDraftExcusedReason }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
   signal?: AbortSignal;
 };
 
@@ -168,15 +184,21 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
   // dry run never performs. A later step that does not replay is marked with
   // it and does not refuse on its own (`../../flow-draft/verify-only.ts`).
   let withheldBy: number | undefined;
-  const conditional = automationStudioFlowDraftConditionalStepIds(input.steps);
+  const reasons = automationStudioFlowDraftConditionalStepReasons(input.steps);
+  const conditional = new Set(reasons.keys());
   for (const [index, step] of proposed.entries()) {
-    const mode = automationStudioFlowDraftStepReplayMode(step);
+    // Checked, not run, when it declares a lasting effect or does one of the
+    // person's acts on the page it found (`../../flow-draft/verify-only.ts`);
+    // the whole draft says which proposed step comes next.
+    const mode = automationStudioFlowDraftStepReplayMode(step, input.steps);
     const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step) : automationStudioNodeReplayStepCall(step);
     const callId = input.callIdOf(step);
     const toolId = automationStudioNodeReplayToolId(step);
     const stepId = automationStudioFlowDraftStepId(step);
+    // Why the test passes over this step if it does not hold, known before it runs.
+    const excusable: AutomationStudioFlowDraftExcusedReason | undefined = reasons.get(stepId) ?? (withheldBy !== undefined ? "withheld" : undefined);
     // A step with nothing to run it with is a failed step, not a skipped one.
-    let ran: ReplayAnswer = value ? await call(input, callId, toolId, value) : { readable: false };
+    let ran: ReplayAnswer = value ? await call(input, callId, toolId, value, excusable) : { readable: false };
     let status = statusOf(ran, mode);
     let reanchored = false;
     const previous = outcomes.at(-1);
@@ -196,6 +218,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       ...(ran.readable && ran.result.resultCode ? { resultCode: ran.result.resultCode } : {}),
       ...(mode === "verify" ? { mode } : {}),
       ...(status !== "replayed" && withheldBy !== undefined ? { withheldBy } : {}),
+      ...(status !== "replayed" && excusable ? { excused: excusable } : {}),
       ...(reanchored ? { reanchored: true as const } : {})
     };
     outcomes.push(outcome);
@@ -306,10 +329,11 @@ async function call(
   input: ReplayCaller,
   callId: string,
   toolId: string,
-  value: JsonObject
+  value: JsonObject,
+  excusable?: AutomationStudioFlowDraftExcusedReason
 ): Promise<ReplayAnswer> {
   try {
-    const ran = await input.executeTool({ callId, toolId, value, ...(input.signal ? { signal: input.signal } : {}) });
+    const ran = await input.executeTool({ callId, toolId, value, ...(input.signal ? { signal: input.signal } : {}), ...(excusable ? { excusable } : {}) });
     const result = automationStudioLlmEvidenceParseToolExecutionResult(ran, "mutate");
     return result ? { readable: true, result } : { readable: false };
   } catch (error) {

@@ -44,11 +44,19 @@
 // presses of the add that are not the count, `quantity_presses_differ` with
 // the `presses` counted (`./standing.ts`).
 //
+// **A choice made after its act (live run `run-murwdp4f-35f976d2`, C2).** A
+// choice done by a step after the step that does its act stays done, and
+// carries `afterAct` (that step) and `afterActSaid`: the act ran before its
+// choice. This is the channel that reaches the model on every decision
+// (`../../llm/harness-options/draft-acts.ts`) and the judge of the build's test
+// (`buildTest.checklist`); never a todo (`./choice-order.ts`).
+//
 // Nothing here calls a provider or reads a page; it is the instruction's words
 // and the draft.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftStepGoesToLocation } from "../reachability/index.ts";
+import { automationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
 import type { AutomationStudioInstructedChoice } from "./contracts.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
 import { automationStudioInstructedActsStanding, type AutomationStudioInstructedStanding } from "./standing.ts";
@@ -101,6 +109,10 @@ export type AutomationStudioInstructedChoiceChecklistItem = {
   done?: number;
   todo?: AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo;
   step?: number;
+  /** The position of the step that does this choice's act, when it comes before the step that makes the choice (`./choice-order.ts`). */
+  afterAct?: number;
+  /** What that means, in words the model and the judge act on. Information, never a todo. */
+  afterActSaid?: string;
 } & AutomationStudioInstructedTodoDetail;
 
 /** One act as the model is shown it. */
@@ -143,7 +155,7 @@ export function automationStudioInstructedActsChecklist(input: {
   return acts.map((act) => {
     const item: AutomationStudioInstructedActChecklistItem = { id: act.id, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true as const } : {}), ...shown(standing.get(act.id)) };
     if (!act.requires?.length) return item;
-    return { ...item, choices: act.requires.map((choice) => ({ id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote, ...shown(standing.get(choice.id)) })) };
+    return { ...item, choices: act.requires.map((choice) => ({ id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote, ...shown(standing.get(choice.id)), ...madeAfterAct(choice, standing.get(choice.id)) })) };
   });
 }
 
@@ -158,6 +170,13 @@ function shown(stood: AutomationStudioInstructedStanding | undefined): { done: n
     ...(stood.actsOn !== undefined ? { actsOn: stood.actsOn } : {}),
     ...(stood.presses ? { presses: [...stood.presses] } : {})
   };
+}
+
+/** A done choice whose act's step comes before it: that step, and the sentence the verdict says (`./choice-order.ts`). */
+function madeAfterAct(choice: AutomationStudioInstructedChoice, stood: AutomationStudioInstructedStanding | undefined): { afterAct?: number; afterActSaid?: string } {
+  if (!stood || !("done" in stood) || !stood.afterAct) return {};
+  const found = automationStudioInstructedChoiceAfterAct({ id: choice.id, of: choice.of, step: stood.done.position, actStep: stood.afterAct.position });
+  return found ? { afterAct: found.actStep, afterActSaid: found.said } : {};
 }
 
 /** The ids of the acts and choices the checklist shows as not done, each act before its choices. */

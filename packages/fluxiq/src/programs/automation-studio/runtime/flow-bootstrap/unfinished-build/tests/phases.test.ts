@@ -156,7 +156,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1, tested: "not_tested" } });
     expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.250, which left nothing for its next call\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
-    expect(outcome.ending.message).toContain("The Flow so far was kept, and building again carries on from it.");
+    expect(outcome.ending.message).toContain("The steps found so far were kept, and building again carries on from them.");
     expect(outcome.ending.message).not.toContain("not doable");
   });
 

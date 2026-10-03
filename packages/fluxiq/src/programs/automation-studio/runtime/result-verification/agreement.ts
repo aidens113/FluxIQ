@@ -70,7 +70,11 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
     // the same reason.
     return {
       ...first,
-      reason: "The result was judged not to answer the request the Flow was built for, twice and with the same evidence, although every step of the run succeeded.",
+      // Nothing about the steps: this file reads only the two verdicts, and a
+      // build's test can pass with a step it excused failing. "Although every
+      // step of the run succeeded" was said above "Step 15 (×) failed" (t193
+      // 1002-M, `run-murzln6g-11debe1d`, C6).
+      reason: "The result was judged not to answer the request the Flow was built for, twice and with the same evidence.",
       verdicts,
       calls: 2
     };

@@ -20,6 +20,26 @@
 // what a person is asked: a check is not the act, and the act stays gated
 // where it always was.
 //
+// **A step that does one of the person's acts is checked, whatever it
+// declared (t193-1002m-w6, 2026-10-02).** Live run `run-murwdp4f-35f976d2`'s
+// draft step d12, Add to cart, carried act a2 and declared `consequences: []`,
+// so both build tests pressed it and the person's cart went from 2 to 3 to 4
+// items where the instruction said "keep what is already in my cart". The
+// model under-declared, but its own act claim (`acts` on the step) says the
+// step does what the person asked done, and every instructed act is a lasting
+// one (`../flow-bootstrap/instructed-acts/`). So a changing step that names a
+// bare act id (`a2`) is verified too. A choice of an act (`a2.quantity`,
+// `a2.size`) is not an act: it sets up the page the act is done on, and is run
+// again. One exception keeps the declaration rule: an act step that moved the
+// page -- the next proposed step found the target somewhere other than where
+// this one did, compared whole as the moved-target rule below compares
+// `replay.from` -- is what the later steps stand on ("Arriving is not doing",
+// `../flow-bootstrap/instructed-acts/check.ts`), so withholding it would leave
+// every later target absent. This one predicate
+// (`automationStudioFlowDraftStepReplayMode`) is what the build's test, a
+// rerun's put-back (`../llm/node-tools/replay-draft.ts`, `../llm/node-tools/step-place.ts`) and
+// a part run (`../llm/node-tools/run-flow-part.ts`) all decide by.
+//
 // **Why the declaration and not every change.** A press that only opens,
 // filters or navigates is what the steps after it stand on: the chooser a
 // store is picked from is open only because the press before it opened it.
@@ -86,7 +106,7 @@ import type { JsonValue } from "../../../../core/index.ts";
 import { isAutomationStudioDestructiveActionConsequence } from "../action-permissions/index.ts";
 import type { AutomationStudioFlowDraftReplayOutcome } from "./dry-run.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REMEMBERED_CODE } from "./site-memory.ts";
-import type { AutomationStudioFlowDraftStep } from "./step.ts";
+import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "./step.ts";
 
 /** The code a host answers a check with when the step could run now and was not run. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE = "core.replay.verified";
@@ -102,18 +122,43 @@ const NONE = "none";
 
 /**
  * How the dry run treats this step: `verify` when running it again would
- * repeat a lasting effect, `replay` otherwise.
+ * repeat a lasting effect, `replay` otherwise. `steps` is the draft the step
+ * is in, from which its next proposed step is read.
  *
- * The declaration is read from what the Flow keeps (`ranWith`) before what the
- * model wrote (`input`), the same order a replay reads the step's argument in.
- * Core reads only whether it says anything but none: an unrecognised class is
- * still a claim that something lasts, and the gate -- not this -- decides
- * whether a class is one Core knows.
+ * A changing step is verified when it declares anything lasting, or when it
+ * does one of the person's acts (a bare act id on `acts`) and did not move the
+ * target (see the header). The declaration is read from what the Flow keeps
+ * (`ranWith`) before what the model wrote (`input`), the same order a replay
+ * reads the step's argument in. Core reads only whether it says anything but
+ * none: an unrecognised class is still a claim that something lasts, and the
+ * gate -- not this -- decides whether a class is one Core knows.
  */
-export function automationStudioFlowDraftStepReplayMode(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftReplayMode {
+export function automationStudioFlowDraftStepReplayMode(step: AutomationStudioFlowDraftStep, steps: readonly AutomationStudioFlowDraftStep[]): AutomationStudioFlowDraftReplayMode {
   if (step.effect !== "mutate") return "replay";
   const declared = step.ranWith && "consequences" in step.ranWith ? step.ranWith.consequences : step.input.consequences;
-  return declaresLasting(declared) ? "verify" : "replay";
+  if (declaresLasting(declared)) return "verify";
+  if (!doesAnAct(step)) return "replay";
+  return automationStudioFlowDraftStepMovedTarget(step, nextProposed(steps, step)) ? "replay" : "verify";
+}
+
+/**
+ * The proposed step after `step` in the draft, by draft order, or nothing when
+ * it is the last. A step not found in `steps` by identity is placed by its
+ * position, as a rerun's put-back places one (`../llm/node-tools/step-place.ts`).
+ */
+function nextProposed(steps: readonly AutomationStudioFlowDraftStep[], step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftStep | undefined {
+  const proposed = steps.filter(automationStudioFlowDraftStepIsProposed);
+  const at = proposed.indexOf(step);
+  if (at >= 0) return proposed[at + 1];
+  return proposed.filter((each) => each.position > step.position).sort((left, right) => left.position - right.position)[0];
+}
+
+/** An act id as a step names it: `a2`, never a choice of one (`a2.quantity`). */
+const ACT_ID = /^a[0-9]+$/u;
+
+/** Whether the step says it does one of the person's acts, not only a choice of one. */
+function doesAnAct(step: AutomationStudioFlowDraftStep): boolean {
+  return (step.acts ?? []).some((named) => ACT_ID.test(named.trim().toLowerCase()));
 }
 
 /**
