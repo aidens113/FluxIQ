@@ -6,7 +6,7 @@
 // dismissals its build had performed, and no line anywhere said so.
 import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRouting } from "../../../flow-draft/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowDraftWrittenStep } from "../assemble-draft.ts";
 
@@ -80,5 +80,49 @@ describe("the plan a draft makes", () => {
     });
     expect(assembled.plan).toBeUndefined();
     expect(assembled.issues.map((issue) => issue.code)).toContain("flow_script.unknown_node");
+  });
+});
+
+// t243: each step records the page it started on and the page it left, as the
+// host's route signatures, and the plan node it becomes carries them.
+describe("the route signatures a draft step recorded", () => {
+  // Core's built-ins too, for the join an optional step adds.
+  const withJoins = new AutomationStudioNodeRegistry();
+  for (const definition of webDomainNodeDefinitionsFixture()) withJoins.register(definition);
+  const signed = (position: number, routing?: AutomationStudioFlowDraftStepRouting): AutomationStudioFlowDraftStep => ({
+    ...step(position, "press", { target: `#control-${position}` }), id: `d${position}`, stateBefore: `D${position - 1}`, stateAfter: `D${position}`, ...(routing ? { routing } : {})
+  });
+  const signaturesOf = (draftStep: { stateBefore?: string; stateAfter?: string }) => ({
+    ...(draftStep.stateBefore ? { before: { page: draftStep.stateBefore } } : {}),
+    ...(draftStep.stateAfter ? { after: { page: draftStep.stateAfter } } : {})
+  });
+
+  it("puts each step's signatures on the plan node it became", () => {
+    const assembled = assembleAutomationStudioFlowDraftPlan({ steps: [signed(1), signed(2)], write, registry, resolution, summary: "Press twice", routeSignaturesOf: signaturesOf });
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(assembled.plan?.subflows[0]?.nodes.map((node) => node.routeSignatures)).toEqual([
+      { before: { page: "D0" }, after: { page: "D1" } },
+      { before: { page: "D1" }, after: { page: "D2" } }
+    ]);
+  });
+
+  it("gives the join a routed draft adds no signatures, and a step with none stays without", () => {
+    const assembled = assembleAutomationStudioFlowDraftPlan({
+      steps: [signed(1, { kind: "optional" }), signed(2)], write, registry: withJoins, resolution, summary: "Dismiss, then press",
+      routeSignaturesOf: (draftStep) => draftStep.stateBefore === "D0" ? signaturesOf(draftStep) : undefined
+    });
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const nodes = assembled.plan?.subflows[0]?.nodes ?? [];
+    expect(nodes.map((node) => [node.definitionId, node.routeSignatures])).toEqual([
+      ["web.output.dom-click", { before: { page: "D0" }, after: { page: "D1" } }],
+      ["builtin.control.merge", undefined],
+      ["web.output.dom-click", undefined]
+    ]);
+    expect(nodes.every((node) => node.routeSignatures !== undefined || !("routeSignatures" in node))).toBe(true);
+  });
+
+  it("records nothing when the build had no signatures to give", () => {
+    const assembled = assembleAutomationStudioFlowDraftPlan({ steps: [signed(1)], write, registry, resolution, summary: "Press once" });
+    expect(assembled.plan?.subflows[0]?.nodes.some((node) => "routeSignatures" in node)).toBe(false);
   });
 });

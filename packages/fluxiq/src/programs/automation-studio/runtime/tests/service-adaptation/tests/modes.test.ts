@@ -15,7 +15,12 @@ function createService(...args: ConstructorParameters<typeof AutomationStudioSer
   return service;
 }
 
-describe("AutomationStudioService recording persistence", () => {
+// Every case here creates Flows and runs whole runtime sessions through the
+// service. Measured 2026-10-02 (t245), alone / with the runtime and program test
+// directories in parallel: 8.6 / 7.8-15.5 s, 5.1 / 6.7-15.1 s, 4.4 / 6.0-8.8 s, and
+// 2.8 / 13.1-18.1 s for budget exhaustion, which failed the full sweep at the
+// suite's 15 s default. The cases are correct; their budget was too small.
+describe("AutomationStudioService recording persistence", { timeout: 60_000 }, () => {
   beforeEach(async () => {
     tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-studio-service-"));
   });

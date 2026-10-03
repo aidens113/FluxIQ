@@ -152,6 +152,53 @@ describe("what a replay's answers make of a draft", () => {
   });
 });
 
+describe("a refusal for a step the test never reached the page of", () => {
+  // Run muqk4u32 (t174 F41): the arrival kept, a refused press, then the ×, the
+  // search and the listing taken and never added, then the item-page steps
+  // kept. Dry runs 1 and 2 listed step 1 replayed and 6-13 unreproducible, and
+  // nothing named 3-5: the model spent decisions 0038-0055 finding them.
+  const draft = (): AutomationStudioFlowDraftStep[] => [
+    step(1, { stateBefore: "blank", stateAfter: "home+popup" }),
+    step(2, { stateBefore: "home+popup", stateAfter: "home+popup", effectApplied: false, disposition: "taken" }),
+    step(3, { stateBefore: "home+popup", stateAfter: "home", disposition: "taken" }),
+    step(4, { stateBefore: "home", stateAfter: "results", disposition: "taken" }),
+    step(5, { stateBefore: "results", stateAfter: "item+consent", disposition: "taken" }),
+    step(6, { stateBefore: "item+consent", stateAfter: "item" }),
+    step(7, { stateBefore: "item", stateAfter: "item-grey" })
+  ];
+  type Status = "replayed" | "failed" | "unreproducible";
+  const outcomes = (statuses: [Status, Status, Status]) => statuses.map((status, index) => ({ step: [1, 6, 7][index]!, actionId: "node.click", status }));
+
+  it("names the steps that changed the page on the way to it and are not in the Flow", () => {
+    const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: outcomes(["replayed", "unreproducible", "unreproducible"]) });
+    const feedback = automationStudioFlowDraftDryRunFeedback(verdict, new Set(), draft());
+    expect(feedback.notInFlow).toBe("Steps 3, 4 and 5 changed the page on the way to step 6 when you ran them, and are not in the Flow, so the test never reached the page step 6 acted on: add them (amend_draft add).");
+  });
+
+  it("names one such step in the singular, and leaves out a detour", () => {
+    const steps = draft();
+    // The search is already in the Flow; the listing was opened, left, and opened again.
+    steps[3]!.disposition = "kept";
+    steps.splice(5, 0,
+      step(6, { stateBefore: "item+consent", stateAfter: "results", disposition: "taken" }),
+      step(7, { stateBefore: "results", stateAfter: "item+consent", disposition: "taken" }));
+    steps.forEach((each, index) => { each.position = index + 1; each.iteration = index + 1; });
+    const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [
+      { step: 4, actionId: "node.click", status: "replayed" }, { step: 8, actionId: "node.click", status: "unreproducible" }
+    ] });
+    expect(automationStudioFlowDraftDryRunFeedback(verdict, new Set(), steps).notInFlow).toBe("Step 7 changed the page on the way to step 8 when you ran it, and is not in the Flow, so the test never reached the page step 8 acted on: add it (amend_draft add).");
+  });
+
+  it("says nothing more when every step on the way is in the Flow, when the step failed rather than went unreached, or without the draft", () => {
+    const kept = draft().map((each) => (each.position === 2 ? each : { ...each, disposition: "kept" as const }));
+    const unreached = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: outcomes(["replayed", "unreproducible", "unreproducible"]) });
+    expect(automationStudioFlowDraftDryRunFeedback(unreached, new Set(), kept)).not.toHaveProperty("notInFlow");
+    const failed = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: outcomes(["replayed", "failed", "replayed"]) });
+    expect(automationStudioFlowDraftDryRunFeedback(failed, new Set(), draft())).not.toHaveProperty("notInFlow");
+    expect(automationStudioFlowDraftDryRunFeedback(unreached)).not.toHaveProperty("notInFlow");
+  });
+});
+
 describe("the loop's gate on proposing", () => {
   const tool = { toolId: "core.run_node", description: "Run a node.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true };
 

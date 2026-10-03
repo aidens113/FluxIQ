@@ -222,9 +222,16 @@ It refuses nothing and grants nothing. The instruction is the authority for
 permitting, so a class the instruction asks for was already allowed and an
 under-declaration bypasses no permission; refusing the build would be Core
 overruling the person's own instruction on Core's reading of their words.
-Instead the finding is recorded on what the person approves and said out loud as
-a `confirm` ask in the Flow's thread, which does not park -- the build has a
-Flow, and the question is about applying it. Nothing here reads a control, a
+Instead the finding is recorded on what the person approves and said out loud in
+the Flow's thread. It is a `confirm` ask ("... Apply it as it stands?"), which
+does not park, only when a class nobody declared is one a person is asked about
+(`destructive.ts`: moving money, deleting, sending or publishing -- the user's
+rule of 2026-10-01); a creation or an edit nobody declared is said as a plain
+line with no question (t174 F42). The sentence names each class in plain words
+beside the person's own quoted words, with no class codes and no action counts:
+run `run-muqk4u32-0b36e58f` ended on "The instruction asks for modify_existing
+and create_new, and none of this run's 72 actions said it would cause that",
+whose 72 counted every replay of the draft. Nothing here reads a control, a
 label or a node id: both sides of the comparison are the model's own statements.
 
 The comparison may cost one provider call the build would not otherwise make,
@@ -709,6 +716,27 @@ option `draftAuthoring: "transcript"` keeps the old rule, under which every step
 that ran was `kept` unless withdrawn; it exists only to replay builds recorded
 under that rule (`runtime/llm/loop-configuration.ts`, `runtime/flow-draft/step.ts`).
 
+**A step added to the Flow brings the way to its page (t174/F41).** When a step
+joins the Flow -- `add` on its call, or an `add` or `keep` amendment -- every
+step since the last step in the Flow that the model took without deciding
+about (`taken`) and that changed the state joins with it, because the step ran
+on what they left (`runtime/flow-draft/opener.ts`, `runtime/flow-draft/path-to-step.ts`).
+The walk back passes over a look and a call that did not work (even where the
+page went on loading under it), and over a step that changed nothing or has no
+states; it ends at a step in the Flow or at one the model dropped or called
+exploratory. A detour -- a stretch that came back to a state already seen on
+the way, such as a listing opened and left again -- is left out; the state a
+step left and the state the next one found are compared as one moment, because
+a page can go on changing between two calls. Until t174/F41 the rule brought at
+most two steps back: live run `run-muqk4u32-0b36e58f` added 7-in-1 on an item
+page reached by a ×, a search, a listing in a new tab, a consent and a colour;
+the colour and the consent were kept and the rest were not, and two dry runs
+ran the item-page steps on the home page. For the same reason a refused dry
+run, given the draft, names the taken steps that changed the page on the way
+to its first `unreproducible` step and are not in the Flow (`notInFlow`:
+"Steps 3, 4 and 5 changed the page on the way to step 6 ... add them",
+`runtime/flow-draft/dry-run.ts`).
+
 **Each step names the control it acted on (t174/F33).** A step's `input` names
 a control by the token the domain minted for it, a handle on the web, and a
 token says nothing once its page is gone: live run `run-muqiho5c-e830ce01`
@@ -737,6 +765,39 @@ own is wired as `optional` when the Flow is written
 join the next step runs from, so playback skips it on a visit where the site
 remembers the answer. The stored draft is not rewritten, and a step that does
 an instructed act is never made optional.
+
+**Each step records the page it started on and the page it left (t243).** A
+run that meets a step it cannot run continues at the node whose expected
+pre-state matches the page, so the build records each step's pre-state as it
+sees it. The build's routing (`runtime/route-state/build-routing.ts`) keeps,
+for every call that reports the digest of the page it left
+(`stateDigests.after`) and that page's route state, the host's signature of the
+state (`signRouteState`) under that digest; the free first look counts the same
+way. A draft step's `stateBefore` and `stateAfter` digests then name its route
+signatures: `before`, its expected pre-state, and `after`. They ride the plan
+node (`routeSignatures`) through validation, which apply repeats and compares
+byte for byte, to the Flow node's metadata under `routeSignatures`
+(`runtime/flow-bootstrap/adaptation.ts`). They are keyed by digest rather than
+by call id because call ids repeat across repair rounds -- `initial.<tool>`
+opens every round -- while a digest names the page itself, and a step's
+`stateBefore` is the previous call's `stateAfter` whenever nothing moved the
+page in between. A host that signs no states records nothing, an observation
+made outside a call has no digest and maps nothing, and a plan the model wrote
+itself has any `routeSignatures` dropped before it is read: they are
+Core-derived only. Steps also record their **effect**, what they did to the
+page: the routing keeps the full route state of the page the newest call left,
+with that call's `stateDigests.after` -- one state in memory, never more -- and
+for a call whose `stateDigests.before` equals that digest, whose `after`
+differs and that reported the route state it left, keeps the host's
+`signRouteEffect(previous state, left state)` under the pair of digests. The
+web domain reports both digests on an action (its read before acting and its
+read after, `withCallStates`). A step's signatures then carry `effect` for its
+own `stateBefore` and `stateAfter`. A look (equal digests) records none, nor
+does a call that started on a page the previous call did not leave, a call
+after one that threw, or a host that records no effects. A run reads the
+effect for a step it cannot run, to pass over a step the site already did
+(`../automation-studio.md`, "A step that cannot run continues where the page
+is").
 
 **The instructed acts are the model's checklist from the first decision**
 (audit A1, cause 1). The draft entry carries `acts`: each lasting act the

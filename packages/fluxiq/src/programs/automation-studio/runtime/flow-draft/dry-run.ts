@@ -87,6 +87,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
+import { automationStudioFlowDraftPathToStep } from "./path-to-step.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REANCHORED_CODE } from "./site-memory.ts";
 import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 
@@ -310,8 +311,15 @@ const DRY_RUN_INSTRUCTION = "You said the Flow is ready, so it was tested: run o
  * replaying, by `automationStudioFlowDraftReplayOutcomeKey`; such a step's line
  * says `again: true`, so the model can see it is being refused for the same
  * step a second time rather than a new one.
+ *
+ * `steps` is the draft the replay ran. Given it, a refusal whose first
+ * unreproducible step ran, while exploring, on a page taken steps made names
+ * those steps (`notInFlow`): run muqk4u32's refusals listed step 1 replayed and
+ * 6-13 unreproducible, and the ×, the search and the listing that reach the
+ * item page (3-5) had to be inferred from the draft (t174 F41).
  */
-export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudioFlowDraftDryRun, told: ReadonlySet<string> = new Set()): JsonObject {
+export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudioFlowDraftDryRun, told: ReadonlySet<string> = new Set(), steps?: readonly AutomationStudioFlowDraftStep[]): JsonObject {
+  const missing = steps ? notInFlow(verdict, steps) : undefined;
   return {
     ok: false,
     code: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE,
@@ -328,6 +336,23 @@ export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudi
       ...(outcome.reanchored ? { reanchored: true } : {}),
       ...(outcome.status !== "replayed" && told.has(automationStudioFlowDraftReplayOutcomeKey(outcome)) ? { again: true } : {})
     })),
+    ...(missing ? { notInFlow: missing } : {}),
     instruction: DRY_RUN_INSTRUCTION
   };
+}
+
+/**
+ * The taken steps that changed the page on the way to the first unreproducible
+ * step and are not in the Flow, said as what to do, or nothing when there are
+ * none (`./path-to-step.ts`).
+ */
+function notInFlow(verdict: AutomationStudioFlowDraftDryRun, steps: readonly AutomationStudioFlowDraftStep[]): string | undefined {
+  const unreached = verdict.outcomes.find((outcome) => outcome.status === "unreproducible");
+  const step = unreached ? steps.find((candidate) => candidate.position === unreached.step) : undefined;
+  if (!step) return undefined;
+  const way = automationStudioFlowDraftPathToStep(steps, step).map((each) => each.position).sort((a, b) => a - b);
+  if (!way.length) return undefined;
+  const one = way.length === 1;
+  const named = one ? `Step ${way[0]}` : `Steps ${way.slice(0, -1).join(", ")} and ${way[way.length - 1]}`;
+  return `${named} changed the page on the way to step ${step.position} when you ran ${one ? "it" : "them"}, and ${one ? "is" : "are"} not in the Flow, so the test never reached the page step ${step.position} acted on: add ${one ? "it" : "them"} (amend_draft add).`;
 }

@@ -47,6 +47,7 @@
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftInterruptionStepIds, automationStudioFlowDraftStepId } from "../../flow-draft/index.ts";
+import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type { AutomationStudioFlowScriptBranch, AutomationStudioFlowScriptStep } from "./contracts.ts";
 import { authoringError } from "./issue.ts";
@@ -74,6 +75,8 @@ const ROW_PORT = "item";
 export type AutomationStudioFlowDraftRoutedStep = {
   step: AutomationStudioFlowDraftStep;
   written: Pick<AutomationStudioFlowScriptStep, "description" | "node" | "entries">;
+  /** The pages the step ran between, as the build signed them (`AutomationStudioFlowScriptStep.routeSignatures`). */
+  routeSignatures?: AutomationStudioRouteSignatures;
 };
 
 /**
@@ -347,6 +350,7 @@ function scriptStep(entry: AutomationStudioFlowDraftRoutedStep, label: string | 
     // Which draft step this is, so the node it becomes can be traced back to
     // it. The joins and loops this module adds carry none.
     draftStepId: automationStudioFlowDraftStepId(entry.step),
+    ...(entry.routeSignatures ? { routeSignatures: entry.routeSignatures } : {}),
     line: 0
   };
 }

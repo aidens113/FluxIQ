@@ -528,3 +528,25 @@ describe("a Flow holding steps carried from an earlier Flow that never ran in th
     expect((await run.complete()).answer).toBeUndefined();
   });
 });
+
+describe("a refusal whose step ran on a page taken steps made", () => {
+  it("run muqk4u32: names the taken steps that changed the page on the way and are not in the Flow (t174 F41)", async () => {
+    // 1 is kept and left the page at b; 2 was taken, not kept, and moved it to
+    // c; 3 ran on c. The test runs 1 then 3, never 2, so 3 is not on its page.
+    const steps = [
+      step(1, { stateBefore: "a", stateAfter: "b" }),
+      step(2, { disposition: "taken", stateBefore: "b", stateAfter: "c" }),
+      step(3, { stateBefore: "c", stateAfter: "d" })
+    ];
+    const run = harness(steps, { 3: UNREPRODUCIBLE });
+    const refused = await run.complete();
+    expect(refused.answer).toEqual(refusedFor(UNREPRODUCIBLE));
+    expect(refused.ran).toEqual(["dryrun.1.reset", "dryrun.1.1", "dryrun.1.3"]);
+    expect(run.lastVerdict().notInFlow).toBe("Step 2 changed the page on the way to step 3 when you ran it, and is not in the Flow, so the test never reached the page step 3 acted on: add it (amend_draft add).");
+    // Judged again from the same replays, it says so again.
+    await run.complete();
+    const again = await run.complete();
+    expect(again.ran).toEqual([]);
+    expect(run.lastVerdict().notInFlow).toContain("Step 2 changed the page");
+  });
+});

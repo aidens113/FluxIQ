@@ -225,7 +225,7 @@ export function automationStudioFlowDraftDryRunGate(
     if (refused?.signature === signature && refused.replays >= MAX_REPLAYS_OF_ONE_DRAFT) {
       // The same Flow those replays refused, so the same verdict: its steps
       // that did not replay are marked `again`, and its issues are the same.
-      const feedback = automationStudioFlowDraftDryRunFeedback(refused.verdict, asked);
+      const feedback = automationStudioFlowDraftDryRunFeedback(refused.verdict, asked, input.steps);
       input.accountEvidence(feedback);
       input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}.again`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
       return { issueCodes: automationStudioFlowDraftDryRunIssueCodes(refused.verdict) };
@@ -274,7 +274,7 @@ export function automationStudioFlowDraftDryRunGate(
       input.accountEvidence(replay.evidence.value);
       input.showEvidence({ callId: replay.evidence.callId, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID, value: replay.evidence.value });
     }
-    const feedback = automationStudioFlowDraftDryRunFeedback(replay.verdict, asked);
+    const feedback = automationStudioFlowDraftDryRunFeedback(replay.verdict, asked, input.steps);
     for (const outcome of replay.verdict.outcomes) {
       if (outcome.status !== "replayed") asked.add(automationStudioFlowDraftReplayOutcomeKey(outcome));
     }

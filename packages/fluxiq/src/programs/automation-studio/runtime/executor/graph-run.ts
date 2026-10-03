@@ -2,7 +2,7 @@ import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
-import { automationStudioAbsentStepSkip } from "./step-skip/index.ts";
+import { announceAutomationStudioStateRoute, automationStudioCouldNotRun, automationStudioNotShownAttempt, automationStudioStateRouteGuard, automationStudioStateRoutedAttempt, decideAutomationStudioStateRoute, type AutomationStudioStateRouteDecision } from "./state-routing/index.ts";
 import { nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
 import {
@@ -26,9 +26,9 @@ import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransit
 import { automationStudioParkedRun, automationStudioAskInEffects, automationStudioAskSettlement, type AutomationStudioAsk, type AutomationStudioAskSettlement, type AutomationStudioCarriedIteration, type AutomationStudioParkedRun } from "../parking/index.ts";
 import { automationStudioRunState, type AutomationStudioRunState } from "./run-state.ts";
 import { chooseAutomationStudioStartNode } from "./start-node.ts";
-import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioTraceWithholding, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
+import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
-import { automationStudioActivityAction, automationStudioActivityAskResolution, automationStudioActivityRecoveryChoice, emitAutomationStudioActivity, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
+import { automationStudioActivityAskResolution, automationStudioActivityRecoveryChoice, emitAutomationStudioActivity, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -173,7 +173,7 @@ async function runGraphToTrace(
   // and discarded is the shape of bug this repository keeps meeting.
   const defence = runState.defence.summary();
   const defended = defence ? { ...executed, defence } : executed;
-  const saved = withholding.apply(withholdRunInputs(runState.records.apply(defended), options.inputs ?? {}));
+  const saved = withholding.apply(automationStudioWithholdRunInputs(runState.records.apply(defended), options.inputs ?? {}));
   withheldBySavedTrace.set(saved, withholding.values());
   capturedBySavedTrace.set(saved, runState.records.captured());
   onExecutedTrace?.(defended, saved);
@@ -317,59 +317,6 @@ function continuationFault(reason: string): AutomationStudioFaultAssessment {
   };
 }
 
-/** How deep a withheld input is walked before it is withheld whole: the bound the value-based rewrite uses. */
-const MAXIMUM_INPUT_DEPTH = 64;
-
-/**
- * The trace with every run input withheld where this module saved it: in
- * `values`, and in each attempt's `inputs`, both seeded from `options.inputs`.
- *
- * Every run input's texts and numbers are also recorded for the value-based
- * rewrite (`runGraphToTrace`), which withholds a copy of one under any data key.
- * This pass is kept because it is positional: an input is found at its own key
- * and proved by identity -- the entry still holds the value the caller supplied,
- * not a node output written over the same key -- and withheld whole, including
- * a subtree deeper than the value walk collects.
- *
- * The value-based rewrite has a cost this pass does not: a value the run
- * computed that equals an input (5 + 0) reads as withheld too, because a copy
- * cannot be told from a computation by value. Nothing executes from the saved
- * trace -- a Call Flow parent and a live-patch rerun are handed the executed
- * trace -- so the choice shapes only what is kept. A withheld input keeps its
- * shape, as everything else the trace withholds does.
- */
-function withholdRunInputs(trace: AutomationStudioGraphExecutionTrace, inputs: Record<string, JsonValue>): AutomationStudioGraphExecutionTrace {
-  if (!Object.keys(inputs).length) return trace;
-  return {
-    ...trace,
-    values: withheldInputEntries(trace.values, inputs),
-    attempts: trace.attempts.map((attempt) => {
-      const attemptInputs = withheldInputEntries(attempt.inputs, inputs);
-      return attemptInputs === attempt.inputs ? attempt : { ...attempt, inputs: attemptInputs };
-    })
-  };
-}
-
-function withheldInputEntries(entries: Record<string, JsonValue>, inputs: Record<string, JsonValue>): Record<string, JsonValue> {
-  let withheld: Record<string, JsonValue> | undefined;
-  for (const [key, supplied] of Object.entries(inputs)) {
-    if (entries[key] !== supplied) continue;
-    withheld ??= { ...entries };
-    withheld[key] = withheldInputValue(supplied, 0);
-  }
-  return withheld ?? entries;
-}
-
-/** Every string and number in a supplied value, replaced in place. Booleans and null carry no credential and stay, as in the value-based rewrite. */
-function withheldInputValue(value: JsonValue, depth: number): JsonValue {
-  if (typeof value === "string") return value ? AUTOMATION_STUDIO_WITHHELD_VALUE : value;
-  if (typeof value === "number") return AUTOMATION_STUDIO_WITHHELD_VALUE;
-  if (!value || typeof value !== "object") return value;
-  if (depth >= MAXIMUM_INPUT_DEPTH) return AUTOMATION_STUDIO_WITHHELD_VALUE;
-  if (Array.isArray(value)) return value.map((item) => withheldInputValue(item, depth + 1));
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withheldInputValue(item, depth + 1)]));
-}
-
 async function executeAutomationStudioGraph(
   flow: AutomationStudioFlowDocument,
   options: AutomationStudioGraphExecutionOptions,
@@ -414,6 +361,9 @@ async function executeAutomationStudioGraph(
   // Each body, say -- gets the whole ladder again on its second arrival.
   let arrival = { nodeId: currentNode.id, attempts: 0, consumed: new Set<AutomationStudioLadderRungKind>() };
   let pendingRetry: AutomationStudioNodeAttemptTrace["retry"];
+  // Where state routing has sent this run, so a page that keeps sending it back
+  // to one node without progress ends the run rather than looping it.
+  const routeGuard = automationStudioStateRouteGuard();
   // Set only on a resumed run's first pass. The parked node is not executed
   // again: that pass does nothing but leave it by the route the answer chose,
   // so whatever the node already did happened once.
@@ -453,16 +403,17 @@ async function executeAutomationStudioGraph(
       const recordedState = automationStudioRecordedState(currentNode);
       // The wait ceiling, gated by the state the node expects to find. It never
       // fails the node: an unsatisfied gate is a mark on the attempt, because the
-      // recording is evidence the action was possible at that point. A
-      // sometimes-present step the gate judged not shown is skipped instead,
-      // with nothing dispatched (`step-skip/absent-step.ts`).
+      // recording is evidence the action was possible at that point. A gate
+      // that judged the state and found it not met asks state routing first,
+      // and a way on skips the dispatch entirely (`state-routing/`).
       const readiness = await automationStudioAwaitNodeReadiness(currentNode, options, `${currentNode.id}.attempt.${nextAttemptNumber()}`);
       if (options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
       }
       emitAutomationStudioActivityStep({ index: step + 1, count: flow.nodes.length, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues });
-      const notShown = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? nodeAttemptWithAdaptationIds(currentNode, { attemptId: `${currentNode.id}.attempt.${nextAttemptNumber()}`, nodeId: currentNode.id, definitionId: currentNode.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], failure: { category: "target_not_found", code: "executor.ready_state.not_shown", retryable: false, stage: "target_resolution" } }) : undefined;
-      const executed = notShown && automationStudioAbsentStepSkip(flow, currentNode, notShown) ? notShown : remainingMs === undefined
+      const notShown: AutomationStudioNodeAttemptTrace | undefined = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? automationStudioNotShownAttempt(currentNode, `${currentNode.id}.attempt.${nextAttemptNumber()}`, now()) : undefined;
+      let routing: AutomationStudioStateRouteDecision | undefined = notShown ? await decideAutomationStudioStateRoute({ flow, node: currentNode, attempt: notShown, attempts, options, guard: routeGuard }) : undefined;
+      const executed = notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
         ? await executeAutomationStudioNode(flow, currentNode, values, options, nextAttemptNumber(), withholding, runState)
         : await executeWithRegionTimeout(
           (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, nextAttemptNumber(), withholding, runState),
@@ -477,7 +428,8 @@ async function executeAutomationStudioGraph(
         ...executed,
         ...(readiness ? { readiness } : {}),
         ...(Object.keys(recordedState).length ? { recordedState } : {}),
-        ...(pendingRetry ? { retry: pendingRetry } : {})
+        ...(pendingRetry ? { retry: pendingRetry } : {}),
+        ...(routing?.kind === "none" ? { stateRouting: routing.record } : {})
       };
       pendingRetry = undefined;
       const tracedAttempt = region?.kind === "policy" ? { ...attempt, policyDecision: policyDecisionForAttempt(currentNode, attempt) } : attempt;
@@ -573,18 +525,27 @@ async function executeAutomationStudioGraph(
           ...(attempt.message ? { message: attempt.message } : {})
         };
       }
-      // A sometimes-present step (a popup, a banner) observed not on the page is
-      // skipped, not failed: no fault, no ladder, no budget, no "Recovery started".
-      const skipEdge = routeOverride === undefined && attempt.status === "failed" ? automationStudioAbsentStepSkip(flow, currentNode, attempt) : undefined;
-      if (skipEdge) {
-        const { failure, fault: _fault, message: _message, ...shown } = attempts[attemptIndex]!;
-        attempts[attemptIndex] = { ...shown, status: "succeeded", route: "skipped", skipped: { reason: "target_absent", code: failure!.code } };
-        const said = automationStudioActivityAction({ parameters: currentNode.parameterValues, label: currentNode.label, notShown: true }) ?? "Skipped a step";
-        emitAutomationStudioActivity({ phase: "running", label: said, detail: { kind: "step", title: said, status: "succeeded", ref: currentNode.id } });
-        currentNode = nodesById.get(skipEdge.targetNodeId);
-        if (!currentNode) return missingTargetTrace(startedAt, now(), skipEdge, attempts, values, effects);
-        recordRegionTransition(skipEdge, regionId, options, regionTransitions, now());
-        continue;
+      // A step that cannot run continues where the page is, before any fault,
+      // ladder rung, budget or "Recovery started" (`state-routing/`). The Flow's
+      // declared way past a sometimes-present step is its first case; with no
+      // way on, the attempt keeps its routing record and the ladder runs.
+      if (routeOverride === undefined && automationStudioCouldNotRun(attempt)) {
+        routing ??= await decideAutomationStudioStateRoute({ flow, node: currentNode, attempt, attempts, options, guard: routeGuard });
+        attempts[attemptIndex] = automationStudioStateRoutedAttempt(attempts[attemptIndex]!, routing);
+        if (routing.kind === "stopped") return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: routing.message };
+        announceAutomationStudioStateRoute(flow, currentNode, routing);
+        if (routing.kind === "routed") {
+          if (routing.edge) recordRegionTransition(routing.edge, regionId, options, regionTransitions, now());
+          currentNode = routing.node;
+          continue;
+        }
+        if (routing.kind === "declared") {
+          const skipEdge = routing.edge;
+          currentNode = nodesById.get(skipEdge.targetNodeId);
+          if (!currentNode) return missingTargetTrace(startedAt, now(), skipEdge, attempts, values, effects);
+          recordRegionTransition(skipEdge, regionId, options, regionTransitions, now());
+          continue;
+        }
       }
       if (routeOverride === undefined && attempt.status === "failed") {
         const failedEdge = chooseAutomationStudioEdge(flow, currentNode.id, attempt.route ?? "failed");
