@@ -46,13 +46,17 @@ export type ActivityActionOutcome = "working" | "done" | "failed" | "waiting";
  * One action, ready for a card. `target` is the name of what it acted on as
  * the event already carried it, or null when it named none (the client says
  * "the page" in its own words). `why` is a short human reason for a failure,
- * or null; never a result code.
+ * or null; never a result code. `tested` is set only on a step a test of the
+ * Flow did not simply do again, and says what it did instead, in words a card
+ * shows in place of "Done" ("Checked, not pressed", "Already done on the
+ * site", "Skipped: not there, optional"; `./tested.ts`).
  */
 export type ActivityAction = {
   kind: ActivityActionKind;
   target: string | null;
   outcome: ActivityActionOutcome;
   why: string | null;
+  tested?: string;
   /**
    * Present, and true, for a step a test run of the Flow ran (a build's dry
    * run, or a part of the Flow run again): the card names the action and adds

@@ -182,3 +182,16 @@ describe("the post-run check is told it judges a finished run, and only a build'
     }
   });
 });
+
+// t193 1002-M (live run `run-murzln6g-11debe1d`, C6): the drawer's "×" the Flow
+// passes over failed in the test, the judge was shown it as plain `failed`,
+// and its second answer asked to "fix or remove the failed step 15".
+describe("the judge's instruction on an excused step", () => {
+  it("says an excused step is no defect: never a no for it alone, and never fix or remove it in changed", () => {
+    // Only a build's test has excused steps, so it is said where buildTest is.
+    const instruction = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(instruction).toMatch(/excused/u);
+    expect(instruction).toMatch(/excused[^.]*not a defect/u);
+    expect(instruction).toMatch(/never asks? to fix, rerun or remove it/u);
+  });
+});

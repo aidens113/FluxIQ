@@ -15,12 +15,17 @@
 // - Tool folders `NNNN-tool-<toolId>`, and `NNNN-test-<toolId>` for a Flow
 //   test's replay, hold `call.json`, `result.json`, `page.txt` when the result
 //   carries a page view, and `meta.json`.
+// - Answer folders `NNNN-answer-amend_draft`, and `NNNN-answer-<toolId>` for a
+//   call refused unrun as a repeat, hold `result.json` -- Core's answer:
+//   `applied`, `partly_applied`, `refused` or `ignored`, with each reason --
+//   and `meta.json` (kind `answer`). They carry no provider and cost nothing.
 // - `meta.json` is written last: a folder with it is complete.
 // - `index.md` in the directory lists every completed step.
 //
 // No header is ever written and the resolved credential is never handed to the
 // step log; every text is still screened for credential shapes. Every write is
 // best-effort: a step log that cannot write never changes or fails a call.
+export * from "./answer-step.ts";
 export * from "./directory.ts";
 export * from "./model-step.ts";
 export * from "./scope.ts";
