@@ -183,6 +183,19 @@ unpadded timeline number, so `entry.10` is listed before `entry.2`.
 A compiled plan's `startNodeId` is chosen by the same rule, and is `null` where
 a run would refuse.
 
+A partial run also names where it stops: `stopAfterNodeId` in
+`AutomationStudioGraphExecutionOptions` (`runtime/executor/partial-run/`).
+The run ends `succeeded` with `stopReason: "stopped_at_node"` once that node has
+run and its attempt is recorded, without leaving it by any way: its edge, its
+failed route, a continuation past a failure, its declared skip, or a forward
+state route. A state route from another node that would take the run strictly
+past the stop node -- to a node reachable from it with no way back -- stops the
+run too; a route back to an earlier step is followed, and a route onto the stop
+node runs it. Like `startNodeId`, it belongs to the root graph:
+`runCanonicalAutomationStudioFlow` never hands it to a Call Flow child. A partial
+run tests part of a Flow; it never decides whether a change is kept (see
+[Applying a runtime patch waits for a judged whole run](#applying-a-runtime-patch-waits-for-a-judged-whole-run)).
+
 A chain generated from a recording has exactly one root, its first candidate,
 so a Flow generated into an empty Subflow begins at the first recorded action.
 A chain appended beside other nodes gives the graph a second root. Connect the
@@ -973,6 +986,70 @@ plain object is refused rather than recorded as applied, and so is any
 promotion never applies an adaptation; see
 [What the shipped app reaches](#what-the-shipped-app-reaches).
 
+### Applying a runtime patch waits for a judged whole run
+
+A runtime patch reaches the stored Flow only after a whole run that ran it, from
+the Flow's start, was judged to answer the request (user, 2026-10-02: the loop
+"must test the entire flow & have that judged success at least one time"). The
+order, as built:
+
+1. **The run fails at a step.** It began at the Flow's start; a run never takes
+   a `startNodeId` from `runRuntimeSession`.
+2. **The patch ladder writes a patch and trials it** from the changed node on a
+   throwaway copy (`runtime/live-patch.ts`), and saves the adaptation.
+3. **The promotion gate decides, and nothing is applied.**
+   `promoteAutomationStudioRuntimeAdaptation`
+   (`runtime/service/runtime-adaptation/runtime-promotion.ts`) records the
+   decision. One that allows an unattended apply says `autoApply: true`,
+   `applyAt: "judged_whole_run"` and `applied: false`; one that sends the change
+   to a person is recorded as before.
+4. **The run resumes on the unapplied candidate.** The resume
+   (`runtime/service/runtime-adaptation/repair-rerun.ts`) reads the stored Flow
+   and writes every pending patch of this run onto it in memory, by the same
+   function an apply uses (`runtime/service/adaptations/graph-flow-patch.ts`).
+   It keeps the run's id, so the run that is judged went from the Flow's start,
+   through the patched step, to its end. The pass records the patches it ran as
+   `adaptiveRetry.candidateAdaptationIds`. A pending patch that cannot be read,
+   or cannot be written onto the Flow, declines the resume
+   (`repair_rerun.candidate_unreadable`, `repair_rerun.candidate_unwritable`)
+   rather than running a Flow the patch took no part in.
+5. **The result is judged, then the patch is settled.** Once
+   `verifyAutomationStudioRuntimeSessionResult` returns, the service settles every
+   pending patch of the run (`settleAutomationStudioRunJudgedPromotions`,
+   `runtime/service/runtime-adaptation/judged-promotion.ts`). It is applied,
+   through `review-flow-adaptation`'s apply and so through the promotion gates,
+   only when the run ended `succeeded`, its verdict was performed and is
+   `answers`, and the resumed pass ran the patch. Otherwise it stays unapplied
+   with `notAppliedReason`: `not_rerun` (no resumed pass ran it -- the resume was
+   declined, or the patch came from a refuted result's repair after the
+   verdict), `run_cancelled`, `run_failed`, `refuted` (judged, and not
+   `answers`), `not_judged`, or `apply_failed` (judged to answer; the apply
+   refused). The decision on the adaptation and on the run's
+   `runtimePatchAttempts` receipt carry `judgedRunId` and `settledAt`. A run
+   still `waiting` on a person settles nothing.
+
+**Why the trialling run is the judged whole run.** The trial and the resume
+continue one run that began at the Flow's start: the steps before the patched
+one are the same in the candidate and the stored Flow, and the steps after it
+ran on the candidate. Running the Flow again from its start after an apply would
+repeat every lasting effect the run already had, which is why the resume exists
+at all. The re-run from the start that `repair-rerun.ts` also performs follows a
+*re-authored* Flow, never a runtime patch, and it settles any patch still
+pending first, unapplied, with the reason its own run gave: that run was
+refuted or did not finish, and a re-authored graph is not the one the patch was
+written for.
+
+**Reuse.** Only an applied patch changes the stored Flow, so only it is run by
+later runs, replayed as evidence by a run that asks no model, and counted as
+changed durable behavior (`automationStudioDecisionAppliedAutomatically`,
+`runtime/durable-behavior/`: `autoApply: true` and `applied` not `false`; a
+decision recorded before this rule carries no `applied` and was applied when it
+was made). An unapplied patch keeps its trial evidence and its `validated`
+status, and a person can still apply it through review.
+
+Build and re-author repairs are gated separately, by a whole-Flow run judged on
+the Flow as it finally stands (t244).
+
 Training modes make adaptation temporary and explainable. Normal mode keeps
 LLM intervention and adaptation creation off by default. Train-for-N-runs and
 train-until-stable enable adaptive behavior only inside an explicit window,
@@ -1020,18 +1097,19 @@ task kinds. Each path reaches a model as follows:
   sends no patch request, and a run without an intent has no provider.
 - **Result verification:** a run's own caller, or, for a run nobody is
   watching, the Flow's [standing authorization](#the-standing-authorization-for-runs-nobody-is-watching).
-- **Automatic promotion:** no intent. Core attempts it for each adaptation a
+- **Automatic promotion:** no intent. Core decides it for each adaptation a
   runtime patch saves, which in the shipped app comes only from an adapting
-  run. Every explicit run is forced into manual proposal mode, and the
+  run, and applies an allowed one only after the run's judged end (see
+  [Applying a runtime patch waits for a judged whole run](#applying-a-runtime-patch-waits-for-a-judged-whole-run)). Every explicit run is forced into manual proposal mode, and the
   promotion gate sends manual-mode adaptations to review; a `diagnose_and_adapt`
   proposal is high-risk as well. An adaptation is applied only through the
   review endpoint, `review-flow-adaptation`, which needs `flows.write` and a
   pass from the promotion gates, not a PIN.
-- **The retry after an applied patch:** no intent. The retry runs only
-  when a runtime patch was applied automatically and marked the original action
-  retryable, which the shipped app never produces — and then only when that
+- **The retry after a patch allowed unattended:** no intent. The retry runs only
+  when the gate allowed a runtime patch to be applied automatically and the patch
+  marked the original action retryable, which the shipped app never produces — and then only when that
   patch’s trial also vouched for continuing, after which it resumes at the
-  trial’s resume point instead of the Flow’s start. A run with an explicit
+  trial’s resume point instead of the Flow’s start, on the unapplied candidate. A run with an explicit
   intent skips the retry at both of its call sites in `runRuntimeSession`.
 - **Training modes:** every canonical run in a project still computes its
   training-mode behavior, records it in run detail, and takes its recovery
@@ -1046,11 +1124,10 @@ task kinds. Each path reaches a model as follows:
   of the explicit lanes; each spends the run's own budget instead of the
   training settings'.
 
-In a host whose resolver lets a run reach the retry, the retry reruns the updated
-Flow, or a routed run's selected Subflow graph, in the same run session. It
-starts from that graph's start, not from the failed node. The retry passes the run's
-graph options, which set no `startNodeId`, so the executor chooses the start
-node as it does for a new run.
+In a host whose resolver lets a run reach the retry, the retry runs the candidate
+-- the stored Flow, or a routed run's selected Subflow graph, with the run's
+pending patches written onto it unsaved -- in the same run session, from the
+trial's resume point (below).
 
 ### What a trial proved, and whether the run may continue
 
@@ -1084,7 +1161,7 @@ is the permission, and it is false unless all of the following hold:
 `notResumableCode` names which of those refused: `no_checks`, `check_failed`,
 `check_unknown`, `no_resume_point` or `no_evidence`.
 
-The retry after an applied patch is what reads that permission.
+The retry after a patch the gate allowed unattended is what reads that permission.
 `decideAutomationStudioAdaptiveRetry`
 (`runtime/service/adaptations/adaptive-retry.ts`) takes it back off the run’s own
 `runtimePatchAttempts` receipts, which carry `resumable`, `notResumableCode` and

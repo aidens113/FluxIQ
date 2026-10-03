@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowArtifact, type AutomationStudioFlowDocument, type AutomationStudioFlowRunDetail, type AutomationStudioRuntimeSession } from "../../../../model/index.ts";
+import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowAdaptation, type AutomationStudioFlowArtifact, type AutomationStudioFlowDocument, type AutomationStudioFlowRunDetail, type AutomationStudioRuntimeSession } from "../../../../model/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import { runtimeSessionToFlowRunDetail } from "../../summaries/index.ts";
 import { recoveryBudgetFromRuntimeAdaptationContext } from "../context.ts";
@@ -84,30 +84,44 @@ const readFails: NonNullable<AutomationStudioGraphExecutionOptions["effectDispat
   ? { status: "failed", route: "failed", message: "No target resolved.", failure: { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" } }
   : checkPassed(effect);
 
-async function rerun(options: { dispatcher?: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>; detailMetadata?: NonNullable<AutomationStudioFlowRunDetail["metadata"]> } = {}) {
+async function rerun(options: {
+  dispatcher?: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>;
+  detailMetadata?: NonNullable<AutomationStudioFlowRunDetail["metadata"]>;
+  sessionMetadata?: NonNullable<AutomationStudioRuntimeSession["metadata"]>;
+  adaptations?: AutomationStudioFlowAdaptation[];
+  from?: "start" | "resume";
+} = {}) {
   const context = await adaptationContext();
-  const session = await refutedSession();
+  const first = await refutedSession();
+  const session = options.sessionMetadata ? { ...first, metadata: { ...(first.metadata ?? {}), ...options.sessionMetadata } } : first;
   const firstDetail = runtimeSessionToFlowRunDetail(session, PROJECT_ID);
   const written: AutomationStudioRuntimeSession[] = [];
   const saved: AutomationStudioFlowRunDetail[] = [];
+  const savedAdaptations: AutomationStudioFlowAdaptation[] = [];
+  const applied: string[] = [];
+  // The stored Flow: a fresh copy each read, so a write onto it would show.
+  const stored = structuredClone(flow);
   const result = await rerunAutomationStudioSessionAfterRepair({
     ports: {
       getFlowSubflow: async () => null,
-      getFlow: async () => flow,
+      getFlow: async () => stored,
       assertOwnedSubflowGraph: async () => undefined,
       listPublishedFlowSnapshots: async () => [],
       deprecatedPublicationIds: async () => [],
       writeRuntimeSession: async (_projectId, next) => { written.push(next); },
-      saveFlowRunDetail: async (detail) => { saved.push(detail); }
+      saveFlowRunDetail: async (detail) => { saved.push(detail); },
+      getFlowAdaptation: async (_projectId, _flowId, adaptationId) => options.adaptations?.find((adaptation) => adaptation.adaptationId === adaptationId) ?? null,
+      saveFlowAdaptation: async (adaptation) => { savedAdaptations.push(adaptation); return adaptation; },
+      applyFlowAdaptation: async (request) => { applied.push(request.adaptationId); throw new Error("A re-run never applies a patch."); }
     },
     projectId: PROJECT_ID,
     session,
     detail: options.detailMetadata ? { ...firstDetail, metadata: { ...(firstDetail.metadata ?? {}), ...options.detailMetadata } } : firstDetail,
     graphOptions: { effectDispatcher: options.dispatcher ?? checkPassed, delay: async () => undefined, recoveryBudget: recoveryBudgetFromRuntimeAdaptationContext(context) },
     adaptationContext: context,
-    from: "start"
+    from: options.from ?? "start"
   });
-  return { context, session, result, written, saved };
+  return { context, session, result, written, saved, savedAdaptations, applied, stored };
 }
 
 describe("a repaired re-run of an optional press whose target is gone", () => {
@@ -180,5 +194,84 @@ describe("the recovery marker on a finished repair re-run", () => {
     const { saved } = await rerun({ dispatcher: readFails, detailMetadata: { recoveryState: { state: "running", startedAt: 5 } } });
 
     expect((saved.at(-1)?.metadata as Record<string, any> | undefined)?.recoveryState).toMatchObject({ state: "ended" });
+  });
+});
+
+// t249: a runtime patch reaches the stored Flow only after a whole run that ran
+// it was judged to answer. The resume after a patch therefore runs the
+// unapplied candidate -- the stored Flow with the run's pending patches written
+// onto it in memory -- and never writes the stored Flow. A re-run from the
+// start follows a re-authored Flow and settles a still-pending patch first,
+// unapplied, with the reason its own run gave.
+describe("a re-run and a runtime patch still waiting for its judged run", () => {
+  const ADAPTATION_ID = "adaptation.read-target";
+  const pendingDecision = { autoApply: true, applyAt: "judged_whole_run", applied: false, reason: "trial succeeded" };
+  const receipt = { kind: "temporary_target_override", adaptationId: ADAPTATION_ID, retryOriginalAction: true, resumable: true, resumeFrom: { nodeId: "search", route: "success" }, approvalDecision: pendingDecision };
+  const adaptation = (targetId = "read"): AutomationStudioFlowAdaptation => ({
+    schemaVersion: "0.1",
+    adaptationId: ADAPTATION_ID,
+    flowId: flow.flowId,
+    projectId: PROJECT_ID,
+    sourceRunId: "run.rerun",
+    trigger: "Runtime patch temporary_target_override restored expected state.",
+    patch: [{ kind: "edit_action_target", targetId, summary: "The results moved.", after: { selector: "#results-v2" } }],
+    status: "validated",
+    author: "runtime",
+    riskLevel: "low",
+    createdAt: 1,
+    updatedAt: 1,
+    metadata: { approvalDecision: pendingDecision }
+  });
+  /** The read lands only on the repaired target. */
+  const readNeedsRepair: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> = (effect) => {
+    const payload = JSON.stringify(effect.payload ?? null);
+    if (payload.includes("results") && !payload.includes("results-v2")) return { status: "failed", route: "failed", message: "No target resolved.", failure: { category: "target_not_found", code: "web.target.not_found", retryable: false, stage: "target_resolution" } };
+    return { status: "success", route: "success", outputs: { ok: true } };
+  };
+
+  it("resumes on the candidate with the patch written in, and leaves the stored Flow as it was", async () => {
+    const { result, saved, savedAdaptations, applied, stored } = await rerun({ from: "resume", dispatcher: readNeedsRepair, adaptations: [adaptation()], detailMetadata: { runtimePatchAttempts: [receipt] } });
+
+    expect(result?.session?.status).toBe("succeeded");
+    // The resume began at the trial's resume point and pressed the repaired target.
+    expect(result?.session?.trace?.attempts.slice(4).map((attempt) => attempt.nodeId)).toEqual(["search", "check", "join", "read"]);
+    expect(result?.session?.trace?.attempts.at(-1)).toMatchObject({ nodeId: "read", status: "succeeded" });
+    expect(result?.flow?.nodes.find((node) => node.id === "read")?.parameterValues).toMatchObject({ parameters: { elementId: "results", target: { selector: "#results-v2" } } });
+    // Nothing was written: not the Flow, not the adaptation.
+    expect(stored.nodes.find((node) => node.id === "read")?.parameterValues).toEqual({ outputId: "activate-element", parameters: { elementId: "results" } });
+    expect(savedAdaptations).toEqual([]);
+    expect(applied).toEqual([]);
+    // The run says which pending patches the pass ran, for the judged settle.
+    expect(saved.at(-1)?.metadata?.adaptiveRetry).toMatchObject({ attempted: true, status: "succeeded", candidateAdaptationIds: [ADAPTATION_ID] });
+  });
+
+  it("declines the resume when a pending patch cannot be written onto the Flow, rather than running a Flow without it", async () => {
+    const { result, written } = await rerun({ from: "resume", dispatcher: readNeedsRepair, adaptations: [adaptation("gone")], detailMetadata: { runtimePatchAttempts: [receipt] } });
+
+    expect(result).toEqual({ declinedCode: "repair_rerun.candidate_unwritable" });
+    expect(written).toEqual([]);
+  });
+
+  it("settles a pending patch unapplied before a re-run from the start, with its run's reason", async () => {
+    const { result, saved, savedAdaptations, applied } = await rerun({
+      adaptations: [adaptation()],
+      detailMetadata: { runtimePatchAttempts: [receipt], adaptiveRetry: { attempted: true, status: "succeeded", candidateAdaptationIds: [ADAPTATION_ID] } },
+      sessionMetadata: { resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer" } }
+    });
+
+    expect(result?.session?.status).toBe("succeeded");
+    expect(applied).toEqual([]);
+    expect(savedAdaptations).toHaveLength(1);
+    expect(savedAdaptations[0]?.metadata?.approvalDecision).toMatchObject({ autoApply: true, applied: false, notAppliedReason: "refuted", judgedRunId: "run.rerun" });
+    // The re-run ran the re-authored Flow as stored, without the patch.
+    expect(result?.flow?.nodes.find((node) => node.id === "read")?.parameterValues).toEqual({ outputId: "activate-element", parameters: { elementId: "results" } });
+    const kept = saved.at(-1)?.metadata?.runtimePatchAttempts as Array<Record<string, any>> | undefined;
+    expect(kept?.[0]?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "refuted" });
+  });
+
+  it("settles a patch no resumed pass ran as never re-run", async () => {
+    const { savedAdaptations } = await rerun({ adaptations: [adaptation()], detailMetadata: { runtimePatchAttempts: [receipt] } });
+
+    expect(savedAdaptations[0]?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "not_rerun" });
   });
 });

@@ -58,8 +58,9 @@ export async function runCanonicalAutomationStudioFlow(flow: AutomationStudioFlo
       // A start node belongs to the graph that named it. A child Flow starts at
       // its own start node, so a parent resuming mid-graph never sends its node
       // id across the boundary, where nothing would match it and the child would
-      // fail with "No start node is available in this flow."
-      const { startNodeId: _parentStartNodeId, ...childBase } = parentOptions;
+      // fail with "No start node is available in this flow." A partial run's
+      // stop node is the root's too: a child node sharing its id runs on.
+      const { startNodeId: _parentStartNodeId, stopAfterNodeId: _parentStopAfterNodeId, ...childBase } = parentOptions;
       // The child's defaults come from its published interface: authored, not supplied (`trace-withholding.ts`, `supply`).
       const childOptions: AutomationStudioGraphExecutionOptions = { ...childBase, declaredInputDefaults, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) };
       const maxAttempts = Math.max(1, Number((node.parameterValues?.retry as { maxAttempts?: unknown } | undefined)?.maxAttempts ?? 1));

@@ -1,5 +1,4 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import { safeSegment } from "../../../../_shared/storage.ts";
 import {
   type AutomationStudioFlowAdaptation,
   type AutomationStudioFlowArtifact,
@@ -10,7 +9,7 @@ import {
   validateAutomationStudioFlowSubflow
 } from "../../../model/index.ts";
 import path from "node:path";
-import { actionTargetParameterValues } from "../../flow-change/index.ts";
+import { automationStudioGraphFlowWithAdaptationPatch } from "./graph-flow-patch.ts";
 import type { AutomationStudioFlowMutations, AutomationStudioFlowStore, AutomationStudioFlowWriter } from "../flows/index.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { compactJsonObject } from "../compact-json.ts";
@@ -52,23 +51,8 @@ export class AutomationStudioAdaptationPatches {
     if (!patch.targetId) throw new Error(`Patch ${patch.kind} is missing a target node.`);
     const target = await this.resolveFlowNodeAdaptationTarget(adaptation);
     const before = target.graphFlow;
-    const nodeIndex = before.nodes.findIndex((node) => node.id === patch.targetId);
-    if (nodeIndex < 0) throw new Error(`Unknown Flow node for adaptation patch: ${patch.targetId}`);
-    const nodes = structuredClone(before.nodes);
-    const node = nodes[nodeIndex]!;
-    const parameterValues = { ...(node.parameterValues ?? {}) };
-    if (patch.kind === "edit_expectation") {
-      if (!isJsonRecord(patch.after)) throw new Error("Expectation adaptation patches must provide an object after value.");
-      node.parameterValues = compactJsonObject({ ...parameterValues, ...patch.after });
-    } else {
-      if (patch.after === undefined) throw new Error("Action target adaptation patches must provide an after value.");
-      node.parameterValues = compactJsonObject({ ...parameterValues, ...actionTargetParameterValues({ nodeId: node.id, definitionId: node.definitionId, parameterValues }, structuredClone(patch.after), adaptation.adaptationId) });
-    }
-    const after = {
-      ...before,
-      nodes,
-      updatedAt: now
-    };
+    // Written by the same function a judged run's candidate is built with (`graph-flow-patch.ts`).
+    const after = automationStudioGraphFlowWithAdaptationPatch(before, adaptation, patch, now);
     assertFlowValidationOk(after, "Flow node adaptation patch");
     const saved = await this.flowWriter.saveFlowInternal({ projectId: adaptation.projectId, flow: after }, false);
     return durableAdaptationMutationRecord({
@@ -127,13 +111,7 @@ export class AutomationStudioAdaptationPatches {
       if (!patch.targetId) throw new Error("Router reroute patches must include the source node as targetId.");
       const target = await this.resolveFlowNodeAdaptationTarget(adaptation);
       const before = target.graphFlow;
-      if (!before.nodes.some((node) => node.id === patch.targetId)) throw new Error(`Unknown source node for router reroute patch: ${patch.targetId}`);
-      if (!before.nodes.some((node) => node.id === toNodeId)) throw new Error(`Unknown target node for router reroute patch: ${toNodeId}`);
-      const edgeId = `adaptation.${safeSegment(adaptation.adaptationId)}.${safeSegment(patch.targetId)}.${safeSegment(toNodeId)}`;
-      const edges = before.edges.some((edge) => edge.id === edgeId)
-        ? structuredClone(before.edges)
-        : [...structuredClone(before.edges), { id: edgeId, sourceNodeId: patch.targetId, sourcePortId: "failed", targetNodeId: toNodeId, targetPortId: "in", metadata: { adaptationId: adaptation.adaptationId } }];
-      const after = { ...before, edges, updatedAt: now };
+      const after = automationStudioGraphFlowWithAdaptationPatch(before, adaptation, patch, now);
       assertFlowValidationOk(after, "Router reroute adaptation patch");
       const saved = await this.flowWriter.saveFlowInternal({ projectId: adaptation.projectId, flow: after }, false);
       return durableAdaptationMutationRecord({

@@ -146,4 +146,44 @@ describe("canonical composite Flow executor", () => {
     // The parent reads back only what it wrote itself.
     expect(trace.values["recall.value"]).toEqual(["synthetic-seed", "synthetic-parent"]);
   });
+
+  // t249: a partial run stops after a node of the graph it names. A Call Flow
+  // child has nodes of its own, and one that shares the stop node's id must not
+  // end the child early: the stop node, like the start node, is the root's.
+  it("stops the root graph after its stop node, and never sends the stop node into a Call Flow child", async () => {
+    const child = {
+      ...createBlankAutomationStudioFlowArtifact({ flowId: "flow.child.stop", projectId: "project", name: "Child", now: 1 }),
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start" },
+        { id: "call", definitionId: "builtin.data.constant", parameterValues: { value: "inner" } },
+        { id: "tail", definitionId: "builtin.data.constant", parameterValues: { value: "tail" } }
+      ],
+      edges: [
+        { id: "start.call", sourceNodeId: "start", targetNodeId: "call", sourcePortId: "success", targetPortId: "in" },
+        { id: "call.tail", sourceNodeId: "call", targetNodeId: "tail", sourcePortId: "success", targetPortId: "in" }
+      ]
+    };
+    const snapshot = createPublishedFlowSnapshot(child, "1.0.0", 2);
+    const parent = {
+      ...createBlankAutomationStudioFlowArtifact({ flowId: "flow.parent.stop", projectId: "project", name: "Parent", now: 1 }),
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start" },
+        createCallFlowNode({ id: "call", target: { flowId: child.flowId, version: "1.0.0", scope: { kind: "global" } } }),
+        { id: "after", definitionId: "builtin.data.constant", parameterValues: { value: "after" } }
+      ],
+      edges: [
+        { id: "start.call", sourceNodeId: "start", targetNodeId: "call", sourcePortId: "success", targetPortId: "in" },
+        { id: "call.after", sourceNodeId: "call", targetNodeId: "after", sourcePortId: "success", targetPortId: "in" }
+      ]
+    };
+
+    const trace = await runCanonicalAutomationStudioFlow(parent, [snapshot], { stopAfterNodeId: "call" });
+
+    expect(trace).toMatchObject({ status: "succeeded", stopReason: "stopped_at_node", currentNodeId: "call" });
+    expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["start", "call"]);
+    const childTrace = trace.attempts.find((attempt) => attempt.nodeId === "call")?.childTrace;
+    expect(childTrace?.status).toBe("succeeded");
+    expect(childTrace).not.toHaveProperty("stopReason");
+    expect(childTrace?.attempts.map((attempt) => attempt.nodeId)).toEqual(["start", "call", "tail"]);
+  });
 });

@@ -151,7 +151,7 @@ describe("Automation Studio training modes", () => {
     })).toEqual({
       autoApply: true,
       requiresManualApproval: false,
-      reason: "An adaptation whose trial succeeded is applied."
+      reason: "An adaptation whose trial succeeded is applied once a whole run from the Flow's start, which ran it, is judged to answer."
     });
     expect(decideAutomationStudioAdaptationPromotionGate({
       approvalMode: "manual",
@@ -207,7 +207,7 @@ describe("Automation Studio training modes", () => {
       promoteAdaptations: true
     });
 
-    expect(gate([trial()])).toEqual({ autoApply: true, requiresManualApproval: false, reason: "An adaptation whose trial succeeded is applied." });
+    expect(gate([trial()])).toEqual({ autoApply: true, requiresManualApproval: false, reason: "An adaptation whose trial succeeded is applied once a whole run from the Flow's start, which ran it, is judged to answer." });
     expect(gate([trial(), replay(), replay()])).toMatchObject({ autoApply: true });
     expect(gate([legacy("succeeded")])).toMatchObject({ autoApply: true });
     expect(gate([])).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Adaptation must pass validation before promotion." });

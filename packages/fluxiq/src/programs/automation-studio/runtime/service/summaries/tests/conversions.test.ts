@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../../executor/index.ts";
-import { AUTOMATION_STUDIO_LADDER_MODEL_RUNG_SELECTED_CODE, flowRunSummaryWithInterventionSummaries, runtimeSessionToFlowRunDetail } from "../index.ts";
+import { AUTOMATION_STUDIO_LADDER_MODEL_RUNG_SELECTED_CODE, adaptiveRuntimeMetricsFromRunDetail, flowRunSummaryWithInterventionSummaries, runtimeSessionToFlowRunDetail } from "../index.ts";
 
 describe("runtimeSessionToFlowRunDetail attempt recordCount", () => {
   it("reads recordCount from the $dataset marker a saved trace holds in place of the captured rows", () => {
@@ -219,5 +219,9 @@ describe("flowRunSummaryWithInterventionSummaries durableBehaviorChanged", () =>
     expect(flowRunSummaryWithInterventionSummaries(applied).durableBehaviorChanged).toBe(true);
     const pending = { ...applied, metadata: { ...(detail.metadata ?? {}), runtimePatchAttempts: [{ adaptationId: "adaptation.one", approvalDecision: { autoApply: false } }] } };
     expect(flowRunSummaryWithInterventionSummaries(pending).durableBehaviorChanged).toBe(false);
+    // t249: allowed unattended but held for the run's judged end, which it did not pass.
+    const held = { ...applied, metadata: { ...(detail.metadata ?? {}), runtimePatchAttempts: [{ adaptationId: "adaptation.one", approvalDecision: { autoApply: true, applyAt: "judged_whole_run", applied: false, notAppliedReason: "not_judged" } }] } };
+    expect(flowRunSummaryWithInterventionSummaries(held).durableBehaviorChanged).toBe(false);
+    expect(adaptiveRuntimeMetricsFromRunDetail(held)).toMatchObject({ durableBehaviorChanged: false, adaptationApplyCount: 0 });
   });
 });

@@ -26,6 +26,7 @@ import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransit
 import { automationStudioParkedRun, automationStudioAskInEffects, automationStudioAskSettlement, type AutomationStudioAsk, type AutomationStudioAskSettlement, type AutomationStudioCarriedIteration, type AutomationStudioParkedRun } from "../parking/index.ts";
 import { automationStudioRunState, type AutomationStudioRunState } from "./run-state.ts";
 import { chooseAutomationStudioStartNode } from "./start-node.ts";
+import { automationStudioStopAfterNode } from "./partial-run/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import { automationStudioActivityAskResolution, automationStudioActivityRecoveryChoice, emitAutomationStudioActivity, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
@@ -364,6 +365,9 @@ async function executeAutomationStudioGraph(
   // Where state routing has sent this run, so a page that keeps sending it back
   // to one node without progress ends the run rather than looping it.
   const routeGuard = automationStudioStateRouteGuard();
+  // A partial run's stop node (`partial-run/`), asked before every move out of a node.
+  const stopAfter = automationStudioStopAfterNode(flow, options.stopAfterNodeId);
+  const stoppedAt = (nodeId: string, message: string): AutomationStudioGraphExecutionTrace => ({ status: "succeeded", startedAt, finishedAt: now(), currentNodeId: nodeId, attempts, values, effects, regionTransitions, stopReason: "stopped_at_node", message });
   // Set only on a resumed run's first pass. The parked node is not executed
   // again: that pass does nothing but leave it by the route the answer chose,
   // so whatever the node already did happened once.
@@ -533,6 +537,9 @@ async function executeAutomationStudioGraph(
         routing ??= await decideAutomationStudioStateRoute({ flow, node: currentNode, attempt, attempts, options, guard: routeGuard });
         attempts[attemptIndex] = automationStudioStateRoutedAttempt(attempts[attemptIndex]!, routing);
         if (routing.kind === "stopped") return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: routing.message };
+        const routedTo = routing.kind === "routed" ? { toNodeId: routing.node.id, stateRoute: { direction: routing.direction } } : routing.kind === "declared" ? { toNodeId: routing.edge.targetNodeId, stateRoute: {} } : undefined;
+        const stopsHere = routedTo ? stopAfter?.stops({ fromNodeId: currentNode.id, ...routedTo }) : undefined;
+        if (stopsHere) return stoppedAt(currentNode.id, stopsHere);
         announceAutomationStudioStateRoute(flow, currentNode, routing);
         if (routing.kind === "routed") {
           if (routing.edge) recordRegionTransition(routing.edge, regionId, options, regionTransitions, now());
@@ -622,6 +629,8 @@ async function executeAutomationStudioGraph(
               recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault ?? continuationFault(continuation.reason), "continued", 0);
               route = "success";
               const onwardEdge = chooseAutomationStudioEdge(flow, failedNode.id, route, failedNode.definitionId);
+              const stopsOnward = onwardEdge ? stopAfter?.stops({ fromNodeId: failedNode.id, toNodeId: onwardEdge.targetNodeId }) : undefined;
+              if (stopsOnward) return stoppedAt(failedNode.id, stopsOnward);
               if (onwardEdge) {
                 const leftRegionId = regionId;
                 currentNode = nodesById.get(onwardEdge.targetNodeId);
@@ -644,6 +653,8 @@ async function executeAutomationStudioGraph(
             };
           }
           recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "continued", 0);
+          const stopsFailedRoute = stopAfter?.stops({ fromNodeId: failedNode.id, toNodeId: executableFailedEdge.targetNodeId });
+          if (stopsFailedRoute) return stoppedAt(failedNode.id, stopsFailedRoute);
           currentNode = nodesById.get(executableFailedEdge.targetNodeId);
           if (!currentNode) return missingTargetTrace(startedAt, now(), executableFailedEdge, attempts, values, effects);
           recordRegionTransition(executableFailedEdge, regionId, options, regionTransitions, now());
@@ -659,6 +670,9 @@ async function executeAutomationStudioGraph(
       // route for. Checked first: a last node must not "succeed" by it.
       const personEnding = automationStudioPersonNeededEnding(attempts, currentNode, route);
       if (personEnding) return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: personEnding };
+      // The stop node has run: a partial run ends here, whatever edge it lacks.
+      const stopsWithoutEdge = stopAfter?.stops({ fromNodeId: currentNode.id, toNodeId: currentNode.id });
+      if (stopsWithoutEdge) return stoppedAt(currentNode.id, stopsWithoutEdge);
       const outgoingRoutes = flow.edges
         .filter((edge) => edge.sourceNodeId === currentNode!.id)
         .map((edge) => edge.sourcePortId ?? "success")
@@ -680,6 +694,8 @@ async function executeAutomationStudioGraph(
           : `Node ${currentNode.id} completed without an outgoing edge before the Flow visited every node. Add an edge to continue or an End node to finish explicitly.`
       };
     }
+    const stopsOnEdge = stopAfter?.stops({ fromNodeId: currentNode.id, toNodeId: nextEdge.targetNodeId });
+    if (stopsOnEdge) return stoppedAt(currentNode.id, stopsOnEdge);
     const previousRegionId = regionId;
     currentNode = nodesById.get(nextEdge.targetNodeId);
     if (!currentNode) return missingTargetTrace(startedAt, now(), nextEdge, attempts, values, effects);

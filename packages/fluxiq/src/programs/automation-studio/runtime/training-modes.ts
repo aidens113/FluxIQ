@@ -347,7 +347,7 @@ export function decideAutomationStudioAdaptationPromotionGate(input: AutomationS
     if (structuralPatch) return manualReview("Mixed adaptation approval mode routes a structural adaptation to a person.");
     if (input.riskLevel === "high" || input.riskLevel === "destructive") return manualReview("Mixed adaptation approval mode routes a high-risk adaptation to a person.");
   }
-  return { autoApply: true, requiresManualApproval: false, reason: "An adaptation whose trial succeeded is applied." };
+  return { autoApply: true, requiresManualApproval: false, reason: "An adaptation whose trial succeeded is applied once a whole run from the Flow's start, which ran it, is judged to answer." };
 }
 
 /**

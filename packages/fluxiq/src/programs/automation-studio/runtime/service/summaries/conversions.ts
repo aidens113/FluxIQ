@@ -16,7 +16,7 @@ import type { AutomationStudioRuntimeRunSummary } from "../../../storage/index.t
 import { automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithFlowVersions } from "../../flow-version/index.ts";
 import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure } from "../../adaptive-orchestrator.ts";
 import type { AutomationStudioInstructionSummary } from "../indexes/index.ts";
-import { automationStudioRunChangedDurableBehavior } from "../../durable-behavior/index.ts";
+import { automationStudioDecisionAppliedAutomatically, automationStudioRunChangedDurableBehavior } from "../../durable-behavior/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { extractionSummaryFromOutputs } from "./extraction-summary.ts";
@@ -28,7 +28,7 @@ export const SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY = 16;
 
 export function adaptiveRuntimeMetricsFromRunDetail(detail: AutomationStudioFlowRunDetail): JsonObject {
   const runtimePatchAttempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
-  const durableBehaviorChanged = runtimePatchAttempts.some((attempt) => isJsonRecord(attempt.approvalDecision) && attempt.approvalDecision.autoApply === true);
+  const durableBehaviorChanged = runtimePatchAttempts.some((attempt) => automationStudioDecisionAppliedAutomatically(attempt.approvalDecision));
   const tokenUsage = detail.summary.tokenUsage ?? flowRunSummaryWithInterventionSummaries(detail).tokenUsage;
   return compactJsonObject({
     llmCallCount: detail.interventions.filter((intervention) => intervention.provider || intervention.promptVersion || intervention.kind === "diagnosis" || intervention.kind === "runtime_patch").length,

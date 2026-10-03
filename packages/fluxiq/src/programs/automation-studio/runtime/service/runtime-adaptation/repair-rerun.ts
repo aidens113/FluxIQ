@@ -10,7 +10,9 @@
 //
 // `resume` is the failed step's re-run: the ladder patched a node, the adaptive
 // retry decides whether the run may be resumed and from which node, and
-// execution picks up there. `start` is the wrong answer's: nothing failed, so
+// execution picks up there -- on the unapplied candidate, since a runtime patch
+// reaches the stored Flow only once this run's result is judged to answer
+// (`./judged-promotion.ts`, t249). `start` is the wrong answer's: nothing failed, so
 // there is no node to resume from and no retry budget to consult -- the Flow
 // was *edited*, and an edited Flow has to be run from the beginning or the new
 // step never runs at all.
@@ -28,6 +30,7 @@
 // answer's re-run is the same ninety lines with one branch in them.
 
 import type {
+  AutomationStudioFlowAdaptation,
   AutomationStudioFlowArtifact,
   AutomationStudioFlowDocument,
   AutomationStudioFlowRunDetail,
@@ -44,9 +47,20 @@ import { isTerminalRuntimeSessionStatus, type AutomationStudioRunRecoveryState }
 import { runtimeSessionToFlowRunDetail } from "../summaries/index.ts";
 import { runtimeRunDetailWithAdaptationContext } from "./context.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "./contracts.ts";
+import {
+  automationStudioAwaitsJudgedRun,
+  automationStudioJudgedPromotionCandidate,
+  automationStudioRunAdaptationIds,
+  settleAutomationStudioJudgedPromotions,
+  type AutomationStudioJudgedPromotionPorts
+} from "./judged-promotion.ts";
 
-/** What the service lends a re-run: the reads it makes and the two writes it lands. */
-export type AutomationStudioRepairRerunPorts = {
+/**
+ * What the service lends a re-run: the reads it makes, the two writes it lands,
+ * and the adaptation reads and writes a runtime patch's deferred promotion
+ * needs (`./judged-promotion.ts`).
+ */
+export type AutomationStudioRepairRerunPorts = AutomationStudioJudgedPromotionPorts & {
   getFlowSubflow(projectId: string, flowId: string, subflowId: string): Promise<AutomationStudioFlowSubflow | null>;
   getFlow(projectId: string, flowId: string): Promise<AutomationStudioFlowArtifact>;
   /** Refuses a Subflow graph this parent does not own, before anything is run. */
@@ -112,8 +126,18 @@ export async function rerunAutomationStudioSessionAfterRepair(
   if ("declinedCode" in found) return found;
   const updatedFlow = found.flow;
   if (input.subflowId) await input.ports.assertOwnedSubflowGraph(input.projectId, updatedFlow);
+  // A resume runs the unapplied candidate: the stored Flow with this run's
+  // pending runtime patches written onto it, unsaved. Nothing is applied until
+  // the run's result is judged. A run from the start follows a re-authored
+  // Flow, so any patch still pending is settled first, unapplied: its own run
+  // was refuted or never finished, and it was written for the graph before.
+  const candidate = input.from === "resume" ? await resumeCandidate(input, updatedFlow) : { flow: updatedFlow, adaptationIds: [] };
+  if ("declinedCode" in candidate) return candidate;
+  const detail = input.from === "start"
+    ? await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.adaptationContext.flowId, session: input.session, detail: input.detail })
+    : input.detail;
   const retryTrace = await runCanonicalAutomationStudioFlow(
-    updatedFlow,
+    candidate.flow,
     await input.ports.listPublishedFlowSnapshots(),
     // Numbered after the first pass's attempts: the re-run is kept under the
     // same run id, and an attempt id it repeated would be dropped by the store.
@@ -143,7 +167,7 @@ export async function rerunAutomationStudioSessionAfterRepair(
     }
   };
   await input.ports.writeRuntimeSession(input.projectId, retrySession);
-  const retriedSubflows = input.detail.subflows.map((entry) => {
+  const retriedSubflows = detail.subflows.map((entry) => {
     if (!input.subflowId || entry.subflowId !== input.subflowId) return entry;
     const { failureReason: _initialFailureReason, ...retainedMetadata } = entry.metadata ?? {};
     const finishedAt = retryTrace.finishedAt ?? Date.now();
@@ -164,32 +188,60 @@ export async function rerunAutomationStudioSessionAfterRepair(
     ...retryBase,
     summary: {
       ...retryBase.summary,
-      routeDecisionCount: input.detail.routeDecisions.length,
+      routeDecisionCount: detail.routeDecisions.length,
       subflowEntryCount: retriedSubflows.length
     },
-    routeDecisions: input.detail.routeDecisions,
+    routeDecisions: detail.routeDecisions,
     subflows: retriedSubflows
   }, input.adaptationContext);
   await input.ports.saveFlowRunDetail({
     ...retryDetail,
-    interventions: input.detail.interventions,
-    adaptationIds: input.detail.adaptationIds,
-    changeProposalIds: input.detail.changeProposalIds,
+    interventions: detail.interventions,
+    adaptationIds: detail.adaptationIds,
+    changeProposalIds: detail.changeProposalIds,
     metadata: {
       // The run's own metadata over the rebuilt detail's: everything the first
       // pass recorded survives the rebuild, which is what stops a repaired run
       // being repaired a second time.
       ...(retryDetail.metadata ?? {}),
-      ...(input.detail.metadata ?? {}),
+      ...(detail.metadata ?? {}),
       [input.from === "resume" ? "adaptiveRetry" : "repairedRerun"]: {
         attempted: true,
         status: retryTrace.status,
-        attemptCount: retryTrace.attempts.length
+        attemptCount: retryTrace.attempts.length,
+        // The pending patches this pass ran, which the judged-promotion settle reads.
+        ...(candidate.adaptationIds.length ? { candidateAdaptationIds: candidate.adaptationIds } : {})
       },
-      ...rerunRecoveryState(input.detail, retryTrace.status, rerunStartedAt, retryTrace.finishedAt ?? Date.now())
+      ...rerunRecoveryState(detail, retryTrace.status, rerunStartedAt, retryTrace.finishedAt ?? Date.now())
     }
   });
-  return { session: retrySession, flow: canonicalFlowDocument(updatedFlow) };
+  return { session: retrySession, flow: canonicalFlowDocument(candidate.flow) };
+}
+
+/**
+ * The candidate a resume runs, or why it could not be built. A pending patch
+ * that cannot be read, or cannot be written onto the Flow it was trialled on,
+ * declines the resume: running the stored Flow instead would put a run the
+ * patch never took part in up for the judgement that keeps it.
+ */
+async function resumeCandidate(
+  input: AutomationStudioRepairRerunInput,
+  flow: AutomationStudioFlowArtifact
+): Promise<{ flow: AutomationStudioFlowArtifact; adaptationIds: string[] } | { declinedCode: string }> {
+  const recordedIds = automationStudioRunAdaptationIds(input.detail);
+  if (!recordedIds.length) return { flow, adaptationIds: [] };
+  let adaptations: AutomationStudioFlowAdaptation[];
+  try {
+    const read = await Promise.all(recordedIds.map((adaptationId) => input.ports.getFlowAdaptation(input.projectId, input.adaptationContext.flowId, adaptationId)));
+    adaptations = read.filter((adaptation): adaptation is AutomationStudioFlowAdaptation => adaptation !== null && automationStudioAwaitsJudgedRun(adaptation, input.session.runId));
+  } catch {
+    return { declinedCode: UNREADABLE.candidate };
+  }
+  try {
+    return automationStudioJudgedPromotionCandidate({ flow, adaptations, subflowId: input.subflowId });
+  } catch {
+    return { declinedCode: UNREADABLE.candidateUnwritable };
+  }
 }
 
 /**
@@ -229,7 +281,9 @@ const UNREADABLE = {
   flow: "repair_rerun.flow_unreadable",
   subflow: "repair_rerun.subflow_unreadable",
   subflowAbsent: "repair_rerun.subflow_absent",
-  graph: "repair_rerun.subflow_graph_unreadable"
+  graph: "repair_rerun.subflow_graph_unreadable",
+  candidate: "repair_rerun.candidate_unreadable",
+  candidateUnwritable: "repair_rerun.candidate_unwritable"
 } as const;
 
 /** The Flow as it now stands: the Subflow's graph where one ran, else the Flow itself. */

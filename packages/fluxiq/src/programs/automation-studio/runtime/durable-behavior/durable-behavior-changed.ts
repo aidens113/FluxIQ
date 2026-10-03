@@ -16,9 +16,19 @@ export function automationStudioRunChangedDurableBehavior(detail: { adaptationId
   if (!Array.isArray(attempts)) return false;
   return adaptationIds.some((adaptationId) => attempts.some((attempt) => {
     if (!attempt || typeof attempt !== "object" || Array.isArray(attempt)) return false;
-    const decision = attempt.approvalDecision;
-    return attempt.adaptationId === adaptationId
-      && Boolean(decision) && typeof decision === "object" && !Array.isArray(decision)
-      && (decision as { autoApply?: unknown }).autoApply === true;
+    return attempt.adaptationId === adaptationId && automationStudioDecisionAppliedAutomatically(attempt.approvalDecision);
   }));
+}
+
+/**
+ * Whether one promotion decision put its change on the stored Flow without a
+ * person. Since t249 an unattended apply waits for the run's judged end, so a
+ * decision allowing it says `applied: false` until the run's result was judged
+ * to answer, and `applied: true` once the change was applied; a decision
+ * recorded before t249 carries no `applied` and was applied when it was made.
+ */
+export function automationStudioDecisionAppliedAutomatically(decision: unknown): boolean {
+  if (!decision || typeof decision !== "object" || Array.isArray(decision)) return false;
+  const recorded = decision as { autoApply?: unknown; applied?: unknown };
+  return recorded.autoApply === true && recorded.applied !== false;
 }
