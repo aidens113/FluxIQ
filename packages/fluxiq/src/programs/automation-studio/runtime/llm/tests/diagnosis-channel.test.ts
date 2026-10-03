@@ -53,9 +53,19 @@ describe("Automation Studio LLM structured diagnosis channel", () => {
     expect(unknownKey.response).toBeUndefined();
     expect(unknownKey.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.unexpected_field");
 
+    // A text past its bound is read clipped to it, never carried whole and never
+    // voiding the reply (live run murwcmx2, `harness/tests/long-diagnosis-text.test.ts`);
+    // a text that is not a string is still refused.
     const overlong = await diagnose({ kind: "diagnosis", summary: "A diagnosis.", diagnosis: { observed: "x".repeat(501) } });
-    expect(overlong.ok).toBe(false);
-    expect(overlong.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.invalid_diagnosis_text");
+    expect(overlong.ok).toBe(true);
+    expect(overlong.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.diagnosis_text_clipped");
+    const clipped = overlong.response?.kind === "diagnosis" ? (overlong.response.diagnosis?.observed ?? "") : "";
+    expect(clipped.length).toBeLessThanOrEqual(500);
+    expect(clipped.endsWith("[clipped]")).toBe(true);
+
+    const notText = await diagnose({ kind: "diagnosis", summary: "A diagnosis.", diagnosis: { observed: { sql: "DROP TABLE runs" } } });
+    expect(notText.ok).toBe(false);
+    expect(notText.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_output.invalid_diagnosis_text");
 
     const badVerdict = await diagnose({ kind: "diagnosis", summary: "A diagnosis.", diagnosis: { stillAchievable: "probably" } });
     expect(badVerdict.ok).toBe(false);

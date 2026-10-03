@@ -376,6 +376,10 @@ async function executeAutomationStudioGraph(
   // again: that pass does nothing but leave it by the route the answer chose,
   // so whatever the node already did happened once.
   let resumedRoute = seed?.route;
+  // The step card's "N of M": M is the Flow's shown nodes, and N leaves out every
+  // merge the run has passed, those before a park included, which its attempts
+  // carry. A resumed run's first pass only leaves the parked node, which its
+  // `stepsTaken` already counted, so it is not a second step either.
   for (let step = seed?.stepsTaken ?? 0; step < maxSteps; step += 1) {
     if (options.signal?.aborted) {
       return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };

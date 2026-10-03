@@ -89,8 +89,8 @@ describe("a runtime bound with its own system instructions", () => {
     const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });
 
     expect(result.status).toBe("proposed");
-    // Two decisions and the judge: two different call sites, one provider.
-    expect(ran.map(isJudgeRequest)).toEqual([false, false, true]);
+    // Two decisions and the judge, its yes confirmed by a second call (murwcmx2, C-H): two different call sites, one provider.
+    expect(ran.map(isJudgeRequest)).toEqual([false, false, true, true]);
     const expected = { domainId: "example", ...INSTRUCTIONS };
     for (const request of ran) expect(request.domainInstructions).toEqual(expected);
     expect(measured.length).toBeGreaterThan(0);

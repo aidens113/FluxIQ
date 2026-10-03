@@ -29,6 +29,16 @@ describe("automationStudioActivityAction", () => {
     expect(automationStudioActivityAction({ id: "web.output.dom-wait_for_selector" })).toBe("Waiting for the page");
   });
 
+  // t194 (`run-murwcmx2-a1c6edf7`, screenshot 00016): every step of the build's
+  // test named its subject except the list read, a bare "Test run". The domain
+  // names what a read reads (`describeCall`), and the sentence quotes it.
+  it("names what a list read reads when the domain says it", () => {
+    expect(automationStudioActivityAction({ id: "web.output.dom-extract_list", words: { target: "name, price and rating" } })).toBe("Reading the list of “name, price and rating”");
+    expect(automationStudioActivityAction({ id: "web.output.dom-extract_list", words: {} })).toBe("Reading the list");
+    expect(automationStudioActivityAction({ id: "web.output.dom-extract_list", parameters: { element: QUOTE } })).toBe("Reading the list");
+    expect(automationStudioActivityToolCall(call("dryrun.1.10", { replay: "step", node: "web.output.dom-extract_list", parameters: {}, consequences: [] }), { target: "name and price" }).title).toBe("Reading the list of “name and price”");
+  });
+
   it("prefers an authored label, and names nothing it does not know", () => {
     expect(automationStudioActivityAction({ id: CLICK, label: "open the services page" })).toBe("Open the services page");
     expect(automationStudioActivityAction({ id: CLICK, label: "node.bootstrap.x.y", parameters: { element: QUOTE } })).toBe("Clicking “Get a free quote”");

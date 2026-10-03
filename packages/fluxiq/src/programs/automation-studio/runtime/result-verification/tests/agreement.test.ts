@@ -109,3 +109,100 @@ describe("automationStudioResultVerificationAgreement", () => {
     }
   });
 });
+
+// Live run murwcmx2 (step 0035): the first call judged `no` and advised
+// narrowing the read's name condition; the second did not come back usable. The
+// unsettled outcome dropped the first call's reading, so the repair was told
+// only "unverified" and completed the unchanged Flow. The reading of the call
+// that judged `no` is carried as one unconfirmed reading -- never a failure
+// record, never a repair, and the run still does not fail on it.
+describe("an unsettled verification carries the reading of the call that judged no", () => {
+  const reading = { expected: "Every pair under $50, earbuds with a charging case included.", observed: "The name condition alone left out earbuds sold with a charging case.", changed: "Narrow the name condition to accessory-only titles." };
+  const saidNo = (): AutomationStudioResultVerification => automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "no", ...reading }, basis: "model" });
+  const said_unknown = (): AutomationStudioResultVerification => automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "unknown", observed: "I could not tell." }, basis: "model" });
+  const expectedReading = { expected: reading.expected, observed: reading.observed, advice: reading.changed };
+
+  it("run murwcmx2: a no, then a call that did not come back, is unconfirmed and carries the no's expected, observed and advice", () => {
+    const agreed = automationStudioResultVerificationAgreement({ first: saidNo(), second: unavailable() });
+    expect(agreed).toMatchObject({ verdict: "unsure", basis: "model_unconfirmed", calls: 2 });
+    expect(agreed.unconfirmedReading).toEqual(expectedReading);
+    expect(agreed.failure).toBeUndefined();
+    expect(agreed.repair).toBeUndefined();
+    expect(automationStudioResultVerificationFailsRun(agreed)).toBe(false);
+  });
+
+  it("carries the reading of whichever call judged no: the first, or the second after an unknown", () => {
+    for (const [first, second, basis] of [
+      [saidNo(), said_unknown(), "model_unconfirmed"],
+      [saidNo(), silent(), "model_unconfirmed"],
+      [saidNo(), said("yes"), "model_disagreed"],
+      [said_unknown(), saidNo(), "model_unconfirmed"]
+    ] as const) {
+      const agreed = automationStudioResultVerificationAgreement({ first, second });
+      expect(agreed.basis).toBe(basis);
+      expect(agreed.unconfirmedReading, `${first.verdict} then ${second.verdict}`).toEqual(expectedReading);
+      expect(agreed.failure).toBeUndefined();
+      expect(automationStudioResultVerificationFailsRun(agreed)).toBe(false);
+    }
+  });
+
+  it("carries none where no call judged no, or the no said nothing beyond its verdict", () => {
+    for (const [first, second] of [[said_unknown(), said_unknown()], [said_unknown(), said("yes")], [said("no"), unavailable()]] as const) {
+      expect(automationStudioResultVerificationAgreement({ first, second })).not.toHaveProperty("unconfirmedReading");
+    }
+  });
+
+  it("is a copy: changing the outcome's reading leaves the call's directive as it was", () => {
+    const first = saidNo();
+    const agreed = automationStudioResultVerificationAgreement({ first, second: unavailable() });
+    agreed.unconfirmedReading!.advice = "changed";
+    expect(first.repair?.judgement?.advice).toBe(reading.changed);
+  });
+});
+
+// Live run murwcmx2 (build judges 0032 and 0051): the same request, byte for
+// byte but one step number, was answered `no` and then `yes` (confidence 0.9),
+// and the one `yes` finished the build on the 10 rows the playback judge
+// refused. A build-test verification therefore confirms a first `yes` with a
+// second call; the runtime result check does not.
+describe("a verification that confirms a first yes (the build-test judge)", () => {
+  const reading = { expected: "Every pair under $50, earbuds sold with a charging case included.", observed: "Three earbuds with a Wireless Charging Case were left out by the name condition.", changed: "Narrow the name condition to accessory-only titles." };
+  const saidNo = (): AutomationStudioResultVerification => automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "no", ...reading }, basis: "model" });
+
+  it("asks again after a yes only when the verification confirms answers; never after a silent or unavailable first call", () => {
+    expect(automationStudioResultVerificationAskAgain(said("yes"), { confirmAnswer: true })).toBe(true);
+    expect(automationStudioResultVerificationAskAgain(said("yes"), { confirmAnswer: false })).toBe(false);
+    expect(automationStudioResultVerificationAskAgain(said("no"), { confirmAnswer: true })).toBe(true);
+    expect(automationStudioResultVerificationAskAgain(silent(), { confirmAnswer: true })).toBe(false);
+    expect(automationStudioResultVerificationAskAgain(unavailable(), { confirmAnswer: true })).toBe(false);
+  });
+
+  it("yes, yes is a yes asked twice", () => {
+    const agreed = automationStudioResultVerificationAgreement({ first: said("yes"), second: said("yes"), confirmAnswer: true });
+    expect(agreed).toMatchObject({ verdict: "answers", basis: "model", code: "core.result.answers_request", verdicts: ["answers", "answers"], calls: 2 });
+    expect(automationStudioResultVerificationFailsRun(agreed)).toBe(false);
+  });
+
+  it("run murwcmx2: yes, then no, is disagreed and unsure, carrying the no's reading -- never a yes", () => {
+    // Mutation: let the first yes stand. The build then finishes on rows a second look refused.
+    const agreed = automationStudioResultVerificationAgreement({ first: said("yes"), second: saidNo(), confirmAnswer: true });
+    expect(agreed).toMatchObject({ verdict: "unsure", basis: "model_disagreed", code: "core.result.verdicts_disagree", verdicts: ["answers", "does_not_answer"], calls: 2 });
+    expect(agreed.reason).toContain("the first was that it does what was asked, the second that it does not");
+    expect(agreed.unconfirmedReading).toEqual({ expected: reading.expected, observed: reading.observed, advice: reading.changed });
+    expect(agreed.failure).toBeUndefined();
+    expect(agreed.repair).toBeUndefined();
+  });
+
+  it("a second call that is unknown, silent or unavailable leaves the first yes standing, as two calls", () => {
+    for (const second of [said("unknown"), silent(), unavailable()]) {
+      const agreed = automationStudioResultVerificationAgreement({ first: said("yes"), second, confirmAnswer: true });
+      expect(agreed, second.code).toMatchObject({ verdict: "answers", basis: "model", code: "core.result.answers_request", verdicts: ["answers", "unsure"], calls: 2 });
+      expect(agreed).not.toHaveProperty("unconfirmedReading");
+    }
+  });
+
+  it("without the option a second verdict after a yes is ignored, as the runtime result check always has", () => {
+    const agreed = automationStudioResultVerificationAgreement({ first: said("yes"), second: saidNo() });
+    expect(agreed).toMatchObject({ verdict: "answers", verdicts: ["answers"], calls: 1 });
+  });
+});

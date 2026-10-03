@@ -263,6 +263,9 @@ export type AutomationStudioLlmEvidenceLoopInput = {
      * amendment naming a step names one step.
      */
     seed?: readonly AutomationStudioFlowDraftStep[];
+    /** Where each seeded step's node started in the run being repaired, by step id (`node-tools/draft-from-flow.ts`): a rerun of it, or
+     * of the step that took its place, with no start page of its own is put back there first (`node-tools/step-place.ts`; t194 C-D). */
+    seedStartedOn?: Readonly<Record<string, JsonObject>>;
     /**
      * The seed is the draft of a build that ran out before it finished, and
      * this build continues it (`../flow-bootstrap/incomplete-draft/`).

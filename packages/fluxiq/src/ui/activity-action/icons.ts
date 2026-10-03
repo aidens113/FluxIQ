@@ -8,6 +8,8 @@ const PAIRS: readonly (readonly [ActivityActionKind, string])[] = [
   ["navigate", "globe"],
   ["read", "table"],
   ["look", "scan-search"],
+  // A look at what Core holds: the look's icon, so no client has to draw a new one.
+  ["recall", "scan-search"],
   ["wait", "hourglass"],
   ["person_check", "shield-check"],
   ["permission", "hand"],

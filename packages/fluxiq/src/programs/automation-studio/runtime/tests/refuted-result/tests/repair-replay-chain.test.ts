@@ -317,16 +317,18 @@ describe("a wrong answer, end to end, with a scripted provider", () => {
     // Refuted (asked twice, as a refutation always is), re-authored in three
     // decisions -- the carried click rerun, the read rerun with the fix, the
     // completion -- the re-author's own test of the whole Flow judged (it is a
-    // build: lane D F43, t244), and the repaired run judged once.
-    expect(harness.calls.map((call) => call.taskKind)).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification"]);
-    // The build's judge read the re-author's own test, not a run.
+    // build: lane D F43, t244) and its yes confirmed by a second call (a
+    // build-finishing yes always is: murwcmx2, C-H), and the repaired run judged once.
+    expect(harness.calls.map((call) => call.taskKind)).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification", "loop_verification"]);
+    // The build's judge, both calls, read the re-author's own test, not a run.
     expect(harness.calls[5]!.sent).toContain("buildTest");
+    expect(harness.calls[6]!.sent).toContain("buildTest");
     // That test ran the whole repaired Flow from its start: put back, then both steps run again in order.
     expect(harness.replays.filter((call) => call.value.replay === "step").map((call) => call.value.node)).toEqual([CLICK_ID, EXTRACT_ID]);
     // The judge was shown the wrong rows first and the right rows last.
     expect(harness.calls[0]!.sent).toContain("Beta");
-    expect(harness.calls[6]!.sent).not.toContain("Beta");
-    expect(harness.calls[6]!.sent).toContain("Gamma");
+    expect(harness.calls[7]!.sent).not.toContain("Beta");
+    expect(harness.calls[7]!.sent).toContain("Gamma");
     // The re-author was never shown the denied locator, and the Flow never lost it.
     for (const call of harness.calls) expect(call.sent).not.toContain(SELECTOR);
 

@@ -183,12 +183,12 @@ function resumedEntry(request: AutomationStudioLlmTaskRequest | undefined): Json
 
 describe("a Flow the model says is ready", () => {
   it("reaches the judge, which is shown what the Flow's own test observed", async () => {
-    const run = await build({ instruction: READ_TOWELS, decisions: [read("call.read"), complete()], judge: ["yes"] });
+    const run = await build({ instruction: READ_TOWELS, decisions: [read("call.read"), complete()], judge: ["yes", "yes"] });
     const result = await run.generation;
 
     expect(result.status).toBe("proposed");
-    // Two decisions, then the judge, once: it said yes, so it was not asked again.
-    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true]);
+    // Two decisions, then the judge twice: a yes finishes the build, so it is confirmed by a second call (murwcmx2, C-H).
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true, true]);
     const judge = run.requests[2]!;
     expect(judge).toMatchObject({ taskKind: "loop_verification", expectedOutput: "diagnosis" });
     // The judge read the test that ran the Flow from its start: the rows the test read, never the ones the exploration saw.
@@ -199,7 +199,7 @@ describe("a Flow the model says is ready", () => {
     expect(run.replays.map((call) => `${String(call.toolId)}:${String(call.replay)}`)).toEqual(["shop.read:reset", "shop.read:step"]);
     // The judge is asked about the Flow's instruction, and the build pays for it.
     expect(JSON.stringify(judge.context.instructions)).toContain("paper towels listed on the shelf");
-    expect(result.accounting).toMatchObject({ inputTokens: 2 * USAGE.inputTokens + JUDGE_USAGE.inputTokens, totalTokens: 2 * USAGE.totalTokens + JUDGE_USAGE.totalTokens });
+    expect(result.accounting).toMatchObject({ inputTokens: 2 * USAGE.inputTokens + 2 * JUDGE_USAGE.inputTokens, totalTokens: 2 * USAGE.totalTokens + 2 * JUDGE_USAGE.totalTokens });
     // Judged yes: said as judged, never as unverified.
     expect(activity.some((event) => event.label === "Judging the Flow")).toBe(true);
     expect(activity.some((event) => event.label === "Flow not verified")).toBe(false);
@@ -215,7 +215,7 @@ describe("a Flow the model says is ready", () => {
       instruction: READ_TOWELS,
       // The exploration's read and completion; then the repair's own read, and its completion.
       decisions: [read("call.read"), complete(), { kind: "tool_call", callId: "call.open", toolId: "shop.press", input: { control: "ValueRidge Paper Towels, 12 Rolls" }, add: true }, read("call.read.again"), complete()],
-      judge: ["no", "no", "yes"] as JudgeAnswer[],
+      judge: ["no", "no", "yes", "yes"] as JudgeAnswer[],
       judgeSaid: said
     });
 
@@ -242,14 +242,14 @@ describe("a Flow the model says is ready", () => {
       const result = await run.generation;
 
       expect(result.status).toBe("proposed");
-      // Two noes for the explored Flow, one yes for the repaired one: the last request.
-      expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true, true, false, false, false, true]);
+      // Two noes for the explored Flow, a yes for the repaired one and its confirmation: the last requests.
+      expect(run.requests.map(isJudgeRequest)).toEqual([false, false, true, true, false, false, false, true, true]);
       // The yes was about the repaired Flow: its test read again, and pressed the pack it opened.
       const packet = buildTestOf(run.requests.at(-1));
       expect(packet?.steps.filter((item) => item.action === "shop.read")).toHaveLength(2);
       expect(JSON.stringify(packet?.steps)).toContain("ValueRidge Paper Towels, 12 Rolls");
       // The build paid for every judge call.
-      expect(result.accounting?.totalTokens).toBe(5 * USAGE.totalTokens + 3 * JUDGE_USAGE.totalTokens);
+      expect(result.accounting?.totalTokens).toBe(5 * USAGE.totalTokens + 4 * JUDGE_USAGE.totalTokens);
       expect(activity.some((event) => event.label === "Flow not verified")).toBe(false);
     }, 30_000);
   });
@@ -303,7 +303,7 @@ describe("lane A's run 40: the napkins claimed on the towels' Add to cart", () =
     const run = await build({
       instruction: PICKUP_CART,
       decisions: [...towels, complete(claims), ...napkins, complete([...claims.slice(0, 2), { action: "a3", step: "12" }])],
-      judge: ["no", "no", "yes"],
+      judge: ["no", "no", "yes", "yes"],
       judgeSaid: said
     });
     const result = await run.generation;

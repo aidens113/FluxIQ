@@ -19,10 +19,12 @@ const CORE_TOOL_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
   ["core.dry_run.page", "test"],
   ["core.completion_check", "test"],
   ["core.observe", "look"],
-  // Reading how a step is used, and an earlier result again: looks at what
-  // Core holds rather than actions on the page.
+  // Reading how a step is used: a look at what Core holds rather than an
+  // action on the page.
   ["core.describe_nodes", "look"],
-  ["core.recall_result", "look"],
+  // Reading an earlier result again, which is no look at the page: one that
+  // found nothing read "Look · Didn't work: it wasn't on the page" (t194).
+  ["core.recall_result", "recall"],
   ["core.state_snapshot", "look"],
   ["core.state_diff", "look"]
 ]);

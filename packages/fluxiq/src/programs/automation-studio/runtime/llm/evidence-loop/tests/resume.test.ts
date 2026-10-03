@@ -48,6 +48,24 @@ describe("the entry a continued build starts from", () => {
     expect(entry.value.instruction).not.toContain("complete only when every act and choice on the checklist is done");
   });
 
+  // Live run murwcmx2 (re-author step 0065, cause C-F): the round before stopped
+  // on unusable decisions and its Flow was not run (`test: not_tested`), yet the
+  // repair was told it "was tested from where it starts and judged".
+  it("tells a repair whose Flow was not run from its start that it was not, and never that it was tested", () => {
+    const judgement = { stopped: "unusable_decisions", test: "not_tested", stepsInFlow: 7, actsDone: 2, actsTodo: [], lastRefusedFor: ["llm_evidence_loop.repeat_refused"] };
+    const instruction = automationStudioLlmEvidenceResumeEntry({ revision: 2, stopped: "unusable_decisions", outstandingIssueCodes: [], judgement }, [step(1)]).value.instruction as string;
+    expect(instruction).toContain("This is the repair of a Flow that was not finished");
+    expect(instruction).not.toContain("tested from where it starts and judged");
+    expect(instruction).not.toContain("the test found");
+    expect(instruction).not.toContain("wherever the test left it");
+    expect(instruction).toContain("What it had was not run from where it starts (judgement.test is not_tested), so nothing here says whether its steps work: judgement says how much of the acts checklist is done.");
+    expect(instruction).toContain("The page is wherever the last round left it, so look first.");
+    expect(instruction).toContain("The whole Flow is tested from where it starts when you complete");
+    // A Flow that was run keeps the words it had.
+    const ran = automationStudioLlmEvidenceResumeEntry({ revision: 2, stopped: "unusable_decisions", outstandingIssueCodes: [], judgement: { ...judgement, test: "replay_failed", stepsThatDidNotWork: [3] } }, [step(1)]).value.instruction as string;
+    expect(ran).toContain("What it had was tested from where it starts and judged: judgement says what the test found");
+  });
+
   it("opens a repair of a Flow the judge sent back with the judge's account, the checklist as information", () => {
     const judge = { verdict: "no", expected: "two packs of napkins in the cart", observed: "the test added one pack of towels", advice: "add the napkins, twice", findings: ["step 3 pressed Add on the towels"] };
     const judgement = { stopped: "judged_wrong", test: "replayed_clean", stepsInFlow: 4, actsDone: 2, actsTodo: [], judge };
@@ -68,6 +86,23 @@ describe("the entry a continued build starts from", () => {
     const instruction = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [], judgement }, [step(1)]).value.instruction as string;
     expect(instruction).toContain("was not judged to do what the instruction asks");
     expect(instruction).toContain("Steps 5, 6, 7, 8, 9 were carried from the earlier Flow and not run in this build: rerun them live (amend_draft rerun)");
+  });
+
+  // Live run murwcmx2 (step 0035): told only "not judged", the repair completed
+  // the unchanged Flow although one judge call had advised narrowing a condition.
+  it("tells a repair after an unsettled judge that judge.unconfirmedReading is one reading the second check did not confirm, to act on where the rows bear it out", () => {
+    const unconfirmedReading = { expected: "every pair under $50", observed: "the name condition left out earbuds with a charging case", advice: "narrow the name condition" };
+    const judge = { verdict: "unknown", findings: ["Asked twice with the same evidence, the model never judged it twice."], unconfirmedReading };
+    const judgement = { stopped: "judged_wrong", test: "replayed_clean", stepsInFlow: 5, actsDone: 0, actsTodo: [], judge };
+    const entry = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [], judgement }, [step(1)]);
+    expect(entry.value).toMatchObject({ judgement: { judge: { unconfirmedReading } } });
+    const instruction = entry.value.instruction as string;
+    expect(instruction).toContain("was not judged to do what the instruction asks");
+    expect(instruction).toContain("judgement.judge.unconfirmedReading is one judge call's reading that the second check did not confirm");
+    expect(instruction).toContain("act on its advice where the rows and the test bear it out");
+    // Without a reading the unjudged instruction says nothing of one.
+    const plain = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [], judgement: { ...judgement, judge: { verdict: "unknown", findings: ["unsure"] } } }, [step(1)]).value.instruction as string;
+    expect(plain).not.toContain("unconfirmedReading");
   });
 
   it("tells a round after one that added nothing that nothing is in the Flow yet, and to keep exploring", () => {
@@ -245,5 +280,43 @@ describe("the opening of a round whose draft already holds the Flow", () => {
     });
 
     expect(executeTool.mock.calls[0]![0].value).toEqual(look);
+  });
+});
+
+// A repair whose Flow still holds steps carried from the Flow being changed,
+// never run in this build, is told which they are and the one way through:
+// rerun each live, in the Flow's order, then complete (live run murwcmx2,
+// re-author step 0065, cause C-F; t194-w70). It used to be told only that the
+// Flow "was tested from where it starts", and reran nothing.
+const notRunJudgement = { stopped: "unusable_decisions", test: "not_tested", stepsInFlow: 7, actsDone: 0, actsTodo: [], lastRefusedFor: ["llm_evidence_loop.repeat_refused"], notRunInThisBuild: [1, 2, 4, 6] };
+
+describe("the repair entry, for a Flow holding steps that never ran in this build", () => {
+  it("names those steps and says the Flow is tested only once each is rerun live, in order", () => {
+    const instruction = automationStudioLlmEvidenceResumeEntry({ revision: 2, stopped: "unusable_decisions", outstandingIssueCodes: [], judgement: notRunJudgement }, [step(1)]).value.instruction as string;
+    expect(instruction).toContain("This is the repair of a Flow that was not finished when the build stopped (stopped says why).");
+    expect(instruction).toContain("Steps 1, 2, 4, 6 (judgement.notRunInThisBuild) came from the Flow being changed and have not run in this build (not_run_in_this_build), so the Flow could not be run from where it starts (judgement.test is not_tested) and nothing yet says whether it works.");
+    expect(instruction).toContain("The Flow can be tested whole only once each of them has run in this build: rerun each, in the Flow's order (amend_draft rerun), adding the consequences it would have to its input ([] when it leaves nothing lasting), so it takes its place as a step that ran.");
+    expect(instruction).toContain("A rerun of a carried step is first put back where its node started in the run being repaired, where that run recorded it.");
+    expect(instruction).toContain("Keep what the draft already changed; rerunning a step with the parameters it has is how it comes to have run.");
+    expect(instruction).toContain("Then complete: the whole Flow is tested from where it starts and judged.");
+    expect(instruction).not.toContain("tested from where it starts and judged: judgement says what the test found");
+  });
+
+  it("says one step as one", () => {
+    const instruction = automationStudioLlmEvidenceResumeEntry({ revision: 2, stopped: "unusable_decisions", outstandingIssueCodes: [], judgement: { ...notRunJudgement, notRunInThisBuild: [3] } }, [step(1)]).value.instruction as string;
+    expect(instruction).toContain("Step 3 (judgement.notRunInThisBuild) came from the Flow being changed and has not run in this build (not_run_in_this_build)");
+  });
+
+  it("names them after a judge's account that named none", () => {
+    const judge = { verdict: "not_judged", findings: ["the judge could not run"] };
+    const instruction = automationStudioLlmEvidenceResumeEntry({ revision: 2, stopped: "judged_wrong", outstandingIssueCodes: [], judgement: { ...notRunJudgement, stopped: "judged_wrong", judge } }, [step(1)]).value.instruction as string;
+    expect(instruction).toContain("Steps 1, 2, 4, 6 were carried from the earlier Flow and not run in this build: rerun them live (amend_draft rerun), so the test runs them.");
+  });
+
+  it("keeps the untested words for a Flow that names no such step", () => {
+    const { notRunInThisBuild: _named, ...rest } = notRunJudgement;
+    const instruction = automationStudioLlmEvidenceResumeEntry({ revision: 2, stopped: "unusable_decisions", outstandingIssueCodes: [], judgement: rest }, [step(1)]).value.instruction as string;
+    expect(instruction).toContain("What it had was not run from where it starts (judgement.test is not_tested)");
+    expect(instruction).not.toContain("notRunInThisBuild");
   });
 });
