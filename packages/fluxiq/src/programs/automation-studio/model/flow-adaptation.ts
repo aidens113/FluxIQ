@@ -342,8 +342,15 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
    * "skipped"` and carries no `failure`. `code` is what observed the absence:
    * the host's failure code (`web.target.not_found`), or
    * `executor.ready_state.not_shown` when nothing was dispatched.
+   *
+   * Or a step the run could not run and passed over by reading the page's
+   * state (`state_routed`, t243): the attempt reads `route: "state_routed"`,
+   * and names the node the run went on to and whether that was `forward` or
+   * `backward` in the Flow.
    */
-  skipped?: { reason: "target_absent"; code: string };
+  skipped?:
+    | { reason: "target_absent"; code: string }
+    | { reason: "state_routed"; code: string; toNodeId: string; direction: "forward" | "backward" };
   metadata?: JsonObject;
 };
 

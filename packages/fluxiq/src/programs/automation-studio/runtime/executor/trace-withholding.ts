@@ -46,6 +46,7 @@
 // credential is not a node id.
 import type { JsonValue } from "../../../../core/index.ts";
 import { FLUXIQ_RUNTIME_WITHHELD_VALUE, fluxiqRuntimeTextWithholding, type FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
+import type { AutomationStudioGraphExecutionTrace } from "./contracts.ts";
 import { isAutomationStudioRecordTraceMarker } from "./record-summary.ts";
 
 /**
@@ -225,4 +226,57 @@ function sameJson(left: JsonValue | undefined, right: JsonValue): boolean {
 
 function isPlainRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/** How deep a withheld input is walked before it is withheld whole: the bound the value-based rewrite uses. */
+const MAXIMUM_INPUT_DEPTH = 64;
+
+/**
+ * The trace with every run input withheld where the graph run saved it: in
+ * `values`, and in each attempt's `inputs`, both seeded from `options.inputs`.
+ *
+ * Every run input's texts and numbers are also recorded for the value-based
+ * rewrite (`automationStudioTraceWithholding`), which withholds a copy of one
+ * under any data key. This pass is kept because it is positional: an input is
+ * found at its own key and proved by identity -- the entry still holds the
+ * value the caller supplied, not a node output written over the same key --
+ * and withheld whole, including a subtree deeper than the value walk collects.
+ *
+ * The value-based rewrite has a cost this pass does not: a value the run
+ * computed that equals an input (5 + 0) reads as withheld too, because a copy
+ * cannot be told from a computation by value. Nothing executes from the saved
+ * trace -- a Call Flow parent and a live-patch rerun are handed the executed
+ * trace -- so the choice shapes only what is kept. A withheld input keeps its
+ * shape, as everything else the trace withholds does.
+ */
+export function automationStudioWithholdRunInputs(trace: AutomationStudioGraphExecutionTrace, inputs: Record<string, JsonValue>): AutomationStudioGraphExecutionTrace {
+  if (!Object.keys(inputs).length) return trace;
+  return {
+    ...trace,
+    values: withheldInputEntries(trace.values, inputs),
+    attempts: trace.attempts.map((attempt) => {
+      const attemptInputs = withheldInputEntries(attempt.inputs, inputs);
+      return attemptInputs === attempt.inputs ? attempt : { ...attempt, inputs: attemptInputs };
+    })
+  };
+}
+
+function withheldInputEntries(entries: Record<string, JsonValue>, inputs: Record<string, JsonValue>): Record<string, JsonValue> {
+  let withheld: Record<string, JsonValue> | undefined;
+  for (const [key, supplied] of Object.entries(inputs)) {
+    if (entries[key] !== supplied) continue;
+    withheld ??= { ...entries };
+    withheld[key] = withheldInputValue(supplied, 0);
+  }
+  return withheld ?? entries;
+}
+
+/** Every string and number in a supplied value, replaced in place. Booleans and null carry no credential and stay, as in the value-based rewrite. */
+function withheldInputValue(value: JsonValue, depth: number): JsonValue {
+  if (typeof value === "string") return value ? AUTOMATION_STUDIO_WITHHELD_VALUE : value;
+  if (typeof value === "number") return AUTOMATION_STUDIO_WITHHELD_VALUE;
+  if (!value || typeof value !== "object") return value;
+  if (depth >= MAXIMUM_INPUT_DEPTH) return AUTOMATION_STUDIO_WITHHELD_VALUE;
+  if (Array.isArray(value)) return value.map((item) => withheldInputValue(item, depth + 1));
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, withheldInputValue(item, depth + 1)]));
 }
