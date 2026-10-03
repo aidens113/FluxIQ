@@ -130,4 +130,64 @@ describe("Automation Adaptations workspace", () => {
     expect(renderer.root.findAll((node) => node.type === "span" && node.children.includes("Loading..."))).toHaveLength(0);
     await act(async () => renderer.unmount());
   });
+
+  it("says in the summary whether a runtime patch was applied to the Flow, and why a held-back one was not", async () => {
+    const decision = { autoApply: true, applyAt: "judged_whole_run", reason: "Low-risk patch with a passing trial." };
+    const adaptations: Record<string, any> = {
+      "adaptation.applied": { adaptationId: "adaptation.applied", status: "applied", patch: [], validationResults: [], metadata: { approvalDecision: { ...decision, applied: true } } },
+      "adaptation.held": { adaptationId: "adaptation.held", status: "validated", patch: [], validationResults: [], metadata: { approvalDecision: { ...decision, applied: false, notAppliedReason: "run_parked" } } }
+    };
+    const text = (node: any): string => node.children.map((child: any) => typeof child === "string" ? child : text(child)).join(" ");
+    for (const [adaptationId, expected, decisionHeading] of [
+      ["adaptation.applied", ["Applied to the Flow", "its result was judged to answer the request."], "Allowed automatically and applied"],
+      ["adaptation.held", ["Not applied to the Flow", "stopped to wait for a person, so its result was never judged."], "Allowed automatically, but held back"]
+    ] as const) {
+      const commands = {
+        listAdaptations: vi.fn(async () => ({ ok: true, payload: { adaptations: [], page: { adaptations: [], limit: 25, offset: 0, total: 0 } } })),
+        loadAdaptation: vi.fn(async () => ({ ok: true, payload: { adaptation: adaptations[adaptationId] } })),
+        reviewAdaptation: vi.fn()
+      } as any;
+      let renderer!: ReactTestRenderer;
+      await act(async () => {
+        renderer = create(<AdaptationsViewContent commands={commands} flow={{ flowId: "flow.one" }} projectId="project.one" requestedAdaptationId={adaptationId} />);
+      });
+      const rendered = text(renderer.root.findByProps({ "aria-label": "Whether this change is in the Flow" }));
+      for (const phrase of expected) expect(rendered).toContain(phrase);
+      expect(rendered).not.toContain("run_parked");
+      // "Current Decision" agrees with "In The Flow": never "Automatically allowed" for a patch that was held back.
+      const currentDecision = text(renderer.root.findAll((node) => node.type === "section" && text(node).includes("Current Decision")).at(-1));
+      expect(currentDecision).toContain(decisionHeading);
+      expect(currentDecision).not.toContain("Automatically allowed");
+      // The reason sentence is said once on the Summary tab, in "In The Flow", and not repeated under "Current Decision".
+      expect(currentDecision).not.toContain(expected[1]);
+      const summary = text(renderer.root.findAll((node) => node.props.className === "automation-adaptation-detail-body")[0]);
+      expect(summary.split(expected[1]).length - 1).toBe(1);
+      await act(async () => renderer.unmount());
+    }
+  });
+
+  it("marks each inbox row with whether its patch went into the Flow", async () => {
+    const rows = [
+      { adaptationId: "adaptation.applied", trigger: "Applied patch", status: "applied", riskLevel: "low", updatedAt: 3, judgedApplication: { applied: true } },
+      { adaptationId: "adaptation.held", trigger: "Held patch", status: "validated", riskLevel: "low", updatedAt: 2, judgedApplication: { applied: false, notAppliedReason: "refuted" } },
+      { adaptationId: "adaptation.waiting", trigger: "Waiting patch", status: "validated", riskLevel: "low", updatedAt: 1, judgedApplication: { applied: false } },
+      { adaptationId: "adaptation.manual", trigger: "Manual patch", status: "proposed", riskLevel: "low", updatedAt: 0 }
+    ];
+    const commands = {
+      listAdaptations: vi.fn(async () => ({ ok: true, payload: { adaptations: rows, page: { adaptations: rows, limit: 25, offset: 0, total: rows.length } } })),
+      loadAdaptation: vi.fn(async () => ({ ok: false })),
+      reviewAdaptation: vi.fn()
+    } as any;
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<AdaptationsViewContent commands={commands} flow={{ flowId: "flow.one" }} projectId="project.one" />);
+    });
+    const text = (node: any): string => node.children.map((child: any) => typeof child === "string" ? child : text(child)).join(" ");
+    const row = (trigger: string) => text(renderer.root.findAll((node) => node.type === "button" && node.props.role === "row" && text(node).includes(trigger))[0]);
+    expect(row("Applied patch")).toContain("Applied to the Flow");
+    expect(row("Held patch")).toContain("Not applied: result judged wrong");
+    expect(row("Waiting patch")).toContain("Waiting for a judged run");
+    expect(row("Manual patch")).not.toMatch(/Applied to the Flow|Not applied|Waiting for a judged run/);
+    await act(async () => renderer.unmount());
+  });
 });

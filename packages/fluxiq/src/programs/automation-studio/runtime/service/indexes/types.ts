@@ -1,3 +1,4 @@
+import type { AutomationStudioJudgedApplication } from "../../durable-behavior/index.ts";
 import type { AutomationStudioAdaptationPolicy, AutomationStudioFlowAdaptation, AutomationStudioFlowChangeProposal, AutomationStudioFlowInstruction, AutomationStudioFlowRouter, AutomationStudioFlowRunSummary, AutomationStudioFlowSubflow, AutomationStudioRuntimeSession } from "../../../model/index.ts";
 
 // The per-project JSON indexes and the summary rows they hold. These moved out
@@ -52,6 +53,8 @@ export type AutomationStudioAdaptationSummary = {
   riskLevel: AutomationStudioFlowAdaptation["riskLevel"];
   trigger: string;
   updatedAt: number;
+  /** Whether its runtime patch was put into the Flow after its judged run; absent when the decision never recorded it. */
+  judgedApplication?: AutomationStudioJudgedApplication;
 };
 
 export type AutomationStudioRouterSummary = {
