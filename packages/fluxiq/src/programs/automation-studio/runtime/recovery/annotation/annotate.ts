@@ -281,7 +281,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     costLeftUsd: input.costLeftUsd,
     model: provider?.metadata.model
   });
-  const maxEstimatedCostUsdPerCall = budget.maxEstimatedCostUsdPerCall;
+  // What one call may reserve, priced at the rate in force as that call is made
+  // rather than once here: a recovery can run from off-peak into a peak window
+  // (`run-budget.ts`, t254). Read it in each call's request, never hoisted.
+  const maxEstimatedCostUsdPerCall = (): number => budget.maxEstimatedCostUsdPerCallAt();
   const requestedTokenLimits = providerResolution?.tokenLimits;
   let failureEvidence: JsonObject | undefined;
   if (provider && failedAttempt && ports.llmEvidenceRuntime?.captureSanitizedFailureEvidence) {
@@ -393,7 +396,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     runBudget,
     ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
     ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
-    maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
+    maxEstimatedCostUsd: maxEstimatedCostUsdPerCall(),
     ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
     now,
     metadata: { source: "runRuntimeSession", expectedOutput: "diagnosis", ...executionPurpose }
@@ -430,7 +433,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     // patch that could follow adds one for itself.
     const reservedCalls = (refusalIsCheckable ? 1 : 0) + (patchCouldFollow ? 1 : 0);
     const patchReserve = scope && reservedCalls > 0
-      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall, reservedCalls, ...(provider?.estimateCostUsd ? { estimateCostUsd: provider.estimateCostUsd.bind(provider) } : {}) })
+      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall(), reservedCalls, ...(provider?.estimateCostUsd ? { estimateCostUsd: provider.estimateCostUsd.bind(provider) } : {}) })
       : undefined;
     try {
       explorationResult = scope ? await runAutomationStudioRecoveryExploration({
@@ -523,7 +526,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         runBudget,
         ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
         ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
-        maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
+        maxEstimatedCostUsd: maxEstimatedCostUsdPerCall(),
         ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
         now
       },
@@ -587,7 +590,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       runBudget,
       ...(requestedTokenLimits ? { tokenLimits: requestedTokenLimits } : {}),
       ...(providerResolution?.timeoutMs !== undefined ? { timeoutMs: providerResolution.timeoutMs } : {}),
-      maxEstimatedCostUsd: maxEstimatedCostUsdPerCall,
+      maxEstimatedCostUsd: maxEstimatedCostUsdPerCall(),
       ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
       expectedOutput: "runtime_patch",
       now,

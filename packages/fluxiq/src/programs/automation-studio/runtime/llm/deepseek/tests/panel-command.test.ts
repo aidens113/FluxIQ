@@ -37,6 +37,7 @@ describe("the chat window's DeepSeek call", () => {
     expect((init!.headers as Record<string, string>).authorization).toBe(`Bearer ${KEY}`);
     const body = JSON.parse(String(init!.body));
     expect(body).toMatchObject({ model: "deepseek-flash", temperature: 0, response_format: { type: "json_object" }, thinking: { type: "disabled" }, stream: false });
+    expect(body).not.toHaveProperty("max_tokens");
     expect(body.messages).toEqual([
       { role: "system", content: REQUEST.instructions },
       { role: "user", content: "hello" },
@@ -94,6 +95,15 @@ describe("the chat window's DeepSeek call", () => {
 
     // A model with no one to tell still answers.
     await expect(modelWith((async () => reply(200, { choices: [{ message: { content: "{}" } }], usage })) as unknown as typeof fetch).decide(REQUEST, execution())).resolves.toBe("{}");
+  });
+
+  it("accepts and charges a reply longer than 600 output tokens", async () => {
+    const usage = { prompt_tokens: 100, completion_tokens: 5_000, total_tokens: 5_100 };
+    const paid = vi.fn();
+    const answer = await modelWith((async () => reply(200, { choices: [{ message: { content: '{"do": "flow.createHere"}' } }], usage })) as unknown as typeof fetch)
+      .decide(REQUEST, { ...execution(), paid });
+    expect(answer).toBe('{"do": "flow.createHere"}');
+    expect(paid).toHaveBeenCalledWith(estimateAutomationStudioDeepSeekCostUsd(100, 5_000, 0, AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL));
   });
 
   it("does not retry when no key can be released, and says so without the key", async () => {

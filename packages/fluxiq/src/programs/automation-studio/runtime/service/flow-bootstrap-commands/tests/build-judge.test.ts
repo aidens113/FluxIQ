@@ -237,6 +237,27 @@ describe("a build's judge", () => {
     });
     expect(blind.testEndView).toBeUndefined();
   });
+
+  // t254 stage 2: a round the judging reserve stopped has its Flow tested by the
+  // phases and judged with that reserve. The test's gate is handed what makes its
+  // pass reach this judge, and a test kept before it is never read in its place.
+  it("reads the phases' judged test of a reserve-stopped Flow, and no test kept before it", async () => {
+    const { provider } = scripted();
+    const judge = automationStudioFlowBootstrapBuildJudge({
+      provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+      instructionText: ASKS_FOR_A_TABLE, plan: () => undefined
+    });
+    const loop = { round: 0, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never;
+    judge.roundStarted();
+    judge.observeTest(passed("an earlier draft"));
+    const gate = judge.judgedTest();
+    expect(gate).not.toHaveProperty("endView");
+    // The test has not passed yet: nothing is about this Flow.
+    expect(await judge.judge(loop)).not.toHaveProperty("flowSignature");
+    const signature = automationStudioFlowDraftFlowSignature([read]);
+    gate.observed?.(passed(signature));
+    expect(await judge.judge(loop)).toMatchObject({ verdict: "no", flowSignature: signature });
+  });
 });
 
 /** A passing test of the one-step Flow, under `signature`. */

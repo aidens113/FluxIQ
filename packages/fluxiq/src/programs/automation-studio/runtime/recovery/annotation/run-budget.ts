@@ -81,16 +81,35 @@ export type AutomationStudioRecoveryRunBudgetInput = {
   costLeftUsd?: number | undefined;
   /** The model the resolved provider calls, which prices one call's worst case. Absent or unpriced, Core's default model is. */
   model?: string | undefined;
+  /**
+   * The clock a reservation is priced by, in epoch milliseconds: DeepSeek bills
+   * half outside its peak hours (`../../llm/deepseek/pricing.ts`), and a call is
+   * held at the rate in force when it is held, as the build purse holds one
+   * (t254). Absent, the wall clock.
+   */
+  now?: (() => number) | undefined;
 };
 
 export type AutomationStudioRecoveryRunBudget = {
   /** What the run's ledger is constructed with. Every field is set. */
   ledger: Required<AutomationStudioLlmRunBudgetLimits>;
-  /** What one call may reserve against the purse before it knows what it spent.
-   * A ceiling: the harness reserves the request's own measured size, priced by
-   * the provider, under it (`../../llm/harness/run.ts`). At the window profile
-   * this ceiling is the whole purse, and only that keeps it from binding. */
+  /** What one call may reserve against the purse before it knows what it spent,
+   * priced when the budget was resolved. A ceiling: the harness reserves the
+   * request's own measured size, priced by the provider, under it
+   * (`../../llm/harness/run.ts`). At the window profile this ceiling is the
+   * whole purse, and only that keeps it from binding. A call does not take
+   * this figure: it takes `maxEstimatedCostUsdPerCallAt()`, read as the call is
+   * made, because a recovery resolved off-peak can run into a peak window. */
   maxEstimatedCostUsdPerCall: number;
+  /**
+   * The same ceiling priced at the rate in force at `atMs` -- the budget's
+   * clock now, when absent (t254). Every call reads it as it is made, so one
+   * made at peak is held at the peak rate and one made off-peak at half of
+   * it, whenever the recovery's budget was set. Only the worst-case term moves
+   * with the clock; the even share, the resolver's per-call cost and the purse
+   * bound it exactly as they bound `maxEstimatedCostUsdPerCall`.
+   */
+  maxEstimatedCostUsdPerCallAt(atMs?: number): number;
   /** The call count the resolver declared, when it declared one. Absent means
    * the ledger's count is only Core's backstop, and no stage should plan by it. */
   declaredCallsPerRun?: number;
@@ -134,8 +153,8 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
   // the Flow's configured limit and by what a repair has left, and raised by none.
   const maxEstimatedCostUsdPerRun = automationStudioLlmRunCostCeilingUsd(requestedCost, input.policyMaxEstimatedCostUsdPerRun, input.costLeftUsd);
   // What one call reserves before it knows what it spent: its worst case --
-  // the per-request token limits priced at the model's peak rates, all input a
-  // cache miss -- and never less than an even share of the purse. The ledger
+  // the per-request token limits priced at the model's rates in force now, peak
+  // or off-peak (t254), all input a cache miss -- and never less than an even share of the purse. The ledger
   // counts a call that reports more than it reserved as a budget breach
   // (`../../llm/run-budget.ts`), so a reservation below what a call can really
   // cost reads an ordinary call as a breach: an even share of the ceiling, then
@@ -146,21 +165,32 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
   // worst-case call short of its purse, and never past it. A resolver's
   // per-call cost, when it names one, caps the reservation, and so does the
   // purse itself.
+  //
+  // The worst case is priced when each call is made, not once here: a
+  // recovery resolved off-peak that ran into a peak window held its peak calls
+  // at half their rate, and the ledger counted each one a breach (t254).
   const share = maxEstimatedCostUsdPerRun / costShares;
   const perCallCap = typeof resolution?.maxEstimatedCostUsd === "number" && Number.isFinite(resolution.maxEstimatedCostUsd) && resolution.maxEstimatedCostUsd > 0 ? resolution.maxEstimatedCostUsd : AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
-  const reservation = Math.min(maxEstimatedCostUsdPerRun, perCallCap, Math.max(share, worstCaseCallCostUsd(tokenLimits, input.model)));
+  const clock = input.now ?? Date.now;
+  const model = input.model;
+  // The one per-call cap a ledger enforces, rounded down to the billionth the
+  // ledger rounds its running total to.
+  const maxEstimatedCostUsdPerCallAt = (atMs: number = clock()): number => {
+    const reservation = Math.min(maxEstimatedCostUsdPerRun, perCallCap, Math.max(share, worstCaseCallCostUsd(tokenLimits, model, atMs)));
+    return Math.floor(reservation * 1_000_000_000) / 1_000_000_000;
+  };
   return {
     ledger: { maxCallsPerRun, maxTotalTokensPerRun, maxOutputTokensPerRun, maxEstimatedCostUsdPerRun },
-    // The one per-call cap a ledger enforces, rounded down to the billionth the
-    // ledger rounds its running total to.
-    maxEstimatedCostUsdPerCall: Math.floor(reservation * 1_000_000_000) / 1_000_000_000,
+    maxEstimatedCostUsdPerCall: maxEstimatedCostUsdPerCallAt(),
+    maxEstimatedCostUsdPerCallAt,
     ...(declaredCalls !== undefined ? { declaredCallsPerRun: declaredCalls } : {})
   };
 }
 
 /**
  * One call at the per-request token limits the resolver declared, every input
- * token a cache miss, at the model's peak rates.
+ * token a cache miss, at the model's rates in force at `atMs` -- half outside
+ * peak hours -- through the one shared price (`estimateAutomationStudioDeepSeekCostUsd`).
  *
  * Nothing when it declared none. The harness's own default is then the model's
  * whole window (`../../llm/harness/token-limits.ts`, since 2026-09-30), a
@@ -169,12 +199,12 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
  * An even share of the purse is reserved instead, and the harness reserves each
  * call at its own measured size when the provider can price it.
  */
-function worstCaseCallCostUsd(tokenLimits: Partial<AutomationStudioLlmTokenLimits> | undefined, model: string | undefined): number {
+function worstCaseCallCostUsd(tokenLimits: Partial<AutomationStudioLlmTokenLimits> | undefined, model: string | undefined, atMs: number): number {
   if (!tokenLimits || Object.values(tokenLimits).every((value) => value === undefined)) return 0;
   const limits = resolveAutomationStudioLlmTokenLimits(tokenLimits).limits;
   const outputTokens = Math.min(limits.maxOutputTokens, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST);
   const inputTokens = Math.max(0, Math.min(limits.maxInputTokens, limits.maxTotalTokens - outputTokens, AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST - outputTokens));
-  return estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, isAutomationStudioDeepSeekModel(model) ? model : AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL);
+  return estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, isAutomationStudioDeepSeekModel(model) ? model : AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, atMs);
 }
 
 function positiveInteger(value: unknown): number | undefined {

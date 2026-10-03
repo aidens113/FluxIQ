@@ -38,9 +38,6 @@ import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDe
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./provider.ts";
 import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
 
-/** The most a decision may run to. The answer is one small object; this is room for a reply in words. */
-const PANEL_COMMAND_MAX_OUTPUT_TOKENS = 600;
-
 export type AutomationStudioDeepSeekPanelCommandOptions = {
   /** The key for this caller, released for one call. Throw when there is none to release. */
   resolveKey(caller: AutomationStudioConversationCaller | null): Promise<string>;
@@ -100,7 +97,8 @@ export function createAutomationStudioDeepSeekPanelCommandModel(options: Automat
 /**
  * The request as DeepSeek receives it: the instructions as the system message,
  * the thread as alternating turns, and the new message last. JSON mode, no
- * thinking, temperature zero -- the answer is a choice, not prose.
+ * thinking, temperature zero -- the answer is a choice, not prose. No
+ * output cap is sent: no request sends max_tokens (t254, user 2026-10-03).
  */
 export function automationStudioDeepSeekPanelCommandBody(request: AutomationStudioConversationModelRequest, model: AutomationStudioDeepSeekModel): Record<string, unknown> {
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [{ role: "system", content: request.instructions }];
@@ -110,7 +108,6 @@ export function automationStudioDeepSeekPanelCommandBody(request: AutomationStud
   return {
     model,
     messages,
-    max_tokens: PANEL_COMMAND_MAX_OUTPUT_TOKENS,
     temperature: 0,
     thinking: { type: "disabled" },
     response_format: { type: "json_object" },

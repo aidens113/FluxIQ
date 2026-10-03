@@ -59,6 +59,14 @@ export type AutomationStudioFlowBootstrapBuildJudge = {
    * judge (`../end-view/look.ts`). Absent where the domain offers no free look.
    */
   testEndView: AutomationStudioFlowDraftDryRunGateInput["endView"];
+  /**
+   * For the phases' test of a Flow the judge reads next -- the one a round the
+   * judging reserve stopped left (`../../flow-bootstrap/unfinished-build/reserve-judging.ts`):
+   * what that test's gate is given so its pass reaches this judge, as the
+   * loop's own test does, with the look at the page it ended on. Any test kept
+   * before is dropped first, so the judge reads this test or none.
+   */
+  judgedTest(): Pick<AutomationStudioFlowDraftDryRunGateInput, "observed" | "endView">;
   /** The phases' `judge`: each verdict stamped with the Flow signature of the test it judged, where this round observed one. */
   judge: BuildJudge;
   /**
@@ -104,10 +112,15 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
   });
   const look = input.look && automationStudioEndViewLook({ tools: input.look.tools, viewKeys: input.observedStateKeys });
   const executeTool = input.look?.executeTool;
+  const testEndView: AutomationStudioFlowDraftDryRunGateInput["endView"] = look && executeTool ? (request) => look({ ...request, executeTool }) : undefined;
   return {
     roundStarted: () => { lastTest = undefined; },
     observeTest: (report) => { lastTest = report; },
-    testEndView: look && executeTool ? (request) => look({ ...request, executeTool }) : undefined,
+    testEndView,
+    judgedTest: () => {
+      lastTest = undefined;
+      return { observed: (report) => { lastTest = report; }, ...(testEndView ? { endView: testEndView } : {}) };
+    },
     judge: async ({ loop, budget }) => {
       // The test this verdict is about, read once: the round's own, never an earlier round's.
       const judgedTest = lastTest;

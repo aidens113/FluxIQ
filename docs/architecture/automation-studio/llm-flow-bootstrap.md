@@ -889,7 +889,11 @@ round opens only when both hold:
   only by spending it is refused, the refusal and the cost ending name it
   (`keptBackUsd`), and the loop's count of what is left takes it out, so the
   model wraps up while the finishing decision and its judging are paid for. The
-  reserve is never charged.
+  reserve is never charged as such. A round stopped because a call would have
+  eaten into it spends it testing and judging the Flow as it stands, and
+  finishes the build on a yes about that Flow (t254 stage 2), unless that Flow
+  is unchanged since a judge of the build said no to it (stage 3; see "One
+  purse per Flow creation" below).
 - **The round before it measurably progressed** (`unfinished-build/progress.ts`),
   by what the test and the judge report. That means more acts or choices with a
   step, or more of them proven by the test; a test that now runs clean, or fails
@@ -1173,8 +1177,12 @@ instruction, every decision, the test and the judge are all held against it.
   625). No reply is capped, so a hold is no longer a proof: the ceiling can be
   crossed only by the part of one reply beyond its reserve, and every such call
   is a breach with its overshoot recorded (`AutomationStudioLlmBuildPurse.overshootUsd`,
-  the loop accounting's `budgetBreaches` and `budgetOvershootUsd`). Other call
-  kinds are held at their 8,000-token window set-aside.
+  the loop accounting's `budgetBreaches` and `budgetOvershootUsd`). A judge
+  call's breach reaches the build's accounting too (t254 stage 2): the judge's
+  spend arrives as a verdict, so the phases read the purse's breaches and
+  overshoot across the judge's calls and add them beside that spend, and a
+  build's recorded `estimatedCostUsd` and `budgetOvershootUsd` are what its
+  purse charged. Other call kinds are held at their 8,000-token window set-aside.
 - **The loop budget does not end a build on cost.** Its count of decisions
   left (`runtime/llm/loop-budget.ts`) reads the purse's figures with no
   held-back decision; it only tells the model what is left and drives the
@@ -1186,6 +1194,46 @@ instruction, every decision, the test and the judge are all held against it.
   purse refuses gives a `not_judged` verdict, which finishes nothing: the
   round goes to repair, and a purse that cannot fund that repair ends the build
   at its budget with the Flow kept.
+- **The judging reserve is spent judging, never left** (t254 stage 2,
+  `runtime/flow-bootstrap/unfinished-build/reserve-judging.ts`). A round the
+  purse stopped because its next call would have eaten into the judging kept
+  back (a cost refusal carrying `keptBackUsd`) does not end the build with that
+  reserve unspent. The Flow as it stands is tested from its start, its test
+  handed to the build's judge (`AutomationStudioFlowBootstrapBuildJudge.judgedTest`),
+  the caller is asked whether it can build that Flow as it stands
+  (`acceptStopped`: the completion check run on the draft, which becomes the
+  plan built), and the judge is asked about the test with the reserve its
+  calls draw on. A yes about that very Flow (its `flowSignature`) finishes the
+  build with it. Anything else -- a no, an unsure verdict, a yes about another
+  version or about no test -- ends it `budget_exhausted` (`cost`): the message
+  says the reserve went on judging the Flow as it stood and what that cost,
+  what the purse had spent after it, what the judge found and says is left to
+  change, and that the Flow was kept as a draft. It is never "not doable" from
+  here, even where the judge says what was asked can no longer be had: money
+  stopped the build, not a judged dead end. An empty Flow, one no replay can
+  run, one whose test failed, or one the completion check refuses is not
+  judged -- a yes could finish none of them -- and ends at cost as before, as
+  does a cost stop that kept nothing back.
+- **A Flow a judge said no to is not judged again unchanged** (t254 stage 3,
+  `runtime/flow-bootstrap/unfinished-build/phases.ts`). Where the round the
+  reserve stopped holds the very Flow a judge of this build last said no to,
+  the reserve is not spent: no test from its start and no judge call. "The very
+  Flow" is the Flow signature (`automationStudioFlowDraftFlowSignature`) of the
+  test that judge judged -- the `no` verdict's own `flowSignature`, or, where
+  the verdict carries none, the signature of the finished round's Flow, which a
+  `no` is always about -- compared with the signature of the Flow the stopped
+  round left. Only a `no` counts: after an unsure or not-judged verdict, or a
+  `no` about a test of another version, the Flow is tested and judged with the
+  reserve as above. The build ends `budget_exhausted` (`cost`) with the
+  refusal's figures; the message says the next call could not fit beside what
+  was kept back for judging, and that this was not spent because the Flow was
+  unchanged since the judge said it does not do what was asked. It then gives
+  what that judge found and says is left to change, and that the Flow was kept
+  as a draft. It is never "not doable", even where that judge said what was
+  asked can no longer be had. Run murzln6g's repair at peak rates is the case:
+  refused its first decision beside $0.0068 kept back, its Flow was still the
+  seed round 0's judge said no to, so it ends at cost with round 0's findings
+  and makes no judge call.
 
 ## Generation readiness capability
 

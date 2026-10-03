@@ -13,6 +13,13 @@
 // $0.00084, and a repair's first request is about 0.74 times the last
 // decision's (20,068 tokens). Every call is held through the real harness hold
 // at DeepSeek flash's rates for the clock it is made on.
+//
+// At peak rates the repair's first decision does not fit beside the judging
+// kept back. Since t254 stage 2 that reserve is spent judging the Flow as it
+// stands (`../reserve-judging.ts`) -- but here the repair was refused its first
+// decision, so its Flow is still the seed round 0's judge said no to. Since
+// stage 3 such a Flow is not tested or judged again: the build ends at cost with
+// round 0's findings, the reserve unspent (`../phases.ts`).
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import {
@@ -53,13 +60,20 @@ function step(position: number, overrides: Partial<AutomationStudioFlowDraftStep
 const wholeFlow = () => [step(1, { acts: ["a1"] }), step(2, { acts: ["a1.quantity"], input: { quantity: "2" } }), step(3, { acts: ["a2"] })];
 const accounting = (iterations: number, estimatedCostUsd: number): AutomationStudioLlmEvidenceLoopAccounting => ({ iterations, toolCalls: iterations, evidenceBytes: 0, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd });
 
+/** What the judge says of the repair round's Flow when it is judged no: with nothing more to be had, by its word. */
+const REPAIR_JUDGED_NO: AutomationStudioFlowBootstrapTestVerdict = { verdict: "no", expected: "the kettle saved", observed: "the saved items list was empty", advice: "save the kettle from its product page", findings: ["result.required_values_missing"], stillAchievable: "no", spent: { ...NOTHING, estimatedCostUsd: 0.00277 } };
+
 /** murzln6g's build: one exploration round ending on its last decision, judged no by a pair of judge calls, then whatever repair the purse will fund. */
-async function murzln6g(atMs: number) {
+async function murzln6g(atMs: number, repairVerdict: "yes" | "no" = "yes") {
   const price = flashAt(atMs);
   const provider = { estimateCostUsd: ({ inputTokens, outputTokens }: { inputTokens: number; outputTokens: number }) => price(inputTokens, outputTokens) };
   const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: SPENT_BEFORE });
   const requests: AutomationStudioFlowBootstrapRoundRequest[] = [];
   const firstRepairHolds: Array<{ ok: boolean }> = [];
+  const judgeHolds: Array<{ round: number; ok: boolean }> = [];
+  const tests: Array<{ steps: number; judged: boolean }> = [];
+  const announced: string[] = [];
+  let refusal: AutomationStudioLlmBuildPurse["refusal"];
   /** One call through the harness's own hold, charged `costUsd` when it was sent. */
   const call = (estimatedInputTokens: number, maxOutputTokens: number, costUsd: number, judge = false) => {
     const held = automationStudioLlmBuildPurseHoldCall({ provider, estimatedInputTokens, maxOutputTokens, judge });
@@ -77,6 +91,7 @@ async function murzln6g(atMs: number) {
       const first = call(FIRST_REPAIR_SENT, DECISION_REPLY, 0.0025);
       firstRepairHolds.push(first);
       if (!first.ok) {
+        refusal = purse.refusal && { ...purse.refusal };
         return {
           ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps: request.repair!.seed, accounting: accounting(0, 0),
           exhaustion: { bound: "budget", budgetBound: "cost", ...(purse.refusal ? { costRefusal: { ...purse.refusal } } : {}), maxIterations: 64, iterations: 0, draftSteps: 3, proposableSteps: 3, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
@@ -86,14 +101,17 @@ async function murzln6g(atMs: number) {
     },
     judge: async ({ round, loop }): Promise<AutomationStudioFlowBootstrapTestVerdict> => {
       // The judge's two calls: a first answer, then a second confirming or asking again.
-      call(JUDGE_SENT, JUDGE_REPLY, 0.00193, true);
-      call(JUDGE_SENT, JUDGE_REPLY, 0.00084, true);
+      judgeHolds.push({ round, ...call(JUDGE_SENT, JUDGE_REPLY, 0.00193, true) });
+      judgeHolds.push({ round, ...call(JUDGE_SENT, JUDGE_REPLY, 0.00084, true) });
       const spent = { ...NOTHING, estimatedCostUsd: 0.00277 };
-      return round === 0
-        ? { verdict: "no", expected: "250 Count in the cart", observed: "the 100 Count was added", findings: ["result.required_values_missing"], spent }
-        : { verdict: "yes", spent, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) };
+      if (round === 0) return { verdict: "no", expected: "250 Count in the cart", observed: "the 100 Count was added", findings: ["result.required_values_missing"], spent };
+      return repairVerdict === "yes" ? { verdict: "yes", spent, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) } : { ...REPAIR_JUDGED_NO, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) };
     },
-    test: async () => undefined,
+    test: async (steps, options) => {
+      tests.push({ steps: steps.length, judged: options?.judged === true });
+      return undefined;
+    },
+    announce: ({ text }) => announced.push(text),
     replayable: (steps) => steps.length > 0,
     checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
     budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
@@ -102,11 +120,11 @@ async function murzln6g(atMs: number) {
     keep: async (...args) => ({ revision: 1, steps: (args[2] as unknown[]).length }),
     now: () => 0
   }));
-  return { outcome, purse, requests, firstRepairHolds, price };
+  return { outcome, purse, requests, firstRepairHolds, judgeHolds, tests, announced, refusal, price };
 }
 
 describe("run murzln6g: a repair round after a judged no with $0.0111 left (t254)", () => {
-  it("needed $0.0187 by the old gate, and opens a repair round now, at peak rates", async () => {
+  it.each(["yes", "no"] as const)("needed $0.0187 by the old gate, opens a repair round now, and at peak rates ends at cost with round 0's findings when the refused first decision leaves round 0's Flow unchanged (a repair judge that would say %s is not asked)", async (repairVerdict) => {
     const peak = flashAt(PEAK);
     // The old gate: the last decision held at its packed request and a 2,000-token cap, plus one judge call with a 2,000-token cap.
     const oldGate = peak(LAST_DECISION_SENT + PACKED_OVERHEAD, 2_000) + peak(JUDGE_SENT, 2_000);
@@ -116,7 +134,7 @@ describe("run murzln6g: a repair round after a judged no with $0.0111 left (t254
     const gate = 2 * peak(JUDGE_SENT, JUDGE_REPLY) + peak(0, DECISION_REPLY);
     expect(gate).toBeCloseTo(0.007745, 6);
 
-    const { outcome, purse, requests, firstRepairHolds } = await murzln6g(PEAK);
+    const { outcome, purse, requests, firstRepairHolds, judgeHolds, tests, announced, refusal } = await murzln6g(PEAK, repairVerdict);
 
     // Judged no with $0.0111 left, as the run was.
     expect(requests).toHaveLength(2);
@@ -124,12 +142,24 @@ describe("run murzln6g: a repair round after a judged no with $0.0111 left (t254
     // The repair's first decision is priced from its own 20,068 tokens ($0.0069), and does not fit beside the
     // judging pair kept back ($0.0068): at peak rates $0.0111 buys a repair round's judging, not its first decision.
     expect(firstRepairHolds).toEqual([{ ok: false }]);
-    expect(purse.refusal).toMatchObject({ spentUsd: expect.closeTo(0.0889, 9), pendingUsd: 0, keptBackUsd: expect.closeTo(2 * peak(JUDGE_SENT, JUDGE_REPLY), 9), projectedCostUsd: expect.closeTo(peak(FIRST_REPAIR_SENT, DECISION_REPLY), 9) });
+    expect(refusal).toMatchObject({ spentUsd: expect.closeTo(0.0889, 9), pendingUsd: 0, keptBackUsd: expect.closeTo(2 * peak(JUDGE_SENT, JUDGE_REPLY), 9), projectedCostUsd: expect.closeTo(peak(FIRST_REPAIR_SENT, DECISION_REPLY), 9) });
+    // The Flow the repair left is the seed round 0's judge said no to: no test and no judge call (t254 stage 3).
+    expect(tests).toEqual([]);
+    expect(judgeHolds).toEqual([{ round: 0, ok: true }, { round: 0, ok: true }]);
+    expect(announced).toContain("The build reached its spending limit before the Flow was finished. The Flow is unchanged since the judge said it does not do what was asked, so what was kept back for judging is not spent judging it again.");
+    expect(announced.some((text) => text.includes("judging it with what was kept back"))).toBe(false);
+    // Ended at cost with round 0's findings and the Flow kept as a draft; never "not doable".
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("it had spent $0.089 ($0.081 of it by earlier builds of this Flow), $0.007 was kept back for judging the Flow, and its next call could have cost up to $0.007.");
-    // Nothing overspent its hold, and nothing passed the ceiling.
+    const message = outcome.kind === "unfinished" ? outcome.ending.message : "";
+    expect(message).toContain("its next call could have cost up to $0.007, more than was left beside the $0.007 kept back for judging the Flow, and that was not spent, because the Flow was unchanged since the judge said it does not do what was asked, and it had spent $0.089 ($0.081 of it by earlier builds of this Flow) in all.");
+    expect(message).toContain("The judge found: the 100 Count was added.");
+    expect(message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it, with $0.011 left of this Flow's $0.10.");
+    expect(message).not.toContain("went on testing and judging");
+    expect(message).not.toContain("saved items list");
+    // Only round 0's decision and judging were spent; the reserve was left.
+    expect(outcome.kind === "unfinished" && outcome.accounting.estimatedCostUsd).toBeCloseTo(0.005 + 0.00277, 9);
+    expect(purse.spentUsd()).toBeCloseTo(0.0889, 9);
     expect(purse.breaches).toBe(0);
-    expect(purse.spentUsd()).toBeLessThanOrEqual(0.1);
   });
 
   it("repairs and finishes at the off-peak rate the run was billed at, its holds half the peak figures", async () => {

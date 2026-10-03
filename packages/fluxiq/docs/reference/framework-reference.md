@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 3036
+- Public declarations: 3040
 - Class: 92
 - Interface: 2
 - Object: 377
-- Type: 1698
+- Type: 1699
 - Type Alias: 1
-- Value: 866
+- Value: 869
 
 ## Public Declarations
 
@@ -180,7 +180,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_DECISION_STEP_IDS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/decision-step-ids.ts:11` | The step names of decisions that called no tool. Core's own `core.` namespace, which no domain tool may take, so a reader tells them from tool steps by name. They ride in `steps` rather than in a field of their own so a reader that predates them still parses the record. |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS` | Object | `packages/fluxiq/src/programs/automation-studio/api/contracts/adaptation.ts:28` | - |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/limits.ts:16` | - |
-| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:173` | The least time worth starting a repair with: a look, a few decisions and the test. |
+| `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:199` | The least time worth starting a repair with: a look, a few decisions and the test. |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/output-schema.ts:120` | The output schema at the setting's default. |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/action-permissions.ts:102` | How long a build waits for an answer, for a caller that waits at all. The one Core bound, under the name this path has always exported it by. The mechanism and the reasoning moved to `parking/permission-ask.ts` on 2026-09-22, when the repair path had to ask the same question the same way. |
 | `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERSON_NEEDED_MAX_ASKS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/person-needed.ts:56` | How many times one build may put the question to a person. |
@@ -740,7 +740,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioDeclinedRepairAttempt` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/patches.ts:405` | - |
 | `AutomationStudioDeepSeekModel` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/models.ts:26` | - |
 | `automationStudioDeepSeekModelRefusal` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/models.ts:69` | - |
-| `AutomationStudioDeepSeekPanelCommandOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/panel-command.ts:44` | - |
+| `AutomationStudioDeepSeekPanelCommandOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/panel-command.ts:41` | - |
 | `AutomationStudioDeepSeekProviderOptions` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/provider.ts:45` | - |
 | `AutomationStudioDefenceEntry` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/ledger.ts:17` | One fault the run met, and what became of it. |
 | `automationStudioDefenceLedger` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/ledger.ts:71` | - |
@@ -846,11 +846,11 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioFlowBootstrapAnswerabilitySnapshot` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/answerability/contracts.ts:45` | Content-free capability facts observed when a completed plan is checked. |
 | `automationStudioFlowBootstrapBlockedSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts:85` | - |
 | `AutomationStudioFlowBootstrapBudgetBound` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/build-ending.ts:33` | Which budget ran out. |
-| `automationStudioFlowBootstrapBudgetExhausted` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/budget-exhausted.ts:80` | - |
+| `automationStudioFlowBootstrapBudgetExhausted` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/budget-exhausted.ts:95` | - |
 | `AutomationStudioFlowBootstrapBudgetSizes` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/budget-exhausted.ts:33` | The size of each budget, as the person is told it. |
 | `AutomationStudioFlowBootstrapBuildEnding` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/build-ending.ts:48` | What a build that could not finish says about itself. |
-| `AutomationStudioFlowBootstrapBuildPhasesInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:202` | - |
-| `AutomationStudioFlowBootstrapBuildPhasesOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:252` | - |
+| `AutomationStudioFlowBootstrapBuildPhasesInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:228` | - |
+| `AutomationStudioFlowBootstrapBuildPhasesOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:286` | - |
 | `AutomationStudioFlowBootstrapCatalogEntry` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:77` | - |
 | `automationStudioFlowBootstrapCatalogNames` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/catalog-names.ts:16` | - |
 | `AutomationStudioFlowBootstrapCatalogNames` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:162` | Every node of a catalog by id and what it does, by category (`./catalog-names.ts`): `{ "<category>": ["<id>: <description>", ...] }`. |
@@ -896,16 +896,17 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioFlowBootstrapInstructionColumns` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/answerability/instruction-columns.ts:32` | - |
 | `AutomationStudioFlowBootstrapIssue` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:164` | - |
 | `automationStudioFlowBootstrapIssueFeedback` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/issue-feedback.ts:119` | - |
+| `automationStudioFlowBootstrapJudgeAtReserve` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/reserve-judging.ts:54` | - |
 | `AutomationStudioFlowBootstrapJudgedRecords` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:73` | What the judged test stored, from the summary the judge read (t240): rows stored, rows refused, and stored rows missing a required value. What a repair's progress is measured by (`./progress.ts`). Absent where the judge reported none. |
 | `AutomationStudioFlowBootstrapJudgedWrong` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:86` | The judge's account of a Flow it sent back to repair, as the repair is told it. `no` with what it did not do; `unknown` or `not_judged` for a Flow not judged to do it -- the judge unsure, not run, or its yes about a test of another version of the Flow or of none -- with `findings` holding why, and `untestedCarried` naming steps carried from an earlier Flow that its test did not run. |
-| `automationStudioFlowBootstrapJudgeFinished` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:146` | - |
+| `automationStudioFlowBootstrapJudgeFinished` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:152` | - |
 | `AutomationStudioFlowBootstrapJudgement` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:236` | The judgement of a Flow (phase 2), for a round that stopped short or one that finished and was judged wrong: what the test did, how much of the checklist the Flow does, and, after a judge, what it found. Codes, counts, ids and the judge's screened words: what the repair is told, and what an ending is written from. |
 | `automationStudioFlowBootstrapJudgementProgress` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/progress.ts:42` | - |
 | `automationStudioFlowBootstrapJudgementUnmeasured` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/progress.ts:69` | - |
-| `automationStudioFlowBootstrapJudgementValue` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:224` | - |
+| `automationStudioFlowBootstrapJudgementValue` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:252` | - |
 | `AutomationStudioFlowBootstrapJudgeReading` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:76` | What one judge call said of a test: what was asked, what the test did, and what to change. Every part optional. |
 | `AutomationStudioFlowBootstrapJudgeSpend` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:35` | What one judge of a Flow's test spent, counted against the build's budget. |
-| `automationStudioFlowBootstrapJudgeUnfinished` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:90` | - |
+| `automationStudioFlowBootstrapJudgeUnfinished` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:96` | - |
 | `automationStudioFlowBootstrapKeptSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/kept-said.ts:18` | - |
 | `automationStudioFlowBootstrapLargestSizeLimits` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/size-limits.ts:98` | - |
 | `AutomationStudioFlowBootstrapLastRoute` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/routing-context.ts:54` | - |
@@ -938,13 +939,14 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioFlowBootstrapRecordOutputIssues` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/record-output-contract.ts:91` | - |
 | `automationStudioFlowBootstrapRepairingJudgedSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts:173` | - |
 | `automationStudioFlowBootstrapRepairingNotRunSaid` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/not-done.ts:146` | - |
-| `automationStudioFlowBootstrapRepairSeed` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:74` | - |
+| `automationStudioFlowBootstrapRepairSeed` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:80` | - |
 | `automationStudioFlowBootstrapRepliesUnreadable` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/replies-unreadable.ts:25` | - |
+| `AutomationStudioFlowBootstrapReserveJudging` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/reserve-judging.ts:38` | How judging the Flow a reserve-stopped round left went. |
 | `AutomationStudioFlowBootstrapRisk` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:10` | - |
 | `automationStudioFlowBootstrapRoundEnding` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/round-ending.ts:24` | - |
 | `AutomationStudioFlowBootstrapRoundEnding` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:116` | How one live round ended, read for what the build does next. |
 | `AutomationStudioFlowBootstrapRoundProgress` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:108` | What a stopped round had recorded: its rows and what it spent. |
-| `AutomationStudioFlowBootstrapRoundRequest` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:179` | What one live round is given. |
+| `AutomationStudioFlowBootstrapRoundRequest` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:205` | What one live round is given. |
 | `AutomationStudioFlowBootstrapRoundStopped` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/build-ending.ts:97` | Why one live round stopped: the round's own stop (`../unfinished-build/contracts.ts`, `AutomationStudioFlowBootstrapUnfinishedStop`), or `budget` where a budget stopped it. |
 | `AutomationStudioFlowBootstrapRouteCondition` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/route-condition.ts:52` | A route's condition: Core's `AutomationConditionExpression`, narrowed to the operators the router evaluates, JSON values, and the three plain groups. Every value of it is an `AutomationConditionExpression`. |
 | `automationStudioFlowBootstrapRouteIssues` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/route-validation.ts:20` | - |
@@ -974,8 +976,10 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioFlowBootstrapUnchangedCompleteRefusal` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/unchanged-complete.ts:48` | - |
 | `AutomationStudioFlowBootstrapUnfinishedStall` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/unfinished-stall.ts:14` | - |
 | `AutomationStudioFlowBootstrapUnfinishedStop` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/contracts.ts:16` | Why a live round stopped without the model saying the Flow was ready, where no budget was the reason. |
-| `AutomationStudioFlowBootstrapUnfinishedTest` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:67` | What the caller's test answers: the loop's dry-run gate, over the steps it is given. |
+| `AutomationStudioFlowBootstrapUnfinishedTest` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:73` | What the caller's test answers: the loop's dry-run gate, over the steps it is given. `judged` is set for a test the build's judge will read next -- the Flow a round left when the judging reserve stopped it (`./reserve-judging.ts`) -- so the caller hands what the test observed to its judge; absent, it is the checklist's test alone. |
 | `automationStudioFlowBootstrapUnreadColumnsSentence` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/authoring/instruction-record-columns.ts:79` | - |
+| `automationStudioFlowBootstrapWithJudgeAccount` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:205` | - |
+| `automationStudioFlowBootstrapYesNotAboutThisFlow` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/judgement.ts:192` | - |
 | `AutomationStudioFlowBuildPlan` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/contracts.ts:179` | Registry-validated, Core-risked and deterministically laid-out plan accepted by Bootstrap Adaptations. |
 | `AutomationStudioFlowCatalogEntry` | Type | `packages/fluxiq/src/programs/automation-studio/model/flow-compatibility.ts:9` | - |
 | `AutomationStudioFlowChangeEntryPoint` | Type | `packages/fluxiq/src/programs/automation-studio/model/flow-adaptation.ts:424` | Which of the three ways into the flow-improvement loop produced a change. |
@@ -1657,8 +1661,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioRecoveryDeadlineRemainingMs` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/recovery-deadline.ts:70` | - |
 | `AutomationStudioRecoveryDecision` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/contracts.ts:146` | - |
 | `AutomationStudioRecoveryExplorationInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts:119` | - |
-| `AutomationStudioRecoveryExplorationResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts:164` | - |
-| `AutomationStudioRecoveryExploredPacket` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts:162` | One packet an exploration returned, labelled for the runtime patch request. |
+| `AutomationStudioRecoveryExplorationResult` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts:170` | - |
+| `AutomationStudioRecoveryExploredPacket` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts:168` | One packet an exploration returned, labelled for the runtime patch request. |
 | `AutomationStudioRecoveryLookupInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/contracts.ts:93` | - |
 | `AutomationStudioRecoveryPatchReserve` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/patch-reserve.ts:36` | - |
 | `automationStudioRecoveryPermissionGate` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/permissions.ts:59` | - |
@@ -1666,7 +1670,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioRecoveryPermissionSummary` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/permissions.ts:44` | The recovery's authority, as classes only: what a run detail records and a reader compares. |
 | `AutomationStudioRecoveryReplan` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/replan.ts:52` | What re-planning after a look produced, and whether the look changed anything. |
 | `AutomationStudioRecoveryReplanInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/replan.ts:66` | - |
-| `AutomationStudioRecoveryRunBudget` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/run-budget.ts:86` | - |
+| `AutomationStudioRecoveryRunBudget` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/run-budget.ts:93` | - |
 | `AutomationStudioRecoveryRunBudgetInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/run-budget.ts:58` | - |
 | `AutomationStudioRecoveryTrace` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/trace.ts:113` | - |
 | `AutomationStudioRecoveryTraceEvent` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/trace.ts:74` | - |
@@ -2187,7 +2191,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ConversationTurnAppendRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/conversation.ts:86` | A turn the person writes. The author is always the person: Core's own turns do not come through the API. With `capabilities` the turn is also read as an instruction. That is the panel's vocabulary (`fluxiq/automation-studio/panel-capabilities`), handed across on every message so Core never keeps a second catalog; Core stores the turn first, has the model decide whether to run a capability, ask one question or reply, writes that into the thread, and answers with the decision so the panel can run what was chosen. Without it the turn is only stored, exactly as before -- which is how the panel records what it did. For the capabilities Core runs itself (`runtime/conversations/commands/`: `flow.createHere`, `flow.describe`, `flow.explore`, `flow.improve`, `run.execute`, `ask.answer`) a client need send only the id: Core's own descriptor replaces whatever was sent, Core runs the capability, and the answer's `response.execution` says what came of it (`ConversationCommandExecution`). The client then runs nothing itself. |
 | `convertCodeOwnedFlowToVisual` | Value | `packages/fluxiq/src/programs/automation-studio/dsl/source.ts:28` | - |
 | `correctAutomationStudioFlowBootstrapPlanNames` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/name-correction.ts:56` | - |
-| `createAutomationStudioDeepSeekPanelCommandModel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/panel-command.ts:54` | - |
+| `createAutomationStudioDeepSeekPanelCommandModel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/panel-command.ts:51` | - |
 | `createAutomationStudioDeepSeekProvider` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/deepseek/provider.ts:55` | - |
 | `createAutomationStudioElementMatcher` | Value | `packages/fluxiq/src/programs/automation-studio/fingerprinting/element-fingerprint.ts:112` | - |
 | `createAutomationStudioFileStorePaths` | Value | `packages/fluxiq/src/programs/automation-studio/storage/file-store.ts:191` | - |
@@ -2818,7 +2822,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `resolveAutomationStudioLlmInstructions` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/instruction.ts:55` | - |
 | `resolveAutomationStudioLlmRunCostCeilingUsd` | Value | `packages/fluxiq/src/programs/automation-studio/model/run-cost-ceiling/run-cost-ceiling-env.ts:55` | - |
 | `resolveAutomationStudioLlmTokenLimits` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/token-limits.ts:78` | - |
-| `resolveAutomationStudioRecoveryRunBudget` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/run-budget.ts:100` | - |
+| `resolveAutomationStudioRecoveryRunBudget` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/run-budget.ts:119` | - |
 | `resolveAutomationStudioResultCheckSchedule` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-check-schedule/resolve.ts:21` | - |
 | `resolveAutomationStudioV2Feature` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts:463` | - |
 | `ResolvedActionVisualTarget` | Type | `packages/fluxiq/src/programs/automation-studio/model/action-visual-target.ts:7` | - |
@@ -2841,14 +2845,14 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `rollbackFluxIQStorageMigration` | Value | `packages/fluxiq/src/framework/storage-migration.ts:27` | - |
 | `RotateSecretKeyRequest` | Type | `packages/fluxiq/src/programs/secret-keys/api/contracts.ts:44` | - |
 | `runAutomationStudioCompiledPlan` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/compiled-plan.ts:155` | - |
-| `runAutomationStudioFlowBootstrapBuildPhases` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:297` | - |
+| `runAutomationStudioFlowBootstrapBuildPhases` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/phases.ts:331` | - |
 | `runAutomationStudioFlowDraftPart` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/run-flow-part.ts:60` | - |
 | `runAutomationStudioGraph` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/graph-run.ts:70` | - |
 | `runAutomationStudioLegacyImporterBatch` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts:375` | - |
 | `runAutomationStudioLegacyMigrationOrchestration` | Value | `packages/fluxiq/src/programs/automation-studio/storage/project/migration-cutover.ts:407` | - |
 | `runAutomationStudioLlmEvidenceLoop` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/evidence-loop.ts:175` | - |
 | `runAutomationStudioLlmHarness` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/run.ts:28` | - |
-| `runAutomationStudioRecoveryExploration` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts:194` | - |
+| `runAutomationStudioRecoveryExploration` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/annotation/exploration.ts:200` | - |
 | `runAutomationStudioRecoveryLadder` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/ladder-run.ts:61` | - |
 | `runAutomationStudioRouter` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/router-runtime.ts:139` | - |
 | `runAutomationStudioRuntimeExploration` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/runtime-exploration.ts:252` | - |
