@@ -33,6 +33,23 @@
 // acts checklist is then information, not the bar. Steps carried from an
 // earlier Flow that its test never ran are named, to be run again live.
 //
+// **An unsettled judge's one reading is passed on as exactly that.** When the
+// judge's two calls did not settle, but one of them said the Flow does not do
+// what was asked, its expected, observed and advice reach the repair as
+// `judge.unconfirmedReading`, with words saying the second check did not
+// confirm it and to act on it only where the rows bear it out.
+//
+// **Steps that never ran in this build are named, with the one way through
+// (t194-w70).** A re-author or an extend starts from a stored Flow whose steps
+// carry nothing they ran with, and Core does not run them itself, so a round
+// that stopped with one in its Flow was not tested at all
+// (`judgement.notRunInThisBuild`). Live run murwcmx2's re-author (step 0065) was
+// told its Flow "was tested from where it starts", reran nothing, and the build
+// ended with the advised fix never run from the Flow's start. Now the repair is
+// told which steps have not run and, in the words the test's own refusal uses
+// (`../../flow-draft/full-run-required.ts`), to rerun each live in the Flow's
+// order before completing.
+//
 // Codes, counts and Core's own words, plus the judge's words, which the judge
 // screened before they reached the judgement: nothing here is page content, so
 // the entry rides where every other Core entry does.
@@ -78,6 +95,43 @@ const REPAIR_INSTRUCTION = "This is the repair of a Flow that was not finished w
   + "Correct or drop a step the test found not working. Do not repeat work the draft already holds. "
   + "The whole Flow is tested again from where it starts when you complete: complete when the Flow does what the instruction asks.";
 
+// The same repair when the round before left a Flow that was not run from its
+// start (`judgement.test` is `not_tested`: nothing could replay it, or a budget
+// stopped the round). Live run murwcmx2 (re-author step 0065) told such a
+// repair its Flow "was tested from where it starts and judged".
+const UNTESTED_REPAIR_INSTRUCTION = "This is the repair of a Flow that was not finished when the build stopped (stopped says why). "
+  + "What it had was not run from where it starts (judgement.test is not_tested), so nothing here says whether its steps work: judgement says how much of the acts checklist is done. "
+  + "Your draft is that Flow. The page is wherever the last round left it, so look first. "
+  + "Work live on what is failing or missing, one act or choice at a time, and add each step the Flow needs, naming the act or choice it does (act a2, or a2.quantity). "
+  + "Do not repeat work the draft already holds. "
+  + "The whole Flow is tested from where it starts when you complete: complete when the Flow does what the instruction asks.";
+
+/** Positive whole positions from a judgement field; none when it holds none. */
+function positionsOf(value: unknown): number[] {
+  return Array.isArray(value) ? value.filter((position): position is number => Number.isSafeInteger(position) && (position as number) > 0) : [];
+}
+
+/** "Step 3", "Steps 1, 2, 4". */
+function stepsSaid(positions: readonly number[]): string {
+  return positions.length === 1 ? `Step ${positions[0]}` : `Steps ${positions.join(", ")}`;
+}
+
+/**
+ * The repair of a Flow holding steps carried from the Flow being changed that
+ * never ran in this build: which they are, and rerunning each live, in order,
+ * as the test's own refusal says (`../../flow-draft/full-run-required.ts`).
+ */
+function notRunRepairInstruction(positions: readonly number[]): string {
+  const one = positions.length === 1;
+  return "This is the repair of a Flow that was not finished when the build stopped (stopped says why). "
+    + `${stepsSaid(positions)} (judgement.notRunInThisBuild) came from the Flow being changed and ${one ? "has" : "have"} not run in this build (not_run_in_this_build), so the Flow could not be run from where it starts (judgement.test is not_tested) and nothing yet says whether it works. `
+    + `The Flow can be tested whole only once ${one ? "it has" : "each of them has"} run in this build: rerun ${one ? "it" : "each"}, in the Flow's order (amend_draft rerun), adding the consequences it would have to its input ([] when it leaves nothing lasting), so it takes its place as a step that ran. `
+    + "A rerun of a carried step is first put back where its node started in the run being repaired, where that run recorded it. "
+    + "Keep what the draft already changed; rerunning a step with the parameters it has is how it comes to have run. "
+    + "Your draft is that Flow. The page is wherever the last round left it, so look first. "
+    + "Then complete: the whole Flow is tested from where it starts and judged.";
+}
+
 const JUDGED_INSTRUCTION = "The Flow you said was ready was tested from its start and judged against the instruction: judgement.judge says what it did not do (observed), what was asked (expected) and what to change (advice), and findings says why. "
   + "Your draft is that Flow. The page is where the test left it: look first. "
   + "Work live on exactly that: correct or replace the step that does the wrong thing, and add each step the Flow still needs, naming the act or choice it does (act a2, or a2.quantity). "
@@ -95,6 +149,21 @@ const UNJUDGED_INSTRUCTION = "The Flow you said was ready was not judged to do w
   + "The acts checklist is the build's own reading and is information, not the bar: the Flow is judged on what its test does. "
   + "The whole Flow is tested again from where it starts and judged again when you complete: complete when the Flow does what the instruction asks.";
 
+// Said after the unjudged instruction when one judge call did say the Flow does
+// not do what was asked and the other did not confirm it. Until live run
+// murwcmx2 that reading was dropped: the repair was told only "not judged" and
+// completed the unchanged Flow, though one call had said which condition to
+// narrow. It is one reading, not a verdict, so the repair is told to check it
+// against the rows rather than to obey it.
+const UNCONFIRMED_READING = "judgement.judge.unconfirmedReading is one judge call's reading that the second check did not confirm: what it took the instruction to ask (expected), what it saw the test do (observed) and what it advised changing (advice). "
+  + "It is not a verdict: check it against the rows and the test, act on its advice where the rows and the test bear it out, and leave alone what they do not.";
+
+/** Whether the judge's account carries an unknown's unconfirmed reading. */
+function hasUnconfirmedReading(judge: JsonObject): boolean {
+  const reading = judge.unconfirmedReading;
+  return judge.verdict !== "no" && reading !== null && typeof reading === "object" && !Array.isArray(reading) && Object.keys(reading).length > 0;
+}
+
 /** The judge's account in a repair's judgement, when a judge sent the Flow back. */
 function judgedBy(resume: AutomationStudioLlmEvidenceLoopResume): JsonObject | undefined {
   const judge = resume.judgement?.judge;
@@ -105,9 +174,11 @@ function judgedBy(resume: AutomationStudioLlmEvidenceLoopResume): JsonObject | u
  * The repair instruction after a judge: the judged one, then the steps carried
  * from an earlier Flow that its test did not run, to be run again live.
  */
-function judgedInstruction(judge: JsonObject): string {
-  const carried = Array.isArray(judge.untestedCarried) ? judge.untestedCarried.filter((position): position is number => Number.isSafeInteger(position) && (position as number) > 0) : [];
-  const lead = judge.verdict === "no" ? JUDGED_INSTRUCTION : UNJUDGED_INSTRUCTION;
+function judgedInstruction(judge: JsonObject, notRun: readonly number[]): string {
+  const named = positionsOf(judge.untestedCarried);
+  // The judge's account names the carried steps its test did not run; where it names none, the judgement's own reading of the Flow does.
+  const carried = named.length ? named : notRun;
+  const lead = judge.verdict === "no" ? JUDGED_INSTRUCTION : hasUnconfirmedReading(judge) ? `${UNJUDGED_INSTRUCTION} ${UNCONFIRMED_READING}` : UNJUDGED_INSTRUCTION;
   if (!carried.length) return lead;
   return `${lead} Steps ${carried.join(", ")} were carried from the earlier Flow and not run in this build: rerun them live (amend_draft rerun), so the test runs them.`;
 }
@@ -133,9 +204,15 @@ function instructionFor(resume: AutomationStudioLlmEvidenceLoopResume): string {
   // with the reply, not from steps run and added): exploring again then goes by
   // what the judge found, which the round would otherwise never be told
   // (t195-w29, `../../tests/deepseek-bootstrap/tests/answerability.test.ts`).
-  if (nothingInFlow(resume)) return judge ? `${EXPLORE_AGAIN_INSTRUCTION} ${EXPLORE_AGAIN_JUDGED}` : EXPLORE_AGAIN_INSTRUCTION;
-  if (judge) return judgedInstruction(judge);
-  return resume.judgement ? REPAIR_INSTRUCTION : INSTRUCTION;
+  if (nothingInFlow(resume)) {
+    if (!judge) return EXPLORE_AGAIN_INSTRUCTION;
+    return hasUnconfirmedReading(judge) ? `${EXPLORE_AGAIN_INSTRUCTION} ${EXPLORE_AGAIN_JUDGED} ${UNCONFIRMED_READING}` : `${EXPLORE_AGAIN_INSTRUCTION} ${EXPLORE_AGAIN_JUDGED}`;
+  }
+  const notRun = positionsOf(resume.judgement?.notRunInThisBuild);
+  if (judge) return judgedInstruction(judge, notRun);
+  if (!resume.judgement) return INSTRUCTION;
+  if (notRun.length) return notRunRepairInstruction(notRun);
+  return resume.judgement.test === "not_tested" ? UNTESTED_REPAIR_INSTRUCTION : REPAIR_INSTRUCTION;
 }
 
 /** The entry itself, under a call id of its own. */

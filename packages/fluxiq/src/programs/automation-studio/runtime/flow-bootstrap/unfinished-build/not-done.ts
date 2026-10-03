@@ -96,6 +96,8 @@ export function automationStudioFlowBootstrapBlockedSaid(issueCodes: readonly st
  */
 export function automationStudioFlowBootstrapTestSaid(judgement: AutomationStudioFlowBootstrapJudgement | undefined): string {
   if (judgement?.judge) return judgedTestSaid(judgement);
+  // Steps carried from an earlier Flow and never rerun: the Flow was never run whole, which is said, never left unsaid (t194-w70).
+  if (judgement?.notRunInThisBuild?.length) return notRunTestSaid(judgement.stepsInFlow, judgement.notRunInThisBuild);
   if (!judgement || judgement.tested === "not_tested") return judgement && judgement.stepsInFlow === 0 ? "No step I found belonged in the Flow." : "";
   const steps = `${judgement.stepsInFlow} step${judgement.stepsInFlow === 1 ? "" : "s"}`;
   if (judgement.tested === "replayed_clean") {
@@ -118,12 +120,41 @@ export function automationStudioFlowBootstrapTestSaid(judgement: AutomationStudi
 function judgedTestSaid(judgement: AutomationStudioFlowBootstrapJudgement): string {
   const steps = `${judgement.stepsInFlow} step${judgement.stepsInFlow === 1 ? "" : "s"}`;
   const carried = judgement.judge?.untestedCarried ?? [];
+  if (!carried.length && judgement.notRunInThisBuild?.length) return notRunTestSaid(judgement.stepsInFlow, judgement.notRunInThisBuild);
   if (carried.length) {
     return `Step${carried.length === 1 ? "" : "s"} ${carried.slice(0, 6).join(", ")}${carried.length > 6 ? " and more" : ""} of the Flow (${steps}) came from the earlier Flow and ${carried.length === 1 ? "was" : "were"} not run when it was tested, so what ${carried.length === 1 ? "it does" : "they do"} could not be judged.`;
   }
   if (judgement.judge?.verdict === "no") return `The Flow (${steps}) ran from its start, but what it did was judged not to be what you asked.`;
   if (judgement.tested === "not_tested") return `The Flow as it now stands (${steps}) was not run whole from its start and judged, so it was not judged to do what you asked.`;
   return `The Flow (${steps}) ran from its start, but what it did was not judged to be what you asked.`;
+}
+
+/** A Flow holding steps carried from an earlier Flow and never rerun in this build, as an ending says it. */
+function notRunTestSaid(stepsInFlow: number, notRun: readonly number[]): string {
+  const steps = `${stepsInFlow} step${stepsInFlow === 1 ? "" : "s"}`;
+  return `The Flow as it stands (${steps}) was never run whole from its start: ${positionsSaid(notRun)} came from the Flow being changed and ${notRun.length === 1 ? "was" : "were"} not run again in this build, so it was never tested or judged.`;
+}
+
+/**
+ * The repair's announcement for a Flow holding steps carried from an earlier
+ * Flow that never ran in this build (t194-w70): which, and that each is run
+ * again live before the Flow can be tested; and, when the round before held
+ * them too and ran none of them, that it did not.
+ */
+export function automationStudioFlowBootstrapRepairingNotRunSaid(notRun: readonly number[], ranNoneAgain: boolean): string {
+  const which = `${positionsSaid(notRun)} came from the Flow being changed and ${notRun.length === 1 ? "has" : "have"} not run in this build`;
+  const again = ranNoneAgain ? ` The last round ran none of ${notRun.length === 1 ? "it" : "them"} again.` : "";
+  return `The Flow could not be tested from its start: ${which}.${again} Repairing it live, running ${notRun.length === 1 ? "it" : "each"} again so the whole Flow can be tested and judged.`;
+}
+
+/** "step 3", "steps 1 and 2", "steps 1, 2 and 4": at most eight, then how many more. */
+function positionsSaid(positions: readonly number[]): string {
+  const MOST = 8;
+  if (positions.length === 1) return `step ${positions[0]}`;
+  const shown = positions.slice(0, MOST);
+  const more = positions.length - shown.length;
+  const list = more ? `${shown.join(", ")} and ${more} more` : `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}`;
+  return `steps ${list}`;
 }
 
 /**

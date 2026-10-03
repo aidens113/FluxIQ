@@ -27,6 +27,15 @@
 // Flow the judge then did judge got further, whatever the Flow before it was:
 // `judged_after_unjudged`. Its verdict can only be `no` here; a yes about the
 // Flow as it stands finishes the build.
+//
+// **A round that could not be measured (t194-w70).** A Flow holding steps
+// carried from an earlier Flow that never ran in this build is not run from its
+// start (`./judgement.ts`, `notRunInThisBuild`), so none of the measures above
+// has anything to read. For such a round, progress is what the round could
+// change: fewer steps that have not run (`fewer_steps_not_run`, which also
+// counts for the first measured round after it), or a Flow different from the
+// one before (`flow_changed_unmeasured`). It is what the repair's announcement
+// says; "not doable" is never concluded from such a round (`./phases.ts`).
 import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapProgressMeasure } from "./contracts.ts";
 
 /** What `after` measurably did better than `before`; empty when nothing did. */
@@ -50,7 +59,20 @@ export function automationStudioFlowBootstrapJudgementProgress(before: Automatio
       if (is.stored >= was.stored && is.missingRequired < was.missingRequired) moved.push("fewer_records_missing_required");
     }
   }
+  const [notRunBefore, notRunAfter] = [notRun(before), notRun(after)];
+  if (notRunAfter < notRunBefore) moved.push("fewer_steps_not_run");
+  if (notRunAfter > 0 && after.flowSignature !== before.flowSignature) moved.push("flow_changed_unmeasured");
   return moved;
+}
+
+/** Whether a round could not be measured: steps carried into its Flow never ran in this build, so it was not run from its start. */
+export function automationStudioFlowBootstrapJudgementUnmeasured(judgement: AutomationStudioFlowBootstrapJudgement): boolean {
+  return notRun(judgement) > 0;
+}
+
+/** How many steps carried into the Flow never ran in this build: as its judgement names them, or a judge's account does. */
+function notRun(judgement: AutomationStudioFlowBootstrapJudgement): number {
+  return Math.max(judgement.notRunInThisBuild?.length ?? 0, judgement.judge?.untestedCarried?.length ?? 0);
 }
 
 /** The steps that worked when the Flow was run from its start; none where it was not run. */
