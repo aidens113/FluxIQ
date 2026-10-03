@@ -3,6 +3,7 @@ import path from "node:path";
 import sqlite3 from "sqlite3";
 import { withSqlPerformanceContext } from "../../../_shared/performance-metrics.ts";
 import { AutomationStudioStatementCache } from "./statement-cache.ts";
+import { AutomationStudioProjectStoreUnavailableError } from "./store-unavailable-error.ts";
 
 export type AutomationStudioSqlRunResult = { changes: number; lastID: number };
 export type AutomationStudioWalCheckpointMode = "passive" | "full" | "restart" | "truncate";
@@ -81,7 +82,7 @@ export class AutomationStudioProjectDatabasePool {
   }
 
   async acquire(projectId: string): Promise<AutomationStudioProjectDatabaseLease> {
-    if (this.closing) throw new Error("Automation Studio project database pool is closing.");
+    if (this.closing) throw new AutomationStudioProjectStoreUnavailableError("Automation Studio project database pool is closing.");
     const normalizedProjectId = normalizeProjectId(projectId);
     // The entry is awaited before the lease is counted, so the last lease may be
     // released (closing the entry and removing it from the map) during that await.
@@ -89,7 +90,7 @@ export class AutomationStudioProjectDatabasePool {
     let entryPromise = this.currentOrOpenEntry(normalizedProjectId);
     let entry = await entryPromise;
     while (this.entries.get(normalizedProjectId) !== entryPromise) {
-      if (this.closing) throw new Error("Automation Studio project database pool is closing.");
+      if (this.closing) throw new AutomationStudioProjectStoreUnavailableError("Automation Studio project database pool is closing.");
       entryPromise = this.currentOrOpenEntry(normalizedProjectId);
       entry = await entryPromise;
     }

@@ -36,7 +36,8 @@
 // judged it. `run_parked`: the run stopped waiting on a person; no Core path
 // continues a parked run on the candidate, so the settle is final.
 // `run_errored`: the run threw. `apply_failed`: judged to answer, and the apply
-// itself refused. An unapplied adaptation keeps its trial evidence and stays
+// itself refused. `store_unavailable`: the project store went away before the
+// settle could be read or written (t258); the session then says so. An unapplied adaptation keeps its trial evidence and stays
 // reviewable; a person can still apply it through review.
 
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -45,8 +46,10 @@ import { automationStudioDecisionAwaitsJudgedRun, automationStudioRunCandidateAd
 import { automationStudioGraphFlowWithAdaptationPatch } from "../adaptations/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord } from "../json-values.ts";
+import { AutomationStudioProjectStoreUnavailableError } from "../../../storage/index.ts";
+import type { AutomationStudioRuntimeAdaptationContext } from "./contracts.ts";
 
-export type AutomationStudioJudgedPromotionReason = "not_rerun" | "run_cancelled" | "run_failed" | "refuted" | "not_judged" | "run_parked" | "run_errored" | "apply_failed";
+export type AutomationStudioJudgedPromotionReason = "not_rerun" | "run_cancelled" | "run_failed" | "refuted" | "not_judged" | "run_parked" | "run_errored" | "apply_failed" | "store_unavailable";
 
 /** What settling one pending patch comes to: applied, unapplied with a reason, or still waiting on a run that has not finished. */
 export type AutomationStudioJudgedPromotionOutcome = { apply: true } | { apply: false; reason: AutomationStudioJudgedPromotionReason } | { waiting: true };
@@ -142,17 +145,15 @@ export async function settleAutomationStudioJudgedPromotions(input: {
   const settled = new Map<string, JsonObject>();
   for (const adaptationId of recorded) {
     if (input.only === "ran" && !ran.has(adaptationId)) continue;
-    const adaptation = await input.ports.getFlowAdaptation(input.projectId, input.flowId, adaptationId);
-    if (!adaptation) continue;
-    const decision = isJsonRecord(adaptation.metadata?.approvalDecision) ? adaptation.metadata.approvalDecision : {};
-    if (!automationStudioAwaitsJudgedRun(adaptation, input.session.runId)) {
-      // Settled for this run already -- a receipt write that did not land -- is mirrored, never applied twice.
-      if (decision.settledAt !== undefined && decision.judgedRunId === input.session.runId) settled.set(adaptationId, decision);
-      continue;
+    try {
+      const decision = await settleRecorded(input, adaptationId, ran.has(adaptationId));
+      if (decision) settled.set(adaptationId, decision);
+    } catch (error) {
+      // The store went away mid-settle: a patch still held stays unapplied, and its receipt says why.
+      if (!AutomationStudioProjectStoreUnavailableError.is(error)) throw error;
+      const held = receiptDecision(input.detail, adaptationId);
+      if (held && automationStudioDecisionAwaitsJudgedRun(held, input.session.runId)) settled.set(adaptationId, unappliedForStore(held, input.session.runId, error));
     }
-    const outcome: AutomationStudioJudgedPromotionOutcome = input.reason ? { apply: false, reason: input.reason } : automationStudioJudgedPromotionOutcome(input.session, ran.has(adaptationId));
-    if ("waiting" in outcome) continue;
-    settled.set(adaptationId, await settleOne(input, adaptation, decision, outcome));
   }
   if (!settled.size) return input.detail;
   const attempts = Array.isArray(input.detail.metadata?.runtimePatchAttempts) ? input.detail.metadata.runtimePatchAttempts : [];
@@ -175,23 +176,129 @@ export async function settleAutomationStudioJudgedPromotions(input: {
 /**
  * The same, for a run that has ended: its stored record is read, settled, and
  * saved. `reason` is for a run that threw, whose session cannot say why.
+ *
+ * Only a run whose adaptation context may promote can hold a patch for its
+ * judged end: the promotion gate writes the hold, and only where
+ * `behavior.promoteAdaptations` lets it (`./runtime-promotion.ts`). Any other
+ * run -- no context, a deterministic run, manual approval, a dry run, a mode or
+ * setting that forbids promotion -- has nothing to settle, and its record is
+ * not read. Until t258 it was read at every judged end, so a deterministic run
+ * whose project store could not be opened threw "pool is closing" from here in
+ * place of ending failed with its own reason.
+ *
+ * A run that may promote, and whose store went away (the store is unavailable,
+ * not answering with an error), does not throw either: what the store could not
+ * take is noted on the session (`noteStoreUnavailable`), which is handed back.
+ * Any other failure still throws, and a healthy store is settled as before.
  */
 export async function settleAutomationStudioRunJudgedPromotions(input: {
   ports: AutomationStudioJudgedPromotionPorts & {
     getFlowRunDetail(projectId: string, runId: string): Promise<AutomationStudioFlowRunDetail | null>;
     saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<unknown>;
+    /** Where a settle the store could not take is noted: the session lives outside the project store. */
+    writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<unknown>;
   };
   projectId: string;
   flowId: string | undefined;
+  /** The run's adaptation context, `null` when it has none. Required, so no caller can forget the gate it carries. */
+  context: Pick<AutomationStudioRuntimeAdaptationContext, "behavior"> | null | undefined;
   session: AutomationStudioRuntimeSession;
   reason?: AutomationStudioJudgedPromotionReason | undefined;
 }): Promise<AutomationStudioRuntimeSession> {
-  if (!input.flowId) return input.session;
-  const detail = await input.ports.getFlowRunDetail(input.projectId, input.session.runId);
+  if (!input.flowId || input.context?.behavior.promoteAdaptations !== true) return input.session;
+  let detail: AutomationStudioFlowRunDetail | null;
+  try {
+    detail = await input.ports.getFlowRunDetail(input.projectId, input.session.runId);
+  } catch (error) {
+    if (!AutomationStudioProjectStoreUnavailableError.is(error)) throw error;
+    return await noteStoreUnavailable(input, "read_record", error, []);
+  }
   if (!detail) return input.session;
   const settled = await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.flowId, session: input.session, detail, ...(input.reason ? { reason: input.reason } : {}) });
-  if (settled !== detail) await input.ports.saveFlowRunDetail(settled);
-  return input.session;
+  const decided = settledForRun(settled, input.session.runId);
+  if (settled !== detail) {
+    try {
+      await input.ports.saveFlowRunDetail(settled);
+    } catch (error) {
+      if (!AutomationStudioProjectStoreUnavailableError.is(error)) throw error;
+      return await noteStoreUnavailable(input, "save_record", error, decided);
+    }
+  }
+  const unwritten = decided.find((entry) => entry.notAppliedReason === "store_unavailable");
+  return unwritten ? await noteStoreUnavailable(input, "settle", unwritten.error, decided) : input.session;
+}
+
+/**
+ * The store went away while the run's held patches were being settled (t258).
+ * Nothing is applied: the promotion gate's hold stays on any adaptation the
+ * store could not take, so no unattended apply can follow from it, and a
+ * person can still review it. So that it is not lost silently, the run's
+ * session -- kept outside the project store -- records where the store went
+ * away, why, and what was decided for each patch. The run ends with its own
+ * outcome; this is written beside it, never in place of it.
+ */
+async function noteStoreUnavailable(
+  input: { ports: { writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<unknown> }; projectId: string; session: AutomationStudioRuntimeSession },
+  step: "read_record" | "settle" | "save_record",
+  error: unknown,
+  decided: JsonObject[]
+): Promise<AutomationStudioRuntimeSession> {
+  const noted: AutomationStudioRuntimeSession = {
+    ...input.session,
+    metadata: {
+      ...(input.session.metadata ?? {}),
+      judgedPromotionSettlement: compactJsonObject({
+        status: "store_unavailable",
+        step,
+        at: Date.now(),
+        reason: errorText(error),
+        recordSaved: step === "settle",
+        adaptations: decided.map((entry) => compactJsonObject({ adaptationId: entry.adaptationId, applied: entry.applied, notAppliedReason: entry.notAppliedReason }))
+      })
+    }
+  };
+  await input.ports.writeRuntimeSession(input.projectId, noted);
+  return noted;
+}
+
+/** What this run's settle decided, receipt by receipt, with the adaptation each is for. */
+function settledForRun(detail: AutomationStudioFlowRunDetail, runId: string): JsonObject[] {
+  const attempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
+  return attempts.flatMap((attempt) => {
+    const decision = isJsonRecord(attempt.approvalDecision) ? attempt.approvalDecision : undefined;
+    return decision && typeof attempt.adaptationId === "string" && decision.judgedRunId === runId && decision.settledAt !== undefined ? [{ ...decision, adaptationId: attempt.adaptationId }] : [];
+  });
+}
+
+function receiptDecision(detail: AutomationStudioFlowRunDetail, adaptationId: string): JsonObject | undefined {
+  const attempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
+  const receipt = attempts.find((attempt) => attempt.adaptationId === adaptationId && isJsonRecord(attempt.approvalDecision));
+  return receipt && isJsonRecord(receipt.approvalDecision) ? receipt.approvalDecision : undefined;
+}
+
+function unappliedForStore(held: JsonObject, runId: string, error: unknown): JsonObject {
+  return compactJsonObject({ ...held, judgedRunId: runId, settledAt: Date.now(), applied: false, notAppliedReason: "store_unavailable", error: errorText(error) });
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** One recorded adaptation settled against the run, or nothing when it waits on no judgement of this run. */
+async function settleRecorded(
+  input: { ports: AutomationStudioJudgedPromotionPorts; projectId: string; flowId: string; session: Pick<AutomationStudioRuntimeSession, "runId" | "status" | "metadata">; reason?: AutomationStudioJudgedPromotionReason | undefined },
+  adaptationId: string,
+  ranIt: boolean
+): Promise<JsonObject | undefined> {
+  const adaptation = await input.ports.getFlowAdaptation(input.projectId, input.flowId, adaptationId);
+  if (!adaptation) return undefined;
+  const decision = isJsonRecord(adaptation.metadata?.approvalDecision) ? adaptation.metadata.approvalDecision : {};
+  if (!automationStudioAwaitsJudgedRun(adaptation, input.session.runId)) {
+    // Settled for this run already -- a receipt write that did not land -- is mirrored, never applied twice.
+    return decision.settledAt !== undefined && decision.judgedRunId === input.session.runId ? decision : undefined;
+  }
+  const outcome: AutomationStudioJudgedPromotionOutcome = input.reason ? { apply: false, reason: input.reason } : automationStudioJudgedPromotionOutcome(input.session, ranIt);
+  return "waiting" in outcome ? undefined : await settleOne(input, adaptation, decision, outcome);
 }
 
 async function settleOne(
@@ -219,7 +326,9 @@ async function settleOne(
     });
     return recorded;
   } catch (error) {
-    const refused = compactJsonObject({ ...base, applied: false, notAppliedReason: "apply_failed", autoApplyFailed: true, error: error instanceof Error ? error.message : String(error) });
+    // An apply the store went away under is unapplied for that reason, not because the gates refused it.
+    const notAppliedReason: AutomationStudioJudgedPromotionReason = AutomationStudioProjectStoreUnavailableError.is(error) ? "store_unavailable" : "apply_failed";
+    const refused = compactJsonObject({ ...base, applied: false, notAppliedReason, autoApplyFailed: true, error: errorText(error) });
     await input.ports.saveFlowAdaptation(withDecision(saved, refused));
     return refused;
   }
