@@ -122,6 +122,46 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
       ...(reset.readable ? { evidence: { callId: resetCallId, toolId: automationStudioNodeReplayToolId(first), value: reset.result.evidence } } : {})
     };
   }
+  const done = await automationStudioFlowDraftReplaySteps({
+    executeTool: input.executeTool,
+    ...(input.signal ? { signal: input.signal } : {}),
+    steps: input.steps,
+    run: proposed,
+    callIdOf: (step) => `dryrun.${input.attempt}.${step.position}`,
+    reanchor: true
+  });
+  return { verdict: verdictOf(input, "ok", done.outcomes), observations: done.observations, ...(done.evidence ? { evidence: done.evidence } : {}) };
+}
+
+/** What a run of steps done again needs: the executor, the draft, and the steps. */
+export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal"> & {
+  /** The whole draft: what says which steps the Flow would not always run. */
+  steps: readonly AutomationStudioFlowDraftStep[];
+  /** The proposed steps to do again, in order, from where the target now stands. */
+  run: readonly AutomationStudioFlowDraftStep[];
+  /** The call id each step is sent under. */
+  callIdOf(step: AutomationStudioFlowDraftStep): string;
+  /** Whether a step missing right after one left undone is asked once more on its own page (see the header). */
+  reanchor: boolean;
+};
+
+/** What a run of steps done again answered: one outcome per step, in order, and what the first that did not replay left. */
+export type AutomationStudioFlowDraftReplayStepsResult = Pick<AutomationStudioFlowDraftReplayResult, "observations" | "evidence"> & {
+  outcomes: AutomationStudioFlowDraftReplayOutcome[];
+};
+
+/**
+ * Do proposed steps again, in order, from where the target stands now, the way
+ * a replay does every step after its reset: a step whose effect lasts is
+ * checked and not run, and every step is asked even after one that did not
+ * replay. The caller has put the target where the first of them starts and
+ * judges the outcomes; this only makes the calls and reads what came back.
+ * Used by the replay above and by a rerun's put-back (`./step-place.ts`).
+ */
+export async function automationStudioFlowDraftReplaySteps(input: AutomationStudioFlowDraftReplayStepsInput): Promise<AutomationStudioFlowDraftReplayStepsResult> {
+  const proposed = input.run;
+  const outcomes: AutomationStudioFlowDraftReplayOutcome[] = [];
+  const observations: AutomationStudioFlowDraftReplayResult["observations"] = [];
   let evidence: AutomationStudioFlowDraftReplayResult["evidence"];
   // The first verified step whose withheld effect a later step may have
   // needed: one that moved the target, or one a person is asked about, which a
@@ -132,7 +172,7 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
   for (const [index, step] of proposed.entries()) {
     const mode = automationStudioFlowDraftStepReplayMode(step);
     const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step) : automationStudioNodeReplayStepCall(step);
-    const callId = `dryrun.${input.attempt}.${step.position}`;
+    const callId = input.callIdOf(step);
     const toolId = automationStudioNodeReplayToolId(step);
     const stepId = automationStudioFlowDraftStepId(step);
     // A step with nothing to run it with is a failed step, not a skipped one.
@@ -140,7 +180,7 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
     let status = statusOf(ran, mode);
     let reanchored = false;
     const previous = outcomes.at(-1);
-    if (value && status === "unreproducible" && withheldBy === undefined && !conditional.has(stepId) && previous && leftUndone(previous, conditional)) {
+    if (input.reanchor && value && status === "unreproducible" && withheldBy === undefined && !conditional.has(stepId) && previous && leftUndone(previous, conditional)) {
       const again = await reanchor(input, step, callId, toolId, value);
       if (again) {
         ran = again;
@@ -177,7 +217,7 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
     // sense halfway, and the difference is what the model needs.
     if (!evidence && ran.readable) evidence = { callId: reanchored ? `${callId}.again` : callId, toolId, value: ran.result.evidence };
   }
-  return { verdict: verdictOf(input, "ok", outcomes), observations, ...(evidence ? { evidence } : {}) };
+  return { outcomes, observations, ...(evidence ? { evidence } : {}) };
 }
 
 function verdictOf(
@@ -225,7 +265,7 @@ function leftUndone(outcome: AutomationStudioFlowDraftReplayOutcome, conditional
  * page is never passed.
  */
 async function reanchor(
-  input: AutomationStudioFlowDraftReplayInput,
+  input: ReplayCaller,
   step: AutomationStudioFlowDraftStep,
   callId: string,
   toolId: string,
@@ -237,6 +277,9 @@ async function reanchor(
   if (!back.readable || back.result.resultCode !== AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed || back.result.effectApplied !== true) return undefined;
   return await call(input, `${callId}.again`, toolId, value);
 }
+
+/** What a replay call needs from its caller: the executor, and the signal that cancels it. */
+type ReplayCaller = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal">;
 
 /**
  * What one replay call answered.
@@ -260,7 +303,7 @@ type ReplayAnswer =
  * So a cancelled run re-throws, and everything else is an unreadable answer.
  */
 async function call(
-  input: AutomationStudioFlowDraftReplayInput,
+  input: ReplayCaller,
   callId: string,
   toolId: string,
   value: JsonObject

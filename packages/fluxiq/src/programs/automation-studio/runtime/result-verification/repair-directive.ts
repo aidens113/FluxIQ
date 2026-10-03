@@ -66,7 +66,9 @@ export const AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES = Object.freeze({
   /** Part of the account the verdict was reached from was cut to fit. */
   summaryWithheld: "result.summary_withheld",
   /** Nothing in the counts is wrong, so what is wrong is which rows or values were kept. */
-  countsLookRight: "result.counts_look_right"
+  countsLookRight: "result.counts_look_right",
+  /** The Flow reads and stores nothing, so what is wrong is an act its steps did not do, or did differently. */
+  actsJudgedUndone: "result.acts_judged_undone"
 } as const);
 
 // **Whole.** Every finding, every fix line, every column and every word of the
@@ -150,6 +152,11 @@ export function automationStudioRecordedResultRepair(repair: AutomationStudioRes
 export function automationStudioResultRepairFindings(summary: AutomationStudioRunResultSummary): AutomationStudioResultRepairFinding[] {
   const codes = AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES;
   const findings: AutomationStudioResultRepairFinding[] = [];
+  if (summary.recordSetCount === 0 && flowReadsNothing(summary)) {
+    findings.push({ code: codes.actsJudgedUndone, detail: "The Flow reads no list and stores no records, so its answer is what its steps did on the site: an act the request asks for was not done, or was done differently." });
+    if (summary.withheld) findings.push(withheldFinding());
+    return findings;
+  }
   if (summary.recordSetCount === 0) {
     findings.push({ code: codes.noRecordSet, detail: "The run kept no record set at all, so nothing it read was stored." });
   } else if (summary.totalRecordCount === 0 && summary.totalRefusedCount > 0) {
@@ -167,12 +174,59 @@ export function automationStudioResultRepairFindings(summary: AutomationStudioRu
   }
   for (const set of summary.recordSets) findings.push(...recordSetFindings(set, summary));
   if (summary.withheld) {
-    findings.push({ code: codes.summaryWithheld, detail: "Part of the account this verdict was reached from was cut to fit, so the sample is narrower than the counts." });
+    findings.push(withheldFinding());
   }
   if (!findings.some((finding) => finding.code !== codes.summaryWithheld)) {
     findings.unshift({ code: codes.countsLookRight, detail: "No count is wrong on its own, so what is wrong is which rows, or which values, were kept." });
   }
   return findings;
+}
+
+/**
+ * The Flow's entry and exit, which the assembler derives from the order of the
+ * steps and no build authors or edits (`llm/node-tools/draft-from-flow.ts`
+ * keeps the same set out of a seeded draft). A saved Flow ends in its end node,
+ * so naming the last node outright pointed a repair at the one step it cannot
+ * change (t176).
+ */
+const DERIVED_CONTROL_NODES: ReadonlySet<string> = new Set(["builtin.control.start", "builtin.control.end"]);
+
+/** Core's own node that writes the records it is handed (`nodes/data/write-records.ts`). */
+const RECORD_WRITER = "builtin.data.write-records";
+
+/**
+ * Whether the Flow that produced this result reads and stores nothing, so that
+ * a run with no record set is the Flow doing what it was built to do.
+ *
+ * `run-muqiojz4-04a7a8fc` (bigbox cart): a Flow that switched a store and added
+ * items to a cart was refuted with `result.no_record_set` and told to "add or
+ * fix the step that stores what the Flow read", and its re-author spent the
+ * build on list reads the request never asked for instead of the missing Add to
+ * cart.
+ *
+ * Content-free and positive, from what the summary already carries, the same
+ * markers the executor reads a node's answer by (`executor/defensive/
+ * continuation.ts`, `carriesAnswer`): no read reported itself, no step is Core's
+ * record writer, and no step was authored with a record output. True only where
+ * every authored step's parameters are in view and none of them under
+ * `recordOutput` was withheld -- a step Core cannot see might be the one that
+ * stores, so where it cannot tell, the record-set finding stands. A build test
+ * keeps every finding as it was: no test stores a record set, and its judge
+ * already drops that one (`build-test/judge.ts`).
+ */
+function flowReadsNothing(summary: AutomationStudioRunResultSummary): boolean {
+  if (summary.buildTest || summary.reads?.length || summary.flowParametersWithheld) return false;
+  const authored = summary.flowShape.filter((step) => !DERIVED_CONTROL_NODES.has(step.definitionId));
+  if (!authored.length) return false;
+  return authored.every((step) =>
+    step.definitionId !== RECORD_WRITER
+    && step.parameters !== undefined
+    && (step.parameters.recordOutput === undefined || step.parameters.recordOutput === null)
+    && !(step.parametersWithheld ?? []).some((path) => path === "recordOutput" || path.startsWith("recordOutput.")));
+}
+
+function withheldFinding(): AutomationStudioResultRepairFinding {
+  return { code: AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.summaryWithheld, detail: "Part of the account this verdict was reached from was cut to fit, so the sample is narrower than the counts." };
 }
 
 /** What one record set's own numbers and sample say about it. */
@@ -276,18 +330,10 @@ function fixLine(finding: AutomationStudioResultRepairFinding, summary: Automati
   if (finding.code === codes.columnAlwaysEmpty) return `Re-point the columns${columns} that are empty in every row sampled: what they read is not where that value is.`;
   if (finding.code === codes.rowsIdentical) return "Give the extraction the row container the request describes: it is reading one item over and over instead of each row.";
   if (finding.code === codes.recordsTruncated) return "Raise what the record output keeps, or narrow what is stored, so the answer is the whole result rather than its first rows.";
+  if (finding.code === codes.actsJudgedUndone) return "Compare each act the request asks for -- with the item, option, size, quantity and order it names -- against the step that does it, as the check's reading and advice describe: add the step for an act no step does, and correct the parameters of a step that did its act differently.";
   if (finding.code === codes.countsLookRight) return `Compare the request's own terms against the stored columns and the parameters of the steps that decided them${lastStep(summary)}, and change the step whose parameters decide which rows are kept.`;
   return undefined;
 }
-
-/**
- * The Flow's entry and exit, which the assembler derives from the order of the
- * steps and no build authors or edits (`llm/node-tools/draft-from-flow.ts`
- * keeps the same set out of a seeded draft). A saved Flow ends in its end node,
- * so naming the last node outright pointed a repair at the one step it cannot
- * change (t176).
- */
-const DERIVED_CONTROL_NODES: ReadonlySet<string> = new Set(["builtin.control.start", "builtin.control.end"]);
 
 /** The Flow's last authored step, named as that and not as the step that stored the rows. */
 function lastStep(summary: AutomationStudioRunResultSummary): string {

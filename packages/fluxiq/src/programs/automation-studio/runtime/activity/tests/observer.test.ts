@@ -130,7 +130,9 @@ describe("observeAutomationStudioEvidenceLoop", () => {
     ] as const) {
       seen = [];
       const decision = automationStudioActivityDecisionReason.attach({ ...value }, "Because the draft now covers the request.");
-      await inScope(() => observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => decision })).decide(decideRequest));
+      const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => decision }));
+      // A draft edit is said once the loop has gone on without refusing it ("an edit to the draft", below).
+      await inScope(async () => { await observed.decide(decideRequest); if (value.kind === "amend_draft") await observed.decide({ ...decideRequest, iteration: 2 }); });
       expect(seen[1]).toMatchObject({ phase, label: title, detail: { kind: "thought", title, text: "Because the draft now covers the request.", status: "succeeded" } });
     }
   });
@@ -210,3 +212,90 @@ describe("a call the bound domain describes", () => {
   });
 });
 
+
+// Live run `run-murdouox-c5294247` (t195, `S/0033`-`S/0036`): edits Core refused (`already_so`,
+// `changes_nothing`) read in the chat as work done, "Updating the draft Flow -- Adding the repeat ...".
+// An edit's card now waits for the loop's answer and says plainly when it changed nothing.
+describe("an edit to the draft", () => {
+  const ADDING = "Adding the repeat over the qualifying requests so the Flow confirms each of them.";
+  const amend = (amendments: unknown[] = [{ step: 14, change: "repeat", over: 12 }]) => automationStudioActivityDecisionReason.attach({ kind: "amend_draft", amendments }, ADDING);
+  const request = (iteration: number, evidence: Array<{ callId: string; toolId: string; value: never }> = []) => ({ ...decideRequest, iteration, evidence });
+  const thoughts = () => seen.filter((event) => event.detail?.kind === "thought" && event.detail.status !== "started").map((event) => [event.detail?.title, event.detail?.text, event.detail?.status]);
+  const refused = (iteration: number, reasons: string[], applied = 0) => ({ callId: `core.amendment_check.${iteration}`, toolId: "core.amendment_check", value: { ok: false, refused: reasons.map((reason) => ({ step: 14, reason })), applied } as never });
+
+  it("says an edit Core refused as one that changed nothing, and why, never as work done", async () => {
+    let next = amend();
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => next }));
+    await inScope(async () => {
+      await observed.decide(request(17));
+      next = { kind: "complete", result: {} } as never;
+      await observed.decide(request(18, [refused(17, ["already_so"])]));
+    });
+    expect(thoughts()).toEqual([
+      ["Didn't change the Flow", "The Flow already does that, so this was not done: adding the repeat over the qualifying requests so the Flow confirms each of them.", "failed"]
+    ]);
+    expect(JSON.stringify(seen)).not.toContain("Updating the draft Flow");
+    expect(JSON.stringify(seen)).not.toContain("already_so");
+  });
+
+  it("says a step asked to run again unchanged as not run again, whichever check refused it", async () => {
+    for (const evidence of [
+      refused(18, ["changes_nothing"]),
+      { callId: "core.repeat_check.18", toolId: "core.repeat_check", value: { ok: false, code: "llm_evidence_loop.repeat_refused", then: { outcome: "changed_nothing" } } as never }
+    ]) {
+      seen = [];
+      let next = automationStudioActivityDecisionReason.attach({ kind: "amend_draft", amendments: [{ step: 12, change: "rerun", input: {} }] }, "Rerunning the request listing with a where that keeps five or more mutual friends.");
+      const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => next }));
+      await inScope(async () => {
+        await observed.decide(request(18));
+        next = { kind: "complete", result: {} } as never;
+        await observed.decide(request(19, [evidence]));
+      });
+      expect(thoughts()).toHaveLength(1);
+      expect(thoughts()[0]![0]).toBe("Didn't run the step again");
+      expect(thoughts()[0]![1]).toMatch(/^(That step|It) already ran exactly this way.*, so this was not done: rerunning the request listing/u);
+    }
+  });
+
+  it("says an edit that landed as before, once the loop has gone on, and before a step it runs again", async () => {
+    let next = amend();
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => next }));
+    await inScope(async () => {
+      await observed.decide(request(3));
+      // Held until the loop answers: nothing is said of the edit yet.
+      expect(thoughts()).toEqual([]);
+      next = { kind: "complete", result: {} } as never;
+      // A refusal of another decision is not this one's.
+      await observed.decide(request(4, [refused(2, ["already_so"])]));
+    });
+    expect(thoughts()).toEqual([["Updating the draft Flow", ADDING, "succeeded"]]);
+    // It comes before the next decision's own row.
+    expect(seen.findIndex((event) => event.detail?.title === "Updating the draft Flow")).toBeLessThan(seen.map((event) => event.detail?.title).lastIndexOf("Deciding the next step"));
+
+    seen = [];
+    const rerun = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => amend([{ step: 12, change: "rerun", input: {} }]) }));
+    await inScope(async () => {
+      await rerun.decide(request(5));
+      await rerun.executeTool({ callId: "rerun.12", toolId: "core.run_node", value: { node: "web.output.dom-extract" } });
+    });
+    expect(seen.map((event) => event.detail?.kind)).toEqual(["thought", "thought", "tool", "tool"]);
+    expect(seen[1]!.detail?.title).toBe("Updating the draft Flow");
+  });
+
+  it("says the edit the round stalled on from the stalled round's record, and passes the stall through", async () => {
+    const stalledError = new Error("stalled");
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => amend(), unusableDecisions: { stalled: () => stalledError } }));
+    let returned: unknown;
+    await inScope(async () => {
+      await observed.decide(request(20));
+      returned = observed.unusableDecisions!.stalled({
+        issueCodes: ["llm_evidence_loop.draft_amendments_refused"],
+        trace: [{ iteration: 20, decision: "amend_draft", resultCode: "llm_evidence_loop.draft_unchanged", amended: 0, amendmentsRefused: [{ step: 14, reason: "already_so" }] }] as never,
+        accounting: {} as never,
+        steps: []
+      });
+    });
+    expect(returned).toBe(stalledError);
+    expect(thoughts()).toEqual([["Didn't change the Flow", expect.stringMatching(/^The Flow already does that, so this was not done: adding the repeat/u), "failed"]]);
+  });
+});

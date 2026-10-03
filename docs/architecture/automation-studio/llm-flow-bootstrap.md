@@ -1287,8 +1287,10 @@ evidence of the last step that answered; a bad range is refused
 `run_flow.input_invalid`, `run_flow.nothing_in_flow` or
 `run_flow.not_a_flow_step`. It costs one decision and counts as one tool call;
 the steps it sends make no provider call and are not counted, as the dry run's
-are not. The chat shows "Running steps 3 to 5 of the Flow" and each step as
-"Trying part of the Flow: ..." in the `verifying` phase
+are not. The chat shows "Running part of the Flow" (or "the rest of the Flow",
+"one step of the Flow", "the Flow from its start": never a step number, which
+the person never sees) and each step as "Trying part of the Flow: ..." in the
+`verifying` phase
 (`runtime/activity/wording/core-tool.ts`, `tool-call.ts`).
 
 **It is never the Flow's test.** It records no draft step, writes no

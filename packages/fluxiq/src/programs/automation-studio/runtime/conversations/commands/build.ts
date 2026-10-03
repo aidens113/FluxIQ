@@ -10,7 +10,7 @@
 // travels as `authSessionId` because the endpoint refuses a request whose
 // session is not the caller's own.
 
-import type { AutomationStudioConversationCommandContext } from "./command.ts";
+import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandContext } from "./command.ts";
 import { automationStudioConversationCallCause } from "./progress.ts";
 
 export type AutomationStudioConversationBuildResult =
@@ -20,7 +20,8 @@ export type AutomationStudioConversationBuildResult =
       /** True when the build finished holding a question: the change cannot be applied until it is answered. */
       awaitingPermission: boolean;
     }
-  | { ok: false; cause: string };
+  /** `ending` is the build's own account for the person, when it gave one; the answer opens with it (`./progress.ts`). */
+  | { ok: false; cause: string; ending?: string };
 
 export async function buildAutomationStudioFlowFromConversation(
   context: AutomationStudioConversationCommandContext,
@@ -36,10 +37,24 @@ export async function buildAutomationStudioFlowFromConversation(
     ...(input.mode === "extend" ? { mode: "extend" } : context.startLocation ? { startLocation: context.startLocation } : {}),
     ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd })
   });
-  if (!response.ok) return { ok: false, cause: automationStudioConversationCallCause("the build", response) };
+  if (!response.ok) {
+    const ending = buildEnding(response);
+    return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}) };
+  }
   const adaptation = (response.payload as { adaptation?: { adaptationId?: unknown; permissionRequest?: unknown } } | undefined)?.adaptation;
   if (!adaptation || typeof adaptation.adaptationId !== "string" || !adaptation.adaptationId) {
     return { ok: false, cause: "the build answered without the change it made" };
   }
   return { ok: true, adaptationId: adaptation.adaptationId, awaitingPermission: Boolean(adaptation.permissionRequest) };
+}
+
+/**
+ * The build's own account of why it could not finish, written for the person --
+ * not doable and why, or the budget that ran out
+ * (`../../flow-bootstrap/generation-failure/build-ending.ts`) -- when the failed
+ * call carries one. The command's answer opens with it alone (`./progress.ts`).
+ */
+function buildEnding(response: AutomationStudioConversationCommandCallResult): string | undefined {
+  const ending = (response.payload as { diagnostic?: { ending?: { message?: unknown } } } | undefined)?.diagnostic?.ending?.message;
+  return typeof ending === "string" && ending.trim() ? ending.trim() : undefined;
 }

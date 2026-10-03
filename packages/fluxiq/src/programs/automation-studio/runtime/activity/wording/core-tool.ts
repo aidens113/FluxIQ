@@ -24,9 +24,11 @@ function listed(names: readonly string[]): string {
  * What one of Core's own look-up tools does, said from its input: reading how
  * the steps it names are used (`Looking up how to use “Type and Click”`), and
  * reading an earlier call's result again (`Looking again at what “open store
- * picker 1” found`), and running part of the Flow again (`Running steps 3 to
- * 5 of the Flow`, t244). Nothing for any other tool. These named no verb, so
- * they read "Working on the page" (t193).
+ * picker 1” found`), and running part of the Flow again (`Running the rest of
+ * the Flow`, t244). Nothing for any other tool. These named no verb, so they
+ * read "Working on the page" (t193). A part run's words name no step number:
+ * the person never sees the draft's numbering (t195); the cards of the steps it
+ * sends say what each one does.
  */
 export function automationStudioActivityCoreTool(call: { toolId: string; value?: unknown }): string | undefined {
   const value = call.value && typeof call.value === "object" && !Array.isArray(call.value) ? call.value as Record<string, unknown> : {};
@@ -44,8 +46,9 @@ export function automationStudioActivityCoreTool(call: { toolId: string; value?:
   if (call.toolId === RUN_FLOW) {
     const step = (each: unknown): each is number => typeof each === "number" && Number.isInteger(each) && each >= 1;
     if (!step(value.from)) return "Running part of the Flow";
-    if (!step(value.to)) return `Running the Flow from step ${value.from}`;
-    return value.to === value.from ? `Running step ${value.from} of the Flow` : `Running steps ${value.from} to ${value.to} of the Flow`;
+    if (value.to === value.from) return "Running one step of the Flow";
+    if (!step(value.to)) return value.from === 1 ? "Running the Flow from its start" : "Running the rest of the Flow";
+    return "Running part of the Flow";
   }
   return undefined;
 }

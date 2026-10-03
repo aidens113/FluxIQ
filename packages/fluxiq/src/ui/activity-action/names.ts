@@ -14,6 +14,7 @@ const PAIRS: readonly (readonly [ActivityActionKind, string])[] = [
   ["permission", "Permission"],
   ["draft", "Edit Flow"],
   ["test", "Test run"],
+  ["result_check", "Check result"],
   ["repair", "Repair"],
   ["join", "Join paths"],
   ["branch", "Choose path"],

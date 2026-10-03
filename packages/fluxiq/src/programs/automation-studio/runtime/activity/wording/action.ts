@@ -31,7 +31,9 @@ const MAX_SAID = 60;
  * table, which is how a card reads the verb back from a title.
  */
 const PHRASES: readonly Phrase[] = [
-  { verb: "navigate", plain: "Opening a page" },
+  // "Opening a page" named no page: its card read "Open page" alone (t193,
+  // `run-muqiojz4-04a7a8fc`). The page is named by its address path.
+  { verb: "navigate", plain: "Opening a page", named: (name) => `Opening ${quoted(name)}` },
   { verb: "back", plain: "Going back a page" },
   { verb: "click", plain: "Clicking on the page", named: (name) => `Clicking ${quoted(name)}` },
   { verb: "type", plain: "Typing into the page", named: (name) => `Typing into ${quoted(name)}`, said: (text, name) => `Typing ${said(text)}${name ? ` into ${quoted(name)}` : ""}` },
@@ -78,6 +80,59 @@ function elementName(parameters: unknown): string | undefined {
   return automationStudioActivityHumanLabel(identity.accessibleName, 60) ?? automationStudioActivityHumanLabel(identity.visibleText, 60);
 }
 
+/** The most of an address path a title shows. */
+const MAX_PATH = 60;
+/** The page-start shorthand a page view writes an address in ("~/ip/napkins"). */
+const START_RELATIVE = /^~(\/.*)?$/u;
+/** An absolute address, scheme and authority first; group 1 is its path. Read by shape, so nothing is thrown for a value that is no address. */
+const ABSOLUTE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/]+(\/.*)?$/u;
+/** A path segment that reads as a key or token: long, letters and digits, no word breaks. */
+const TOKEN_SEGMENT = /^(?=[^/]*\d)(?=[^/]*[A-Za-z])[A-Za-z0-9+=]{16,}$/u;
+
+/**
+ * The page a navigate opens, in words a person can tell apart: its address
+ * path, or "Home page" for the site's root. Never the host, the query or the
+ * fragment -- a query can carry a token -- and a segment that reads as a key
+ * is cut to "…". A long path keeps its end, which names the page, cut at the
+ * front ("…/ip/napkins"). Nothing for a value that is no address.
+ */
+function pageName(parameters: unknown): string | undefined {
+  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return undefined;
+  const url = (parameters as { url?: unknown }).url;
+  if (typeof url !== "string" || !url.trim() || /\s/u.test(url.trim())) return undefined;
+  const path = addressPath(url.trim());
+  if (path === undefined) return undefined;
+  const segments = path.split("/").filter(Boolean).map((segment) => TOKEN_SEGMENT.test(segment) ? "…" : decoded(segment));
+  if (!segments.length) return "Home page";
+  const whole = `/${segments.join("/")}`;
+  if (whole.length <= MAX_PATH) return whole;
+  let kept = "";
+  for (const segment of [...segments].reverse()) {
+    const next = `/${segment}${kept}`;
+    if (next.length + 1 > MAX_PATH) break;
+    kept = next;
+  }
+  return kept ? `…${kept}` : `…${whole.slice(-(MAX_PATH - 1))}`;
+}
+
+/** The path of an absolute, root-relative or page-start-relative address, without its query or fragment. */
+function addressPath(url: string): string | undefined {
+  const bare = url.split(/[?#]/u)[0] ?? "";
+  const start = START_RELATIVE.exec(bare);
+  if (start) return start[1] ?? "/";
+  if (bare.startsWith("/")) return bare;
+  const absolute = ABSOLUTE.exec(bare);
+  return absolute ? absolute[1] || "/" : undefined;
+}
+
+function decoded(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 /** Words a call types or looks for, collapsed and bounded; nothing for an empty one. */
 function saidText(text: string | undefined): string | undefined {
   const collapsed = typeof text === "string" ? text.replace(/\s+/gu, " ").trim().replace(/"/gu, "'") : "";
@@ -102,7 +157,8 @@ function notShownSentence(input: { parameters?: unknown; label?: string | undefi
 /**
  * What a step does, in a person's words: its authored label when it has one
  * ("Open search"), else the verb its id names with the element's name when the
- * step carries one ("Clicking “Get a free quote”"), else the verb alone
+ * step carries one ("Clicking “Get a free quote”"), or for a navigate the
+ * page's address path ("Opening “/ip/napkins”"), else the verb alone
  * ("Opening a page"). Nothing when the id names no known verb, so the caller
  * says something plain of its own rather than the id.
  *
@@ -121,7 +177,8 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
     if (!verb) continue;
     // The domain's own reading of the call first (the control a handle names,
     // the words it types), then the element a resolved node carries.
-    const name = automationStudioActivityHumanLabel(input.words?.target, 60) ?? (verb.named || verb.also?.named ? elementName(input.parameters) : undefined);
+    const name = automationStudioActivityHumanLabel(input.words?.target, 60)
+      ?? (verb.verb === "navigate" ? pageName(input.parameters) : verb.named || verb.also?.named ? elementName(input.parameters) : undefined);
     if (verb.also && words.slice(index + 1).some((rest) => verb.also!.word.test(rest))) return name && verb.also.named ? verb.also.named(name) : verb.also.plain;
     const text = saidText(input.words?.text);
     if (text !== undefined && verb.said) return verb.said(text, name);
