@@ -224,12 +224,20 @@ describe("what the projection admits", () => {
     const admitted = (rejectedSamples: unknown, rejectedSamplesAlone: unknown) =>
       extractionSummaryFromOutputs({ result: { extraction: { ...fields, conditions: counts, rejectedSamples, rejectedSamplesAlone } } });
     // A playback's form: each list is its alone rows. The label is the first text column, whole; an address is not text.
-    expect(admitted([[], [earbud, trevio, priceOnly]], [0, 3])?.conditions).toEqual({
+    // The rest of the row follows the label (t195-w34): the read account says the label with the value its condition tested.
+    const played = admitted([[], [earbud, trevio, priceOnly]], [0, 3])?.conditions as { aloneRows: Array<Array<Record<string, string>>> };
+    expect(played).toEqual({
       ...counts,
-      aloneRows: [[], [{ name: earbud.name }, { name: "Trevio T5 Wireless Earbuds, Wireless Charging Case, Rose Gold" }, { price: "$12.00" }]]
+      aloneRows: [[], [
+        { name: earbud.name, url: "/dp/B01", price: "$39.99" },
+        { name: "Trevio T5 Wireless Earbuds, Wireless Charging Case, Rose Gold", url: "/dp/B02", price: "$29.99" },
+        { price: "$12.00", url: "", name: "" }
+      ]]
     });
+    // The label is the first cell, whatever the field order.
+    expect(played.aloneRows[1]!.map((row) => Object.keys(row)[0])).toEqual(["name", "name", "price"]);
     // The exploring form: every rejected row, the alone ones leading. Only the lead is kept.
-    expect(admitted([[], [earbud, alsoFailedPrice]], [0, 1])?.conditions).toMatchObject({ aloneRows: [[], [{ name: earbud.name }]] });
+    expect(admitted([[], [earbud, alsoFailedPrice]], [0, 1])?.conditions).toMatchObject({ aloneRows: [[], [{ name: earbud.name, url: "/dp/B01", price: "$39.99" }]] });
     expect(JSON.stringify(admitted([[], [earbud, alsoFailedPrice]], [0, 1]))).not.toContain("Replacement");
     // Rows with no leads, from a page build that did not order them, say nothing of which were alone, and are not kept.
     expect(extractionSummaryFromOutputs({ result: { extraction: { ...fields, conditions: counts, rejectedSamples: [[], [earbud]] } } })?.conditions).toEqual(counts);

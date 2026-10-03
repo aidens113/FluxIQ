@@ -28,7 +28,12 @@
 // one count per condition it was given, in the order it was given them.
 //
 // **And the rows each condition removed by itself, by label** (`alone-rows.ts`),
-// carried, like the wording, only under the bound domain's declared keys.
+// carried, like the wording, only under the bound domain's declared keys. Each
+// with the value the condition tested (t195-w34): the stored row holds every
+// column, its label first (`service/summaries/extraction-summary.ts`), and is
+// cut here to its label and the cell of the column the condition tests
+// (`condition.ts`), the two-cell shape the build-test's rows arrive in. A row
+// stored before then holds its label alone and is said as before.
 //
 // **Every read, every condition and every dedupe key** (user, 2026-09-30:
 // "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT
@@ -41,7 +46,7 @@ import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptReco
 import { automationStudioEvidenceKey } from "../../llm/index.ts";
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
 import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
-import { automationStudioResultReadConditionText } from "./condition.ts";
+import { automationStudioResultReadConditionColumn, automationStudioResultReadConditionText } from "./condition.ts";
 import { automationStudioResultReadDedupe } from "./dedupe.ts";
 
 /** The members that mark an object as a read's own parameters. */
@@ -50,6 +55,8 @@ const READ_PARAMETER_KEYS = ["where", "paginate", "dedupe", "fields"];
 const STOP_WORD = /^[a-z_]{1,40}$/u;
 /** The paging modes that move to another page, lower-cased. */
 const PAGE_BY_PAGE_MODES: ReadonlySet<string> = new Set(["next", "numbered"]);
+/** A key a JavaScript object orders first whatever order it was written in, so never a row's second cell: it would read as the label. */
+const INDEX_KEY = /^\d+$/u;
 
 export type AutomationStudioResultReadAccountsInput = {
   /** The run's recorded attempts, in the order they ran. */
@@ -143,7 +150,9 @@ function conditionAccounts(
     const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index]) : undefined;
     const rows = count(rejected[index]);
     const byItself = count(alone[index]);
-    const leftOutOnlyByThis = deniedKeys ? automationStudioResultReadAloneRows(aloneRows[index], deniedKeys) : undefined;
+    const leftOutOnlyByThis = deniedKeys
+      ? automationStudioResultReadAloneRows(withTestedValue(aloneRows[index], automationStudioResultReadConditionColumn(written[index], columns)), deniedKeys)
+      : undefined;
     accounts.push({
       ...(condition ? { condition } : {}),
       ...(rows !== undefined ? { rejected: rows } : {}),
@@ -152,6 +161,25 @@ function conditionAccounts(
     });
   }
   return accounts;
+}
+
+/**
+ * Each stored row cut to its label (its first cell) and, where the row holds
+ * the column `tested` names and that is not the label's own, that cell after
+ * it. Anything that is not a list of rows comes back as it was, for the screen
+ * to refuse.
+ */
+function withTestedValue(rows: JsonValue | undefined, tested: string | undefined): JsonValue | undefined {
+  if (!Array.isArray(rows)) return rows;
+  return rows.map((row): JsonValue => {
+    if (!isRecord(row)) return row;
+    const [label] = Object.entries(row);
+    if (label === undefined) return row;
+    const cut: JsonObject = { [label[0]]: label[1] };
+    if (tested === undefined || tested === label[0] || INDEX_KEY.test(tested) || !Object.hasOwn(row, tested)) return cut;
+    const value = row[tested];
+    return typeof value === "string" ? { ...cut, [tested]: value } : cut;
+  });
 }
 
 /** The read's own parameters: the step's, or the one object inside them that holds what a read is authored with. */
