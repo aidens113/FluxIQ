@@ -1,11 +1,12 @@
 // The one purse a refuted result's whole repair spends from.
 //
 // **Why one purse, not one per part.** Each part of a repair was held to the
-// run cost ceiling, $0.25, on its own: the re-author build, the build again
+// run cost ceiling, then $0.25, on its own: the re-author build, the build again
 // after a failure that may pass, and the patch ladder the repair falls back to.
 // So one repair could spend about $0.75, and a run refuted again after its
 // re-run could start the whole sequence over. The user's rule is that a build,
-// and its repair, each spend at most $0.25 in total. So the repair of one run
+// and its repair, each spend at most the run cost ceiling in total
+// (`AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 by default). So the repair of one run
 // is one total: the ceiling, lowered by the Flow's own setting and never raised
 // by it. Each part is handed what is left of that total once the parts before
 // it have been charged what they reported spending, and a part with nothing
@@ -143,7 +144,7 @@ export function automationStudioResultRepairWithPurse(detail: AutomationStudioFl
   };
 }
 
-/** Rounded to the billionth, as the run ledger rounds its running total, so $0.25 less $0.20 is $0.05. */
+/** Rounded to the billionth, as the run ledger rounds its running total, so $0.10 less $0.07 is $0.03. */
 function roundUsd(value: number): number {
   return Math.round(value * 1_000_000_000) / 1_000_000_000;
 }

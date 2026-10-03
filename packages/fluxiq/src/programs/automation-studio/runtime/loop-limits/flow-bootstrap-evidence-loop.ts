@@ -7,8 +7,8 @@
 // (`run-mubs2sme-75efe4a4`, `run-mubri4yg-10d01258`). The standing decision is
 // that a build iterates while it makes progress and stops on a bound that
 // means something. So the loop is handed the run's own bounds as its `budget`
-// -- the resolver's token budget, the run's cost ceiling (the $0.25 run cost
-// ceiling, lowered by the resolver's total or the Flow's configured
+// -- the resolver's token budget, the run's cost ceiling (the run cost
+// ceiling, $0.10 by default, lowered by the resolver's total or the Flow's configured
 // `maxEstimatedCostUsdPerRun` and never raised by either), and a deadline --
 // and works out from what it has actually spent how many
 // decisions it has left, tells the model so on every decision, and offers its
@@ -85,7 +85,7 @@ export type AutomationStudioFlowBootstrapEvidenceLoopLimits = {
  *
  * `flowMaxEstimatedCostUsdPerRun` is the Flow's configured spend limit
  * (`adaptationPolicySettings.maxEstimatedCostUsdPerRun`). The build's total is
- * the run cost ceiling, $0.25, lowered by that limit and by the resolver's own
+ * the run cost ceiling (`AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 by default), lowered by that limit and by the resolver's own
  * total where either is a positive number, and never raised by them.
  */
 export function automationStudioFlowBootstrapEvidenceLoopLimits(resolution: {

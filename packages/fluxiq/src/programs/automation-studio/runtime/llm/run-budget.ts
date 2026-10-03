@@ -60,7 +60,7 @@ export type AutomationStudioLlmRunBudgetLimits = {
   maxCallsPerRun?: number;
   maxTotalTokensPerRun: number;
   maxOutputTokensPerRun: number;
-  /** The run's cost total, held against every reservation. Absent means the run cost ceiling, $0.25. */
+  /** The run's cost total, held against every reservation. Absent means the run cost ceiling, `AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD` ($0.10 by default). */
   maxEstimatedCostUsdPerRun?: number;
 };
 

@@ -21,6 +21,7 @@ import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { extractionSummaryFromOutputs } from "./extraction-summary.ts";
 import { hostTargetResolutionFromOutputs } from "./host-target-resolution.ts";
+import { automationStudioRunDetailStateRouting } from "./state-routing.ts";
 
 // Converting a runtime session into the run detail, summaries and intervention
 // records that the summary indexes and the public run views are built from.
@@ -168,6 +169,7 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
     const outputShape = attemptOutputShape(attempt.outputs);
     const hostTargetResolution = hostTargetResolutionFromOutputs(attempt.outputs);
     const extraction = extractionSummaryFromOutputs(attempt.outputs);
+    const stateRouting = automationStudioRunDetailStateRouting(attempt, failure?.code);
     return {
       attemptId: attempt.attemptId,
       nodeId: attempt.nodeId,
@@ -190,6 +192,10 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
       ...(attempt.skipped ? { skipped: attempt.skipped.reason === "state_routed"
         ? { reason: "state_routed", code: attempt.skipped.code, toNodeId: attempt.skipped.toNodeId, direction: attempt.skipped.direction }
         : { reason: "target_absent", code: attempt.skipped.code } } : {}),
+      // What state routing made of the page, whatever it decided: a step whose
+      // routing found no way on otherwise reads like one that never consulted
+      // it (`state-routing.ts`).
+      ...(stateRouting ? { stateRouting } : {}),
       metadata: {
         ...(attempt.regionId ? { regionId: attempt.regionId } : {}),
         ...(attempt.transitionComparison?.diffSummary ? { diffSummary: attempt.transitionComparison.diffSummary } : {}),

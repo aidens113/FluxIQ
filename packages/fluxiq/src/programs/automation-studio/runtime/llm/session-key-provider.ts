@@ -9,7 +9,8 @@
 // not an integrity failure.
 //
 // The limits returned are defaults for one call and one run, not checks: the
-// run's own budget enforces them. The run's total is the $0.25 run cost ceiling
+// run's own budget enforces them. The run's total is the run cost ceiling,
+// $0.10 unless FLUXIQ_LLM_RUN_COST_CEILING_USD says otherwise
 // (`flow-execution-limits/run-cost-ceiling.ts`), which the Flow's configured
 // `maxEstimatedCostUsdPerRun` may lower and never raise.
 
