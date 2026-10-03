@@ -556,12 +556,14 @@ function verificationDidNotFinish(reason: "timed_out" | "aborted" | "threw", err
     ? "it did not finish inside its deadline"
     : reason === "aborted"
       ? "the run was cancelled while it was being judged"
-      : `it failed before reaching a verdict (${errorName(error)})`;
+      : "it failed before reaching a verdict";
+  // The reason is said in the chat, so the error's kind goes on the record, not into the sentence.
   return {
     schemaVersion: "automation-studio.result-verification.v1",
     performed: false,
     code: AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES.notFinished,
-    reason: `Whether this run's result answers the request was never judged: ${why}.`
+    reason: `Whether this run's result answers the request was never judged: ${why}.`,
+    ...(reason === "threw" ? { failureCode: errorName(error) } : {})
   };
 }
 
@@ -611,7 +613,8 @@ const RECORD_PAGE_SIZE = 200;
 
 function unreadableResult(error: unknown): AutomationStudioResultVerificationOutcome {
   const code = "core.result.unreadable";
-  const observation = `The run's stored records could not be read: ${errorName(error)}.`;
+  // Said in the chat beside the reason: the error's kind is kept on the record instead.
+  const observation = "The run's stored records could not be read.";
   return {
     schemaVersion: "automation-studio.result-verification.v1",
     performed: true,
@@ -620,7 +623,8 @@ function unreadableResult(error: unknown): AutomationStudioResultVerificationOut
     code,
     reason: "What the run produced could not be read, so whether it answers the request was never judged.",
     observation,
-    failure: automationStudioResultFailureRecord({ verdict: "unsure", code, observation })
+    failure: automationStudioResultFailureRecord({ verdict: "unsure", code, observation }),
+    failureCode: errorName(error)
   };
 }
 
@@ -650,7 +654,7 @@ function errorName(error: unknown): string {
  */
 function recordedOutcome(outcome: AutomationStudioResultVerificationOutcome): JsonObject {
   const status = automationStudioResultVerificationStatus(outcome);
-  if (outcome.performed === false) return { status, performed: false, code: outcome.code, reason: outcome.reason };
+  if (outcome.performed === false) return { status, performed: false, code: outcome.code, reason: outcome.reason, ...(outcome.failureCode ? { failureCode: outcome.failureCode } : {}) };
   return {
     status,
     performed: true,
@@ -661,7 +665,8 @@ function recordedOutcome(outcome: AutomationStudioResultVerificationOutcome): Js
     observation: outcome.observation,
     ...(outcome.verdicts ? { verdicts: [...outcome.verdicts] } : {}),
     ...(outcome.calls !== undefined ? { calls: outcome.calls } : {}),
-    ...(outcome.repair ? { repair: automationStudioRecordedResultRepair(outcome.repair) } : {})
+    ...(outcome.repair ? { repair: automationStudioRecordedResultRepair(outcome.repair) } : {}),
+    ...(outcome.failureCode ? { failureCode: outcome.failureCode } : {})
   };
 }
 

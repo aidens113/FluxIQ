@@ -218,6 +218,25 @@ export type AutomationStudioFlowDraftStep = {
    * says which act it does needs no claim written again at the end.
    */
   acts?: string[];
+  /**
+   * The id of the step whose place in the Flow this one took when it was rerun
+   * (`../llm/evidence-loop/rerun-replacement.ts`), or of the step that one stood
+   * for: the start of the chain. A step carried from an earlier Flow (`f<n>`,
+   * `../llm/node-tools/draft-from-flow.ts`) must run in the build before the
+   * Flow can be tested whole (t244, user 2026-10-02), and the rerun that runs it
+   * is a new step with an id of its own; this is how the written Flow still
+   * knows it is that node, and keeps its id.
+   */
+  standsFor?: string;
+  /**
+   * What state routing recorded on the Flow node a carried step stands for
+   * (`metadata.routeSignatures`: the pages it ran between, and what it did,
+   * as the build signed them), carried unread from the re-seed to whatever
+   * writes the Flow, and onto a rerun that took its place. Read only where a
+   * step's own run recorded none, so a re-authored Flow keeps state routing for
+   * a node whose fresh signatures could not be taken.
+   */
+  routeSignatures?: JsonObject;
 };
 
 /**

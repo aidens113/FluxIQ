@@ -11,7 +11,8 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioFlowBootstrapIncompleteDraftStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../../service/index.ts";
-import { blankFixture, copyDataDirSeed, expectNoTopology, caller, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
+import { blankFixture, copyDataDirSeed, expectNoTopology, caller, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 // The case needs an `example`-domain project holding a blank Flow and its active instruction. Writing it through the service costs about a second on an idle
 // machine and several under load, inside each case's 15s budget, so it is written once
@@ -57,6 +58,8 @@ describe("a Flow build that runs out, and the build after it", () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
     const provider = mockProvider(async (request) => {
+      // The finished Flow's test is judged, and judged a success: a build finishes only on that (user, 2026-10-02).
+      if (isJudgeRequest(request)) return judgeReply("yes");
       requests.push(request);
       call += 1;
       // The continuation takes one step of its own -- a build must gather before it may finish -- and then finishes.
@@ -68,12 +71,13 @@ describe("a Flow build that runs out, and the build after it", () => {
     const instance = new AutomationStudioService({
       dataDir: tempRoot,
       llmProviderResolver: (() => ({ provider, maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
-      llmEvidenceRuntime: {
+      // A stand-in that says how to run its steps again, so the continued build's test can run the whole Flow from its start.
+      llmEvidenceRuntime: automationStudioReplayingBinding({
         domainId: "example",
         deniedEvidenceKeys: [],
         tools: [{ toolId: "example.act", description: "Change the target.", inputSchema: { type: "object" }, effect: "mutate" }],
         executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" })
-      }
+      })
     });
     services.add(instance);
 

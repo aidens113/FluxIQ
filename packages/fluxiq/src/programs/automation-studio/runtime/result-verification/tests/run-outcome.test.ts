@@ -100,6 +100,10 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(next.status).toBe("failed");
     expect(next.metadata?.resultVerification).toMatchObject({ status: "refuted", basis: "model_unavailable", code: "core.result.verdict_unavailable", verdicts: ["unsure"], calls: 1 });
     expect(context.requests).toHaveLength(1);
+    // The reason is said in chat, in words; the call's exact code stays on the record.
+    const recorded = next.metadata?.resultVerification as JsonObject;
+    expect(typeof recorded.failureCode).toBe("string");
+    expect(String(recorded.reason)).not.toContain(String(recorded.failureCode));
   });
 
   it("fails closed, on one call, when the reply never says", async () => {
@@ -317,7 +321,10 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     expect(next.status).toBe("succeeded");
     const recorded = next.metadata?.resultVerification as JsonObject;
     expect(recorded.code).toBe("core.result.verification_did_not_finish");
-    expect(String(recorded.reason)).toContain("(Error)");
+    // The reason is said in chat: words only. The error's kind stays on the record.
+    expect(String(recorded.reason)).toContain("it failed before reaching a verdict.");
+    expect(String(recorded.reason)).not.toContain("(Error)");
+    expect(recorded.failureCode).toBe("Error");
     expect(String(recorded.reason)).not.toContain("SQLITE_CANTOPEN");
   });
 
@@ -338,6 +345,8 @@ describe("verifyAutomationStudioRuntimeSessionResult", () => {
     const recorded = next.metadata?.resultVerification as JsonObject;
     expect(recorded.code).toBe("core.result.unreadable");
     expect(String(recorded.observation)).not.toContain("SQLITE_CANTOPEN");
+    expect(String(recorded.observation)).toBe("The run's stored records could not be read.");
+    expect(recorded.failureCode).toBe("Error");
     expect(context.requests).toHaveLength(0);
   });
 

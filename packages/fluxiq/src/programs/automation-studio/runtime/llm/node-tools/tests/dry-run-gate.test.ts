@@ -30,7 +30,12 @@ import {
   type AutomationStudioFlowDraftTestReport,
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "../../index.ts";
-import { AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import {
+  AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE,
+  AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE,
+  automationStudioFlowDraftFlowSignature,
+  type AutomationStudioFlowDraftStep
+} from "../../../flow-draft/index.ts";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES } from "../replay.ts";
 
@@ -54,7 +59,7 @@ const step = (position: number, over: Partial<AutomationStudioFlowDraftStep> = {
 });
 
 /** A gate over `steps`, whose replayed steps answer `answers[position]` (replayed when absent). */
-function harness(steps: AutomationStudioFlowDraftStep[], answers: Record<number, string>) {
+function harness(steps: AutomationStudioFlowDraftStep[], answers: Record<number, string>, options: { requireRunnable?: boolean; requireLibrarySteps?: boolean } = {}) {
   const calls: string[] = [];
   const shown: { callId: string; toolId: string; value: JsonValue }[] = [];
   let reused = 0;
@@ -67,6 +72,8 @@ function harness(steps: AutomationStudioFlowDraftStep[], answers: Record<number,
   };
   const gate = automationStudioFlowDraftDryRunGate({
     enabled: true,
+    ...(options.requireRunnable ? { requireRunnable: true } : {}),
+    ...(options.requireLibrarySteps ? { requireLibrarySteps: true } : {}),
     steps,
     executeTool,
     accountEvidence: (value) => JSON.stringify(value).length,
@@ -82,7 +89,7 @@ function harness(steps: AutomationStudioFlowDraftStep[], answers: Record<number,
     return { answer, ran: calls.slice(from) };
   };
   const lastVerdict = (): JsonObject => shown.filter((entry) => entry.toolId === "core.dry_run").at(-1)!.value as JsonObject;
-  return { complete, lastVerdict, reused: () => reused, reports };
+  return { complete, lastVerdict, reused: () => reused, reports, shown };
 }
 
 const refusedFor = (...codes: string[]) => ({ issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_ISSUE_CODE, ...codes] });
@@ -295,7 +302,10 @@ describe("the dry run of a draft completed again unchanged", () => {
     expect(run.shown.at(-1)).toMatch(/\.again$/u);
   });
 
-  it("is judged again, not replayed, when a routing word makes the failing step one the Flow does not always run", async () => {
+  it("is replayed again, not judged from the old replays, when a routing word makes the failing step one the Flow does not always run", async () => {
+    // User rule (2026-10-02): marking a step optional changes the Flow, and a
+    // changed Flow is finished only by a run of it -- never by an earlier
+    // run's outcomes judged again under the new routing.
     const steps = [pressOn(1, "#open"), pressOn(2, "#gone")];
     const reused = vi.fn();
     const run = gate(steps, reused);
@@ -304,9 +314,8 @@ describe("the dry run of a draft completed again unchanged", () => {
 
     steps[1]!.routing = { kind: "optional" };
     expect(await run.dryRun()).toBeUndefined();
-    expect(run.executeTool).toHaveBeenCalledTimes(6);
-    // Passed on an earlier replay, so the attempt records it as reused.
-    expect(reused).toHaveBeenCalledTimes(1);
+    expect(run.executeTool).toHaveBeenCalledTimes(9);
+    expect(reused).not.toHaveBeenCalled();
   });
 
   it("is replayed again once the steps themselves change", async () => {
@@ -341,7 +350,8 @@ describe("what a passing test reports", () => {
     // Completed again unchanged: not replayed, and reported as the first replay's.
     expect(await run.complete()).toEqual({ answer: undefined, ran: [] });
     expect(run.reports).toHaveLength(2);
-    expect(run.reports[1]).toEqual({ verdict: first.verdict, observations: first.observations, reused: true });
+    expect(run.reports[1]).toEqual({ verdict: first.verdict, observations: first.observations, reused: true, signature: first.signature });
+    expect(first.signature).toBe(automationStudioFlowDraftFlowSignature(steps));
   });
 
   it("reports nothing for a refused replay", async () => {
@@ -352,15 +362,20 @@ describe("what a passing test reports", () => {
     expect(run.reports).toEqual([]);
   });
 
-  it("reports a pass after the made-optional step with the verdict that passed", async () => {
-    const run = harness([step(2), step(3), step(4, { acts: ["a1"] })], { 3: UNREPRODUCIBLE });
+  it("reports a pass after the made-optional step with the verdict that passed, keyed on the Flow with that step optional", async () => {
+    const steps = [step(2), step(3), step(4, { acts: ["a1"] })];
+    const before = automationStudioFlowDraftFlowSignature(steps);
+    const run = harness(steps, { 3: UNREPRODUCIBLE });
     expect((await run.complete()).answer).toBeUndefined();
     expect(run.reports).toHaveLength(1);
     expect(run.reports[0]).toMatchObject({ reused: false, verdict: { ok: true } });
     expect(run.reports[0]!.observations.map((each) => each.step)).toEqual([2, 3, 4]);
+    // The run that proved step 3 optional is a run of the Flow with it optional.
+    expect(run.reports[0]!.signature).toBe(automationStudioFlowDraftFlowSignature(steps));
+    expect(run.reports[0]!.signature).not.toBe(before);
   });
 
-  it("reports the stored observations when a twice-replayed draft passes judged from its stored outcomes", async () => {
+  it("reports a new replay's observations when a twice-replayed draft passes once its failing step is marked optional", async () => {
     const steps = [pressOn(1, "#open"), pressOn(2, "#gone")];
     const run = gate(steps);
     await run.dryRun();
@@ -369,15 +384,148 @@ describe("what a passing test reports", () => {
 
     steps[1]!.routing = { kind: "optional" };
     expect(await run.dryRun()).toBeUndefined();
-    expect(run.executeTool).toHaveBeenCalledTimes(6);
+    expect(run.executeTool).toHaveBeenCalledTimes(9);
     expect(run.observed).toHaveBeenCalledTimes(1);
     const report = run.observed.mock.calls[0]![0] as AutomationStudioFlowDraftTestReport;
-    expect(report.reused).toBe(true);
-    expect(report.verdict.ok).toBe(true);
+    expect(report.reused).toBe(false);
+    expect(report.verdict).toMatchObject({ ok: true, attempt: 3 });
+    expect(report.signature).toBe(automationStudioFlowDraftFlowSignature(steps));
     expect(report.observations).toEqual([
       { step: 1, stepId: "d1", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed, evidence: {} },
       { step: 2, stepId: "d2", resultCode: AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.failed, evidence: {} }
     ]);
+  });
+});
+
+// User rule (2026-10-02): a Flow is finished only after a run of the whole Flow
+// from its start was judged success on the Flow as it finally stands; any edit
+// after that run needs another full run. The gate's clean verdict is therefore
+// a verdict about the Flow -- routing and settings included -- not only about
+// the steps a replay sends.
+describe("a clean verdict is about the Flow as it stands", () => {
+  it("replays again when routing changes after a clean replay", async () => {
+    const steps = [step(2), step(3), step(4)];
+    const run = harness(steps, {});
+    expect((await run.complete()).answer).toBeUndefined();
+    expect(await run.complete()).toEqual({ answer: undefined, ran: [] });
+
+    steps[1]!.routing = { kind: "optional" };
+    const changed = await run.complete();
+    expect(changed.answer).toBeUndefined();
+    expect(changed.ran).toEqual(["dryrun.2.reset", "dryrun.2.2", "dryrun.2.3", "dryrun.2.4"]);
+    expect(run.reports.map((report) => report.reused)).toEqual([false, true, false]);
+    expect(run.reports[2]!.signature).toBe(automationStudioFlowDraftFlowSignature(steps));
+    expect(run.reports[2]!.signature).not.toBe(run.reports[0]!.signature);
+  });
+
+  it("replays again when a step's settings change after a clean replay", async () => {
+    const steps = [step(2), step(3)];
+    const run = harness(steps, {});
+    expect((await run.complete()).answer).toBeUndefined();
+    steps[0]!.settings = { waitMs: 500 };
+    expect((await run.complete()).ran).toEqual(["dryrun.2.reset", "dryrun.2.2", "dryrun.2.3"]);
+  });
+});
+
+// A re-authored Flow is an extend build seeded with the earlier Flow's steps
+// (`../draft-from-flow.ts`): carried steps `f<n>` with no `ranWith`, no
+// `replay` and no consequence declaration. Before this gate such a draft was
+// simply not replayable, the test never ran, and the build finished
+// unverified -- then was approved and applied before anything ran it whole.
+describe("a Flow holding steps carried from an earlier Flow that never ran in this build", () => {
+  const carried = (position: number): AutomationStudioFlowDraftStep => {
+    const { ranWith: _ranWith, replay: _replay, ...rest } = step(position, { id: `f${position}` });
+    return rest;
+  };
+
+  it("is refused full_run_required, naming those steps, with no replay and nothing observed", async () => {
+    const steps = [carried(1), step(2), carried(3)];
+    const run = harness(steps, {});
+    expect(await run.complete()).toEqual({ answer: { issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] }, ran: [] });
+    expect(run.reports).toEqual([]);
+    expect(run.reused()).toBe(0);
+    expect(run.lastVerdict()).toMatchObject({
+      code: AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE,
+      steps: [{ step: 1, replayed: "not_run_in_this_build" }, { step: 3, replayed: "not_run_in_this_build" }]
+    });
+    expect(run.shown.at(-1)).toMatchObject({ callId: "core.dry_run.unrun.1", toolId: "core.dry_run" });
+  });
+
+  it("does not move the target or touch the executor", async () => {
+    const steps = [carried(1), pressOn(2, "#open")];
+    const run = gate(steps);
+    expect(await run.dryRun()).toEqual({ issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] });
+    expect(await run.dryRun()).toEqual({ issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] });
+    expect(run.executeTool).not.toHaveBeenCalled();
+    expect(run.targetMoved).not.toHaveBeenCalled();
+    expect(run.observed).not.toHaveBeenCalled();
+    expect(run.shown).toEqual(["core.dry_run.unrun.1", "core.dry_run.unrun.2"]);
+  });
+
+  it("is replayed once each carried step was rerun and carries ranWith and replay", async () => {
+    const steps = [carried(1), step(2)];
+    const run = harness(steps, {});
+    expect((await run.complete()).answer).toEqual({ issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] });
+    steps[0] = step(1, { id: "f1" });
+    const rerun = await run.complete();
+    expect(rerun.answer).toBeUndefined();
+    expect(rerun.ran).toEqual(["dryrun.1.reset", "dryrun.1.1", "dryrun.1.2"]);
+    expect(run.reports[0]!.signature).toBe(automationStudioFlowDraftFlowSignature(steps));
+  });
+
+  // t244, beyond carried steps: a build's Flow the test cannot run whole for
+  // any reason is refused at completion, rather than passed untested and left
+  // for a judge to be paid to read a test that never ran. Only a caller that
+  // authors a Flow asks for this (`requireRunnable`); the recovery ladder's
+  // exploration authors none, and finishes with whatever it ran.
+  it("refuses a build's step that left nothing to run it again with as cannot_run_again", async () => {
+    const { replay: _replay, ...bare } = step(2);
+    const run = harness([step(1), bare], {}, { requireRunnable: true });
+    expect(await run.complete()).toEqual({ answer: { issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] }, ran: [] });
+    expect(run.lastVerdict()).toMatchObject({ steps: [{ step: 2, replayed: "cannot_run_again" }] });
+  });
+
+  it("refuses a build's first step with nothing to put the target back where the Flow starts", async () => {
+    const first = step(1);
+    const run = harness([{ ...first, replay: { produced: { rows: 1 } } }, step(2)], {}, { requireRunnable: true });
+    expect(await run.complete()).toEqual({ answer: { issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] }, ran: [] });
+    expect(run.lastVerdict()).toMatchObject({ steps: [{ step: 1, replayed: "cannot_run_again" }] });
+  });
+
+  it("refuses a build's Flow none of whose steps ran in this build, naming none", async () => {
+    const run = harness([{ ...step(1), disposition: "dropped" }], {}, { requireRunnable: true });
+    expect(await run.complete()).toEqual({ answer: { issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] }, ran: [] });
+    expect(run.lastVerdict()).toMatchObject({ steps: [], instruction: expect.stringContaining("no step of this Flow has run in this build") });
+  });
+
+  // Where the build offers the node library, a step taken through another tool
+  // sends the Flow to the plan the reply wrote out, which never ran: the test
+  // would run one Flow and the judge's yes be stored on another.
+  it("refuses a build's step taken off the node library, where the library is offered", async () => {
+    const library = (position: number) => step(position, { toolId: "core.run_node" });
+    const run = harness([library(1), step(2, { toolId: "domain.act" }), library(3)], {}, { requireRunnable: true, requireLibrarySteps: true });
+    expect(await run.complete()).toEqual({ answer: { issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] }, ran: [] });
+    expect(run.lastVerdict()).toMatchObject({ steps: [{ step: 2, replayed: "not_a_library_step" }] });
+    const offered = harness([library(1), library(2)], {}, { requireRunnable: true, requireLibrarySteps: true });
+    expect((await offered.complete()).answer).toBeUndefined();
+  });
+
+  it("passes a step of a host's own tool where no library is offered: the reply's plan is all it has", async () => {
+    const run = harness([step(1, { toolId: "domain.act" })], {}, { requireRunnable: true });
+    expect((await run.complete()).answer).toBeUndefined();
+  });
+
+  it("passes, untested, what a caller that authors no Flow cannot run again", async () => {
+    const { replay: _replay, ...bare } = step(2);
+    const run = harness([step(1), bare], {});
+    expect(await run.complete()).toEqual({ answer: undefined, ran: [] });
+  });
+
+  it("does not count a carried step the model dropped", async () => {
+    const steps = [carried(1), step(2)];
+    steps[0]!.disposition = "dropped";
+    const run = harness(steps, {});
+    expect((await run.complete()).answer).toBeUndefined();
   });
 });
 

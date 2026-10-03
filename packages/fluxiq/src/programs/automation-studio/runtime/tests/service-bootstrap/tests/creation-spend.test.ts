@@ -26,6 +26,7 @@ import {
   type AutomationStudioLlmTaskRequest
 } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, caller, copyDataDirSeed, isJudgeRequest, judgeReply, mockProvider, plan, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 const SEEDING_TIMEOUT_MS = 60_000;
@@ -133,22 +134,24 @@ describe("a Flow creation's one purse", () => {
 
   it("(b) clears the record when a build proposes a Flow", async () => {
     // The incomplete-draft pattern: the first build runs out of its four calls,
-    // the second continues its draft, takes one step and finishes.
+    // the second continues its draft, takes one step and finishes once its test of the whole Flow is judged a success.
     let continuedAt: number | undefined;
     let call = 0;
-    const provider = mockProvider(async () => {
+    const provider = mockProvider(async (request) => {
+      if (isJudgeRequest(request)) return judgeReply("yes");
       call += 1;
       const decision: JsonObject = continuedAt !== undefined && call > continuedAt + 1
         ? { kind: "complete", result: { summary: "Built.", plan: plan() } }
         : { kind: "tool_call", callId: `call.${call}`, toolId: "example.act", input: { press: call }, add: true };
       return { response: { kind: "evidence_tool_decision", summary: "Step.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
     });
-    const acting: AutomationStudioLlmEvidenceRuntimeBinding = {
+    // A stand-in that says how to run its steps again, so the finishing build's test can run the whole Flow from its start.
+    const acting: AutomationStudioLlmEvidenceRuntimeBinding = automationStudioReplayingBinding({
       domainId: "example",
       deniedEvidenceKeys: [],
       tools: [{ toolId: "example.act", description: "Change the target.", inputSchema: { type: "object" }, effect: "mutate" }],
       executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" })
-    };
+    });
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
     const instance = service(provider, acting, { maxCallsPerRun: 4 });
     const request = { projectId: project.id, flowId: flow.flowId, evidenceGuided: true as const, caller: caller() };

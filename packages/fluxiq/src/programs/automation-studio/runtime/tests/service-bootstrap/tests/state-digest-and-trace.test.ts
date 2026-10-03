@@ -14,7 +14,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, caller, mockProvider, plan, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
+import { blankFixture, caller, isJudgeRequest, judgeReply, mockProvider, plan, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
 type DigestAsk = { projectId: string; flowId: string; callId: string; toolId: string; phase: string };
 
@@ -93,16 +94,21 @@ describe("what a build records about the steps it ran", () => {
   });
 });
 
-/** One build: look, act, then complete with a plan that needs nothing permitted. */
+/**
+ * One build: look, act (added to the Flow), then complete with a plan that needs
+ * nothing permitted. The act is the Flow's one step, so the build's test runs it
+ * again (answered by the replaying stand-in, which takes no digest) and the judge
+ * of that test says yes: a Flow is finished only on a whole-Flow run judged success.
+ */
 async function build(options: { digests?: boolean } = {}) {
   const asked: DigestAsk[] = [];
   const decisions: JsonObject[] = [
     { kind: "tool_call", callId: "call.look", toolId: "example.look", input: {} },
-    { kind: "tool_call", callId: "call.act", toolId: "example.act", input: {} },
+    { kind: "tool_call", callId: "call.act", toolId: "example.act", input: {}, add: true },
     { kind: "complete", result: { summary: "Built.", plan: plan() } }
   ];
   let call = 0;
-  const provider = mockProvider(async () => ({
+  const provider = mockProvider(async (request) => isJudgeRequest(request) ? judgeReply() : ({
     response: { kind: "evidence_tool_decision", summary: "Step.", decision: decisions[Math.min(call++, decisions.length - 1)]! },
     usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 }
   }));
@@ -110,7 +116,7 @@ async function build(options: { digests?: boolean } = {}) {
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
     llmProviderResolver: (() => ({ provider, maxCallsPerRun: 6 })) as never,
-    llmEvidenceRuntime: binding(asked, options.digests !== false)
+    llmEvidenceRuntime: automationStudioReplayingBinding(binding(asked, options.digests !== false))
   });
   services.add(instance);
   const generation = instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() });

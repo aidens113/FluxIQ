@@ -1,206 +1,148 @@
-// A rerun's put-back does again the steps that built on the same page before
-// it (`../step-place.ts`).
+// Where a rerun runs, and what its result says about it (`../step-place.ts`).
 //
-// t193 lane B, `run-muqiojz4-04a7a8fc` (bigbox cart): draft step 9 pressed "+"
-// on the towel page (quantity 2) and step 10 pressed Add to cart there. The
-// rerun of step 10 reset the target to the towel page's address, which brought
-// the page back at quantity 1, so the rerun added one towel; the model then
-// "fixed" the quantity by rerunning step 10 as "+", and the Flow lost its Add
-// to cart. The site below is that towel page: an address, a swatch, a quantity
-// and a cart, where a reset to the address puts back none of the in-page state.
-import { describe, expect, it } from "vitest";
-import type { JsonObject } from "../../../../../../core/index.ts";
+// Live run `run-muqk713g-d08ad3dc` (C6, steps 0042-0060): after the saved Flow's
+// answer was refuted, the re-author seeded its draft from the Flow. A seeded
+// step records no `replay.from`, so every rerun of the Flow's list read ran on
+// results page 5, where the refuted run had left the page: 1 page, 11 items,
+// kept 0, unfiltered. Nothing in the rerun's result said it had run there, so
+// the model chased a dedupe and dropped a correct condition.
+//
+// The fake site is that shape: five results pages, 13 rows the filter keeps on
+// pages 1-4 and none on page 5, and a read that pages to the end.
+import { describe, expect, it, vi } from "vitest";
+import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
+import type { AutomationStudioFlowEdge, AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../../model/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
-import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
-import { automationStudioNodeRerunFromItsPlace } from "../index.ts";
+import { automationStudioFlowDraftSeedFromFlow } from "../draft-from-flow.ts";
+import { automationStudioRunNodeStartPages } from "../run-start-pages.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../run-node.ts";
+import { automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceNoted, type AutomationStudioNodeRerunPlace } from "../step-place.ts";
 
-const HOME = "https://bigbox.test/";
-const TOWELS = "https://bigbox.test/p/towels";
-const CART = "https://bigbox.test/cart";
+const CHEAP_PER_PAGE = [4, 3, 3, 3, 0];
 
-type SiteStep = {
-  node: string;
-  /** Where the step found the target; absent, it recorded nothing. */
-  from?: string;
-  consequences?: string[];
-  /** Not proposed: a look the model took, which is not in the Flow. */
-  taken?: true;
-  routing?: AutomationStudioFlowDraftStep["routing"];
-};
-
-const draft = (site: SiteStep[]): AutomationStudioFlowDraftStep[] => site.map((each, index) => {
-  const consequences = each.consequences ?? [];
-  return {
-    position: index + 1,
-    id: `d${index + 1}`,
-    iteration: index + 1,
-    actionId: each.node,
-    toolId: "core.run_node",
-    input: { node: each.node, parameters: {}, consequences },
-    ranWith: { node: each.node, parameters: {}, consequences },
-    effect: each.taken ? "observe" : "mutate",
-    effectApplied: true,
-    disposition: each.taken ? "taken" : "kept",
-    proposes: !each.taken,
-    stateBefore: `state-before-${index + 1}`,
-    ...(each.routing ? { routing: each.routing } : {}),
-    ...(each.from === undefined ? {} : { replay: { from: { location: each.from } } })
-  };
-});
-
-const answer = (code: string, effectApplied = false, evidence: JsonObject = { said: code }): AutomationStudioLlmEvidenceToolExecutionResult =>
-  ({ kind: "llm_evidence_tool_execution", evidence, effectApplied, resultCode: code });
-
-/**
- * The towel page. A reset goes to an address and nothing more: blue swatch
- * unchosen, quantity 1. `missing` names presses whose control is not there.
- */
-function towels(options: { missing?: string[] } = {}) {
-  const page = { at: CART, swatch: "", quantity: 1, cart: 0 };
-  const calls: { callId: string; value: JsonObject }[] = [];
-  const press = (node: string): void => {
-    if (node === "node.go_towels") page.at = TOWELS;
-    if (node === "node.blue") page.swatch = "blue";
-    if (node === "node.plus") page.quantity += 1;
-    if (node === "node.add_to_cart") page.cart += page.quantity;
-  };
-  const executeTool = async ({ callId, value }: { callId: string; toolId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
-    calls.push({ callId, value });
+/** The results site; `reset` is a replay's `{ replay: "reset", from }`. */
+function site(start = 1) {
+  let page = start;
+  return vi.fn(async ({ value }: { callId: string; toolId: string; value: JsonObject }) => {
     if (value.replay === "reset") {
-      page.at = String((value.from as JsonObject).location);
-      page.swatch = "";
-      page.quantity = 1;
-      return answer("core.replay.replayed", true);
+      const location = (value.from as JsonObject | undefined)?.location;
+      if (typeof location !== "string") return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: false }, effectApplied: false, resultCode: "core.replay.reset_failed" };
+      page = Number(location.slice("page=".length));
+      return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };
     }
-    const node = String(value.node);
-    if (options.missing?.includes(node)) return answer(value.replay ? "core.replay.failed" : "web.action.failed", false, { ok: false, missing: node });
-    if (value.replay === "verify") return answer("core.replay.verified");
-    press(node);
-    return answer(value.replay === "step" ? "core.replay.replayed" : "web.action.succeeded", true);
-  };
-  return { page, calls, executeTool };
+    const pages = CHEAP_PER_PAGE.slice(page - 1);
+    const kept = pages.reduce((sum, cheap) => sum + cheap, 0);
+    page = 5;
+    return { kind: "llm_evidence_tool_execution" as const, evidence: { rows: kept || 11, unfiltered: kept === 0, pagesRead: pages.length }, effectApplied: true, resultCode: "web.inspect.succeeded" };
+  });
 }
 
-const STEPS: SiteStep[] = [
-  { node: "node.go_towels", from: HOME },
-  { node: "node.blue", from: TOWELS },
-  { node: "node.read_price", from: TOWELS, taken: true },
-  { node: "node.plus", from: TOWELS },
-  { node: "node.add_to_cart", from: TOWELS, consequences: ["create_new"] },
-  { node: "node.go_cart", from: TOWELS }
-];
-
-const rerunOf = async (site: SiteStep[], position: number, host: ReturnType<typeof towels>, now = "state-on-the-cart-page") => {
-  const steps = draft(site);
-  const place = await automationStudioNodeRerunFromItsPlace({ step: steps[position - 1]!, steps, now, callId: `rerun.${position}`, executeTool: host.executeTool });
-  // The loop runs the rerun's own call only when the place was reached.
-  if (place.kind !== "unreachable") await host.executeTool({ callId: `rerun.${position}`, toolId: "core.run_node", value: { node: site[position - 1]!.node, parameters: {} } });
-  return place;
+const node = (id: string, definitionId: string): AutomationStudioFlowNode => ({ id, definitionId, parameterValues: {} });
+const edge = (id: string, sourceNodeId: string, targetNodeId: string): AutomationStudioFlowEdge => ({ id, sourceNodeId, targetNodeId });
+const FLOW = {
+  nodes: [node("main.s1", "web.output.browser-navigate"), node("main.s4", "web.output.dom-type"), node("main.s5", "web.output.dom-extract_list")],
+  edges: [edge("e1", "main.s1", "main.s4"), edge("e2", "main.s4", "main.s5")]
 };
 
-describe("a rerun's put-back", () => {
-  it("does again, in order, the proposed steps before it that started on the same page, then runs the rerun on the page they built", async () => {
-    const host = towels();
-    const place = await rerunOf(STEPS, 5, host);
+/** The refuted run's attempts, with the page the host captured before each node. */
+function refutedRun(): { actionAttempts: AutomationStudioFlowRunActionAttemptRecord[] } {
+  const ran = (order: number, nodeId: string, location: string): AutomationStudioFlowRunActionAttemptRecord => ({
+    attemptId: `a${order}`, nodeId, definitionId: "web", order, status: "succeeded", startedAt: order,
+    metadata: { stateRefs: { beforeAction: { stateSnapshotId: `s${order}`, stateRef: `s${order}`, capturedAt: order, from: { location } } } }
+  });
+  return { actionAttempts: [ran(1, "main.s1", "page=0"), ran(2, "main.s4", "page=0"), ran(3, "main.s5", "page=1")] };
+}
 
-    expect(host.calls.map((call) => [call.callId, call.value.replay ?? null, call.value.node ?? null])).toEqual([
-      ["rerun.5.place", "reset", null],
-      ["rerun.5.place.2", "step", "node.blue"],
-      ["rerun.5.place.4", "step", "node.plus"],
-      ["rerun.5", null, "node.add_to_cart"]
+/** The rerun the evidence loop makes: put the page back, then run the step's own call. */
+async function rerun(step: AutomationStudioFlowDraftStep, startedOn: JsonObject | undefined, executeTool: ReturnType<typeof site>) {
+  const place = await automationStudioNodeRerunFromItsPlace({ steps: [], step, startedOn, now: "page=5", callId: "rerun.5", executeTool });
+  const ran = place.kind === "unreachable" ? place.result : await executeTool({ callId: "rerun.5", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, value: { node: "web.output.dom-extract_list" } });
+  return { place, ran: automationStudioNodeRerunPlaceNoted(place, ran) as { evidence: JsonObject } };
+}
+
+describe("a rerun of a step seeded from the Flow, after the refuted run left the page on 5", () => {
+  it("puts the page back where the node started in that run, and reads the 13 rows rather than page 5's 11 unfiltered", async () => {
+    const seed = automationStudioFlowDraftSeedFromFlow({ ...FLOW, startPages: automationStudioRunNodeStartPages(refutedRun()) });
+    const read = seed.steps[2]!;
+    const executeTool = site(5);
+
+    const { place, ran } = await rerun(read, seed.startedOnByStepId[read.id!], executeTool);
+
+    expect(executeTool.mock.calls.map(([call]) => [call.callId, call.value])).toEqual([
+      ["rerun.5.place", { replay: "reset", from: { location: "page=1" } }],
+      ["rerun.5", { node: "web.output.dom-extract_list" }]
     ]);
-    // Two towels, blue: what the Flow's own steps 2 and 4 make before step 5.
-    expect(host.page).toMatchObject({ at: TOWELS, swatch: "blue", quantity: 2, cart: 2 });
-    expect(place).toMatchObject({
-      kind: "put_back",
-      callId: "rerun.5.place",
-      doneAgain: [
-        { step: 2, actionId: "node.blue", callId: "rerun.5.place.2", outcome: "replayed" },
-        { step: 4, actionId: "node.plus", callId: "rerun.5.place.4", outcome: "replayed" }
-      ]
-    });
+    expect(place).toEqual({ kind: "put_back", callId: "rerun.5.place", startPage: "seeded_run", doneAgain: [] });
+    expect(ran.evidence).toMatchObject({ rows: 13, unfiltered: false, pagesRead: 5, rerunPlace: { place: "put_back", startPage: "seeded_run" } });
   });
 
-  it("checks a step whose effect lasts rather than repeating it, and still does the steps after it", async () => {
-    const site: SiteStep[] = [
-      { node: "node.go_towels", from: HOME },
-      { node: "node.blue", from: TOWELS },
-      { node: "node.gift_wrap", from: TOWELS, consequences: ["create_new"] },
-      { node: "node.plus", from: TOWELS },
-      { node: "node.add_to_cart", from: TOWELS }
-    ];
-    const host = towels();
-    const place = await rerunOf(site, 5, host);
+  it("before the fix the same rerun read page 5 alone, and now its result says it ran where the page was", async () => {
+    const [, , read] = automationStudioFlowDraftSeedFromFlow(FLOW).steps;
+    const executeTool = site(5);
 
-    expect(host.calls.map((call) => [call.callId, call.value.replay ?? null])).toEqual([
-      ["rerun.5.place", "reset"],
-      ["rerun.5.place.2", "step"],
-      ["rerun.5.place.3", "verify"],
-      ["rerun.5.place.4", "step"],
-      ["rerun.5", null]
-    ]);
-    expect(place).toMatchObject({ kind: "put_back", doneAgain: [{ step: 2 }, { step: 3, outcome: "verified" }, { step: 4 }] });
-    expect(host.page.quantity).toBe(2);
+    const { place, ran } = await rerun(read!, undefined, executeTool);
+
+    expect(executeTool.mock.calls.map(([call]) => call.callId)).toEqual(["rerun.5"]);
+    expect(place).toEqual({ kind: "in_place", why: "start_page_unknown" });
+    expect(ran.evidence).toMatchObject({ rows: 11, unfiltered: true, pagesRead: 1 });
+    expect(ran.evidence.rerunPlace).toMatchObject({ place: "in_place", reason: "start_page_unknown" });
+    expect(String((ran.evidence.rerunPlace as JsonObject).detail)).toMatch(/where the page is now/u);
+  });
+});
+
+describe("where a rerun runs", () => {
+  const step = (fields: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+    position: 1, id: "d1", iteration: 1, actionId: "read", toolId: "read", input: {}, effect: "observe", disposition: "kept", ...fields
   });
 
-  it("runs nothing when a step before it cannot be done again, and answers with that step's failure", async () => {
-    const host = towels({ missing: ["node.plus"] });
-    const place = await rerunOf(STEPS, 5, host);
-
-    expect(host.calls.map((call) => call.callId)).toEqual(["rerun.5.place", "rerun.5.place.2", "rerun.5.place.4"]);
-    expect(host.page.cart).toBe(0);
-    expect(place).toMatchObject({
-      kind: "unreachable",
-      result: {
-        effectApplied: false,
-        resultCode: "llm_evidence_loop.rerun_place_unreachable",
-        evidence: {
-          ok: false,
-          code: "rerun_place_unreachable",
-          doneAgain: [{ step: 2, outcome: "replayed" }, { step: 4, outcome: "failed" }],
-          failedStep: { step: 4, actionId: "node.plus", evidence: { ok: false, missing: "node.plus" } }
-        }
-      }
-    });
+  // t193 x t194: a rerun put back says which steps before it were done again,
+  // so the model reads the rerun as running after them.
+  it("names the steps done again in the put-back note, and nothing when there were none", () => {
+    const doneAgain = [{ step: 9, stepId: "d9", actionId: "web.output.dom-click", callId: "r.place.9", outcome: "verified" }];
+    expect(automationStudioNodeRerunPlaceNoted({ kind: "put_back", callId: "r.place", startPage: "step", doneAgain }, { rows: 1 }))
+      .toEqual({ rows: 1, rerunPlace: { place: "put_back", startPage: "step", doneAgain: [{ step: 9, actionId: "web.output.dom-click", outcome: "verified" }] } });
+    expect(automationStudioNodeRerunPlaceNoted({ kind: "put_back", callId: "r.place", startPage: "step", doneAgain: [] }, { rows: 1 }))
+      .toEqual({ rows: 1, rerunPlace: { place: "put_back", startPage: "step" } });
   });
 
-  it("passes over a step the Flow would not always run whose target is not there, as the test from the start does", async () => {
-    const site: SiteStep[] = [
-      { node: "node.go_towels", from: HOME },
-      { node: "node.close_offer", from: TOWELS, routing: { kind: "optional" } },
-      { node: "node.plus", from: TOWELS },
-      { node: "node.add_to_cart", from: TOWELS }
-    ];
-    const host = towels({ missing: ["node.close_offer"] });
-    const place = await rerunOf(site, 4, host);
-
-    expect(host.calls.map((call) => call.callId)).toEqual(["rerun.4.place", "rerun.4.place.2", "rerun.4.place.3", "rerun.4"]);
-    expect(place).toMatchObject({ kind: "put_back", doneAgain: [{ step: 2, outcome: "failed" }, { step: 3, outcome: "replayed" }] });
-    expect(host.page.cart).toBe(2);
+  it("puts back the step's own recorded page before the seeded one", async () => {
+    const executeTool = site(5);
+    const place = await automationStudioNodeRerunFromItsPlace({ steps: [], step: step({ replay: { from: { location: "page=2" } } }), startedOn: { location: "page=1" }, now: "page=5", callId: "r", executeTool });
+    expect(place).toEqual({ kind: "put_back", callId: "r.place", startPage: "step", doneAgain: [] });
+    expect(executeTool.mock.calls[0]![0].value).toEqual({ replay: "reset", from: { location: "page=2" } });
   });
 
-  it("does nothing again when no step before it started on its page", async () => {
-    const host = towels();
-    const place = await rerunOf(STEPS, 2, host);
-
-    expect(host.calls.map((call) => call.callId)).toEqual(["rerun.2.place", "rerun.2"]);
-    expect(place).toEqual({ kind: "put_back", callId: "rerun.2.place", doneAgain: [] });
+  it("runs where it is, and says so, when the page is still the one its step started on", async () => {
+    const executeTool = site(1);
+    const place = await automationStudioNodeRerunFromItsPlace({ steps: [], step: step({ replay: { from: { location: "page=1" } }, stateBefore: "page=1" }), now: "page=1", callId: "r", executeTool });
+    expect(place).toEqual({ kind: "in_place", why: "already_there" });
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(automationStudioNodeRerunPlaceNoted(place, { rows: 13 })).toEqual({ rows: 13, rerunPlace: { place: "in_place", reason: "already_on_start_page" } });
   });
 
-  it("runs in place, with nothing reset or done again, for a step that recorded no page", async () => {
-    const site: SiteStep[] = [{ node: "node.blue" }, { node: "node.plus" }, { node: "node.add_to_cart" }];
-    const host = towels();
-    const place = await rerunOf(site, 3, host);
+  it("does not put a seeded step back when nothing recorded where its node started", async () => {
+    const executeTool = site(5);
+    expect(await automationStudioNodeRerunFromItsPlace({ steps: [], step: step(), now: "page=5", callId: "r", executeTool })).toEqual({ kind: "in_place", why: "start_page_unknown" });
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+});
 
-    expect(place).toEqual({ kind: "in_place" });
-    expect(host.calls.map((call) => call.callId)).toEqual(["rerun.3"]);
+describe("what a rerun's result says about where it ran", () => {
+  const inPlace: AutomationStudioNodeRerunPlace = { kind: "in_place", why: "start_page_unknown" };
+
+  it("notes a plain answer as well as an execution result", () => {
+    expect(automationStudioNodeRerunPlaceNoted(inPlace, { rows: 11 })).toMatchObject({ rows: 11, rerunPlace: { place: "in_place", reason: "start_page_unknown" } });
   });
 
-  it("runs in place when the target is still in the state the step found it in", async () => {
-    const host = towels();
-    const place = await rerunOf(STEPS, 5, host, "state-before-5");
+  it("leaves an answer it cannot note, and a call that was not a rerun, as they are", () => {
+    const listed = { kind: "llm_evidence_tool_execution" as const, evidence: [1, 2] as JsonValue, effectApplied: false };
+    expect(automationStudioNodeRerunPlaceNoted(inPlace, listed)).toBe(listed);
+    expect(automationStudioNodeRerunPlaceNoted(inPlace, "text")).toBe("text");
+    expect(automationStudioNodeRerunPlaceNoted(undefined, { rows: 11 })).toEqual({ rows: 11 });
+  });
 
-    expect(place).toEqual({ kind: "in_place" });
-    expect(host.calls.map((call) => call.callId)).toEqual(["rerun.5"]);
+  it("leaves an unreachable place's own answer as it is: it already says nothing ran", () => {
+    const unreachable = { kind: "llm_evidence_tool_execution" as const, evidence: { ok: false, code: "rerun_place_unreachable" }, effectApplied: false };
+    expect(automationStudioNodeRerunPlaceNoted({ kind: "unreachable", callId: "r.place", result: unreachable }, unreachable)).toBe(unreachable);
   });
 });

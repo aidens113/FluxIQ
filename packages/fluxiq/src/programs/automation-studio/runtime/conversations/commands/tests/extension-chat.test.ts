@@ -12,6 +12,12 @@
 // session, with only the four permissions a token may hold. The messages are
 // what `background/panel/conversation-relay.ts` sends: capability ids only,
 // and the page the person is on.
+//
+// **A build finishes only once its whole Flow ran from its start and was judged
+// to do what was asked (t244, user 2026-10-02).** So the scripted page can run
+// its steps again (`automationStudioReplayingBinding`), the scripted provider
+// also answers as the judge, and an improvement -- an extend build, which
+// carries the Flow's steps -- reruns each carried step before it finishes.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -26,6 +32,7 @@ import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, type AutomationStudioL
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import type { AutomationStudioLlmProviderResolverInput } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioReplayingBinding } from "../../../tests/replaying-binding.ts";
 import { automationStudioConversationCommandWork } from "../index.ts";
 
 const OPEN_ID = "domain.example.open";
@@ -102,7 +109,8 @@ async function createWorld(options: { unlocked: string | null }) {
   const toolInputs: Array<Record<string, unknown>> = [];
   const resolutions: AutomationStudioLlmProviderResolverInput[] = [];
   let buildDecisions: Array<Record<string, unknown>> = [];
-  const binding: AutomationStudioLlmEvidenceRuntimeBinding = {
+  // The test of the whole Flow runs its steps again through this, answered without reaching the page.
+  const binding: AutomationStudioLlmEvidenceRuntimeBinding = automationStudioReplayingBinding({
     domainId: "example",
     deniedEvidenceKeys: [],
     tools: [{ toolId: "example.inspect", description: "Inspect what is in view.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
@@ -114,7 +122,7 @@ async function createWorld(options: { unlocked: string | null }) {
         ? { kind: "llm_evidence_tool_execution" as const, evidence: { ran: String(value.node) }, effectApplied: true, draft: { actionId: String(value.node), input: value, proposes: true } }
         : { controls: [{ label: "Search" }] };
     }
-  };
+  });
   const service = new AutomationStudioService({
     dataDir: path.join(tempRoot, "data"),
     seedFixture: false,
@@ -123,9 +131,13 @@ async function createWorld(options: { unlocked: string | null }) {
       return {
         provider: {
           metadata: { provider: "mock-production", model: "mock-bootstrap" },
-          runTask: async (_request: AutomationStudioLlmTaskRequest) => {
+          runTask: async (request: AutomationStudioLlmTaskRequest) => {
             // The real provider releases the key to the caller's session per call (`session-key-provider.ts`).
             if (input.caller?.actorSessionId !== options.unlocked) throw new Error("Secret key session unlock is unavailable");
+            // The judge of a build's test of the whole Flow: it says the Flow does what was asked.
+            if (request.taskKind === "loop_verification") {
+              return { response: { kind: "diagnosis", summary: "The Flow's test does what was asked.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.0005 } };
+            }
             const decision = buildDecisions.shift() ?? { kind: "complete", result: { summary: "Search the catalog." } };
             return { response: { kind: "evidence_tool_decision", summary: "Working it out.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
           }
@@ -292,7 +304,12 @@ describe("the extension's chat, end to end in Core", () => {
     const flow = await onlyFlow(world.service, world.project.id);
 
     const improveOnce = async () => {
-      world!.scriptBuild([{ kind: "complete", result: { summary: "Search, then open the first kettle." } }]);
+      // The improvement carries the Flow's search step, which has not run in this build: it runs it again as it stands,
+      // so the improved Flow can be tested whole, and then finishes.
+      world!.scriptBuild([
+        { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { consequences: [] } }] },
+        { kind: "complete", result: { summary: "Search, then open the first kettle." } }
+      ]);
       const response = await world!.say("It should also open the first kettle", { do: "flow.improve", with: { flowId: flow.flowId, change: "Also open the first kettle." } });
       expect(response?.execution).toMatchObject({ capabilityId: "flow.improve", status: "started" });
       await automationStudioConversationCommandWork.idle();

@@ -19,6 +19,15 @@
 // The Flow is shaped like the live ones: a step that holds a resolved locator
 // under a key the domain denies (`selector`), before the step that reads the
 // items. A re-author seeded from that Flow once refused its own first request.
+//
+// **A repair is accepted only after the whole repaired Flow ran from its start
+// and was judged (t244, user 2026-10-02).** The re-author is an extend build:
+// each step it carries from the Flow must run again in the build before it can
+// finish, so it reruns the consent click unchanged and the read with the judge's
+// fix, in the Flow's order, one rerun per decision; its test then runs both from
+// the start, and only a yes about that Flow is approved and applied. The
+// stand-in domain says how to run its steps again through
+// `automationStudioReplayingBinding` (`../../replaying-binding.ts`).
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -31,6 +40,7 @@ import { decideAutomationStudioChangeConfidence } from "../../../flow-change/ind
 import { createAutomationStudioSessionKeyProviderResolver } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 
 const ACTOR = { actorUserId: "user-t176", actorSessionId: "session-t176" };
@@ -172,7 +182,8 @@ async function createHarness() {
 
       if (taskKind === "evidence_tool_decision") {
         decisions += 1;
-        const decision = decisions === 1 ? repairDecision(sent) : { kind: "complete", result: { summary: "Read only the red products." } };
+        // The carried consent click first, as it stands; then the read, corrected from the brief; then finish.
+        const decision = decisions === 1 ? rerunConsentClick() : decisions === 2 ? repairDecision(sent) : { kind: "complete", result: { summary: "Read only the red products." } };
         return providerResponse({ kind: "evidence_tool_decision", summary: "Narrow the extraction to red products.", decision });
       }
 
@@ -180,20 +191,22 @@ async function createHarness() {
     }) as typeof fetch
   });
 
+  // The test of the whole Flow runs its steps again through this stand-in: the replay calls it answers are listed here.
+  const runtime = automationStudioReplayingBinding({
+    domainId: DOMAIN,
+    // The web domain's rule, which a seeded click step used to trip.
+    deniedEvidenceKeys: ["selector"],
+    tools: [{ toolId: "t176.inspect", description: "Inspect the fixture page.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
+    runsNodes: { runnable: [CLICK_ID, EXTRACT_ID] },
+    executeTool: async ({ toolId, value }: { toolId: string; value: JsonObject }) => toolId === "core.run_node"
+      ? { kind: "llm_evidence_tool_execution" as const, evidence: { ran: String(value.node) }, effectApplied: true, draft: { actionId: String(value.node), input: value, proposes: true } }
+      : { controls: [{ label: "Products" }] }
+  });
   service = new AutomationStudioService({
     dataDir: tempRoot,
     seedFixture: false,
     llmProviderResolver: async (input) => resolveProvider(input),
-    llmEvidenceRuntime: {
-      domainId: DOMAIN,
-      // The web domain's rule, which a seeded click step used to trip.
-      deniedEvidenceKeys: ["selector"],
-      tools: [{ toolId: "t176.inspect", description: "Inspect the fixture page.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {} } }],
-      runsNodes: { runnable: [CLICK_ID, EXTRACT_ID] },
-      executeTool: async ({ toolId, value }) => toolId === "core.run_node"
-        ? { kind: "llm_evidence_tool_execution" as const, evidence: { ran: String(value.node) }, effectApplied: true, draft: { actionId: String(value.node), input: value, proposes: true } }
-        : { controls: [{ label: "Products" }] }
-    }
+    llmEvidenceRuntime: runtime
   }).bindIoRuntime(io, DOMAIN).bindNativeNodeRuntime(nativeRuntime());
   services.add(service);
 
@@ -247,23 +260,42 @@ async function createHarness() {
     updatedAt: now
   });
 
-  return { service, projectId: project.id, flowId: flow.flowId, graphFlowId: subflow.graphFlowId!, calls };
+  return { service, projectId: project.id, flowId: flow.flowId, graphFlowId: subflow.graphFlowId!, calls, replays: runtime.replays };
 }
 
 /**
- * The re-author's first decision, made only from what it was handed: the
- * repair brief must carry the judge's advice, and the step that reads the list
- * must be in the draft it was shown. Anything missing is an answer that does
- * nothing, so the chain stops short and the file says where.
+ * The carried consent click, run again as it stands: it never ran in this
+ * build, so the repaired Flow could not be tested whole without it. It changes
+ * nothing lasting, so its consequences are none.
+ */
+function rerunConsentClick(): JsonObject {
+  return { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { consequences: [] } }] };
+}
+
+/**
+ * The re-author's repair, made only from what it was handed: the repair brief
+ * must carry the judge's advice, and the step that reads the list must be in
+ * the Flow the draft it was shown holds, under the number it is shown with
+ * there (the click's rerun before it took the click's place, so the original
+ * click stays listed as the step it replaced and the read is no longer step 2).
+ * Anything missing is an answer that does nothing, so the chain stops short and
+ * the file says where.
  */
 function repairDecision(sent: string): JsonObject {
-  const request = JSON.parse(sent) as { context?: { instructions?: { instructions?: Array<{ instructionId: string; body: string }> } } };
+  const request = JSON.parse(sent) as {
+    context?: {
+      instructions?: { instructions?: Array<{ instructionId: string; body: string }> };
+      evidenceLoop?: { evidence?: Array<{ toolId?: string; value?: { steps?: Array<{ step?: number; actionId?: string; inResult?: boolean }> } }> };
+    };
+  };
   const brief = request.context?.instructions?.instructions?.find((instruction) => instruction.instructionId === "core.result_repair.brief");
   if (!brief?.body.includes("red")) return { kind: "complete", result: { summary: "Nothing to change." } };
-  if (!sent.includes(EXTRACT_ID)) return { kind: "complete", result: { summary: "No step reads the list." } };
+  const draft = request.context?.evidenceLoop?.evidence?.find((entry) => entry.toolId === "core.flow_draft")?.value;
+  const read = draft?.steps?.find((step) => step.actionId === EXTRACT_ID && step.inResult === true);
+  if (read?.step === undefined) return { kind: "complete", result: { summary: "No step reads the list." } };
   return {
     kind: "amend_draft",
-    amendments: [{ step: 2, change: "rerun", input: { node: EXTRACT_ID, parameters: { recordOutput: RECORD_OUTPUT, where: "red" }, consequences: [] } }]
+    amendments: [{ step: read.step, change: "rerun", input: { node: EXTRACT_ID, parameters: { recordOutput: RECORD_OUTPUT, where: "red" }, consequences: [] } }]
   };
 }
 
@@ -282,16 +314,19 @@ describe("a wrong answer, end to end, with a scripted provider", () => {
     });
     const detail = await harness.service.getFlowRunDetail(harness.projectId, run.runId);
 
-    // Refuted (asked twice, as a refutation always is), re-authored in two
-    // decisions, the re-author's own test judged (it is a build: lane D F43),
-    // and the repaired run judged once.
-    expect(harness.calls.map((call) => call.taskKind)).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification"]);
+    // Refuted (asked twice, as a refutation always is), re-authored in three
+    // decisions -- the carried click rerun, the read rerun with the fix, the
+    // completion -- the re-author's own test of the whole Flow judged (it is a
+    // build: lane D F43, t244), and the repaired run judged once.
+    expect(harness.calls.map((call) => call.taskKind)).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification"]);
     // The build's judge read the re-author's own test, not a run.
-    expect(harness.calls[4]!.sent).toContain("buildTest");
+    expect(harness.calls[5]!.sent).toContain("buildTest");
+    // That test ran the whole repaired Flow from its start: put back, then both steps run again in order.
+    expect(harness.replays.filter((call) => call.value.replay === "step").map((call) => call.value.node)).toEqual([CLICK_ID, EXTRACT_ID]);
     // The judge was shown the wrong rows first and the right rows last.
     expect(harness.calls[0]!.sent).toContain("Beta");
-    expect(harness.calls[5]!.sent).not.toContain("Beta");
-    expect(harness.calls[5]!.sent).toContain("Gamma");
+    expect(harness.calls[6]!.sent).not.toContain("Beta");
+    expect(harness.calls[6]!.sent).toContain("Gamma");
     // The re-author was never shown the denied locator, and the Flow never lost it.
     for (const call of harness.calls) expect(call.sent).not.toContain(SELECTOR);
 

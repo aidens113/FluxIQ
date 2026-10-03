@@ -24,6 +24,7 @@ import {
 import { AutomationStudioLlmProviderError, createAutomationStudioSessionKeyProviderResolver, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioSessionKeyPorts } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
+import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { draftObservation, issueCodesForEvidence, type DecisionObservation } from "./observation.ts";
 import { LOOK_TOOL_ID, type JudgeReply, type Reply } from "./replies.ts";
 
@@ -77,6 +78,14 @@ export async function create(options: {
   maxTotalTokensPerRun?: number;
   instructionBody?: string;
   webRegistry?: boolean;
+  /**
+   * Each look is a step of the Flow (an act that applied, proposed), as the web
+   * registry's always are. A build is finished only once its Flow ran whole and
+   * was judged (t244, user 2026-10-02), so a case whose build has to finish runs
+   * its looks as steps: a demo look that only observes adds nothing the Flow's
+   * test could run, and its completion is refused `llm_evidence_loop.full_run_required`.
+   */
+  looksAreSteps?: boolean;
   /** The judge's answer to its n-th call; `yes` when the case scripts none. */
   judge?: (judgeCall: number) => JudgeReply;
 }): Promise<Creation> {
@@ -123,7 +132,8 @@ export async function create(options: {
       maxTotalEstimatedCostUsd: 2
     };
   });
-  service.bindLlmEvidenceRuntime(lookBinding(options.webRegistry ? "web-automation" : "demo", options.webRegistry === true));
+  // Able to run its steps again, so the build's test of the whole Flow can run (`../../replaying-binding.ts`).
+  service.bindLlmEvidenceRuntime(automationStudioReplayingBinding(lookBinding(options.webRegistry ? "web-automation" : "demo", options.webRegistry === true || options.looksAreSteps === true)));
   try {
     const project = await service.createProject({ name: "Bootstrap exploration", ...(options.webRegistry ? { domainId: "web-automation" } : {}) });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.created", name: "Blank Flow" });

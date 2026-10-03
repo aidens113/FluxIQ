@@ -28,6 +28,7 @@ import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE, type Automat
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapNoRouteLeft } from "./contracts.ts";
 import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapNotDoneSaid, automationStudioFlowBootstrapStopSaid, automationStudioFlowBootstrapTestSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The not-doable ending, from the last judgement and the checklist it was read by. */
 export function automationStudioFlowBootstrapNotDoable(input: {
@@ -37,6 +38,8 @@ export function automationStudioFlowBootstrapNotDoable(input: {
   rounds: number;
   /** Decisions across every round. */
   decisions: number;
+  /** Why each live round stopped, in order (`./tried.ts`). */
+  stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
   /** Why no route is left (`./phases.ts`): said as the last round's account. Absent: the older "got no further". */
   noRoute?: AutomationStudioFlowBootstrapNoRouteLeft | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
@@ -57,7 +60,7 @@ export function automationStudioFlowBootstrapNotDoable(input: {
     kind: "not_doable",
     message: message.slice(0, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE),
     notDone,
-    tried: { rounds: input.rounds, decisions: input.decisions, stepsInFlow: input.judgement.stepsInFlow, tested: input.judgement.tested }
+    tried: automationStudioFlowBootstrapTried(input)
   };
 }
 
@@ -90,7 +93,14 @@ const MAX_JUDGE_WORDS = 200;
 
 /** What the judge found, in the person's terms: what they asked, and what the test did. Its words are the judge's own, already screened. */
 function judgedSaid(judge: AutomationStudioFlowBootstrapJudgedWrong): string {
-  if (judge.verdict !== "no") return "the steps it carried from the earlier Flow were never run in this build, so it could not be judged to do what you asked.";
+  // Not judged to do it, for any reason (t244): an unsure judge, one that could
+  // not answer, or a yes about another version or no test. Steps carried from
+  // an earlier Flow and never run are one such reason, named when they are it.
+  if (judge.verdict !== "no") {
+    if (judge.untestedCarried?.length) return "the steps it carried from the earlier Flow were never run in this build, so it could not be judged to do what you asked.";
+    const why = judge.findings[0];
+    return `it was never judged to do what you asked${why ? ` -- "${bounded(why)}"` : ""}.`;
+  }
   const told = [
     judge.expected ? `what you asked: "${bounded(judge.expected)}"` : "",
     judge.observed ? `what its test did: "${bounded(judge.observed)}"` : "",

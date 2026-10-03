@@ -14,9 +14,20 @@ import {
   AutomationStudioService,
   type AutomationStudioLlmProviderResolverInput,
 } from "../../../service.ts";
+import { automationStudioReplayingBinding, type AutomationStudioReplayingBindingCalls } from "../../replaying-binding.ts";
 import {
   adaptiveTrainingMetadata,
 } from "../../service-fixtures.ts";
+
+// **A repair is applied only after the whole re-authored Flow ran from its
+// start and was judged (t244, user 2026-10-02).** The re-author is an extend
+// build seeded with the Flow's one step, carried as `f1`; a carried step never
+// ran in this build, so the build first reruns it as it stands
+// (`amend_draft` rerun, `consequences: []`), and only then can it finish: its
+// test runs that Flow whole and the judge's yes about it is what lets the
+// adaptation be approved and applied. That is one more decision per re-author
+// than before. The stand-in domain says how to run its steps again through
+// `automationStudioReplayingBinding` (`../../replaying-binding.ts`).
 
 const ACTOR = {
   actorUserId: "user-t240",
@@ -118,6 +129,8 @@ interface TestHarness {
   resolverObservations: ResolverObservation[];
   /** How many times the caller's key was released: once per model call. */
   reveals(): number;
+  /** The replay calls the re-author's test of the whole Flow sent the stand-in domain. */
+  replays: AutomationStudioReplayingBindingCalls;
   reauthorProviderStarted: Promise<void>;
   releaseReauthorProvider(): void;
 }
@@ -185,6 +198,7 @@ async function createHarness(options: {
   const reauthorProviderStarted = new Promise<void>((resolve) => { signalReauthorProviderStarted = resolve; });
   const reauthorProviderRelease = new Promise<void>((resolve) => { releaseReauthorProvider = resolve; });
   let verificationCalls = 0;
+  let decisions = 0;
   let revealCount = 0;
   const resolveForCaller = createAutomationStudioSessionKeyProviderResolver({
     ports: {
@@ -242,13 +256,18 @@ async function createHarness(options: {
             },
           );
         }
+        decisions += 1;
+        // The carried extraction step first, run again as it stands, so the
+        // Flow can be tested whole; then finish.
         return jsonResponse({
           kind: "evidence_tool_decision",
           summary: "The current topology is sufficient.",
-          decision: {
-            kind: "complete",
-            result: { summary: "Preserve the extraction topology." },
-          },
+          decision: decisions === 1
+            ? { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { consequences: [] } }] }
+            : {
+                kind: "complete",
+                result: { summary: "Preserve the extraction topology." },
+              },
         });
       }
 
@@ -256,6 +275,24 @@ async function createHarness(options: {
     }) as typeof fetch,
   });
   const resolverObservations: ResolverObservation[] = [];
+  // A node run is an act that applied; a look answers what it saw.
+  const runtime = automationStudioReplayingBinding({
+    domainId: "t240",
+    deniedEvidenceKeys: [],
+    tools: [
+      {
+        toolId: "t240.inspect",
+        description: "Inspect the deterministic fixture.",
+        inputSchema: { type: "object" },
+        effect: "observe",
+        initialObservation: { input: {} },
+      },
+    ],
+    runsNodes: {},
+    executeTool: async ({ toolId, value }: { toolId: string; value: JsonObject }) => toolId === "core.run_node"
+      ? { kind: "llm_evidence_tool_execution" as const, evidence: { ran: String(value.node) }, effectApplied: true, draft: { actionId: String(value.node), input: value, proposes: true } }
+      : { controls: [{ label: "Fixture" }] },
+  });
 
   const service = new AutomationStudioService({
     dataDir: tempRoot,
@@ -268,21 +305,7 @@ async function createHarness(options: {
       if (!resolution) return undefined;
       return options.intent ? resolution : { ...resolution, maxCallsPerRun: 4 };
     },
-    llmEvidenceRuntime: {
-      domainId: "t240",
-      deniedEvidenceKeys: [],
-      tools: [
-        {
-          toolId: "t240.inspect",
-          description: "Inspect the deterministic fixture.",
-          inputSchema: { type: "object" },
-          effect: "observe",
-          initialObservation: { input: {} },
-        },
-      ],
-      runsNodes: {},
-      executeTool: async () => ({ controls: [{ label: "Fixture" }] }),
-    },
+    llmEvidenceRuntime: runtime,
   })
     .bindIoRuntime(io, "t240")
     .bindNativeNodeRuntime(nativeRuntime());
@@ -394,6 +417,7 @@ async function createHarness(options: {
     decisionPayloads,
     resolverObservations,
     reveals: () => revealCount,
+    replays: runtime.replays,
     reauthorProviderStarted,
     releaseReauthorProvider,
   };
@@ -456,9 +480,10 @@ describe("refuted-result service composition", () => {
       // grant is held between them, so its failure neither revokes nor ends
       // anything here, and the run's own repair finishes.
       // The re-author is a build, so its own test is judged before it is proposed
-      // (lane D F43: a re-authored Flow is judged on its own test); the repaired
-      // run is then verified as before.
-      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "loop_verification", "loop_verification"]);
+      // (lane D F43: a re-authored Flow is judged on its own test); its two
+      // decisions rerun the carried step and finish (t244); the repaired run is
+      // then verified as before.
+      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision", "evidence_tool_decision", "loop_verification", "loop_verification"]);
       expect(completed.status).toBe("succeeded");
       const detail = await harness.service.getFlowRunDetail(harness.projectId, completed.runId);
       expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true });
@@ -487,11 +512,13 @@ describe("refuted-result service composition", () => {
       });
 
       // The re-author is a build, so its own test is judged before it is proposed
-      // (lane D F43: a re-authored Flow is judged on its own test); the repaired
-      // run is then verified as before.
+      // (lane D F43: a re-authored Flow is judged on its own test); its two
+      // decisions rerun the carried step and finish (t244); the repaired run is
+      // then verified as before.
       expect(harness.taskKinds).toEqual([
         "loop_verification",
         "loop_verification",
+        "evidence_tool_decision",
         "evidence_tool_decision",
         "loop_verification",
         "loop_verification",
@@ -529,11 +556,15 @@ describe("refuted-result service composition", () => {
           reauthor!.adaptationId!,
         ),
       ).resolves.toMatchObject({ mode: "extend", status: "applied" });
+      // What was applied had run whole first: the re-author's test put the
+      // target back and ran the Flow's one step again from its start (t244).
+      expect(harness.replays.filter((call) => call.value.replay === "step").map((call) => call.value.node)).toEqual([EXTRACT.id]);
 
       // run-mulwm2dc-0bd95f22: the re-author was called with a Flow id, a mode
       // and a grant, and the check's refutation went no further. The build's own
       // decision request now carries Core's repair brief beside the instruction.
-      expect(harness.decisionPayloads).toHaveLength(1);
+      // Two decisions: the carried step's rerun, then the completion.
+      expect(harness.decisionPayloads).toHaveLength(2);
       const sent = JSON.parse(harness.decisionPayloads[0]!) as { context: { instructions: { instructions: Array<{ instructionId: string; title: string; body: string }> } } };
       const listed = sent.context.instructions.instructions;
       const brief = listed.find((instruction) => instruction.instructionId === "core.result_repair.brief");

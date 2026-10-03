@@ -6,7 +6,7 @@
 // Flow it started from ends it too (run 38, cause C8). Rounds and judges are
 // scripted: each charges the purse it is handed as its calls would.
 import { describe, expect, it } from "vitest";
-import { automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
@@ -98,7 +98,7 @@ describe("a repair round opens only when the purse can fund it", () => {
     // Five decisions held at $0.02 each, charged $0.017: $0.015 is left, under a decision and a judge at $0.02 each.
     const { input, requests } = harness([
       (request) => { calls(request.purse, 5, 0.02, 0.017); return outOfDecisions([step(1, { acts: ["a1"] })], spent(5, 0.085)); }
-    ], { purse, judge: async () => ({ verdict: "yes", spent: NOTHING_SPENT }) });
+    ], { purse, judge: async ({ loop }) => ({ verdict: "yes", spent: NOTHING_SPENT, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) }) });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
@@ -232,15 +232,18 @@ describe("a round that ended on refused repeats and handed back the Flow it star
 // summary's counts on a no, so a repair that stored rows where none were, or
 // refused fewer or left fewer incomplete while storing no fewer, progressed.
 describe("a repair judged wrong for the same findings, measured by what its test stored", () => {
-  const YES: AutomationStudioFlowBootstrapTestVerdict = { verdict: "yes", spent: NOTHING_SPENT };
-  /** Three rounds, each a different Flow; the first two judged no with these counts and the same finding, the third yes. */
+  /** Three rounds, each a different Flow; the first two judged no with these counts and the same finding, the third yes about its own test. */
   async function judgedTwice(first: { stored: number; refused: number; missingRequired: number }, second: { stored: number; refused: number; missingRequired: number }) {
-    const verdicts = [no(["result.required_values_missing"], first), no(["result.required_values_missing"], second), YES];
+    const verdicts: Array<(steps: readonly AutomationStudioFlowDraftStep[]) => AutomationStudioFlowBootstrapTestVerdict> = [
+      () => no(["result.required_values_missing"], first),
+      () => no(["result.required_values_missing"], second),
+      (steps) => ({ verdict: "yes", spent: NOTHING_SPENT, flowSignature: automationStudioFlowDraftFlowSignature(steps) })
+    ];
     const { input, requests } = harness([
       () => finished(wholeFlow(), spent(2, 0.01)),
       (request) => finished([...request.repair!.seed.slice(0, 2), step(3, { id: "d9", acts: ["a2"], ranWith: { target: "kettle" } })], spent(2, 0.01)),
       (request) => finished([...request.repair!.seed.slice(0, 2), step(3, { id: "d10", acts: ["a2"], ranWith: { target: "kettle-card" } })], spent(2, 0.01))
-    ], { judge: async () => verdicts.shift()! });
+    ], { judge: async ({ loop }) => verdicts.shift()!(loop.steps) });
     return { outcome: await runAutomationStudioFlowBootstrapBuildPhases(input), requests };
   }
 
@@ -264,5 +267,56 @@ describe("a repair judged wrong for the same findings, measured by what its test
     const { outcome, requests } = await judgedTwice({ stored: 4, refused: 5, missingRequired: 0 }, { stored: 1, refused: 0, missingRequired: 0 });
     expect(requests).toHaveLength(2);
     expect(outcome.kind === "unfinished" && outcome.ending.kind).toBe("not_doable");
+  });
+});
+
+// Live run muqk713g (Stage 6): no record said why each round stopped, so a
+// debug could not tell whether these bounds fired. The ending's `tried` now
+// carries each round's stop and, for "not doable", which no-route case ended it
+// -- closed words only, which the run record and the Lab publish as they are.
+describe("each round's stop, recorded on the ending", () => {
+  const seeded = () => [step(1, { acts: ["a1"] }), step(2, { acts: ["a1.quantity"], input: { quantity: "2" } })];
+
+  it("records a repair that stopped on refused repeats, and the no-route case that ended the build", async () => {
+    const { input } = harness([
+      () => outOfDecisions(seeded(), spent(10, 0.01)),
+      (request) => repeatsRefused(request.repair!.seed.map((each) => ({ ...each })), spent(3, 0.008))
+    ]);
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind === "unfinished" && outcome.ending.tried).toEqual({
+      rounds: 2, decisions: 13, stepsInFlow: 2, tested: "replayed_clean",
+      stops: [{ round: 0, stopped: "iterations" }, { round: 1, stopped: "repeat_without_progress" }],
+      noRoute: { kind: "repeated_unchanged" }
+    });
+  });
+
+  it("records rounds judged wrong, and a repair that made no measurable progress", async () => {
+    const { input } = harness([
+      () => finished(wholeFlow(), spent(2, 0.01)),
+      (request) => finished([...request.repair!.seed, step(4, { id: "d9", actionId: "web.navigate", ranWith: { url: "https://shop.example/" } })], spent(2, 0.01))
+    ], { judge: async () => no(["result.no_records_stored"]) });
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind === "unfinished" && outcome.ending.tried).toMatchObject({
+      stops: [{ round: 0, stopped: "judged_wrong" }, { round: 1, stopped: "judged_wrong" }],
+      noRoute: { kind: "no_progress" }
+    });
+  });
+
+  it("records every round of a build a bound ended, with no no-route case", async () => {
+    let added = 0;
+    const growing = (request: AutomationStudioFlowBootstrapRoundRequest) => {
+      added += 1;
+      return outOfDecisions([...(request.repair?.seed ?? []), step(added, { id: `d${10 + added}`, acts: added === 1 ? ["a1"] : [] })], spent(10, 0.001));
+    };
+    const { input } = harness([growing, growing], { maxRounds: 2 });
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "rounds", tried: { stops: [{ round: 0, stopped: "iterations" }, { round: 1, stopped: "iterations" }] } });
+    expect(outcome.kind === "unfinished" && outcome.ending.tried.noRoute).toBeUndefined();
   });
 });

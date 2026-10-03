@@ -17,6 +17,13 @@
 // found by what the object holds -- a condition list, a paging setting, a dedupe
 // setting, a column map -- rather than by its name.
 //
+// **A dedupe is read in every form the domain reads one** (`dedupe.ts`), and a
+// read that moves page by page is said to leave out a row identical to one an
+// earlier page yielded, with the read's own count where it sent one
+// (`earlierPageRepeats`). Live run `run-muqk713g`'s judges were all told the
+// earbuds read "does not deduplicate": 12 rows passed its conditions, 10 were
+// stored, the other two such repeats, and each judge asked for a dedupe.
+//
 // A condition is paired with its rejection count by position: the read reports
 // one count per condition it was given, in the order it was given them.
 //
@@ -35,11 +42,14 @@ import { automationStudioEvidenceKey } from "../../llm/index.ts";
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
 import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionText } from "./condition.ts";
+import { automationStudioResultReadDedupe } from "./dedupe.ts";
 
 /** The members that mark an object as a read's own parameters. */
 const READ_PARAMETER_KEYS = ["where", "paginate", "dedupe", "fields"];
 /** A closed word the read reports, as extraction-summary.ts admits them. */
 const STOP_WORD = /^[a-z_]{1,40}$/u;
+/** The paging modes that move to another page, lower-cased. */
+const PAGE_BY_PAGE_MODES: ReadonlySet<string> = new Set(["next", "numbered"]);
 
 export type AutomationStudioResultReadAccountsInput = {
   /** The run's recorded attempts, in the order they ran. */
@@ -82,8 +92,13 @@ function account(
   const conditions = conditionAccounts(filter, authored, deniedKeys);
   const paginate = authored?.paginate;
   const pageLimit = isRecord(paginate) ? firstLimit(paginate) : undefined;
-  const dedupe = authored?.dedupe;
-  const dedupeBy = isRecord(dedupe) && deniedKeys ? columnKeys(dedupe.by, deniedKeys) : [];
+  const columns = isRecord(authored?.fields) ? Object.keys(authored.fields) : [];
+  const dedupe = authored ? automationStudioResultReadDedupe(authored.dedupe, columns) : undefined;
+  const dedupeBy = dedupe && deniedKeys ? columnKeys(dedupe.by, deniedKeys) : [];
+  // A read that moves page by page leaves out a row identical to an earlier page's, dedupe or none:
+  // said by the read's own count, or by its authored paging where the count did not reach the record.
+  const earlierPageRepeats = count(extraction.earlierPageRepeats);
+  const dropsEarlierPageRepeats = earlierPageRepeats !== undefined || movesPageByPage(paginate);
   return {
     nodeId: attempt.nodeId,
     definitionId: attempt.definitionId,
@@ -93,8 +108,10 @@ function account(
     truncated: extraction.truncated === true,
     ...(itemsSeen !== undefined ? { itemsSeen } : {}),
     kept: count(extraction.recordCount) ?? 0,
-    ...(authored ? { paginates: isRecord(paginate), dedupes: isRecord(dedupe) || dedupe === true } : {}),
+    ...(authored ? { paginates: isRecord(paginate), dedupes: dedupe?.dedupes === true } : {}),
     ...(dedupeBy.length ? { dedupeBy } : {}),
+    ...(dropsEarlierPageRepeats ? { dropsEarlierPageRepeats: true as const } : {}),
+    ...(earlierPageRepeats !== undefined ? { earlierPageRepeats } : {}),
     ...(conditions.length ? { conditions } : {}),
     ...(filter?.unfiltered === true ? { unfiltered: true } : {}),
     ...(attempts > 1 ? { attempts } : {})
@@ -151,11 +168,20 @@ function firstLimit(paginate: JsonObject): number | undefined {
 }
 
 /** Column ids, held to the stored schema's own id rule and the domain's declared keys. */
-function columnKeys(value: JsonValue | undefined, deniedKeys: readonly string[]): string[] {
-  const written = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
+function columnKeys(written: readonly string[], deniedKeys: readonly string[]): string[] {
   const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
-  return written
-    .filter((key): key is string => typeof key === "string" && AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS.fieldIdPattern.test(key) && !denied.has(automationStudioEvidenceKey(key)));
+  return written.filter((key) => AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS.fieldIdPattern.test(key) && !denied.has(automationStudioEvidenceKey(key)));
+}
+
+/**
+ * Whether authored paging moves to another page: `next`, which an absent
+ * `mode` is, or numbered -- the two modes whose read leaves out a row an
+ * earlier page already yielded. A scroll or load-more read does not.
+ */
+function movesPageByPage(paginate: JsonValue | undefined): boolean {
+  if (!isRecord(paginate)) return false;
+  const mode = paginate.mode;
+  return mode === undefined || (typeof mode === "string" && PAGE_BY_PAGE_MODES.has(mode.trim().toLowerCase()));
 }
 
 function count(value: unknown): number | undefined {
