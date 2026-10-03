@@ -107,3 +107,74 @@ describe("a rerun of a read that paged to the end", () => {
     expect(answered).toMatchObject({ ok: false, code: "rerun_place_unreachable" });
   });
 });
+
+// t193 lane B, `run-muqiojz4-04a7a8fc` (bigbox cart): a rerun of Add to cart
+// reset the towel page to its address, which took back the "+" before it, so
+// the rerun added one towel where the Flow adds two. The put-back now does the
+// proposed steps that started on that page again, in order, before the rerun
+// (`../../node-tools/step-place.ts`).
+describe("a rerun of a step that built on the press before it on the same page", () => {
+  /** The towel page: an address, a swatch, a quantity and a cart; a reset puts back the address alone. */
+  function towels() {
+    const page = { at: "towels", swatch: "", quantity: 1, cart: 0 };
+    const state = () => `${page.at}|${page.swatch}|q${page.quantity}|c${page.cart}`;
+    const press = (target: string) => {
+      if (target === "Blue") page.swatch = "blue";
+      if (target === "+") page.quantity += 1;
+      if (target === "Add to cart") page.cart += page.quantity;
+      if (target === "Cart") page.at = "cart";
+    };
+    const executeTool = vi.fn(async ({ value }: { callId?: string; toolId: string; value: JsonObject }) => {
+      if (value.replay === "reset") {
+        page.at = String((value.from as JsonObject).location);
+        page.swatch = "";
+        page.quantity = 1;
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };
+      }
+      const target = String(value.target);
+      if (value.replay === "step") {
+        press(target);
+        return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };
+      }
+      const before = state();
+      const from = page.at;
+      press(target);
+      return {
+        kind: "llm_evidence_tool_execution",
+        stateDigests: { before, after: state() },
+        evidence: { ok: true, pressed: target, quantity: page.quantity, cart: page.cart },
+        effectApplied: true,
+        resultCode: "web.action.succeeded",
+        draft: { actionId: "web.click", effect: "mutate", proposes: true, ranWith: { target }, replay: { from: { location: from } } }
+      };
+    });
+    return { page, executeTool };
+  }
+  const pressing = (callId: string, target: string) => ({ kind: "tool_call", callId, toolId: "press", input: { target }, add: true });
+
+  it("does the swatch and the \"+\" again before the rerun, so it adds two towels and not one", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(pressing("blue.1", "Blue"))
+      .mockResolvedValueOnce(pressing("plus.1", "+"))
+      .mockResolvedValueOnce(pressing("add.1", "Add to cart"))
+      .mockResolvedValueOnce(pressing("cart.1", "Cart"))
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 3, change: "rerun", input: { target: "Add to cart" } }] })
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const host = towels();
+
+    await expect(loop(decide, host.executeTool)).resolves.toMatchObject({ ok: true });
+
+    expect(host.executeTool.mock.calls.map(([call]) => [call.callId, call.value.replay ?? null, call.value.target ?? null])).toEqual([
+      ["blue.1", null, "Blue"],
+      ["plus.1", null, "+"],
+      ["add.1", null, "Add to cart"],
+      ["cart.1", null, "Cart"],
+      ["rerun.3.place", "reset", null],
+      ["rerun.3.place.1", "step", "Blue"],
+      ["rerun.3.place.2", "step", "+"],
+      ["rerun.3", null, "Add to cart"]
+    ]);
+    const answered = shownAt(decide, 5).find((entry) => entry.callId === "rerun.3")?.value;
+    expect(answered).toMatchObject({ pressed: "Add to cart", quantity: 2, cart: 4 });
+  });
+});

@@ -22,7 +22,8 @@ export type ConversationStepOutcomeWords = {
 
 /** The outcome line for `action`; `live` is true for the newest card of work still running. Null for none. */
 export function conversationStepOutcomeWords(action: ConversationStepAction, live: boolean): ConversationStepOutcomeWords | null {
-  const test = action.kind === "test";
+  // A run's result check passes or does not, as a build's test run does.
+  const test = action.kind === "test" || action.kind === "result_check";
   switch (action.outcome) {
     case "working":
       return live ? { state: "working", status: "running", label: "Working on it" } : null;

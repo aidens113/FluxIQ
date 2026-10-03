@@ -15,6 +15,10 @@ const OPENING_PREFIX = "initial.";
 const REPLAY_KEY = "replay";
 /** The callId of a step run again with a corrected argument, `rerun.<step>` (`../../llm/evidence-loop/rerun-request.ts`), and of the reset before it, `rerun.<step>.place` (`../../llm/node-tools/step-place.ts`). */
 const RERUN = /^rerun\.(\d+)(?:\.|$)/u;
+/** A step done again after a rerun's reset and before the rerun, `rerun.<step>[.<k>].place.<position>` (`../../llm/node-tools/step-place.ts`). */
+const DONE_AGAIN = /^rerun\.\d+(?:\.\d+)?\.place\.\d+$/u;
+/** A rerun's reset, before the step runs again. */
+const RERUN_RESET = "Putting the page back to where the step starts";
 
 const FROM_THE_START = "Trying the Flow from the start";
 /** The opening call when it goes to where the Flow starts rather than looks. */
@@ -88,15 +92,25 @@ export function automationStudioActivityToolCall(call: { callId: string; toolId:
     // node, with nothing to name but the page it looks at.
     return { phase: "exploring", kind: "note", title: OPENING_LOOK, label: OPENING_LOOK, dryRun: false, ...named };
   }
+  // A rerun's words name no step number: the person never sees the draft's
+  // numbering, and "Trying step 12 again" on the page's status overlay told
+  // them nothing (t195, `run-murdouox-c5294247`, UI review).
   const rerun = RERUN.exec(call.callId)?.[1];
   if (value[REPLAY_KEY] === "reset") {
     // A rerun puts the page back where its step starts before running it
     // again: bookkeeping, like a dry run's reset. Its row read "Action · the
     // page" (t193, `run-muqiojz4-04a7a8fc`).
-    const title = rerun ? `Putting the page back to where step ${rerun} starts` : "Putting the page back to where the step starts";
-    return { phase: "exploring", kind: "note", title, label: title, dryRun: false };
+    return { phase: "exploring", kind: "note", title: RERUN_RESET, label: RERUN_RESET, dryRun: false };
   }
   const title = action ?? unnamed(call.toolId, node);
-  const label = rerun ? `Trying step ${rerun} again: ${lowerFirst(title)}` : title;
+  if (rerun && DONE_AGAIN.test(call.callId)) {
+    // The steps before a rerun on its page, done again so the rerun finds what
+    // they built there; a step whose effect lasts is only checked.
+    const label = value[REPLAY_KEY] === "verify"
+      ? `Checking an earlier step is still done: ${lowerFirst(title)}`
+      : `Doing an earlier step again first: ${lowerFirst(title)}`;
+    return { phase: "exploring", kind: "tool", title, label, dryRun: false, ...named };
+  }
+  const label = rerun ? `Trying again: ${lowerFirst(title)}` : title;
   return { phase: "exploring", kind: "tool", title, label, dryRun: false, ...named };
 }

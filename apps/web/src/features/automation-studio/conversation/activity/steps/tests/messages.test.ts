@@ -92,7 +92,7 @@ describe("FluxIQ's step messages", () => {
     expect(messages.map((message) => [message.kind, message.title, message.text, message.actions.map((action) => [action.kind, action.outcome])])).toEqual([
       ["repair", "Working out what went wrong", "The button moved.", [["repair", "done"]]],
       ["repair", "Saving the fix", "The Flow needs the new button.", [["draft", "done"]]],
-      ["check", "The result doesn't answer the request", "Only three listings were saved.", [["test", "failed"]]]
+      ["check", "The result doesn't answer the request", "Only three listings were saved.", [["result_check", "failed"]]]
     ]);
     expect(messages[2]!.key).toBe("step:build.1#5");
     expect(messages[2]!.actions[0]!.key).toBe("action:build.1#5");

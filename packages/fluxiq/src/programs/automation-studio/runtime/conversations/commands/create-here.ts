@@ -49,7 +49,12 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     progress.landed("saved what it should do");
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "create" });
-    if (!built.ok) return progress.failed(built.cause);
+    // A build that failed leaves the Flow it was making empty, and the ending
+    // says so in place of the steps that landed: "Before that I created the
+    // Flow ... and saved what it should do", read straight after "I could not
+    // build this Flow", said the opposite of what had happened (t195,
+    // `run-murdouox-c5294247`, UI review).
+    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: `What is left: the Flow "${name}", empty, with what you asked saved on it, so it can be built again.` });
     progress.carry({ adaptationId: built.adaptationId });
     const where = automationStudioConversationPageShown(context.startLocation) ?? "the site";
     progress.landed(`explored ${where} and worked out the steps`);

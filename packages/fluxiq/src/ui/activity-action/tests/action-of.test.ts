@@ -218,3 +218,39 @@ describe("activityActionOf: looks name what they look at (t193)", () => {
     expect(outputsOf(activityActionOf(tool("Reading the details of “Add to cart”", undefined, "started", "web.describe_element")))).toEqual(["look", "Add to cart", "working", ""]);
   });
 });
+
+// t193 (`run-muqiojz4-04a7a8fc`): chat wording a person could not use.
+describe("activityActionOf: what each card says (t193 chat wording)", () => {
+  // 00019: a real run's result check read "Test run · Working on it". It checks
+  // the run's result; it runs nothing.
+  it("reads a result check as checking the result, never as a test run", () => {
+    const started: ActivityActionEvent = { phase: "verifying", detail: { kind: "check", title: "Result check started", status: "started" } };
+    const ended: ActivityActionEvent = { phase: "verifying", detail: { kind: "check", title: "Result check", status: "succeeded", text: "The result was judged to answer the request." } };
+    expect(outputsOf(activityActionOf(started))).toEqual(["result_check", "", "working", ""]);
+    expect(outputsOf(activityActionOf(ended))).toEqual(["result_check", "", "done", ""]);
+  });
+
+  it("keeps a build's dry run and its completion check as a test run", () => {
+    expect(activityActionOf({ phase: "verifying", detail: { kind: "check", title: "Completion check", status: "started" } })?.kind).toBe("test");
+    expect(activityActionOf(tool("Clicking “Next”", "Result: core.replay.replayed · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying"))?.kind).toBe("test");
+  });
+
+  // 00020 (`S/0090`): a press refused because the call named no handle read
+  // "Didn't work: it wasn't on the page". Nothing was looked up.
+  it("lets a refusal's own reason say why it failed, before its code's words", () => {
+    const refused = tool("Clicking “Add to cart”", "Result: web.action.rejected.target_unobserved · Reason: target_not_a_handle · Node: web.output.dom-click");
+    expect(outputsOf(activityActionOf(refused))).toEqual(["click", "Add to cart", "failed", "it didn't name a control from the page"]);
+    // A reason with no words of its own leaves the code to say it.
+    const unknown = tool("Clicking “Add to cart”", "Result: web.target.not_found · Reason: vendor_specific_thing · Node: web.output.dom-click");
+    expect(activityActionOf(unknown)?.why).toBe("it wasn't on the page");
+  });
+
+  // 00019, 00020: the navigate card read "Open page" with no page named.
+  it("names the page a navigate opens, by its address path or as the home page", () => {
+    expect(outputsOf(activityActionOf(tool("Opening “/ip/valueridge-napkins”", "Node: web.output.browser-navigate", "started")))).toEqual(["navigate", "/ip/valueridge-napkins", "working", ""]);
+    expect(activityActionOf(tool("Opening “/help/index.html”", "Node: web.output.browser-navigate"))?.target).toBe("/help/index.html");
+    expect(activityActionOf(tool("Opening “Home page”", "Node: web.output.browser-navigate"))?.target).toBe("Home page");
+    // An address path is shown only on a navigate: a click's quoted id stays hidden.
+    expect(activityActionOf(tool("Clicking “/web.output.dom-click”", "Node: web.output.dom-click"))?.target).toBeNull();
+  });
+});

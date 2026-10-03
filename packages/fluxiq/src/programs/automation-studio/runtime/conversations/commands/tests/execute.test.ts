@@ -166,8 +166,35 @@ describe("conversation commands", () => {
     expect(calls.map((call) => call.endpoint)).not.toContain("review-flow-adaptation");
     const [result] = await turnsOf(conversations, conversationId);
     expect(result?.text).toContain('"Create an automation here" stopped because the build failed: Flow Bootstrap generation failed (flow_bootstrap.provider_refused) (provider: flow_bootstrap.provider_refused)');
-    expect(result?.text).toContain('Before that I created the Flow "Kettles" and saved what it should do.');
+    // What is left, said plainly and never as work done after a build that failed (t195,
+    // `run-murdouox-c5294247`: "I could not build this Flow ... Before that I created the Flow").
+    expect(result?.text).not.toContain("Before that I");
+    expect(result?.text).toContain('What is left: the Flow "Kettles", empty, with what you asked saved on it, so it can be built again.');
     expect(result?.text).toContain("Your model key is locked");
+  });
+
+  // t195 `run-murdouox-c5294247` (09-failure-panel): the answer said the failure
+  // three times -- "stopped because the build could not finish. I could not
+  // build this Flow ..." -- before the build's own account of why.
+  it("opens a failed build's answer with the build's own ending, said once, and keeps the full cause as the error", async () => {
+    const conversations = openConversations();
+    const conversationId = await chat(conversations);
+    const ending = "I could not build this Flow: the page asks for a sign-in I was not given.";
+    const { port } = fakePort({
+      "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.kettle" } } }),
+      "save-flow-generation-instruction": () => ({ ok: true }),
+      "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: "Flow Bootstrap generation failed.", payload: { diagnostic: { code: "flow_bootstrap.not_doable", stage: "provider_output_validation", ending: { message: ending } } } })
+    });
+
+    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
+    await automationStudioConversationCommandWork.idle();
+
+    const [result] = await turnsOf(conversations, conversationId);
+    expect(result?.text.startsWith(ending)).toBe(true);
+    expect(result?.text).not.toContain("stopped because");
+    expect(result?.text).not.toContain("could not finish");
+    expect(result?.text.split("I could not build this Flow")).toHaveLength(2);
+    expect(result?.text).toContain('What is left: the Flow "Kettles", empty, with what you asked saved on it, so it can be built again.');
   });
 
   it("routes the work's own questions and activity into the chat thread", async () => {

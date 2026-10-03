@@ -31,6 +31,8 @@
 // catalog entry the model is already shown supplies the names.
 
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
+// Type-only, for the same cycle: the literal below is held to Core's code by the compiler.
+import type { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../../result-verification/index.ts";
 // The read-account barrel and not the result-verification one: the value edge
 // to that barrel would close a cycle, because `result-verification/run-outcome.ts`
 // already calls into this directory (`reauthor.ts` says the same of its code).
@@ -40,6 +42,35 @@ import { automationStudioResultRepairUnchangedInARow } from "./history.ts";
 
 /** The id every repair brief carries, so a reader can tell it from an instruction a person wrote. */
 export const AUTOMATION_STUDIO_REAUTHOR_BRIEF_INSTRUCTION_ID = "core.result_repair.brief";
+
+/**
+ * The finding Core makes of a Flow that reads no list and stores no records
+ * (`result-verification/repair-directive.ts`). A refutation carrying it is about
+ * acts, and the list-read advice below is withheld from it.
+ */
+const ACTS_JUDGED_UNDONE: (typeof AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES)["actsJudgedUndone"] = "result.acts_judged_undone";
+
+/** What to do when the Flow reads a list: carry each narrowing clause into the step that reads the items. */
+const READ_STEPS: readonly string[] = [
+  "1. Read the request clause by clause. For every clause that narrows the answer -- which items to keep or drop (by a value, a range, a word or a pattern), how many pages or items to read, which order to put them in, or that an item may appear only once -- put it into the parameters of the step that reads the items, using the parameters that step's catalog entry lists (a condition list, a pagination setting, a limit). Leaving a clause out to be narrowed later is no longer right: this repair is the later.",
+  "2. Where a column holds the wrong kind of value (an address where text was asked for, one field where another was meant), change that step's column mapping so the column holds what the request asked for.",
+  "3. Act on the check's findings and advice above. Where the advice names a fix, make it -- but where \"How the read went\" shows the step already pages, deduplicates or filters, change that setting or condition in place instead of adding a step for it. A condition that rejected rows the request wanted is the one to correct.",
+  "4. If the step has no parameter that can express a clause, keep the rest of the fix and say which clause in your completion summary rather than dropping it silently.",
+  "5. Change only what the findings require; keep the steps that reach the page as they are unless the findings say they are wrong."
+];
+
+/**
+ * What to do when the Flow reads nothing (`run-muqiojz4-04a7a8fc`, bigbox cart:
+ * every item of the list above was about a read the request never asked for,
+ * and the re-author chased them instead of the missing Add to cart).
+ */
+const ACT_STEPS: readonly string[] = [
+  "1. Read the request act by act -- each thing it asks to be done on the site, with the item, option, size, quantity and order it names -- and find the step that does each one.",
+  "2. Act on the check's findings and advice above: where an act is missing, add the step that does it; where a step did its act differently (another item, option, size or quantity, or once where twice was asked), correct that step's parameters.",
+  "3. The Flow stores nothing and that is not what was judged wrong: do not add a step that reads or stores anything unless the request asks for something to be read back.",
+  "4. If no step can do an act, keep the rest of the fix and say which act in your completion summary rather than dropping it silently.",
+  "5. Change only what the findings require; keep the steps that did their act as they are."
+];
 
 /**
  * The brief for one repair build.
@@ -65,11 +96,7 @@ export function automationStudioReauthorBrief(input: {
     ...historySection(input.history, input.current),
     "",
     "What to do:",
-    "1. Read the request clause by clause. For every clause that narrows the answer -- which items to keep or drop (by a value, a range, a word or a pattern), how many pages or items to read, which order to put them in, or that an item may appear only once -- put it into the parameters of the step that reads the items, using the parameters that step's catalog entry lists (a condition list, a pagination setting, a limit). Leaving a clause out to be narrowed later is no longer right: this repair is the later.",
-    "2. Where a column holds the wrong kind of value (an address where text was asked for, one field where another was meant), change that step's column mapping so the column holds what the request asked for.",
-    "3. Act on the check's findings and advice above. Where the advice names a fix, make it -- but where \"How the read went\" shows the step already pages, deduplicates or filters, change that setting or condition in place instead of adding a step for it. A condition that rejected rows the request wanted is the one to correct.",
-    "4. If the step has no parameter that can express a clause, keep the rest of the fix and say which clause in your completion summary rather than dropping it silently.",
-    "5. Change only what the findings require; keep the steps that reach the page as they are unless the findings say they are wrong."
+    ...(readsNothing(input.current) ? ACT_STEPS : READ_STEPS)
   ];
   // Whole: no character cap on the brief or on any earlier attempt in it.
   const body = lines.join("\n");
@@ -89,9 +116,16 @@ export function automationStudioReauthorBrief(input: {
   };
 }
 
+/** Whether Core found this refuted Flow reads no list and stores no records. */
+function readsNothing(entry: AutomationStudioResultRepairHistoryEntry): boolean {
+  return (entry.directive?.findings ?? []).some((finding) => finding.code === ACTS_JUDGED_UNDONE);
+}
+
 function refutationLines(entry: AutomationStudioResultRepairHistoryEntry): string[] {
-  const lines = [`- Core's verdict: ${entry.reason}`, `- Stored: ${producedText(entry)}.`];
-  if (entry.step) lines.push(`- The rows came out of step ${entry.step.nodeId} (${entry.step.definitionId})${entry.step.parameters ? `, authored with parameters ${entry.step.parameters}` : ""}.`);
+  const acts = readsNothing(entry);
+  const lines = [`- Core's verdict: ${entry.reason}`, `- Stored: ${acts ? "nothing, and the Flow reads no list and stores no records, so what was judged is what its steps did" : producedText(entry)}.`];
+  const authored = entry.step?.parameters ? `, authored with parameters ${entry.step.parameters}` : "";
+  if (entry.step) lines.push(acts ? `- The run was judged at step ${entry.step.nodeId} (${entry.step.definitionId})${authored}: where the run ended, not a step known to be wrong.` : `- The rows came out of step ${entry.step.nodeId} (${entry.step.definitionId})${authored}.`);
   // How the read went, before anyone's advice: advice written without it once
   // asked for a paging loop and a filter around a step that already had both.
   for (const read of entry.reads ?? []) lines.push(`- How the read went: ${automationStudioResultReadSentence(read, "full")}`);
@@ -112,13 +146,15 @@ function historySection(history: readonly AutomationStudioResultRepairHistoryEnt
     const after = entries[index + 1]!;
     const unchanged = before.answerDigest === after.answerDigest;
     const text = [
-      `- Attempt ${before.attempt} repaired the answer below and its Flow then produced ${producedText(after)}${unchanged ? " -- exactly the same answer as before the repair, so that edit changed nothing that matters" : ""}.`,
+      `- Attempt ${before.attempt} repaired the answer below and its Flow then produced ${readsNothing(after) ? "no records, which is all a Flow that reads nothing produces" : producedText(after)}${unchanged ? " -- exactly the same answer as before the repair, so that edit changed nothing that matters" : ""}.`,
       ...refutationLines(before).map((line) => `  ${line}`)
     ].join("\n");
     lines.push(text);
   }
   if (automationStudioResultRepairUnchangedInARow(entries) > 0) {
-    lines.push("- The last repair did not change the answer. Make a different change this time: the parameters of the step that reads the items are the place to look.");
+    lines.push(readsNothing(current)
+      ? "- The last repair did not change the answer. Make a different change this time: compare each act the request asks for with the step that does it."
+      : "- The last repair did not change the answer. Make a different change this time: the parameters of the step that reads the items are the place to look.");
   }
   return lines;
 }

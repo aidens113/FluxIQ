@@ -21,7 +21,7 @@ describe("automationStudioActivityAction", () => {
   it("names a node by the verb in its id, with the element name it already carries", () => {
     expect(automationStudioActivityAction({ id: CLICK, parameters: { element: QUOTE } })).toBe("Clicking “Get a free quote”");
     expect(automationStudioActivityAction({ id: CLICK, parameters: { target: { handle: "target.4" } } })).toBe("Clicking on the page");
-    expect(automationStudioActivityAction({ id: NAVIGATE, parameters: { url: "https://shop.example/services" } })).toBe("Opening a page");
+    expect(automationStudioActivityAction({ id: NAVIGATE, parameters: { url: "https://shop.example/services" } })).toBe("Opening “/services”");
     expect(automationStudioActivityAction({ id: SNAPSHOT })).toBe("Looking over the whole page");
     expect(automationStudioActivityAction({ id: "web.output.dom-extract_list" })).toBe("Reading the list");
     expect(automationStudioActivityAction({ id: "web.output.dom-type", parameters: { text: "secret", element: { accessibleName: "Search" } } })).toBe("Typing into “Search”");
@@ -33,6 +33,22 @@ describe("automationStudioActivityAction", () => {
     expect(automationStudioActivityAction({ id: CLICK, label: "open the services page" })).toBe("Open the services page");
     expect(automationStudioActivityAction({ id: CLICK, label: "node.bootstrap.x.y", parameters: { element: QUOTE } })).toBe("Clicking “Get a free quote”");
     expect(automationStudioActivityAction({ id: "vendor.frobnicate" })).toBeUndefined();
+  });
+
+  // t193 (`run-muqiojz4-04a7a8fc`, screenshots 00019 and 00020): the navigate
+  // card read "Open page" with no page named.
+  it("names the page a navigate opens by its address path, or as the home page, never its query", () => {
+    const opening = (url: unknown) => automationStudioActivityAction({ id: NAVIGATE, parameters: { url } });
+    expect(opening("http://127.0.0.1:63414/scenarios/bigbox-retail/ip/valueridge-everyday-dinner-napkins/418831402?variant=5530102"))
+      .toBe("Opening “…/ip/valueridge-everyday-dinner-napkins/418831402”");
+    expect(opening("https://shop.example/")).toBe("Opening “Home page”");
+    expect(opening("~/")).toBe("Opening “Home page”");
+    expect(opening("~/ip/napkins")).toBe("Opening “/ip/napkins”");
+    expect(opening("/cart?token=abc#x")).toBe("Opening “/cart”");
+    expect(opening("https://shop.example/reset/Zx9aQ2kLm4Np7Rt1Vw3Yb6Cd/done")).toBe("Opening “/reset/…/done”");
+    expect(opening("https://shop.example/caf%C3%A9")).toBe("Opening “/café”");
+    expect(opening(undefined)).toBe("Opening a page");
+    expect(opening("not a url at all")).toBe("Opening a page");
   });
 
   // F36 (`run-muqiho5c-e830ce01`): a control with no accessible name read "Click · the page" in the playback.
@@ -71,7 +87,7 @@ describe("automationStudioActivityToolCall", () => {
 
   it("marks Core's opening call as a note, and names every other call by what it does", () => {
     expect(automationStudioActivityToolCall(call("initial.core.run_node", { node: SNAPSHOT, parameters: {}, consequences: [] }))).toMatchObject({ kind: "note", phase: "exploring", title: "Looking over the page the Flow starts on" });
-    expect(automationStudioActivityToolCall(call("nav.start", { node: NAVIGATE, parameters: { url: "https://x.example" } }))).toMatchObject({ kind: "tool", phase: "exploring", title: "Opening a page" });
+    expect(automationStudioActivityToolCall(call("nav.start", { node: NAVIGATE, parameters: { url: "https://x.example" } }))).toMatchObject({ kind: "tool", phase: "exploring", title: "Opening “Home page”" });
     expect(automationStudioActivityToolCall(call("x", { node: "vendor.frobnicate" }))).toMatchObject({ title: "Running the “Frobnicate” step" });
     expect(automationStudioActivityToolCall(call("x", {}))).toMatchObject({ title: "Running a step" });
     expect(automationStudioActivityToolCall(call("x", {}, "vendor.recall_notes"))).toMatchObject({ title: "Using “Recall notes”" });
@@ -88,13 +104,31 @@ describe("automationStudioActivityToolCall", () => {
     expect(automationStudioActivityToolCall(call("r2", { callId: "initial.core.run_node" }, "core.recall_result")).title).toBe("Looking again at what an earlier step found");
   });
 
-  it("says a rerun's reset as bookkeeping for its step, and the rerun as that step tried again (t193: Action · the page)", () => {
+  // A rerun's words name no step number (t195, `run-murdouox-c5294247`: the
+  // overlay read "Trying step 12 again", a number the person never sees).
+  it("says a rerun's reset as bookkeeping for its step, and the rerun as tried again, with no step number (t193: Action · the page)", () => {
     expect(automationStudioActivityToolCall(call("rerun.10.place", { replay: "reset", from: { location: "https://x.example/p" } }))).toEqual({
-      phase: "exploring", kind: "note", title: "Putting the page back to where step 10 starts", label: "Putting the page back to where step 10 starts", dryRun: false
+      phase: "exploring", kind: "note", title: "Putting the page back to where the step starts", label: "Putting the page back to where the step starts", dryRun: false
     });
     expect(automationStudioActivityToolCall(call("rerun.10", { node: CLICK, parameters: { element: QUOTE } }))).toEqual({
-      phase: "exploring", kind: "tool", title: "Clicking “Get a free quote”", label: "Trying step 10 again: clicking “Get a free quote”", dryRun: false, node: CLICK
+      phase: "exploring", kind: "tool", title: "Clicking “Get a free quote”", label: "Trying again: clicking “Get a free quote”", dryRun: false, node: CLICK
     });
+  });
+
+  // t193 W1: after a rerun's reset, the steps before it on the same page are
+  // done again (`../../../llm/node-tools/step-place.ts`); each is its own call,
+  // `rerun.<n>[.<k>].place.<m>`, and read as the rerun itself.
+  it("says a step done again before a rerun as an earlier step, and a checked one as checked, never as the rerun itself", () => {
+    expect(automationStudioActivityToolCall(call("rerun.10.2.place.9", { replay: "step", node: CLICK, parameters: { element: { tagName: "span", visibleText: "+" } } }))).toEqual({
+      phase: "exploring", kind: "tool", title: "Clicking “+”", label: "Doing an earlier step again first: clicking “+”", dryRun: false, node: CLICK
+    });
+    expect(automationStudioActivityToolCall(call("rerun.12.place.11", { replay: "verify", node: CLICK, parameters: { element: { accessibleName: "Add to cart" } } }))).toEqual({
+      phase: "exploring", kind: "tool", title: "Clicking “Add to cart”", label: "Checking an earlier step is still done: clicking “Add to cart”", dryRun: false, node: CLICK
+    });
+    expect(automationStudioActivityToolCall(call("rerun.10.2.place", { replay: "reset", from: { location: "https://x.example/p" } })).title).toBe("Putting the page back to where the step starts");
+    for (const callId of ["rerun.10", "rerun.10.2.place", "rerun.10.2.place.9", "rerun.12.place.11"]) {
+      expect(automationStudioActivityToolCall(call(callId, { replay: "step", node: CLICK, parameters: { element: QUOTE } })).label).not.toMatch(/step \d/u);
+    }
   });
 
   it("reads an opening call that goes somewhere as going to where the Flow starts, a step of the work (F31)", () => {
