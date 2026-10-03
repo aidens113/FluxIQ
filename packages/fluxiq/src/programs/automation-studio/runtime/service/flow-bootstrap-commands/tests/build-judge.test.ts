@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
+import { automationStudioFlowBootstrapJudgeFinished, automationStudioFlowBootstrapRepairingJudgedSaid } from "../../../flow-bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
@@ -159,10 +160,11 @@ describe("a build's judge", () => {
     });
     const judged = await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
     expect(judged.verdict).toBe("unknown");
-    const said: Array<{ label?: string; text?: string }> = [];
-    judge.unverified({ kind: "finished", judged } as never, ((entry: { label?: string; text?: string }) => { said.push(entry); }) as never);
-    expect(said).toHaveLength(1);
-    const text = said[0]?.text ?? "";
+    // A build no longer finishes unverified (t244): an unsure verdict opens a
+    // repair round, and that round's announcement is what the chat says.
+    if (judged.verdict === "yes") throw new Error("expected an unsure verdict");
+    const { judgement } = automationStudioFlowBootstrapJudgeFinished({ round: 1, steps: [read], verdict: judged, checklist: () => undefined });
+    const text = automationStudioFlowBootstrapRepairingJudgedSaid(judgement.judge!);
     expect(text).toContain("the judge's reply could not be read");
     expect(text).not.toContain("llm_output.");
     expect(text).not.toMatch(/\b[a-z_]+\.[a-z_.]+\b/);
