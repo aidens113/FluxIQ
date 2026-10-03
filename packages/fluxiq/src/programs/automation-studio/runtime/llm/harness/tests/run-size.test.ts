@@ -14,6 +14,7 @@ import { createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSee
 import { AutomationStudioLlmProviderError, normalizedAutomationStudioLlmProviderFailure } from "../../provider-contract.ts";
 import { AutomationStudioLlmProviderRetryLedger } from "../../provider-retry/index.ts";
 import { AutomationStudioLlmRunBudgetLedger } from "../../run-budget.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../build-purse/index.ts";
 import type { AutomationStudioLlmProvider } from "../provider.ts";
 import { runAutomationStudioLlmHarness } from "../run.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest, AutomationStudioLlmTaskResult } from "../task-request.ts";
@@ -159,3 +160,45 @@ function harness(input: Partial<AutomationStudioLlmHarnessInput>): Promise<Autom
     providerRetry: { wait: async () => {}, ledger: new AutomationStudioLlmProviderRetryLedger(), ...input.providerRetry }
   });
 }
+
+// t254: a build call is priced at what it sends, never the packed request, and
+// its reply is held at the largest reply observed for its kind, never capped.
+describe("what a build's purse holds a call at (t254)", () => {
+  /** DeepSeek flash's peak rates, every input token a miss. */
+  const flash = (inputTokens: number, outputTokens: number) => (inputTokens * 0.3 + outputTokens * 1.2) / 1_000_000;
+  const held: Array<{ inputTokens: number; outputTokens: number }> = [];
+  /** A provider whose sent messages measure 1,000 tokens, far under the packed request carrying a long instruction. */
+  const sendsLittle = (): AutomationStudioLlmProvider => ({
+    metadata: { provider: "deepseek", model: "deepseek-flash" },
+    measureInput: () => ({ estimatedInputTokens: 1_000, estimatedInputBytes: 3_000 }),
+    estimateCostUsd: ({ inputTokens, outputTokens }) => { held.push({ inputTokens, outputTokens }); return flash(inputTokens, outputTokens); },
+    runTask: async () => ANSWER
+  });
+  const longInstruction = [{ schemaVersion: "0.1" as const, instructionId: "instruction.long", title: "Long", body: "word ".repeat(30_000), scope: { kind: "flow" as const, projectId: "project.llm", flowId: "flow.checkout" }, priority: 100, status: "active" as const, requirement: "required" as const, createdAt: 1, updatedAt: 1 }];
+
+  it("prices what the provider sends, and keeps the packed request for the window refusal alone", async () => {
+    held.length = 0;
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
+    const result = await automationStudioLlmBuildPurseScope(purse, () => harness({ provider: sendsLittle(), instructions: longInstruction as never, tokenLimits: WINDOW }));
+
+    expect(result.ok).toBe(true);
+    // The size the window refusal reads is the packed request, the larger measure.
+    expect(result.request.estimatedInputTokens).toBeGreaterThan(10_000);
+    // The purse held what is sent: 1,000 tokens, not the packed request's.
+    expect(held[0]?.inputTokens).toBe(1_000);
+    expect(purse.lastProjectedCostUsd).toBeCloseTo(flash(1_000, WINDOW.maxOutputTokens), 12);
+  });
+
+  it("holds a decision's reply at 750 tokens and a judge's at 1,250, twice the largest each has sent, and another kind at its window set-aside", async () => {
+    const replies = async (taskKind: AutomationStudioLlmHarnessInput["taskKind"]) => {
+      held.length = 0;
+      const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
+      await automationStudioLlmBuildPurseScope(purse, () => harness({ taskKind, provider: { ...sendsLittle(), runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged." } }) }, tokenLimits: WINDOW, ...(taskKind === "evidence_tool_decision" ? { evidenceLoop: { iteration: 1, tools: [], evidence: [], decisionSchema: { type: "object" }, completionSchema: { type: "object" }, canComplete: true } } : {}) }));
+      return held[0]?.outputTokens;
+    };
+    expect(await replies("evidence_tool_decision")).toBe(750);
+    expect(await replies("loop_verification")).toBe(1_250);
+    expect(await replies("runtime_diagnosis")).toBe(WINDOW.maxOutputTokens);
+    expect(AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES).toEqual({ decisionReplyTokens: 750, judgeReplyTokens: 1_250, judgeInputTokens: 8_000 });
+  });
+});

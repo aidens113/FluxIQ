@@ -16,7 +16,19 @@
 // its own measure of that request), and a call that would take what was spent,
 // what is in flight and its own worst case past the ceiling is refused, never
 // sent. A call that then reports costing more than it was held at is a breach,
-// counted, because the projection is meant to be the most it can cost.
+// counted with its overshoot in dollars (`overshootUsd`).
+//
+// **A reply is held at a reserve, not a cap (user, 2026-10-03, t254).** No
+// request sends `max_tokens`, so a call's hold is its sent input all uncached,
+// at the rate in force when it is held, plus the largest reply observed for its
+// kind with a margin (`./build-call-reserves.ts`). The hold is no longer a
+// proof: a reply longer than its reserve costs more than it was held at, and the
+// Flow's ceiling can be crossed -- only by the part of that one reply beyond its
+// reservation, since calls are held one at a time and nothing fits once one has
+// overshot. Each such call is a breach, its overshoot added to `overshootUsd`,
+// and both reach the loop's accounting (`../evidence-loop/cost-purse.ts`). What
+// a settled call is charged is what the provider billed: its cached input at
+// the cached rate and off-peak calls at half (`../deepseek/pricing.ts`).
 //
 // **One purse per Flow creation, and the only cost authority (t234).** The
 // user's limit is a Flow's: $0.10 (FLUXIQ_LLM_RUN_COST_CEILING_USD) for
@@ -39,13 +51,29 @@
 // (t234: a refuted result's repair ladder spent $0.12 of $0.10 without it).
 // Holding it at the whole ceiling instead would refuse every call after the
 // first one that cost anything.
+//
+// **Judging is kept back while a build explores (t254).** A build with a judge
+// ends every round by judging its Flow, a pair of calls (a first answer, then a
+// second that confirms a yes or asks a non-yes again). `run-murzln6g` spent
+// $0.089 of $0.10 over thirty exploration decisions and reached its judgement
+// with nothing left for a repair. So once the build's phases ask for it
+// (`keepBackForJudging`), every call that is not a judge's -- each decision,
+// the instruction reading -- is held as if the judging pair were already in
+// flight: refused when what is spent, what is in flight, the judging pair and
+// its own worst case would cross the ceiling. A judge's call draws on that
+// reserve rather than leaving it. The pair is held at the largest judge call
+// priced so far, or, before any has been, at the provider's price for the
+// standing judge allowance the phases name. The reserve is never charged:
+// spend is still only what calls settle at, so it shows in no accounting, only
+// in what the loop is told is left (`../loop-budget.ts`) and in a refusal's
+// `keptBackUsd`.
 
 import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 
 /** Why a call was not sent, in figures. */
 export type AutomationStudioLlmBuildPurseRefusal = {
   code: "llm_budget.run_cost_limit";
-  /** The call's worst case: every input token uncached, its whole reply allowance. Absent where the provider does not price. */
+  /** The call's hold: every input token uncached, its reply at its reserve (`./build-call-reserves.ts`). Absent where the provider does not price. */
   projectedCostUsd?: number;
   estimatedInputTokens: number;
   maxOutputTokens: number;
@@ -56,6 +84,33 @@ export type AutomationStudioLlmBuildPurseRefusal = {
   ceilingUsd: number;
   /** What earlier builds of the same Flow creation had spent, included in `spentUsd`. Absent when none. */
   carriedUsd?: number;
+  /** What was kept back for judging the build's Flow, which this call -- not a judge's -- had to leave (`keepBackForJudging`). Absent when nothing was. */
+  keptBackUsd?: number;
+};
+
+/** A request's worst case by the provider's own price, or `undefined` where it does not price (`./projected-cost.ts`). */
+export type AutomationStudioLlmBuildPursePrice = (inputTokens: number, outputTokens: number) => number | undefined;
+
+/** One call the purse is asked to hold. */
+export type AutomationStudioLlmBuildPurseCall = {
+  /** The call's worst case (`./projected-cost.ts`); `undefined` where the provider does not price. */
+  projectedCostUsd: number | undefined;
+  estimatedInputTokens: number;
+  maxOutputTokens: number;
+  /** The call is a judge's: it draws on the judging reserve rather than leaving it, and the reserve is sized from it. */
+  judge?: boolean | undefined;
+  /** The provider's price, kept so the purse can price the judging reserve and a round's least decision before either is asked for. */
+  price?: AutomationStudioLlmBuildPursePrice | undefined;
+};
+
+/**
+ * Judging the build's Flow, kept back from every other call (t254): `calls`
+ * judge calls, each held at the largest judge call priced so far, or at the
+ * provider's price for `unpriced` before any has been.
+ */
+export type AutomationStudioLlmBuildPurseJudging = {
+  calls: number;
+  unpriced: { inputTokens: number; outputTokens: number };
 };
 
 /** One call's hold on the purse, settled once by whichever comes first. */
@@ -95,6 +150,8 @@ export class AutomationStudioLlmBuildPurse {
   readonly ceilingUsd: number;
   /** Calls that reported costing more than they were held at. */
   breaches = 0;
+  /** What those calls cost beyond their holds, summed: by how much the purse's holds were short, which is how far past its ceiling it can have gone. */
+  overshootUsd = 0;
   /** The last call this purse refused; cleared before each call `./run.ts` wraps. */
   refusal: AutomationStudioLlmBuildPurseRefusal | undefined;
   /** The worst case of the last call it priced: the least the next, larger request can cost at worst. */
@@ -106,6 +163,12 @@ export class AutomationStudioLlmBuildPurse {
   private largestReportedUsd = 0;
   private readonly pending = new Map<number, number>();
   private holds = 0;
+  /** Judging kept back from every other call, once the build's phases ask for it. */
+  private judging: AutomationStudioLlmBuildPurseJudging | undefined;
+  /** The largest worst case of a judge call priced on this purse: what each judge call of the reserve is held at. */
+  private largestJudgeHoldUsd: number | undefined;
+  /** The provider's price, from the last call that brought one. */
+  private price: AutomationStudioLlmBuildPursePrice | undefined;
 
   constructor(private readonly options: AutomationStudioLlmBuildPurseOptions) {
     if (!Number.isFinite(options.ceilingUsd) || options.ceilingUsd < 0) throw new Error("A build purse's ceiling must be a finite, non-negative amount.");
@@ -126,26 +189,63 @@ export class AutomationStudioLlmBuildPurse {
     return [...this.pending.values()].reduce((sum, held) => sum + held, 0);
   }
 
-  /** What is left of the ceiling once what was spent and what is held are taken out; never below nothing. */
+  /** What is left of the ceiling once what was spent and what is held are taken out; never below nothing. The judging reserve is not taken out: a judge may spend it. */
   leftUsd(): number {
     return Math.max(0, this.ceilingUsd - this.spentUsd() - this.pendingUsd());
+  }
+
+  /** Keep `judging` back from every call that is not a judge's, from now on (t254). */
+  keepBackForJudging(judging: AutomationStudioLlmBuildPurseJudging): void {
+    this.judging = { calls: judging.calls, unpriced: { ...judging.unpriced } };
+  }
+
+  /**
+   * What judging the Flow is held at: the reserve's judge calls, each at the
+   * largest judge call priced so far or, before any, at the provider's price
+   * for the reserve's standing allowance. `undefined` where nothing is kept
+   * back or nothing can be priced.
+   */
+  judgingHoldUsd(): number | undefined {
+    if (!this.judging) return undefined;
+    const each = this.largestJudgeHoldUsd ?? this.priceUsd(this.judging.unpriced.inputTokens, this.judging.unpriced.outputTokens);
+    return each === undefined ? undefined : this.judging.calls * each;
+  }
+
+  /** What a call that is not a judge's must leave for judging: `judgingHoldUsd`, or nothing. */
+  keptBackUsd(): number {
+    return this.judgingHoldUsd() ?? 0;
+  }
+
+  /** The provider's price, at the rate in force now, for a request of `inputTokens` and a reply of `outputTokens`, all uncached; `undefined` before any call brought a price, or where it prices nonsense. */
+  priceUsd(inputTokens: number, outputTokens: number): number | undefined {
+    let priced: number | undefined;
+    try {
+      priced = this.price?.(inputTokens, outputTokens);
+    } catch {
+      priced = undefined;
+    }
+    return typeof priced === "number" && Number.isFinite(priced) && priced > 0 ? priced : undefined;
   }
 
   /**
    * Hold a call's worst case, or refuse it. `projectedCostUsd` is the call's
    * worst case (`./projected-cost.ts`); `undefined` means the provider does not
    * price, and the call is held at the most any call here has reported costing,
-   * or refused only once nothing is left while none has.
+   * or refused only once nothing is left while none has. A call that is not a
+   * judge's must also leave what is kept back for judging (`keptBackUsd`).
    */
-  hold(call: { projectedCostUsd: number | undefined; estimatedInputTokens: number; maxOutputTokens: number }): { ok: true; hold: AutomationStudioLlmBuildPurseHold } | { ok: false; refusal: AutomationStudioLlmBuildPurseRefusal } {
+  hold(call: AutomationStudioLlmBuildPurseCall): { ok: true; hold: AutomationStudioLlmBuildPurseHold } | { ok: false; refusal: AutomationStudioLlmBuildPurseRefusal } {
+    if (call.price) this.price = call.price;
     const spentUsd = this.spentUsd();
     const pendingUsd = this.pendingUsd();
     const projected = call.projectedCostUsd;
     if (projected !== undefined) this.lastProjectedCostUsd = projected;
+    if (call.judge && projected !== undefined) this.largestJudgeHoldUsd = Math.max(this.largestJudgeHoldUsd ?? 0, projected);
+    const keptBackUsd = call.judge ? 0 : this.keptBackUsd();
     const heldUsd = projected ?? this.largestReportedUsd;
     const over = heldUsd > 0
-      ? spentUsd + pendingUsd + heldUsd > this.ceilingUsd + EPSILON_USD
-      : spentUsd + pendingUsd >= this.ceilingUsd;
+      ? spentUsd + pendingUsd + keptBackUsd + heldUsd > this.ceilingUsd + EPSILON_USD
+      : spentUsd + pendingUsd + keptBackUsd >= this.ceilingUsd;
     if (over) {
       this.refusal = {
         code: "llm_budget.run_cost_limit",
@@ -155,7 +255,8 @@ export class AutomationStudioLlmBuildPurse {
         spentUsd,
         pendingUsd,
         ceilingUsd: this.ceilingUsd,
-        ...(this.carriedUsd > 0 ? { carriedUsd: this.carriedUsd } : {})
+        ...(this.carriedUsd > 0 ? { carriedUsd: this.carriedUsd } : {}),
+        ...(keptBackUsd > 0 ? { keptBackUsd } : {})
       };
       return { ok: false, refusal: this.refusal };
     }
@@ -175,6 +276,7 @@ export class AutomationStudioLlmBuildPurse {
           if (valid) this.largestReportedUsd = Math.max(this.largestReportedUsd, reported);
           if (valid && projected !== undefined && reported > heldUsd + EPSILON_USD) {
             this.breaches += 1;
+            this.overshootUsd += reported - heldUsd;
             this.options.onBreach?.();
           }
         },

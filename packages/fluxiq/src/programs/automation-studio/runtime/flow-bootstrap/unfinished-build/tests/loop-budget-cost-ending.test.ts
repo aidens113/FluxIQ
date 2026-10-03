@@ -8,14 +8,14 @@
 // round with $0.026 unspent -- a second cost authority beside the purse, which
 // never saw the call. Now the build's one purse, opened for the Flow's creation
 // with what earlier builds of it spent, is handed to the loop, and the loop
-// ends on cost only when that purse refuses: here the sixteenth call's worst
-// case ($0.0314, every input token uncached plus the 8,000-token reply
-// allowance) does not fit what is left, so the purse refuses it before it is
+// ends on cost only when that purse refuses: here the sixteenth call's hold
+// ($0.0227, every input token uncached plus its 750-token reply reserve, t254;
+// it was $0.0314 with the 8,000-token allowance) does not fit what is left, so the purse refuses it before it is
 // sent, and the ending says what was spent, how much of it earlier builds of
 // this Flow spent, and what the call could have cost at most.
 // This drives the real loop through the real harness with run 13's figures.
 import { describe, expect, it } from "vitest";
-import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider } from "../../../llm/harness.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceTool } from "../../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../../../llm/index.ts";
@@ -38,7 +38,9 @@ const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
  */
 const LEFT_BY_EARLIER_BUILD = 0.095;
 const CARRIED = CEILING - LEFT_BY_EARLIER_BUILD;
-/** DeepSeek flash's peak rates, every input token a miss, plus the reply allowance: how the purse prices a request. */
+/** A decision's reply as the purse holds it: its observed-maximum reserve, never a cap (t254). */
+const DECISION_REPLY = AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.decisionReplyTokens;
+/** DeepSeek flash's peak rates, every input token a miss, plus the reply reserve: how the purse prices a request. */
 const worstCase = (inputTokens: number, outputTokens: number) => (inputTokens * 0.3 + outputTokens * 1.2) / 1_000_000;
 const usd = (amount: number) => `$${amount.toFixed(3)}`;
 /** That `message` opens with `prefix`, shown as a diff when it does not. */
@@ -111,12 +113,12 @@ describe("a build whose purse refused its next call (run 13)", () => {
     expect(outcome.progress.exhaustion).toMatchObject({ bound: "budget", budgetBound: "cost", iterations: 15 });
     // The refusal is the purse's own, creation-wide: no second authority declined anything.
     const refusal = outcome.progress.exhaustion?.costRefusal;
-    expect(refusal).toMatchObject({ code: "llm_budget.run_cost_limit", pendingUsd: 0, ceilingUsd: CEILING, maxOutputTokens: 8_000 });
+    expect(refusal).toMatchObject({ code: "llm_budget.run_cost_limit", pendingUsd: 0, ceilingUsd: CEILING, maxOutputTokens: DECISION_REPLY });
     expect(refusal).not.toHaveProperty("declinedBy");
     expect(refusal?.spentUsd).toBeCloseTo(CARRIED + SPENT, 9);
-    expect(refusal?.projectedCostUsd).toBeCloseTo(worstCase(72_677, 8_000), 9);
+    expect(refusal?.projectedCostUsd).toBeCloseTo(worstCase(72_677, DECISION_REPLY), 9);
     // Run 13 said "The build stopped at its spending limit of $0.10 before the Flow was finished." and no figure.
     const carried = CARRIED > 0 ? ` (${usd(CARRIED)} of it by earlier builds of this Flow)` : "";
-    opens(outcome.ending.message, `The build stopped at its spending limit of $${CEILING.toFixed(2)} before the Flow was finished: it had spent ${usd(CARRIED + SPENT)}${carried}, and its next call could have cost up to ${usd(worstCase(72_677, 8_000))}. `);
+    opens(outcome.ending.message, `The build stopped at its spending limit of $${CEILING.toFixed(2)} before the Flow was finished: it had spent ${usd(CARRIED + SPENT)}${carried}, and its next call could have cost up to ${usd(worstCase(72_677, DECISION_REPLY))}. `);
   });
 });

@@ -15,6 +15,9 @@ import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
 import { AutomationStudioLlmProviderError, normalizedAutomationStudioLlmProviderFailure } from "../../provider-contract.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekCostUsd } from "../index.ts";
 
+/** A peak instant, Wednesday 2026-09-30 02:00 UTC: DeepSeek bills calls at their send time, peak or off-peak (t254), and these figures are peak. */
+const PEAK_CLOCK = (): number => Date.UTC(2026, 8, 30, 2);
+
 /** Page text a reply may quote, which must never reach an account. */
 const PAGE_TEXT = "PRIVATE_PAGE_TEXT charging case";
 const CARD = "main > div:nth-of-type(2) > div > div:nth-of-type(1) > div.css-0rc9pnw";
@@ -181,6 +184,7 @@ async function refusal(body: unknown, contentType = "application/json"): Promise
 
 function adapter(response: () => Response) {
   return createAutomationStudioDeepSeekProvider({
+    now: PEAK_CLOCK,
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async () => "test-secret",
     fetchImpl: (async () => response()) as typeof fetch

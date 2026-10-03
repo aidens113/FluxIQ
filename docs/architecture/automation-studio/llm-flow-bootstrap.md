@@ -532,7 +532,10 @@ is persisted. The per-request ceiling is the model's context window --
 `AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS` as
 `AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST` -- and the session-key
 profile is that whole window: 992,000 input tokens, 8,000 reserved for the reply
-by default (build decisions send and reserve 2,000), 1,000,000 total. A request whose estimated input plus reserved output exceeds the
+by default, 1,000,000 total. No request sends a reply cap (`max_tokens`): the
+user's order of 2026-10-03 (t254) removed the 2,000-token cap on build decisions
+and judges and the 8,000 one on everything else, so the provider's own maximum
+applies and the 8,000 is only what this check sets aside. A request whose estimated input plus reserved output exceeds the
 window is refused before it is sent, never trimmed:
 `llm_budget.input_limit_exceeded` or `llm_budget.request_total_exceeded` from
 the harness, and `llm.provider_input_budget_exceeded` from the DeepSeek adapter,
@@ -868,15 +871,29 @@ budget remains.
 **Repairs are bounded by money and progress, not by a count (t240).** Another
 round opens only when both hold:
 
-- **The purse can fund it.** It must hold one more decision plus the judging of
-  its Flow, each at its capped hold (2,000 reply tokens for either): what the
-  purse last priced a decision at and a judge call at
-  (`AutomationStudioLlmBuildPurse.lastProjectedCostUsd`). A judge not yet priced
-  is held at the decision's price, which is at least its own: its request carries
-  the test's account, not the page. A build that cannot fund the round ends
-  `budget_exhausted` (`cost`), saying what was left and what the round could have
-  cost (run 38, cause C7). A provider that does not price leaves nothing to
-  project, and only an empty purse stops the round.
+- **The purse can fund it** (t254, `unfinished-build/round-funding.ts`). It must
+  hold the judging of its Flow -- two judge calls, since a first answer is
+  confirmed or asked again, each at the largest judge hold priced (or, before
+  any, at a judge's standing allowance of 8,000 input and 1,250 reply tokens) --
+  and the least its first decision can be held at, its 750-token reply reserve
+  with no input. The first decision itself is priced from its own request when
+  it is sent; it used to be held at the previous round's last decision, though a
+  repair starts from a fresh window and every first repair decision recorded was
+  smaller. A build that cannot fund the round ends `budget_exhausted` (`cost`),
+  saying what was left and what the round needed (run 38, cause C7; murzln6g).
+  A provider that does not price leaves nothing to project, and only an empty
+  purse stops the round.
+- **Judging is kept back while the build explores** (t254). With a judge, the
+  purse keeps that judging pair back from every call that is not a judge's
+  (`AutomationStudioLlmBuildPurse.keepBackForJudging`): a decision that would fit
+  only by spending it is refused, the refusal and the cost ending name it
+  (`keptBackUsd`), and the loop's count of what is left takes it out, so the
+  model wraps up while the finishing decision and its judging are paid for. The
+  reserve is never charged as such. A round stopped because a call would have
+  eaten into it spends it testing and judging the Flow as it stands, and
+  finishes the build on a yes about that Flow (t254 stage 2), unless that Flow
+  is unchanged since a judge of the build said no to it (stage 3; see "One
+  purse per Flow creation" below).
 - **The round before it measurably progressed** (`unfinished-build/progress.ts`),
   by what the test and the judge report. That means more acts or choices with a
   step, or more of them proven by the test; a test that now runs clean, or fails
@@ -1082,16 +1099,20 @@ does not return the plan, prompt, instruction bodies, provider credential/key
 identity, or secret material. Explicit review and apply are
 still required to materialize topology.
 
-Successful DeepSeek usage accounting includes a conservative finite
-`estimatedCostUsd`. As read from DeepSeek's own price list on 2026-09-23
+Successful DeepSeek usage accounting includes a finite `estimatedCostUsd`:
+what DeepSeek bills. As read from DeepSeek's own price list on 2026-09-23
 (`https://api-docs.deepseek.com/quick_start/pricing/`), the default model
 `deepseek-flash` is served by DeepSeek-V4.1-Flash at a peak cache-miss rate of
 USD 0.3 per million input tokens, a peak cache-hit rate of USD 0.006, and USD
 1.2 per million output tokens; `deepseek-v4-pro` costs USD 1.32, 0.044 and 3.96
-on the same three axes. Core prices per model and does not assume the off-peak
-discount, which halves every rate outside 01:00-04:00 and 06:00-10:00 UTC on
-weekdays: the run budget reserves before a call is made, so an off-peak run is billed
-less than Core estimated and never more. These provider-owned prices are a dated
+on the same three axes. Core prices per model and at the rate in force when a
+call is sent (t254; user, 2026-10-03: "It should be billed at how much it
+actually costs"): DeepSeek halves every rate outside 01:00-04:00 and
+06:00-10:00 UTC on weekdays and all weekend (`automationStudioDeepSeekOffPeakAt`
+in `runtime/llm/deepseek/pricing.ts`), and its cached input is charged at the
+cache-hit rate from the usage it reports. A hold before a call uses the rate in
+force at that moment with all input uncached. Chinese public holidays, also
+off-peak, are not known to Core and are charged at peak. These provider-owned prices are a dated
 maintenance input and must be reviewed when DeepSeek changes its line-up or
 pricing.
 
@@ -1145,14 +1166,23 @@ instruction, every decision, the test and the judge are all held against it.
   next build's purse as `carriedUsd`, and cleared when the creation ends. A
   refuted-result repair during a later scheduled run keeps its own run ceiling
   and never touches the record.
-- **Holds are true worst cases.** Each call is held at all of its input
-  uncached at peak rates -- input measured at 3 UTF-8 bytes per token plus 16
-  framing tokens, which overstated every recorded call -- plus its reply
-  allowance. Build decisions send and hold `max_tokens` 2,000
-  (`AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS`,
-  `runtime/llm/harness/token-limits.ts`), at least three times the largest of
-  6,119 recorded decision replies (593 tokens; p99 469). Other calls keep the
-  8,000 default; a runtime patch step can reach about 2,700 tokens.
+- **Holds price what is sent, with an observed reply reserve (t254).** Each
+  call is held at the input its provider will send -- never the packed request,
+  which carries the whole node catalog and is kept only for the window refusal
+  -- all uncached at the rate in force, measured at 3 UTF-8 bytes per token plus
+  16 framing tokens (densest call recorded: 3.24 bytes per token), plus its reply
+  at a reserve: twice the largest reply observed for its kind
+  (`runtime/llm/build-purse/build-call-reserves.ts`), 750 tokens for a decision
+  or the instruction reading (largest 371) and 1,250 for a judge call (largest
+  625). No reply is capped, so a hold is no longer a proof: the ceiling can be
+  crossed only by the part of one reply beyond its reserve, and every such call
+  is a breach with its overshoot recorded (`AutomationStudioLlmBuildPurse.overshootUsd`,
+  the loop accounting's `budgetBreaches` and `budgetOvershootUsd`). A judge
+  call's breach reaches the build's accounting too (t254 stage 2): the judge's
+  spend arrives as a verdict, so the phases read the purse's breaches and
+  overshoot across the judge's calls and add them beside that spend, and a
+  build's recorded `estimatedCostUsd` and `budgetOvershootUsd` are what its
+  purse charged. Other call kinds are held at their 8,000-token window set-aside.
 - **The loop budget does not end a build on cost.** Its count of decisions
   left (`runtime/llm/loop-budget.ts`) reads the purse's figures with no
   held-back decision; it only tells the model what is left and drives the
@@ -1164,6 +1194,46 @@ instruction, every decision, the test and the judge are all held against it.
   purse refuses gives a `not_judged` verdict, which finishes nothing: the
   round goes to repair, and a purse that cannot fund that repair ends the build
   at its budget with the Flow kept.
+- **The judging reserve is spent judging, never left** (t254 stage 2,
+  `runtime/flow-bootstrap/unfinished-build/reserve-judging.ts`). A round the
+  purse stopped because its next call would have eaten into the judging kept
+  back (a cost refusal carrying `keptBackUsd`) does not end the build with that
+  reserve unspent. The Flow as it stands is tested from its start, its test
+  handed to the build's judge (`AutomationStudioFlowBootstrapBuildJudge.judgedTest`),
+  the caller is asked whether it can build that Flow as it stands
+  (`acceptStopped`: the completion check run on the draft, which becomes the
+  plan built), and the judge is asked about the test with the reserve its
+  calls draw on. A yes about that very Flow (its `flowSignature`) finishes the
+  build with it. Anything else -- a no, an unsure verdict, a yes about another
+  version or about no test -- ends it `budget_exhausted` (`cost`): the message
+  says the reserve went on judging the Flow as it stood and what that cost,
+  what the purse had spent after it, what the judge found and says is left to
+  change, and that the Flow was kept as a draft. It is never "not doable" from
+  here, even where the judge says what was asked can no longer be had: money
+  stopped the build, not a judged dead end. An empty Flow, one no replay can
+  run, one whose test failed, or one the completion check refuses is not
+  judged -- a yes could finish none of them -- and ends at cost as before, as
+  does a cost stop that kept nothing back.
+- **A Flow a judge said no to is not judged again unchanged** (t254 stage 3,
+  `runtime/flow-bootstrap/unfinished-build/phases.ts`). Where the round the
+  reserve stopped holds the very Flow a judge of this build last said no to,
+  the reserve is not spent: no test from its start and no judge call. "The very
+  Flow" is the Flow signature (`automationStudioFlowDraftFlowSignature`) of the
+  test that judge judged -- the `no` verdict's own `flowSignature`, or, where
+  the verdict carries none, the signature of the finished round's Flow, which a
+  `no` is always about -- compared with the signature of the Flow the stopped
+  round left. Only a `no` counts: after an unsure or not-judged verdict, or a
+  `no` about a test of another version, the Flow is tested and judged with the
+  reserve as above. The build ends `budget_exhausted` (`cost`) with the
+  refusal's figures; the message says the next call could not fit beside what
+  was kept back for judging, and that this was not spent because the Flow was
+  unchanged since the judge said it does not do what was asked. It then gives
+  what that judge found and says is left to change, and that the Flow was kept
+  as a draft. It is never "not doable", even where that judge said what was
+  asked can no longer be had. Run murzln6g's repair at peak rates is the case:
+  refused its first decision beside $0.0068 kept back, its Flow was still the
+  seed round 0's judge said no to, so it ends at cost with round 0's findings
+  and makes no judge call.
 
 ## Generation readiness capability
 

@@ -8,11 +8,13 @@ import { estimateAutomationStudioDeepSeekCostUsd } from "../deepseek/index.ts";
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProviderErrorCode } from "../provider-contract.ts";
 
 describe("Automation Studio DeepSeek provider", () => {
-  it("uses the fixed endpoint, explicit model/max_tokens, opaque secret resolver, request IDs, and no redirects", async () => {
+  it("uses the fixed endpoint, an explicit model and no max_tokens, opaque secret resolver, request IDs, and no redirects", async () => {
     let requestedUrl = "";
     let requestedInit: RequestInit | undefined;
     const secretRequests: unknown[] = [];
     const provider = createAutomationStudioDeepSeekProvider({
+      // A peak hour (Wednesday 02:00 UTC): a call is billed at its send time, peak or off-peak (t254).
+      now: () => Date.UTC(2026, 8, 30, 2),
       secretReference: { kind: "secret_reference", id: "secret:deepseek" },
       resolveSecret: async (input) => {
         secretRequests.push(input);
@@ -33,7 +35,9 @@ describe("Automation Studio DeepSeek provider", () => {
     expect(new Headers(requestedInit?.headers).get("x-request-id")).toBe("request.one");
     expect(new Headers(requestedInit?.headers).get("idempotency-key")).toBe("idempotency.one");
     const outbound = JSON.parse(String(requestedInit?.body)) as { messages: Array<{ role: string; content: string }> };
-    expect(outbound).toMatchObject({ model: "deepseek-flash", max_tokens: 2000, temperature: 0, thinking: { type: "disabled" }, stream: false });
+    expect(outbound).toMatchObject({ model: "deepseek-flash", temperature: 0, thinking: { type: "disabled" }, stream: false });
+    // No reply cap is sent (user, 2026-10-03, t254: "i never told you to add any cap on output. Remove that"): the provider's own maximum applies.
+    expect(outbound).not.toHaveProperty("max_tokens");
     const systemPrompt = outbound.messages.find((message) => message.role === "system")!.content;
     const userPayload = JSON.parse(outbound.messages.find((message) => message.role === "user")!.content) as Record<string, unknown>;
     expect(systemPrompt).toContain("Return exactly one JSON object matching the requested expectedOutput.");
@@ -383,8 +387,11 @@ describe("Automation Studio DeepSeek provider", () => {
 
     const invalidUsage = providerForResponse(() => responseEnvelope({ kind: "diagnosis", summary: "Diagnosis." }, { prompt_tokens: 2, completion_tokens: 3, total_tokens: 99 }));
     await expectProviderError(invalidUsage.runTask(request()), "llm.provider_usage_invalid");
-    const overLimitUsage = providerForResponse(() => responseEnvelope({ kind: "diagnosis", summary: "Diagnosis." }, { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 }));
+    // Usage over the window still refuses; a reply longer than what the window set aside does not, since no cap was sent (t254).
+    const overLimitUsage = providerForResponse(() => responseEnvelope({ kind: "diagnosis", summary: "Diagnosis." }, { prompt_tokens: 7_000, completion_tokens: 1_003, total_tokens: 8_003 }));
     await expectProviderError(overLimitUsage.runTask(request({ tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2, maxTotalTokens: 8002 } })), "llm.provider_usage_limit_exceeded");
+    const longReply = providerForResponse(() => responseEnvelope({ kind: "diagnosis", summary: "Diagnosis." }, { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 }));
+    await expect(longReply.runTask(request({ tokenLimits: { maxInputTokens: 8000, maxOutputTokens: 2, maxTotalTokens: 8002 } }))).resolves.toMatchObject({ usage: { outputTokens: 3 } });
   });
 
   it("rejects missing secrets and unsupported model/response bounds without transport", async () => {

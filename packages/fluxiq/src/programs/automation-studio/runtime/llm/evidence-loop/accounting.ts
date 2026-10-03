@@ -37,6 +37,12 @@ export type AutomationStudioLlmEvidenceLoopAccounting = {
    * writes; optional for the same reason `cacheHitInputTokens` is.
    */
   budgetBreaches?: number;
+  /**
+   * What those calls cost beyond their holds, in dollars (t254): a reply is
+   * held at an observed-maximum reserve, never capped, so this is how far past
+   * the ceiling the build can have gone. Absent means none.
+   */
+  budgetOvershootUsd?: number;
 };
 
 /** A loop's accounting before it has spent anything. */

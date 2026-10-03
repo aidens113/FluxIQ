@@ -35,6 +35,14 @@
 // its own, and `run-muqbzu32-8691a65e` stopped with $0.0738 of $0.10 spent and
 // a next decision of $0.0245 at worst that the purse would have paid for.
 //
+// **What judging needs is not the exploration's to spend (t254).** A build
+// with a judge keeps its judging pair back from every decision
+// (`./build-purse/purse.ts`, `keepBackForJudging`), and the count takes it out
+// of what is left: the model is told what exploration may still spend, and
+// reaches its wrap-up while the decision that finishes and the judging after
+// it are both still paid for. `run-murzln6g` was told of $0.0111 it could not
+// have spent on a repair and judged.
+//
 // **The last decisions are for finishing, not only the very last one.** The
 // last decision used to be the only one offered completion alone, so a
 // completion refused on it had no turn left to be corrected:
@@ -79,7 +87,7 @@ export type AutomationStudioLlmEvidenceLoopSpending = {
   elapsedMs: number;
   /**
    * The worst case of the last decision sent, priced from its request
-   * (`./build-purse/`): every input token uncached, its whole reply allowance.
+   * (`./build-purse/`): every input token uncached, its reply at its reserve.
    * Each request carries everything before it, so the next costs at least this
    * at worst. The next decision is reserved at this or the average, whichever
    * is larger, and the rest are counted at the average: the average alone said
@@ -91,11 +99,12 @@ export type AutomationStudioLlmEvidenceLoopSpending = {
   /**
    * The purse the loop's decisions are held against, read before this
    * decision: the cost count reads it rather than the loop's own figures, so
-   * what earlier builds of the same Flow creation spent and what calls in
-   * flight are held at count, and nothing else is held back. Absent, the
+   * what earlier builds of the same Flow creation spent, what calls in
+   * flight are held at and what is kept back for judging the Flow
+   * (`keptBackUsd`, t254) count, and nothing else is held back. Absent, the
    * count reads `maxCostUsd` and `estimatedCostUsd`.
    */
-  purse?: { ceilingUsd: number; spentUsd: number; pendingUsd: number };
+  purse?: { ceilingUsd: number; spentUsd: number; pendingUsd: number; keptBackUsd?: number };
 };
 
 /** What is left, this decision included. Only the bounds the budget names appear. */
@@ -140,10 +149,11 @@ export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudi
     remaining.tokensLeft = Math.max(0, Math.floor(tokensLeft));
   }
   if (budget.maxCostUsd !== undefined || spent.purse) {
-    // What the purse has left: its ceiling less what is spent and what is in
-    // flight, with nothing held back. Without one, the loop's own figures.
+    // What the purse has left for decisions: its ceiling less what is spent,
+    // what is in flight and what is kept back for judging, with nothing else
+    // held back. Without one, the loop's own figures.
     const costLeft = spent.purse
-      ? spent.purse.ceilingUsd - spent.purse.spentUsd - spent.purse.pendingUsd
+      ? spent.purse.ceilingUsd - spent.purse.spentUsd - spent.purse.pendingUsd - (spent.purse.keptBackUsd ?? 0)
       : budget.maxCostUsd! - spent.estimatedCostUsd - unreported * averageCost;
     // As the token bound counts: the next decision is reserved at its worst
     // case, once, and those after it at what decisions have actually cost.
