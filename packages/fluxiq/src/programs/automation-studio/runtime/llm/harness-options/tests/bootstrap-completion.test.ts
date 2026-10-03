@@ -324,6 +324,9 @@ describe("a completed plan that could not reach where the Flow starts", () => {
     });
     expect(refused.ok).toBe(false);
     expect(refused.check.restoredStep).toEqual({ step: 1, withdrawnAs: "dropped" });
+    // A draft's refusal hands back the note in place of a script (t252, D8): a missing step may be run or written.
+    if (refused.ok || refused.check.ok) throw new Error("expected a refusal");
+    expect((refused.check.feedback as unknown as Feedback).previous).toContain("run or write the step it is missing");
     const plain = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary: "Scrape the products" }, projectId: "project.1", flowId: "flow.1", registry, resolution,
       draftSteps: [step(1, "web.browser.navigate", { url: START_LOCATION }, "kept")], startLocation: START_LOCATION

@@ -109,6 +109,18 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
    */
   routeState?: JsonObject;
   /**
+   * The node's output values, keyed by output port, as the Flow would hold
+   * them after this node ran: a list read's rows under its record port, on a
+   * replay (t252, `../node-tools/replay.ts`).
+   *
+   * **Carried, never shown.** The evidence is what the model reads; this is
+   * what the build's test reads, to run a repeat once for each row the listing
+   * returned in the test. Rows are page text, so nothing puts this member in
+   * front of the model or the judge. A value that is not an object is dropped,
+   * never fatal: without it the test runs the repeat once, as before.
+   */
+  outputs?: JsonObject;
+  /**
    * What this one call did, for the draft the loop is accruing.
    *
    * A tool that runs whichever of a library's things the call named answers
@@ -158,5 +170,14 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
      * Flow (`../../flow-draft/sometimes-present.ts`).
      */
     interruption?: true;
+    /**
+     * The caller's word that the step was written, not run (t252,
+     * `core.run_node` with `write: true`): checked and frozen, nothing done.
+     * Only `true` is carried, and only beside the result code
+     * `core.run_node.written` (`../node-tools/replay.ts`): a caller that
+     * ignored `write` and acted answered some other code, and its step is an
+     * ordinary recorded one, never a false "written" (`../../flow-draft/step.ts`).
+     */
+    written?: true;
   };
 };

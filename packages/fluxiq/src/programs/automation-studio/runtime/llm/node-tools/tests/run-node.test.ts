@@ -86,6 +86,29 @@ describe("the run-node tool's declaration", () => {
     expect(description).toContain("A page that needs a person goes to the person: never press, type into or reload a check.");
   });
 
+  // t252 (D1, D8): a step may be written rather than run, and a written step
+  // may hold bindings where a value changes between runs or rows.
+  it("offers write, optional, and says what writing a step does and when to prefer it", () => {
+    const built = tool()!;
+    const properties = built.inputSchema.properties as { write?: { type: string; description: string }; parameters: { description: string } };
+    expect(built.inputSchema.required).toEqual(["node", "parameters", "consequences"]);
+    expect(properties.write?.type).toBe("boolean");
+    expect(properties.write?.description).toContain("without running it");
+    expect(properties.write?.description).toContain("the test runs it");
+    expect(properties.write?.description).toContain("prefer write for a lasting act on items a loop selects: the test acts on exactly the items the Flow selects");
+    // On the property, not the description, which has no room under its 1,500.
+    expect(built.description.length).toBeLessThanOrEqual(1_500);
+    expect(automationStudioLlmEvidenceValidTools([built])).toBe(true);
+  });
+
+  it("names the binding forms in the parameters description, for a written step only", () => {
+    const parameters = (tool()!.inputSchema.properties as { parameters: { description: string } }).parameters.description;
+    expect(parameters).toContain("{\"$input\": \"<name>\", \"test\": <the value to test with>}");
+    expect(parameters).toContain("{\"$row\": \"<field>\"}");
+    expect(parameters).toContain("write true");
+    expect(parameters).toContain("concrete values only");
+  });
+
   it("is nothing at all when the library is empty", () => {
     expect(automationStudioLlmRunNodeTool({ nodeIds: [] })).toBeUndefined();
   });

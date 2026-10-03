@@ -37,6 +37,11 @@
 //     Flow -- no step producing the records asked for, or none going to where
 //     it starts (t195-w28a). Information the judge confirms against the steps,
 //     never a refusal.
+//   - `passes`, on a step of a span that repeats (t252 D6): one line per pass,
+//     each naming its row by the label the span's list read gave it, with its
+//     own outcome and observation (`./pass-lines.ts`, `./span-rows.ts`).
+//   - `inputs`, once: the Flow's parameters at the values the test ran on
+//     (t252 D4, `./test-inputs.ts`).
 //
 // **And the page the test ended on** (`endView`, t174-w87), once, beside the
 // steps: the view the caller captured after the test, or else the domain's view
@@ -87,6 +92,9 @@ import {
   type AutomationStudioRunResultSummaryWithEndView
 } from "../result-summary.ts";
 import { automationStudioBuildTestObservationReader } from "./observation.ts";
+import { automationStudioBuildTestPassLines } from "./pass-lines.ts";
+import { automationStudioBuildTestSpanRows } from "./span-rows.ts";
+import { automationStudioBuildTestInputs } from "./test-inputs.ts";
 
 /**
  * The test a build ran, as this builder reads it.
@@ -97,7 +105,8 @@ import { automationStudioBuildTestObservationReader } from "./observation.ts";
  */
 export type AutomationStudioBuildTestReportInput = {
   verdict: { outcomes: readonly AutomationStudioFlowDraftReplayOutcome[] };
-  observations: readonly { step: number; stepId?: string | undefined; resultCode?: string | undefined; evidence: JsonValue }[];
+  /** `pass` and `of` (1-based pass, pass count) on an answer from a repeated span (t252 D6); absent elsewhere. */
+  observations: readonly { step: number; stepId?: string | undefined; resultCode?: string | undefined; evidence: JsonValue; pass?: number | undefined; of?: number | undefined }[];
   reused: boolean;
 };
 
@@ -169,6 +178,10 @@ export function automationStudioBuildTestResultSummary(input: {
   const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
   let withheld = denied === undefined;
   const claimed = resultClaims(input.result?.acts);
+  // What each step is shown observing, by id, as it is made: a repeated step's passes are named by the rows its list step was shown returning.
+  const shown = new Map<string, JsonValue>();
+  const rowsOf = (step: AutomationStudioFlowDraftStep): readonly string[] | undefined =>
+    automationStudioBuildTestSpanRows(input.steps, (id) => shown.get(id)).get(automationStudioFlowDraftStepId(step));
   const reasons = automationStudioFlowDraftConditionalStepReasons(input.steps);
   const steps = proposed.map((step): AutomationStudioBuildTestStep => {
     const outcome = input.report ? outcomeOf(step, input.report.verdict.outcomes) : undefined;
@@ -178,10 +191,18 @@ export function automationStudioBuildTestResultSummary(input: {
     const claims = [...new Set([...(step.acts ?? []), ...claimed.filter((claim) => names(claim.step, step)).map((claim) => claim.action)])]
       .filter((claim) => claim.trim() && !automationStudioLocatorShapedText(claim));
     const runs = step.routing ? routingValue(step.routing, input.steps) : undefined;
-    const observed = observe && input.report && (step.effect !== "mutate" || checked)
-      ? observe(step, observationsOf(step, input.report.observations))
-      : undefined;
-    if (observed?.withheld) withheld = true;
+    const observing = observe && input.report && (step.effect !== "mutate" || checked) ? observe : undefined;
+    const lines = automationStudioBuildTestPassLines({
+      step,
+      outcome,
+      observations: input.report ? observationsOf(step, input.report.observations) : [],
+      rows: rowsOf(step),
+      observe: observing ? (evidence) => observing(step, evidence) : undefined,
+      stepOutcome: outcome ? outcomeWord(outcome) : "not_run"
+    });
+    const observed = observing ? observing(step, lines.unpassed) : undefined;
+    if (observed?.withheld || lines.withheld) withheld = true;
+    if (observed?.value !== undefined) shown.set(automationStudioFlowDraftStepId(step), observed.value);
     return {
       step: step.position,
       action: step.actionId,
@@ -194,6 +215,7 @@ export function automationStudioBuildTestResultSummary(input: {
       ...(runs ? { runs } : {}),
       ...(carriedStep(step) ? { carried: true as const } : {}),
       ...(observed?.value !== undefined ? { observed: observed.value } : {}),
+      ...(lines.passes ? { passes: lines.passes } : {}),
       ...(checked ? { explored: explored(step) } : {})
     };
   });
@@ -208,13 +230,16 @@ export function automationStudioBuildTestResultSummary(input: {
     draftSteps: input.steps,
     startLocation: input.startLocation
   });
+  const tested = denied === undefined ? undefined : automationStudioBuildTestInputs(input.steps, denied);
+  if (tested?.withheld) withheld = true;
   const buildTest: AutomationStudioBuildTestAccount = {
     kind: "build_test",
     test: input.report ? (input.report.reused ? "reused" : "ran") : "not_run",
     steps,
     ...(checklist?.length ? { checklist: checklist.map((item) => automationStudioWithoutLocators(item)) } : {}),
     ...(!check.ok ? { missingActs: automationStudioWithoutLocators(check.missingActs) } : {}),
-    ...(input.notes?.length ? { notes: input.notes.map((note) => automationStudioWithoutLocators({ ...note })) } : {})
+    ...(input.notes?.length ? { notes: input.notes.map((note) => automationStudioWithoutLocators({ ...note })) } : {}),
+    ...(tested?.inputs.length ? { inputs: tested.inputs } : {})
   };
   const shape = summarizeAutomationStudioRunResult({ recordSets: [], flowNodes: input.nodes, deniedEvidenceKeys: denied });
   const held = input.endView ?? lastView(input.report, input.observedStateKeys);
@@ -262,11 +287,14 @@ function outcomeOf(step: AutomationStudioFlowDraftStep, outcomes: readonly Autom
  * Why the test passed over a step that did not hold, in Core's words: as the
  * replay excused it, else by what the draft now says of the step -- a step the
  * test itself made optional (`madeOptional`) is excused by the routing that
- * gave it, and its outcome predates it -- else by a withheld effect.
+ * gave it, and its outcome predates it -- else by a withheld effect. A step
+ * of a repeat the test ran once per row (`passes`, t252) is not one the Flow
+ * may not run, so the draft's routing never excuses it: only a withheld effect.
  */
 function excusedWords(outcome: AutomationStudioFlowDraftReplayOutcome, reason: ReturnType<ReturnType<typeof automationStudioFlowDraftConditionalStepReasons>["get"]>): string | undefined {
   if (outcome.status === "replayed") return undefined;
-  const excused = outcome.excused ?? reason ?? (outcome.withheldBy !== undefined ? "withheld" : undefined);
+  const routed = outcome.passes === undefined ? reason : undefined;
+  const excused = outcome.excused ?? routed ?? (outcome.withheldBy !== undefined ? "withheld" : undefined);
   return excused ? automationStudioFlowDraftExcusedWords({ ...outcome, excused }) : undefined;
 }
 
@@ -277,11 +305,11 @@ function outcomeWord(outcome: AutomationStudioFlowDraftReplayOutcome): Automatio
 
 const OUTCOME_WORDS: ReadonlySet<string> = new Set(["replayed", "verified", "present", "remembered", "failed", "changed", "unreproducible"]);
 
-/** What the test observed of this step, each answer as it came; the reader makes one a value, several a list. */
-function observationsOf(step: AutomationStudioFlowDraftStep, observations: AutomationStudioBuildTestReportInput["observations"]): JsonValue[] {
+/** What the test observed of this step, each answer as it came with its pass; the reader makes one a value, several a list. */
+function observationsOf(step: AutomationStudioFlowDraftStep, observations: AutomationStudioBuildTestReportInput["observations"]): Array<{ pass?: number | undefined; evidence: JsonValue }> {
   return observations.filter((observation) => step.id !== undefined && observation.stepId !== undefined
     ? observation.stepId === step.id
-    : observation.step === step.position).map((observation) => observation.evidence);
+    : observation.step === step.position).map((observation) => ({ pass: observation.pass, evidence: observation.evidence }));
 }
 
 /**

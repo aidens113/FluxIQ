@@ -344,6 +344,14 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * a page.
    */
   testEndView?: AutomationStudioFlowDraftDryRunGateInput["endView"];
+  /**
+   * The node each step names, by its id, for every place the loop sends its
+   * steps again -- its dry run and a part run (`core.run_flow`) -- so a repeat
+   * runs once for each row its list returned, as the Flow would
+   * (`node-tools/replay-span.ts`). Absent, a repeat is sent once on the row the
+   * build explored and excused.
+   */
+  nodeOf?: AutomationStudioFlowDraftDryRunGateInput["nodeOf"];
   signal?: AbortSignal;
 };
 

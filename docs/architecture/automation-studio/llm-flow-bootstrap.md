@@ -740,6 +740,9 @@ guidance says so, and the Flow is assembled only from added steps. The loop
 option `draftAuthoring: "transcript"` keeps the old rule, under which every step
 that ran was `kept` unless withdrawn; it exists only to replay builds recorded
 under that rule (`runtime/llm/loop-configuration.ts`, `runtime/flow-draft/step.ts`).
+A step may also be written rather than run (`core.run_node` with `write: true`),
+and its values bound to a Flow input or a loop's row (`amend_draft bind`): see
+[Flow Authoring](flow-authoring.md) (t252).
 
 **A step added to the Flow brings the way to its page (t174/F41).** When a step
 joins the Flow -- `add` on its call, or an `add` or `keep` amendment -- every
@@ -1420,6 +1423,9 @@ taken after that change, because that replay is a run of that Flow. The
 replay signature (`automationStudioFlowDraftReplaySignature`, routing left out)
 remains only for progress and no-progress: whether the model is re-sending the
 same steps, and the `seedSignature` an extend build's first round starts from.
+A repeat is run once per row its list returned in the test, and a written step
+the test never ran on a row is refused `not_reached`: see
+[the build's test](flow-authoring.md#the-builds-test) (t252).
 
 A dry run never clears site data or logs the person out, never repeats a
 lasting effect, and checks a changing step rather than running it again

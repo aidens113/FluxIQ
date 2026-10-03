@@ -30,12 +30,13 @@
 // it unchanged.
 
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftInputs, automationStudioFlowDraftStepId, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { assembleAutomationStudioFlowScriptPlan } from "./assemble.ts";
 import type { AutomationStudioFlowScript, AutomationStudioFlowScriptStep } from "./contracts.ts";
+import { authoringDraftBindingIssues } from "./draft-bindings.ts";
 import { routeAutomationStudioFlowDraftSteps, type AutomationStudioFlowDraftRoutedStep } from "./draft-routing.ts";
 import { authoringError } from "./issue.ts";
 
@@ -133,11 +134,40 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
   const script: AutomationStudioFlowScript = { summary: input.summary, blocks: [{ name: input.summary, steps, line: 1 }] };
   const namedColumns = automationStudioFlowBootstrapInstructionColumns(input.instructionText ?? "");
   const assembled = assembleAutomationStudioFlowScriptPlan({ script, registry: input.registry, resolution: input.resolution, summary: input.summary, namedColumns });
+  // What the steps' bindings say about the graph they became: a row read
+  // outside a loop over a list, an input an output would overwrite
+  // (`./draft-bindings.ts`). The plan's node `s<n>` is the n-th step it was
+  // given (`./assemble.ts`), which is how each refusal names its draft step.
+  const built = assembled.plan ?? assembled.refusedPlan;
+  if (built) {
+    const positionById = new Map(input.steps.map((step) => [automationStudioFlowDraftStepId(step), step.position] as const));
+    issues.push(...authoringDraftBindingIssues({
+      plan: built,
+      stepPositionOf: (nodeKey) => {
+        const draftStepId = /^s(\d+)$/u.test(nodeKey) ? steps[Number(nodeKey.slice(1)) - 1]?.draftStepId : undefined;
+        return draftStepId === undefined ? undefined : positionById.get(draftStepId);
+      },
+      registry: input.registry,
+      resolution: input.resolution
+    }));
+  }
+  // One Flow input tested with two values: a run that supplies nothing would
+  // use one value at one step and another at the next, and the build's test
+  // would have run neither Flow (`../../flow-draft/flow-inputs.ts`, design t252 D3).
+  for (const conflict of automationStudioFlowDraftInputs(input.steps).conflicts) {
+    issues.push(authoringError(
+      "flow_draft.input_conflict",
+      `The Flow input "${conflict.name}" is given different test values by steps ${conflict.steps.join(", ")}: ${conflict.tests.map((test) => JSON.stringify(test)).join(" and ")}. A run that supplies no value would use one at one step and another at the next. Give every binding of "${conflict.name}" the same test value, or give the inputs different names.`,
+      `draft.steps.${conflict.steps[0]}`
+    ));
+  }
   const all = [...issues, ...assembled.issues];
   // A step nothing could write down refuses the plan: it is a step that was
   // performed and would be absent from the result, which is the one outcome
-  // the draft exists to make impossible.
-  if (issues.length) return { issues: all, ...(assembled.plan ?? assembled.refusedPlan ? { refusedPlan: (assembled.plan ?? assembled.refusedPlan)! } : {}) };
+  // the draft exists to make impossible. So does a binding the graph cannot
+  // honour, since the Flow would run the step on nothing or on the wrong value,
+  // and an input tested with two values.
+  if (issues.length) return { issues: all, ...(built ? { refusedPlan: built } : {}) };
   return {
     ...(assembled.plan ? { plan: assembled.plan, draftStepIdByNodeKey: draftStepIdByNodeKey(steps, assembled.plan) } : {}),
     ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}),

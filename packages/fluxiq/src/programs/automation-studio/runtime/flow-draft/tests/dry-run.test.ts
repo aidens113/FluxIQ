@@ -150,6 +150,34 @@ describe("what a replay's answers make of a draft", () => {
     ]);
     expect(String(feedback.instruction)).toContain("amend_draft rerun");
   });
+
+  it("no longer excuses a repeated step the test ran once per row, unless a withheld effect is why it did not replay (t252)", () => {
+    const passes = [{ pass: 1, status: "replayed" as const }, { pass: 2, status: "unreproducible" as const, resultCode: "core.replay.unreproducible" }];
+    const ran = { ...outcome({ step: 2, status: "unreproducible", resultCode: "core.replay.unreproducible" }), stepId: "d2", passes };
+    expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [ran], conditional: new Set(["d2"]) }).ok).toBe(false);
+    expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [{ ...ran, withheldBy: 1 }], conditional: new Set(["d2"]) }).ok).toBe(true);
+    // Run once on the explored row, as before t252: still excused.
+    const { passes: _passes, ...once } = ran;
+    expect(automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [once], conditional: new Set(["d2"]) }).ok).toBe(true);
+  });
+
+  it("shows a repeated step's passes and the first that did not replay, and says a repeat runs once per item (t252)", () => {
+    const verdict = automationStudioFlowDraftDryRunVerdict({
+      attempt: 1, reset: "ok",
+      outcomes: [
+        { ...outcome({ step: 2, status: "unreproducible", resultCode: "core.replay.unreproducible" }), passes: [{ pass: 1, status: "replayed" }, { pass: 2, status: "unreproducible", resultCode: "core.replay.unreproducible" }, { pass: 3, status: "replayed" }] },
+        { ...outcome({ step: 3 }), passes: [] }
+      ]
+    });
+    expect(automationStudioFlowDraftDryRunFeedback(verdict).steps).toEqual([
+      { step: 2, actionId: "node.click", replayed: "unreproducible", resultCode: "core.replay.unreproducible", passes: 3, pass: 2 },
+      { step: 3, actionId: "node.click", replayed: "replayed", passes: 0 }
+    ]);
+    const instruction = String(automationStudioFlowDraftDryRunFeedback(verdict).instruction);
+    expect(instruction).toContain("once for each item");
+    expect(instruction).toContain("loop_bound");
+    expect(instruction).toContain("unresolved_binding");
+  });
 });
 
 describe("a refusal for a step the test never reached the page of", () => {

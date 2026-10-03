@@ -164,6 +164,16 @@ export type AutomationStudioFlowDraftReplayOutcome = {
    */
   madeOptional?: true;
   /**
+   * Set on a step of a repeat the test ran as the Flow would: one entry per
+   * pass, once per row its list returned in this test, or once per time its
+   * check held (`../llm/node-tools/replay-span.ts`, t252). The status above is
+   * its first pass that did not pass, else `replayed`; an empty list is a list
+   * with no rows in the test, which ran the step zero times. Absent, the step
+   * was sent once, as every step was before t252. A step with passes is never
+   * excused as one the Flow does not always run (see the verdict).
+   */
+  passes?: AutomationStudioFlowDraftReplayPass[];
+  /**
    * Set on a step that did not replay and that does not stand in the way of
    * the proposal, naming why: the draft says the Flow does not always run it
    * (`./routing.ts`), or it needed what a verified step's withheld effect
@@ -172,6 +182,9 @@ export type AutomationStudioFlowDraftReplayOutcome = {
    */
   excused?: AutomationStudioFlowDraftExcusedReason;
 };
+
+/** One pass of a repeated step in a test: which pass, how it answered, and the caller's code. */
+export type AutomationStudioFlowDraftReplayPass = { pass: number; status: AutomationStudioFlowDraftReplayStatus; resultCode?: string };
 
 /** One whole replay of the draft. */
 export type AutomationStudioFlowDraftDryRun = {
@@ -233,6 +246,12 @@ export function automationStudioFlowDraftReplaySignature(steps: readonly Automat
  * site remembers is not a step the model gets through by insisting, but one the
  * Flow itself handles. Every other step that did not replay refuses the
  * proposal, whatever the model was told about it before.
+ *
+ * **A repeat the test ran is not excused (t252).** A repeated step is in
+ * `conditional` because a replay used to send it once, on the explored row. A
+ * step that carries `passes` was run once per row, as the Flow runs it, so a
+ * pass that did not replay is the Flow failing -- unless a withheld effect is
+ * why (`withheldBy`, `./verify-only.ts`), which excuses it as it does any step.
  */
 export function automationStudioFlowDraftDryRunVerdict(input: {
   attempt: number;
@@ -242,8 +261,9 @@ export function automationStudioFlowDraftDryRunVerdict(input: {
 }): AutomationStudioFlowDraftDryRun {
   const outcomes = input.outcomes.map((outcome) => ({ ...outcome }));
   const conditional = input.conditional ?? new Set<string>();
-  const blocking = outcomes.filter((outcome) => !(outcome.stepId !== undefined && conditional.has(outcome.stepId))
-    && automationStudioFlowDraftReplayOutcomeBlocks(outcome));
+  const excused = (outcome: AutomationStudioFlowDraftReplayOutcome): boolean => outcome.stepId !== undefined && conditional.has(outcome.stepId)
+    && (outcome.passes === undefined || outcome.withheldBy !== undefined);
+  const blocking = outcomes.filter((outcome) => !excused(outcome) && automationStudioFlowDraftReplayOutcomeBlocks(outcome));
   return {
     attempt: input.attempt,
     reset: input.reset,
@@ -316,6 +336,10 @@ const DRY_RUN_INSTRUCTION = "You said the Flow is ready, so it was tested: run o
   // judge of live run `run-murzln6g-11debe1d` asked to fix or remove one.
   + "excused: the step did not replay, and the Flow passes over it as written -- the line says why: optional, an interruption that was not there, a check, a fallback, a repeat, or a step that needed what a verified step would have done. It does not stand in the way: do not fix, rerun, reorder or drop it for this. "
   + "afterWithheld names the verified step before this one whose effect was withheld -- one that moved the page, or one that moves money, deletes, or sends or publishes, which the test never does -- so this step may have needed what that step would have done; a step marked with it does not stand in the way of the proposal on its own. "
+  // t252: a repeat is run as the Flow runs it (`../llm/node-tools/replay-span.ts`).
+  + "A step inside a repeat was run once for each item its list returned in this test, each time with that item and with its bound values filled in for it -- a lasting act is checked for each item, never done -- or, over a check, once each time the check held. passes says how many times it ran, and pass names the first time it did not replay, which is what its line shows; passes 0 means the list had no items in this test. "
+  + "loop_bound: the list returned more items than the loop takes. unresolved_binding: a bound value had nothing to take it from -- a row field on a step outside the repeat, or one the item does not have -- so the step was not sent. "
+  + "When the test could not read the list's items, the repeat ran once on the item you explored, as a step the Flow does not always run. "
   + "The target now stands where the replay ended.";
 
 /**
@@ -349,6 +373,7 @@ export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudi
       ...(outcome.withheldBy !== undefined ? { afterWithheld: outcome.withheldBy } : {}),
       ...(excusedLine(outcome)),
       ...(outcome.reanchored ? { reanchored: true } : {}),
+      ...automationStudioFlowDraftReplayPassWords(outcome),
       ...(outcome.status !== "replayed" && told.has(automationStudioFlowDraftReplayOutcomeKey(outcome)) ? { again: true } : {})
     })),
     ...(missing ? { notInFlow: missing } : {}),
@@ -360,6 +385,16 @@ export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudi
 function excusedLine(outcome: AutomationStudioFlowDraftReplayOutcome): { excused?: string } {
   const words = automationStudioFlowDraftExcusedWords(outcome);
   return words ? { excused: words } : {};
+}
+
+/**
+ * How a repeated step's passes are shown on its line: how many it ran, and the
+ * first that did not pass. Nothing for a step sent once.
+ */
+export function automationStudioFlowDraftReplayPassWords(outcome: AutomationStudioFlowDraftReplayOutcome): JsonObject {
+  if (!outcome.passes) return {};
+  const blocking = outcome.passes.find((pass) => pass.status !== "replayed");
+  return { passes: outcome.passes.length, ...(blocking ? { pass: blocking.pass } : {}) };
 }
 
 /**

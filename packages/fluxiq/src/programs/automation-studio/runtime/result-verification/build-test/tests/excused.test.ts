@@ -64,3 +64,33 @@ describe("an excused step in the judge's account of a build's test", () => {
 
   // What the judge is told an excused step means: `../../../llm/tests/diagnosis-channel.test.ts`.
 });
+
+// t252 merged with lane B: a repeated step the test ran once per row (`passes`)
+// is not one the Flow may not run, so its `repeat` routing never excuses it in
+// the judge's account; only a withheld effect does. A repeat the test could not
+// walk (no `passes`) is still excused as repeated, as before t252.
+describe("an excused step of a repeat in the judge's account", () => {
+  const repeated = web(15, "web.output.dom-click", { selector: "#confirm", accessibleName: "Confirm" }, SITE, { step: { routing: { kind: "repeat", over: "d12", through: "d15" } } });
+  const lineOf = (outcome: AutomationStudioFlowDraftReplayOutcome) => automationStudioBuildTestResultSummary({
+    steps: [navigate(1), add, repeated, plus], report: report([replayed(steps[0]!), verified(add), outcome, verified(plus)]),
+    nodes: [], instructionText: PICKUP, startLocation: SITE, deniedEvidenceKeys: DENIED
+  }).buildTest!.steps.find((each) => each.step === 15)!;
+  const PASSES = [{ pass: 1, status: "replayed" as const }, { pass: 2, status: "failed" as const, resultCode: "core.replay.failed" }];
+
+  it("marks no excuse on a repeated step whose per-row pass failed", () => {
+    const line = lineOf(failed({ passes: PASSES }));
+    expect(line.outcome).toBe("failed");
+    expect(line).not.toHaveProperty("excused");
+  });
+
+  it("excuses the same step as repeated when the test could not walk the span (no passes)", () => {
+    expect(lineOf(failed({})).excused).toMatch(/^repeated: /u);
+  });
+
+  it("excuses a per-row pass that failed after a checked step with the withheld words", () => {
+    const line = lineOf(failed({ passes: PASSES, withheldBy: 12 }));
+    expect(line.excused).toContain("it needed what step 12 would have done");
+    expect(line.excused).not.toMatch(/^repeated/u);
+    expect(lineOf(failed({ passes: PASSES, withheldBy: 12, excused: "withheld" })).excused).toBe(line.excused);
+  });
+});

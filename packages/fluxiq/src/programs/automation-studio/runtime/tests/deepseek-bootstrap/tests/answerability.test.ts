@@ -216,7 +216,7 @@ describe("creating a Flow through an exploration, with no grant", () => {
       },
       draft: {
         present: true,
-        budget: 4_000,
+        budget: 5_000,
         // The six steps the repair was seeded with, and the look it took first.
         steps: 7,
         unlisted: 0,

@@ -26,6 +26,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import { runAutomationStudioFlowDraftPart } from "./run-flow-part.ts";
+import type { AutomationStudioFlowDraftReplayNodeOf } from "./replay-span.ts";
 
 /** The tool that runs part of the Flow. */
 export const AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID = "core.run_flow";
@@ -69,6 +70,8 @@ type RunFlowLoop = {
   enabled: boolean;
   /** The build's lasting acts, read when a part run first needs them, as the dry run reads them (`./dry-run-gate.ts`). */
   lastingActs?: (() => Promise<ReadonlySet<string>>) | undefined;
+  /** The node each step names, so a repeat whose list is in the range runs once per row (`./run-flow-part.ts`). */
+  nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
 };
 
 /**
@@ -91,7 +94,7 @@ export function automationStudioLlmRunFlowBinding(loop: RunFlowLoop): {
     tools: adds ? [...tools, automationStudioLlmRunFlowTool()] : tools,
     executeTool: adds
       ? async (input) => input.toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID
-        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}) })
+        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}) })
         : executeTool(input)
       : executeTool,
     offered: (tool) => !adds || tool.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID

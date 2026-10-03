@@ -90,3 +90,68 @@ describe("a rerun the loop declines", () => {
     ]);
   });
 });
+
+// t252: a written step is put back written, and a recorded step that holds a
+// binding is never run live, because a binding resolves only in the Flow.
+describe("a rerun of a step with bindings", () => {
+  const nodeStep = (written: boolean, parameters: JsonObject): AutomationStudioFlowDraftStep => ({
+    position: 3,
+    id: "d3",
+    iteration: 3,
+    actionId: "demo.press",
+    toolId: "core.run_node",
+    input: { node: "demo.press", parameters, consequences: [] },
+    effect: "mutate",
+    disposition: "kept",
+    ...(written ? { written: true as const } : {})
+  });
+  const runNode = new Set(["core.run_node"]);
+
+  it("of a written step stays written: the call carries write true", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(3, { note: "kept" })], [nodeStep(true, { target: { $state: { path: "item.name" } }, note: "old" })], runNode);
+
+    expect(resolved.refused).toEqual([]);
+    expect(resolved.request).toEqual({
+      step: 3,
+      toolId: "core.run_node",
+      input: { node: "demo.press", parameters: { target: { $state: { path: "item.name" } }, note: "kept" }, consequences: [], write: true },
+      callId: "rerun.3"
+    });
+  });
+
+  it("of a written step translates a binding form it is given, as a written call is", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(3, { note: { $input: "note", test: "hi" } })], [nodeStep(true, { note: "old" })], runNode);
+
+    expect(resolved.request?.input).toEqual({ node: "demo.press", parameters: { note: { $state: { path: "note", fallback: "hi" } } }, consequences: [], write: true });
+  });
+
+  it("of a written step refuses a binding form that cannot be read, rather than send it as a literal", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(3, { note: { $input: "Bad Name", test: "hi" } })], [nodeStep(true, { note: "old" })], runNode);
+
+    expect(resolved.request).toBeUndefined();
+    expect(resolved.refused).toEqual([{ step: 3, reason: "bind_malformed" }]);
+  });
+
+  it("of a recorded step whose parameters stay bound is refused, unrun", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(3, { note: "new" })], [nodeStep(false, { query: { $state: { path: "query", fallback: "towels" } }, note: "old" })], runNode);
+
+    expect(resolved.request).toBeUndefined();
+    expect(resolved.refused).toEqual([{ step: 3, reason: "rerun_holds_binding" }]);
+  });
+
+  it("of a recorded step given a binding form is refused, unrun", () => {
+    for (const form of [{ $row: "name" }, { $input: "query", test: "towels" }, { $step: 2, output: "records" }]) {
+      const resolved = automationStudioLlmEvidenceRerunRequest([rerun(3, { note: form })], [nodeStep(false, { note: "old" })], runNode);
+
+      expect(resolved.request).toBeUndefined();
+      expect(resolved.refused).toEqual([{ step: 3, reason: "rerun_holds_binding" }]);
+    }
+  });
+
+  it("of a recorded step that replaces every binding with a value runs live, unwritten", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(3, { query: "towels" })], [nodeStep(false, { query: { $state: { path: "query", fallback: "towels" } } })], runNode);
+
+    expect(resolved.refused).toEqual([]);
+    expect(resolved.request?.input).toEqual({ node: "demo.press", parameters: { query: "towels" }, consequences: [] });
+  });
+});

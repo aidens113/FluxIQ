@@ -14,7 +14,8 @@
 //   when none arrived), `response.txt`, `decision.json` and `meta.json`.
 // - Tool folders `NNNN-tool-<toolId>`, and `NNNN-test-<toolId>` for a Flow
 //   test's replay, hold `call.json`, `result.json`, `page.txt` when the result
-//   carries a page view, and `meta.json`.
+//   carries a page view, and `meta.json`. A replay's row (`item` in the call) and
+//   output values (`outputs` in `meta.json`) are written as field names only.
 // - Answer folders `NNNN-answer-amend_draft`, and `NNNN-answer-<toolId>` for a
 //   call refused unrun as a repeat, hold `result.json` -- Core's answer:
 //   `applied`, `partly_applied`, `refused` or `ignored`, with each reason --

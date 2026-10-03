@@ -101,6 +101,23 @@ function legacyRecord(): AutomationStudioBootstrapAdaptation {
 }
 
 describe("Flow Bootstrap normalization provenance", () => {
+  // t252: a step's declared consequences survive storage on its Flow node, for
+  // recorded and written steps alike; `[]` (nothing lasting) is kept, and a
+  // step that declared nothing stores nothing.
+  it("keeps each plan node's declared consequences on its Flow node, and none where the plan node has none", () => {
+    const plan = buildPlan();
+    const [open, extract] = plan.subflows[0]!.nodes;
+    Object.assign(open!, { consequences: [] });
+    Object.assign(extract!, { consequences: ["submit"] });
+    const topology = normalizeAutomationStudioFlowBuildPlan({ adaptationId: ADAPTATION_ID, parentFlow: parentFlow(), buildPlan: plan, sourceInstructionIds: [], now: CREATED_AT });
+    const [primary, recovery] = topology.subflows.map((entry) => entry.graphFlow.nodes);
+    expect(primary![0]!.metadata?.declaredConsequences).toEqual([]);
+    expect(primary![1]!.metadata?.declaredConsequences).toEqual(["submit"]);
+    expect(recovery![0]!.metadata).not.toHaveProperty("declaredConsequences");
+    // A copy, never the plan's own array.
+    expect(primary![1]!.metadata?.declaredConsequences).not.toBe(extract!.consequences);
+  });
+
   it("stamps every node it creates with the adaptation id", () => {
     const topology = normalize();
     const nodes = topology.subflows.flatMap((entry) => entry.graphFlow.nodes);

@@ -35,6 +35,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
+import { AUTOMATION_STUDIO_NODE_WRITE_KEY } from "./replay.ts";
 
 /** The one verb that runs a node from the library. */
 export const AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID = "core.run_node";
@@ -70,6 +71,8 @@ const DESCRIPTION = [
   // is now handed to one (`../../flow-bootstrap/person-needed.ts`), so the
   // model is told never to act on a check at all.
   "A failed node says what went wrong and how things now stand. A page that needs a person goes to the person: never press, type into or reload a check.",
+  // A step may also be written, not run (t252): said on `write` itself, since
+  // this description has 12 characters left under its 1,500.
   "Run a node that only reads -- a snapshot, a wait, an assertion -- to see where you are, and one that acts to make the page do what the instruction needs. A step you add keeps the parameters it ran with.",
   // "only reads" earns its place: a build that had to collect a page of
   // products into a table read "leaves nothing behind" as a question about the
@@ -79,6 +82,28 @@ const DESCRIPTION = [
   // models declared `move_money` on the press that only opens a checkout page.
   `Judge \`consequences\` for this node, not the Flow: [] when it only reads, and in one Flow the press that applies a filter or opens checkout is [] and the press that submits the post is ${PUBLISHING}.`
 ].join(" ");
+
+/**
+ * Writing a step rather than running it (t252, D1 and D8; user, 2026-10-02:
+ * the model "should also be able/encouraged to build dynamic & smart flows
+ * from what its gathered without going through every iteration"). The host
+ * checks the step and freezes what it names, does nothing, and answers
+ * `core.run_node.written` (`./replay.ts`); the decision parse reads `write`
+ * as `add` (`../evidence-loop-decision.ts`). Said on the property rather than
+ * in the description above, which is held under 1,500 characters.
+ */
+const WRITE_DESCRIPTION = "true: write this step into the Flow without running it -- nothing is done now; it is checked as a run would check it, frozen as written and added, and the test runs it. "
+  + "Use it once what you have seen is enough to know the node and its parameters, and prefer write for a lasting act on items a loop selects: the test acts on exactly the items the Flow selects, and the build changes nothing the Flow should not. "
+  + "Declare consequences as for a run.";
+
+/**
+ * The parameters, and the binding forms a written step may hold in place of a
+ * value (`../../flow-draft/binding-forms.ts`). A call that runs now carries
+ * concrete values only, and the decision parse refuses one that does not.
+ */
+const PARAMETERS_DESCRIPTION = "That node's own parameters, exactly as its definition in flowBootstrap.describedNodes declares them. "
+  + "Where a value changes between runs or rows, a written step (write true) holds a binding in its place: {\"$input\": \"<name>\", \"test\": <the value to test with>} for a value the person gave, which becomes an input of the Flow, or {\"$row\": \"<field>\"} for a field of the row a repeat is on. "
+  + "A call that runs now takes concrete values only.";
 
 /**
  * The run-node tool for one resolved library, or nothing when the library is
@@ -123,14 +148,15 @@ export function automationStudioLlmRunNodeTool(input: {
       required: ["node", "parameters", "consequences"],
       properties: {
         node,
-        parameters: { type: "object", description: "That node's own parameters, exactly as its definition in flowBootstrap.describedNodes declares them." },
+        parameters: { type: "object", description: PARAMETERS_DESCRIPTION },
         consequences: {
           type: "array",
           maxItems: 5,
           uniqueItems: true,
           items: { type: "string", enum: [...AUTOMATION_STUDIO_ACTION_CONSEQUENCES] },
           description: `What running this node would lastingly do. [] leaves nothing behind; a press that submits, orders, deletes or changes something saved names its class, such as ${PUBLISHING}, and is put to the person first.`
-        }
+        },
+        [AUTOMATION_STUDIO_NODE_WRITE_KEY]: { type: "boolean", description: WRITE_DESCRIPTION }
       }
     },
     ...(input.initial ? { initialObservation: { input: input.initial, ...arrivalFor(input.arrival, nodeIds) } } : {})

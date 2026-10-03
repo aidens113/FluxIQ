@@ -329,7 +329,36 @@ export type AutomationStudioBuildTestStep = {
   observed?: JsonValue;
   /** What the step did while the build explored, for a step the test only checked. */
   explored?: { changed: "yes" | "no" | "unknown"; resultCode?: string; stateChanged?: boolean };
+  /**
+   * A repeated step's passes, one per row of the list its span repeats over,
+   * in order (t252 D6). `outcome` above is the first pass that did not pass,
+   * else `replayed`; each pass's own answer and observation are here.
+   */
+  passes?: AutomationStudioBuildTestPass[];
 };
+
+/**
+ * One pass of a repeated step as the judge of its test reads it (t252 D6).
+ *
+ * The row is named by its label only, the label the list read's `readRows`
+ * gave it, screened as those are (`build-test/read-rows.ts`); a row's values
+ * never travel here.
+ */
+export type AutomationStudioBuildTestPass = {
+  /** 1-based: the row's place in the list. */
+  pass: number;
+  /** The row's label from the list the span repeats over; absent when that list named none for it. */
+  row?: string;
+  outcome: AutomationStudioBuildTestStep["outcome"];
+  /** What the test observed on this pass, by the same rule as a step's `observed`. */
+  observed?: JsonValue;
+};
+
+/**
+ * One input the Flow takes, at the value its test used (t252 D4): the Flow's
+ * parameter, declared by its first binding, and the steps that use it.
+ */
+export type AutomationStudioBuildTestInput = { name: string; test: JsonValue; steps: number[] };
 
 /** A build's test, as its judge reads it: every proposed step in order, and the build's own reading of the instruction's acts. */
 export type AutomationStudioBuildTestAccount = {
@@ -343,6 +372,8 @@ export type AutomationStudioBuildTestAccount = {
   missingActs?: JsonObject;
   /** What Core's capability checks found the accepted Flow cannot do. Information, not a refusal. */
   notes?: AutomationStudioBuildTestNote[];
+  /** The Flow's inputs at the values the test ran on, once for the whole test. */
+  inputs?: AutomationStudioBuildTestInput[];
 };
 
 /**

@@ -281,7 +281,10 @@ function endpoint(options: {
     const evidence = user.context.evidenceLoop?.evidence ?? [];
     const completionFeedback = issueCodesForEvidence(evidence, "core.completion_check");
     const draftValue = evidence.find((entry) => entry.toolId === "core.flow_draft")?.value;
-    const draft = draftObservation(draftValue, 4_000);
+    // A measuring stick, not a limit: the draft has no byte budget since 2026-09-30 and is shown whole
+    // (`flow-draft/entry.ts`). 4,000 until t252, whose authored guidance (write, loop, bind) is about 1,150
+    // bytes longer; a draft that outgrows this is a prompt that grew, and is worth a look.
+    const draft = draftObservation(draftValue, 5_000);
     const resumedValue = evidence.find((entry) => entry.toolId === "core.resumed")?.value;
     const visibleRecordProducerCount = new Set(
       Object.values(user.context.flowBootstrap?.nodeCatalog ?? {}).flatMap((lines) => Array.isArray(lines) ? lines : []).flatMap((line) => {

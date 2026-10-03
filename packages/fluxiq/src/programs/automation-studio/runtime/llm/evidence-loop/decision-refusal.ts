@@ -13,6 +13,7 @@
 // because sending the same wrong shape again is the model repeating itself.
 import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision } from "./decision.ts";
+import { automationStudioLlmEvidenceDecisionIssueCodes } from "../evidence-loop-decision.ts";
 
 /** A `complete` decision where completion was not offered. What it means to the model is in `../unusable-decision.ts`. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETE_NOT_OFFERED_CODE = "llm_evidence_loop.complete_not_offered";
@@ -37,7 +38,11 @@ export function automationStudioLlmEvidenceDecisionRefusal(
 ): { issueCodes: string[]; usage?: AutomationStudioLlmUsageSummary } | undefined {
   if (!decision) {
     const usage = usageOf(raw);
-    return { issueCodes: [AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_SHAPE_INVALID_CODE], ...(usage ? { usage } : {}) };
+    // A tool call the grammar read and refused for a reason it can name -- a
+    // binding on a node call that runs now, or one a written call cannot use
+    // (t252) -- says that reason rather than "not a shape".
+    const named = automationStudioLlmEvidenceDecisionIssueCodes(raw);
+    return { issueCodes: named ?? [AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_SHAPE_INVALID_CODE], ...(usage ? { usage } : {}) };
   }
   if (decision.kind === "complete" && !offered.complete) return { issueCodes: [AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETE_NOT_OFFERED_CODE] };
   if (decision.kind === "amend_draft" && !offered.amend) return { issueCodes: [AUTOMATION_STUDIO_LLM_EVIDENCE_AMEND_NOT_OFFERED_CODE] };

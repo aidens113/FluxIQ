@@ -25,20 +25,25 @@
 //
 // **Nothing here is counted as a tool call**, as the dry run's calls are not:
 // the model asked for one call, and the loop counts that one.
+//
+// **The dry run's own walker (t252).** The steps are sent by the same walk the
+// dry run makes after its reset (`./replay-draft.ts`), so a repeat whose list
+// step is in the range runs once per row its list returned here, and bindings
+// are resolved the same way (`./replay-span.ts`); one whose list step is not in
+// the range has no rows to walk and runs once, as a step the Flow does not
+// always run. A pass that does not pass stops the run as a step does.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
-  automationStudioFlowDraftConditionalStepIds,
   automationStudioFlowDraftReplayOutcomeWord,
-  automationStudioFlowDraftStepId,
+  automationStudioFlowDraftReplayPassWords,
   automationStudioFlowDraftStepIsProposed,
-  automationStudioFlowDraftStepReplayMode,
-  type AutomationStudioFlowDraftReplayOutcome,
   type AutomationStudioFlowDraftStep
 } from "../../flow-draft/index.ts";
-import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
-import { automationStudioNodeReplayStatus, automationStudioNodeReplayStepCall, automationStudioNodeReplayToolId, automationStudioNodeReplayVerifyCall } from "./replay.ts";
+import { automationStudioNodeReplayStepCall } from "./replay.ts";
+import { automationStudioFlowDraftReplaySteps } from "./replay-draft.ts";
+import type { AutomationStudioFlowDraftReplayNodeOf } from "./replay-span.ts";
 
 /** What a part run needs: the draft, the model's argument, its call id and the loop's executor. */
 export type AutomationStudioFlowDraftPartRunInput = {
@@ -50,6 +55,8 @@ export type AutomationStudioFlowDraftPartRunInput = {
   executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
   /** The build's lasting acts, as the dry run is given them (`./replay-draft.ts`): a step claiming one is checked, not repeated. */
   lastingActs?: ReadonlySet<string> | undefined;
+  /** The node each step names, as the dry run is given it (`./replay-draft.ts`): what lets a repeat run once per row. */
+  nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -67,42 +74,41 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
   const to = range.to ?? last.position;
   if (!positions.includes(range.from) || !positions.includes(to)) return refusal("run_flow.not_a_flow_step", { flowSteps: positions });
   if (to < range.from) return refusal("run_flow.input_invalid", { expected: "to at or after from" });
-  const conditional = automationStudioFlowDraftConditionalStepIds(input.steps);
-  const ran: JsonObject[] = [];
   let shown: { step: number; evidence: JsonValue } | undefined;
-  let stoppedAt: number | undefined;
   let effectApplied = false;
   let before: string | undefined;
   let after: string | undefined;
   let first = true;
-  for (const step of proposed.filter((each) => each.position >= range.from && each.position <= to)) {
-    const mode = automationStudioFlowDraftStepReplayMode(step, input.lastingActs);
-    const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step) : automationStudioNodeReplayStepCall(step);
-    if (!value) {
-      ran.push({ step: step.position, actionId: step.actionId, ran: NOT_RUN });
-      stoppedAt = step.position;
-      break;
-    }
-    const sent = await call(input, `${input.callId}.${step.position}`, automationStudioNodeReplayToolId(step), value);
-    const answer = sent.readable ? sent.result : undefined;
-    const status = answer ? automationStudioNodeReplayStatus(answer.resultCode, mode) : "failed";
-    const outcome: AutomationStudioFlowDraftReplayOutcome = {
-      step: step.position, actionId: step.actionId, status,
-      ...(answer?.resultCode ? { resultCode: answer.resultCode } : {}),
-      ...(mode === "verify" ? { mode } : {})
-    };
-    ran.push({ step: step.position, actionId: step.actionId, ran: automationStudioFlowDraftReplayOutcomeWord(outcome), ...(outcome.resultCode ? { resultCode: outcome.resultCode } : {}) });
-    if (answer) {
+  const done = await automationStudioFlowDraftReplaySteps({
+    executeTool: input.executeTool,
+    ...(input.signal ? { signal: input.signal } : {}),
+    steps: input.steps,
+    run: proposed.filter((each) => each.position >= range.from && each.position <= to),
+    callIdOf: (step) => `${input.callId}.${step.position}`,
+    reanchor: false,
+    ...(input.lastingActs ? { lastingActs: input.lastingActs } : {}),
+    ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
+    // A step the Flow does not always run goes on, as the Flow would; one with
+    // nothing to run it with stops the run whatever it says about when it runs.
+    stopsAt: (step, excused) => !excused || unrunnable(step),
+    answered: (step, answer) => {
       shown = { step: step.position, evidence: answer.evidence };
       effectApplied ||= answer.effectApplied;
       if (first) before = answer.stateDigests?.before;
       after = answer.stateDigests?.after;
+      first = false;
     }
-    first = false;
-    if (status === "replayed" || conditional.has(automationStudioFlowDraftStepId(step))) continue;
-    stoppedAt = step.position;
-    break;
-  }
+  });
+  const ran: JsonObject[] = done.outcomes.map((outcome) => {
+    const step = proposed.find((each) => each.position === outcome.step);
+    if (step && unrunnable(step)) return { step: outcome.step, actionId: outcome.actionId, ran: NOT_RUN };
+    return {
+      step: outcome.step, actionId: outcome.actionId, ran: automationStudioFlowDraftReplayOutcomeWord(outcome),
+      ...(outcome.resultCode ? { resultCode: outcome.resultCode } : {}),
+      ...automationStudioFlowDraftReplayPassWords(outcome)
+    };
+  });
+  const stoppedAt = done.stoppedAt;
   const passed = stoppedAt === undefined;
   const evidence: JsonObject = {
     ok: true, passed, from: range.from, to, steps: ran,
@@ -138,26 +144,12 @@ function instructionOf(from: number, to: number, stoppedAt: number | undefined):
 }
 
 /**
- * What one step's call answered. `unreadable` is named rather than left as an
- * absent answer, as in the dry run (`./replay-draft.ts`): an answer that could
- * not be parsed and a call that threw are both "this step did not
- * demonstrably run", a failed step that stops the run -- never "nothing to
- * check".
+ * Whether a step has nothing to run it with: one carried from an earlier Flow
+ * that never ran in this build (`./draft-from-flow.ts`). Nothing is sent for
+ * it, and it stops the run (see the header).
  */
-type PartAnswer =
-  | { readable: true; result: NonNullable<ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult>> }
-  | { readable: false };
-
-/** One step's call. A cancelled run re-throws, so a stop is never recorded as a step that failed. */
-async function call(input: AutomationStudioFlowDraftPartRunInput, callId: string, toolId: string, value: JsonObject): Promise<PartAnswer> {
-  try {
-    const ran = await input.executeTool({ callId, toolId, value, ...(input.signal ? { signal: input.signal } : {}) });
-    const result = automationStudioLlmEvidenceParseToolExecutionResult(ran, "mutate");
-    return result ? { readable: true, result } : { readable: false };
-  } catch (error) {
-    if (input.signal?.aborted) throw error;
-    return { readable: false };
-  }
+function unrunnable(step: AutomationStudioFlowDraftStep): boolean {
+  return automationStudioNodeReplayStepCall(step) === undefined;
 }
 
 /** A refusal the model can act on, shaped as Core's own tools refuse (`./describe-nodes.ts`). */

@@ -21,6 +21,8 @@ import {
   type AutomationStudioFlowDraftAmendment,
   type AutomationStudioFlowDraftStepReplay,
   automationStudioFlowDraftControlWords,
+  automationStudioFlowDraftHoldsBinding,
+  automationStudioFlowDraftTranslateBindings,
   type AutomationStudioFlowDraftAmendmentChange
 } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
@@ -51,8 +53,25 @@ import type { AutomationStudioLlmEvidenceToolFailureCode, AutomationStudioLlmEvi
  * mutate to perform a workflow step" told a drafting model not to build its
  * Flow, and "never repeat a successful mutation" read as "act on one row
  * only": live run `run-munnop9n-5475d593` pressed one Confirm of four and
- * never said repeat. */
-export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Only the newest view of the target is shown whole: an earlier result whose view a later result replaced carries supersededBy, the callId of that later result, in its place, and keeps the rest of what it said -- what the step did and what changed. To see again something only a replaced view showed, look at the target as it is now. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result -- except where a core.flow_draft entry is shown: then the result is a Flow you author, and it is ready only when every act on that entry's acts checklist is done by a step you added to the Flow. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, unless the result is a Flow built from the steps you run and add to it: then run each step it needs once and add it (a look, a failed try or a detour is never added), and to do one act to every item of a list do it to one item and state repeat, rather than doing it to each; never repeat a successful mutation merely to try another eventual-workflow value. Getting back to a state you were already in is not progress: only a step added to the Flow, or a state you had not reached, is. Never repeat the same toolId with the same input. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available. An entry whose toolId starts with core. is Core's, not a tool result. The core.evidence_history entry is the record of all your decisions so far and what Core answered each; do not make again a decision it shows was refused or answered from memory. Every other core. entry is Core's answer to a recent decision: correct what it names, and when it names an earlier callId, use that entry instead of asking again. A tool that refused you, or was never offered, bounds only what you may do while gathering evidence, never what the result may contain: write the step you were not permitted to perform here into the result instead, from what you observed.";
+ * never said repeat.
+ *
+ * t252 (user, 2026-10-02: "if the task is repetitive, it should be smart and
+ * make a flow that loops, takes params"): "run each step it needs once and add
+ * it" read as "a step must be run to be in the Flow", so repetitive work was
+ * performed item by item. The clause now says to run to learn, that a step may
+ * be written once what was seen is enough, that repetitive work is a loop, and
+ * that a value that changes is bound. */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_INSTRUCTION = "Evidence entries are the current authoritative results of prior tool calls. Only the newest view of the target is shown whole: an earlier result whose view a later result replaced carries supersededBy, the callId of that later result, in its place, and keeps the rest of what it said -- what the step did and what changed. To see again something only a replaced view showed, look at the target as it is now. Your goal is to produce the final structured result, not to execute the workflow that result describes. When the decision schema offers a complete variant, evaluate it first. Complete immediately once current evidence is sufficient to construct that result -- except where a core.flow_draft entry is shown: then the result is a Flow you author, and it is ready only when every act on that entry's acts checklist is done by a step you added to the Flow. Do not select a tool merely because one remains available. Use a tool only to resolve information still missing from the result; prefer observation over mutation. Use a mutating tool only when its state change is necessary to reveal otherwise unavailable evidence, such as moving to where that evidence is kept or revealing what is hidden. Never mutate merely to perform an eventual workflow step that belongs in the generated result, unless the result is a Flow built from the steps you run or write and add to it: then run steps to learn what works and add the ones the Flow needs (a look, a failed try or a detour is never added); you may also write a step without running it (core.run_node with write true) once what you have seen is enough to know its node and parameters. There, repetitive work is a loop, not a sequence: list the items with a where that keeps the ones to act on, do or write the act once on one item it kept, and state repeat, never doing it to every item; a value that changes between runs or rows is bound ({\"$input\": ...}, {\"$row\": ...}), never typed in; and never repeat a successful mutation merely to try another eventual-workflow value. Getting back to a state you were already in is not progress: only a step added to the Flow, or a state you had not reached, is. Never repeat the same toolId with the same input. Repeating an observation with different parameters is not progress. Do not call a mutating tool merely to unlock another observation. Treat a recoverable tool result shaped like {ok:false,code:string} as feedback and choose a different evidence-gathering action or complete if enough evidence is already available. An entry whose toolId starts with core. is Core's, not a tool result. The core.evidence_history entry is the record of all your decisions so far and what Core answered each; do not make again a decision it shows was refused or answered from memory. Every other core. entry is Core's answer to a recent decision: correct what it names, and when it names an earlier callId, use that entry instead of asking again. A tool that refused you, or was never offered, bounds only what you may do while gathering evidence, never what the result may contain: write the step you were not permitted to perform here into the result instead, from what you observed.";
+
+/**
+ * The node call's names, restated from `./node-tools/` (`run-node.ts`,
+ * `replay.ts`) rather than imported: that directory reads this grammar, so an
+ * import back would be a cycle. `tests/` beside the decision parse runs it on
+ * the exported names, so the two cannot drift unseen.
+ */
+const RUN_NODE_TOOL_ID = "core.run_node";
+const WRITE_KEY = "write";
+const WRITTEN_CODE = "core.run_node.written";
 
 /** How many steps one amendment decision may edit at once. */
 const MAX_AMENDMENTS_PER_DECISION = 16;
@@ -84,10 +103,10 @@ const EVIDENCE_CLOSED_CODE = /^[a-z0-9_.:-]{1,100}$/i;
  * (live run `run-mup2u8o3-6697c4be`, call `search2`).
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_TOOL_EXECUTION_KEYS: readonly string[] = [
-  "kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "draft"
+  "kind", "evidence", "effectApplied", "targetsUnchanged", "resultCode", "resultReason", "diagnostic", "repeatedAnswer", "personNeeded", "nodeId", "stateDigests", "routeState", "clearedWait", "outputs", "draft"
 ];
 
-type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
+type ParsedToolExecution = { evidence: JsonValue; effectApplied: boolean; targetsUnchanged?: boolean; resultCode?: string; resultReason?: string; diagnostic?: JsonObject; repeatedAnswer?: number; personNeeded?: true; nodeId?: string; stateDigests?: { before?: string; after?: string }; outputs?: JsonObject; draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] };
 
 /** The result read from what a tool returned, or nothing when it is not one. */
 export function automationStudioLlmEvidenceParseToolExecutionResult(
@@ -124,7 +143,7 @@ function readToolExecution(
     if (typeof value.effectApplied !== "boolean") return { refused: "effect_applied_not_boolean" };
     if (value.targetsUnchanged !== undefined && typeof value.targetsUnchanged !== "boolean") return { refused: "targets_unchanged_not_boolean" };
     if (value.resultCode !== undefined && (typeof value.resultCode !== "string" || !EVIDENCE_CLOSED_CODE.test(value.resultCode))) return { refused: "result_code_not_code" };
-    const draft = readCallRecord(value.draft, value.evidence);
+    const draft = readCallRecord(value.draft, value.evidence, value.resultCode);
     if (draft && "refused" in draft) return draft;
     const diagnostic = automationStudioLlmEvidenceDiagnostic(value.diagnostic);
     // **The key list had to widen before the domain emitted either of these.**
@@ -163,6 +182,10 @@ function readToolExecution(
       // rather than fatal: a malformed digest leaves that side unobserved, and
       // the call it describes still happened.
       ...(stateDigestsOf(value.stateDigests) ? { stateDigests: stateDigestsOf(value.stateDigests)! } : {}),
+      // A node's output values, for the build's test and never the model
+      // (`./evidence-loop/tool-execution.ts`). Dropped rather than fatal:
+      // without them the test runs a repeat once, as it always did.
+      ...(isJsonObject(value.outputs) ? { outputs: value.outputs } : {}),
       ...(draft ? { draft: draft.draft } : {})
     } };
   }
@@ -193,10 +216,10 @@ function closedCode(value: unknown): value is string {
  * never interprets it; the argument is carried so the step can be written down
  * or run again; the two flags are the caller's statement about its own call.
  */
-function readCallRecord(value: unknown, evidence: JsonValue): { draft: NonNullable<AutomationStudioLlmEvidenceToolExecutionResult["draft"]> } | { refused: AutomationStudioLlmEvidenceToolResultCheck } | undefined {
+function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown): { draft: NonNullable<AutomationStudioLlmEvidenceToolExecutionResult["draft"]> } | { refused: AutomationStudioLlmEvidenceToolResultCheck } | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) return { refused: "draft.not_object" };
-  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption"])) return { refused: "draft.unknown_key" };
+  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption", "written"])) return { refused: "draft.unknown_key" };
   if (value.actionId !== undefined && !validId(value.actionId)) return { refused: "draft.action_id" };
   if (value.input !== undefined && !isJsonObject(value.input)) return { refused: "draft.input" };
   if (value.ranWith !== undefined && !isJsonObject(value.ranWith)) return { refused: "draft.ran_with" };
@@ -212,6 +235,10 @@ function readCallRecord(value: unknown, evidence: JsonValue): { draft: NonNullab
   // says it; anything else is read as saying nothing, never as a refusal --
   // the call happened either way (`../flow-draft/step.ts`, `interruption`).
   const interruption = value.interruption === true;
+  // Written, not run (t252): only `true`, and only beside the code that says
+  // so. A caller that ignored `write` and acted answered another code, so its
+  // step is an ordinary recorded one rather than a false "written".
+  const written = value.written === true && resultCode === WRITTEN_CODE;
   return { draft: {
     ...(value.actionId === undefined ? {} : { actionId: value.actionId }),
     ...(value.input === undefined ? {} : { input: value.input }),
@@ -220,7 +247,8 @@ function readCallRecord(value: unknown, evidence: JsonValue): { draft: NonNullab
     ...(value.proposes === undefined ? {} : { proposes: value.proposes }),
     ...(replay ? { replay } : {}),
     ...(control === undefined ? {} : { control }),
-    ...(interruption ? { interruption: true as const } : {})
+    ...(interruption ? { interruption: true as const } : {}),
+    ...(written ? { written: true as const } : {})
   } };
 }
 
@@ -288,7 +316,7 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
 
 /** What a call may say about the draft, where the model authors it. */
 const AUTHORING_CALL_PROPERTIES: JsonObject = {
-  add: { type: "boolean", description: "true: if this call works, put its step into the Flow now. A step you run is not in the Flow until you add it, here or with amend_draft add. Leave it out for a look, a try or a step the Flow does not need." },
+  add: { type: "boolean", description: "true: if this call works, put its step into the Flow now -- a step you run or write; write true implies add. A step you run is not in the Flow until you add it, here or with amend_draft add. Leave it out for a look, a try or a step the Flow does not need." },
   act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$", description: "The act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity. Implies add." }
 };
 
@@ -357,14 +385,16 @@ export function automationStudioLlmEvidenceParseDecision(value: unknown): Automa
   if (value.kind === "complete" && exactKeys(value, ["kind", "result", "usage"]) && isJsonObject(value.result) && validUsage(value.usage)) {
     return { kind: "complete", result: value.result, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
   }
-  if (value.kind === "tool_call" && exactKeys(value, ["kind", "callId", "toolId", "input", "usage", "add", "act"])
-    && validId(value.callId) && validId(value.toolId) && isJsonObject(value.input) && validUsage(value.usage)
-    && (value.add === undefined || typeof value.add === "boolean")
-    && (value.act === undefined || (typeof value.act === "string" && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(value.act)))) {
-    // `act` says the step does an act, which only a step in the Flow can: it adds.
-    const add = value.add === true || value.act !== undefined;
+  if (isToolCall(value)) {
+    // A node call that writes its step, or one that may not carry a binding
+    // because it runs now: read here, refused by the codes below.
+    const call = readNodeCall(value.toolId, value.input);
+    if ("refused" in call) return undefined;
+    // `act` says the step does an act, which only a step in the Flow can: it
+    // adds. `write` puts the step into the Flow by writing it: it adds too.
+    const add = value.add === true || value.act !== undefined || call.written;
     return {
-      kind: "tool_call", callId: value.callId, toolId: value.toolId, input: value.input,
+      kind: "tool_call", callId: value.callId, toolId: value.toolId, input: call.input,
       ...(add ? { add: true as const } : {}), ...(typeof value.act === "string" ? { act: value.act } : {}),
       ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {})
     };
@@ -374,6 +404,70 @@ export function automationStudioLlmEvidenceParseDecision(value: unknown): Automa
     if (amendments) return { kind: "amend_draft", amendments, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
   }
   return undefined;
+}
+
+/** A node call whose parameters carry a binding and that runs now, which no binding can (t252, D1). */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_NEEDS_WRITE_CODE = "run_node.binding_needs_write";
+
+/**
+ * A written node call with a binding that cannot be read. Sent first, then
+ * once per binding as `run_node.binding_refused.<reason>:parameters.<path>`,
+ * so the model is told where and why in codes alone.
+ */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE = "run_node.binding_refused";
+
+/**
+ * Why a reply that is a tool call in shape was still not read as a decision,
+ * as the issue codes the model is told; nothing for any other reply, which
+ * either parsed or is refused as a shape (`./evidence-loop/decision-refusal.ts`).
+ * Answered by the same reader as the parse above, so the two never disagree.
+ */
+export function automationStudioLlmEvidenceDecisionIssueCodes(value: unknown): string[] | undefined {
+  if (!isToolCall(value)) return undefined;
+  const call = readNodeCall(value.toolId, value.input);
+  return "refused" in call ? call.refused : undefined;
+}
+
+/** Whether a reply is a tool call of the shape the grammar reads. */
+function isToolCall(value: unknown): value is { kind: "tool_call"; callId: string; toolId: string; input: JsonObject; add?: boolean; act?: string; usage?: unknown } {
+  return isRecord(value) && value.kind === "tool_call" && exactKeys(value, ["kind", "callId", "toolId", "input", "usage", "add", "act"])
+    && validId(value.callId) && validId(value.toolId) && isJsonObject(value.input) && validUsage(value.usage)
+    && (value.add === undefined || typeof value.add === "boolean")
+    && (value.act === undefined || (typeof value.act === "string" && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(value.act)));
+}
+
+/**
+ * A call's input as it is sent, and whether it writes its step; or the issue
+ * codes it is refused for.
+ *
+ * Only a node call is read (`./node-tools/run-node.ts`); every other tool's
+ * input passes as it came. **Written** (`write: true`): its parameters' binding
+ * forms become the executor's state bindings here, once, before the call is
+ * sent (`../flow-draft/binding-forms.ts`), so the host and every later reader
+ * see one shape; a form that cannot be translated refuses the decision rather
+ * than reaching a node as an object it was never meant to receive. **Run now**:
+ * a binding anywhere in its parameters refuses it, because a binding resolves
+ * only in the Flow and a live call carries concrete values only.
+ */
+function readNodeCall(toolId: string, input: JsonObject): { input: JsonObject; written: boolean } | { refused: string[] } {
+  if (toolId !== RUN_NODE_TOOL_ID) return { input, written: false };
+  const parameters = input.parameters;
+  if (input[WRITE_KEY] !== true) {
+    return automationStudioFlowDraftHoldsBinding(parameters) ? { refused: [AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_NEEDS_WRITE_CODE] } : { input, written: false };
+  }
+  // Parameters that are not an object are the host's to refuse, as for any call.
+  if (!isJsonObject(parameters)) return { input, written: true };
+  const translated = automationStudioFlowDraftTranslateBindings(parameters);
+  if (translated.refused.length) {
+    return { refused: [AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE, ...translated.refused.map(({ path, reason }) => bindingRefusedCode(path, reason))] };
+  }
+  return { input: { ...input, parameters: translated.parameters }, written: true };
+}
+
+/** One refused binding as a code naming its reason and, where the path can travel as a code, where it sits. */
+function bindingRefusedCode(path: string, reason: string): string {
+  const named = `${AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE}.${reason}:parameters${path ? `.${path}` : ""}`;
+  return EVIDENCE_CLOSED_CODE.test(named) ? named : `${AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE}.${reason}`;
 }
 
 /**

@@ -9,8 +9,9 @@
 // place. Re-emission is not a correction; it is a second first draft.
 //
 // An amendment names one step and says one thing about it, so a correction
-// costs the model a sentence rather than the whole result. Ten changes: six
-// about whether a step is in the Flow at all, and four about when it runs.
+// costs the model a sentence rather than the whole result. Eleven changes: six
+// about whether a step is in the Flow at all, four about when it runs, and one
+// about what it runs with.
 //
 //   add          -- put this step I ran into the Flow (at `to`, when given).
 //                   Since 2026-09-30 a step the model runs is evidence, not a
@@ -31,6 +32,10 @@
 //   on_failed    -- when this fails, run `to` instead, then carry on.
 //   repeat       -- do this through `through`, once per row `over` produced,
 //                   or while `over` keeps holding.
+//
+//   bind         -- this step's value comes from somewhere at run time: lift
+//                   the parameters `input` names into bindings, the run that
+//                   worked kept as its `instance` (design t252, D2).
 //
 // The second four are `./routing.ts`, and they exist because a draft that can
 // only say "and then" produces a Flow that always does everything: a build that
@@ -54,6 +59,12 @@
 // `settings` rides alongside any of them, because "keep this step, but with
 // this wait condition" is one thought and should not cost two calls.
 //
+// `bind` is how a step the model ran becomes general without running it again:
+// a value the person gave becomes a Flow input, and a value of the row a
+// repeat is on becomes that row's field (`./binding-forms.ts`). It lifts an
+// argument the step already has and never invents one, so the run that worked
+// stays evidence for the step it now is.
+//
 // `rerun` is the one amendment this module does not carry out. It has to
 // *execute* something, and executing is the loop's job rather than the draft's:
 // the loop runs the step's action again with the new argument, appends what came
@@ -68,15 +79,21 @@
 // already holds and never asks for again.
 
 import { automationStudioFlowDraftClaimAct } from "./act-claim.ts";
+import {
+  automationStudioFlowDraftHoldsBinding,
+  automationStudioFlowDraftIsBindingForm,
+  automationStudioFlowDraftStoredBindingKind,
+  automationStudioFlowDraftTranslateBindings
+} from "./binding-forms.ts";
 import { automationStudioFlowDraftKeepOpeners } from "./opener.ts";
-import type { JsonObject } from "../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
 import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
 import { automationStudioFlowDraftPrecedingProposedStep, automationStudioFlowDraftStepId } from "./routing.ts";
 
 /** Every change one amendment may ask for. */
-export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES = ["add", "drop", "exploratory", "keep", "reorder", "rerun", "optional", "only_if", "on_failed", "repeat"] as const;
+export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES = ["add", "drop", "exploratory", "keep", "reorder", "rerun", "optional", "only_if", "on_failed", "repeat", "bind"] as const;
 
 export type AutomationStudioFlowDraftAmendmentChange = (typeof AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES)[number];
 
@@ -99,7 +116,12 @@ export type AutomationStudioFlowDraftAmendment = {
    * to remember rather than one it can guess.
    */
   to?: number;
-  /** `rerun` only: what changes in the argument the step ran with, as a JSON merge patch (`../llm/evidence-loop/rerun-input.ts`). */
+  /**
+   * `rerun`: what changes in the argument the step ran with, as a JSON merge
+   * patch (`../llm/evidence-loop/rerun-input.ts`). `bind`: the parameters to
+   * lift, each set to a binding form (`./binding-forms.ts`), the `parameters`
+   * wrapper optional.
+   */
   input?: JsonObject;
   /** `only_if` only: the step whose success this one runs on. Defaults to the step before it. */
   check?: number;
@@ -131,7 +153,8 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID = /^a[1-9][0-9]{0,2}(?:\.[a-z]{
  */
 export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
-  reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named";
+  reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named"
+    | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed" | "rerun_holds_binding";
   /**
    * `over_not_before` only: the step the repeat named as `over`, so the
    * telling can say, in the draft's numbers, which step lists the rows and
@@ -154,6 +177,11 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    * running while the checklist showed it done and `a3` still to do.
    */
   act?: string;
+  /**
+   * `bind_*` only: the dotted path of the parameter the refusal is about,
+   * under the step's parameters, in the model's own key names.
+   */
+  parameter?: string;
 };
 
 /**
@@ -176,11 +204,11 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA: JsonObject = {
     step: { type: "integer", minimum: 1, description: "The step number shown in the draft." },
     change: {
       enum: [...AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES],
-      description: "add: put this step you ran into the Flow -- a step you run is not in the Flow until you add it -- at the position given by to when given, and act names the act it does. drop: leave this step out of the result. exploratory: I did this only to look around. keep: put it back in, and make it unconditional again (it clears optional, only_if and on_failed, never repeat, and nothing when it carries act). reorder: move it to the position given by to. rerun: do it again with input's changes; the run replaces this step. optional: the Flow carries on when this step fails, for something that is not always there. only_if: run this step only when the step before it succeeded, or the one given by check. on_failed: when this step fails, run the step given by to instead, then carry on. repeat: do this step, through the one given by through, once for each row the step given by over produced, or while that step keeps succeeding. To do one act to every listed item, three steps in this order: the listing, with a where that keeps only the items to act on (every row it returns is acted on; rerun it only when its where is missing or wrong, never to run it again as it stands); the act done to one row it kept -- that row's own control, never one on a row it leaves out -- added with its act; then repeat on that act, with over the listing. The repeat goes on the act, never on the listing itself; each pass acts on its own row. When the listing comes after the act, reorder the listing to the act's position first, then repeat the act, which the move put one later: the amendments of one decision are read in order, each against the numbers the one before it left. Drop any other step that does the same act to a single row."
+      description: "add: put this step you ran into the Flow -- a step you run is not in the Flow until you add it -- at the position given by to when given, and act names the act it does. drop: leave this step out of the result. exploratory: I did this only to look around. keep: put it back in, and make it unconditional again (it clears optional, only_if and on_failed, never repeat, and nothing when it carries act). reorder: move it to the position given by to. rerun: do it again with input's changes; the run replaces this step. optional: the Flow carries on when this step fails, for something that is not always there. only_if: run this step only when the step before it succeeded, or the one given by check. on_failed: when this step fails, run the step given by to instead, then carry on. repeat: do this step, through the one given by through, once for each row the step given by over produced, or while that step keeps succeeding. To do one act to every listed item, three steps in this order: the listing, with a where that keeps only the items to act on (every row it returns is acted on; rerun it only when its where is missing or wrong, never to run it again as it stands); the act done to one row it kept -- that row's own control, never one on a row it leaves out -- added with its act; then repeat on that act, with over the listing. The repeat goes on the act, never on the listing itself; each pass acts on its own row. When the listing comes after the act, reorder the listing to the act's position first, then repeat the act, which the move put one later: the amendments of one decision are read in order, each against the numbers the one before it left. Drop any other step that does the same act to a single row. bind: make a step in the Flow general without running it again: input names parameters it already has, each set to a binding -- {\"$input\": <name>, \"test\": <value>} for a value the person gave that would change between runs (test is that value, and defaults to the one the step ran with), {\"$row\": <field>} for a field of the row a repeat is on (only for a step inside a repeat). The run that worked is kept as evidence."
     },
     settings: { type: "object", description: "Settings to carry on the step, merged over any it already has." },
     to: { type: "integer", minimum: 1, description: "add or reorder: the position to put the step at. on_failed: the step to run when this one fails. Counting from 1." },
-    input: { type: "object", description: "rerun only: a JSON merge patch over the argument the step ran with. Only the keys that change, and a node's parameters may be written without parameters around them; a list replaces whole; null removes a key; a key left out is kept, and a new key given a left-out key's value renames it." },
+    input: { type: "object", description: "rerun only: a JSON merge patch over the argument the step ran with. Only the keys that change, and a node's parameters may be written without parameters around them; a list replaces whole; null removes a key; a key left out is kept, and a new key given a left-out key's value renames it. bind: the parameters to lift, each set to a binding form, {\"$input\": <name>, \"test\": <value>} or {\"$row\": <field>}, at any depth; only parameters the step already has, never a new one." },
     check: { type: "integer", minimum: 1, description: "only_if only: the step whose success this one runs on. Leave it out for the step before it, which is usually the check you just ran." },
     through: { type: "integer", minimum: 1, description: "repeat only: the last step of the span that repeats. Leave it out to repeat this step alone. A press that opens a confirmation repeats with it: name the confirmation as through." },
     over: { type: "integer", minimum: 1, description: "repeat only: the step whose rows the span repeats for -- the listing, a step before this one -- or whose success it repeats while. Leave it out for the step before it." },
@@ -225,7 +253,8 @@ export function applyAutomationStudioFlowDraftAmendments(
     // draft showed the step out -- and was sent again.
     // A failed press the caller marked as no step of a Flow is the same failed
     // press, and the draft entry shows it the same way (`./entry.ts`).
-    if ((automationStudioFlowDraftStepIsAction(step) || step.effect === "mutate") && step.effectApplied === false) {
+    // A written step changed nothing by construction: it was never performed.
+    if (step.written !== true && (automationStudioFlowDraftStepIsAction(step) || step.effect === "mutate") && step.effectApplied === false) {
       refused.push({ step: amendment.step, reason: "did_not_work" });
       continue;
     }
@@ -250,6 +279,12 @@ export function applyAutomationStudioFlowDraftAmendments(
     // model is told so, beside whatever else the amendment changed.
     const actOnRead = amendment.act !== undefined && step.effect !== "mutate";
     if (actOnRead) refused.push({ step: amendment.step, reason: "act_on_a_read" });
+    if (amendment.change === "bind") {
+      const bound = bindStep(steps, step, amendment);
+      if (bound.ok) applied += 1;
+      else refused.push({ step: amendment.step, reason: bound.reason, ...(bound.parameter === undefined ? {} : { parameter: bound.parameter }) });
+      continue;
+    }
     if (amendment.change === "reorder") {
       if (moveStep(steps, step, amendment.to, amendment.settings)) applied += 1;
       else refused.push({ step: amendment.step, reason: placeExists(steps, amendment.to) ? "already_so" : "no_such_position" });
@@ -396,4 +431,145 @@ function moveStep(
 /** Whether the draft has the position an amendment asked to move a step to. */
 function placeExists(steps: readonly AutomationStudioFlowDraftStep[], to: number | undefined): boolean {
   return to !== undefined && Number.isInteger(to) && to >= 1 && to <= steps.length;
+}
+
+/** The key a node call's argument holds its parameters under. */
+const PARAMETERS_KEY = "parameters";
+
+type BindRefusal = { ok: false; reason: AutomationStudioFlowDraftAmendmentRefusal["reason"]; parameter?: string };
+
+/** One binding form the patch sets, where it sits under the parameters, and the value it replaces. */
+type BindLeaf = { path: string[]; form: JsonObject; replaced: JsonValue };
+
+/**
+ * Lift the parameters a `bind` names into bindings, or say why not (design
+ * t252, D2).
+ *
+ * Everything is checked before anything is written, so a refused bind leaves
+ * the step exactly as it was. Generalizing lifts an argument the step already
+ * has: every leaf the patch sets must be a binding form, and must replace a
+ * value the step ran with. The bindings are written into both what the step
+ * runs with and what it shows -- the draft renders them back as forms
+ * (`./binding-render.ts`) -- and the first concrete argument is kept as the
+ * step's `instance`. A row field needs the step inside a repeat span; whether
+ * that span is over a list is the assembler's to check, from the node it
+ * repeats over.
+ */
+function bindStep(
+  steps: readonly AutomationStudioFlowDraftStep[],
+  step: AutomationStudioFlowDraftStep,
+  amendment: AutomationStudioFlowDraftAmendment
+): { ok: true } | BindRefusal {
+  if (!automationStudioFlowDraftStepIsProposed(step)) return { ok: false, reason: "not_a_kept_step" };
+  const argument = step.ranWith ?? step.input;
+  const nested = isObject(argument[PARAMETERS_KEY]);
+  const parameters = nested ? argument[PARAMETERS_KEY] as JsonObject : argument;
+  const patch = amendment.input === undefined ? undefined : unwrappedPatch(amendment.input, nested);
+  if (!patch || !Object.keys(patch).length) return { ok: false, reason: "bind_not_a_binding" };
+  const leaves: BindLeaf[] = [];
+  const problem = collectBindLeaves(patch, parameters, [], leaves);
+  if (problem) return problem;
+  const bindings: { path: string[]; binding: JsonObject }[] = [];
+  for (const leaf of leaves) {
+    const parameter = leaf.path.join(".");
+    // A Flow input written without its test value is tested with the value it replaces.
+    let form = leaf.form;
+    if (Object.hasOwn(form, "$input") && !Object.hasOwn(form, "test")) {
+      const test = replacedTest(leaf.replaced);
+      if (test === undefined) return { ok: false, reason: "bind_malformed", parameter };
+      form = { ...form, test };
+    }
+    const translated = automationStudioFlowDraftTranslateBindings({ value: form });
+    const binding = translated.parameters.value;
+    if (translated.refused.length || !isObject(binding)) return { ok: false, reason: "bind_malformed", parameter };
+    if (automationStudioFlowDraftStoredBindingKind(binding)?.kind === "row" && !insideRepeat(steps, step)) return { ok: false, reason: "bind_row_outside_loop", parameter };
+    bindings.push({ path: leaf.path, binding });
+  }
+  const unchanged = bindings.every(({ path, binding }) => JSON.stringify(valueAt(parameters, path)) === JSON.stringify(binding));
+  if (unchanged && amendment.settings === undefined) return { ok: false, reason: "already_so" };
+  // The run that worked, once: a later bind never replaces it, and a written step has none.
+  if (step.instance === undefined && step.written !== true && !automationStudioFlowDraftHoldsBinding(argument)) step.instance = structuredClone(argument);
+  for (const { path, binding } of bindings) {
+    if (step.ranWith) setAt(containerOf(step.ranWith, nested), path, binding);
+    if (step.input !== step.ranWith) setAt(containerOf(step.input, nested), path, binding);
+  }
+  if (amendment.settings) step.settings = { ...(step.settings ?? {}), ...amendment.settings };
+  return { ok: true };
+}
+
+/** The patch under the parameters: written with or without `parameters` around it. */
+function unwrappedPatch(patch: JsonObject, nested: boolean): JsonObject {
+  const keys = Object.keys(patch);
+  return nested && keys.length === 1 && keys[0] === PARAMETERS_KEY && isObject(patch[PARAMETERS_KEY]) ? patch[PARAMETERS_KEY] as JsonObject : patch;
+}
+
+/**
+ * Every binding form the patch sets, with the value each replaces, or the
+ * first leaf that is not a form, or that names a parameter the step does not
+ * have. An object that is not a form is a path to forms below it, and has to
+ * be an object the step already has.
+ */
+function collectBindLeaves(patch: JsonObject, existing: JsonObject, path: string[], leaves: BindLeaf[]): BindRefusal | undefined {
+  for (const [key, value] of Object.entries(patch)) {
+    const at = [...path, key];
+    const parameter = at.join(".");
+    const has = Object.hasOwn(existing, key);
+    if (automationStudioFlowDraftIsBindingForm(value)) {
+      if (!has) return { ok: false, reason: "bind_new_key", parameter };
+      leaves.push({ path: at, form: value, replaced: existing[key]! });
+      continue;
+    }
+    if (!isObject(value) || Object.hasOwn(value, "$state") || !Object.keys(value).length) return { ok: false, reason: "bind_not_a_binding", parameter };
+    if (!has) return { ok: false, reason: "bind_new_key", parameter };
+    const below = existing[key];
+    if (!isObject(below) || Object.hasOwn(below, "$state")) return { ok: false, reason: "bind_not_a_binding", parameter };
+    const problem = collectBindLeaves(value, below, at, leaves);
+    if (problem) return problem;
+  }
+  return undefined;
+}
+
+/** The test value a Flow input takes from the value it replaces: that value, or the test of an input already bound there. */
+function replacedTest(replaced: JsonValue): JsonValue | undefined {
+  if (replaced === null) return undefined;
+  const stored = automationStudioFlowDraftStoredBindingKind(replaced);
+  if (stored) return stored.kind === "input" ? stored.test : undefined;
+  return automationStudioFlowDraftHoldsBinding(replaced) ? undefined : replaced;
+}
+
+/** Whether a step is inside a span some step repeats: that step, through the one it names as `through`. */
+function insideRepeat(steps: readonly AutomationStudioFlowDraftStep[], step: AutomationStudioFlowDraftStep): boolean {
+  const at = steps.indexOf(step);
+  return steps.some((first, start) => {
+    if (first.routing?.kind !== "repeat") return false;
+    const through = first.routing.through;
+    const end = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === through);
+    return at === start || (end >= start && at >= start && at <= end);
+  });
+}
+
+/** Where a step's parameters are kept in one of its arguments, made when it has none yet. */
+function containerOf(argument: JsonObject, nested: boolean): JsonObject {
+  if (!nested) return argument;
+  if (!isObject(argument[PARAMETERS_KEY])) argument[PARAMETERS_KEY] = {};
+  return argument[PARAMETERS_KEY] as JsonObject;
+}
+
+function valueAt(root: JsonObject, path: readonly string[]): JsonValue | undefined {
+  let value: JsonValue | undefined = root;
+  for (const key of path) value = isObject(value) ? value[key] : undefined;
+  return value;
+}
+
+function setAt(root: JsonObject, path: readonly string[], value: JsonValue): void {
+  let target = root;
+  for (const key of path.slice(0, -1)) {
+    if (!isObject(target[key])) target[key] = {};
+    target = target[key] as JsonObject;
+  }
+  target[path[path.length - 1]!] = structuredClone(value);
+}
+
+function isObject(value: JsonValue | undefined): value is JsonObject {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

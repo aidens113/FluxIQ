@@ -43,7 +43,7 @@ export function automationStudioLlmEvidenceCallRecord(
   tool: AutomationStudioLlmEvidenceTool,
   input: JsonObject,
   execution?: { draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] }
-): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true } {
+): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true; written?: true } {
   const declared = execution?.draft;
   const actionId = declared?.actionId ?? tool.toolId;
   return {
@@ -57,6 +57,11 @@ export function automationStudioLlmEvidenceCallRecord(
     // The words of what it acted on, already screened on the parse path; shown beside `input` (`../../flow-draft/entry.ts`).
     ...(declared?.control === undefined ? {} : { control: declared.control }),
     // The caller's word that it answered a layer gone after it (`../../flow-draft/step.ts`).
-    ...(declared?.interruption === true ? { interruption: true as const } : {})
+    ...(declared?.interruption === true ? { interruption: true as const } : {}),
+    // Written, never run (t252), spread onto the step the loop appends
+    // (`../../flow-draft/step.ts`, `written`). The parse path carries it only
+    // beside the code `core.run_node.written` (`../evidence-loop-decision.ts`),
+    // so a host that ignored `write` and acted never makes a step "written".
+    ...(declared?.written === true ? { written: true as const } : {})
   };
 }

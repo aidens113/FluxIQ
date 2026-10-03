@@ -187,3 +187,50 @@ describe("the draft entry a decision is shown", () => {
     expect(lines[1]).not.toHaveProperty("does");
   });
 });
+
+// t252: a step may be written rather than run, its arguments may be bound, and
+// the inputs the bindings declare are listed once for the whole draft.
+describe("written steps, bindings and inputs in the draft entry", () => {
+  const nodeStep = (position: number, parameters: Record<string, unknown>, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+    position, iteration: position, actionId: "node.act", input: { node: "node.act", parameters } as never, ranWith: { node: "node.act", parameters } as never,
+    effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", ...over
+  });
+
+  it("marks a written step written and in the Flow, never did_not_work", () => {
+    const lines = value([nodeStep(1, {}, { written: true, effectApplied: false, resultCode: "core.run_node.written" })]).steps as Array<Record<string, unknown>>;
+    expect(lines[0]).toMatchObject({ written: true, inResult: true, disposition: "kept" });
+    const recorded = value([nodeStep(1, {})]).steps as Array<Record<string, unknown>>;
+    expect(recorded[0]).not.toHaveProperty("written");
+  });
+
+  it("shows stored bindings in the forms the model writes, and lists the inputs they declare", () => {
+    const entry = value([
+      nodeStep(1, { query: { $state: { path: "query", fallback: "blue towels" } } }),
+      nodeStep(2, { note: { $state: { path: "item.name" } } })
+    ]) as Entry & { inputs?: unknown };
+    expect(entry.steps[0]?.input).toEqual({ node: "node.act", parameters: { query: { $input: "query", test: "blue towels" } } });
+    expect(entry.steps[1]?.input).toEqual({ node: "node.act", parameters: { note: { $row: "name" } } });
+    expect(entry.inputs).toEqual([{ name: "query", test: "blue towels", steps: [1] }]);
+    expect(JSON.stringify(entry)).not.toContain("$state");
+    expect(value([nodeStep(1, { query: "x" })])).not.toHaveProperty("inputs");
+  });
+
+  it("shows passes beside a replayed step when its replay carries them", () => {
+    const replayed = { step: 1, actionId: "node.act", status: "replayed" as const };
+    const lines = value([nodeStep(1, {}, { replayed: { ...replayed, passes: 3 } as never }), nodeStep(2, {}, { replayed })]).steps as Array<Record<string, unknown>>;
+    expect(lines[0]).toMatchObject({ replayed: "replayed", passes: 3 });
+    expect(lines[1]).not.toHaveProperty("passes");
+  });
+
+  it("tells an authoring model it may write a step, bind a value, and that repetitive work is a loop", () => {
+    const { instruction } = automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry;
+    expect(instruction).toContain("write true");
+    expect(instruction).toContain("written true");
+    expect(instruction).toContain("{\"$input\": <name>, \"test\": <value>}");
+    expect(instruction).toContain("{\"$row\": <field>}");
+    expect(instruction).toContain("amend_draft bind");
+    expect(instruction).toContain("inputs");
+    expect(instruction).toContain("passes");
+    expect(instruction).toMatch(/never do it to every item yourself/u);
+  });
+});

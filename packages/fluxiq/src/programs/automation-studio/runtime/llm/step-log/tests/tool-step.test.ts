@@ -102,6 +102,35 @@ describe("a tool step", () => {
     expect(readFileSync(path.join(directory, "index.md"), "utf8")).toContain("| 0001 | tool | web.look | web.action.succeeded, unread: unknown_key | - |");
   });
 
+  // t252 D6: a repeated step's replay carries its row under `item`, and a replayed read answers
+  // with its rows under `outputs`. Both are page data, written by field names only.
+  it("writes a replay's row and a result's output values as their field names, never their values", async () => {
+    const rows = [{ title: "Oak desk", price: "129.00" }, { title: "Ash chair", sku: "A-77" }];
+    const run = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string; value: unknown }) => ({ ...execution({ ok: true }), outputs: { records: rows, total: 2 } }), env());
+    await run({ callId: "dryrun.1.3", toolId: "core:replay_node", value: { node: "node.read_detail", parameters: { mode: "full" }, item: rows[0] } });
+    await run({ callId: "dryrun.1.4", toolId: "core:replay_node", value: { node: "node.save", item: "Oak desk" } });
+
+    const first = path.join(directory, "0001-test-core_replay_node");
+    expect(json(path.join(first, "call.json"))).toEqual({
+      callId: "dryrun.1.3", toolId: "core:replay_node", input: { node: "node.read_detail", parameters: { mode: "full" }, item: { fields: ["title", "price"] } }
+    });
+    expect(json(path.join(first, "meta.json"))).toMatchObject({ outputs: { records: { fields: ["title", "price", "sku"] }, total: { fields: [] } } });
+    expect(json(path.join(directory, "0002-test-core_replay_node", "call.json"))).toMatchObject({ input: { item: { fields: [] } } });
+    for (const step of [first, path.join(directory, "0002-test-core_replay_node")]) {
+      for (const file of ["call.json", "meta.json", "result.json"]) {
+        const text = readFileSync(path.join(step, file), "utf8");
+        for (const value of ["Oak desk", "129.00", "Ash chair", "A-77"]) expect(text).not.toContain(value);
+      }
+    }
+  });
+
+  it("writes a call without a row, and a result without output values, as before", async () => {
+    const run = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string; value: unknown }) => execution({ ok: true }), env());
+    await run({ callId: "c1", toolId: "web.look", value: { nodeId: "web.look" } });
+    expect(json(path.join(directory, "0001-tool-web.look", "call.json"))).toEqual({ callId: "c1", toolId: "web.look", input: { nodeId: "web.look" } });
+    expect(json(path.join(directory, "0001-tool-web.look", "meta.json"))).not.toHaveProperty("outputs");
+  });
+
   it("is turned on in the evidence loop's wrapper by the step log alone", async () => {
     const input = {
       decide: async (_request: { iteration: number }) => ({ kind: "complete" }),

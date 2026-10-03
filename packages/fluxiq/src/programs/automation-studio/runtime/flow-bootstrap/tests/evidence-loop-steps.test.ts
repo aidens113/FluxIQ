@@ -50,6 +50,14 @@ describe("Flow Bootstrap evidence steps: refused amendments", () => {
     expect(parseAutomationStudioFlowBootstrapEvidenceSteps([step])).toEqual([step]);
   });
 
+  // t252: a rerun refused because the step still holds a binding is a reason the
+  // draft has, so it is published and read back like any other.
+  it("carries a rerun refused for a binding the step still holds", () => {
+    const [step] = automationStudioFlowBootstrapEvidenceSteps([amendRow({ amendmentsRefused: [{ step: 4, reason: "rerun_holds_binding" }] })]);
+    expect(step).toMatchObject({ amendmentsRefused: [{ step: 4, reason: "rerun_holds_binding" }], amendmentRefusals: ["4:rerun_holds_binding"] });
+    expect(parseAutomationStudioFlowBootstrapEvidenceSteps([step])).toEqual([step]);
+  });
+
   it("leaves the field off a decision that refused nothing", () => {
     for (const refused of [undefined, [] as const]) {
       const [step] = automationStudioFlowBootstrapEvidenceSteps([amendRow({ amended: 2, ...(refused ? { amendmentsRefused: refused } : {}) })]);

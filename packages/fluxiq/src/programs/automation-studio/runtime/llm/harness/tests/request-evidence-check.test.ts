@@ -73,3 +73,32 @@ describe("a build's test on its way to the judge", () => {
     expect(automationStudioLlmRequestEvidenceRefusal(request(own))).toBeUndefined();
   });
 });
+
+// t252-w9: a repeated step's passes and the Flow's inputs carry the domain's
+// values too, so the declared keys are looked for there as well.
+describe("a build's test that ran a repeat and took inputs", () => {
+  const PRESS = { step: 5, action: "web.output.dom-click", target: ["Confirm"], outcome: "replayed" as const, runs: { kind: "repeat" as const, over: 4, through: 5 } };
+
+  it("is sent with each pass's label and observation and each input's test value", () => {
+    const summary = buildTest([LISTING, { ...PRESS, passes: [{ pass: 1, row: "Amara Osei", outcome: "replayed", observed: { answer: "pressed" } }, { pass: 2, row: "(withheld)", outcome: "replayed" }] }]);
+    const sent = { ...summary, buildTest: { ...summary.buildTest!, inputs: [{ name: "minimum", test: 5, steps: [4] }] } };
+    expect(automationStudioLlmRequestEvidenceRefusal(request(sent))).toBeUndefined();
+  });
+
+  it("is refused when a declared key reaches what a pass observed", () => {
+    const summary = buildTest([LISTING, { ...PRESS, passes: [{ pass: 1, row: "Amara Osei", outcome: "replayed", observed: { cookies: "x" } }] }]);
+    expect(automationStudioLlmRequestEvidenceRefusal(request(summary))).toBe("llm.provider_result_summary_invalid");
+  });
+
+  it("is refused when a declared key reaches an input's test value", () => {
+    const summary = buildTest([LISTING]);
+    const sent = { ...summary, buildTest: { ...summary.buildTest!, inputs: [{ name: "who", test: { name: "Amara", headers: "x" }, steps: [4] }] } };
+    expect(automationStudioLlmRequestEvidenceRefusal(request(sent))).toBe("llm.provider_result_summary_invalid");
+  });
+
+  it("leaves an input whose name is a declared key alone: the name is Core's envelope", () => {
+    const summary = buildTest([LISTING]);
+    const sent = { ...summary, buildTest: { ...summary.buildTest!, inputs: [{ name: "headers", test: "name", steps: [4] }] } };
+    expect(automationStudioLlmRequestEvidenceRefusal(request(sent))).toBeUndefined();
+  });
+});

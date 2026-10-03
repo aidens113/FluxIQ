@@ -157,6 +157,47 @@ describe("runAutomationStudioFlowDraftPart", () => {
     await expect(run(four(), { from: 1 }, host({ 2: "throw" }, { abort }), abort.signal)).rejects.toThrow("host went away");
   });
 
+  it("runs a repeat once per row when its list step is in the range, and once when it is not (t252)", async () => {
+    const nodeOf = (id: string) => id === "node.list"
+      ? { inputs: [], outputs: [{ id: "records", type: "array" }] }
+      : { inputs: [{ id: "item" }], outputs: [] };
+    const steps = [
+      step(1, { actionId: "node.list", effect: "observe", ranWith: { node: "node.list", parameters: {} } }),
+      step(2, { routing: { kind: "repeat", over: "d1", through: "d2" } }),
+      step(3)
+    ];
+    const rows = [{ name: "Ada" }, { name: "Ben" }];
+    const calls: { callId: string; value: JsonObject }[] = [];
+    const executeTool = async (call: { callId: string; toolId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+      calls.push(call);
+      return { kind: "llm_evidence_tool_execution", evidence: { at: call.callId }, effectApplied: true, resultCode: REPLAYED, ...(call.value.node === "node.list" ? { outputs: { records: rows } } : {}) };
+    };
+    const whole = await runAutomationStudioFlowDraftPart({ steps, value: { from: 1 }, callId: "part", executeTool, nodeOf });
+    expect(calls.map((call) => [call.callId, call.value.item ?? null])).toEqual([["part.1", null], ["part.2.pass.1", rows[0]], ["part.2.pass.2", rows[1]], ["part.3", null]]);
+    expect(whole.evidence).toMatchObject({ passed: true, steps: [{ step: 1 }, { step: 2, ran: "replayed", passes: 2 }, { step: 3 }] });
+    calls.length = 0;
+    await runAutomationStudioFlowDraftPart({ steps, value: { from: 2 }, callId: "part", executeTool, nodeOf });
+    expect(calls.map((call) => call.callId)).toEqual(["part.2", "part.3"]);
+  });
+
+  it("stops at a pass that did not replay, leaving the target where it broke (t252)", async () => {
+    const nodeOf = (id: string) => id === "node.list" ? { inputs: [], outputs: [{ id: "records", type: "array" }] } : { inputs: [{ id: "item" }], outputs: [] };
+    const steps = [
+      step(1, { actionId: "node.list", effect: "observe", ranWith: { node: "node.list", parameters: {} } }),
+      step(2, { routing: { kind: "repeat", over: "d1", through: "d2" } }),
+      step(3)
+    ];
+    const calls: string[] = [];
+    const executeTool = async (call: { callId: string; toolId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+      calls.push(call.callId);
+      const code = call.callId === "part.2.pass.1" ? "core.replay.failed" : REPLAYED;
+      return { kind: "llm_evidence_tool_execution", evidence: { at: call.callId }, effectApplied: true, resultCode: code, ...(call.value.node === "node.list" ? { outputs: { records: [{ n: 1 }, { n: 2 }] } } : {}) };
+    };
+    const result = await runAutomationStudioFlowDraftPart({ steps, value: { from: 1 }, callId: "part", executeTool, nodeOf });
+    expect(calls).toEqual(["part.1", "part.2.pass.1"]);
+    expect(result).toMatchObject({ resultCode: "core.run_flow.stopped", evidence: { stoppedAt: 2, steps: [{ step: 1 }, { step: 2, ran: "failed", passes: 1, pass: 1 }], last: { step: 2 } } });
+  });
+
   it("leaves every step of the draft as it was: nothing is marked replayed", async () => {
     const steps = four();
     const before = structuredClone(steps);

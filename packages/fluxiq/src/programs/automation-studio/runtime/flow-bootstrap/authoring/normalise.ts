@@ -16,7 +16,7 @@
 // is refused, not dropped, because where it was meant to go is exactly what
 // cannot be guessed; the refusal is fed back with the node's parameter ids.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationNodeParameter, AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
+import { isAutomationNodeParameterStateBinding, type AutomationNodeParameter, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import {
   automationStudioFlowBootstrapDeclaredRecordsPath,
   automationStudioMatchWrittenParameterName,
@@ -152,6 +152,9 @@ export function materialiseDefaults(definition: AutomationStudioNodeDefinition, 
 /** A value read as the parameter's declared type wants it, where that reading is the only one. */
 function coerce(value: JsonValue, parameter: AutomationNodeParameter): JsonValue {
   if (parameter.ui?.control === "record-output") return value;
+  // A state binding is resolved at run time into a value of the declared type;
+  // reading it as one here would wrap it in a list or stringify it.
+  if (isAutomationNodeParameterStateBinding(value)) return value;
   const type = parameter.valueType;
   if (type === "array" && !Array.isArray(value)) return value === null ? [] : [value];
   if ((type === "object" || type === "json") && typeof value === "string") {

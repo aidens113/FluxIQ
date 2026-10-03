@@ -23,6 +23,13 @@
 // the numbers that do exist rather than proposing the one the model may have
 // meant.
 //
+// **Bindings (t252).** A binding resolves only in the Flow, so a rerun never
+// sends one live. A written step is put back written: its call carries `write`,
+// and a binding form in the patch is translated as a written call's is, once,
+// here. A recorded step whose merged argument still holds a binding is refused
+// as `rerun_holds_binding`, unrun: rerun it with a value for every bound
+// parameter, or write it.
+//
 // **A rerun of a done act is requested here like any other and run as a check**
 // (live run `run-murwcaj0-40e56557`, R7: a repair rerun of the step that had
 // confirmed Amara's request, act a1, pressed Tom's Confirm instead). It is not
@@ -31,8 +38,19 @@
 // (`../node-tools/rerun-check.ts`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import {
+  automationStudioFlowDraftHoldsBinding,
+  automationStudioFlowDraftTranslateBindings,
+  type AutomationStudioFlowDraftAmendment,
+  type AutomationStudioFlowDraftAmendmentRefusal,
+  type AutomationStudioFlowDraftStep
+} from "../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceRerunInput } from "./rerun-input.ts";
+
+/** The key that asks for a node call to be written rather than run (`../node-tools/replay.ts`). */
+const WRITE_KEY = "write";
+/** The key a node call's parameters sit under (`../node-tools/run-node.ts`). */
+const PARAMETERS_KEY = "parameters";
 
 /** A step to run again: which step it replaces, and the call that replaces it, with the whole argument it runs with. */
 export type AutomationStudioLlmEvidenceRerunCall = { step: number; toolId: string; input: JsonObject; callId: string };
@@ -77,7 +95,16 @@ export function automationStudioLlmEvidenceRerunRequest(
       continue;
     }
     // Only the keys that change, merged over what the step ran with (`./rerun-input.ts`).
-    const input = automationStudioLlmEvidenceRerunInput(step.input, amendment.input);
+    const merged = automationStudioLlmEvidenceRerunInput(step.input, amendment.input);
+    const input = step.written ? writtenInput(merged) : merged;
+    if (input === undefined) {
+      refused.push({ step: amendment.step, reason: "bind_malformed" });
+      continue;
+    }
+    if (!step.written && automationStudioFlowDraftHoldsBinding(input)) {
+      refused.push({ step: amendment.step, reason: "rerun_holds_binding" });
+      continue;
+    }
     // The same call on the same untouched page answers the same: refused, unrun (`../repeat-guard/outcomes.ts`).
     if (ranAlready(toolId, input, step.replay?.from ? step.stateBefore : undefined)) {
       refused.push({ step: amendment.step, reason: "changes_nothing" });
@@ -86,4 +113,18 @@ export function automationStudioLlmEvidenceRerunRequest(
     request = { step: step.position, toolId, input, callId: `rerun.${step.position}` };
   }
   return { request, refused };
+}
+
+/**
+ * A written step's rerun argument: written again, with any binding form its
+ * parameters were given translated to the state binding a written call sends
+ * (`../evidence-loop-decision.ts`); nothing when a form cannot be read, which
+ * is never sent on as a literal.
+ */
+function writtenInput(input: JsonObject): JsonObject | undefined {
+  const parameters = input[PARAMETERS_KEY];
+  if (parameters === null || typeof parameters !== "object" || Array.isArray(parameters)) return { ...input, [WRITE_KEY]: true };
+  const translated = automationStudioFlowDraftTranslateBindings(parameters);
+  if (translated.refused.length) return undefined;
+  return { ...input, [PARAMETERS_KEY]: translated.parameters, [WRITE_KEY]: true };
 }

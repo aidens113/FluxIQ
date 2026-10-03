@@ -33,6 +33,12 @@
 //     a draft this gate applies to": it was never tested, the judge answered
 //     `unknown` or a yes about no test, and a re-authored Flow was approved and
 //     applied before anything ran it whole.
+//   - A written step the test never came to -- inside a repeat whose list had
+//     no rows in the test, so it ran zero times, or a repeat the test could not
+//     walk row by row, where it did not pass on the explored row (t252,
+//     `./replay-span.ts`) -- is refused the same way, as `not_reached`, once the
+//     replay has run: a written step never ran in the build, so nothing else
+//     shows it works.
 //
 // **A refused Flow completed again unchanged is told so.** An unchanged Flow
 // is replayed twice -- a step can fail once on a page still settling -- and
@@ -70,6 +76,7 @@ import {
 import { automationStudioFlowDraftStepCarried } from "./draft-from-flow.ts";
 import { automationStudioFlowBootstrapDraftStepIsWritable } from "./draft-step.ts";
 import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "./replay-draft.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE, type AutomationStudioFlowDraftReplayObservation } from "./replay-span.ts";
 
 /**
  * What a gate answers.
@@ -80,8 +87,8 @@ import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayIn
  */
 export type AutomationStudioFlowDraftDryRunRefusal = "cancelled" | { issueCodes: readonly string[] };
 
-/** What one step's replay answered: its evidence, as the domain gave it. */
-export type AutomationStudioFlowDraftTestObservation = { step: number; stepId?: string; resultCode?: string; evidence: JsonValue };
+/** What one step's replay answered: its evidence, as the domain gave it; a pass of a repeat says which, of how many. */
+export type AutomationStudioFlowDraftTestObservation = AutomationStudioFlowDraftReplayObservation;
 
 /**
  * The page a passing test ended on, as the domain's view of it, and the step it
@@ -183,6 +190,8 @@ export type AutomationStudioFlowDraftDryRunGateInput = {
    * a page; it never fails the test.
    */
   endView?: ((request: { callId: string; after?: number; signal?: AbortSignal }) => Promise<AutomationStudioFlowDraftTestEndView | undefined>) | undefined;
+  /** The node each step names, handed to the replay so a repeat runs once per row (`./replay-draft.ts`). */
+  nodeOf?: AutomationStudioFlowDraftReplayInput["nodeOf"];
   signal?: AbortSignal;
 };
 
@@ -243,6 +252,14 @@ export function automationStudioFlowDraftDryRunGate(
   // fails answers no acts (`instructedLastingActs`); a provider that throws is a fault, and ends the build.
   let lasting: Promise<ReadonlySet<string>> | undefined;
   const lastingActs = (): Promise<ReadonlySet<string>> | undefined => input.lastingActs && (lasting ??= input.lastingActs());
+  // The steps the model is told the test cannot run, with why, as one refusal.
+  const refuseUnrunnable = (steps: readonly { position: number; actionId: string; word: AutomationStudioFlowDraftUnrunnableWord }[]): AutomationStudioFlowDraftDryRunRefusal => {
+    unrunRefusals += 1;
+    const feedback = automationStudioFlowDraftFullRunRequiredFeedback(steps);
+    input.accountEvidence(feedback);
+    input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.unrun.${unrunRefusals}`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
+    return { issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] };
+  };
   return async () => {
     if (!input.enabled) return undefined;
     // Steps the test cannot run: one carried from an earlier Flow that never
@@ -266,11 +283,7 @@ export function automationStudioFlowDraftDryRunGate(
       ? [...new Set([...(noStart ? proposed.slice(0, 1) : cannotRun), ...offLibrary])].sort((a, b) => a.position - b.position)
       : cannotRun.filter(automationStudioFlowDraftStepCarried);
     if (notRun.length || (input.requireRunnable && !proposed.length)) {
-      unrunRefusals += 1;
-      const feedback = automationStudioFlowDraftFullRunRequiredFeedback(notRun.map((step) => ({ position: step.position, actionId: step.actionId, word: unrunnableWord(step, offLibrary) })));
-      input.accountEvidence(feedback);
-      input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.unrun.${unrunRefusals}`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
-      return { issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] };
+      return refuseUnrunnable(notRun.map((step) => ({ position: step.position, actionId: step.actionId, word: unrunnableWord(step, offLibrary) })));
     }
     if (!automationStudioFlowDraftReplayable(input.steps)) return undefined;
     const signature = automationStudioFlowDraftFlowSignature(input.steps);
@@ -297,6 +310,7 @@ export function automationStudioFlowDraftDryRunGate(
         attempt: attempts,
         executeTool: input.executeTool,
         ...(lastingIds ? { lastingActs: lastingIds } : {}),
+        ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
         ...(input.signal ? { signal: input.signal } : {})
       });
     } catch {
@@ -312,7 +326,11 @@ export function automationStudioFlowDraftDryRunGate(
       if (step) step.replayed = { ...outcome };
     }
     input.targetMoved();
+    // A written step the test never came to has shown nothing, however the
+    // rest replayed: the Flow is not tested whole, so it is refused as such.
+    const unreached = notReached(input.steps, replay.verdict);
     if (replay.verdict.ok) {
+      if (unreached.length) return refuseUnrunnable(unreached);
       cleanSignature = signature;
       return passed(replay.verdict, replay.observations, false, signature, await lookedAt(replay.verdict));
     }
@@ -323,6 +341,7 @@ export function automationStudioFlowDraftDryRunGate(
     // with that routing written: this replay is a run of that Flow, every step
     // it sent unchanged, and the one it made optional is the one it found absent.
     const optional = madeOptional(input.steps, replay.verdict);
+    if (optional && unreached.length) return refuseUnrunnable(unreached);
     if (optional) {
       cleanSignature = automationStudioFlowDraftFlowSignature(input.steps);
       return passed(optional, replay.observations, false, cleanSignature, await lookedAt(optional));
@@ -349,6 +368,53 @@ export function automationStudioFlowDraftDryRunGate(
 }
 
 /**
+ * The written steps of a repeat the test never ran on a row, as `not_reached`:
+ *
+ *   - a span whose list had no rows in the test ran them zero times (`passes`
+ *     empty);
+ *   - a span the test could not walk (no node lookup, a list step that did not
+ *     replay clean, no rows given back) sent them once on the row the build
+ *     explored, with no `passes`, and excused one that did not pass there as
+ *     conditional.
+ *
+ * Either way nothing ran the step, since a written step never ran in the build.
+ * A recorded step in the same span ran live while exploring, so it answers as
+ * any conditional step does -- unless the test could not walk the span and the
+ * step's call failed `core.replay.unresolved_binding`: it is bound to the row
+ * (`$row`), so its bound form has never run on one, and excusing it would
+ * propose a loop body nothing ever tested (t252-w7b's proof without `nodeOf`).
+ * A step withheld behind a lasting act is excused for that (`withheldBy`), not
+ * refused here.
+ */
+function notReached(steps: readonly AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun): { position: number; actionId: string; word: AutomationStudioFlowDraftUnrunnableWord }[] {
+  const repeated = repeatedStepIds(steps);
+  return verdict.outcomes.flatMap((outcome) => {
+    const zeroPasses = outcome.passes?.length === 0 && outcome.status === "replayed";
+    const unwalked = outcome.passes === undefined && outcome.withheldBy === undefined && outcome.status !== "replayed";
+    if (!zeroPasses && !unwalked) return [];
+    const step = steps.find((candidate) => candidate.position === outcome.step);
+    if (!step) return [];
+    const rowNeverGiven = unwalked && outcome.resultCode === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE;
+    if (!(step.written || rowNeverGiven) || (unwalked && !repeated.has(automationStudioFlowDraftStepId(step)))) return [];
+    return [{ position: step.position, actionId: step.actionId, word: "not_reached" as const }];
+  });
+}
+
+/**
+ * The ids of every step inside a repeat: the conditional set
+ * (`../../flow-draft/routing.ts`) of the draft with only its repeats routed, so
+ * the span rule stays the one the dry run excuses by.
+ */
+function repeatedStepIds(steps: readonly AutomationStudioFlowDraftStep[]): ReadonlySet<string> {
+  const repeatsOnly = steps.map((step): AutomationStudioFlowDraftStep => {
+    if (!step.routing || step.routing.kind === "repeat") return step;
+    const { routing: _otherRouting, ...unrouted } = step;
+    return unrouted;
+  });
+  return automationStudioFlowDraftConditionalStepIds(repeatsOnly);
+}
+
+/**
  * The line a refusal of an unchanged refused Flow carries: nothing changed
  * since the last test, it was run again and failed the same way or was not run
  * again, and the steps that stood in the way -- those that did not replay and
@@ -356,9 +422,13 @@ export function automationStudioFlowDraftDryRunGate(
  * words.
  */
 function unchangedLine(steps: readonly AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun, test: "replayed" | "replayed_differently" | "not_replayed"): string {
+  // The verdict's own exemption (`../../flow-draft/dry-run.ts`): a step of a
+  // repeat the test ran once per row (`passes`) is excused only by a withheld effect.
   const excused = new Set([...automationStudioFlowDraftConditionalStepIds(steps), ...automationStudioFlowDraftWithheldStepIds(verdict.outcomes)]);
+  const passedOver = (outcome: AutomationStudioFlowDraftDryRun["outcomes"][number]): boolean => outcome.stepId !== undefined && excused.has(outcome.stepId)
+    && (outcome.passes === undefined || outcome.withheldBy !== undefined);
   const failing = verdict.outcomes
-    .filter((outcome) => automationStudioFlowDraftReplayOutcomeBlocks(outcome) && !(outcome.stepId !== undefined && excused.has(outcome.stepId)))
+    .filter((outcome) => automationStudioFlowDraftReplayOutcomeBlocks(outcome) && !passedOver(outcome))
     .map((outcome) => `step ${outcome.step} (${outcome.status})`);
   const head = test === "replayed"
     ? "Nothing in the Flow changed since the last test, and it failed the same way again."

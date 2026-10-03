@@ -7,7 +7,7 @@
 // issued. A value this module cannot read is returned as `undefined`, and the
 // caller refuses the parameter naming the shape it accepts -- it never guesses.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationNodeParameter } from "../../../nodes/index.ts";
+import { isAutomationNodeParameterStateBinding, type AutomationNodeParameter } from "../../../nodes/index.ts";
 import { authoringKey } from "./keys.ts";
 
 /**
@@ -32,6 +32,13 @@ const PAIR = /^([A-Za-z0-9_.:-]{1,100})\s*=\s*(.*)$/u;
 
 /** One written value read as the parameter's declared type, or `undefined` when it cannot be. */
 export function authoringParameterValue(text: string, parameter: AutomationNodeParameter): JsonValue | undefined {
+  // A state binding (`{"$state":{"path",...}}`) is the value read at run time,
+  // not a value of the declared type, so it is kept exactly as written whatever
+  // that type is: read as text it became a string a string parameter would send
+  // verbatim, and read as a list it was wrapped in one. Whether the parameter
+  // may be bound at all is plan validation's answer, not this reader's.
+  const bound = stateBinding(text);
+  if (bound !== undefined) return bound;
   if (parameter.options) return optionValue(text, parameter);
   // A record output is filled in from the contract, not read as an object
   // here: a bare name written for one is the dataset's name, never a handle.
@@ -131,6 +138,12 @@ function objectValue(text: string): JsonValue | undefined {
     return object;
   }
   return isAuthoringHandleToken(text) ? { [AUTOMATION_STUDIO_AUTHORING_HANDLE_KEY]: text } : undefined;
+}
+
+/** Text read as the state binding it spells, when it spells one and nothing else. */
+function stateBinding(text: string): JsonValue | undefined {
+  const parsed = jsonValue(text);
+  return isAutomationNodeParameterStateBinding(parsed) ? parsed : undefined;
 }
 
 /** Text read as the JSON it spells, when it spells JSON and nothing else. */

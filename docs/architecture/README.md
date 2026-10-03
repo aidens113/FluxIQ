@@ -74,6 +74,8 @@ Global program internals use the layout described in
   - [Workspace And Authoring UI](automation-studio/workspace.md)
   - [Canonical Persistence](automation-studio/persistence.md)
   - [Client Gateway](automation-studio/client-gateway.md)
+  - [Flow Authoring](automation-studio/flow-authoring.md) — written steps,
+    bindings and Flow inputs, and the build's test of a loop
 - [Automation Studio Importer Guide](../integrations/automation-studio-importing-repos.md)
 - [Client Gateway WebSocket Integration](../integrations/client-gateway-websocket.md)
 - [Runtime Kernel](runtime-kernel.md)

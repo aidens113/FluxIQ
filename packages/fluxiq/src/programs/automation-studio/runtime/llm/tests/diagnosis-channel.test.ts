@@ -183,6 +183,18 @@ describe("the post-run check is told it judges a finished run, and only a build'
   });
 });
 
+// t252 D4, D6: a repeated step now runs once per row in the build's test, and
+// the Flow's inputs are tested at their test values. Only a build's test is told.
+describe("the build-test judge is told what a repeated step's passes and the Flow's inputs are", () => {
+  it("says a repeated step runs once per row and each pass is judged against its own row", () => {
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(prompt).toContain("A repeated step runs once for each row of the list it repeats over");
+    expect(prompt).toContain("Judge each pass against its own row, not the row the build explored");
+    expect(prompt).toContain("buildTest.inputs");
+    expect(automationStudioDiagnosisPromptInstruction("loop_verification")).not.toContain("passes");
+  });
+});
+
 // t193 1002-M (live run `run-murzln6g-11debe1d`, C6): the drawer's "×" the Flow
 // passes over failed in the test, the judge was shown it as plain `failed`,
 // and its second answer asked to "fix or remove the failed step 15".
