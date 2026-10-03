@@ -77,11 +77,12 @@ describe("a build whose step lands on a check only a person can get past", () =>
     expect(ask).toMatchObject({ kind: "choice", parks: true, status: "answered", control: { kind: "person_check" }, answer: { kind: "choice", value: "person_done" } });
     // The model never saw the check, and the decision after the answer was shown the person's clearing and a fresh look.
     expect(run.requests.some((request) => request.includes(CHECK_MARKER))).toBe(false);
-    // Two decisions, then the judge of the Flow's test.
-    expect(run.requests).toHaveLength(3);
+    // Two decisions, then the judge of the Flow's test, twice (a build-finishing yes is confirmed by a second call: murwcmx2, C-H).
+    expect(run.requests).toHaveLength(4);
     expect(run.requests[1]).toContain("personCompletedCheck");
     expect(run.requests[1]).toContain("the list, after the check");
     expect(run.requests[2]).toContain("\"taskKind\":\"loop_verification\"");
+    expect(run.requests[3]).toContain("\"taskKind\":\"loop_verification\"");
     // The look ran once at the start and once after the person, and the act was not run again.
     expect(run.calls).toEqual(["example.look", "example.act", "example.look"]);
     // The step stands: it applied, and it carries no failure code.

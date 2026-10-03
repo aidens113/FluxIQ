@@ -70,9 +70,10 @@ describe("building a Flow that needs an action a person has not allowed", () => 
 
     // The action itself is still never taken: only the press that needed nobody's permission.
     expect(run.pressed).toEqual([OPEN.handle]);
-    // Recoverable: the model was asked again and built the Flow it could, and its test was judged.
-    expect(run.requests).toHaveLength(4);
-    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, false, true]);
+    // Recoverable: the model was asked again and built the Flow it could, and its test was judged, its yes confirmed
+    //(a build-finishing yes is confirmed by a second call: murwcmx2, C-H).
+    expect(run.requests).toHaveLength(5);
+    expect(run.requests.map(isJudgeRequest)).toEqual([false, false, false, true, true]);
     expect(result.status).toBe("proposed");
     expect(result.permissionRequest).toMatchObject({
       schemaVersion: "automation-studio.action-permission-request.v1",

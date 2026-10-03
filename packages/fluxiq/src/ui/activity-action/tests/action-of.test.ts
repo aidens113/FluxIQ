@@ -216,8 +216,11 @@ describe("activityActionOf: looks name what they look at (t193)", () => {
   });
 
   // t194 (`run-murwcmx2-a1c6edf7`, 00016): the test's list read was a bare "Test run".
+  // A test run's step reads by its action, marked as part of a test (D4, below).
   it("names a test run's list read by what it reads", () => {
-    expect(outputsOf(activityActionOf(tool("Reading the list of “name, price and rating”", "Result: core.replay.replayed · Node: web.output.dom-extract_list", "succeeded", RUN_NODE, "verifying")))).toEqual(["test", "name, price and rating", "done", ""]);
+    const read = activityActionOf(tool("Reading the list of “name, price and rating”", "Result: core.replay.replayed · Node: web.output.dom-extract_list", "succeeded", RUN_NODE, "verifying"));
+    expect(outputsOf(read)).toEqual(["read", "name, price and rating", "done", ""]);
+    expect(read?.testing).toBe(true);
   });
 
   it("names a look by the words it looks for, in their quotes, when it names no control", () => {

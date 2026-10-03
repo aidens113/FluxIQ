@@ -187,7 +187,7 @@ describe("a verification that confirms a first yes (the build-test judge)", () =
     // Mutation: let the first yes stand. The build then finishes on rows a second look refused.
     const agreed = automationStudioResultVerificationAgreement({ first: said("yes"), second: saidNo(), confirmAnswer: true });
     expect(agreed).toMatchObject({ verdict: "unsure", basis: "model_disagreed", code: "core.result.verdicts_disagree", verdicts: ["answers", "does_not_answer"], calls: 2 });
-    expect(agreed.reason).toContain("that it answers the request and then that it does not");
+    expect(agreed.reason).toContain("the first was that it does what was asked, the second that it does not");
     expect(agreed.unconfirmedReading).toEqual({ expected: reading.expected, observed: reading.observed, advice: reading.changed });
     expect(agreed.failure).toBeUndefined();
     expect(agreed.repair).toBeUndefined();

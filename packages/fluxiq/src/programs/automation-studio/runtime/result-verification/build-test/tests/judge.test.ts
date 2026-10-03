@@ -197,7 +197,7 @@ describe("a judge under the build's purse (t234)", () => {
     // Priced on the reply alone, at a rate that makes the default 8,000-token allowance the $0.011 hold run 38 refused.
     const outputRateUsd = 0.0112 / 8_000;
     const asked: number[] = [];
-    const llm = scripted(["yes"]);
+    const llm = scripted(["yes", "yes"]);
     const provider: AutomationStudioLlmProvider = { ...llm.provider, estimateCostUsd: ({ outputTokens }) => { asked.push(outputTokens); return outputTokens * outputRateUsd; } };
     const purse = purseWith(0.009);
 
@@ -213,7 +213,7 @@ describe("a judge under the build's purse (t234)", () => {
   });
 
   it("a reply allowance a resolver named smaller than the judge's cap is kept", async () => {
-    const { provider, seen } = scripted(["yes"]);
+    const { provider, seen } = scripted(["yes", "yes"]);
     await judge(PICKUP_CART, { provider, verify: (request) => verifyAutomationStudioRunResult({ ...request, tokenLimits: { maxOutputTokens: 500 } }) })({ summary: run40Summary() });
     expect(seen[0]?.tokenLimits.maxOutputTokens).toBe(500);
   });
@@ -262,7 +262,7 @@ describe("run murwcmx2: the judge's reading reaches the build", () => {
   it("a no the second call did not confirm is unknown, carrying that no's expected, observed and advice as one unconfirmed reading", async () => {
     const provider = answering({ answersRequest: "no", ...FIRST }, { answersRequest: "unknown" });
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "unknown", why: expect.stringContaining("never twice that it does not"), unconfirmedReading: { expected: FIRST.expected, observed: FIRST.observed, advice: FIRST.changed } });
+    expect(verdict).toMatchObject({ verdict: "unknown", why: expect.stringContaining("nor were both that it does not"), unconfirmedReading: { expected: FIRST.expected, observed: FIRST.observed, advice: FIRST.changed } });
     expect(verdict).not.toHaveProperty("advice");
   });
 

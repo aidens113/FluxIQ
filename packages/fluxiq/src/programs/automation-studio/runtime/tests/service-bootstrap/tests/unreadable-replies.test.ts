@@ -83,9 +83,9 @@ describe("a Flow build whose model reply arrives unreadable", () => {
     const { requests, generation } = await build((call) => call <= 2);
 
     await expect(generation).resolves.toMatchObject({ status: "proposed" });
-    // Two unreadable, the act, the completion, then the judge of the Flow's test.
-    expect(requests).toHaveLength(5);
-    expect(requests.map(isJudgeRequest)).toEqual([false, false, false, false, true]);
+    // Two unreadable, the act, the completion, then the judge of the Flow's test, twice (a build-finishing yes is confirmed by a second call: murwcmx2, C-H).
+    expect(requests).toHaveLength(6);
+    expect(requests.map(isJudgeRequest)).toEqual([false, false, false, false, true, true]);
     const note = requests[2]!.context.evidenceLoop?.evidence.find((entry) => entry.toolId === "core.decision_check")?.value;
     expect(note).toMatchObject({ code: "llm_evidence_loop.reply_unreadable", unreadable: { case: "content_mismatched" }, unreadableInARow: 2 });
   });
