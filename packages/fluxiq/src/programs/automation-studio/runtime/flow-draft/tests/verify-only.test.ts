@@ -64,6 +64,23 @@ describe("which steps a dry run checks rather than runs again", () => {
     expect(automationStudioFlowDraftStepReplayMode(step())).toBe("replay");
   });
 
+  // Live run `run-murwcaj0-40e56557` (R3): the step that confirmed a friend
+  // request, act a1, declared `consequences: []`, so every test pressed Confirm
+  // again. An instructed act is lasting by definition (the reader reads only
+  // lasting acts), so a changing step that does one is checked whatever it says.
+  it("checks a changing step that does an instructed act, whatever it declares", () => {
+    for (const consequences of [[], ["none"], "none"]) {
+      expect(automationStudioFlowDraftStepReplayMode(step({ consequences, acts: ["a1"] })), JSON.stringify(consequences)).toBe("verify");
+    }
+    expect(automationStudioFlowDraftStepReplayMode(step({ acts: ["a1"] })), "no declaration").toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(step({ acts: ["a1"], noRanWith: true }))).toBe("verify");
+  });
+
+  it("still runs again a read that carries an act, and a changing step whose act list is empty", () => {
+    expect(automationStudioFlowDraftStepReplayMode(step({ effect: "observe", consequences: [], acts: ["a1"] }))).toBe("replay");
+    expect(automationStudioFlowDraftStepReplayMode(step({ consequences: [], acts: [] }))).toBe("replay");
+  });
+
   it("reads the declaration the Flow keeps before the one the model wrote", () => {
     const written = step({ noRanWith: true, input: { node: "node.click", parameters: {}, consequences: ["delete"] } });
     expect(automationStudioFlowDraftStepReplayMode(written)).toBe("verify");

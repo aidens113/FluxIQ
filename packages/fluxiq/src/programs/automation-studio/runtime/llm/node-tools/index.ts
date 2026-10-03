@@ -8,6 +8,8 @@ export * from "./replay.ts";
 export * from "./replay-draft.ts";
 export * from "./dry-run-gate.ts";
 export * from "./step-place.ts";
+// A rerun of a step whose act was already done is checked, not done again (R7).
+export * from "./rerun-check.ts";
 // Running part of the Flow again from a chosen step, never the Flow's test (t244).
 export * from "./run-flow-part.ts";
 export * from "./run-flow.ts";

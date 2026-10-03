@@ -67,7 +67,7 @@ import {
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceNoted } from "./node-tools/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioNodeRerunAnswer, automationStudioNodeRerunFromItsPlace } from "./node-tools/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "./build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
 import {
@@ -415,14 +415,18 @@ export async function runAutomationStudioLlmEvidenceLoop(
     let ran: Awaited<ReturnType<typeof input.executeTool>> | undefined;
     let stateBefore: string | undefined;
     let stateAfter: string | undefined;
+    // Whether a rerun of a step whose act was already done was checked and its step took the new argument (`./node-tools/rerun-check.ts`).
+    let rerunTook = false;
     const words = automationStudioFlowDraftStepWordsOf(input.describeCall, { toolId: decision.toolId, value: decision.input }); // Asked before the call: a click that closes its popup leaves its handle naming nothing (`../flow-draft/step-words.ts`).
     try {
       // A rerun runs from its step's own page, never from where the last call left it (`./node-tools/step-place.ts`).
       const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, steps: draftSteps, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
       // The rerun's answer says where it ran (`rerunPlace`): run `run-muqk713g`'s re-author reran a seeded read on the
-      // results page the refuted run left, and nothing said so (C6).
-      ran = place?.kind === "unreachable" ? place.result : automationStudioNodeRerunPlaceNoted(place, await runFlow.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) }));
+      // results page the refuted run left, and nothing said so (C6). A rerun of a step whose act was already done is
+      // checked with the new argument and not done again: run `run-murwcaj0-40e56557` (R7) accepted a request the
+      // instruction said to leave alone by rerunning its confirm step on another row (`./node-tools/rerun-check.ts`).
+      ({ ran, took: rerunTook } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal }));
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {
@@ -474,7 +478,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
     const draftChanged = decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
     automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring });
-    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, draftSteps.find((step) => step.callId === callId)) : {};
+    // A checked rerun whose step took the new argument is that step: what was held for the rerun applies to it.
+    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, rerunTook ? rerunReplaces : draftSteps.find((step) => step.callId === callId)) : {};
     // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
     const addedToFlow = authored?.advanced() === true;
     const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined

@@ -32,6 +32,22 @@
 // caller's step and is run again, as it always was. (The web binding refuses a
 // changing call that declares nothing, so every web step it keeps says.)
 //
+// **An instructed act is checked whatever the step declares** (live run
+// `run-murwcaj0-40e56557`, R3). The step that confirmed a friend request, act
+// a1, declared `consequences: []`, so every test pressed Confirm again on the
+// person's real requests. The instructed-acts reader reads only lasting acts
+// (`../flow-bootstrap/instructed-acts/instruction-acts.ts`), so a changing step
+// that carries one (`acts`, `./step.ts`) lasts by the model's own account,
+// whatever it wrote beside it. A read that carries an act is still run again:
+// a read changes nothing, and the draft refuses an act on one anyway.
+//
+// **A rerun of a done act is a check too** (the same run, R7). The repair round
+// reran that step with Tom's Confirm, a request the instruction said to leave
+// alone, and the rerun pressed it. A changing step that carries an act and whose
+// own run did it (`automationStudioFlowDraftStepActDone`) is rerun as this same
+// check of the new argument, never as the act again
+// (`../llm/node-tools/rerun-check.ts`).
+//
 // **Three answers to a check, and what each does to the verdict.**
 //
 //   verified        -- the step could run now. It passes, and its effect was
@@ -108,12 +124,23 @@ const NONE = "none";
  * model wrote (`input`), the same order a replay reads the step's argument in.
  * Core reads only whether it says anything but none: an unrecognised class is
  * still a claim that something lasts, and the gate -- not this -- decides
- * whether a class is one Core knows.
+ * whether a class is one Core knows. A changing step that does an instructed
+ * act is checked whatever it declares (see the header, R3).
  */
 export function automationStudioFlowDraftStepReplayMode(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftReplayMode {
   if (step.effect !== "mutate") return "replay";
+  if (step.acts?.length) return "verify";
   const declared = step.ranWith && "consequences" in step.ranWith ? step.ranWith.consequences : step.input.consequences;
   return declaresLasting(declared) ? "verify" : "replay";
+}
+
+/**
+ * Whether a step has already done its instructed act: it changes something,
+ * carries an act, and its own run worked and changed the page. A rerun of such
+ * a step is a check of the new argument, not the act again (see the header, R7).
+ */
+export function automationStudioFlowDraftStepActDone(step: AutomationStudioFlowDraftStep): boolean {
+  return step.effect === "mutate" && (step.acts?.length ?? 0) > 0 && step.effectApplied === true && step.proposes !== false;
 }
 
 /**
