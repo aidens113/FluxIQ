@@ -9,6 +9,7 @@
 // filter keeps or, when it keeps nothing, returning the page unfiltered.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 
 const tools = [
@@ -18,8 +19,8 @@ const tools = [
 const CHEAP_PER_PAGE = [4, 3, 3, 3, 0];
 
 /** The results site. `reset` is a replay's `{ replay: "reset", from }`; `unreachable` makes every reset fail. */
-function site(options: { unreachable?: boolean; noReplay?: boolean } = {}) {
-  let page = 1;
+function site(options: { unreachable?: boolean; noReplay?: boolean; startAt?: number } = {}) {
+  let page = options.startAt ?? 1;
   const result = (fields: JsonObject, before: number) => ({ kind: "llm_evidence_tool_execution", stateDigests: { before: `p${before}`, after: `p${page}` }, ...fields });
   return vi.fn(async ({ toolId, value }: { callId?: string; toolId: string; value: JsonObject }) => {
     const before = page;
@@ -46,8 +47,9 @@ function site(options: { unreachable?: boolean; noReplay?: boolean } = {}) {
   });
 }
 
-const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof site>) => runAutomationStudioLlmEvidenceLoop({
-  tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") }
+const loop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof site>, draft?: { seed: AutomationStudioFlowDraftStep[]; seedStartedOn?: Record<string, JsonObject> }) => runAutomationStudioLlmEvidenceLoop({
+  tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") },
+  ...(draft ? { draft } : {})
 });
 const read = { kind: "tool_call", callId: "read.1", toolId: "read", input: { list: "results" }, add: true };
 const rerun = (where: string) => ({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { where } }] });
@@ -134,6 +136,64 @@ describe("a rerun of a read that paged to the end", () => {
 
     const answered = shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value;
     expect(answered).toMatchObject({ rows: 13, rerunPlace: { place: "put_back", startPage: "step" } });
+  });
+});
+
+// Live run `run-murwcmx2-a1c6edf7` (t194, cause C-D): after the judge refuted
+// the saved Flow's answer, the re-author's `amend_draft rerun step 7` -- the
+// Flow's list read, with a relaxed condition -- ran on results page 5, where the
+// refuted run had left the page: "11 records from 1 page". A step carried from
+// the Flow records no `replay.from`, so the loop is handed where its node
+// started in the refuted run (`seedStartedOn`) and puts the page back there.
+describe("a re-author's rerun of the Flow's read, carried from the Flow", () => {
+  /** The Flow's read, as `node-tools/draft-from-flow.ts` seeds it: no call, no replay. */
+  const carried: AutomationStudioFlowDraftStep = {
+    position: 1, id: "f1", iteration: 0, actionId: "web.read", toolId: "read", input: { list: "results" }, effect: "observe", proposes: true, disposition: "kept"
+  };
+  const decided = () => vi.fn()
+    .mockResolvedValueOnce(rerun("price < 50"))
+    .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+
+  it("puts the page back where the read started in the refuted run before it runs, and reads the 13 rows", async () => {
+    const decide = decided();
+    const executeTool = site({ startAt: 5 });
+
+    await loop(decide, executeTool, { seed: [carried], seedStartedOn: { f1: { location: "p1" } } }).catch(() => undefined);
+
+    expect(executeTool.mock.calls.map(([call]) => [call.callId, call.value])).toEqual([
+      ["rerun.1.place", { replay: "reset", from: { location: "p1" } }],
+      ["rerun.1", { list: "results", where: "price < 50" }]
+    ]);
+    const answered = shownAt(decide, 1).find((entry) => entry.callId === "rerun.1")?.value;
+    expect(answered).toMatchObject({ rows: 13, unfiltered: false, pagesRead: 5, rerunPlace: { place: "put_back", startPage: "seeded_run" } });
+  });
+
+  it("runs where the page is, and says so, when the refuted run recorded no start page for it", async () => {
+    const decide = decided();
+    const executeTool = site({ startAt: 5 });
+
+    await loop(decide, executeTool, { seed: [carried], seedStartedOn: {} }).catch(() => undefined);
+
+    expect(executeTool.mock.calls.map(([call]) => call.callId)).toEqual(["rerun.1"]);
+    const answered = shownAt(decide, 1).find((entry) => entry.callId === "rerun.1")?.value;
+    expect(answered).toMatchObject({ rows: 11, unfiltered: true, rerunPlace: { place: "in_place", reason: "start_page_unknown" } });
+  });
+
+  it("puts the page back for a rerun of a step that stood in for the carried read without a start page of its own", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(rerun("price < 60"))
+      .mockResolvedValueOnce(rerun("price < 50"))
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const executeTool = site({ startAt: 5, noReplay: true });
+
+    await loop(decide, executeTool, { seed: [carried], seedStartedOn: { f1: { location: "p1" } } }).catch(() => undefined);
+
+    expect(executeTool.mock.calls.map(([call]) => [call.callId, call.value.replay ?? null])).toEqual([
+      ["rerun.1.place", "reset"],
+      ["rerun.1", null],
+      ["rerun.1.2.place", "reset"],
+      ["rerun.1.2", null]
+    ]);
   });
 });
 

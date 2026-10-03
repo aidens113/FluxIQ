@@ -86,6 +86,15 @@ describe("a failed step the ladder could not repair", () => {
     });
   });
 
+  // A rerun in the re-author puts the page back where its node started (t194 cause C-D, `run-murwcmx2`).
+  it("hands the build where each node of the failed run started", async () => {
+    const port = deps();
+    const detail = failedDetail(GOAL_GONE);
+    detail.actionAttempts![0]!.metadata = { stateRefs: { beforeAction: { stateSnapshotId: "s", stateRef: "r", capturedAt: 1, from: { location: "https://social.test/" } } } };
+    await repair(port, detail);
+    expect((port.generate.mock.calls[0] as unknown[])[3]).toEqual({ s3: { location: "https://social.test/" } });
+  });
+
   it("is re-authored the same way when the domain refused the target override as unanchored", async () => {
     const port = deps();
     const result = await repair(port, failedDetail({}, OVERRIDE_REFUSED));

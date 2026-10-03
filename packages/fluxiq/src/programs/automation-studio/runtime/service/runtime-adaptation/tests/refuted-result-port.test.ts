@@ -80,6 +80,32 @@ describe("the caller a re-author builds for", () => {
   });
 });
 
+// Live run `run-murwcmx2-a1c6edf7` (t194, cause C-D): the re-author reran the
+// Flow's list read where the refuted run left the page (results page 5). The
+// build is handed where each node's first attempt started, read off the run.
+describe("where the refuted run's nodes started", () => {
+  it("hands the build each node's first-attempt start page, as the host stated it", async () => {
+    const generate = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
+    const started = (location: string) => ({ stateRefs: { beforeAction: { stateSnapshotId: "s", stateRef: "r", capturedAt: 1, from: { location } } } });
+    const withAttempts = {
+      ...detail,
+      actionAttempts: [
+        { attemptId: "a.2", nodeId: "node.s7", definitionId: "web.output.dom-extract_list", order: 2, status: "failed", startedAt: 2, metadata: started("https://shop.test/s?k=earbuds&page=5") },
+        { attemptId: "a.1", nodeId: "node.s7", definitionId: "web.output.dom-extract_list", order: 1, status: "failed", startedAt: 1, metadata: started("https://shop.test/s?k=earbuds") },
+        { attemptId: "a.0", nodeId: "node.s6", definitionId: "web.output.dom-click", order: 0, status: "succeeded", startedAt: 0 }
+      ]
+    } as unknown as AutomationStudioFlowRunDetail;
+    await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))({ ...request, detail: withAttempts });
+    expect((generate.mock.calls[0] as unknown[])[3]).toEqual({ "node.s7": { location: "https://shop.test/s?k=earbuds" } });
+  });
+
+  it("hands the build no start pages when the run's host recorded none", async () => {
+    const generate = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
+    await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))(request);
+    expect((generate.mock.calls[0] as unknown[])[3]).toEqual({});
+  });
+});
+
 describe("a re-author whose build fails", () => {
   it("names the guard that refused the request and degrades to the patch ladder instead of ending", async () => {
     const generate = vi.fn(async () => { throw new AutomationStudioLlmRequestRefusedError("llm.request.evidence_denied_key", "refused"); });
