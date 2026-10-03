@@ -9,6 +9,7 @@ import type { AutomationStudioNodeAttemptTrace } from "../../../executor.ts";
 import {
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD as CEILING,
   AutomationStudioLlmProviderError,
+  estimateAutomationStudioDeepSeekCostUsd,
   type AutomationStudioHarnessOptionBundle,
   type AutomationStudioLlmEvidenceRuntimeBinding,
   type AutomationStudioLlmProvider,
@@ -176,10 +177,22 @@ describe("what bounds a recovery", () => {
   // A person who asked the model into an exploring recovery is held to the
   // run's own budget -- twenty-six calls, 100,000 tokens, and the run cost
   // ceiling, which the resolver's $2 cannot raise -- and the training
-  // budget being spent does not stop it. The per-call token limits are small
-  // enough that one call's worst case ($0.0024 at peak) stays under its even
-  // share of the $0.10 ceiling, so the share is what each call reserves.
+  // budget being spent does not stop it. The per-call window is derived from
+  // the budget, not from the prompt: the largest input that keeps one call's
+  // worst case at peak under its even share of the $0.10 ceiling, so the share
+  // is what each call reserves and the window is as roomy as that allows. It
+  // was a fixed 4,000 input tokens, which the exploration's growing decision
+  // request outgrew at its twenty-second look once the evidence decision's
+  // guidance grew (t252 merged with t254): refused unsent as over its window,
+  // which is right, but not what this case is about.
   it("holds an explore_and_adapt recovery to the run's budget, not to the training budget", async () => {
+    const declaredCalls = 26;
+    const share = CEILING / declaredCalls;
+    const maxOutputTokens = 1_000;
+    const replyAtPeak = estimateAutomationStudioDeepSeekCostUsd(0, maxOutputTokens);
+    const maxInputTokens = Math.floor((share - replyAtPeak) / estimateAutomationStudioDeepSeekCostUsd(1_000_000, 0) * 1_000_000);
+    // The premise, checked rather than assumed: one call at the window's limits costs no more than its share, at peak.
+    expect(estimateAutomationStudioDeepSeekCostUsd(maxInputTokens, maxOutputTokens)).toBeLessThanOrEqual(share);
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const run = await annotate({
       looks: 40,
@@ -188,19 +201,20 @@ describe("what bounds a recovery", () => {
       requests,
       asked: {
         intent: "explore_and_adapt",
-        resolution: { maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: 2, tokenLimits: { maxInputTokens: 4_000, maxOutputTokens: 1_000, maxTotalTokens: 5_000 } }
+        resolution: { maxCallsPerRun: declaredCalls, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: 2, tokenLimits: { maxInputTokens, maxOutputTokens, maxTotalTokens: maxInputTokens + maxOutputTokens } }
       }
     });
 
     expect(run.taskKinds[0]).toBe("runtime_diagnosis");
     expect(run.taskKinds.at(-1)).toBe("runtime_patch");
     const spent = costAccounting(run.detail);
-    expect(spent).toMatchObject({ calls: 26, explorationCalls: 24, pendingCalls: 0 });
+    // Every declared call is made: the diagnosis, the patch, and the exploration between them.
+    expect(spent).toMatchObject({ calls: declaredCalls, explorationCalls: declaredCalls - 2, pendingCalls: 0 });
     // Nearly all of the run's ceiling, and never past it.
     expect(Number(spent?.estimatedCostUsd)).toBeGreaterThan(CEILING * 0.8);
     expect(Number(spent?.estimatedCostUsd)).toBeLessThanOrEqual(CEILING);
     // Every call reserved its share of the run's ceiling, not the resolver's $2.
-    for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(CEILING / 26, 8);
+    for (const request of requests) expect(request.maxEstimatedCostUsd).toBeCloseTo(share, 8);
     // The diagnosis and the patch say which intent they run for.
     expect(requests.filter((request) => request.taskKind !== "evidence_tool_decision").map((request) => request.metadata?.executionPurpose)).toEqual(["explore_and_adapt", "explore_and_adapt"]);
     expect(budgetCodes(run.detail)).toEqual([]);
