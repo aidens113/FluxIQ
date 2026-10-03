@@ -235,7 +235,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const accounting = automationStudioLlmEvidenceLoopEmptyAccounting(); const purse = automationStudioLlmEvidenceLoopPurse(input.budget, accounting, input.purse); // Each decision's worst case held against the build's purse, or the loop's own at its cost budget, before it is sent: the only cost authority (`./evidence-loop/cost-purse.ts`).
   // The caller's tools, with `core.run_flow` after them where the loop drafts and runs its dry run: part of the Flow
   // run again, never its test. Fixed for the whole loop, so read once (`./node-tools/loop-tools.ts`).
-  const toolSet = automationStudioLlmEvidenceLoopToolSet({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && input.dryRun !== false });
+  // The build's lasting acts, read once, whichever of the dry run, a part run or a rerun's put-back first sends steps again (`./node-tools/replay-draft.ts`).
+  let lasting: Promise<ReadonlySet<string>> | undefined; const readLasting = input.lastingActs; const lastingActs = readLasting ? () => (lasting ??= readLasting()) : undefined;
+  const toolSet = automationStudioLlmEvidenceLoopToolSet({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && input.dryRun !== false, ...(lastingActs ? { lastingActs } : {}) });
   if (!limits || !toolSet) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting);
   const { runFlow, tools, toolIds, toolsById, mutableTools } = toolSet;
   const callIds = new Set<string>();
@@ -391,6 +393,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     targetMoved: () => { counters.mutationEpoch += 1; counters.attemptEpoch += 1; handling.dryRunSeen.ran = true; handling.repeats.moved(); },
     reusedClean: () => { handling.dryRunSeen.reused = true; },
     ...(input.observeTest ? { observed: input.observeTest } : {}),
+    ...(lastingActs ? { lastingActs } : {}),
+    ...(input.testEndView ? { endView: input.testEndView } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   });
   // The state every decision handler reads and writes (`decision-handlers/types.ts`).
@@ -419,7 +423,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     try {
       // A rerun runs from its step's own page, never from where the last call left it; a carried step from where its node started in the repaired run (`./node-tools/step-place.ts`, t194 C-D).
       const startedOn = rerunReplaces && input.draft ? input.draft.seedStartedOn?.[rerunReplaces.standsFor ?? automationStudioFlowDraftStepId(rerunReplaces)] : undefined;
-      const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, startedOn, steps: draftSteps, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
+      const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, startedOn, steps: draftSteps, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal, ...(lastingActs ? { lastingActs: await lastingActs() } : {}) }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
       // The rerun's answer says where it ran (`rerunPlace`): run `run-muqk713g`'s re-author reran a seeded read on the
       // results page the refuted run left, and nothing said so (C6).

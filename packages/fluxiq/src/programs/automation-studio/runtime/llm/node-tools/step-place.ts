@@ -115,6 +115,8 @@ export async function automationStudioNodeRerunFromItsPlace(input: {
   /** The rerun's own call id; the reset is sent as `<callId>.place`, each step done again as `<callId>.place.<position>`. */
   callId: string;
   executeTool(request: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /** The build's lasting acts, as the dry run is given them (`./replay-draft.ts`): a step done again that claims one is checked, not repeated. */
+  lastingActs?: ReadonlySet<string> | undefined;
   signal?: AbortSignal | undefined;
 }): Promise<AutomationStudioNodeRerunPlace> {
   const own = input.step.replay?.from;
@@ -142,6 +144,7 @@ export async function automationStudioNodeRerunFromItsPlace(input: {
     steps: input.steps,
     run,
     callIdOf: (step) => `${callId}.${step.position}`,
+    ...(input.lastingActs ? { lastingActs: input.lastingActs } : {}),
     // Every step of the run starts on the place the reset just put back, so
     // asking one again "on its own page" would only reset away the others.
     reanchor: false

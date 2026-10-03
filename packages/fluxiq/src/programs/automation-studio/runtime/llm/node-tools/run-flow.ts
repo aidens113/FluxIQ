@@ -67,6 +67,8 @@ type RunFlowLoop = {
   steps: readonly AutomationStudioFlowDraftStep[];
   /** Whether the loop drafts and runs its dry run. */
   enabled: boolean;
+  /** The build's lasting acts, read when a part run first needs them, as the dry run reads them (`./dry-run-gate.ts`). */
+  lastingActs?: (() => Promise<ReadonlySet<string>>) | undefined;
 };
 
 /**
@@ -89,7 +91,7 @@ export function automationStudioLlmRunFlowBinding(loop: RunFlowLoop): {
     tools: adds ? [...tools, automationStudioLlmRunFlowTool()] : tools,
     executeTool: adds
       ? async (input) => input.toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID
-        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal })
+        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}) })
         : executeTool(input)
       : executeTool,
     offered: (tool) => !adds || tool.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID

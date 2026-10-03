@@ -80,6 +80,25 @@ describe("automationStudioResultVerificationAgreement", () => {
     }
   });
 
+  // Run `run-murwd8le-79e735a8` (UI review D3): the person read "...the model
+  // judged that it does not answer the request and then that it answers the
+  // request. Neither answer is taken over the other, so the result is
+  // unverified and the run keeps the status its steps earned."
+  it("says an unsettled result in words a person reads, keeping what it means and its codes", () => {
+    const disagreed = automationStudioResultVerificationAgreement({ first: said("no"), second: said("yes") });
+    const unconfirmed = automationStudioResultVerificationAgreement({ first: said("no"), second: said("unknown") });
+    for (const agreed of [disagreed, unconfirmed]) {
+      expect(agreed.reason).not.toMatch(/\bmodel\b|status its steps earned|two checks/iu);
+      expect(agreed.reason).toContain("checked twice with the same evidence");
+      expect(agreed.reason).toContain("not confirmed");
+      expect(agreed.reason).toContain("not marked as failed");
+    }
+    expect(disagreed.reason).toBe("This result was checked twice with the same evidence, and the answers differed: the first was that it does not do what was asked, the second that it does. Neither answer counts for more than the other, so the result is not confirmed, and the run is not marked as failed for it.");
+    expect(disagreed.code).toBe("core.result.verdicts_disagree");
+    expect(unconfirmed.reason).toContain("core.result.verdict_unsure");
+    expect(unconfirmed.code).toBe("core.result.refutation_unconfirmed");
+  });
+
   it("lets a first call that gave no answer fail closed, as one call, whatever a second might have said", () => {
     // Mutation: combine a first silent reply with a second yes -- the run would
     // then pass on a call that never answered.

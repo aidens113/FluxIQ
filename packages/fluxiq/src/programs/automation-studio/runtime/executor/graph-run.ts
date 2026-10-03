@@ -29,7 +29,7 @@ import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { automationStudioStopAfterNode } from "./partial-run/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
-import { automationStudioActivityAskResolution, automationStudioActivityRecoveryChoice, emitAutomationStudioActivity, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
+import { automationStudioActivityAskResolution, automationStudioActivityRecoveryChoice, automationStudioActivityStepNumbers, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -46,14 +46,6 @@ const withheldBySavedTrace = new WeakMap<AutomationStudioGraphExecutionTrace, Fl
  * objects, so the parent replaces them with markers as well.
  */
 const capturedBySavedTrace = new WeakMap<AutomationStudioGraphExecutionTrace, AutomationStudioCapturedRecords>();
-
-/**
- * Whether a node is a step a person sees. A merge joins paths and does nothing
- * on the page, so a run says no step card for it and leaves it out of "Step N
- * of M" both ways: five acts and two merges read "Step 5 of 5", not "Step 7 of
- * 7" over five cards (UI-3). A branch, a check and every other node are shown.
- */
-const shownAsStep = (node: { definitionId: string }): boolean => node.definitionId !== "builtin.control.merge";
 
 /**
  * The one place a run trace is produced, and therefore the one place values a
@@ -363,6 +355,10 @@ async function executeAutomationStudioGraph(
     };
   }
 
+  // "Step N of M" numbers a step by its place in the Flow, from the Flow's own
+  // start, so a retry, a route back or a partial run keeps it; a Merge has none
+  // and is not announced (`activity/step/numbers.ts`).
+  const stepNumbers = automationStudioActivityStepNumbers(flow, (startChoice ?? chooseAutomationStudioStartNode(flow)).node?.id);
   let maxSteps = seed ? seed.maxSteps : Math.min(AUTOMATION_STUDIO_MAX_RUN_STEPS, Math.max(1, options.maxSteps ?? 250));
   // One arrival at one node: how many times it has been attempted here, and
   // which ladder rungs that arrival has already spent. It is reset the moment
@@ -384,8 +380,6 @@ async function executeAutomationStudioGraph(
   // merge the run has passed, those before a park included, which its attempts
   // carry. A resumed run's first pass only leaves the parked node, which its
   // `stepsTaken` already counted, so it is not a second step either.
-  const shownStepCount = flow.nodes.filter(shownAsStep).length;
-  let hiddenSteps = seed ? 1 + seed.attempts.filter((attempt) => !shownAsStep(attempt)).length : 0;
   for (let step = seed?.stepsTaken ?? 0; step < maxSteps; step += 1) {
     if (options.signal?.aborted) {
       return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
@@ -428,8 +422,8 @@ async function executeAutomationStudioGraph(
       if (options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
       }
-      if (!shownAsStep(currentNode)) hiddenSteps += 1;
-      else emitAutomationStudioActivityStep({ index: step + 1 - hiddenSteps, count: shownStepCount, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues });
+      const stepNumber = stepNumbers.numberOf(currentNode.id);
+      if (stepNumber !== undefined) emitAutomationStudioActivityStep({ index: stepNumber, count: stepNumbers.count, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues });
       const notShown: AutomationStudioNodeAttemptTrace | undefined = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? automationStudioNotShownAttempt(currentNode, `${currentNode.id}.attempt.${nextAttemptNumber()}`, now()) : undefined;
       let routing: AutomationStudioStateRouteDecision | undefined = notShown ? await decideAutomationStudioStateRoute({ flow, node: currentNode, attempt: notShown, attempts, options, guard: routeGuard }) : undefined;
       const executed = notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
@@ -545,7 +539,7 @@ async function executeAutomationStudioGraph(
         };
       }
       // A step that cannot run continues where the page is, before any fault,
-      // ladder rung, budget or "Recovery started" (`state-routing/`). The Flow's
+      // ladder rung, budget or recovery (`state-routing/`). The Flow's
       // declared way past a sometimes-present step is its first case; with no
       // way on, the attempt keeps its routing record and the ladder runs.
       if (routeOverride === undefined && automationStudioCouldNotRun(attempt)) {
@@ -578,7 +572,10 @@ async function executeAutomationStudioGraph(
         // whichever way the ladder goes.
         const fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now());
         const mayAbsorb = automationStudioRunMayStillAbsorb(runState.defence.runWaitedMs());
-        emitAutomationStudioActivity({ phase: "repairing", label: `Recovering from a failed step${failedNode.label?.trim() ? `: ${failedNode.label.trim()}` : ""}`, detail: { kind: "step", title: "Recovery started", status: "started", ref: failedNode.id } });
+        // Settles the step as failed, with its failure's code, so a card can say
+        // why ("the page was busy", D8); it opens no "Recovery started" row of
+        // its own (D5): the recovery thought below says what recovery chose.
+        emitAutomationStudioActivityStepRecovering({ nodeId: failedNode.id, label: failedNode.label, definitionId: failedNode.definitionId, parameters: failedNode.parameterValues, failureCode: attempts[attemptIndex]!.failure?.code });
         const ladder = await runAutomationStudioRecoveryLadder({
           flow,
           node: failedNode,

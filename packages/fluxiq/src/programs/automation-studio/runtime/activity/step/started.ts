@@ -1,11 +1,11 @@
-import { emitAutomationStudioActivity } from "./emit.ts";
-import { automationStudioActivityAction, automationStudioActivityHumanLabel } from "./wording/index.ts";
+import { emitAutomationStudioActivity } from "../emit.ts";
+import { automationStudioActivityAction, automationStudioActivityHumanLabel } from "../wording/index.ts";
 
 /**
  * Says the executor is about to run one node: "Running step N of M: action".
- * `count` is how many steps a person sees in the Flow (every node but a merge,
- * which the executor never announces); a loop can take a run past it, and
- * then the sentence says "step N" plainly rather than a count it has passed.
+ * `index` is the step's place in the Flow and `count` how many steps it has,
+ * both from `./numbers.ts`, so a retry of a step says its number again;
+ * an `index` past `count` says "step N" plainly rather than a count it passed.
  *
  * The action is the node's authored label, which the panel already shows, or
  * else what its definition id names with the element name its parameters

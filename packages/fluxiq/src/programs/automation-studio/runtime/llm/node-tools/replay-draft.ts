@@ -3,8 +3,9 @@
 // The reset, then every step the draft proposes, in order, each through the
 // same executor an ordinary tool call goes through -- so each one passes the
 // same permission gate, and none of them reaches a provider. A step whose
-// effect lasts is checked rather than run again, and the steps after it are
-// still run (`../../flow-draft/verify-only.ts`). The loop keeps its
+// effect lasts -- by its declaration, or by claiming an act the instruction
+// asks to last (`lastingActs`, t174-w89) -- is checked rather than run again,
+// and the steps after it are still run (`../../flow-draft/verify-only.ts`). The loop keeps its
 // own bookkeeping out of here: this makes the calls and reports what came back,
 // and `evidence-loop.ts` decides what the verdict does to the build.
 //
@@ -60,6 +61,14 @@ export type AutomationStudioFlowDraftReplayInput = {
   /** 1 for the first replay of this build. */
   attempt: number;
   executeTool(input: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }): Promise<JsonValue | AutomationStudioLlmEvidenceToolExecutionResult>;
+  /**
+   * The ids of the instruction's acts this build reads as lasting
+   * (`../../flow-bootstrap/action-permissions.ts`, `instructedLastingActs`): a
+   * step claiming one is checked rather than run again, whatever it declared
+   * (`../../flow-draft/verify-only.ts`). Absent, a step lasts by its
+   * declaration alone.
+   */
+  lastingActs?: ReadonlySet<string> | undefined;
   signal?: AbortSignal;
 };
 
@@ -128,13 +137,14 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
     steps: input.steps,
     run: proposed,
     callIdOf: (step) => `dryrun.${input.attempt}.${step.position}`,
-    reanchor: true
+    reanchor: true,
+    ...(input.lastingActs ? { lastingActs: input.lastingActs } : {})
   });
   return { verdict: verdictOf(input, "ok", done.outcomes), observations: done.observations, ...(done.evidence ? { evidence: done.evidence } : {}) };
 }
 
 /** What a run of steps done again needs: the executor, the draft, and the steps. */
-export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal"> & {
+export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal" | "lastingActs"> & {
   /** The whole draft: what says which steps the Flow would not always run. */
   steps: readonly AutomationStudioFlowDraftStep[];
   /** The proposed steps to do again, in order, from where the target now stands. */
@@ -170,7 +180,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
   let withheldBy: number | undefined;
   const conditional = automationStudioFlowDraftConditionalStepIds(input.steps);
   for (const [index, step] of proposed.entries()) {
-    const mode = automationStudioFlowDraftStepReplayMode(step);
+    const mode = automationStudioFlowDraftStepReplayMode(step, input.lastingActs);
     const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step) : automationStudioNodeReplayStepCall(step);
     const callId = input.callIdOf(step);
     const toolId = automationStudioNodeReplayToolId(step);

@@ -1,3 +1,4 @@
+import { activityActionResultCheckRow } from "./result-check-row.ts";
 import type { ActivityActionEvent } from "./types.ts";
 
 /**
@@ -5,6 +6,7 @@ import type { ActivityActionEvent } from "./types.ts";
  * card in place rather than drawing another. Null for an event that is a card
  * of its own, or no card.
  *
+ * - A run's result check: `check:result`, for its start and its verdict.
  * - An ask: `ask:<ref>`, the ask id. The row that opens a wait on the person
  *   and the row that settles it carry the same one, whatever phase each is in.
  * - A tool call or a check: `<kind>:<ref>`, or `<kind>:<title>` without a ref.
@@ -20,6 +22,10 @@ export function activityActionKey(event: ActivityActionEvent): string | null {
   if (!detail) return null;
   const ref = detail.ref?.trim();
   if (detail.kind === "ask") return ref ? `ask:${ref}` : null;
+  // A result check starts as "Result check started" and ends as "Result
+  // check", with no ref: keyed by title, the start was an orphan card above
+  // the verdict (t174-w85 D1, `run-murwd8le-79e735a8`).
+  if (activityActionResultCheckRow(detail)) return "check:result";
   if (detail.kind === "tool" || detail.kind === "check") return `${detail.kind}:${ref || detail.title}`;
   return null;
 }

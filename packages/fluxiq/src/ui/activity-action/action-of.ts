@@ -1,6 +1,8 @@
 import { activityActionFailureReason } from "./failure-reason.ts";
 import { activityActionRecordOf } from "./record.ts";
 import { activityActionReplayFailing } from "./replay-failing.ts";
+import { ACTIVITY_RESULT_CHECK_LABELS } from "./result-check-labels.ts";
+import { activityActionResultCheckRow } from "./result-check-row.ts";
 import type { ActivityAction, ActivityActionEvent, ActivityActionKind, ActivityActionOutcome } from "./types.ts";
 import { activityActionVerb } from "./verb.ts";
 
@@ -56,12 +58,16 @@ const PERSON_TITLE = /\bcheck\b/iu;
 const QUOTED = /“([^”]+)”/u;
 /** Words a look searches for, which Core says in straight quotes: Looking for "USB-C hub" on the page. */
 const SAID = /"([^"]+)"/u;
+/** A result check's verdicts that are neither a pass nor a failure: not confirmed, or not checked. */
+const NOT_CONFIRMED: ReadonlySet<string> = new Set([ACTIVITY_RESULT_CHECK_LABELS.unconfirmed, ACTIVITY_RESULT_CHECK_LABELS.unchecked]);
 /**
- * The title a result check's rows carry ("Result check started", "Result
- * check": `programs/automation-studio/runtime/result-verification/verify.ts`).
- * It checks what a run left; it runs nothing, so it is no test run.
+ * What a look's title says it looked over, at or for ("Looking over the whole
+ * page", "Looking for the repeating list on the page": the wording in
+ * `programs/automation-studio/runtime/activity/wording/action.ts`).
  */
-const RESULT_CHECK_TITLE = /^Result check\b/u;
+const LOOKED_AT = /^Looking (?:over|at|for) (.+)$/u;
+/** A look at the bare page names nothing a person could tell apart from any other. */
+const BARE_PAGE = /^the page$/iu;
 /**
  * A page's address path as the navigate wording names it ("/ip/napkins", or
  * "…/ip/napkins" cut at the front): a dot in it ("/help/index.html") is not an id.
@@ -127,21 +133,35 @@ function kindOf(event: ActivityActionEvent, detail: Detail, code: string | undef
   if (event.phase === "repairing") return "repair";
   if (code !== undefined && PERSON_CODE.test(code)) return "person_check";
   if (code !== undefined && PERMISSION_CODE.test(code)) return "permission";
-  if (detail.kind === "check" && RESULT_CHECK_TITLE.test(detail.title)) return "result_check";
+  if (activityActionResultCheckRow(detail)) return "result_check";
+  // A test run's step is named by its action, as a build's own step is; one
+  // that names no action stays a test run.
+  if (testStep(event, detail, core)) return actionKindOf(event, detail, code, node) ?? "test";
   if (detail.kind === "check" || event.phase === "verifying" || core === "test") return "test";
   if (core) return core;
-  const control = node ? CORE_NODE_KINDS.get(node) : undefined;
-  if (control) return control;
-  const verb = kindOfId(node)
-    ?? (ref && !ref.startsWith(CORE_PREFIX) ? kindOfId(ref) : undefined)
-    ?? (event.step?.label ? kindOfWords(wordsOf(event.step.label), true) : undefined)
-    ?? kindOfCode(code)
-    ?? kindOfTitle(detail.title);
+  const verb = actionKindOf(event, detail, code, node);
   if (verb) return verb;
   // A tool call, or a step the executor ran, is an action even when nothing
   // names its verb. A note or a bare status step ("Build started") is not.
   if (detail.kind === "tool" || (detail.kind === "step" && (event.step !== undefined || ref !== undefined))) return "other";
   return null;
+}
+
+/** A step a test run of the Flow ran: a tool row of the `verifying` phase that is no Core tool of its own. */
+function testStep(event: ActivityActionEvent, detail: Detail, core: ActivityActionKind | undefined): boolean {
+  return event.phase === "verifying" && detail.kind === "tool" && core === undefined;
+}
+
+/** The kind of action a control node, a node id, a tool id, a label, a result code or a title names; undefined when none names one. */
+function actionKindOf(event: ActivityActionEvent, detail: Detail, code: string | undefined, node: string | undefined): ActivityActionKind | undefined {
+  const ref = detail.ref;
+  const control = node ? CORE_NODE_KINDS.get(node) : undefined;
+  if (control) return control;
+  return kindOfId(node)
+    ?? (ref && !ref.startsWith(CORE_PREFIX) ? kindOfId(ref) : undefined)
+    ?? (event.step?.label ? kindOfWords(wordsOf(event.step.label), true) : undefined)
+    ?? kindOfCode(code)
+    ?? kindOfTitle(detail.title);
 }
 
 function failingCode(code: string): boolean {
@@ -171,15 +191,35 @@ function declinedWhy(kind: ActivityActionKind, resolution: string | undefined): 
   return null;
 }
 
-function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActionKind): string | null {
+/** `text` with its spaces made single, unless it is empty or shaped like an id. */
+function plain(text: string | undefined): string | undefined {
+  const words = text?.replace(/\s+/gu, " ").trim();
+  return words && !ID_SHAPED.test(words) ? words : undefined;
+}
+
+function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActionKind, testing: boolean): string | null {
+  let name: string | undefined;
   for (const candidate of [QUOTED.exec(detail.title)?.[1], event.step?.label]) {
-    const name = candidate?.replace(/\s+/gu, " ").trim();
-    if (name && (!ID_SHAPED.test(name) || (kind === "navigate" && ADDRESS_PATH.test(name)))) return name;
+    const words = candidate?.replace(/\s+/gu, " ").trim();
+    if (words && (!ID_SHAPED.test(words) || (kind === "navigate" && ADDRESS_PATH.test(words)))) {
+      name = words;
+      break;
+    }
   }
-  // A look that names no control is named by the words it looks for, kept in
-  // their quotes so the card never reads them as a control's name.
-  const sought = kind === "look" ? SAID.exec(detail.title)?.[1]?.replace(/\s+/gu, " ").trim() : undefined;
-  return sought && !ID_SHAPED.test(sought) ? `"${sought}"` : null;
+  // Words typed or looked for, kept in their straight quotes so the card never
+  // reads them as a control's name. A test run's typing step names what it
+  // typed, then where: no decision above it says the words, and its field
+  // alone was a search box's placeholder, "Autumn Mega Sale: up to 70…", never
+  // "Voltbay USB-C hub" (t174-w85 D4). A build's typing step names the field
+  // only; the decision above its card already says the words.
+  const said = kind === "look" || (kind === "type" && testing) ? plain(SAID.exec(detail.title)?.[1]) : undefined;
+  if (said && kind === "type") return name ? `"${said}" into ${name}` : `"${said}"`;
+  if (name) return name;
+  if (said) return `"${said}"`;
+  // A look that names neither a control nor words is named by what its title
+  // says it looked over ("the whole page"): "Look · Done" said nothing (D5).
+  const looked = kind === "look" ? plain(LOOKED_AT.exec(detail.title.trim())?.[1]) : undefined;
+  return looked && !BARE_PAGE.test(looked) ? looked : null;
 }
 
 /**
@@ -194,19 +234,26 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * wait on a person (a check they have to complete, else a permission); the
  * `repairing` phase; a result code that says the page needs a person, or a
  * permission; a result check's rows (`result_check`, checking what a run
- * left); any other check row or a `verifying` row (a dry run's steps); and
- * otherwise the verb named by the node id's last segment, the tool id, the
- * step's label, the result code's action word, or the title Core already said
- * it in. Generic verbs only; see `./verb.ts`.
+ * left); a test run's step (a `verifying` tool row that is no Core tool), by
+ * the action it names as below and marked `testing`, else a test run; any
+ * other check row or `verifying` row; and otherwise the verb named by the
+ * node id's last segment, the tool id, the step's label, the result code's
+ * action word, or the title Core already said it in. Generic verbs only; see
+ * `./verb.ts`.
  *
  * An ask is waiting until the row that settles it says how it ended
  * (`detail.resolution`): done when it was answered, allowed or waited out,
  * failed when it was declined, nobody answered, or the work stopped first. That row is the only one
  * read for it; a later event of the same work never settles a wait.
  *
- * `target` is the name Core quoted in the title, else the step's label, else
- * for a look the words it looked for, in straight quotes, else null; never an
- * id, though a navigate's address path ("/help/index.html") is not one. A replay code that says the step held (`./replay-failing.ts`: replayed,
+ * `target` is the name Core quoted in the title, else the step's label; a
+ * test run's typing step puts the words it typed first, in straight quotes ('"3" into
+ * Quantity'); a look that names no control is named by the words it looked
+ * for, in straight quotes, else by what its title says it looked over ("the
+ * whole page", never the bare page); else null. Never an id, though a
+ * navigate's address path ("/help/index.html") is not one. A result check
+ * that could not confirm the result, or could not check it, is `unconfirmed`,
+ * read from Core's status sentence (`./result-check-labels.ts`). A replay code that says the step held (`./replay-failing.ts`: replayed,
  * verified, present, remembered) is done, not failed. `why` is set only for a failure: a settled ask's
  * resolution in words ("you pressed Stop", "nobody answered in time"), or
  * else the refusal's own reason or the result code's last words
@@ -222,5 +269,14 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const why = outcome !== "failed" ? null
     : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
       : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason) : null;
-  return { kind, target: targetOf(event, detail, kind), outcome, why };
+  const testing = kind !== "test" && testStep(event, detail, detail.ref ? CORE_TOOL_KINDS.get(detail.ref) : undefined);
+  const unconfirmed = kind === "result_check" && outcome === "failed" && event.label !== undefined && NOT_CONFIRMED.has(event.label.trim());
+  return {
+    kind,
+    target: targetOf(event, detail, kind, testing),
+    outcome,
+    why,
+    ...(testing ? { testing: true as const } : {}),
+    ...(unconfirmed ? { unconfirmed: true as const } : {})
+  };
 }
