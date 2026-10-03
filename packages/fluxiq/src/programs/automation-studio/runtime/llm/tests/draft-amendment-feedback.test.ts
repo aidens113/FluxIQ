@@ -393,3 +393,44 @@ describe("an act named again that the checklist already shows done, through the 
     expect(onStall.mock.calls[0]![0].issueCodes).toEqual(["llm_evidence_loop.draft_amendments_refused"]);
   });
 });
+
+// Live run `run-murz83zy-5030820f` (R8): Amara's Confirm was step 9 and the
+// filtered request listing step 18. `9 repeat over 18` was sent five decisions
+// running and once more in round 1, each told "over ... must come before the
+// act: send {step: <act>, change: repeat, over: <listing>}" -- exactly what it
+// had sent -- and `next` said no step after 18 did anything. The listing has to
+// move before the act; the refusal now says so, with the numbers each
+// amendment of one decision is read against.
+describe("a repeat on an act that sits before its listing says to move the listing first", () => {
+  const act = (position: number, disposition = "kept", effectApplied = true) => ({ position, effect: "mutate", effectApplied, disposition });
+  const read = (position: number, disposition = "taken") => ({ position, effect: "observe", effectApplied: true, disposition });
+  const told = (refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[], steps: Parameters<typeof automationStudioLlmEvidenceDraftAmendmentFeedback>[0]["steps"]) =>
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 });
+  const nextOf = (feedback: Record<string, unknown>): string | undefined => (feedback.refused as { next?: string }[])[0]?.next;
+  // The run's draft as it stood at 0043: the act at 9, looks and trial reads between, the listing at 18.
+  const run = [act(1), act(2), act(3), act(4), act(5), act(6, "taken"), act(7, "taken"), read(8), act(9), read(10), read(11), read(12), read(13), read(14), read(15), read(16), read(17), read(18, "kept")];
+
+  it("names the reorder and then the repeat, in the numbers each is read against", () => {
+    const feedback = told([{ step: 9, reason: "over_not_before", over: 18 }], run);
+    const next = nextOf(feedback);
+    expect(next).toContain("Step 18 is the listing, and it comes after step 9, the act the repeat was put on");
+    expect(next).toContain(`{"step": 18, "change": "reorder", "to": 9}`);
+    expect(next).toContain(`{"step": 10, "change": "repeat", "over": 9}`);
+    expect(next).not.toContain("No step after step 18 does anything");
+    expect((feedback.reasons as Record<string, string>).over_not_before).toContain("reorder");
+  });
+
+  it("shifts through with the act when the repeat named one, and adds the act first when it is not in the Flow", () => {
+    const steps = [act(1), act(2), act(3), read(4), read(5, "kept")];
+    const through = nextOf(told([{ step: 2, reason: "over_not_before", over: 5, through: 3 }], steps));
+    expect(through).toContain(`{"step": 5, "change": "reorder", "to": 2}`);
+    expect(through).toContain(`{"step": 3, "change": "repeat", "over": 2, "through": 4}`);
+    const taken = nextOf(told([{ step: 2, reason: "over_not_before", over: 5 }], [act(1), act(2, "taken"), act(3), read(4), read(5, "kept")]));
+    expect(taken).toContain(`add step 2 with its act, then send {"step": 5, "change": "reorder", "to": 2}`);
+  });
+
+  it("does not say it about an act that did not work", () => {
+    const failed = nextOf(told([{ step: 2, reason: "over_not_before", over: 5 }], [act(1), act(2, "taken", false), act(3), read(4), read(5, "kept")]));
+    expect(failed).not.toContain("reorder");
+  });
+});
