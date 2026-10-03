@@ -13,6 +13,7 @@ import {
   automationStudioFlowDraftDryRunVerdict,
   automationStudioFlowDraftReplayOutcomeVerified,
   automationStudioFlowDraftReplayOutcomeWord,
+  automationStudioFlowDraftStepActDone,
   automationStudioFlowDraftStepMovedTarget,
   automationStudioFlowDraftStepReplayMode,
   automationStudioFlowDraftWithheldStepIds,
@@ -62,6 +63,30 @@ describe("which steps a dry run checks rather than runs again", () => {
 
   it("runs again a step that declared nothing at all, as before", () => {
     expect(automationStudioFlowDraftStepReplayMode(step())).toBe("replay");
+  });
+
+  // Live run `run-murwcaj0-40e56557` (R3): the step that confirmed a friend
+  // request, act a1, declared `consequences: []`, so every test pressed Confirm
+  // again. The instruction's read quotes "confirm everyone ..." as
+  // modify_existing, so a1 is one of its lasting acts (t174-w83's second
+  // witness, merged 2026-10-03): the step is checked whatever it declared.
+  it("checks the confirm step of run-murwcaj0 whatever it declared, once the read names its act lasting", () => {
+    for (const consequences of [[], ["none"], "none"]) {
+      expect(automationStudioFlowDraftStepReplayMode(step({ consequences, acts: ["a1"] }), new Set(["a1"])), JSON.stringify(consequences)).toBe("verify");
+    }
+    expect(automationStudioFlowDraftStepReplayMode(step({ acts: ["a1"], noRanWith: true }), new Set(["a1"]))).toBe("verify");
+  });
+
+  // R7: a rerun is a check exactly when the dry run would check the step and its own run already did its effect.
+  it("calls a step's effect done only when the dry run would check it and its own run changed the page", () => {
+    const lasting = new Set(["a1"]);
+    expect(automationStudioFlowDraftStepActDone(step({ consequences: [], acts: ["a1"], effectApplied: true }), lasting)).toBe(true);
+    expect(automationStudioFlowDraftStepActDone(step({ consequences: ["modify_existing"], effectApplied: true }))).toBe(true);
+    // Not done yet, a choice of the act, an act the read does not call lasting, and a read: each is run as asked.
+    expect(automationStudioFlowDraftStepActDone(step({ consequences: [], acts: ["a1"], effectApplied: false }), lasting)).toBe(false);
+    expect(automationStudioFlowDraftStepActDone(step({ consequences: [], acts: ["a1.colour"], effectApplied: true }), lasting)).toBe(false);
+    expect(automationStudioFlowDraftStepActDone(step({ consequences: [], acts: ["a2"], effectApplied: true }), lasting)).toBe(false);
+    expect(automationStudioFlowDraftStepActDone(step({ effect: "observe", consequences: [], acts: ["a1"], effectApplied: true }), lasting)).toBe(false);
   });
 
   it("reads the declaration the Flow keeps before the one the model wrote", () => {

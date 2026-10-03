@@ -34,6 +34,24 @@
 // caller's step and is run again, as it always was. (The web binding refuses a
 // changing call that declares nothing, so every web step it keeps says.)
 //
+// **An instructed act is checked whatever the step declares** (live runs
+// `run-murwcaj0-40e56557` R3 and `run-murwd8le-79e735a8` Cause 3). The step
+// that confirmed a friend request, act a1, declared `consequences: []`, so
+// every test pressed Confirm again on the person's real requests; an Add to
+// cart did the same to a cart. The second witness is the instruction's own
+// read: a changing step claiming an act it reads as lasting is checked
+// (`lastingActs`, t174-w83, below). Lane D first checked every step carrying
+// any act; merged with t174-w83 (2026-10-03) it keeps the read's narrower set,
+// because a choice (`a1.colour`) or an act that lasts nothing ("open saved
+// items") is what the steps after it stand on and must run again.
+//
+// **A rerun of a done act is a check too** (the same run, R7). The repair round
+// reran that step with Tom's Confirm, a request the instruction said to leave
+// alone, and the rerun pressed it. A step the dry run would check, whose own
+// run already did its effect (`automationStudioFlowDraftStepActDone`, the same
+// rule and the same `lastingActs`), is rerun as this same check of the new
+// argument, never as the effect again (`../llm/node-tools/rerun-check.ts`).
+//
 // **Three answers to a check, and what each does to the verdict.**
 //
 //   verified        -- the step could run now. It passes, and its effect was
@@ -130,6 +148,17 @@ export function automationStudioFlowDraftStepReplayMode(step: AutomationStudioFl
   const declared = step.ranWith && "consequences" in step.ranWith ? step.ranWith.consequences : step.input.consequences;
   if (declaresLasting(declared)) return "verify";
   return lastingActs?.size && step.acts?.some((act) => lastingActs.has(act)) ? "verify" : "replay";
+}
+
+/**
+ * Whether a step has already done its lasting effect: one the dry run would
+ * check rather than run again (`automationStudioFlowDraftStepReplayMode`, by
+ * its declaration or the instruction's lasting acts), whose own run worked and
+ * changed the page. A rerun of such a step is a check of the new argument, not
+ * the effect again (see the header, R7).
+ */
+export function automationStudioFlowDraftStepActDone(step: AutomationStudioFlowDraftStep, lastingActs?: ReadonlySet<string>): boolean {
+  return step.effectApplied === true && step.proposes !== false && automationStudioFlowDraftStepReplayMode(step, lastingActs) === "verify";
 }
 
 /**

@@ -150,6 +150,7 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
   providerThrow?: AutomationStudioLlmProviderThrow;
   /**
    * Present exactly beside `flow_bootstrap.not_doable`,
+   * `flow_bootstrap.build_not_finished`,
    * `flow_bootstrap.evidence_budget_exhausted`,
    * `flow_bootstrap.model_replies_unreadable` and
    * `flow_bootstrap.provider_unavailable`: what a build that could not

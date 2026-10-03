@@ -84,6 +84,22 @@ export function automationStudioResultReadConditionText(
 }
 
 /**
+ * The column of the read a condition tests, as the row it left out is keyed:
+ * its `field`, or the column whose declared read is the condition's own read
+ * (the comparison `subjectOf` names it by). `undefined` for a condition whose
+ * read no column makes, which tests a value no row carries. Not screened: the
+ * caller says the column only through the screen a row's cells pass
+ * (`alone-rows.ts`).
+ */
+export function automationStudioResultReadConditionColumn(condition: JsonValue | undefined, columns: JsonObject | undefined): string | undefined {
+  if (!isRecord(condition)) return undefined;
+  if (typeof condition.field === "string") return condition.field;
+  const read = condition.read;
+  if (!isRecord(read) || !columns) return undefined;
+  return Object.entries(columns).find(([, declared]) => sameRead(declared, read))?.[0];
+}
+
+/**
  * What the condition tests: a column key, or its own read described without the
  * part that addresses the page -- and whether it is the latter, which is the
  * only subject a value the read found is said beside.

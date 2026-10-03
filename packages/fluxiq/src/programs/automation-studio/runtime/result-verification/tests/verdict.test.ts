@@ -168,6 +168,16 @@ describe("automationStudioResultVerdict", () => {
     expect(verification.repair?.judgement?.advice).toBe("the Flow never narrowed the list");
   });
 
+  // t195-w37 (live run run-murwcaj0-40e56557): a build ends "not doable" only on the judge's own "cannot be had".
+  it("carries the diagnosis's stillAchievable on a refutation, and only as one of its three words", () => {
+    for (const stillAchievable of ["no", "yes", "unknown"] as const) {
+      const verification = automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "no", stillAchievable }, basis: "model" });
+      expect(verification.repair?.judgement?.stillAchievable, stillAchievable).toBe(stillAchievable);
+    }
+    const odd = automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "no", stillAchievable: "maybe" as never }, basis: "model" });
+    expect(odd.repair?.judgement?.stillAchievable).toBeUndefined();
+  });
+
   it("does not let a malformed suggestion cost the verdict", () => {
     // Every one of these is a shape the model could produce and none of them may
     // refuse a refutation: a wrong type, whitespace, an oversized field, and a

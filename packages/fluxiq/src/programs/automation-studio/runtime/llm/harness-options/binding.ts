@@ -117,6 +117,19 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * an earlier one back whole (t194 w48, `../evidence-recall/`).
    */
   observedStateKeys?: readonly string[];
+  /**
+   * The keys under which this domain's step arguments carry the row a control
+   * was found in -- for the web domain, a press's `element.context.record`.
+   *
+   * A step repeated over another step's rows is given each kept row in turn,
+   * which replaces that row, so the judge of a build's test is not told the row
+   * the step was built on as if it were the one it acts on
+   * (`../../result-verification/build-test/summary.ts`, live run
+   * `run-murwcaj0-40e56557`). Only the domain knows which keys hold a row, so
+   * the domain declares them, as it declares `deniedEvidenceKeys`. Absent,
+   * nothing is left out.
+   */
+  rowContextKeys?: readonly string[];
   tools: AutomationStudioLlmEvidenceTool[];
   /**
    * Whether this domain can run a node of the library against its live target,

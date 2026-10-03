@@ -21,10 +21,22 @@
 // the same checklist. When the model says the Flow is ready the loop tests it
 // as it always does; a Flow it accepts is the build's result. A repair that
 // stops short is judged again, and another repair follows while each gets
-// further than the judgement before it. One that gets no further is the
-// evidence that no route is left: the build ends "not doable", with the acts
-// that cannot be done, why, what was tried, and what stood still
-// (`./not-doable.ts`).
+// further than the judgement before it. One that gets no further ends the
+// build not finished: the Flow so far kept, what stood still, and what the
+// judge said is left to change (`./not-finished.ts`).
+//
+// **"Not doable" only if there is absolutely no way (user; t195-w37, cause
+// R11).** Live run `run-murwcaj0-40e56557`: round 0's judge said no, still
+// achievable, add a read after the confirm loop; round 1's judge said no,
+// still achievable, with a different finding and its fix; the no-progress stop
+// then ended the build "I could not build this Flow, and I found no way to",
+// with $0.0106 of its $0.10 purse left. Now the build ends "not doable" only
+// when the latest judge says what was asked can no longer be had
+// (`stillAchievable: "no"`, `./not-doable.ts`) -- the one no-way condition
+// kept. The no-progress stop and the refused-repeats stop end it not finished.
+// And a judge who says no, with the result still achievable or unsure, and
+// names the fix, buys one more round after a round without measured progress,
+// if the purse funds it; two such rounds in a row end the build not finished.
 //
 // **Repairs are bounded by money and progress, not by a count (t240).** Two
 // repairs used to be the most a build made, whatever they did, and the earbuds
@@ -36,11 +48,12 @@
 // request carries the test's account rather than the page and its reply cap is
 // the same 2,000 tokens (run 38, cause C7) -- and (b) the round before it
 // measurably progressed by what the test and the judge report
-// (`./progress.ts`). A round that did not ends the build saying what stood
-// still. A round that ended on refused repeats and handed back the very Flow it
-// started from ends it too: a second round would repeat it exactly (run 38,
-// cause C8); for the first round of an extend build the Flow it started from is
-// the caller's (`seedSignature`). The live-round backstop
+// (`./progress.ts`) -- or, once, did not after a judge who named the fix
+// (t195-w37). A round that did not otherwise ends the build not finished,
+// saying what stood still. A round that ended on refused repeats and handed
+// back the very Flow it started from ends it too: a second round would repeat
+// it exactly (run 38, cause C8); for the first round of an extend build the
+// Flow it started from is the caller's (`seedSignature`). The live-round backstop
 // (`AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ROUNDS`) still bounds every build, as
 // the published record's reader is bounded by it.
 //
@@ -52,8 +65,7 @@
 // and keeps exploring live from the page as it stands, round after round,
 // until a Flow is accepted or a budget runs out; the budget ending then says
 // what was tried, how far it got and what blocked it. "Not doable" is never
-// reached from an empty Flow: it needs the evidence of a repair that got no
-// further than a judged Flow.
+// reached from an empty Flow: it needs a judge's word on a tested one.
 //
 // **A build finishes only on a judged success of the Flow as it finally
 // stands (user, 2026-10-02, binding).** With a `judge`, what the loop's test of
@@ -71,7 +83,7 @@
 // `run-muq70foz-74caa189`); now those steps are run again live in a repair
 // until a test of the whole Flow is judged. A purse that cannot fund another
 // decision and judge ends the build at its budget, with the Flow kept; "not
-// doable" still needs a repair that got no further. A build given no `judge`
+// doable" still needs a judge's word that it can no longer be had. A build given no `judge`
 // is unchanged: a Flow the loop accepts is its result, unjudged. The judge's
 // calls are held against the build's purse like every other call, and it is
 // asked within what the purse has left.
@@ -136,6 +148,7 @@ import type {
   AutomationStudioFlowBootstrapJudgement,
   AutomationStudioFlowBootstrapNoRouteLeft,
   AutomationStudioFlowBootstrapRoundProgress,
+  AutomationStudioFlowBootstrapStoodStill,
   AutomationStudioFlowBootstrapTestVerdict,
   AutomationStudioFlowBootstrapUnfinishedStop
 } from "./contracts.ts";
@@ -147,6 +160,7 @@ import {
   type AutomationStudioFlowBootstrapUnfinishedTest
 } from "./judgement.ts";
 import { automationStudioFlowBootstrapNotDoable } from "./not-doable.ts";
+import { automationStudioFlowBootstrapNotFinished } from "./not-finished.ts";
 import { automationStudioFlowBootstrapJudgementProgress, automationStudioFlowBootstrapJudgementUnmeasured } from "./progress.ts";
 import { automationStudioFlowBootstrapRepliesUnreadable } from "./replies-unreadable.ts";
 import { automationStudioFlowBootstrapProviderUnavailable } from "./provider-unavailable.ts";
@@ -288,6 +302,8 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
   const record: AutomationStudioLlmEvidenceLoopTrace[] = [];
   let repair: AutomationStudioFlowBootstrapRoundRequest["repair"];
   let previous: AutomationStudioFlowBootstrapJudgement | undefined;
+  /** Rounds in a row that measurably did no better than the judged round before each (t195-w37): one more is opened after the first only when the judge named the fix. */
+  let unprogressed = 0;
   /** The replay signature of the Flow this round starts from; absent when it starts from nothing. */
   let startSignature = input.seedSignature;
   /** What the purse last priced a decision and a judge call at: what one more round must be able to hold. */
@@ -367,7 +383,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     stops.push({ round, stopped });
     /** The next round's worst case, where the purse could not fund it though it was not spent: what a cost ending says it needed. */
     let unfunded: AutomationStudioFlowBootstrapNextRoundHold | undefined;
-    const end = async (kind: "not_doable" | AutomationStudioFlowBootstrapBudgetBound | { unreadable: AutomationStudioLlmEvidenceLoopUnreadable } | { providerUnavailable: AutomationStudioLlmEvidenceLoopProviderUnavailable }, noRoute?: AutomationStudioFlowBootstrapNoRouteLeft): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> => {
+    const end = async (kind: "not_doable" | AutomationStudioFlowBootstrapBudgetBound | { notFinished: AutomationStudioFlowBootstrapStoodStill } | { unreadable: AutomationStudioLlmEvidenceLoopUnreadable } | { providerUnavailable: AutomationStudioLlmEvidenceLoopProviderUnavailable }, noRoute?: AutomationStudioFlowBootstrapNoRouteLeft): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> => {
       const kept = await input.keep(kind === "not_doable" || typeof kind === "object" ? (stopped === "budget" ? "budget" : stopped) : "budget", phase2.lastIssueCodes, seed, phase2.completionAttempts);
       const checklist = input.checklist(seed);
       const told = { judgement, checklist, rounds, decisions: spent.iterations, stops: [...stops] };
@@ -375,6 +391,8 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
         kind: "unfinished",
         ending: kind === "not_doable"
           ? automationStudioFlowBootstrapNotDoable({ ...told, ...(noRoute ? { noRoute } : {}) })
+          : typeof kind === "object" && "notFinished" in kind
+            ? automationStudioFlowBootstrapNotFinished({ ...told, stoodStill: kind.notFinished, kept: kept !== undefined })
           : typeof kind === "object" && "providerUnavailable" in kind
             ? automationStudioFlowBootstrapProviderUnavailable({ ...told, providerUnavailable: kind.providerUnavailable, changes: record.filter((row) => row.decision === "tool_call" && row.effectApplied === true).length, kept: kept !== undefined })
           : typeof kind === "object"
@@ -406,20 +424,31 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       if (rounds >= maxRounds) return await end("rounds");
       const exhausted = exhaustedForNextRound();
       if (exhausted) return await end(exhausted);
-      input.announce?.({ phase: "exploring", label: "Exploring again", text: `Nothing is in the Flow yet${todo ? `, and all ${todo} of the things you asked are still to do` : ""}. Exploring on from the page as it stands.` });
+      const allTodo = todo === 1 ? ", and the one thing you asked is still to do" : todo ? `, and all ${todo} of the things you asked are still to do` : "";
+      input.announce?.({ phase: "exploring", label: "Exploring again", text: `Nothing is in the Flow yet${allTodo}. Exploring on from the page as it stands.` });
       repair = { seed: [], resume: resume() };
       previous = undefined;
+      unprogressed = 0;
       startSignature = undefined;
       continue;
     }
-    // A Flow holding steps that never ran in this build was not run from its start: no measurement, so never "not doable" from it (t194-w70, murwcmx2 C-F).
+    // A Flow holding steps that never ran in this build was not run from its start: no measurement, so neither "not doable" nor a stall is concluded from it (t194-w70, murwcmx2 C-F).
     const unmeasured = automationStudioFlowBootstrapJudgementUnmeasured(judgement);
     const moved = previous ? automationStudioFlowBootstrapJudgementProgress(previous, judgement) : undefined;
     if (!unmeasured) {
-      // A round that ended on refused repeats and handed back the Flow it started from: a second round would repeat it exactly (run 38, C8).
-      if (stopped === "repeat_without_progress" && startSignature !== undefined && judgement.flowSignature === startSignature) return await end("not_doable", { kind: "repeated_unchanged" });
-      // Phase 3, or the evidence that no route is left: a round that measurably did no better than the judged Flow before it.
-      if (previous && moved && !moved.length) return await end("not_doable", { kind: "no_progress", before: previous });
+      // The one no-way condition: the judge says what was asked can no longer be had, about a Flow run from its start (t195-w37).
+      if (judgement.judge?.verdict === "no" && judgement.judge.stillAchievable === "no") return await end("not_doable", { kind: "judged_unachievable" });
+      // A round that ended on refused repeats and handed back the Flow it started from: a second round would repeat it exactly (run 38, C8). Not finished, never "not doable".
+      if (stopped === "repeat_without_progress" && startSignature !== undefined && judgement.flowSignature === startSignature) return await end({ notFinished: { kind: "repeated_unchanged" } });
+      // Phase 3, or a stop: a round that measurably did no better than the judged Flow before it.
+      if (previous && moved) {
+        if (moved.length) unprogressed = 0;
+        else {
+          unprogressed += 1;
+          // One more round after a judge who said no, still achievable or unsure, and named the fix; two in a row end it (run-murwcaj0-40e56557).
+          if (unprogressed > 1 || !judgedFixNamed(judgement)) return await end({ notFinished: { kind: "no_progress", before: previous, rounds: unprogressed } });
+        }
+      }
     }
     // Whether the round before this one also held steps never run, and this one ran none of them: what the announcement says.
     const ranNoneAgain = unmeasured && previous !== undefined && automationStudioFlowBootstrapJudgementUnmeasured(previous) && !moved?.includes("fewer_steps_not_run");
@@ -435,6 +464,12 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     };
     startSignature = automationStudioFlowDraftReplaySignature(seed);
   }
+}
+
+/** Whether the judge said no, with what was asked still achievable or unsure, and named what to change: what buys one more round after one without measured progress. */
+function judgedFixNamed(judgement: AutomationStudioFlowBootstrapJudgement): boolean {
+  const judge = judgement.judge;
+  return judge?.verdict === "no" && judge.stillAchievable !== "no" && Boolean(judge.advice?.trim());
 }
 
 /** What the purse last priced a decision and a judge call at, each at its reply cap. */
