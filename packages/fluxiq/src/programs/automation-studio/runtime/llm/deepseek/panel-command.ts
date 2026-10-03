@@ -38,15 +38,14 @@ import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDe
 import { AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL } from "./provider.ts";
 import { automationStudioLlmStepLogModelStep } from "../step-log/index.ts";
 
-/** The most a decision may run to. The answer is one small object; this is room for a reply in words. */
-const PANEL_COMMAND_MAX_OUTPUT_TOKENS = 600;
-
 export type AutomationStudioDeepSeekPanelCommandOptions = {
   /** The key for this caller, released for one call. Throw when there is none to release. */
   resolveKey(caller: AutomationStudioConversationCaller | null): Promise<string>;
   fetchImpl?: typeof fetch;
   model?: AutomationStudioDeepSeekModel;
   maxResponseBytes?: number;
+  /** The clock a reply is priced by, peak or off-peak (`./pricing.ts`); `Date.now` when absent. */
+  now?: () => number;
 };
 
 export function createAutomationStudioDeepSeekPanelCommandModel(options: AutomationStudioDeepSeekPanelCommandOptions): AutomationStudioConversationModel {
@@ -54,6 +53,7 @@ export function createAutomationStudioDeepSeekPanelCommandModel(options: Automat
   if (!isAutomationStudioDeepSeekModel(model)) throw new AutomationStudioLlmProviderError("llm.provider_model_unsupported", `DeepSeek model ${String(model)} is not one Core sends to.`);
   const fetchImpl = options.fetchImpl ?? fetch;
   const maxResponseBytes = options.maxResponseBytes ?? AUTOMATION_STUDIO_LLM_DEFAULT_MAX_RESPONSE_BYTES;
+  const now = options.now ?? Date.now;
   return {
     name: `deepseek:${model}`,
     decide: async (request, execution) => {
@@ -67,10 +67,12 @@ export function createAutomationStudioDeepSeekPanelCommandModel(options: Automat
       }
       if (!key) throw new AutomationStudioLlmProviderError("llm.provider_secret_unavailable", "No model key could be released.", false);
       if (body.includes(key)) throw new AutomationStudioLlmProviderError("llm.provider_credential_in_request", "The message would have carried the model key to the model.", false);
+      // When it is sent: what it is billed at, peak or off-peak (t254). Its cost is carried into the Flow creation's purse.
+      const sentAtMs = now();
       // The step log's `NNNN-chat` folder (`../step-log/`): the exact body and reply, never the key. Undefined when off.
       const step = automationStudioLlmStepLogModelStep({
         provider: "deepseek", model, url: AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, body, taskKind: "panel_command", kind: "chat",
-        price: (usage) => estimateAutomationStudioDeepSeekCostUsd(usage.inputTokens, usage.outputTokens, usage.cacheHitInputTokens, model)
+        price: (usage) => estimateAutomationStudioDeepSeekCostUsd(usage.inputTokens, usage.outputTokens, usage.cacheHitInputTokens, model, sentAtMs)
       });
       try {
         const response = await send(fetchImpl, body, key, execution.signal);
@@ -78,7 +80,7 @@ export function createAutomationStudioDeepSeekPanelCommandModel(options: Automat
         step?.reply(bytes, response.status);
         const envelope = panelCommandEnvelope(new TextDecoder().decode(bytes));
         // What the reply cost, told before anything can refuse it: a reply Core cannot use was still paid for.
-        const costUsd = "value" in envelope ? panelCommandCostUsd(envelope.value, model) : undefined;
+        const costUsd = "value" in envelope ? panelCommandCostUsd(envelope.value, model, sentAtMs) : undefined;
         if (costUsd !== undefined) execution.paid?.(costUsd);
         if (!response.ok) throw httpFailure(response.status);
         const content = panelCommandContent(envelope);
@@ -95,7 +97,8 @@ export function createAutomationStudioDeepSeekPanelCommandModel(options: Automat
 /**
  * The request as DeepSeek receives it: the instructions as the system message,
  * the thread as alternating turns, and the new message last. JSON mode, no
- * thinking, temperature zero -- the answer is a choice, not prose.
+ * thinking, temperature zero -- the answer is a choice, not prose. No
+ * output cap is sent: no request sends max_tokens (t254, user 2026-10-03).
  */
 export function automationStudioDeepSeekPanelCommandBody(request: AutomationStudioConversationModelRequest, model: AutomationStudioDeepSeekModel): Record<string, unknown> {
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [{ role: "system", content: request.instructions }];
@@ -105,7 +108,6 @@ export function automationStudioDeepSeekPanelCommandBody(request: AutomationStud
   return {
     model,
     messages,
-    max_tokens: PANEL_COMMAND_MAX_OUTPUT_TOKENS,
     temperature: 0,
     thinking: { type: "disabled" },
     response_format: { type: "json_object" },
@@ -155,14 +157,14 @@ function panelCommandEnvelope(text: string): { value: unknown } | { notJson: unk
  * step log prices it (`../step-log/model-step.ts`). Undefined when the reply
  * carries no usage, or counts the pricing refuses.
  */
-function panelCommandCostUsd(envelope: unknown, model: AutomationStudioDeepSeekModel): number | undefined {
+function panelCommandCostUsd(envelope: unknown, model: AutomationStudioDeepSeekModel, sentAtMs: number): number | undefined {
   const usage = isRecord(envelope) && isRecord(envelope.usage) ? envelope.usage : undefined;
   if (!usage) return undefined;
   const inputTokens = usage.prompt_tokens;
   const outputTokens = usage.completion_tokens;
   if (typeof inputTokens !== "number" || typeof outputTokens !== "number") return undefined;
   try {
-    return estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, automationStudioDeepSeekCacheHitInputTokens(usage, inputTokens) ?? 0, model);
+    return estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, automationStudioDeepSeekCacheHitInputTokens(usage, inputTokens) ?? 0, model, sentAtMs);
   } catch (error) {
     // Counts the pricing refuses (negative, fractional, past Core's limit) leave the reply unpriced; any other throw is a defect.
     if (error instanceof RangeError) return undefined;

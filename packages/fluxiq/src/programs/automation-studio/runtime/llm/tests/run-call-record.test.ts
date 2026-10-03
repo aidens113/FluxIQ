@@ -200,15 +200,18 @@ describe("the harness's line for each call", () => {
   });
 
   // The harness used to withhold a report over the request's limits, so the
-  // ledger charged the smaller reservation and never counted the breach.
+  // ledger charged the smaller reservation and never counted the breach. No
+  // reply cap is sent (user, 2026-10-03, t254), so a reply longer than what the
+  // window set aside is a valid reply -- and still a breach of its reservation,
+  // charged as reported.
   it("charges a reported overage as reported and counts it as a breach", async () => {
     const budget = ledger();
     const result = await call(budget, "request.overage", { metadata: { provider: "mock", model: "debug-model" }, runTask: async () => ({ ...answer, usage: { inputTokens: 500, outputTokens: 90, totalTokens: 590 } }) }, 50);
 
-    expect(result.ok).toBe(false);
-    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toContain("llm_usage.output_limit_exceeded");
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).not.toContain("llm_usage.output_limit_exceeded");
     expect(budget.callRecords("run.receipt").calls).toEqual([expect.objectContaining({
-      validation: { ok: false, issueCodes: ["llm_usage.output_limit_exceeded"] },
+      validation: { ok: true, issueCodes: [] },
       reported: { inputTokens: 500, outputTokens: 90, totalTokens: 590, estimatedCostUsd: null },
       charged: expect.objectContaining({ outputTokens: 90, totalTokens: 590, tokens: "reported", cost: "reserved" }),
       budgetBreach: true

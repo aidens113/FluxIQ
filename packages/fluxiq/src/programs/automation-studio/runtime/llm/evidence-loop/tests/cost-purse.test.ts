@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmProvider, type AutomationStudioLlmUsageSummary } from "../../harness.ts";
 import { runAutomationStudioLlmEvidenceLoop, AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID, type AutomationStudioLlmEvidenceLoopBudget, type AutomationStudioLlmEvidenceTool } from "../../evidence-loop.ts";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmCurrentBuildPurse } from "../../build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse, automationStudioLlmCurrentBuildPurse } from "../../build-purse/index.ts";
+
+/** What a decision's reply is held at: its observed-maximum reserve, never a cap (user, 2026-10-03, t254). */
+const DECISION_REPLY = AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.decisionReplyTokens;
 
 // `run-mup2u8o3-6697c4be`, cause 4: a build's ninth decision was sent with
 // $0.154 of its $0.25 spent, re-read 475,714 of its 477,506 input tokens
@@ -56,17 +59,17 @@ function build(llm: AutomationStudioLlmProvider, pageBytes: number) {
 
 describe("a build's cost ceiling, held before each decision is sent", () => {
   it("does not send a decision whose worst case would cross the ceiling, and ends on the cost budget saying what it would have cost", async () => {
-    // The first decision is small (about $0.01 at worst, its reply allowance
-    // mostly) and reports $0.01. The look it asks for returns 2.4 MB, so the
-    // second carries about 800k tokens: $0.25 at worst on its own. The loop's
-    // count, at the average of what was spent, still says twenty decisions
-    // are left.
+    // The first decision is small (about $0.002 at worst, its 750-token reply
+    // reserve mostly, t254) and reports $0.001. The look it asks for returns
+    // 2.6 MB, so the second carries about 870k tokens: $0.26 at worst on its
+    // own. The loop's count, at the average of what was spent, still says
+    // twenty decisions are left.
     const llm = provider([
-      { decision: { kind: "tool_call", callId: "call.1", toolId: "inspect", input: { page: 2 } }, costUsd: 0.01 },
-      { decision: { kind: "complete", result: {} }, costUsd: 0.01 }
+      { decision: { kind: "tool_call", callId: "call.1", toolId: "inspect", input: { page: 2 } }, costUsd: 0.001 },
+      { decision: { kind: "complete", result: {} }, costUsd: 0.001 }
     ]);
 
-    const result = await build(llm.provider, 2_400_000);
+    const result = await build(llm.provider, 2_600_000);
 
     // Sent once. Before the purse, the second decision went out too.
     expect(llm.asked).toBe(1);
@@ -75,15 +78,15 @@ describe("a build's cost ceiling, held before each decision is sent", () => {
     expect(result.code).toBe("llm_evidence_loop.iteration_limit");
     expect(result.exhaustion).toMatchObject({ bound: "budget", budgetBound: "cost", iterations: 1 });
     const refusal = result.exhaustion!.costRefusal!;
-    expect(refusal).toMatchObject({ code: "llm_budget.run_cost_limit", spentUsd: 0.01, pendingUsd: 0, ceilingUsd: 0.25, maxOutputTokens: 8_000 });
+    expect(refusal).toMatchObject({ code: "llm_budget.run_cost_limit", spentUsd: 0.001, pendingUsd: 0, ceilingUsd: 0.25, maxOutputTokens: DECISION_REPLY });
     // Priced from the request the harness measured, at the uncached rate.
     // The purse refused it, so it is no standing of the loop count's.
     expect(refusal).not.toHaveProperty("declinedBy");
-    expect(refusal.estimatedInputTokens).toBeGreaterThan(2_400_000 / 3);
-    expect(refusal.projectedCostUsd).toBeCloseTo(priceUsd({ inputTokens: refusal.estimatedInputTokens, outputTokens: 8_000 }), 9);
+    expect(refusal.estimatedInputTokens).toBeGreaterThan(2_600_000 / 3);
+    expect(refusal.projectedCostUsd).toBeCloseTo(priceUsd({ inputTokens: refusal.estimatedInputTokens, outputTokens: DECISION_REPLY }), 9);
     expect(refusal.spentUsd + refusal.projectedCostUsd!).toBeGreaterThan(0.25);
     // What the build spent never passes its ceiling, and nothing overspent its hold.
-    expect(result.accounting.estimatedCostUsd).toBeCloseTo(0.01, 9);
+    expect(result.accounting.estimatedCostUsd).toBeCloseTo(0.001, 9);
     expect(result.accounting.budgetBreaches).toBeUndefined();
   });
 
@@ -170,7 +173,7 @@ describe("an evidence loop given the build's purse", () => {
     expect(ended).toMatchObject({ ok: false, code: "llm_evidence_loop.iteration_limit", exhaustion: { bound: "budget", budgetBound: "cost", iterations: 1 } });
     if (ended.ok) return;
     expect(ended.exhaustion!.costRefusal).toEqual({
-      code: "llm_budget.run_cost_limit", projectedCostUsd: 0.03, estimatedInputTokens: expect.any(Number), maxOutputTokens: 8_000,
+      code: "llm_budget.run_cost_limit", projectedCostUsd: 0.03, estimatedInputTokens: expect.any(Number), maxOutputTokens: DECISION_REPLY,
       spentUsd: expect.closeTo(0.08, 9), pendingUsd: 0, ceilingUsd: 0.1, carriedUsd: 0.05
     });
     expect(ended.accounting.estimatedCostUsd).toBeCloseTo(0.03, 9);
@@ -198,5 +201,26 @@ describe("an evidence loop given the build's purse", () => {
     expect(budgets[1]).toMatchObject({ costLeftUsd: expect.closeTo(0.065, 3) });
     expect(purse.spentUsd()).toBeCloseTo(0.036, 9);
     expect(purse.breaches).toBe(2);
+  });
+});
+
+// t254: no reply is capped, so a reply longer than its reserve can cost more
+// than its hold. The loop's accounting says so, in calls and in dollars.
+describe("a decision that cost more than it was held at (t254)", () => {
+  it("is counted as a breach with its overshoot in the loop's accounting, never hidden", async () => {
+    const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
+    // The first decision reports $0.01: far past its hold, its reply having run long. The second completes.
+    const llm = provider([
+      { decision: { kind: "tool_call", callId: "call.1", toolId: "inspect", input: { page: 1 } }, costUsd: 0.01 },
+      { decision: { kind: "complete", result: {} }, costUsd: 0.0001 }
+    ]);
+    const { result } = buildUnder(llm.provider, purse, { maxTotalTokens: 1_000_000 });
+    const ended = await result;
+
+    expect(purse.breaches).toBe(1);
+    expect(purse.overshootUsd).toBeGreaterThan(0.005);
+    expect(ended.accounting.budgetBreaches).toBe(1);
+    expect(ended.accounting.budgetOvershootUsd).toBeCloseTo(purse.overshootUsd, 12);
+    expect(ended.accounting.estimatedCostUsd).toBeCloseTo(0.0101, 9);
   });
 });

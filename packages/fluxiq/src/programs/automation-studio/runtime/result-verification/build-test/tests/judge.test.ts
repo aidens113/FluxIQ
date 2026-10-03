@@ -3,8 +3,8 @@
 // No model is called: the provider is scripted, or `verify` is injected.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
-import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../llm/build-purse/index.ts";
-import { AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS, AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../../llm/build-purse/index.ts";
+import { AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS, AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { verifyAutomationStudioRunResult, type AutomationStudioResultVerificationReport, type AutomationStudioResultVerificationRequest } from "../../verify.ts";
 import { automationStudioBuildTestJudge } from "../judge.ts";
 import { automationStudioBuildTestResultSummary } from "../summary.ts";
@@ -208,8 +208,9 @@ describe("a judge under the build's purse (t234)", () => {
     expect(purse.spentUsd()).toBeCloseTo(CEILING - 0.1 * CEILING, 12);
   });
 
-  it("run 38 (C7): the judge's call is held at a 2,000-token reply, so $0.009 left still pays for it", async () => {
+  it("run 38 (C7): the judge's call is sent with no reply cap and held at its 1,250-token reply reserve, so $0.009 left still pays for it", async () => {
     // Priced on the reply alone, at a rate that makes the default 8,000-token allowance the $0.011 hold run 38 refused.
+    // No cap is sent (user, 2026-10-03, t254): the reserve is twice the largest judge reply observed (625).
     const outputRateUsd = 0.0112 / 8_000;
     const asked: number[] = [];
     const llm = scripted(["yes", "yes"]);
@@ -221,13 +222,14 @@ describe("a judge under the build's purse (t234)", () => {
     expect(verdict).toMatchObject({ verdict: "yes" });
     // The yes is confirmed by a second call (live run murwcmx2); two judge-sized holds still fit in $0.009.
     expect(llm.seen).toHaveLength(2);
-    expect(llm.seen[0]?.tokenLimits.maxOutputTokens).toBe(AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS);
+    // The request's own reply figure is the window check's set-aside, never narrowed to a judge cap.
+    expect(llm.seen[0]?.tokenLimits.maxOutputTokens).toBe(AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS);
     expect(asked.length).toBeGreaterThan(0);
-    expect(new Set(asked)).toEqual(new Set([AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS]));
-    expect(AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS * outputRateUsd).toBeCloseTo(0.0028, 12);
+    expect(new Set(asked)).toEqual(new Set([AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.judgeReplyTokens]));
+    expect(AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.judgeReplyTokens * outputRateUsd).toBeCloseTo(0.00175, 12);
   });
 
-  it("a reply allowance a resolver named smaller than the judge's cap is kept", async () => {
+  it("a reply allowance a resolver named is passed through as named, never narrowed", async () => {
     const { provider, seen } = scripted(["yes", "yes"]);
     await judge(PICKUP_CART, { provider, verify: (request) => verifyAutomationStudioRunResult({ ...request, tokenLimits: { maxOutputTokens: 500 } }) })({ summary: run40Summary() });
     expect(seen[0]?.tokenLimits.maxOutputTokens).toBe(500);

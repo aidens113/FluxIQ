@@ -48,6 +48,8 @@ export type AutomationStudioDeepSeekProviderOptions = {
   fetchImpl?: typeof fetch;
   model?: string;
   maxResponseBytes?: number;
+  /** The clock a call is priced by, peak or off-peak (`./pricing.ts`); `Date.now` when absent. */
+  now?: () => number;
 };
 
 export function createAutomationStudioDeepSeekProvider(options: AutomationStudioDeepSeekProviderOptions): AutomationStudioLlmProvider {
@@ -65,17 +67,19 @@ export function createAutomationStudioDeepSeekProvider(options: AutomationStudio
   if (!Number.isInteger(maxResponseBytes) || maxResponseBytes <= 0 || maxResponseBytes > AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_RESPONSE_BYTES) {
     throw new AutomationStudioLlmProviderError("llm.provider_response_limit_invalid", "DeepSeek response-byte limit is invalid.");
   }
+  const now = options.now ?? Date.now;
   return {
     metadata: { provider: "deepseek", model },
     // The same measure `runDeepSeekTask` refuses on, so the harness refuses an
     // oversize request first and with its size (`../harness/run.ts`).
     measureInput: (request) => measureAutomationStudioDeepSeekInput(request),
-    // All input a cache miss, at the model's peak rates: what the harness
-    // reserves for a call of this size against the run's ledger.
-    estimateCostUsd: ({ inputTokens, outputTokens }) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, model),
+    // All input a cache miss -- what is cached is not known before the call --
+    // at the model's rates in force now, peak or off-peak (t254): what the
+    // harness holds for a call of this size against the ledger and the purse.
+    estimateCostUsd: ({ inputTokens, outputTokens }) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, 0, model, now()),
     runTask: async (request, execution) => {
       try {
-        return await runDeepSeekTask({ request, ...(execution?.signal ? { signal: execution.signal } : {}), secretReference, resolveSecret: options.resolveSecret, fetchImpl, model, maxResponseBytes });
+        return await runDeepSeekTask({ request, ...(execution?.signal ? { signal: execution.signal } : {}), secretReference, resolveSecret: options.resolveSecret, fetchImpl, model, maxResponseBytes, now });
       } catch (error) {
         if (error instanceof AutomationStudioLlmProviderError) throw error;
         // Transport and response work is normalized inside runDeepSeekTask. Any
@@ -94,6 +98,7 @@ async function runDeepSeekTask(input: {
   fetchImpl: typeof fetch;
   model: AutomationStudioDeepSeekModel;
   maxResponseBytes: number;
+  now: () => number;
 }): Promise<{ response: AutomationStudioLlmStructuredResponse; usage: AutomationStudioLlmUsageSummary }> {
   let body: string;
   try {
@@ -164,9 +169,11 @@ async function runDeepSeekTask(input: {
     // `price` lets the step log price a failed call from the reply's own usage,
     // as the panel's chat call does, where no refusal carried a cost.
     const model = input.model;
+    // When the call is sent: what it is billed at, peak or off-peak (`./pricing.ts`, t254).
+    const sentAtMs = input.now();
     step = automationStudioLlmStepLogModelStep({
       provider: "deepseek", model, url: AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, body, taskKind: input.request.taskKind, requestId: input.request.requestId, stage: input.request.context.stage, iteration: input.request.context.evidenceLoop?.iteration,
-      price: (usage) => estimateAutomationStudioDeepSeekCostUsd(usage.inputTokens, usage.outputTokens, usage.cacheHitInputTokens, model)
+      price: (usage) => estimateAutomationStudioDeepSeekCostUsd(usage.inputTokens, usage.outputTokens, usage.cacheHitInputTokens, model, sentAtMs)
     });
     const response = await input.fetchImpl(AUTOMATION_STUDIO_DEEPSEEK_CHAT_COMPLETIONS_URL, {
       method: "POST",
@@ -198,7 +205,7 @@ async function runDeepSeekTask(input: {
     } catch {
       throw automationStudioDeepSeekMalformedReply({ case: "envelope_not_json" }, "DeepSeek returned malformed JSON.");
     }
-    const parsed = parseAutomationStudioDeepSeekEnvelope(envelope, input.request, input.model);
+    const parsed = parseAutomationStudioDeepSeekEnvelope(envelope, input.request, input.model, sentAtMs);
     step?.succeeded(parsed.response, parsed.usage);
     return parsed;
   } catch (error) {

@@ -308,15 +308,18 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
 
   it("ends at its purse, the Flow kept, when its Flow was not judged and the purse cannot fund another round", async () => {
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
-    // Five decisions held at $0.02 each, charged $0.017: $0.015 is left, under a decision and a judge at $0.02 each.
+    // Four decisions held and charged $0.023 each, the last fitting beside the judging pair kept back (2 x $0.0039,
+    // priced at DeepSeek flash's peak rates for a judge's standing allowance): $0.008 is left, under that pair and
+    // the least a first decision can be held at ($0.0009).
+    const flash = (inputTokens: number, outputTokens: number) => (inputTokens * 0.3 + outputTokens * 1.2) / 1_000_000;
     const { input, requests, kept } = harness([
       (request) => {
-        for (let index = 0; index < 5; index += 1) {
-          const held = request.purse!.hold({ projectedCostUsd: 0.02, estimatedInputTokens: 10_000, maxOutputTokens: 2_000 });
+        for (let index = 0; index < 4; index += 1) {
+          const held = request.purse!.hold({ projectedCostUsd: 0.023, estimatedInputTokens: 10_000, maxOutputTokens: 750, price: flash });
           if (!held.ok) throw new Error("the purse refused a call the test expected it to pay for");
-          held.hold.settle({ estimatedCostUsd: 0.017 });
+          held.hold.settle({ estimatedCostUsd: 0.023 });
         }
-        return finished(wholeFlow(), spent(5, 0.085));
+        return finished(wholeFlow(), spent(4, 0.092));
       }
     ], [(call) => ({ verdict: "not_judged", why: "the judge was stopped", spent: { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }, flowSignature: call.signature })], { purse });
 
@@ -324,7 +327,7 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
 
     expect(requests).toHaveLength(1);
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("too little for another round: its next decision and the judging of its Flow could cost up to $0.040.");
+    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("which left $0.008, too little for another round: judging its Flow takes two judge calls held at up to $0.008, and its first decision at least $0.001 more.");
     expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("The Flow so far was kept as a draft");
     // The Flow it finished with is kept whole, for building again to carry on from.
     expect(kept).toHaveLength(1);

@@ -57,7 +57,8 @@ describe("the default model is read once, when Core loads", () => {
     // And it is priced at the model it calls, not at deepseek-flash's rates.
     const { estimateAutomationStudioDeepSeekCostUsd } = await import("../pricing.ts");
     expect(estimateAutomationStudioDeepSeekCostUsd(1_000, 1_000)).toBe(estimateAutomationStudioDeepSeekCostUsd(1_000, 1_000, 0, "deepseek-v4-pro"));
-    expect(resolve({ projectId: "p", flowId: "f", caller })?.provider.estimateCostUsd?.({ inputTokens: 1_000, outputTokens: 1_000 })).toBe(0.00528);
+    // Priced at the rate in force now (t254): the peak figure, or half of it off-peak.
+    expect([0.00528, 0.00264]).toContain(resolve({ projectId: "p", flowId: "f", caller })?.provider.estimateCostUsd?.({ inputTokens: 1_000, outputTokens: 1_000 }));
   }, 120_000); // A fresh module graph behind the host's resolver takes a while to load.
 
   it("stops Core at load when it names no configured model", async () => {

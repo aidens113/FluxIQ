@@ -129,25 +129,29 @@ describe("a round without measured progress, after a judge who named the fix", (
 
   it("opens the one more round only if the purse funds it (t240's money rule)", async () => {
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
-    /** `count` decisions, each held and charged at $0.02. */
-    const charge = (request: AutomationStudioFlowBootstrapRoundRequest, count: number) => {
+    /** DeepSeek flash's peak rates, every input token a miss: the price the harness hands the purse with each hold. */
+    const flash = (inputTokens: number, outputTokens: number) => (inputTokens * 0.3 + outputTokens * 1.2) / 1_000_000;
+    /** `count` decisions, each held and charged at `usd`, beside the judging pair the purse keeps back (t254). */
+    const charge = (request: AutomationStudioFlowBootstrapRoundRequest, count: number, usd: number) => {
       for (let index = 0; index < count; index += 1) {
-        const held = request.purse!.hold({ projectedCostUsd: 0.02, estimatedInputTokens: 10_000, maxOutputTokens: 2_000 });
+        const held = request.purse!.hold({ projectedCostUsd: usd, estimatedInputTokens: 10_000, maxOutputTokens: 750, price: flash });
         if (!held.ok) throw new Error("the purse refused a call the test expected it to pay for");
-        held.hold.settle({ estimatedCostUsd: 0.02 });
+        held.hold.settle({ estimatedCostUsd: usd });
       }
     };
     const verdicts = [no(["result.no_records_stored"], { advice: "read the cart" }), no(["result.no_records_stored"], { advice: "read the cart" })];
-    // $0.08 spent after round 1: $0.02 left, under a decision and a judge at $0.02 each.
+    // $0.092 spent after round 1: $0.008 left, under what one more round needs (t254) -- the judging
+    // pair at its unpriced allowance (2 x $0.0039) and the least a first decision is held at ($0.0009).
     const { input, requests } = harness([
-      (request) => { charge(request, 1); return finished(wholeFlow()); },
-      (request) => { charge(request, 3); return navigated(1)(request); }
+      (request) => { charge(request, 1, 0.02); return finished(wholeFlow()); },
+      (request) => { charge(request, 3, 0.024); return navigated(1)(request); }
     ], { purse, judge: async () => verdicts.shift()! });
 
     const outcome = await unfinished(input);
 
     expect(requests).toHaveLength(2);
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
+    expect(outcome.ending.message).toContain("which left $0.008, too little for another round: judging its Flow takes two judge calls");
   });
 });
 

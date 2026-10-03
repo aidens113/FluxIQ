@@ -5,6 +5,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, estimateAutomationStudioDeepSeekCostUsd } from "../index.ts";
 
+/** A peak instant, Wednesday 2026-09-30 02:00 UTC: DeepSeek bills calls at their send time, peak or off-peak (t254), and these figures are peak. */
+const PEAK_CLOCK = (): number => Date.UTC(2026, 8, 30, 2);
+
 const KEY = "sk-test-0123456789abcdef";
 const REQUEST = {
   instructions: "You can operate the FluxIQ control panel.",
@@ -18,7 +21,7 @@ function reply(status: number, body: unknown) {
 }
 
 function modelWith(fetchImpl: typeof fetch, resolveKey = async () => KEY) {
-  return createAutomationStudioDeepSeekPanelCommandModel({ resolveKey, fetchImpl });
+  return createAutomationStudioDeepSeekPanelCommandModel({ resolveKey, fetchImpl, now: PEAK_CLOCK });
 }
 
 const execution = () => ({ signal: new AbortController().signal, caller: { userId: "user.1", sessionId: "session.1" } });
@@ -34,6 +37,7 @@ describe("the chat window's DeepSeek call", () => {
     expect((init!.headers as Record<string, string>).authorization).toBe(`Bearer ${KEY}`);
     const body = JSON.parse(String(init!.body));
     expect(body).toMatchObject({ model: "deepseek-flash", temperature: 0, response_format: { type: "json_object" }, thinking: { type: "disabled" }, stream: false });
+    expect(body).not.toHaveProperty("max_tokens");
     expect(body.messages).toEqual([
       { role: "system", content: REQUEST.instructions },
       { role: "user", content: "hello" },
@@ -91,6 +95,15 @@ describe("the chat window's DeepSeek call", () => {
 
     // A model with no one to tell still answers.
     await expect(modelWith((async () => reply(200, { choices: [{ message: { content: "{}" } }], usage })) as unknown as typeof fetch).decide(REQUEST, execution())).resolves.toBe("{}");
+  });
+
+  it("accepts and charges a reply longer than 600 output tokens", async () => {
+    const usage = { prompt_tokens: 100, completion_tokens: 5_000, total_tokens: 5_100 };
+    const paid = vi.fn();
+    const answer = await modelWith((async () => reply(200, { choices: [{ message: { content: '{"do": "flow.createHere"}' } }], usage })) as unknown as typeof fetch)
+      .decide(REQUEST, { ...execution(), paid });
+    expect(answer).toBe('{"do": "flow.createHere"}');
+    expect(paid).toHaveBeenCalledWith(estimateAutomationStudioDeepSeekCostUsd(100, 5_000, 0, AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL));
   });
 
   it("does not retry when no key can be released, and says so without the key", async () => {

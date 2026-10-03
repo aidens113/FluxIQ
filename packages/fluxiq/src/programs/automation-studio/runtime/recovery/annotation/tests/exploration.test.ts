@@ -81,6 +81,28 @@ describe("runAutomationStudioRecoveryExploration", () => {
     expect(explored.map((entry) => entry.evidenceId)).toEqual(["explored.1", "explored.2"]);
   });
 
+  // t254: an exploration can run from off-peak into a peak window, so the
+  // per-call ceiling it is given as a function is read as each decision is made.
+  it("reads a per-call ceiling given as a function once per decision, as that decision is made", async () => {
+    const calls: string[] = [];
+    const sent: number[] = [];
+    const pricedAt = [0.004, 0.008, 0.008, 0.004];
+    let read = 0;
+    const recording = sequenceProvider(calls, ["test.inspect", "test.reveal", "test.look"]);
+    const { exploration } = await runAutomationStudioRecoveryExploration({
+      ...base(calls),
+      binding: pagesBinding(calls, { "test.inspect": { schemaVersion: "test.page.v1" }, "test.reveal": { schemaVersion: "test.page.v1", controls: ["candidate.1"] }, "test.look": { schemaVersion: "test.page.v1", controls: ["candidate.2"] } }),
+      provider: { ...recording, runTask: async (request, execution) => { sent.push(request.maxEstimatedCostUsd); return await recording.runTask(request, execution); } },
+      maxEstimatedCostUsd: () => pricedAt[read++] ?? 0.004,
+      recoveryDeadline: startAutomationStudioRecoveryDeadline({ startedAtMs: Date.now() })
+    });
+
+    expect(exploration.outcome).toBe("evidence_gathered");
+    expect(sent).toHaveLength(4);
+    expect(read).toBe(sent.length);
+    expect(sent).toEqual(pricedAt);
+  });
+
   // C-7b. Every decision after the first carries what the domain's options
   // returned, so each one is held to the domain's declared keys. A page with a
   // denied key in it is refused while the next decision is being built: the

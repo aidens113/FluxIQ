@@ -57,7 +57,8 @@ export type AutomationStudioLlmProvider = {
   measureInput?(request: AutomationStudioLlmTaskRequest): AutomationStudioLlmProviderInputMeasure;
   /**
    * What a call of this size would cost at worst: every input token a cache
-   * miss, at the provider's peak rates. The harness reserves this against the
+   * miss, at the provider's rates in force now (DeepSeek's are half off-peak,
+   * t254). The harness reserves this against the
    * run's ledger, under the call's own cost ceiling, so a small request is not
    * held at the price of a full context window. Optional: a provider that does
    * not say is reserved at the call's ceiling.

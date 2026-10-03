@@ -150,7 +150,13 @@ export type AutomationStudioRecoveryExplorationInput = {
   runBudget: AutomationStudioLlmRunBudgetLedger;
   tokenLimits?: Partial<AutomationStudioLlmTokenLimits>;
   timeoutMs?: number;
-  maxEstimatedCostUsd: number;
+  /**
+   * What one decision call may reserve against the purse. A function is read
+   * as each decision is made, so a decision is held at the rate in force when
+   * it is made (`run-budget.ts`, `maxEstimatedCostUsdPerCallAt`); an
+   * exploration can outlast an off-peak window.
+   */
+  maxEstimatedCostUsd: number | (() => number);
   /** The whole recovery's clock, started once by the caller above this one. */
   recoveryDeadline: AutomationStudioRecoveryDeadline;
   budget?: AutomationStudioExplorationBudget;
@@ -421,7 +427,7 @@ async function explorationDecision(
     runBudgetAllowance: "exploration",
     ...(input.tokenLimits ? { tokenLimits: input.tokenLimits } : {}),
     ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
-    maxEstimatedCostUsd: input.maxEstimatedCostUsd,
+    maxEstimatedCostUsd: typeof input.maxEstimatedCostUsd === "function" ? input.maxEstimatedCostUsd() : input.maxEstimatedCostUsd,
     expectedOutput: "evidence_tool_decision",
     ...(decision.signal ? { signal: decision.signal } : {}),
     ...(input.now ? { now: input.now } : {}),
