@@ -59,3 +59,25 @@ describe("activityActionFailureReason: a refusal's own reason (t193)", () => {
     expect(activityActionFailureReason("web.action.failed", "vendor_specific_thing")).toBeNull();
   });
 });
+
+// t194 (`run-murwcmx2-a1c6edf7`, screenshot 00012, step 0036): a recall of a
+// result nobody gave that name read "Didn't work: it wasn't on the page", when
+// it never looked at the page. Core's own codes say what Core missed.
+describe("activityActionFailureReason: Core's own codes are no page miss (t194)", () => {
+  it.each([
+    ["core.recall.not_found", "no earlier result goes by that name"],
+    ["core.check.authorization_absent", "checking had not been turned on for this Flow"],
+    ["core.repair.authorization_absent", "repair had not been allowed for this Flow"],
+    ["core.result.required_values_missing", "the result was missing values the request needs"],
+    ["core.result.verdict_absent", "no verdict came back"]
+  ])("says %s as %s", (code, why) => {
+    expect(activityActionFailureReason(code)).toBe(why);
+  });
+
+  it("never reads a Core code as a page miss, though a page's own code still is", () => {
+    expect(activityActionFailureReason("core.something.missing")).toBeNull();
+    expect(activityActionFailureReason("core.other.not_found")).toBeNull();
+    expect(activityActionFailureReason("core.recall.not_found", "vendor_specific_thing")).toBe("no earlier result goes by that name");
+    expect(activityActionFailureReason("web.target.not_found")).toBe("it wasn't on the page");
+  });
+});

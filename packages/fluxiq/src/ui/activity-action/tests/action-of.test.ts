@@ -205,7 +205,19 @@ describe("activityActionOf: no output carries an id or a result code", () => {
 describe("activityActionOf: looks name what they look at (t193)", () => {
   it("reads Core's look-ups as looks, named by what they look up", () => {
     expect(outputsOf(activityActionOf(tool("Looking up how to use “Type”", undefined, "started", "core.describe_nodes")))).toEqual(["look", "Type", "working", ""]);
-    expect(outputsOf(activityActionOf(tool("Looking again at what an earlier step found", "Result: core.recall.succeeded", "succeeded", "core.recall_result")))).toEqual(["look", "", "done", ""]);
+    expect(outputsOf(activityActionOf(tool("Looking again at what “open store picker 1” found", "Result: core.recall.restored", "succeeded", "core.recall_result")))).toEqual(["recall", "open store picker 1", "done", ""]);
+  });
+
+  // t194 (`run-murwcmx2-a1c6edf7`, 00012): a recall that found nothing read
+  // "Look · Didn't work: it wasn't on the page". It looks at no page; it reads
+  // back an earlier result, and says that nothing went by the name it gave.
+  it("reads a recall as a recall, and one that found nothing as no page miss", () => {
+    expect(outputsOf(activityActionOf(tool("Looking again at what an earlier step found", "Result: core.recall.not_found", "succeeded", "core.recall_result")))).toEqual(["recall", "", "failed", "no earlier result goes by that name"]);
+  });
+
+  // t194 (`run-murwcmx2-a1c6edf7`, 00016): the test's list read was a bare "Test run".
+  it("names a test run's list read by what it reads", () => {
+    expect(outputsOf(activityActionOf(tool("Reading the list of “name, price and rating”", "Result: core.replay.replayed · Node: web.output.dom-extract_list", "succeeded", RUN_NODE, "verifying")))).toEqual(["test", "name, price and rating", "done", ""]);
   });
 
   it("names a look by the words it looks for, in their quotes, when it names no control", () => {

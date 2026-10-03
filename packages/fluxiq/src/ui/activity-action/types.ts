@@ -9,6 +9,12 @@ export type ActivityActionKind =
   | "navigate"
   | "read"
   | "look"
+  /**
+   * Reading an earlier call's result back (`core.recall_result`). It looks at
+   * no page: one that found nothing read "Look · Didn't work: it wasn't on the
+   * page" (t194, `run-murwcmx2-a1c6edf7`).
+   */
+  | "recall"
   | "wait"
   | "person_check"
   | "permission"
