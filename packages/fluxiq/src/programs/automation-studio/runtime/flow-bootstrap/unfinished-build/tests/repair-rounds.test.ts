@@ -1,6 +1,7 @@
 // A build's repair rounds are bounded by money and progress, not by a count
-// (t240): another round opens only when the purse can fund its next decision
-// and the judging of its Flow at their capped holds (run 38, cause C7), and the
+// (t240): another round opens only when the purse can fund the judging of its
+// Flow -- two judge calls (t254) -- and the least its first decision can be held
+// at, the decision itself priced from its own request when sent, and the
 // round before it measurably progressed; one that did not ends the build saying
 // what stood still. A round that ended on refused repeats and handed back the
 // Flow it started from ends it too (run 38, cause C8). Rounds and judges are
@@ -31,11 +32,14 @@ function spent(iterations: number, estimatedCostUsd: number): AutomationStudioLl
   return { iterations, toolCalls: iterations, evidenceBytes: 100, inputTokens: 1_000 * iterations, cacheHitInputTokens: 0, outputTokens: 100 * iterations, totalTokens: 1_100 * iterations, estimatedCostUsd };
 }
 
-/** `count` calls made under the purse, each held at `heldUsd` (its capped worst case) and charged `costUsd`. */
-function calls(purse: AutomationStudioLlmBuildPurse | undefined, count: number, heldUsd: number, costUsd: number): void {
+/** DeepSeek flash's peak rates, every input token a miss: the price the harness hands the purse with each hold. */
+const flash = (inputTokens: number, outputTokens: number) => (inputTokens * 0.3 + outputTokens * 1.2) / 1_000_000;
+
+/** `count` calls made under the purse, each held at `heldUsd` (its worst case) and charged `costUsd`; `judge` marks a judge's call, as the harness does. */
+function calls(purse: AutomationStudioLlmBuildPurse | undefined, count: number, heldUsd: number, costUsd: number, judge = false): void {
   if (!purse) throw new Error("no purse was handed over");
   for (let index = 0; index < count; index += 1) {
-    const held = purse.hold({ projectedCostUsd: heldUsd, estimatedInputTokens: 10_000, maxOutputTokens: 2_000 });
+    const held = purse.hold({ projectedCostUsd: heldUsd, estimatedInputTokens: 10_000, maxOutputTokens: judge ? 1_250 : 750, judge, price: flash });
     if (!held.ok) throw new Error("the purse refused a call the test expected it to pay for");
     held.hold.settle({ estimatedCostUsd: costUsd });
   }
@@ -93,39 +97,46 @@ function harness(
 }
 
 describe("a repair round opens only when the purse can fund it", () => {
-  it("opens none the purse cannot fund for one decision plus a judge, though money is left, and says what it needed", async () => {
+  it("counts judging as the two judge calls it is: opens none the purse cannot fund for the pair and the least of a first decision, and says what it needed", async () => {
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
-    // Five decisions held at $0.02 each, charged $0.017: $0.015 is left, under a decision and a judge at $0.02 each.
+    // Three decisions held and charged $0.0303 each, the last fitting beside the judging pair kept back
+    // (2 x $0.0039 before a judge is priced); the judge's two calls held at $0.004 and charged $0.001.
+    // $0.0071 is left: one judge call and a first decision's least ($0.0049) would fit; the pair ($0.0089) does not.
     const { input, requests } = harness([
-      (request) => { calls(request.purse, 5, 0.02, 0.017); return outOfDecisions([step(1, { acts: ["a1"] })], spent(5, 0.085)); }
-    ], { purse, judge: async ({ loop }) => ({ verdict: "yes", spent: NOTHING_SPENT, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) }) });
+      (request) => { calls(request.purse, 3, 0.0303, 0.0303); return finished(wholeFlow(), spent(3, 0.0909)); }
+    ], { purse, judge: async () => { calls(purse, 2, 0.004, 0.001, true); return no(["result.no_records_stored"]); } });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
     expect(requests).toHaveLength(1);
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
     expect(outcome.kind === "unfinished" && outcome.ending.message).toContain(
-      "it had spent $0.085, which left $0.015, too little for another round: its next decision and the judging of its Flow could cost up to $0.040."
+      "it had spent $0.093, which left $0.007, too little for another round: judging its Flow takes two judge calls held at up to $0.008, and its first decision at least $0.001 more."
     );
   });
 
-  it("holds a judge at what the purse last priced it at: one more round opens while that fits, and none once it does not", async () => {
+  it("prices the next round's first decision from its own request, never at the last decision of the round before", async () => {
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1 });
+    let firstRepairHeld = 0;
     const { input, requests } = harness([
-      // Decisions held at $0.02; $0.061 spent with the judge, so $0.039 is left for a $0.02 decision and a $0.005 judge.
-      (request) => { calls(request.purse, 3, 0.02, 0.02); return finished(wholeFlow(), spent(3, 0.06)); },
-      // $0.077 spent with the judge: $0.023 would hold a decision alone, but not a decision and the judge.
-      (request) => { calls(request.purse, 1, 0.02, 0.015); return finished([...request.repair!.seed.slice(0, 2), step(3, { id: "d9", acts: ["a2"], ranWith: { target: "kettle" } })], spent(1, 0.015)); }
+      // The exploration's decisions are held at $0.03 each; $0.079 is spent with the judge, $0.021 left.
+      // The old gate held the next round at that last decision and a judge ($0.032) and opened none.
+      (request) => { calls(request.purse, 3, 0.03, 0.026); return finished(wholeFlow(), spent(3, 0.078)); },
+      // The repair starts from a fresh window: its first request is held at its own $0.01, beside the $0.004 pair kept back.
+      (request) => { calls(request.purse, 1, 0.01, 0.004); firstRepairHeld += 1; return finished([...request.repair!.seed.slice(0, 2), step(3, { id: "d9", acts: ["a2"], ranWith: { target: "kettle" } })], spent(1, 0.004)); }
     ], {
       purse,
-      judge: async ({ round }) => { calls(purse, 1, 0.005, 0.001); return no(round === 0 ? ["result.no_records_stored"] : ["result.required_values_missing"]); }
+      judge: async ({ round, loop }) => {
+        calls(purse, 2, 0.002, 0.0005, true);
+        return round === 0 ? no(["result.no_records_stored"]) : { verdict: "yes", spent: NOTHING_SPENT, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) };
+      }
     });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
     expect(requests).toHaveLength(2);
-    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("which left $0.023, too little for another round: its next decision and the judging of its Flow could cost up to $0.025.");
+    expect(firstRepairHeld).toBe(1);
+    expect(outcome).toMatchObject({ kind: "finished", rounds: 2 });
   });
 });
 

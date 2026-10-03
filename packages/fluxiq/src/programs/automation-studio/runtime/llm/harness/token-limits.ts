@@ -37,84 +37,23 @@ export type AutomationStudioLlmTokenLimits = {
 };
 
 /**
- * What one call reserves for the model's reply when its caller names no output
- * limit: 8,000 tokens, the reply reserve the live session-key profile has used
- * since the window became the request bound (`../session-key-provider.ts`).
+ * What one call sets aside for the model's reply in its context-window check
+ * when its caller names no output limit: 8,000 tokens, the reply reserve the
+ * live session-key profile has used since the window became the request bound
+ * (`../session-key-provider.ts`). It is never sent as a cap (t254).
  */
 export const AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS = 8_000;
 
-/**
- * What a build's decision call reserves for its reply: 2,000 tokens.
- *
- * Derived from what decisions actually reply with: at least three times the
- * largest of 6,119 recorded build-decision replies across 1,222 runs (593
- * tokens, an `amend_draft`; p99 469, median 101; none truncated), rounded up
- * to the thousand. The corpus is
- * `docs/working/language-driven-flow-loop-plan/reports/t234-reply-sizes.md` in
- * the extension repository.
- *
- * It matters because a build's purse holds each call at its worst case before
- * it is sent (`../build-purse/`): every input token uncached and the whole
- * reply allowance. At the default 8,000 the reply alone was held at more than
- * thirteen times what any decision has used, and a build stopped with money it
- * could still have spent. The hold stays a true upper bound because the
- * request's `max_tokens` is this same figure: the provider cannot reply past
- * it.
- *
- * Only the build loop's decision call takes it (`../../service.ts`). Runtime
- * patch steps may serialize to about 2,700 tokens, so the default reply
- * allowance, patch steps, recovery and the instruction reading are unchanged.
- */
-export const AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS = 2_000;
-
-/**
- * A build decision's token limits: the resolver's input and total, with the
- * reply allowance at most `AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS`.
- *
- * A decision's reply allowance is what decisions use, so the purse holds it at
- * a true worst case; input and total are the resolver's. Limits the resolver
- * named badly are passed through as named, so the harness refuses them with
- * its own diagnostics rather than this narrowing hiding them.
- */
-export function automationStudioLlmDecisionTokenLimits(named: Partial<AutomationStudioLlmTokenLimits> | undefined): Partial<AutomationStudioLlmTokenLimits> | undefined {
-  return withReplyAtMost(named, AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS);
-}
-
-/**
- * What a judge's call reserves for its reply: 2,000 tokens.
- *
- * Derived the way the decision cap is: at least three times the largest
- * recorded judge reply (412 tokens, run 38 `run-muqilf9s-c3211328`; its judge
- * calls cost $0.0005-$0.0009), rounded up to the thousand. A judge answers in
- * the diagnosis envelope -- one verdict word, what it expected and observed,
- * and advice -- so its reply is no longer than a decision's.
- *
- * It matters for the same reason (cause C7 of that run): under a build's purse
- * each call is held at its worst case, and at the default 8,000-token
- * allowance a judge call was held at about $0.011, so a build with $0.009 of
- * its $0.10 left could not have its test judged. The hold stays a true upper
- * bound because the request's `max_tokens` is this figure.
- *
- * Every model-backed judge call takes it: the one call site,
- * `../../result-verification/verify.ts`, serves the build-test judge, the
- * runtime result check and the re-check after a repair's replay.
- */
-export const AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS = 2_000;
-
-/**
- * A judge call's token limits: the resolver's input and total, with the reply
- * allowance at most `AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS`. Badly named
- * limits pass through as named, as for a decision.
- */
-export function automationStudioLlmJudgeTokenLimits(named: Partial<AutomationStudioLlmTokenLimits> | undefined): Partial<AutomationStudioLlmTokenLimits> | undefined {
-  return withReplyAtMost(named, AUTOMATION_STUDIO_LLM_JUDGE_REPLY_TOKENS);
-}
-
-/** The resolved limits with the reply allowance at most `replyTokens`; limits the resolver refuses are returned as named. */
-function withReplyAtMost(named: Partial<AutomationStudioLlmTokenLimits> | undefined, replyTokens: number): Partial<AutomationStudioLlmTokenLimits> | undefined {
-  const resolved = resolveAutomationStudioLlmTokenLimits(named);
-  return resolved.diagnostics.length ? named : { ...resolved.limits, maxOutputTokens: Math.min(resolved.limits.maxOutputTokens, replyTokens) };
-}
+// **No call's reply is capped (user, 2026-10-03, t254).** A build decision
+// was sent with a 2,000-token reply cap (t234), a judge and its confirming call
+// with 2,000 (t239, run 38's C7), and the instruction reading with the 8,000
+// default; t254 briefly proposed 1,000 / 1,200 / 1,000. The user: "i never told
+// you to add any cap on output. Remove that". So no request sends `max_tokens`
+// (`../deepseek/request-body.ts`) and the provider's own maximum applies;
+// `maxOutputTokens` below is only what the context-window refusal sets aside
+// for the reply. What a build's purse holds for a reply is the largest reply
+// observed for that call kind, with a margin
+// (`../build-purse/build-call-reserves.ts`).
 
 /**
  * One call's limits when the caller names none: the model's context window,
@@ -174,7 +113,7 @@ export function validateAutomationStudioLlmUsage(usage: AutomationStudioLlmUsage
   if (!usage) return [];
   const diagnostics: AutomationStudioLlmDiagnostic[] = [];
   if ((usage.inputTokens ?? 0) > limits.maxInputTokens) diagnostics.push({ severity: "error", code: "llm_usage.input_limit_exceeded", message: "Provider-reported input usage exceeded the request limit." });
-  if ((usage.outputTokens ?? 0) > limits.maxOutputTokens) diagnostics.push({ severity: "error", code: "llm_usage.output_limit_exceeded", message: "Provider-reported output usage exceeded the request limit." });
+  // A reply longer than `maxOutputTokens` is not a breach (t254): no request sends a reply cap, so that figure is only what the window check set aside. The input and the window still bind.
   const total = usage.totalTokens ?? ((usage.inputTokens !== undefined && usage.outputTokens !== undefined) ? usage.inputTokens + usage.outputTokens : undefined);
   if (total !== undefined && total > limits.maxTotalTokens) diagnostics.push({ severity: "error", code: "llm_usage.total_limit_exceeded", message: "Provider-reported total usage exceeded the request limit." });
   return diagnostics;

@@ -29,12 +29,10 @@
 // **Repairs are bounded by money and progress, not by a count (t240).** Two
 // repairs used to be the most a build made, whatever they did, and the earbuds
 // build `run-muqiho7e-13be6c03` was stopped at that count. Now another round
-// opens only when (a) the purse can fund one more decision plus the judging of
-// its Flow, each at its capped hold -- what the purse last priced a decision at
-// and a judge call at (`AutomationStudioLlmBuildPurse.lastProjectedCostUsd`),
-// the decision's price standing in for a judge not yet priced, since a judge's
-// request carries the test's account rather than the page and its reply cap is
-// the same 2,000 tokens (run 38, cause C7) -- and (b) the round before it
+// opens only when (a) the purse can fund the judging of its Flow -- two judge
+// calls, each at the largest judge hold priced -- and the least its first
+// decision can be held at, the decision itself priced from its own request
+// when it is sent (`./round-funding.ts`, t254), and (b) the round before it
 // measurably progressed by what the test and the judge report
 // (`./progress.ts`). A round that did not ends the build saying what stood
 // still. A round that ended on refused repeats and handed back the very Flow it
@@ -111,9 +109,11 @@
 // (`../../llm/build-purse/purse.ts`). Every round, its test and the judge draw
 // from that purse, and no round is given a fresh share of it: each round's
 // budget keeps the whole ceiling, the purse holds each call at its worst case,
-// and its refusal is the only cost ending. A repair is not started once the
-// purse cannot fund its next decision and a judge, the judge is asked within what it has left, and a
-// cost ending's figures are the purse's. A build given no purse keeps the
+// and its refusal is the only cost ending. With a judge, the judging pair is
+// kept back from every other call from the build's start (t254), so no round
+// can spend what its judging needs. A repair is not started once the purse
+// cannot fund its judging and the least of a first decision, the judge is
+// asked within what it has left, and a cost ending's figures are the purse's. A build given no purse keeps the
 // older arithmetic: each repair is given what the rounds before it left of the
 // cost budget too.
 //
@@ -152,6 +152,7 @@ import { automationStudioFlowBootstrapRepliesUnreadable } from "./replies-unread
 import { automationStudioFlowBootstrapProviderUnavailable } from "./provider-unavailable.ts";
 import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapRepairingNotRunSaid, automationStudioFlowBootstrapStopSaid } from "./not-done.ts";
 import { automationStudioFlowBootstrapRoundEnding } from "./round-ending.ts";
+import { automationStudioFlowBootstrapRoundFunding } from "./round-funding.ts";
 import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall.ts";
 
 /** The least time worth starting a repair with: a look, a few decisions and the test. */
@@ -290,8 +291,8 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
   let previous: AutomationStudioFlowBootstrapJudgement | undefined;
   /** The replay signature of the Flow this round starts from; absent when it starts from nothing. */
   let startSignature = input.seedSignature;
-  /** What the purse last priced a decision and a judge call at: what one more round must be able to hold. */
-  const holds: CallHolds = {};
+  /** What one more round needs of the purse; with a judge, its judging is kept back from every other call from here (t254). */
+  const funding = automationStudioFlowBootstrapRoundFunding(input.purse, input.judge !== undefined);
   /** Why each round that reached phase 2 stopped, in order: what the ending records, so a debug can tell which bound ended which round (live run muqk713g). */
   const stops: NonNullable<AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"]> = [];
   for (let round = 0; ; round += 1) {
@@ -305,9 +306,6 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       if (!(error instanceof AutomationStudioFlowBootstrapUnfinishedStall)) throw error;
       outcome = error;
     }
-    // The round's last priced call is its last decision, at the decision reply cap: what the next round's decisions are held at.
-    const decisionHold = input.purse?.lastProjectedCostUsd;
-    if (decisionHold !== undefined) holds.decisionUsd = decisionHold;
     const ending = automationStudioFlowBootstrapRoundEnding(outcome);
     // Every round publishes its rows: one that stopped short with the ending, the one that finished with the Flow.
     record.push(...numberedAcrossBuild(ending.kind === "finished" || ending.kind === "other" ? ending.loop.trace : ending.progress.trace, spent.iterations));
@@ -326,9 +324,6 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
         const { budget } = remaining(input, spent, clock() - startedAt);
         // With a purse the judge is asked within what it has left: earlier builds' spend and calls in flight taken out.
         verdict = await input.judge({ round, loop: ending.loop, budget: input.purse ? { ...budget, maxCostUsd: input.purse.leftUsd() } : budget });
-        // A price the purse set while the judge ran is the judge's, at the judge reply cap.
-        const judgeHold = input.purse?.lastProjectedCostUsd;
-        if (judgeHold !== undefined && judgeHold !== decisionHold) holds.judgeUsd = judgeHold;
       } catch (error) {
         if (!cancellation(error)) throw error;
         return { kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.loop.trace], steps: ending.loop.steps, accounting: { ...ending.loop.accounting } }, accounting: spent, rounds, trace: [...record] };
@@ -389,7 +384,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     };
     /** The budget with too little left to open another round, where one has; it notes what the round needed when the purse could not fund it. */
     const exhaustedForNextRound = (): AutomationStudioFlowBootstrapBudgetBound | undefined => {
-      const next = nextRoundHold(holds, input.judge !== undefined);
+      const next = funding.nextRound();
       const exhausted = exhaustedBound(input, spent, clock() - startedAt, next?.usd);
       if (exhausted === "cost" && next && input.purse && input.purse.leftUsd() > PURSE_EMPTY_USD) unfunded = next;
       return exhausted;
@@ -437,9 +432,6 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
   }
 }
 
-/** What the purse last priced a decision and a judge call at, each at its reply cap. */
-type CallHolds = { decisionUsd?: number; judgeUsd?: number };
-
 /**
  * A yes that was not about a test of the Flow as it now stands -- about
  * another version, or about no test -- as what it is for this Flow: not
@@ -450,18 +442,6 @@ function yesNotAboutThisFlow(verdict: Extract<AutomationStudioFlowBootstrapTestV
     ? "the judge's yes was about no test of the Flow, so the Flow as it now stands was not judged"
     : "the judge's yes was about a test of another version of the Flow, not of the Flow as it now stands, so the Flow as it stands was not judged";
   return { verdict: "not_judged", why, spent: verdict.spent, ...(verdict.flowSignature !== undefined ? { flowSignature: verdict.flowSignature } : {}) };
-}
-
-/**
- * One more round's worst case: its next decision and, where the build has a
- * judge, the judging of its Flow, each at its capped hold. A judge not yet
- * priced is held at the decision's price, which is at least its own: its
- * request carries the test's account, not the page, under the same reply cap.
- * Absent where the purse has priced nothing -- a provider that does not price.
- */
-function nextRoundHold(holds: CallHolds, judged: boolean): AutomationStudioFlowBootstrapNextRoundHold | undefined {
-  if (holds.decisionUsd === undefined) return undefined;
-  return { usd: holds.decisionUsd + (judged ? holds.judgeUsd ?? holds.decisionUsd : 0), judged };
 }
 
 /** What a round left for phase 2 and phase 3: the judgement of its Flow, and what an ending is written from. */
@@ -504,6 +484,7 @@ function costSpending(refusal: AutomationStudioLlmEvidenceLoopExhaustion["costRe
       ...(refusal ? { spentUsd: refusal.spentUsd, pendingUsd: refusal.pendingUsd } : { spentUsd: purse.spentUsd(), pendingUsd: purse.pendingUsd() }),
       ...projected,
       ...(carriedUsd > 0 ? { carriedUsd } : {}),
+      ...(refusal?.keptBackUsd ? { keptBackUsd: refusal.keptBackUsd } : {}),
       ceilingUsd: refusal?.ceilingUsd ?? purse.ceilingUsd,
       ...(!refusal && unfunded ? { nextRound: unfunded } : {})
     };
@@ -531,8 +512,9 @@ function remaining(input: AutomationStudioFlowBootstrapBuildPhasesInput, spent: 
 /**
  * The budget with too little left to start another round with, or nothing when
  * there is enough of each. With a purse, enough is `needUsd` -- the next
- * round's decision and judge at their capped holds (`nextRoundHold`) -- where
- * the purse has priced a call, and anything at all where it has not.
+ * round's judging pair and the least of its first decision
+ * (`./round-funding.ts`) -- where the purse has priced a call, and anything at
+ * all where it has not.
  */
 function exhaustedBound(input: AutomationStudioFlowBootstrapBuildPhasesInput, spent: AutomationStudioLlmEvidenceLoopAccounting, elapsedMs: number, needUsd: number | undefined): AutomationStudioFlowBootstrapBudgetBound | undefined {
   const { budget, maxIterations } = remaining(input, spent, elapsedMs);
@@ -572,4 +554,5 @@ function addAccounting(into: AutomationStudioLlmEvidenceLoopAccounting, from: Re
   into.estimatedCostUsd += from.estimatedCostUsd;
   // A call that cost more than the purse held it at is a breach of the build's ceiling, whichever round made it; absent means none.
   if (from.budgetBreaches) into.budgetBreaches = (into.budgetBreaches ?? 0) + from.budgetBreaches;
+  if (from.budgetOvershootUsd) into.budgetOvershootUsd = (into.budgetOvershootUsd ?? 0) + from.budgetOvershootUsd;
 }

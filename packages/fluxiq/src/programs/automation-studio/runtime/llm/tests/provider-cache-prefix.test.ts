@@ -25,6 +25,9 @@ import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA, type AutomationStudioFlowBootstrapCatalogEntry } from "../../flow-bootstrap/index.ts";
 
+/** A peak instant, Wednesday 2026-09-30 02:00 UTC: DeepSeek bills calls at their send time, peak or off-peak (t254), and these figures are peak. */
+const PEAK_CLOCK = (): number => Date.UTC(2026, 8, 30, 2);
+
 const tools = [
   { toolId: "core.run_node", description: "Run one node from the library against the page, with the parameters this call names.", inputSchema: { type: "object" } },
   { toolId: "core.read_draft", description: "Read the draft the build has accrued so far.", inputSchema: { type: "object" } }
@@ -230,6 +233,7 @@ describe("a reply that said everything but was not shaped exactly as asked", () 
 async function userMessage(request: AutomationStudioLlmTaskRequest): Promise<string> {
   let outbound = "";
   const provider = createAutomationStudioDeepSeekProvider({
+    now: PEAK_CLOCK,
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
     fetchImpl: (async () => reply({ prompt_tokens: 20, completion_tokens: 8, total_tokens: 28 })) as typeof fetch
@@ -241,6 +245,7 @@ async function userMessage(request: AutomationStudioLlmTaskRequest): Promise<str
 
 async function runWithUsage(usage: Record<string, unknown>): Promise<{ usage: Record<string, number | undefined> }> {
   const provider = createAutomationStudioDeepSeekProvider({
+    now: PEAK_CLOCK,
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async () => "test-secret",
     fetchImpl: (async () => reply(usage)) as typeof fetch
@@ -250,6 +255,7 @@ async function runWithUsage(usage: Record<string, unknown>): Promise<{ usage: Re
 
 async function runWithReply(content: unknown): Promise<{ response: unknown }> {
   const provider = createAutomationStudioDeepSeekProvider({
+    now: PEAK_CLOCK,
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async () => "test-secret",
     fetchImpl: (async () => new Response(JSON.stringify({

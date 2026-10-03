@@ -18,6 +18,9 @@ import type { AutomationStudioLlmProvider } from "../provider.ts";
 import { runAutomationStudioLlmHarness } from "../run.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskResult } from "../task-request.ts";
 
+/** A peak instant, Wednesday 2026-09-30 02:00 UTC: DeepSeek bills calls at their send time, peak or off-peak (t254), and these figures are peak. */
+const PEAK_CLOCK = (): number => Date.UTC(2026, 8, 30, 2);
+
 const RUN = "run.paid";
 /** Step 0108's figures, scaled into this test's token limits. */
 const USAGE = { prompt_tokens: 1_433, completion_tokens: 187, total_tokens: 1_620, prompt_cache_hit_tokens: 1_280, prompt_cache_miss_tokens: 153 };
@@ -90,6 +93,7 @@ function runBudget(): AutomationStudioLlmRunBudgetLedger {
 /** The real adapter, answering 200 with `content` and step 0108's usage. */
 function deepSeek(content: string): AutomationStudioLlmProvider {
   return createAutomationStudioDeepSeekProvider({
+    now: PEAK_CLOCK,
     secretReference: { kind: "secret_reference", id: "secret:deepseek" },
     resolveSecret: async () => "test-secret",
     fetchImpl: (async () => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content } }], usage: USAGE }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch

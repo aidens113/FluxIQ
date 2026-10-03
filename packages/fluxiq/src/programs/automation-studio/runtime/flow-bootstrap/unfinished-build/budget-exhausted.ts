@@ -36,11 +36,14 @@ export type AutomationStudioFlowBootstrapBudgetSizes = {
 };
 
 /**
- * One more round's worst case under the purse (t240): its next decision and,
- * where `judged`, the judging of its Flow, each at its capped hold
- * (`./phases.ts`). A round is not opened that the purse cannot fund for it.
+ * What one more round needs at least under the purse (t240, t254;
+ * `./round-funding.ts`): where `judged`, the judging of its Flow -- two judge
+ * calls, each at its capped hold (`judgingUsd`) -- and the least its first
+ * decision can be held at, its reply reserve alone (`decisionUsd`). `usd` is
+ * their sum. The first decision itself is priced from its own request when it
+ * is sent. A round is not opened that the purse cannot fund for this.
  */
-export type AutomationStudioFlowBootstrapNextRoundHold = { usd: number; judged: boolean };
+export type AutomationStudioFlowBootstrapNextRoundHold = { usd: number; judged: boolean; judgingUsd?: number | undefined; decisionUsd?: number | undefined };
 
 /**
  * What a cost ending says was spent: what the whole build had spent when its
@@ -54,6 +57,8 @@ export type AutomationStudioFlowBootstrapCostSpending = {
   projectedCostUsd?: number | undefined;
   /** What earlier builds of the same Flow creation spent, included in `spentUsd`. Absent when none. */
   carriedUsd?: number | undefined;
+  /** What the purse kept back for judging the Flow, which the refused call had to leave (t254). Absent when nothing was. */
+  keptBackUsd?: number | undefined;
   /**
    * The Flow creation's ceiling, where one purse holds every build of it
    * (t234): building again carries on from what is left of it, which the
@@ -127,13 +132,19 @@ function spendingSaid(spending: AutomationStudioFlowBootstrapCostSpending, ceili
   const carried = spending.carriedUsd !== undefined && spending.carriedUsd > 0 ? ` (${usd(spending.carriedUsd)} of it by earlier builds of this Flow)` : "";
   const held = spending.pendingUsd > 0 ? `, with ${usd(spending.pendingUsd)} more held for calls still running` : "";
   const spent = `: it had spent ${usd(spending.spentUsd)}${carried}${held}`;
-  if (spending.projectedCostUsd !== undefined) return `${spent}, and its next call could have cost up to ${usd(spending.projectedCostUsd)}`;
+  const keptBack = spending.keptBackUsd !== undefined && spending.keptBackUsd > 0 ? `, ${usd(spending.keptBackUsd)} was kept back for judging the Flow` : "";
+  if (spending.projectedCostUsd !== undefined) return `${spent}${keptBack}, and its next call could have cost up to ${usd(spending.projectedCostUsd)}`;
   const left = leftOf(spending.ceilingUsd ?? ceilingUsd, spending);
-  if (spending.nextRound && left >= 0.0005) {
-    const round = spending.nextRound.judged ? "its next decision and the judging of its Flow" : "its next decision";
-    return `${spent}, which left ${usd(left)}, too little for another round: ${round} could cost up to ${usd(spending.nextRound.usd)}`;
-  }
+  if (spending.nextRound && left >= 0.0005) return `${spent}, which left ${usd(left)}, too little for another round: ${nextRoundSaid(spending.nextRound)}`;
   return left >= 0.0005 ? `${spent}, which left ${usd(left)}, too little for its next call` : `${spent}, which left nothing for its next call`;
+}
+
+/** What another round needed at least, as the person is told it. */
+function nextRoundSaid(next: AutomationStudioFlowBootstrapNextRoundHold): string {
+  if (next.judged && next.judgingUsd !== undefined && next.decisionUsd !== undefined) {
+    return `judging its Flow takes two judge calls held at up to ${usd(next.judgingUsd)}, and its first decision at least ${usd(next.decisionUsd)} more`;
+  }
+  return next.judged ? `its first decision and the judging of its Flow need at least ${usd(next.usd)}` : `its first decision needs at least ${usd(next.usd)}`;
 }
 
 /** What a Flow creation's ceiling has left for building again, as the kept sentence ends; nothing where the build had no purse. */

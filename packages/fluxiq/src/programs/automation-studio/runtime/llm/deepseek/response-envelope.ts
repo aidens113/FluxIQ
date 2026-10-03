@@ -19,11 +19,13 @@ import { isRecord } from "./json-record.ts";
 export function parseAutomationStudioDeepSeekEnvelope(
   value: unknown,
   request: AutomationStudioLlmTaskRequest,
-  model: AutomationStudioDeepSeekModel
+  model: AutomationStudioDeepSeekModel,
+  /** When the call was sent, in epoch milliseconds: what DeepSeek bills it at, peak or off-peak (`./pricing.ts`). Absent, the peak rate. */
+  sentAtMs?: number
 ): { response: AutomationStudioLlmStructuredResponse; usage: AutomationStudioLlmUsageSummary } {
   // What the reply cost is read before anything can refuse it: a reply Core
   // cannot use was still paid for, and its account says so.
-  const paid = isRecord(value) ? replyUsage(value.usage, model) : undefined;
+  const paid = isRecord(value) ? replyUsage(value.usage, model, sentAtMs) : undefined;
   if (!isRecord(value) || !Array.isArray(value.choices) || value.choices.length !== 1) malformed({ case: "envelope_shape" }, paid);
   const choice = value.choices[0];
   if (!isRecord(choice) || !isRecord(choice.message)) malformed({ case: "envelope_shape", ...finishReasonOf(choice) }, paid);
@@ -42,7 +44,8 @@ export function parseAutomationStudioDeepSeekEnvelope(
   const outputTokens = nonNegativeInteger(usage.completion_tokens);
   const totalTokens = nonNegativeInteger(usage.total_tokens);
   if (inputTokens === undefined || outputTokens === undefined || totalTokens === undefined || totalTokens !== inputTokens + outputTokens) usageInvalid(paid);
-  if (inputTokens > request.tokenLimits.maxInputTokens || outputTokens > request.tokenLimits.maxOutputTokens || totalTokens > request.tokenLimits.maxTotalTokens) usageLimitExceeded(paid);
+  // The reply's own length is not a limit (t254): no `max_tokens` is sent, so a reply longer than `maxOutputTokens` -- what the window check set aside -- is the provider's to give. The input and the window still bind.
+  if (inputTokens > request.tokenLimits.maxInputTokens || totalTokens > request.tokenLimits.maxTotalTokens) usageLimitExceeded(paid);
   const cacheHitInputTokens = automationStudioDeepSeekCacheHitInputTokens(usage, inputTokens);
   return {
     response: parseDeepSeekStructuredResponse(structured, request, paid),
@@ -51,7 +54,7 @@ export function parseAutomationStudioDeepSeekEnvelope(
       outputTokens,
       totalTokens,
       ...(cacheHitInputTokens === undefined ? {} : { cacheHitInputTokens, cacheMissInputTokens: inputTokens - cacheHitInputTokens }),
-      estimatedCostUsd: estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, cacheHitInputTokens ?? 0, model)
+      estimatedCostUsd: estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, cacheHitInputTokens ?? 0, model, sentAtMs)
     }
   };
 }
@@ -222,7 +225,7 @@ function finishReasonOf(choice: unknown): { finishReason?: string } {
  * same figures and price the accepted path computes, or nothing where the
  * provider's usage does not add up. The accepted path keeps its strict checks.
  */
-function replyUsage(value: unknown, model: AutomationStudioDeepSeekModel): AutomationStudioLlmProviderReplyAccount["usage"] {
+function replyUsage(value: unknown, model: AutomationStudioDeepSeekModel, sentAtMs: number | undefined): AutomationStudioLlmProviderReplyAccount["usage"] {
   if (!isRecord(value)) return undefined;
   const inputTokens = nonNegativeInteger(value.prompt_tokens);
   const outputTokens = nonNegativeInteger(value.completion_tokens);
@@ -234,7 +237,7 @@ function replyUsage(value: unknown, model: AutomationStudioDeepSeekModel): Autom
     outputTokens,
     totalTokens,
     ...(cacheHitInputTokens === undefined ? {} : { cacheHitInputTokens, cacheMissInputTokens: inputTokens - cacheHitInputTokens }),
-    estimatedCostUsd: estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, cacheHitInputTokens ?? 0, model)
+    estimatedCostUsd: estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens, cacheHitInputTokens ?? 0, model, sentAtMs)
   };
 }
 

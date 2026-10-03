@@ -33,14 +33,22 @@ export function measureAutomationStudioDeepSeekInput(request: AutomationStudioLl
   };
 }
 
-/** The whole outbound request, as the bytes that go on the wire. */
+/**
+ * The whole outbound request, as the bytes that go on the wire.
+ *
+ * **No `max_tokens` (user, 2026-10-03, t254).** Every request used to send its
+ * `tokenLimits.maxOutputTokens` as a reply cap -- 2,000 for a build decision and
+ * a judge, 8,000 for the instruction reading and recovery. The user: "i never
+ * told you to add any cap on output. Remove that". The provider's own maximum
+ * applies; `maxOutputTokens` is only what the context-window refusal sets
+ * aside for the reply (`../harness/token-limits.ts`).
+ */
 export function buildAutomationStudioDeepSeekRequestBody(
   request: AutomationStudioLlmTaskRequest,
   model: AutomationStudioDeepSeekModel
 ): string {
   return JSON.stringify({
     model,
-    max_tokens: request.tokenLimits.maxOutputTokens,
     temperature: 0,
     thinking: { type: "disabled" },
     stream: false,

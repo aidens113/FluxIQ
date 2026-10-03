@@ -5,6 +5,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, estimateAutomationStudioDeepSeekCostUsd } from "../index.ts";
 
+/** A peak instant, Wednesday 2026-09-30 02:00 UTC: DeepSeek bills calls at their send time, peak or off-peak (t254), and these figures are peak. */
+const PEAK_CLOCK = (): number => Date.UTC(2026, 8, 30, 2);
+
 const KEY = "sk-test-0123456789abcdef";
 const REQUEST = {
   instructions: "You can operate the FluxIQ control panel.",
@@ -18,7 +21,7 @@ function reply(status: number, body: unknown) {
 }
 
 function modelWith(fetchImpl: typeof fetch, resolveKey = async () => KEY) {
-  return createAutomationStudioDeepSeekPanelCommandModel({ resolveKey, fetchImpl });
+  return createAutomationStudioDeepSeekPanelCommandModel({ resolveKey, fetchImpl, now: PEAK_CLOCK });
 }
 
 const execution = () => ({ signal: new AbortController().signal, caller: { userId: "user.1", sessionId: "session.1" } });

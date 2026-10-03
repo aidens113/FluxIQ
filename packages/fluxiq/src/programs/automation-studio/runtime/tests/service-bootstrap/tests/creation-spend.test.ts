@@ -16,8 +16,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, onTes
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { automationStudioActivityHub } from "../../../activity/index.ts";
 import type { AutomationStudioFlowBootstrapCreationSpend } from "../../../flow-bootstrap/index.ts";
+import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES } from "../../../llm/build-purse/index.ts";
 import {
-  AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS,
   AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD,
   AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS,
   resolveAutomationStudioLlmTokenLimits,
@@ -31,6 +31,9 @@ import { blankFixture, caller, copyDataDirSeed, isJudgeRequest, judgeReply, mock
 
 const SEEDING_TIMEOUT_MS = 60_000;
 const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
+
+/** A provider price: `decisionUsd` for a decision-sized hold, a hundredth of the ceiling for a judge's (its reply reserve), so the judging pair a build keeps back (t254) is judge-sized. */
+const judgeSized = (decisionUsd: number) => ({ outputTokens }: { inputTokens: number; outputTokens: number }): number => (outputTokens === AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.judgeReplyTokens ? CEILING * 0.01 : decisionUsd);
 
 let tempRoot: string;
 let seedRoot: string;
@@ -93,9 +96,10 @@ function service(provider: AutomationStudioLlmProvider, binding: AutomationStudi
 
 describe("a Flow creation's one purse", () => {
   it("(a) starts a second build where the first stopped on cost: it ends at once on cost and spends nothing more", async () => {
-    // Every call is priced at three tenths of the ceiling and costs that: the
+    // Every decision is priced at three tenths of the ceiling and costs that: the
     // purse pays for three and refuses the fourth, so the first build stops
-    // with nine tenths spent.
+    // with nine tenths spent. The judging pair it keeps back (t254) is priced at
+    // a judge's size, a hundredth each.
     const perCall = CEILING * 0.3;
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const provider: AutomationStudioLlmProvider = {
@@ -104,7 +108,7 @@ describe("a Flow creation's one purse", () => {
         const decision = lookingDecision(request, requests.length);
         return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: perCall } };
       }),
-      estimateCostUsd: () => perCall
+      estimateCostUsd: judgeSized(perCall)
     };
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
     const request = { projectId: project.id, flowId: flow.flowId, evidenceGuided: true as const, caller: caller() };
@@ -192,26 +196,26 @@ describe("a Flow creation's one purse", () => {
     await expect(spends(instance).get(project.id, flow.flowId)).resolves.toEqual(stored);
   }, 30_000);
 
-  it("(d) asks each decision for a reply of at most 2,000 tokens, leaving the input and the window as the resolver set them", async () => {
+  it("(d) asks each decision with no reply cap, its limits the resolver's own, and holds its reply at the observed-maximum reserve (user, 2026-10-03, t254)", async () => {
     const decisions: AutomationStudioLlmTaskRequest[] = [];
-    const provider = mockProvider(async (request) => {
+    const heldReplies: number[] = [];
+    const provider = { ...mockProvider(async (request) => {
       if (request.context.evidenceLoop?.tools.length) decisions.push(request);
       return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision: lookingDecision(request, decisions.length) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
-    });
+    }), estimateCostUsd: ({ outputTokens }: { inputTokens: number; outputTokens: number }) => { heldReplies.push(outputTokens); return 0.001; } };
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
     const instance = service(provider, LOOKING, { tokenLimits: { ...defaults.tokenLimits }, maxCallsPerRun: 2 });
 
     await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, evidenceGuided: true, caller: caller() }));
 
-    expect(AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS).toBe(2_000);
     const resolved = resolveAutomationStudioLlmTokenLimits(defaults.tokenLimits).limits;
-    // The resolver's own reply allowance is larger, so the decision's is the one that binds.
-    expect(resolved.maxOutputTokens).toBeGreaterThan(AUTOMATION_STUDIO_LLM_DECISION_REPLY_TOKENS);
     expect(decisions.length).toBeGreaterThan(0);
-    for (const decision of decisions) {
-      expect(decision.tokenLimits).toEqual({ maxInputTokens: resolved.maxInputTokens, maxOutputTokens: 2_000, maxTotalTokens: resolved.maxTotalTokens });
-    }
+    // The resolver's limits, untouched: no decision reply cap narrows them (it was 2,000, t234).
+    for (const decision of decisions) expect(decision.tokenLimits).toEqual(resolved);
+    // Held at twice the largest decision reply observed (371), never at a cap.
+    expect(heldReplies).toContain(AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.decisionReplyTokens);
+    expect(AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.decisionReplyTokens).toBe(750);
   }, 30_000);
 
   it("(e) counts the judge's calls against the same purse", async () => {
@@ -311,8 +315,9 @@ describe("a Flow creation's one purse", () => {
   // Flow is part of that Flow's cost (t234 W9): it is made before the Flow
   // exists, so the build is told it and opens its purse with it carried.
   it("(g) opens the purse with the chat's reading of the message carried, and saves it into the record", async () => {
-    // Half the ceiling carried, and each call priced at three tenths: one call
-    // fits and the second does not. With nothing carried, three would be sent.
+    // Half the ceiling carried, and each decision priced at three tenths (the
+    // judging pair kept back at a hundredth each): one call fits and the second
+    // does not. With nothing carried, three would be sent.
     const interpretationCostUsd = CEILING * 0.5;
     const perCall = CEILING * 0.3;
     const requests: AutomationStudioLlmTaskRequest[] = [];
@@ -321,7 +326,7 @@ describe("a Flow creation's one purse", () => {
         requests.push(request);
         return { response: { kind: "evidence_tool_decision", summary: "Looking.", decision: lookingDecision(request, requests.length) }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: perCall } };
       }),
-      estimateCostUsd: () => perCall
+      estimateCostUsd: judgeSized(perCall)
     };
     const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
     const instance = service(provider, LOOKING);
