@@ -11,6 +11,8 @@ import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootst
 const MAX_QUOTE = 200;
 const MAX_SAID_QUOTE = 90;
 const MAX_SAID = 4;
+/** The longest reason a repair heading quotes. */
+const MAX_REASON = 160;
 
 /** Each reason, as a clause that finishes "... : <quote> -- ". Every reason the checklist gives has its own. */
 const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo, string>> = Object.freeze({
@@ -128,16 +130,28 @@ function judgedTestSaid(judgement: AutomationStudioFlowBootstrapJudgement): stri
 
 /**
  * The repair's announcement after a judge, naming its reason in its own words,
- * bounded: what it found wrong, or that the Flow was not judged to do what was
- * asked and why (user, 2026-10-02).
+ * bounded: what it found wrong, or that the Flow is not yet confirmed to do
+ * what was asked and why (user, 2026-10-02).
+ *
+ * A judge that did not settle it is said as the card above it says it: the
+ * Flow is not confirmed, never that it "was not judged" -- run
+ * `run-murwd8le-79e735a8` showed "not judged to do what you asked" under a card
+ * that said the result was unverified (UI review D3). A long reason is cut at
+ * the end of a sentence where one ends inside the bound.
  */
 export function automationStudioFlowBootstrapRepairingJudgedSaid(judge: NonNullable<AutomationStudioFlowBootstrapJudgement["judge"]>): string {
   const carried = judge.untestedCarried ?? [];
   if (carried.length) return `The Flow was not judged to do what you asked: steps ${carried.join(", ")} came from the earlier Flow and were not run when it was tested. Repairing the Flow live, running them again.`;
-  const reason = (judge.observed ?? judge.findings[0] ?? "").replace(/\s+/gu, " ").trim();
-  const said = reason.length > 160 ? `${reason.slice(0, 157).trimEnd()}...` : reason;
-  if (judge.verdict !== "no") return `The Flow was not judged to do what you asked${said ? `: ${said}` : ""}. Repairing it live, to test it from its start and judge it again.`;
+  const said = boundedReason((judge.observed ?? judge.findings[0] ?? "").replace(/\s+/gu, " ").trim());
+  if (judge.verdict !== "no") return `The Flow is not yet confirmed to do what you asked${said ? `: ${said}` : ""}. Repairing it live, to test it from its start and check it again.`;
   return `The Flow was tested from its start and judged not to do what you asked${said ? `: ${said}` : ""}. Repairing it live.`;
+}
+
+/** A reason of at most 160 characters, cut after its last whole sentence that fits, else mid-way; never ending in a full stop the heading adds. */
+function boundedReason(reason: string): string {
+  if (reason.length <= MAX_REASON) return reason.replace(/\.$/u, "");
+  const sentence = /^.*[.!?](?=\s)/u.exec(reason.slice(0, MAX_REASON + 1))?.[0];
+  return sentence ? sentence.replace(/\.$/u, "") : `${reason.slice(0, MAX_REASON - 3).trimEnd()}...`;
 }
 
 /**

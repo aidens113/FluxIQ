@@ -91,6 +91,12 @@ async function build(script: {
   let decided = 0;
   let judged = 0;
   const provider = mockProvider(async (request) => {
+    // The build's one read of the instruction is not a model decision of the script: it answers that nothing
+    // lasting is asked for, so no step is checked for it. Since t174-w89 it is made before the first test,
+    // which needs it (`service/instruction-authority.ts`); it used to be made only after the build.
+    if (request.metadata?.source === "instructionAuthority") {
+      return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: USAGE };
+    }
     requests.push(request);
     if (isJudgeRequest(request)) {
       const answer = script.judge[judged++];

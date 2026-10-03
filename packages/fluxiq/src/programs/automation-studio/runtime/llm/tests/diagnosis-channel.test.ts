@@ -128,8 +128,27 @@ describe("the judges are told what an excluded row is, and what a replayed read'
   });
 
   it("tells the build-test judge what readRows holds, and to read its leftOutOnlyByThis as a read's", () => {
-    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification");
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
     expect(prompt).toContain("readRows");
     expect(prompt).toContain("readRows.leftOutOnlyByThis");
+  });
+});
+
+// Run `run-murwd8le-79e735a8` (Cause 9): the post-run checks 0071 and 0072
+// called the playback "a build test", because their system prompt carried the
+// "When resultSummary.buildTest is present ..." paragraph with no buildTest.
+describe("the post-run check is told it judges a finished run, and only a build's test is told it judges one", () => {
+  it("sends the build-test paragraph only with a buildTest", () => {
+    const finished = automationStudioDiagnosisPromptInstruction("loop_verification");
+    expect(finished).not.toContain("resultSummary.buildTest");
+    expect(finished).not.toMatch(/build's test/u);
+    expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true })).toContain("When resultSummary.buildTest is present");
+  });
+
+  // Cause 7: neither judge was shown the page the run or test ended on.
+  it("tells every judge what the page the run or test ended on is, and how to read it", () => {
+    for (const prompt of [automationStudioDiagnosisPromptInstruction("loop_verification"), automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true })]) {
+      expect(prompt).toContain("resultSummary.endView");
+    }
   });
 });

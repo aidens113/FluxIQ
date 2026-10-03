@@ -117,6 +117,23 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
   signal: AbortSignal;
   /** What the instruction was read to ask for, once the build first needed to know; stored with what it builds. */
   instructed(): readonly AutomationStudioInstructedConsequence[] | undefined;
+  /**
+   * The ids of the instruction's acts that its read says ask for something
+   * lasting, for the build's tests (`../flow-draft/verify-only.ts`): a step
+   * claiming one is checked rather than run again, whatever it declared.
+   *
+   * Forces the instruction's read now -- the one read the build makes, which
+   * the cross-check after the build reuses rather than paying for again -- so
+   * a caller asks before the first test. An act is lasting when one of the
+   * read's quotes contains its words, or its words contain the quote, after
+   * case and spacing are set aside: the read quotes the person's words and so
+   * does the act (`./instructed-acts/instruction-acts.ts`), each bounded its
+   * own way, so neither is reliably the longer. Only an act's own id is
+   * named; a choice of it (`a1.colour`) never is. No acts, no read: an
+   * instruction that asks for no act has nothing for the tests to withhold. A
+   * read that fails names nothing, and the tests run as the declarations say.
+   */
+  instructedLastingActs(acts: readonly { id: string; quote: string }[]): Promise<ReadonlySet<string>>;
   /** The request the latest refusal carried, or `undefined` when none stands. Stored with a build that finished anyway. */
   request(): AutomationStudioActionPermissionRequest | undefined;
   /** What every action put to the gate declared about itself, in the order it was asked. */
@@ -229,6 +246,16 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     },
     signal: planRefused.signal,
     instructed: () => gate.instructed,
+    instructedLastingActs: async (acts) => {
+      const own = acts.filter((act) => !act.id.includes("."));
+      if (!own.length) return new Set<string>();
+      // The gate holds the read, so this and `crossCheck` share one provider call.
+      const quotes = (await gate.resolveInstructed()).map((entry) => folded(entry.quote)).filter((quote) => quote.length > 0);
+      return new Set(own.filter((act) => {
+        const words = folded(act.quote);
+        return words.length > 0 && quotes.some((quote) => quote.includes(words) || words.includes(quote));
+      }).map((act) => act.id));
+    },
     request: () => gate.request,
     declarations: () => gate.declarations,
     crossCheck: async () => {
@@ -244,6 +271,11 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       ? flowBootstrapPermissionRequiredFailure(gate.request, progress ?? NO_LOOP_PROGRESS, accounting)
       : undefined
   };
+}
+
+/** A quote as `instructedLastingActs` compares it: lower case, every run of spacing one space. */
+function folded(text: string): string {
+  return text.toLowerCase().replace(/\s+/gu, " ").trim();
 }
 
 /** What a build that ran no evidence loop has to show for itself: nothing, honestly. */

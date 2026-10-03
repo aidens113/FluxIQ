@@ -28,6 +28,13 @@
 // it fails closed as it always has. Core's own count-based observations never
 // reach this file: they are settled before any call.
 //
+// **Said for a person.** The two unsettled reasons are shown as they are, on
+// the check's card and in the build's repair heading, so they say it the way a
+// person reads it: checked twice, the answers, not confirmed, not failed for it.
+// They used to speak of "the model", "two checks" and "the status its steps
+// earned" (run `run-murwd8le-79e735a8`, UI review D3). The codes beside them
+// are unchanged.
+//
 // Pure: no call is made here, and nothing is read but the two verdicts.
 
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
@@ -76,18 +83,18 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
     };
   }
   if (second.verdict === "answers") {
-    return unsettled(first, "model_disagreed", codes.disagree, `The two checks of this result disagreed: asked twice with the same evidence, the model judged ${said(first)} and then that it answers the request. Neither answer is taken over the other, so the result is unverified and the run keeps the status its steps earned.`, verdicts);
+    return unsettled(first, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. Neither answer counts for more than the other, so the result is not confirmed, and the run is not marked as failed for it.`, verdicts);
   }
-  return unsettled(first, "model_unconfirmed", codes.unconfirmed, `Asked twice with the same evidence, the model never judged that this result answers the request and never twice that it does not: it judged ${said(first)}, and then ${said(second)} (${second.code}). That is not proof the run failed, so the result is unverified and the run keeps the status its steps earned.`, verdicts);
+  return unsettled(first, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence, and neither answer was that it does what was asked, nor were both that it does not: the first was ${said(first)}, the second ${said(second)} (${second.code}). That does not show the run went wrong, so the result is not confirmed, and the run is not marked as failed for it.`, verdicts);
 }
 
-/** A verdict in Core's own words. */
+/** An answer in Core's own words, as it finishes "the first was ...". */
 function said(verification: AutomationStudioResultVerification): string {
-  if (verification.basis === "model_unavailable") return "nothing, because the call did not come back usable";
-  if (verification.basis === "model_silent") return "nothing, because the reply carried no verdict";
-  if (verification.verdict === "does_not_answer") return "that it does not answer the request";
-  if (verification.verdict === "answers") return "that it answers the request";
-  return "that it could not tell";
+  if (verification.basis === "model_unavailable") return "no answer, because the check did not come back usable";
+  if (verification.basis === "model_silent") return "no answer, because the reply gave none";
+  if (verification.verdict === "does_not_answer") return "that it does not do what was asked";
+  if (verification.verdict === "answers") return "that it does what was asked";
+  return "that it could not be told";
 }
 
 /**

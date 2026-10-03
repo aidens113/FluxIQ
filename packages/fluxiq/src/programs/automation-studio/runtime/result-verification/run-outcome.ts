@@ -80,7 +80,12 @@ import { automationStudioResultVerificationFailsRun, type AutomationStudioResult
 import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultVerificationWithinDeadline } from "./deadline.ts";
 import { automationStudioRecordedResultRepair } from "./repair-directive.ts";
-import { summarizeAutomationStudioRunResult, type AutomationStudioResultRecordSetInput } from "./result-summary.ts";
+import {
+  automationStudioResultEndViewRead,
+  summarizeAutomationStudioRunResult,
+  type AutomationStudioResultEndView,
+  type AutomationStudioResultRecordSetInput
+} from "./result-summary.ts";
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES, verifyAutomationStudioRunResult } from "./verify.ts";
 import { automationStudioZeroProviderGate } from "./zero-provider-run.ts";
@@ -133,6 +138,16 @@ export type AutomationStudioResultVerificationPorts = {
   resolveProvider?: ((input: { projectId: string; flowId: string }) => Promise<AutomationStudioResultVerificationProvider | undefined>) | undefined;
   /** The bound domain's declared denied keys. Absent means nobody declared any, and no row is sampled. */
   deniedEvidenceKeys?: readonly string[] | undefined;
+  /**
+   * Reads the view of its target -- the page -- the run ended on, as the domain
+   * produces it, for the check to judge from (t174-w87; run
+   * `run-murwd8le-79e735a8`'s checks judged a cart from status rows, with
+   * `Cart (3)` on a page they never saw). Nothing in a run's record holds it:
+   * a step's result says what the step did, not what the page then showed.
+   * Absent, or answering nothing, the check is made without it; a read that
+   * fails too, said as withheld, never as a verification that did not finish.
+   */
+  readEndView?: ((input: { projectId: string; runId: string; flowId: string }) => Promise<AutomationStudioResultEndView | undefined>) | undefined;
   /**
    * Says what this check found on the run's own conversation thread.
    *
@@ -484,9 +499,13 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
   // `run-munq5s8x-6d620cdf`'s judge "8 records stored" of a read that had
   // already paged and filtered, so it advised adding both.
   const runDetail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
+  const read = input.ports.readEndView;
+  const ended = await automationStudioResultEndViewRead(read && (() => read({ projectId: input.projectId, runId: session.runId, flowId: session.flowId })));
   const summary = summarizeAutomationStudioRunResult({
     recordSets,
-    ...(input.flow ? { flowNodes: input.flow.nodes } : {}),
+    // In the order the Flow runs them, never as its store lists the nodes (s1, s10, s11 ... s9: run-murwd8le's Cause 8).
+    ...(input.flow ? { flowNodes: input.flow.nodes, flowEdges: input.flow.edges } : {}),
+    ...ended,
     ...(runDetail?.actionAttempts ? { actionAttempts: attemptsOfThisSession(runDetail.actionAttempts, session) } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
   });

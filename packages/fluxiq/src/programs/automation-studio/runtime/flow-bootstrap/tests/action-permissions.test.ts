@@ -13,6 +13,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionDeclaration, AutomationStudioActionPermissionVerdict, AutomationStudioInstructedConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../parking/index.ts";
 import { automationStudioFlowBootstrapActionPermissions } from "../action-permissions.ts";
+import { automationStudioInstructedActs } from "../instructed-acts/index.ts";
 
 const CHECKOUT: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Continue to checkout", kind: "button" }, verb: "press" };
 const PLACE: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Place order", kind: "button" }, verb: "press" };
@@ -191,5 +192,98 @@ describe("the cross-check, said in the person's words", () => {
     expect(run.asks.opened[0]).toMatchObject({ kind: "confirm", parks: false, consequences: ["move_money", "modify_existing", "create_new"] });
     expect(run.asks.opened[0]!.text).toBe("Your instruction asks to move money (\"place the order\"), change something that exists (\"choose Space Grey\") and create something new (\"add it to the cart\"), but nothing FluxIQ did while building this Flow said it would. Apply it as it stands?");
     expect(run.asks.opened[0]!.text).not.toMatch(/move_money|modify_existing|create_new|\d+ action/u);
+  });
+});
+
+/**
+ * Which of the instruction's acts it asks to last, read before the build's
+ * first test so the test does not repeat them (t174-w83). Run
+ * `run-murwd8le-79e735a8` (Cause 3) read the instruction only after the build,
+ * from the cross-check (0070), so its Add to cart -- declared `[]` -- was
+ * pressed again by both tests (0045, 0068). The quotes are that run's.
+ */
+describe("the instruction's lasting acts, read once before the first test", () => {
+  const DIGEST = `sha256:${"0".repeat(64)}`;
+  const READ: AutomationStudioInstructedConsequence[] = [
+    { consequence: "create_new", instructionId: "instruction.goal", instructionDigest: DIGEST, quote: "put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart" },
+    { consequence: "modify_existing", instructionId: "instruction.goal", instructionDigest: DIGEST, quote: "Collect that store's coupon while you are on the item" }
+  ];
+  const ACTS = [
+    { id: "a1", quote: "put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart: Space Grey, the 7-in-1 version, shipped from Spain" },
+    { id: "a2", quote: "Collect that store's coupon while you are on the item" }
+  ];
+  const NOTHING: AutomationStudioActionDeclaration = { consequences: [], control: { name: "Add to cart", kind: "button" }, verb: "press" };
+
+  function reading(instructed: readonly AutomationStudioInstructedConsequence[] | Error) {
+    let derived = 0;
+    const permissions = automationStudioFlowBootstrapActionPermissions({
+      permittedConsequences: [],
+      instructionIds: ["instruction.goal"],
+      deriveInstructed: async () => {
+        derived += 1;
+        if (instructed instanceof Error) throw instructed;
+        return instructed;
+      },
+      executeTool: async (call) => {
+        const verdict = await call.permission!(call.value.declaration as unknown as AutomationStudioActionDeclaration);
+        return { kind: "llm_evidence_tool_execution", evidence: { pressed: verdict.permitted }, effectApplied: verdict.permitted };
+      }
+    });
+    return { permissions, derived: () => derived };
+  }
+
+  it("names every act whose words one of the read's quotes contains, or is contained in", async () => {
+    const run = reading(READ);
+    expect([...await run.permissions.instructedLastingActs(ACTS)].sort()).toEqual(["a1", "a2"]);
+  });
+
+  it("names both acts Core reads from that run's own instruction", async () => {
+    const instruction = "On Farbazaar, put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart: Space Grey, the 7-in-1 version, shipped from Spain. Collect that store's coupon while you are on the item. Do not buy anything.";
+    const acts = automationStudioInstructedActs(instruction);
+    expect(acts.map((act) => act.id)).toEqual(["a1", "a2"]);
+    const run = reading(READ);
+    expect([...await run.permissions.instructedLastingActs(acts)].sort()).toEqual(["a1", "a2"]);
+  });
+
+  it("matches across case and spacing, and leaves out an act no quote overlaps", async () => {
+    const run = reading(READ);
+    const acts = [
+      { id: "a1", quote: "PUT three of the  Voltbay USB-C hub\nsold by Voltbay Official Store in my cart" },
+      { id: "a2", quote: "open my saved items" }
+    ];
+    expect([...await run.permissions.instructedLastingActs(acts)]).toEqual(["a1"]);
+  });
+
+  it("never names a choice of an act, which the steps after it stand on", async () => {
+    const run = reading(READ);
+    expect([...await run.permissions.instructedLastingActs([{ id: "a1.colour", quote: ACTS[0]!.quote }])]).toEqual([]);
+  });
+
+  it("reads the instruction once: the cross-check after the build reuses it, and no second call is made", async () => {
+    const run = reading(READ);
+    await run.permissions.instructedLastingActs(ACTS);
+    expect(run.derived()).toBe(1);
+    // The order `permission-outcome.ts` keeps: what the instruction asks for is known before the build ends, and stays the same after the cross-check.
+    expect(run.permissions.instructed()).toEqual(READ);
+    await run.permissions.executeTool({ callId: "call.add", toolId: "example.press", value: { declaration: NOTHING } as unknown as JsonObject });
+    const check = await run.permissions.crossCheck();
+    expect(check?.verdict).toBe("undeclared");
+    expect(check?.undeclared).toEqual(["modify_existing", "create_new"]);
+    expect(run.derived()).toBe(1);
+    expect(run.permissions.instructed()).toEqual(READ);
+  });
+
+  it("makes no call for an instruction with no acts", async () => {
+    const run = reading(READ);
+    expect([...await run.permissions.instructedLastingActs([])]).toEqual([]);
+    expect(run.derived()).toBe(0);
+  });
+
+  it("names nothing when the read fails, and does not try again at the cross-check", async () => {
+    const run = reading(new Error("provider down"));
+    expect([...await run.permissions.instructedLastingActs(ACTS)]).toEqual([]);
+    await run.permissions.executeTool({ callId: "call.add", toolId: "example.press", value: { declaration: NOTHING } as unknown as JsonObject });
+    await run.permissions.crossCheck();
+    expect(run.derived()).toBe(1);
   });
 });
