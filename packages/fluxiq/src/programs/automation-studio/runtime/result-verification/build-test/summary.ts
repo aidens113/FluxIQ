@@ -18,7 +18,11 @@
 //     keys and every locator-shaped string left out. A step that pressed
 //     "Add to cart" on the towels' page says so; one that never named the
 //     napkins does not.
-//   - `outcome`, from the test that passed, or `not_run`.
+//   - `outcome`, from the test that passed, or `not_run`, and `excused` beside
+//     an outcome that did not hold when the Flow passes over that step anyway,
+//     with why (`../../flow-draft/excused.ts`). Live run `run-murzln6g-11debe1d`
+//     showed an excused step as plain `failed`, and the judge asked to fix or
+//     remove it (t193 1002-M, C6).
 //   - `observed`, what the test saw for a step that reads (the rows) or a step
 //     it only checked, screened like any other evidence. A replayed list read
 //     names its rows, and the rows each condition left out by itself, by label
@@ -56,6 +60,8 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import {
+  automationStudioFlowDraftConditionalStepReasons,
+  automationStudioFlowDraftExcusedWords,
   automationStudioFlowDraftReplayOutcomeWord,
   automationStudioFlowDraftStepById,
   automationStudioFlowDraftStepId,
@@ -113,6 +119,18 @@ const carriedStep = automationStudioFlowDraftStepCarried;
  */
 const NOT_TARGET_WORDS = new Set(["consequences", "node", AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY]);
 
+// **A repeated step's template row is left out by the domain's declaration.**
+// A step repeated over another step's rows is given each kept row in turn, and
+// that row replaces the one it was built on, so the press acts on the control
+// inside each row (the domain's row scoping). The row it was built on is then
+// only its template, and naming it told the judge of run `run-murwcaj0` the
+// loop pressed one remembered card ("not a per-row confirm"). So a repeated
+// step's words leave out the keys under which its argument carries that row
+// and say where its control is found instead; an unrepeated step keeps them,
+// since there it is the row the step acts on. Which keys those are is the
+// domain's to say (`rowContextKeys`, declared beside `deniedEvidenceKeys`):
+// Core names no domain's key, and with none declared every word is kept.
+
 /**
  * A machine-minted key rather than a word: one unbroken run of letters, digits
  * and underscores, long, with several underscores and digits in it -- the
@@ -142,6 +160,12 @@ export function automationStudioBuildTestResultSummary(input: {
   result?: JsonObject | undefined;
   startLocation?: string | undefined;
   deniedEvidenceKeys?: readonly string[] | undefined;
+  /**
+   * The keys under which the domain's step arguments carry the row a control
+   * was found in, as the domain declares them (see the comment above
+   * `machineMinted`): left out of a repeated step's words. Absent, none are.
+   */
+  rowContextKeys?: readonly string[] | undefined;
   /** The domain's declared view keys, left out of every observation (`./observation.ts`). */
   observedStateKeys?: readonly string[] | undefined;
   /** What the completion check found the accepted Flow cannot do (`AutomationStudioBuildTestNote`). */
@@ -158,10 +182,12 @@ export function automationStudioBuildTestResultSummary(input: {
   const shown = new Map<string, JsonValue>();
   const rowsOf = (step: AutomationStudioFlowDraftStep): readonly string[] | undefined =>
     automationStudioBuildTestSpanRows(input.steps, (id) => shown.get(id)).get(automationStudioFlowDraftStepId(step));
+  const reasons = automationStudioFlowDraftConditionalStepReasons(input.steps);
   const steps = proposed.map((step): AutomationStudioBuildTestStep => {
     const outcome = input.report ? outcomeOf(step, input.report.verdict.outcomes) : undefined;
+    const excused = outcome ? excusedWords(outcome, reasons.get(automationStudioFlowDraftStepId(step))) : undefined;
     const checked = outcome?.mode === "verify";
-    const words = denied === undefined ? [] : targetWords(step, denied);
+    const words = denied === undefined ? [] : targetWords(step, denied, input.steps, input.rowContextKeys ?? []);
     const claims = [...new Set([...(step.acts ?? []), ...claimed.filter((claim) => names(claim.step, step)).map((claim) => claim.action)])]
       .filter((claim) => claim.trim() && !automationStudioLocatorShapedText(claim));
     const runs = step.routing ? routingValue(step.routing, input.steps) : undefined;
@@ -185,6 +211,7 @@ export function automationStudioBuildTestResultSummary(input: {
       outcome: outcome ? outcomeWord(outcome) : "not_run",
       ...(checked ? { withheld: true as const } : {}),
       ...(outcome?.withheldBy !== undefined ? { withheldBy: outcome.withheldBy } : {}),
+      ...(excused ? { excused } : {}),
       ...(runs ? { runs } : {}),
       ...(carriedStep(step) ? { carried: true as const } : {}),
       ...(observed?.value !== undefined ? { observed: observed.value } : {}),
@@ -256,6 +283,21 @@ function outcomeOf(step: AutomationStudioFlowDraftStep, outcomes: readonly Autom
   return byId ?? outcomes.find((outcome) => outcome.stepId === undefined && outcome.step === step.position) ?? step.replayed;
 }
 
+/**
+ * Why the test passed over a step that did not hold, in Core's words: as the
+ * replay excused it, else by what the draft now says of the step -- a step the
+ * test itself made optional (`madeOptional`) is excused by the routing that
+ * gave it, and its outcome predates it -- else by a withheld effect. A step
+ * of a repeat the test ran once per row (`passes`, t252) is not one the Flow
+ * may not run, so the draft's routing never excuses it: only a withheld effect.
+ */
+function excusedWords(outcome: AutomationStudioFlowDraftReplayOutcome, reason: ReturnType<ReturnType<typeof automationStudioFlowDraftConditionalStepReasons>["get"]>): string | undefined {
+  if (outcome.status === "replayed") return undefined;
+  const routed = outcome.passes === undefined ? reason : undefined;
+  const excused = outcome.excused ?? routed ?? (outcome.withheldBy !== undefined ? "withheld" : undefined);
+  return excused ? automationStudioFlowDraftExcusedWords({ ...outcome, excused }) : undefined;
+}
+
 function outcomeWord(outcome: AutomationStudioFlowDraftReplayOutcome): AutomationStudioBuildTestStep["outcome"] {
   const word = automationStudioFlowDraftReplayOutcomeWord(outcome);
   return OUTCOME_WORDS.has(word) ? word as AutomationStudioBuildTestStep["outcome"] : outcome.status;
@@ -274,10 +316,13 @@ function observationsOf(step: AutomationStudioFlowDraftStep, observations: Autom
  * The step's own words: every string it ran with, then every string it was
  * given, once each, in that order. Never under a denied key, never under
  * Core's executable-target keys (a handle, or what a handle resolved to), and
- * never a string shaped like a locator or a credential.
+ * never a string shaped like a locator or a credential. A repeated step's
+ * words also leave out the domain's declared row keys (`rowKeys`).
  */
-function targetWords(step: AutomationStudioFlowDraftStep, denied: readonly string[]): string[] {
+function targetWords(step: AutomationStudioFlowDraftStep, denied: readonly string[], steps: readonly AutomationStudioFlowDraftStep[], rowKeys: readonly string[]): string[] {
   const deniedKeys = new Set(denied.map(automationStudioEvidenceKey));
+  const repeated = step.routing?.kind === "repeat";
+  const rowKeySet = new Set(rowKeys.map(automationStudioEvidenceKey));
   const words: string[] = [];
   const collect = (value: unknown): void => {
     if (typeof value === "string") {
@@ -293,11 +338,16 @@ function targetWords(step: AutomationStudioFlowDraftStep, denied: readonly strin
     if (!value || typeof value !== "object") return;
     for (const [key, item] of Object.entries(value)) {
       if (deniedKeys.has(automationStudioEvidenceKey(key)) || automationStudioExecutableTargetKey(key) || NOT_TARGET_WORDS.has(key)) continue;
+      if (repeated && rowKeySet.has(automationStudioEvidenceKey(key))) continue;
       collect(item);
     }
   };
   collect(step.ranWith);
   collect(step.input);
+  if (step.routing?.kind === "repeat") {
+    const over = automationStudioFlowDraftStepById(steps, step.routing.over)?.position;
+    words.push(over === undefined ? "in each row its listing keeps" : `in each row step ${over} keeps`);
+  }
   return words;
 }
 

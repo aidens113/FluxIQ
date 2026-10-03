@@ -119,9 +119,38 @@ describe("how much of what was asked the ending says is done", () => {
     expect(automationStudioFlowBootstrapProgressSaid(checklist, undefined)).toMatch(/^3 of the 4 things you asked have a step in the Flow, not yet shown/u);
   });
 
-  it("calls worked only what worked when the Flow was run, and says the rest did not", () => {
-    expect(automationStudioFlowBootstrapProgressSaid(checklist, { tested: "replay_failed", proven: 1 })).toBe("1 of the 4 things you asked worked when the Flow was run from its start, and 2 more have a step that did not work in that run; still to do: \"two packs\": nothing I tried did it.");
-    expect(automationStudioFlowBootstrapProgressSaid(checklist, { tested: "replayed_clean", proven: 3 })).toMatch(/^3 of the 4 things you asked worked when the Flow was run from its start; still to do/u);
+  it("says which steps ran when the Flow was run, and that the rest did not, without calling them worked unjudged", () => {
+    expect(automationStudioFlowBootstrapProgressSaid(checklist, { tested: "replay_failed", proven: 1 })).toBe("1 of the 4 things you asked has a step that ran, or could run, when the Flow was run from its start, and 2 more have a step that did not work in that run; still to do: \"two packs\": nothing I tried did it.");
+    expect(automationStudioFlowBootstrapProgressSaid(checklist, { tested: "replayed_clean", proven: 3 })).toMatch(/^3 of the 4 things you asked have a step that ran, or could run, when the Flow was run from its start; still to do/u);
+  });
+
+  // t193 R2-C3 (`run-murzln6g-11debe1d`): "5 of the 6 things you asked worked when
+  // the Flow was run from its start", then "what it did was judged not to be what
+  // you asked". A proven step may only have been checked, not done
+  // (`../../../flow-draft/verify-only.ts`), and the judge said the whole was wrong.
+  it("never says worked after the Flow was judged not to do what was asked", () => {
+    const said = automationStudioFlowBootstrapProgressSaid(checklist, { tested: "replayed_clean", proven: 3, judge: { verdict: "no" } });
+    expect(said).not.toContain("worked");
+    expect(said).toBe("3 of the 4 things you asked have a step that ran, or could run, when the Flow was run from its start, but the Flow was judged not to do what you asked; still to do: \"two packs\": nothing I tried did it.");
+    expect(automationStudioFlowBootstrapProgressSaid(checklist, { tested: "replayed_clean", proven: 3, judge: { verdict: "not_judged" } }))
+      .toMatch(/^3 of the 4 things you asked have a step that ran, or could run, when the Flow was run from its start, but the Flow was not judged to do what you asked; still to do/u);
+  });
+
+  it("says worked where the Flow was judged to do what was asked", () => {
+    expect(automationStudioFlowBootstrapProgressSaid(checklist, { tested: "replayed_clean", proven: 3, judge: { verdict: "yes" } }))
+      .toMatch(/^3 of the 4 things you asked worked when the Flow was run from its start; still to do/u);
+  });
+
+  // Live run `run-murz83zy-5030820f` asked one thing and was told "1 of the 1
+  // things you asked worked when the Flow was run from its start".
+  it("says the one thing asked as one thing, never \"1 of the 1 things\"", () => {
+    const one = [{ id: "a1", verb: "confirm", quote: "confirm everyone with five mutual friends", done: 1 }];
+    // "Worked" needs the judge's yes (lane B's R2-C3, merged with t195-w37 on 2026-10-03).
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replayed_clean", proven: 1, judge: { verdict: "yes" } })).toBe("The one thing you asked worked when the Flow was run from its start.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replayed_clean", proven: 1 })).toBe("The one thing you asked has a step that ran, or could run, when the Flow was run from its start.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replayed_clean", proven: 1, judge: { verdict: "no" } })).toBe("The one thing you asked has a step that ran, or could run, when the Flow was run from its start, but the Flow was judged not to do what you asked.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replay_failed", proven: 0 })).toBe("The one thing you asked has a step that did not work when the Flow was run from its start.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "not_tested" })).toBe("The one thing you asked has a step in the Flow, not yet shown to work by running it.");
   });
 
   it("says none is done when no step is named, and nothing when nothing was asked", () => {

@@ -31,6 +31,7 @@
 // own id and the translation happens once, where the amendment is applied
 // (`./amendment.ts`).
 
+import { automationStudioFlowDraftStepAnsweredInterruption } from "./interruption.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
 
@@ -101,33 +102,65 @@ export function automationStudioFlowDraftRoutingReferences(routing: AutomationSt
  * never blocks -- and a step *not* named here still does, because an
  * unconditional step that does not replay is a Flow that does not run.
  *
- * Five kinds of step are in it: one the model marked `optional`, one it made
+ * Six kinds of step are in it: one the model marked `optional`, one it made
  * conditional with `only_if`, the check that guards such a step (the check
  * failing is how the skip happens), a step some other step falls back to,
- * which by construction runs only when that step failed, and every step of a
- * span that repeats. A repeated step runs once per row, or while a check
- * holds -- zero times or many, never "once, on a fresh start" -- and the row the
+ * which by construction runs only when that step failed, every step of a
+ * span that repeats, and one the host says answered an interruption
+ * (`./interruption.ts`), which the Flow is written with as optional. A
+ * repeated step runs once per row, or while a check holds -- zero times or
+ * many, never "once, on a fresh start" -- and the row the
  * build acted on is already done on a site that remembers it: the Confirm it
  * pressed is gone. Replayed as an unconditional step it fails or is
  * unreproducible every time, and in live run `run-munq51ik-a7ebd077` that
- * refused nine of ten completions of a correct loop (lane t195).
+ * refused nine of ten completions of a correct loop (lane t195). In live run
+ * `run-murwdp4f-35f976d2` an interruption step judged mandatory refused the
+ * Flow twice on that step alone, while every later step replayed: the Flow it
+ * was written into would have skipped it.
  */
 export function automationStudioFlowDraftConditionalStepIds(
   steps: readonly AutomationStudioFlowDraftStep[]
 ): ReadonlySet<string> {
-  const conditional = new Set<string>();
+  return new Set(automationStudioFlowDraftConditionalStepReasons(steps).keys());
+}
+
+/**
+ * Why the Flow would not always run a step, one word per kind above:
+ * `interruption` (the host says it answered one), `optional`, `only_if`,
+ * `check` (the step an `only_if` runs on), `fallback` (the step an
+ * `on_failed` falls back to) and `repeat` (a member of a repeating span).
+ */
+export type AutomationStudioFlowDraftConditionalReason = "interruption" | "optional" | "only_if" | "check" | "fallback" | "repeat";
+
+/**
+ * The steps a Flow built from this draft would not always run, each with why:
+ * the same steps as `automationStudioFlowDraftConditionalStepIds`, which is
+ * read from this, so the two can never disagree. A step with more than one
+ * reason keeps the first found, in draft order. The reason is what a test that
+ * passed over such a step says of it (`./excused.ts`): "failed", with nothing
+ * more, was read by the judge as a step to fix or remove (t193 1002-M,
+ * `run-murzln6g-11debe1d`, C6).
+ */
+export function automationStudioFlowDraftConditionalStepReasons(
+  steps: readonly AutomationStudioFlowDraftStep[]
+): ReadonlyMap<string, AutomationStudioFlowDraftConditionalReason> {
+  const reasons = new Map<string, AutomationStudioFlowDraftConditionalReason>();
+  const add = (id: string, reason: AutomationStudioFlowDraftConditionalReason): void => {
+    if (!reasons.has(id)) reasons.set(id, reason);
+  };
   for (const step of steps) {
+    if (automationStudioFlowDraftStepAnsweredInterruption(step)) add(automationStudioFlowDraftStepId(step), "interruption");
     const routing = step.routing;
     if (!routing) continue;
-    if (routing.kind === "optional") conditional.add(automationStudioFlowDraftStepId(step));
+    if (routing.kind === "optional") add(automationStudioFlowDraftStepId(step), "optional");
     if (routing.kind === "only_if") {
-      conditional.add(automationStudioFlowDraftStepId(step));
-      conditional.add(routing.check);
+      add(automationStudioFlowDraftStepId(step), "only_if");
+      add(routing.check, "check");
     }
-    if (routing.kind === "on_failed") conditional.add(routing.to);
-    if (routing.kind === "repeat") for (const member of repeatedSpan(steps, step, routing.through)) conditional.add(member);
+    if (routing.kind === "on_failed") add(routing.to, "fallback");
+    if (routing.kind === "repeat") for (const member of repeatedSpan(steps, step, routing.through)) add(member, "repeat");
   }
-  return conditional;
+  return reasons;
 }
 
 /** The ids of a repeating span: this step through `through`, in draft order; just this step when `through` is not after it. */

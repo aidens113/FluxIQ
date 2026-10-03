@@ -9,6 +9,9 @@ import type { AutomationStudioBuildTestReportInput } from "../summary.ts";
 /** The web domain's declared keys, as it declares them. */
 export const DENIED = ["html", "innerHtml", "outerHtml", "pageSource", "cookies", "headers", "selector"];
 
+/** The keys the web domain declares hold the row a control was found in (`rowContextKeys`), as it declares them. */
+export const ROW_CONTEXT = ["record"];
+
 export const SITE = "http://127.0.0.1:61777/scenarios/bigbox-retail/";
 
 type Element = { selector: string; accessibleName?: string; visibleText?: string; context?: { record: { text: string } } };

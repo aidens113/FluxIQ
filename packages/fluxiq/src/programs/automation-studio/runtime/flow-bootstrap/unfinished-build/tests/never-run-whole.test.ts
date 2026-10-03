@@ -170,7 +170,9 @@ describe("a round whose Flow holds steps that never ran in this build", () => {
     expect(outcome.ending.message).toContain("The Flow as it stands (3 steps) was never run whole from its start: steps 1 and 2 came from the Flow being changed and were not run again in this build, so it was never tested or judged.");
   });
 
-  it("still ends not doable on a measured round that got no further than the measured round before it", async () => {
+  // Merged with t195-w37 (2026-10-03): a measured stall still ends the build, but "not finished" -- "not doable"
+  // only when the judge says what was asked can no longer be had.
+  it("still ends the build on a measured round that got no further than the measured round before it, as not finished", async () => {
     const whole = () => [ran(1, "d1"), ran(2, "d2")];
     const { input } = harness([
       (request) => stall(request, whole()),
@@ -179,7 +181,7 @@ describe("a round whose Flow holds steps that never ran in this build", () => {
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
-    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "not_doable", tried: { noRoute: { kind: "no_progress" } } });
+    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "not_finished", tried: { noRoute: { kind: "no_progress" } } });
   });
 });
 

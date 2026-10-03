@@ -46,6 +46,16 @@
 // is the step before, the span is this step alone -- so the model writes a
 // field only when it means something other than that.
 //
+// **One decision's amendments are read in order, each against the draft the
+// one before it left.** A `reorder` renumbers the draft at once (`moveStep`),
+// so an amendment after it in the same decision names steps by their new
+// numbers. Live run `run-murz83zy-5030820f` (R8) pressed its act at step 9 and
+// listed the rows at step 18, and sent `9 repeat over 18` six times: a listing
+// after its act has to be moved before it first, `18 reorder to 9` and then
+// `10 repeat over 9` in one decision, and the refusal now carries what that
+// needs (`over`, `through`) so its telling can write both with the real numbers
+// (`../llm/draft-amendment-feedback.ts`).
+//
 // `settings` rides alongside any of them, because "keep this step, but with
 // this wait condition" is one thought and should not cost two calls.
 //
@@ -154,6 +164,12 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    */
   over?: number;
   /**
+   * `over_not_before` only, when `over` came after the act and the repeat named
+   * a `through`: that step, so the telling can say where it stands once the
+   * listing is moved before the act (live run `run-murz83zy-5030820f`, R8).
+   */
+  through?: number;
+  /**
    * `act_already_named` only: the act the amendment named, so the telling can
    * say whether the checklist already shows it done and, when it does, which
    * acts are still to do (`../llm/draft-amendment-feedback.ts`). Live run
@@ -188,7 +204,7 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA: JsonObject = {
     step: { type: "integer", minimum: 1, description: "The step number shown in the draft." },
     change: {
       enum: [...AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES],
-      description: "add: put this step you ran into the Flow -- a step you run is not in the Flow until you add it -- at the position given by to when given, and act names the act it does. drop: leave this step out of the result. exploratory: I did this only to look around. keep: put it back in, and make it unconditional again (it clears optional, only_if and on_failed, never repeat, and nothing when it carries act). reorder: move it to the position given by to. rerun: do it again with input's changes; the run replaces this step. optional: the Flow carries on when this step fails, for something that is not always there. only_if: run this step only when the step before it succeeded, or the one given by check. on_failed: when this step fails, run the step given by to instead, then carry on. repeat: do this step, through the one given by through, once for each row the step given by over produced, or while that step keeps succeeding. To do one act to every listed item, three steps in this order: the listing, with a where that keeps only the items to act on (every row it returns is acted on; rerun it only when its where is missing or wrong, never to run it again as it stands); the act done to one row it kept -- that row's own control, never one on a row it leaves out -- added with its act; then repeat on that act, with over the listing. The repeat goes on the act, never on the listing itself; each pass acts on its own row. Drop any other step that does the same act to a single row. bind: make a step in the Flow general without running it again: input names parameters it already has, each set to a binding -- {\"$input\": <name>, \"test\": <value>} for a value the person gave that would change between runs (test is that value, and defaults to the one the step ran with), {\"$row\": <field>} for a field of the row a repeat is on (only for a step inside a repeat). The run that worked is kept as evidence."
+      description: "add: put this step you ran into the Flow -- a step you run is not in the Flow until you add it -- at the position given by to when given, and act names the act it does. drop: leave this step out of the result. exploratory: I did this only to look around. keep: put it back in, and make it unconditional again (it clears optional, only_if and on_failed, never repeat, and nothing when it carries act). reorder: move it to the position given by to. rerun: do it again with input's changes; the run replaces this step. optional: the Flow carries on when this step fails, for something that is not always there. only_if: run this step only when the step before it succeeded, or the one given by check. on_failed: when this step fails, run the step given by to instead, then carry on. repeat: do this step, through the one given by through, once for each row the step given by over produced, or while that step keeps succeeding. To do one act to every listed item, three steps in this order: the listing, with a where that keeps only the items to act on (every row it returns is acted on; rerun it only when its where is missing or wrong, never to run it again as it stands); the act done to one row it kept -- that row's own control, never one on a row it leaves out -- added with its act; then repeat on that act, with over the listing. The repeat goes on the act, never on the listing itself; each pass acts on its own row. When the listing comes after the act, reorder the listing to the act's position first, then repeat the act, which the move put one later: the amendments of one decision are read in order, each against the numbers the one before it left. Drop any other step that does the same act to a single row. bind: make a step in the Flow general without running it again: input names parameters it already has, each set to a binding -- {\"$input\": <name>, \"test\": <value>} for a value the person gave that would change between runs (test is that value, and defaults to the one the step ran with), {\"$row\": <field>} for a field of the row a repeat is on (only for a step inside a repeat). The run that worked is kept as evidence."
     },
     settings: { type: "object", description: "Settings to carry on the step, merged over any it already has." },
     to: { type: "integer", minimum: 1, description: "add or reorder: the position to put the step at. on_failed: the step to run when this one fails. Counting from 1." },
@@ -277,7 +293,7 @@ export function applyAutomationStudioFlowDraftAmendments(
     if (ROUTING_CHANGES.has(amendment.change)) {
       const routed = routeStep(steps, step, amendment);
       if (routed.ok) applied += 1;
-      else refused.push({ step: amendment.step, reason: routed.reason, ...(routed.over === undefined ? {} : { over: routed.over }) });
+      else refused.push({ step: amendment.step, reason: routed.reason, ...(routed.over === undefined ? {} : { over: routed.over }), ...(routed.through === undefined ? {} : { through: routed.through }) });
       continue;
     }
     const disposition = amendment.change === "keep" || amendment.change === "add" ? "kept" : amendment.change === "drop" ? "dropped" : "exploratory";
@@ -337,7 +353,7 @@ function routeStep(
   steps: readonly AutomationStudioFlowDraftStep[],
   step: AutomationStudioFlowDraftStep,
   amendment: AutomationStudioFlowDraftAmendment
-): { ok: true } | { ok: false; reason: AutomationStudioFlowDraftAmendmentRefusal["reason"]; over?: number } {
+): { ok: true } | { ok: false; reason: AutomationStudioFlowDraftAmendmentRefusal["reason"]; over?: number; through?: number } {
   const named = (position: number | undefined): AutomationStudioFlowDraftStep | undefined =>
     position === undefined ? undefined : steps.find((candidate) => candidate.position === position);
   const before = (): AutomationStudioFlowDraftStep | undefined => automationStudioFlowDraftPrecedingProposedStep(steps, step);
@@ -364,7 +380,14 @@ function routeStep(
     // `run-munuj2os-c205ee3a` -- is told that, not that a position is missing.
     // The step it named as over rides along, so the telling can name the
     // listing and the press a loop over it needs by number (live run 37).
-    if (over.position >= step.position) return { ok: false, reason: "over_not_before", over: over.position };
+    // A listing after the act (`9 repeat over 18`, live run
+    // `run-murz83zy-5030820f`) has to be moved before it, which shifts the act
+    // and a `through` after it: the through rides along so the telling can say
+    // where it stands then.
+    if (over.position >= step.position) {
+      const shifts = over.position > step.position && amendment.through !== undefined && through !== step;
+      return { ok: false, reason: "over_not_before", over: over.position, ...(shifts ? { through: through.position } : {}) };
+    }
     if (through.position < step.position) return { ok: false, reason: "no_such_position" };
     routing = { kind: "repeat", through: automationStudioFlowDraftStepId(through), over: automationStudioFlowDraftStepId(over) };
   }

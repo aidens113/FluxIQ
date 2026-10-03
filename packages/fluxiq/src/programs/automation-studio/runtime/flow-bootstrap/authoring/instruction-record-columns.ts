@@ -28,6 +28,18 @@
 // and to the judge for a stored answer whose columns miss one
 // (`result-verification/read-account/unread-columns.ts`). Names come only from
 // the instruction, never from the page.
+//
+// **A read that gives every column, but only before the last act (run
+// `run-murwcaj0-40e56557`, R4).** The instruction asked the build to confirm
+// requests, then give a table of every request the list *now* shows as
+// accepted, with columns name and mutualFriends. The draft's only read of both
+// columns was step 7, before the confirm at step 10, so the unread-column note
+// above had nothing to say; the build completed, the judge refuted the table as
+// the page before the confirms, and a whole repair round was spent. So the
+// same door says a second thing, never with the first: when every read that
+// gives all the named columns runs before the draft's last step that does an
+// instructed act, it says so and names that act step -- never the read, for
+// the reason above. Information only, like the first.
 import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
 import { authoringFieldId, authoringKey } from "./keys.ts";
 
@@ -74,28 +86,54 @@ export function automationStudioFlowBootstrapUnreadColumnsSentence(input: {
 }
 
 /**
- * "The instruction asks for a column "mutualFriends" that no read in the draft
- * gives.", or nothing when no read has fields, the instruction names no
- * column, or some read gives every named one. Said beside the build's draft.
+ * The one note beside the build's draft about the instruction's named columns,
+ * or nothing. It is one of two sentences, and never both: the unread-column
+ * sentence when some named column no read of the draft gives, and otherwise
+ * the before-the-last-act sentence (`readsBeforeLastActSentence`). Said beside
+ * the build's draft (`llm/harness-options/draft-acts.ts`).
  *
  * **About the draft, never about one read (run `run-murdouox-c5294247`, R4).**
- * It used to be said per read and to name the read's step. A draft whose only
- * read was the filter listing a repeat runs over was told "no field of step 12
- * reads mutualFriends", and the model spent its last four decisions reworking
- * that listing instead of adding the read after the confirms the table needed.
- * A column is missing only when no read of the draft gives it, and saying so
- * names no step: it is true whichever read the table should come from, and it
- * points the model at no read to rework.
+ * The unread-column sentence used to be said per read and to name the read's
+ * step. A draft whose only read was the filter listing a repeat runs over was
+ * told "no field of step 12 reads mutualFriends", and the model spent its last
+ * four decisions reworking that listing instead of adding the read after the
+ * confirms the table needed. A column is missing only when no read of the
+ * draft gives it, and saying so names no step: it is true whichever read the
+ * table should come from, and it points the model at no read to rework.
  */
 export function automationStudioFlowBootstrapDraftUnreadColumnsSentence(input: {
   instructionText: string | undefined;
-  /** The field keys of each read the draft holds. */
-  reads: readonly (readonly string[])[];
+  /** Each read the draft holds: its field keys, and its step when the caller knows it. */
+  reads: readonly { step?: number; fieldKeys: readonly string[] }[];
+  /** The draft's last kept step that does an instructed act, when it has one. */
+  lastActStep?: number | undefined;
 }): string | undefined {
-  const fieldKeys = [...new Set(input.reads.flat())];
+  const fieldKeys = [...new Set(input.reads.flatMap((read) => read.fieldKeys))];
   if (!fieldKeys.length) return undefined;
   const unmatched = unreadNamedColumns(input.instructionText, fieldKeys);
-  return unmatched.length ? unreadColumnsSentence(unmatched, "no read in the draft gives") : undefined;
+  if (unmatched.length) return unreadColumnsSentence(unmatched, "no read in the draft gives");
+  return readsBeforeLastActSentence(input.instructionText, input.reads, input.lastActStep);
+}
+
+/**
+ * "Every read in the draft that gives "name", "mutualFriends" runs before step
+ * 10, ...", or nothing when the instruction names no column, there is no act
+ * step, no read with a known step gives every named column, or one of those
+ * reads runs at or after the last act step (run `run-murwcaj0-40e56557`, R4).
+ * It names the act step, never a read.
+ */
+function readsBeforeLastActSentence(
+  instructionText: string | undefined,
+  reads: readonly { step?: number; fieldKeys: readonly string[] }[],
+  lastActStep: number | undefined
+): string | undefined {
+  if (lastActStep === undefined) return undefined;
+  const named = automationStudioFlowBootstrapInstructionColumns(instructionText ?? "");
+  if (!named.length) return undefined;
+  const full = reads.filter((read) => read.step !== undefined && !authoringInstructionRecordColumns({ named, fieldKeys: read.fieldKeys }).unmatched.length);
+  if (!full.length || full.some((read) => read.step! >= lastActStep)) return undefined;
+  const names = named.map((name) => `"${name}"`).join(", ");
+  return `Every read in the draft that gives ${names} runs before step ${lastActStep}, the last step that does what the instruction asks, so it shows the page as it was before that act; if the instruction asks for what the page shows after it, the draft needs a read after step ${lastActStep}.`;
 }
 
 /** The columns the instruction names that none of `fieldKeys` reads. */

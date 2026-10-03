@@ -1,7 +1,8 @@
 // A build whose exploration stops before the Flow is ready (t208; audit A3,
 // cause 1), through the real `generateFlowBootstrapAdaptation`: the Flow so
 // far is tested and judged and a repair follows; a repair that gets no further
-// ends "not doable" with a message the person reads.
+// ends "not finished" with a message the person reads (t195-w37: "not doable"
+// only when the judge says what was asked can no longer be had).
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -169,18 +170,18 @@ describe("a Flow build that stops before its Flow is ready", () => {
     expect(firstOfRepair.context.evidenceLoop?.evidence.find((item) => item.toolId === "core.resumed")?.value).toMatchObject({ draftSteps: 1, proposableSteps: 1 });
   });
 
-  it("ends not doable, with a message the person reads, when the repair gets no further", async () => {
+  // A repair that gets no further ends the build not finished, never "not doable": the user's rule is that a build
+  // is not doable only when there is absolutely no way (t195-w37, live run run-murwcaj0-40e56557).
+  it("ends not finished, with a message the person reads, when the repair gets no further", async () => {
     const { requests, generation } = await build("refuse");
 
     const diagnostic = await rejectedGenerationDiagnostic(generation);
 
     expect(requests.some((request) => repairEntry(request))).toBe(true);
-    expect(diagnostic.code).toBe("flow_bootstrap.not_doable");
-    expect(diagnostic.ending).toMatchObject({ kind: "not_doable", tried: { rounds: 2, stepsInFlow: 1 } });
-    // Said from what the refused decisions were -- here a plan with no Subflow,
-    // refused every time -- rather than as "every attempt to finish was refused",
-    // which run-muqiojz4-04a7a8fc was told after refused amendments alone.
-    expect(diagnostic.ending?.message).toMatch(/^I could not build this Flow, and I found no way to: the Flow could not be finished: too many of its decisions in a row could not be used, because the Flow it wrote was not one that could run\./u);
+    expect(diagnostic.code).toBe("flow_bootstrap.build_not_finished");
+    expect(diagnostic.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 2, stepsInFlow: 1 } });
+    expect(diagnostic.ending?.message).toMatch(/^I have not finished this Flow yet: /u);
+    expect(diagnostic.ending?.message).not.toContain("found no way");
     expect(diagnostic.ending?.message).toContain("I tried 2 times live -- exploring, then one repair after testing what I had");
   });
 });
@@ -191,7 +192,7 @@ describe("a Flow build that stops before its Flow is ready", () => {
 // Flow the first round starts from -- here the kept draft a continuation
 // carries on (t240).
 describe("a continuation whose first round ends on repeats with the kept draft unchanged", () => {
-  it("ends not doable after that one round, never opening an identical second round", async () => {
+  it("ends not finished after that one round, never opening an identical second round", async () => {
     let building = 1;
     let call = 0;
     const second: number[] = [];
@@ -223,8 +224,9 @@ describe("a continuation whose first round ends on repeats with the kept draft u
     building = 2;
     const diagnostic = await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
 
-    expect(diagnostic.code).toBe("flow_bootstrap.not_doable");
-    expect(diagnostic.ending).toMatchObject({ kind: "not_doable", tried: { rounds: 1 } });
+    // Not finished, not "not doable" (t195-w37): a route is still open; another identical round would only repeat it.
+    expect(diagnostic.code).toBe("flow_bootstrap.build_not_finished");
+    expect(diagnostic.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 1 } });
     expect(diagnostic.ending?.message).toContain("ended on refused repeats of the same calls and handed back the Flow it started from, unchanged");
   });
 });

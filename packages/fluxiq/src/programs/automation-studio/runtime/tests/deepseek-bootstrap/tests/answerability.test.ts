@@ -1,7 +1,7 @@
 // A build whose completion cannot answer the instruction is judged, not
 // refused, through the real adapter on the stub harness (`harness.ts`): the
-// measured run `run-mulryg6h-ff241a12` replayed, once ending not doable after
-// the repair round's Flow is judged the same no and once converging on the
+// measured run `run-mulryg6h-ff241a12` replayed, once ending on its spent calls
+// after the repair round's Flow is judged the same no and once converging on the
 // corrected plan. Also here, the stub's own draft-observation discriminator
 // those cases rely on.
 
@@ -54,10 +54,11 @@ describe("creating a Flow through an exploration, with no grant", () => {
   // six steps, so the second round is a repair seeded with them
   // (`llm_evidence_loop.repair`, `flow-bootstrap/unfinished-build/phases.ts`),
   // told the judge's verdict. Its decisions replay the measured script, its last
-  // completion is tested whole and judged no again with the same finding, and the
-  // build ends not doable -- its repair made no progress on the round before --
-  // after spending every call it had: nothing was refused for answerability.
-  it("accepts the measured run's unanswerable completion, judges it with the answerability note, and ends not doable when the repair's Flow is judged the same no", async () => {
+  // completion is tested whole and judged no again with the same finding. Since
+  // t195-w37 a judge that names its fix buys one more round, and this build has
+  // spent every call it had, so it ends on that budget rather than "not doable":
+  // nothing was refused for answerability.
+  it("accepts the measured run's unanswerable completion, judges it with the answerability note, and, when the repair's Flow is judged the same no with a fix named, ends on its spent calls rather than as not doable", async () => {
     const run = await create({
       maxCalls: 26,
       tokenLimits: { maxInputTokens: 48_000, maxOutputTokens: 8_000, maxTotalTokens: 56_000 },
@@ -133,26 +134,27 @@ describe("creating a Flow through an exploration, with no grant", () => {
       expect(observation.draft).toMatchObject({ present: true, steps: 6 + observation.iteration - 1, unlisted: 0, withoutInput: 0, inputTooLarge: 0 });
     }
 
-    // The ending is not doable, said as such: the repair's Flow, tested whole, was judged the same no as the round
-    // before, so the repair made no progress. It spent every call it had doing so.
+    // The repair's Flow, tested whole, was judged the same no as the round before, so the repair made no progress.
+    // The judge named its fix and did not say the request can no longer be had, so the build would take one more
+    // round (t195-w37: "not doable" only when there is absolutely no way) -- but it had spent every call it had, so
+    // it ends on that budget, honestly, and a retry carries on from the Flow so far.
     expect(run.failure).toMatchObject({
-      code: "flow_bootstrap.not_doable",
+      code: "flow_bootstrap.evidence_budget_exhausted",
       stage: "provider_output_validation",
-      // Not retryable: the same no twice is a finding about the task, not a provider fault a retry could clear.
-      retryable: false,
+      retryable: true,
       providerInvocation: "attempted",
       providerResponse: "received",
       // Twenty-six decisions at 1,200 in and 150 out, and four judge calls at 400 and 40.
       accounting: { provider: "deepseek", model: "deepseek-flash", inputTokens: 32_800, outputTokens: 4_060, totalTokens: 36_860 },
       evidenceLoop: { iterationCount: 26, decisionCount: 26, toolCallCount: 21, evidenceBytes: expect.any(Number) },
-      ending: { kind: "not_doable", tried: { rounds: 2, decisions: 26, stepsInFlow: 6, tested: "replayed_clean" } }
+      ending: { kind: "budget_exhausted", tried: { rounds: 2, decisions: 26, stepsInFlow: 6, tested: "replayed_clean" } }
     });
     // No round ran out of decisions -- each ended on a completion the judge sent back -- so there is no exhaustion to
     // report, and no completion was refused, so there is no issue code either.
     expect(run.failure?.evidenceLoop).not.toHaveProperty("exhausted");
     expect(run.failure?.issueCodes ?? []).not.toContain("bootstrap.cannot_answer_instruction");
-    expect(run.failure?.ending?.message).toMatch(/^I could not build this Flow, and I found no way to: it was tested from its start and judged not to do what you asked/u);
-    expect(run.failure?.ending?.message).toContain("the judge found the same as before");
+    expect(run.failure?.ending?.message).not.toContain("found no way");
+    expect(run.failure?.ending?.message).not.toMatch(/^I could not build this Flow/u);
     const steps = run.failure?.evidenceLoop?.steps ?? [];
     // The record numbers both rounds' decisions across the build: the second round's 1-16 are 11-26.
     expect(steps.filter((step) => step.iteration === 7)).toHaveLength(2);
@@ -214,7 +216,7 @@ describe("creating a Flow through an exploration, with no grant", () => {
       },
       draft: {
         present: true,
-        budget: 4_000,
+        budget: 5_000,
         // The six steps the repair was seeded with, and the look it took first.
         steps: 7,
         unlisted: 0,

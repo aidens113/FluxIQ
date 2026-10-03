@@ -83,6 +83,8 @@ const FLOW_BOOTSTRAP_RETRYABLE_AFTER_REQUEST_CODES: ReadonlySet<string> = new Se
   "flow_bootstrap.evidence_iteration_limit",
   // A budget ran out before the repair finished: a retry, which continues the kept draft, is the answer.
   "flow_bootstrap.evidence_budget_exhausted",
+  // Not finished, with a route still open: a retry continues the kept draft (t195-w37).
+  "flow_bootstrap.build_not_finished",
   // Unreadable replies are the provider's, not the task's: a retry continues the kept draft.
   "flow_bootstrap.model_replies_unreadable",
   // So is a provider that stopped answering: a retry once it answers continues the kept draft.
@@ -164,6 +166,7 @@ export function automationStudioFlowBootstrapFailureState(
 
 const ENDING_CODES: ReadonlySet<string> = new Set([
   "flow_bootstrap.not_doable",
+  "flow_bootstrap.build_not_finished",
   "flow_bootstrap.evidence_budget_exhausted",
   "flow_bootstrap.model_replies_unreadable",
   "flow_bootstrap.provider_unavailable"

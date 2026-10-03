@@ -44,13 +44,33 @@
 // presses of the add that are not the count, `quantity_presses_differ` with
 // the `presses` counted (`./standing.ts`).
 //
+// **A choice made after its act (live run `run-murwdp4f-35f976d2`, C2).** A
+// choice done by a step after the step that does its act stays done, and
+// carries `afterAct` (that step) and `afterActSaid`: the act ran before its
+// choice. This is the channel that reaches the model on every decision
+// (`../../llm/harness-options/draft-acts.ts`) and the judge of the build's test
+// (`buildTest.checklist`); never a todo (`./choice-order.ts`).
+// **A step that does a plural act to one row, beside the repeat (live run
+// `run-murz83zy-5030820f`, R10).** The last draft kept step 6, a Confirm done
+// once on one card, beside step 13, the Confirm repeated over the listing at
+// step 7, and showed a1 done by 13 and nothing about 6: playback would have
+// accepted that one request whatever it was. So a plural act whose step is
+// repeated lists under `drop` every kept step that does it to one row, with
+// `dropSaid` saying, in the draft's numbers, to drop them (`singleRowSteps`).
+// A field of its own beside `done`, not a todo: the act is done, the check and
+// the completion gate are unchanged, and a build's ending words every todo
+// (`../unfinished-build/not-done.ts`).
+//
 // Nothing here calls a provider or reads a page; it is the instruction's words
 // and the draft.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftStepGoesToLocation } from "../reachability/index.ts";
+import { automationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
 import type { AutomationStudioInstructedChoice } from "./contracts.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
+import { automationStudioInstructedActRepeatSpans } from "./span.ts";
 import { automationStudioInstructedActsStanding, type AutomationStudioInstructedStanding } from "./standing.ts";
 
 /** Why an act on the checklist is not done yet. */
@@ -101,6 +121,10 @@ export type AutomationStudioInstructedChoiceChecklistItem = {
   done?: number;
   todo?: AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo;
   step?: number;
+  /** The position of the step that does this choice's act, when it comes before the step that makes the choice (`./choice-order.ts`). */
+  afterAct?: number;
+  /** What that means, in words the model and the judge act on. Information, never a todo. */
+  afterActSaid?: string;
 } & AutomationStudioInstructedTodoDetail;
 
 /** One act as the model is shown it. */
@@ -126,6 +150,13 @@ export type AutomationStudioInstructedActChecklistItem = {
    */
   repeatWith?: JsonObject;
   repeatSaid?: string;
+  /**
+   * A plural act whose step is repeated: the kept steps that do it to one row
+   * instead, and the sentence saying to drop them (`singleRowSteps`).
+   * Information beside `done`, never a todo.
+   */
+  drop?: number[];
+  dropSaid?: string;
 } & AutomationStudioInstructedTodoDetail;
 
 /** The checklist, or nothing when the instruction asks for no lasting act. */
@@ -141,9 +172,15 @@ export function automationStudioInstructedActsChecklist(input: {
     startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation) : false;
   const standing = automationStudioInstructedActsStanding({ acts, steps: input.draftSteps, onlyArrives });
   return acts.map((act) => {
-    const item: AutomationStudioInstructedActChecklistItem = { id: act.id, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true as const } : {}), ...shown(standing.get(act.id)) };
+    const stood = standing.get(act.id);
+    const doer = stood ? ("done" in stood ? stood.done : stood.step) : undefined;
+    const once = act.plural && doer ? singleRowSteps(act.id, doer, input.draftSteps) : undefined;
+    const item: AutomationStudioInstructedActChecklistItem = {
+      id: act.id, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true as const } : {}), ...shown(stood),
+      ...(once ? { drop: once.drop, dropSaid: once.said } : {})
+    };
     if (!act.requires?.length) return item;
-    return { ...item, choices: act.requires.map((choice) => ({ id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote, ...shown(standing.get(choice.id)) })) };
+    return { ...item, choices: act.requires.map((choice) => ({ id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote, ...shown(standing.get(choice.id)), ...madeAfterAct(choice, standing.get(choice.id)) })) };
   });
 }
 
@@ -158,6 +195,13 @@ function shown(stood: AutomationStudioInstructedStanding | undefined): { done: n
     ...(stood.actsOn !== undefined ? { actsOn: stood.actsOn } : {}),
     ...(stood.presses ? { presses: [...stood.presses] } : {})
   };
+}
+
+/** A done choice whose act's step comes before it: that step, and the sentence the verdict says (`./choice-order.ts`). */
+function madeAfterAct(choice: AutomationStudioInstructedChoice, stood: AutomationStudioInstructedStanding | undefined): { afterAct?: number; afterActSaid?: string } {
+  if (!stood || !("done" in stood) || !stood.afterAct) return {};
+  const found = automationStudioInstructedChoiceAfterAct({ id: choice.id, of: choice.of, step: stood.done.position, actStep: stood.afterAct.position });
+  return found ? { afterAct: found.actStep, afterActSaid: found.said } : {};
 }
 
 /** The ids of the acts and choices the checklist shows as not done, each act before its choices. */
@@ -175,4 +219,72 @@ export function automationStudioInstructedActsChecklistValue(items: readonly Aut
     ...(repeatWith ? { repeatWith: { ...repeatWith } } : {}),
     ...(choices ? { choices: choices.map((choice) => ({ ...choice })) } : {})
   }));
+}
+
+// The kept steps that do a plural act to one row, beside the step that does it
+// to every row (live run `run-murz83zy-5030820f`, R10; see the header). A step
+// does the same act when it is a step of the Flow (kept, and it worked) that
+// changes something and runs once -- no repeat holds it -- and either says it
+// does this act, or presses the same control as the repeated step: the same
+// action, and the same words the domain gave for its control
+// (`../../flow-draft/step-words.ts`, `does`; else `control`). A step claimed for
+// another act is that act's step, never this one's, and a step with no words
+// for its control is never matched by words: two unnamed presses are not the
+// same press.
+
+type Step = AutomationStudioFlowDraftStep;
+
+/**
+ * The positions of the kept steps that do act `id` to one row while `doer`, a
+ * repeated step, does it to every row, and the sentence saying to drop them;
+ * nothing when `doer` is not repeated or no other step does the act once.
+ */
+function singleRowSteps(
+  id: string,
+  doer: Step,
+  steps: readonly Step[]
+): { drop: number[]; said: string } | undefined {
+  const spans = automationStudioInstructedActRepeatSpans(doer, steps);
+  if (doer.disposition !== "kept" || !spans.length) return undefined;
+  const control = controlOf(doer);
+  const own = (claimed: string): boolean => {
+    const folded = claimed.trim().toLowerCase();
+    return folded === id || folded.startsWith(`${id}.`);
+  };
+  const once = steps.filter((each) => {
+    if (each === doer || !automationStudioFlowDraftStepIsProposed(each) || each.effect !== "mutate") return false;
+    if (automationStudioInstructedActRepeatSpans(each, steps).length) return false;
+    if (each.acts?.some((claimed) => !own(claimed))) return false;
+    if (each.acts?.some(own)) return true;
+    return control !== undefined && each.actionId === doer.actionId && controlOf(each) === control;
+  }).map((each) => each.position).sort((left, right) => left - right);
+  if (!once.length) return undefined;
+  const over = overOf(spans[0]!.carrier, steps);
+  const each = over === undefined
+    ? `step ${doer.position} does it repeated`
+    : over.effect === "mutate"
+      ? `step ${doer.position} does it on each pass while step ${over.position} succeeds`
+      : `step ${doer.position} does it to each row step ${over.position} keeps`;
+  const named = listed(once);
+  const said = once.length === 1
+    ? `step ${named} does ${id} to one row; ${each}: drop step ${named}`
+    : `steps ${named} do ${id} to one row each; ${each}: drop steps ${named}`;
+  return { drop: once, said };
+}
+
+/** The words of the control a step acted on, folded, or nothing when the draft has none. */
+function controlOf(step: Step): string | undefined {
+  const words = (step.words?.target ?? step.control)?.replace(/\s+/gu, " ").trim().toLowerCase();
+  return words ? words : undefined;
+}
+
+/** The step a repeat runs over, when it names one the draft still has. */
+function overOf(carrier: Step, steps: readonly Step[]): Step | undefined {
+  return carrier.routing?.kind === "repeat" ? automationStudioFlowDraftStepById(steps, carrier.routing.over) : undefined;
+}
+
+/** Positions as a sentence lists them: `6`, `2 and 9`, `2, 4 and 9`. */
+function listed(positions: readonly number[]): string {
+  if (positions.length < 2) return `${positions[0]}`;
+  return `${positions.slice(0, -1).join(", ")} and ${positions[positions.length - 1]}`;
 }

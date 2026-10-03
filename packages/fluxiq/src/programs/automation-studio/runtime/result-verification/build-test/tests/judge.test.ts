@@ -77,6 +77,21 @@ describe("a judged no carries the judge's reading to the repair", () => {
     expect(verdict.spent).toEqual({ inputTokens: 1800, outputTokens: 120, totalTokens: 1920, estimatedCostUsd: 0.002, calls: 2 });
   });
 
+  // t195-w37 (live run run-murwcaj0-40e56557): a build ends "not doable" only when the judge says what was asked
+  // can no longer be had, so a no carries the judge's stillAchievable (a reply with any other word is refused by the
+  // harness's schema, and the verdict reader's screen is pinned in ../../tests/verdict.test.ts).
+  it("carries the judge's stillAchievable on a no", async () => {
+    for (const said of ["no", "yes", "unknown"] as const) {
+      const { provider } = scripted(["no", "no"], { observed: "No step reads the list after the confirms.", stillAchievable: said });
+      const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+      expect(verdict, said).toMatchObject({ verdict: "no", stillAchievable: said });
+    }
+    const { provider } = scripted(["no", "no"], { observed: "No step reads the list after the confirms." });
+    const silent = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(silent.verdict).toBe("no");
+    expect("stillAchievable" in silent).toBe(false);
+  });
+
   // A build measures a repair by what its test stored (t240): the counts the verdict was reached from travel with a no.
   it("carries the summary's stored, refused and missing-required counts on a no", async () => {
     const summary = { ...run40Summary(), totalRecordCount: 7, totalRefusedCount: 3, totalRowsMissingRequired: 2 };

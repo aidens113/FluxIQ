@@ -324,3 +324,36 @@ describe("activityActionOf: a result check that could not confirm (D1)", () => {
     expect(activityActionOf({ ...ended(ACTIVITY_RESULT_CHECK_LABELS.unconfirmed, "failed"), detail: { kind: "check", title: "Completion check", status: "failed" } })).not.toHaveProperty("unconfirmed");
   });
 });
+
+// t193 1002-M (`run-murzln6g-11debe1d`, C10): a test step the test only
+// checked, one already done on the site, and one the Flow passes over all read
+// "Done" or "Didn't work: it didn't work the same way again". Merged with
+// t174-w85 D4 (2026-10-03): the step is named by its action and marked
+// `testing`, and `tested` says what the test did with it. The completion check
+// is a note with no card (t174-w88), so it has no kind or words of its own here.
+describe("activityActionOf: what a test of the Flow did with each step (C10)", () => {
+  const dry = (code: string, extra = "", title = "Clicking “Add to cart”", node = "web.output.dom-click") => tool(title, `Result: ${code}${extra} · Node: ${node}`, "succeeded", RUN_NODE, "verifying");
+
+  it("says a step checked and not pressed, and one already done on the site, and nothing more for one done again", () => {
+    expect(activityActionOf(dry("core.replay.verified"))).toMatchObject({ kind: "click", testing: true, outcome: "done", why: null, tested: "Checked, not pressed" });
+    expect(activityActionOf(dry("core.replay.verified", "", "Typing “towels” into “Search”", "web.output.fill-field"))?.tested).toBe("Checked, not typed");
+    expect(activityActionOf(dry("core.replay.present"))?.tested).toBe("Already done on the site");
+    expect(activityActionOf(dry("core.replay.remembered"))?.tested).toBe("Already done on the site");
+    expect(activityActionOf(dry("core.replay.replayed"))).not.toHaveProperty("tested");
+  });
+
+  it("says a step the Flow passes over as skipped, with why, never as a failure", () => {
+    expect(activityActionOf(dry("core.replay.failed", " · Excused: interruption"))).toMatchObject({ kind: "click", testing: true, outcome: "done", why: null, tested: "Skipped: not there, optional" });
+    expect(activityActionOf(dry("core.replay.failed", " · Excused: optional"))?.tested).toBe("Skipped: not there, optional");
+    expect(activityActionOf(dry("core.replay.unreproducible", " · Excused: withheld"))?.tested).toBe("Skipped: it needed a step the test only checked");
+    expect(activityActionOf(dry("core.replay.failed", " · Excused: repeat"))?.tested).toBe("Skipped: it only runs sometimes");
+    // Not excused, it is still a step that did not hold.
+    expect(activityActionOf(dry("core.replay.failed"))).toMatchObject({ outcome: "failed", why: "it didn't work the same way again" });
+    expect(activityActionOf(dry("core.replay.failed"))).not.toHaveProperty("tested");
+  });
+
+  it("gives a test step it cannot name its words by the verb of its title, and the completion check none", () => {
+    expect(activityActionOf(tool("Typing “towels”", "Result: core.replay.verified", "succeeded", RUN_NODE, "verifying"))).toMatchObject({ outcome: "done", tested: "Checked, not typed" });
+    expect(activityActionOf({ phase: "verifying", detail: { kind: "note", title: "Completion check", status: "succeeded" } })).not.toHaveProperty("tested");
+  });
+});

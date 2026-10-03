@@ -20,11 +20,15 @@
 // `quantity-fault.ts` (how many) -- are absent for the reason the choice
 // evidence is: they are how the loop reaches its verdict, not what it offers.
 //
+// `choice-order.ts` is published because the choice made after its act's step
+// travels on the verdict and the checklist as information, typed by it.
+//
 // `permission.ts` is the one rule a completion is still refused for: an act
 // whose verb names a class a person is asked about needs a step declaring it.
 // The check and the checklist are information beside the test and its judge.
 export * from "./check.ts";
 export * from "./checklist.ts";
+export * from "./choice-order.ts";
 export * from "./contracts.ts";
 export * from "./instruction-acts.ts";
 export * from "./permission.ts";

@@ -29,6 +29,13 @@
 // here. A recorded step whose merged argument still holds a binding is refused
 // as `rerun_holds_binding`, unrun: rerun it with a value for every bound
 // parameter, or write it.
+//
+// **A rerun of a done act is requested here like any other and run as a check**
+// (live run `run-murwcaj0-40e56557`, R7: a repair rerun of the step that had
+// confirmed Amara's request, act a1, pressed Tom's Confirm instead). It is not
+// refused: the step carries an instructed act its own run already did, so the
+// call that answers it checks the new argument and does not do the act again
+// (`../node-tools/rerun-check.ts`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import {

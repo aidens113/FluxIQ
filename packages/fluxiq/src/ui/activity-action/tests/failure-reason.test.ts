@@ -71,6 +71,22 @@ describe("activityActionFailureReason: a refusal's own reason (t193)", () => {
   });
 });
 
+// t193 1002-M (`run-murzln6g-11debe1d`, C12): a press refused because the call
+// left out `consequences` read "Didn't work: it wasn't on the page": the
+// reason `missing_input_keys` matched the page word `missing`. Nothing was
+// looked for on the page; the call itself was wrong.
+describe("activityActionFailureReason: a call refused for what it was written with (C12)", () => {
+  it.each([
+    ["missing_input_keys", "the request left out something it needs"],
+    ["unexpected_input_keys", "the request had something it doesn't take"],
+    ["not_a_number", "a value in the request was the wrong kind"],
+    ["value_not_text", "a value in the request was the wrong kind"]
+  ])("says the reason %s as %s, never in page words", (reason, why) => {
+    expect(activityActionFailureReason("web.action.rejected.invalid_input", reason)).toBe(why);
+    expect(activityActionFailureReason("web.action.rejected.invalid_input", reason)).not.toMatch(/page/u);
+  });
+});
+
 // t194 (`run-murwcmx2-a1c6edf7`, screenshot 00012, step 0036): a recall of a
 // result nobody gave that name read "Didn't work: it wasn't on the page", when
 // it never looked at the page. Core's own codes say what Core missed.

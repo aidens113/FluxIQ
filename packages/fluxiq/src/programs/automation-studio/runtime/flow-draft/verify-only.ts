@@ -22,6 +22,18 @@
 // what a person is asked: a check is not the act, and the act stays gated
 // where it always was.
 //
+// **Lane B's run, the same rule (t193-1002m, merged 2026-10-03).** Live run
+// `run-murwdp4f-35f976d2`'s Add to cart carried act a2 and declared
+// `consequences: []`, so both build tests pressed it and the person's cart went
+// from 2 to 3 to 4 items. Lane B's first fix checked every step naming any act,
+// unless the next step found the target elsewhere (the step moved the page).
+// Merged with lanes A and D it is the rule below and nothing more: the
+// instruction's lasting acts, never every act, and no moved-page exception,
+// because an under-declared lasting act that also moves the page -- a Submit, a
+// Place order -- would be pressed again, which a build never does. A last step
+// that only navigates while claiming a lasting act is therefore checked rather
+// than followed (lane B's run `run-murzln6g-11debe1d`, R2-C8, open).
+//
 // **Why the declaration and not every change.** A press that only opens,
 // filters or navigates is what the steps after it stand on: the chooser a
 // store is picked from is open only because the press before it opened it.
@@ -33,6 +45,24 @@
 // changed the person's cart. A step with no declaration at all is an older
 // caller's step and is run again, as it always was. (The web binding refuses a
 // changing call that declares nothing, so every web step it keeps says.)
+//
+// **An instructed act is checked whatever the step declares** (live runs
+// `run-murwcaj0-40e56557` R3 and `run-murwd8le-79e735a8` Cause 3). The step
+// that confirmed a friend request, act a1, declared `consequences: []`, so
+// every test pressed Confirm again on the person's real requests; an Add to
+// cart did the same to a cart. The second witness is the instruction's own
+// read: a changing step claiming an act it reads as lasting is checked
+// (`lastingActs`, t174-w83, below). Lane D first checked every step carrying
+// any act; merged with t174-w83 (2026-10-03) it keeps the read's narrower set,
+// because a choice (`a1.colour`) or an act that lasts nothing ("open saved
+// items") is what the steps after it stand on and must run again.
+//
+// **A rerun of a done act is a check too** (the same run, R7). The repair round
+// reran that step with Tom's Confirm, a request the instruction said to leave
+// alone, and the rerun pressed it. A step the dry run would check, whose own
+// run already did its effect (`automationStudioFlowDraftStepActDone`, the same
+// rule and the same `lastingActs`), is rerun as this same check of the new
+// argument, never as the effect again (`../llm/node-tools/rerun-check.ts`).
 //
 // **Three answers to a check, and what each does to the verdict.**
 //
@@ -104,7 +134,8 @@ const NONE = "none";
 
 /**
  * How the dry run treats this step: `verify` when running it again would
- * repeat a lasting effect, `replay` otherwise.
+ * repeat a lasting effect, `replay` otherwise. `steps` is the draft the step
+ * is in, from which its next proposed step is read.
  *
  * The declaration is read from what the Flow keeps (`ranWith`) before what the
  * model wrote (`input`), the same order a replay reads the step's argument in.
@@ -130,6 +161,17 @@ export function automationStudioFlowDraftStepReplayMode(step: AutomationStudioFl
   const declared = step.ranWith && "consequences" in step.ranWith ? step.ranWith.consequences : step.input.consequences;
   if (declaresLasting(declared)) return "verify";
   return lastingActs?.size && step.acts?.some((act) => lastingActs.has(act)) ? "verify" : "replay";
+}
+
+/**
+ * Whether a step has already done its lasting effect: one the dry run would
+ * check rather than run again (`automationStudioFlowDraftStepReplayMode`, by
+ * its declaration or the instruction's lasting acts), whose own run worked and
+ * changed the page. A rerun of such a step is a check of the new argument, not
+ * the effect again (see the header, R7).
+ */
+export function automationStudioFlowDraftStepActDone(step: AutomationStudioFlowDraftStep, lastingActs?: ReadonlySet<string>): boolean {
+  return step.effectApplied === true && step.proposes !== false && automationStudioFlowDraftStepReplayMode(step, lastingActs) === "verify";
 }
 
 /**

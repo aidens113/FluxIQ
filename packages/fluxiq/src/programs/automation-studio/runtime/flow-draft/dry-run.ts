@@ -87,6 +87,7 @@
 // whatever it declared (t174-w83).
 
 import type { JsonObject } from "../../../../core/index.ts";
+import { automationStudioFlowDraftExcusedWords, type AutomationStudioFlowDraftExcusedReason } from "./excused.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
 import { automationStudioFlowDraftPathToStep } from "./path-to-step.ts";
@@ -172,6 +173,14 @@ export type AutomationStudioFlowDraftReplayOutcome = {
    * excused as one the Flow does not always run (see the verdict).
    */
   passes?: AutomationStudioFlowDraftReplayPass[];
+  /**
+   * Set on a step that did not replay and that does not stand in the way of
+   * the proposal, naming why: the draft says the Flow does not always run it
+   * (`./routing.ts`), or it needed what a verified step's withheld effect
+   * would have made (`withheld`). Said wherever the test is shown, so a step
+   * the Flow passes over is never read as one to fix or remove (`./excused.ts`).
+   */
+  excused?: AutomationStudioFlowDraftExcusedReason;
 };
 
 /** One pass of a repeated step in a test: which pass, how it answered, and the caller's code. */
@@ -323,6 +332,9 @@ const DRY_RUN_INSTRUCTION = "You said the Flow is ready, so it was tested: run o
   // Decision D1: a lasting effect is never repeated (`./verify-only.ts`). The
   // model must not read a checked step as one that was done again.
   + "verified: the step changes something that lasts, so it was not run again, only checked that it could run now. present: the same kind of step, whose effect is already in place on the page it acted on, so it was not run either. Both pass. "
+  // A step the test passed over is not one to repair (`./excused.ts`): the
+  // judge of live run `run-murzln6g-11debe1d` asked to fix or remove one.
+  + "excused: the step did not replay, and the Flow passes over it as written -- the line says why: optional, an interruption that was not there, a check, a fallback, a repeat, or a step that needed what a verified step would have done. It does not stand in the way: do not fix, rerun, reorder or drop it for this. "
   + "afterWithheld names the verified step before this one whose effect was withheld -- one that moved the page, or one that moves money, deletes, or sends or publishes, which the test never does -- so this step may have needed what that step would have done; a step marked with it does not stand in the way of the proposal on its own. "
   // t252: a repeat is run as the Flow runs it (`../llm/node-tools/replay-span.ts`).
   + "A step inside a repeat was run once for each item its list returned in this test, each time with that item and with its bound values filled in for it -- a lasting act is checked for each item, never done -- or, over a check, once each time the check held. passes says how many times it ran, and pass names the first time it did not replay, which is what its line shows; passes 0 means the list had no items in this test. "
@@ -359,6 +371,7 @@ export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudi
       replayed: automationStudioFlowDraftReplayOutcomeWord(outcome),
       ...(outcome.resultCode ? { resultCode: outcome.resultCode } : {}),
       ...(outcome.withheldBy !== undefined ? { afterWithheld: outcome.withheldBy } : {}),
+      ...(excusedLine(outcome)),
       ...(outcome.reanchored ? { reanchored: true } : {}),
       ...automationStudioFlowDraftReplayPassWords(outcome),
       ...(outcome.status !== "replayed" && told.has(automationStudioFlowDraftReplayOutcomeKey(outcome)) ? { again: true } : {})
@@ -366,6 +379,12 @@ export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudi
     ...(missing ? { notInFlow: missing } : {}),
     instruction: DRY_RUN_INSTRUCTION
   };
+}
+
+/** A feedback line's `excused`, for a step the test passed over. */
+function excusedLine(outcome: AutomationStudioFlowDraftReplayOutcome): { excused?: string } {
+  const words = automationStudioFlowDraftExcusedWords(outcome);
+  return words ? { excused: words } : {};
 }
 
 /**

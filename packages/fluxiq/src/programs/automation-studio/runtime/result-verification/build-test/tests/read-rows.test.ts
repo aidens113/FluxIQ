@@ -104,6 +104,57 @@ describe("a replayed list read's rows, as the build-test judge is shown them", (
     expect(nothing).toEqual({ ok: true, code: "core.replay.replayed", said: SAID });
   });
 
+  // t195-w34, live run `run-murwcaj0-40e56557` (R6): a regex meant to keep five or more mutual
+  // friends dropped Jonas Weber, and the judge, shown his name only, called the rows left out
+  // "exactly the requests with fewer than five mutual friends".
+  it("says a left-out row with the value its condition tested, after its label", () => {
+    const summary = judged(answer({
+      rows: [{ name: "Amara Osei" }],
+      leftOutOnlyByThis: [{
+        condition: "div_x0531l50_x1r2vv8_x4q0id2_div_x1a4yqcp_xa73opb_xtlve1b",
+        rows: [
+          { name: "Tom Becker", mutualFriends: "2 mutual friends" },
+          { name: "Jonas Weber", mutualFriends: "Aisha Khan and 4 other mutual friends" },
+          { name: "Priya Nair", mutualFriends: "" },
+          // A sender that predates the tested value sends the label alone.
+          { name: "Diego Alvarez" }
+        ]
+      }]
+    }));
+    expect((observedOf(summary).readRows as JsonObject).leftOutOnlyByThis).toEqual([{
+      condition: "div_x0531l50_x1r2vv8_x4q0id2_div_x1a4yqcp_xa73opb_xtlve1b",
+      rows: [
+        "Tom Becker — mutualFriends: 2 mutual friends",
+        "Jonas Weber — mutualFriends: Aisha Khan and 4 other mutual friends",
+        "Priya Nair — mutualFriends: (no value)",
+        "Diego Alvarez"
+      ]
+    }]);
+    expect(summary.withheld).toBe(false);
+    expect(automationStudioLlmRequestEvidenceRefusal(verificationRequest(summary))).toBeUndefined();
+  });
+
+  it("withholds a tested value shaped like a credential, or from a denied column, and keeps the label beside it", () => {
+    const summary = judged(answer({
+      leftOutOnlyByThis: [{
+        condition: "name",
+        rows: [
+          { name: "Soundcrest Air Lite", note: "token sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c" },
+          { name: "Trevio T5", password: "hunter2" },
+          { password: "Lumo", name: "Lumo Audio" }
+        ]
+      }]
+    }));
+    expect((observedOf(summary).readRows as JsonObject).leftOutOnlyByThis).toEqual([{
+      condition: "name",
+      rows: ["Soundcrest Air Lite — note: (withheld)", "Trevio T5 — (withheld)", "(withheld) — name: Lumo Audio"]
+    }]);
+    expect(summary.withheld).toBe(true);
+    expect(JSON.stringify(summary)).not.toContain("sk-live");
+    expect(JSON.stringify(summary)).not.toContain("hunter2");
+    expect(automationStudioLlmRequestEvidenceRefusal(verificationRequest(summary))).toBeUndefined();
+  });
+
   it("does not name a repeated label as another step's, since every row's label is the answer", () => {
     const summary = judged(answer({ rows: [{ name: LUMO }], leftOutOnlyByThis: [{ condition: "name", rows: [{ name: LUMO }] }] }));
     expect(JSON.stringify(observedOf(summary))).not.toContain("as step");

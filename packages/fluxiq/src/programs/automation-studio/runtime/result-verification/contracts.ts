@@ -150,7 +150,8 @@ export type AutomationStudioResultFlowStepSummary = {
  * the conditions, the paging and the dedupe key are what the Flow authored the
  * step with. Counts, closed words, column ids and the model's own condition
  * wording -- no locator, and no page value but a condition's `leftOutOnlyByThis` row
- * labels and the value its own read found, each screened.
+ * labels with the value it tested on each, and the value its own read found,
+ * each screened.
  */
 export type AutomationStudioResultReadAccount = {
   nodeId: string;
@@ -197,7 +198,11 @@ export type AutomationStudioResultReadAccount = {
    * true answers). Absent where the read did not count it. `leftOutOnlyByThis`
    * names those rows, each by its first text column (its title), whole, so the
    * judge can check them against the request (live run 15: three earbuds "with
-   * Wireless Charging Case"); absent where the read did not send them.
+   * Wireless Charging Case"); absent where the read did not send them. Where
+   * the row holds the column the condition tested, the row is said with that
+   * value after its label, `label — column: value` (t195-w34, live run
+   * `run-murwcaj0-40e56557`: "Jonas Weber — mutualFriends: Aisha Khan and 4
+   * other mutual friends", which a regex for five or more had dropped).
    */
   conditions?: Array<{ condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[] }>;
   /** True when every row failed the conditions and the read answered with the unfiltered rows instead. */
@@ -309,6 +314,13 @@ export type AutomationStudioBuildTestStep = {
   withheld?: true;
   /** The position of the checked step before this one whose withheld effect this step may have needed. */
   withheldBy?: number;
+  /**
+   * Set on a step that did not hold in this test and that the Flow passes
+   * over as written, saying why in Core's words ("optional: ...; in this test
+   * it did not run, which does not stop the Flow"). Not a defect: it is why the
+   * test passed with it (`../flow-draft/excused.ts`).
+   */
+  excused?: string;
   /** When the step runs, when it is not simply the next thing: optional, only if, on failure, or repeated over another step. */
   runs?: JsonValue;
   /** Set when the step was carried from an earlier Flow rather than run in this build. */
@@ -446,7 +458,7 @@ export type AutomationStudioResultRepairDirective = {
    * absent advice is still a valid refutation, and a run must never fail because
    * the judgement was terse.
    */
-  judgement?: { expected?: string; observed?: string; advice?: string };
+  judgement?: { expected?: string; observed?: string; advice?: string; /** Whether what was asked can still be had: a build ends "not doable" only on `no` (t195-w37). */ stillAchievable?: "yes" | "no" | "unknown" };
   /** True when something the judgement said was dropped by a screen rather than carried. */
   withheld?: boolean;
 };

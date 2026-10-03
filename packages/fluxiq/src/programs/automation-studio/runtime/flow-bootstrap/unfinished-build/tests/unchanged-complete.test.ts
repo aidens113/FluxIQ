@@ -127,7 +127,9 @@ describe("a model that keeps completing the refuted Flow unchanged", () => {
     expect(shown.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID)?.value).toMatchObject({ code: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_UNCHANGED_SINCE_JUDGED_WRONG, advice: ADVICE });
   });
 
-  it("ends the build not doable for no progress after that stalled repair, and the judge is never asked again", async () => {
+  // Merged with t195-w37 (2026-10-03): a stall ends the build "not finished"; "not doable" only on the judge's
+  // "can no longer be had". The stalled round brought no judge's fix of its own, so no extra round opens.
+  it("ends the build not finished for no progress after that stalled repair, and the judge is never asked again", async () => {
     const accounting = (iterations: number): AutomationStudioLlmEvidenceLoopAccounting => ({ iterations, toolCalls: iterations, evidenceBytes: 100, inputTokens: 1_000 * iterations, cacheHitInputTokens: 0, outputTokens: 100 * iterations, totalTokens: 1_100 * iterations, estimatedCostUsd: 0.001 * iterations });
     const spent = { inputTokens: 1_000, outputTokens: 100, totalTokens: 1_100, estimatedCostUsd: 0.001 };
     const no: AutomationStudioFlowBootstrapTestVerdict = { verdict: "no", advice: ADVICE, findings: ["earbuds sold with a case were dropped"], spent };
@@ -156,7 +158,7 @@ describe("a model that keeps completing the refuted Flow unchanged", () => {
     expect(judge).toHaveBeenCalledTimes(1);
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
-    expect(outcome.ending).toMatchObject({ kind: "not_doable", tried: { rounds: 2 } });
+    expect(outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 2 } });
     expect(outcome.rounds).toBe(2);
   });
 });

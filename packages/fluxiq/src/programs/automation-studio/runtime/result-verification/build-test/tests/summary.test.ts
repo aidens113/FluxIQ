@@ -10,7 +10,7 @@ import {
   ACCEPT_FRIENDS, FRIENDS, PICKUP_CART, RUN_36_READ, RUN_36_STEPS, RUN_40_CLAIMS, RUN_40_STEPS,
   run36, run36Report, run40, run41Steps
 } from "./live-run-drafts.ts";
-import { DENIED, SITE, present, replayed, report, verified, web } from "./draft-steps.ts";
+import { DENIED, ROW_CONTEXT, SITE, present, replayed, report, verified, web } from "./draft-steps.ts";
 
 const run40Summary = () => automationStudioBuildTestResultSummary({
   steps: RUN_40_STEPS,
@@ -25,7 +25,7 @@ const run40Summary = () => automationStudioBuildTestResultSummary({
 describe("the run 36 packet: an act claimed on a listing", () => {
   const summary = automationStudioBuildTestResultSummary({
     steps: RUN_36_STEPS, report: run36Report(), nodes: [], instructionText: ACCEPT_FRIENDS,
-    result: { summary: "Accepted the requests.", acts: [{ action: "a1", step: "4" }] }, startLocation: FRIENDS, deniedEvidenceKeys: DENIED
+    result: { summary: "Accepted the requests.", acts: [{ action: "a1", step: "4" }] }, startLocation: FRIENDS, deniedEvidenceKeys: DENIED, rowContextKeys: ROW_CONTEXT
   });
   const steps = summary.buildTest!.steps;
 
@@ -39,8 +39,10 @@ describe("the run 36 packet: an act claimed on a listing", () => {
     expect(confirms.map((step) => step.target?.find((word) => /mutual/u.test(word)))).toEqual([
       "Amara Osei23 mutual friendsConfirmDelete",
       "Priya Nair4 mutual friendsConfirmDelete",
-      "Jonas WeberAisha Khan and 4 other mutual friendsConfirmDelete"
+      // Step 7 is repeated over step 4's rows: the card it was built on is only its template.
+      undefined
     ]);
+    expect(steps[6]?.target).toEqual(["Confirm", "in each row step 4 keeps"]);
     for (const confirm of confirms) {
       expect(confirm).toMatchObject({ outcome: "present", withheld: true, explored: { changed: "yes" }, observed: { answer: "present" } });
     }
@@ -54,6 +56,41 @@ describe("the run 36 packet: an act claimed on a listing", () => {
     // A step that changes something and was run again observes nothing for the judge.
     expect(steps[2]?.observed).toBeUndefined();
     expect(steps[5]?.claims).toEqual(["a1"]);
+  });
+});
+
+describe("the run-murwcaj0 shape: a Confirm repeated over a listing's kept rows", () => {
+  const confirm = web(6, "web.output.dom-click", {
+    selector: "body > div > div:nth-of-type(2)", accessibleName: "Confirm", context: { record: { text: "Tom Becker1 mutual friend2w" } }
+  }, FRIENDS, { consequences: ["modify_existing"], step: { routing: { kind: "repeat", over: "d4", through: "d6" } } });
+  const single = web(5, "web.output.dom-click", {
+    selector: "body > div > div:nth-of-type(3)", accessibleName: "Delete", context: { record: { text: "Diego Alvarez8 mutual friends" } }
+  }, FRIENDS, { consequences: ["modify_existing"] });
+  const steps = automationStudioBuildTestResultSummary({
+    steps: [run36.listing, single, confirm], nodes: [], instructionText: ACCEPT_FRIENDS, startLocation: FRIENDS, deniedEvidenceKeys: DENIED, rowContextKeys: ROW_CONTEXT
+  }).buildTest!.steps;
+
+  it("drops the template row's words from a repeated press and says its control is found again in each kept row", () => {
+    expect(steps[2]?.target).toEqual(["Confirm", "in each row step 4 keeps"]);
+    expect(JSON.stringify(steps[2])).not.toContain("Tom Becker");
+    expect(steps[2]?.runs).toEqual({ kind: "repeat", over: 4, through: 6 });
+  });
+
+  it("keeps an unrepeated press's row words: there they are the row it acts on", () => {
+    expect(steps[1]?.target).toEqual(["Delete", "Diego Alvarez8 mutual friends"]);
+  });
+
+  // Core knows no domain's keys (AGENTS.md): which argument key holds the row a control was found in is the
+  // domain's declaration (`rowContextKeys`, as `deniedEvidenceKeys` is). A domain that declares none has every word kept.
+  it("leaves out only the keys the domain declared: with none declared, the template row's words stay", () => {
+    const undeclared = automationStudioBuildTestResultSummary({
+      steps: [run36.listing, single, confirm], nodes: [], instructionText: ACCEPT_FRIENDS, startLocation: FRIENDS, deniedEvidenceKeys: DENIED
+    }).buildTest!.steps;
+    expect(undeclared[2]?.target).toEqual(["Confirm", "Tom Becker1 mutual friend2w", "in each row step 4 keeps"]);
+    const other = automationStudioBuildTestResultSummary({
+      steps: [run36.listing, single, confirm], nodes: [], instructionText: ACCEPT_FRIENDS, startLocation: FRIENDS, deniedEvidenceKeys: DENIED, rowContextKeys: ["row"]
+    }).buildTest!.steps;
+    expect(other[2]?.target).toContain("Tom Becker1 mutual friend2w");
   });
 });
 

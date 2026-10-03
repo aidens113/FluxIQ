@@ -242,3 +242,63 @@ describe("a repeat over a check", () => {
     expect(replayed.verdict.ok).toBe(false);
   });
 });
+
+// t252 merged with lane B (t193 1002-M, C6 and C10): which reason excuses a
+// step, on its outcome and on its call. A pass of a repeat the test ran per row
+// is excused only by a withheld effect, never as "repeat"; a straight optional
+// step that failed is still excused "optional", as lane B made it.
+describe("why the test passes over a step, merged with the per-row repeat", () => {
+  /** The host above, also keeping the `excusable` each call reached executeTool with. */
+  const recording = (options: Parameters<typeof host>[0]) => {
+    const inner = host(options);
+    const excusable = new Map<string, unknown>();
+    return {
+      calls: inner.calls,
+      excusable,
+      executeTool: async (input: Call & { excusable?: string }) => {
+        excusable.set(input.callId, input.excusable);
+        return inner.executeTool(input);
+      }
+    };
+  };
+
+  it("excuses a span member that fails after a checked lasting act as withheld, on its outcome and on each pass's call", async () => {
+    const steps = [
+      step(1, "node.press", {}, { target: "#save" }, ["modify_existing"]),
+      step(2, "node.list", {}, { where: "mutual > 2" }),
+      step(3, "node.press", { routing: { kind: "repeat", over: "d2", through: "d3" } }, { target: "#confirm" })
+    ];
+    const executor = recording({ rows: ROWS, answers: { "dryrun.1.3.pass.1": "core.replay.failed" } });
+    const replayed = await test(steps, executor);
+    expect(replayed.verdict.outcomes.find((outcome) => outcome.step === 1)).toMatchObject({ mode: "verify", status: "replayed", resultCode: "core.replay.verified" });
+    const member = replayed.verdict.outcomes.find((outcome) => outcome.step === 3)!;
+    expect(member).toMatchObject({ status: "failed", withheldBy: 1, excused: "withheld", passes: [{ pass: 1, status: "failed" }, { pass: 2, status: "replayed" }] });
+    expect(executor.excusable.get("dryrun.1.3.pass.1")).toBe("withheld");
+    expect(executor.excusable.get("dryrun.1.3.pass.2")).toBe("withheld");
+  });
+
+  it("gives a span member that fails with no withheld act no excuse, and its calls no excusable: never \"repeat\"", async () => {
+    const executor = recording({ rows: ROWS, answers: { "dryrun.1.2.pass.2": "core.replay.failed" } });
+    const replayed = await test(loopDraft(), executor);
+    const member = replayed.verdict.outcomes.find((outcome) => outcome.step === 2)!;
+    expect(member).toMatchObject({ status: "failed", passes: [{ pass: 1, status: "replayed" }, { pass: 2, status: "failed" }] });
+    expect(member).not.toHaveProperty("excused");
+    expect(member).not.toHaveProperty("withheldBy");
+    const passCalls = [...executor.excusable.keys()].filter((callId) => callId.includes(".pass."));
+    expect(passCalls).toEqual(["dryrun.1.2.pass.1", "dryrun.1.3.pass.1", "dryrun.1.2.pass.2", "dryrun.1.3.pass.2"]);
+    for (const callId of passCalls) expect(executor.excusable.get(callId)).toBeUndefined();
+    expect([...executor.excusable.values()]).not.toContain("repeat");
+    expect(replayed.verdict.ok).toBe(false);
+  });
+
+  it("still excuses a straight optional step that fails as optional, on its outcome and its call (lane B)", async () => {
+    const steps = [step(1, "node.press", { routing: { kind: "optional" } }, { target: "#banner" }), step(2, "node.press")];
+    const executor = recording({ answers: { "dryrun.1.1": "core.replay.failed" } });
+    const replayed = await test(steps, executor);
+    expect(replayed.verdict.outcomes[0]).toMatchObject({ step: 1, status: "failed", excused: "optional" });
+    expect(replayed.verdict.outcomes[0]!.passes).toBeUndefined();
+    expect(executor.excusable.get("dryrun.1.1")).toBe("optional");
+    expect(executor.excusable.get("dryrun.1.2")).toBeUndefined();
+    expect(replayed.verdict.ok).toBe(true);
+  });
+});

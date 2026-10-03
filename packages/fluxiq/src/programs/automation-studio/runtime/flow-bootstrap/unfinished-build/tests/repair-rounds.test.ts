@@ -1,10 +1,11 @@
 // A build's repair rounds are bounded by money and progress, not by a count
 // (t240): another round opens only when the purse can fund its next decision
 // and the judging of its Flow at their capped holds (run 38, cause C7), and the
-// round before it measurably progressed; one that did not ends the build saying
-// what stood still. A round that ended on refused repeats and handed back the
-// Flow it started from ends it too (run 38, cause C8). Rounds and judges are
-// scripted: each charges the purse it is handed as its calls would.
+// round before it measurably progressed; one that did not ends the build not
+// finished, saying what stood still -- never "not doable" (t195-w37). A round
+// that ended on refused repeats and handed back the Flow it started from ends
+// it too (run 38, cause C8). Rounds and judges are scripted: each charges the
+// purse it is handed as its calls would.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
@@ -130,7 +131,7 @@ describe("a repair round opens only when the purse can fund it", () => {
 });
 
 describe("a repair round opens only after a round that measurably progressed", () => {
-  it("ends not doable, saying what stood still, when a different Flow is judged wrong for the same findings", async () => {
+  it("ends not finished, saying what stood still, when a different Flow is judged wrong for the same findings and no fix is named", async () => {
     const { input, requests } = harness([
       () => finished(wholeFlow(), spent(2, 0.01)),
       // Navigation added, nothing more done: what the judge reports is unchanged (run-muqiho7e-13be6c03).
@@ -142,9 +143,9 @@ describe("a repair round opens only after a round that measurably progressed", (
     expect(requests).toHaveLength(2);
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
-    expect(outcome.ending).toMatchObject({ kind: "not_doable", tried: { rounds: 2 } });
+    expect(outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 2 } });
     expect(outcome.ending.message).toContain(
-      "and the last repair made no measurable progress on the round before it: no more of the 3 things you asked had a step (3, as before); the judge found the same as before."
+      "the last repair made no measurable progress on the round before it: no more of the 3 things you asked had a step (3, as before); the judge found the same as before."
     );
   });
 
@@ -189,7 +190,7 @@ describe("a repair round opens only after a round that measurably progressed", (
 describe("a round that ended on refused repeats and handed back the Flow it started from", () => {
   const seeded = () => [step(1, { acts: ["a1"] }), step(2, { acts: ["a1.quantity"], input: { quantity: "2" } })];
 
-  it("ends an extend build's first round not doable, never opening an identical second round", async () => {
+  it("ends an extend build's first round not finished, never opening an identical second round", async () => {
     const { input, requests } = harness([() => repeatsRefused(seeded(), spent(3, 0.008))], { seedSignature: automationStudioFlowDraftReplaySignature(seeded()) });
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
@@ -197,8 +198,8 @@ describe("a round that ended on refused repeats and handed back the Flow it star
     expect(requests).toHaveLength(1);
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
-    expect(outcome.ending).toMatchObject({ kind: "not_doable", tried: { rounds: 1, stepsInFlow: 2 } });
-    expect(outcome.ending.message).toContain("and the last attempt ended on refused repeats of the same calls and handed back the Flow it started from, unchanged, so another round would only repeat it.");
+    expect(outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 1, stepsInFlow: 2 } });
+    expect(outcome.ending.message).toContain("the last attempt ended on refused repeats of the same calls and handed back the Flow it started from, unchanged, so another round would only repeat it.");
   });
 
   it("ends a repair that handed back its seed unchanged the same way", async () => {
@@ -210,7 +211,7 @@ describe("a round that ended on refused repeats and handed back the Flow it star
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
     expect(requests).toHaveLength(2);
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("and the last repair ended on refused repeats of the same calls and handed back the Flow it started from, unchanged");
+    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("the last repair ended on refused repeats of the same calls and handed back the Flow it started from, unchanged");
   });
 
   it("still repairs a first round that changed the Flow it started from, or that started from none", async () => {
@@ -263,16 +264,16 @@ describe("a repair judged wrong for the same findings, measured by what its test
     expect(outcome).toMatchObject({ kind: "finished", rounds: 3 });
   });
 
-  it("ends not doable when fewer rows were refused only because fewer were stored", async () => {
+  it("ends not finished when fewer rows were refused only because fewer were stored", async () => {
     const { outcome, requests } = await judgedTwice({ stored: 4, refused: 5, missingRequired: 0 }, { stored: 1, refused: 0, missingRequired: 0 });
     expect(requests).toHaveLength(2);
-    expect(outcome.kind === "unfinished" && outcome.ending.kind).toBe("not_doable");
+    expect(outcome.kind === "unfinished" && outcome.ending.kind).toBe("not_finished");
   });
 });
 
 // Live run muqk713g (Stage 6): no record said why each round stopped, so a
 // debug could not tell whether these bounds fired. The ending's `tried` now
-// carries each round's stop and, for "not doable", which no-route case ended it
+// carries each round's stop and, for "not finished", which stop ended it
 // -- closed words only, which the run record and the Lab publish as they are.
 describe("each round's stop, recorded on the ending", () => {
   const seeded = () => [step(1, { acts: ["a1"] }), step(2, { acts: ["a1.quantity"], input: { quantity: "2" } })];

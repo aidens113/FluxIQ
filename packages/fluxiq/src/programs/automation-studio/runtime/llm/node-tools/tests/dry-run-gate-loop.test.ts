@@ -133,3 +133,36 @@ describe("a written step of a repeat the test could not walk", () => {
     expect(await run.gate()).toBeUndefined();
   });
 });
+
+// t252 merged with lane B: when the same Flow is refused again unchanged, the
+// `unchanged` line names what to change. A repeated step whose per-row pass
+// failed with no withheld act blocks, so it is named; a straight optional step
+// that failed is passed over, so it is not.
+describe("the unchanged line over a repeat the test walked", () => {
+  // The presses ran in the build (`effectApplied`), so the test proposes them.
+  const draft = () => [
+    step(1, "node.list"),
+    step(2, "node.press", { routing: { kind: "repeat", over: "d1", through: "d2" }, effectApplied: true }),
+    step(3, "node.press", { routing: { kind: "optional" }, effectApplied: true })
+  ];
+  const unchangedOf = (shown: { value: JsonValue }[]): string[] => shown
+    .map((entry) => entry.value)
+    .filter((value): value is JsonObject => typeof value === "object" && value !== null && !Array.isArray(value) && typeof value.unchanged === "string")
+    .map((value) => value.unchanged as string);
+
+  it("names the repeated step whose per-row pass failed, and not the optional straight step", async () => {
+    const steps = draft();
+    const run = harness(steps, [{ name: "Ada" }, { name: "Ben" }], { pressCode: "core.replay.failed" });
+    const first = await run.gate();
+    expect(first).toMatchObject({ issueCodes: expect.any(Array) });
+    expect(steps[1]!.replayed).toMatchObject({ status: "failed", passes: [{ pass: 1, status: "failed" }, { pass: 2, status: "failed" }] });
+    expect(steps[1]!.replayed).not.toHaveProperty("withheldBy");
+    expect(steps[2]!.replayed).toMatchObject({ status: "failed", excused: "optional" });
+    expect(unchangedOf(run.shown)).toEqual([]);
+    await run.gate();
+    const lines = unchangedOf(run.shown);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("Change step 2 (failed) before you say the Flow is ready");
+    expect(lines[0]).not.toContain("step 3");
+  });
+});

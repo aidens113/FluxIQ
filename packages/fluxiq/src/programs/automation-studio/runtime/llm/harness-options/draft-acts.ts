@@ -28,6 +28,15 @@
 // (run `run-murdouox-c5294247`, R4). A note is information: it has no id, no
 // act can be claimed for it, `actsMissing` never counts it, and nothing is
 // refused for it.
+//
+// **So is a read that comes only before the last act (run
+// `run-murwcaj0-40e56557`, R4).** The draft read name and mutualFriends at step
+// 7, then confirmed at step 10 and read nothing after, so the note above was
+// silent, the build completed, and the judge refuted a table of the page as it
+// was before the confirms. When some kept, proposable read gives every named
+// column and every such read sits before the last kept step carrying `acts`,
+// the same note entry says so instead, naming that act step and never the
+// read. Never both: a column no read gives wins.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
@@ -78,17 +87,27 @@ function withRepeat(
   return suggestion ? { ...item, repeatWith: suggestion.amendment, repeatSaid: suggestion.instruction.trim() } : item;
 }
 
-/** One note for the draft when no read of it gives a column the instruction names. */
+/**
+ * One note for the draft when no read of it gives a column the instruction
+ * names, or else when every read that gives them all runs before the last step
+ * that does an instructed act.
+ */
 function unreadColumnNotes(instructionText: string | undefined, steps: readonly AutomationStudioFlowDraftStep[]): JsonObject[] {
   if (!instructionText) return [];
   const reads = steps.flatMap((step) => {
     // A read the model withdrew, or one that failed, is no longer its read.
-    if (step.disposition === "dropped" || step.disposition === "exploratory") return [];
+    if (!isKept(step)) return [];
     if (!automationStudioFlowBootstrapDraftStepIsWritable(step) || !automationStudioFlowDraftStepIsProposable(step)) return [];
-    return [readFieldKeys(step.input.parameters)];
+    return [{ step: step.position, fieldKeys: readFieldKeys(step.input.parameters) }];
   });
-  const note = automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText, reads });
+  const actSteps = steps.filter((step) => isKept(step) && (step.acts?.length ?? 0) > 0).map((step) => step.position);
+  const lastActStep = actSteps.length ? Math.max(...actSteps) : undefined;
+  const note = automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText, reads, lastActStep });
   return note ? [{ note }] : [];
+}
+
+function isKept(step: AutomationStudioFlowDraftStep): boolean {
+  return step.disposition !== "dropped" && step.disposition !== "exploratory";
 }
 
 /**

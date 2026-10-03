@@ -142,6 +142,26 @@ describe("the judges are told what an excluded row is, and what a replayed read'
     expect(prompt).toContain("readRows");
     expect(prompt).toContain("readRows.leftOutOnlyByThis");
   });
+
+  // t195-w34, live run `run-murwcaj0-40e56557` (R6): shown only the names a mutual-friends
+  // regex left out, the judge took the regex's intent for what it did.
+  it("tells both judges a left-out row is written with the value its condition tested, and to judge from it", () => {
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("where the value that condition tested on that row is known, written label — column: value");
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("Read each row's tested value against the request yourself rather than trusting what the condition was meant to do");
+    expect(prompt).toContain("each written label — column: value where the test knows the value that condition tested on it");
+  });
+});
+
+// t195-w39, live run `run-murwcaj0-40e56557` (J1): shown a repeated Confirm's
+// target with the card it was built on, the build-test judge called the loop's
+// press "one remembered target repeated, not a per-row confirm". At playback a
+// repeated step acts on each row's own control; the judge is now told so.
+describe("the build-test judge is told a repeated step acts on each row of its listing", () => {
+  it("says a repeated step acts on each row, never only on the row it was built on", () => {
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(prompt).toContain("A repeated step acts on each row that step keeps, finding its control again inside each row, never only on the row it was built on");
+  });
 });
 
 // Run `run-murwd8le-79e735a8` (Cause 9): the post-run checks 0071 and 0072
@@ -172,5 +192,18 @@ describe("the build-test judge is told what a repeated step's passes and the Flo
     expect(prompt).toContain("Judge each pass against its own row, not the row the build explored");
     expect(prompt).toContain("buildTest.inputs");
     expect(automationStudioDiagnosisPromptInstruction("loop_verification")).not.toContain("passes");
+  });
+});
+
+// t193 1002-M (live run `run-murzln6g-11debe1d`, C6): the drawer's "×" the Flow
+// passes over failed in the test, the judge was shown it as plain `failed`,
+// and its second answer asked to "fix or remove the failed step 15".
+describe("the judge's instruction on an excused step", () => {
+  it("says an excused step is no defect: never a no for it alone, and never fix or remove it in changed", () => {
+    // Only a build's test has excused steps, so it is said where buildTest is.
+    const instruction = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(instruction).toMatch(/excused/u);
+    expect(instruction).toMatch(/excused[^.]*not a defect/u);
+    expect(instruction).toMatch(/never asks? to fix, rerun or remove it/u);
   });
 });

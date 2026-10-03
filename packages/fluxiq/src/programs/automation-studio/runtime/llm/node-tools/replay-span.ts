@@ -38,7 +38,9 @@
 // (`automationStudioFlowDraftStepReplayMode`): a lasting act is a check per
 // row, never a press. A member of a span that ran has `passes`, and the verdict
 // no longer excuses it as a step the Flow does not always run
-// (`../../flow-draft/dry-run.ts`).
+// (`../../flow-draft/dry-run.ts`). One that did not pass after a lasting act
+// was only checked is excused for that, and says so (`excused: "withheld"`,
+// `../../flow-draft/excused.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../../nodes/index.ts";
@@ -296,7 +298,7 @@ function memberOutcome(
     status,
     ...(resultCode ? { resultCode } : {}),
     ...(mode === "verify" ? { mode } : {}),
-    ...(status !== "replayed" && withheldBy !== undefined ? { withheldBy } : {}),
+    ...(status !== "replayed" && withheldBy !== undefined ? { withheldBy, excused: "withheld" as const } : {}),
     passes
   };
 }

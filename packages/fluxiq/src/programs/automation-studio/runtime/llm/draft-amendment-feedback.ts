@@ -38,6 +38,19 @@
 // after it to put the repeat on, or, when there is none, that the act on one
 // row it kept comes first, with the repeat to send then. Nothing is changed on
 // the model's behalf; `next` is information, in the draft's own numbers.
+//
+// **A listing after its act is moved first.** Live run `run-murz83zy-5030820f`
+// (R8) pressed Amara's Confirm as step 9 and ran the filtered listing only at
+// step 18, then sent `9 repeat over 18` five decisions running and once more in
+// round 1. Each refusal told it to send `{step: <act>, change: repeat, over:
+// <listing>}` -- exactly what it had sent -- and `next` looked for a press
+// *after* the listing and said there was none. Nothing pointed to `reorder`.
+// So when the repeat was put on a working act and `over` names a listing after
+// it, `next` says to move the listing to the act's place and then repeat the
+// act, with the numbers each amendment is read against: a decision's
+// amendments apply in order and a reorder renumbers at once
+// (`../flow-draft/amendment.ts`), so `18 reorder to 9` is followed by
+// `10 repeat over 9` -- and a `through` after the act shifts with it.
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../flow-draft/index.ts";
@@ -66,7 +79,7 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   no_such_position: "There is no position to move a step to at that number.",
   run_by_the_loop: "A rerun is carried out by the loop rather than written onto the draft, and this one was not carried out. A rerun needs an input saying what changes in the step's argument, its step's action has to be one still offered, and only the first rerun of a decision runs -- ask for one, and do the rest in the next decision.",
   no_step_before_it: "This change was about the step before the one it named, and there is none. Name the step it is about: check for only_if, over for repeat.",
-  over_not_before: "repeat goes on the act that is done to each row -- the press, or the first of the steps done to a row -- never on the step that lists the rows. over names that listing, and it must come before the act: send {\"step\": <the act>, \"change\": \"repeat\", \"over\": <the listing>}. When no step does the act to a row yet, do it to one row the listing kept and add it first: there is nothing to repeat until then.",
+  over_not_before: "repeat goes on the act that is done to each row -- the press, or the first of the steps done to a row -- never on the step that lists the rows. over names that listing, and it must come before the act: send {\"step\": <the act>, \"change\": \"repeat\", \"over\": <the listing>}. When the listing comes after the act, sending that again is refused again: move the listing before the act first with reorder, {\"step\": <the listing>, \"change\": \"reorder\", \"to\": <the act>}, which makes the act one step later, then repeat the act at its new number over the listing at its new one -- both in one decision is fine, since each amendment reads the numbers the one before it left. When no step does the act to a row yet, do it to one row the listing kept and add it first: there is nothing to repeat until then.",
   not_a_kept_step: "It named a step the Flow does not contain -- one dropped, marked exploratory, or that did not work. Routing describes the Flow, so it may only name steps the Flow runs.",
   changes_nothing: "That rerun was already run with exactly this argument on this same page, and its result is the one already shown: running it again changes nothing, so it was not run. Change what differs in the step's argument, change the page first, or go on with the result you have. A listing whose rows are right is never run again: go on to the act on one row it kept.",
   did_not_work: "That step did not work, so it is already out of the Flow and nothing needs dropping or keeping about it. The only amendment that changes it is rerun with a corrected argument; or run the action again as a new call. If the Flow does not need it, leave it alone.",
@@ -184,6 +197,9 @@ function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: rea
   const at = (position: number | undefined) => position === undefined ? undefined : steps.find((step) => step.position === position);
   const reads = (step: AutomationStudioDraftAmendmentFeedbackStep | undefined): step is AutomationStudioDraftAmendmentFeedbackStep => step?.effect !== undefined && step.effect !== "mutate";
   if (refusal.reason === "over_not_before") {
+    const act = at(refusal.step);
+    const named = at(refusal.over);
+    if (act?.effect === "mutate" && act.effectApplied !== false && reads(named) && named.position > act.position) return listingFirst(act, named.position, refusal.through);
     const listing = [at(refusal.over), at(refusal.step)].find(reads);
     return listing ? `Step ${listing.position} is the listing, so the repeat cannot go on it. ${rowAct(listing.position, steps)}` : undefined;
   }
@@ -193,6 +209,22 @@ function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: rea
     return `Step ${listing.position} already ran with exactly this argument, so its result stands as shown: do not run it again. If it lists the rows an act is done to and they are the right ones, go on to the act. ${rowAct(listing.position, steps)}`;
   }
   return undefined;
+}
+
+/**
+ * What a repeat on the act at `act.position` over the listing at `listing`,
+ * after it, needs instead: the listing moved to the act's place, then the
+ * repeat, in the numbers the reorder leaves -- the act one later, the listing
+ * where the act was, and a `through` between them one later too. One
+ * decision's amendments are applied in order, each against the draft the one
+ * before it left (`../flow-draft/amendment.ts`), so both may go in one.
+ */
+function listingFirst(act: AutomationStudioDraftAmendmentFeedbackStep, listing: number, through: number | undefined): string {
+  const at = act.position;
+  const shifted = through === undefined || through === listing ? undefined : through >= at && through < listing ? through + 1 : through;
+  const add = act.disposition === "kept" ? "" : `add step ${at} with its act, then `;
+  const repeat = `{"step": ${at + 1}, "change": "repeat", "over": ${at}${shifted === undefined ? "" : `, "through": ${shifted}`}}`;
+  return `Step ${listing} is the listing, and it comes after step ${at}, the act the repeat was put on: over must come before the act, so the same repeat is refused however often it is sent. Move the listing before the act first: ${add}send {"step": ${listing}, "change": "reorder", "to": ${at}}, which makes the listing step ${at} and the act step ${at + 1}, then ${repeat}. Both may go in one decision: each amendment is read against the numbers the one before it left.`;
 }
 
 /**
