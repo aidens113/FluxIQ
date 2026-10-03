@@ -19,11 +19,15 @@ const REASONS: readonly { words: RegExp; why: string }[] = [
   { words: /_(disabled|not_enabled|readonly|read_only)_/u, why: "it couldn't be used yet" },
   { words: /_(detached|stale|changed|moved)_/u, why: "the page changed before it could" },
   { words: /_(intervention|check_required|human_check)_/u, why: "the page wanted a person" },
+  // A page that said it was busy, by its code or by the refusal's reason
+  // (`page_busy_try_later`): checked before `refused_by_page`, whose "the page
+  // turned it down" was said of a press the page was only too busy to take
+  // (t174-w85 D8, `run-murwd8le-79e735a8`).
+  { words: /_(busy|try_later|rate_limited|throttled|too_many_requests)_/u, why: "the page was busy" },
   // The page's own answer to a press, not a permission: "Please select a
   // Color." beside Add to cart would read "it wasn't allowed" (crossborder
   // `run-muqk4u32-0b36e58f`, t174 F40). Checked before `refused`.
   { words: /_(refused_by_page|declined_by_page)_/u, why: "the page turned it down" },
-  { words: /_(rate_limited|throttled|too_many_requests)_/u, why: "the page asked to wait and try again" },
   { words: /_(denied|forbidden|refused|blocked|not_allowed|permission)_/u, why: "it wasn't allowed" },
   { words: /_(invalid|malformed|rejected|unsupported)_/u, why: "the step wasn't accepted" },
   { words: /_(network|offline|unreachable|navigation_failed|load_failed)_/u, why: "the page didn't load" },

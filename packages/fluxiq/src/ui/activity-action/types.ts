@@ -47,6 +47,20 @@ export type ActivityAction = {
   target: string | null;
   outcome: ActivityActionOutcome;
   why: string | null;
+  /**
+   * Present, and true, for a step a test run of the Flow ran (a build's dry
+   * run, or a part of the Flow run again): the card names the action and adds
+   * that it was a test. Its steps read "Test run · ×" before (t174-w85 D4).
+   */
+  testing?: true;
+  /**
+   * Present, and true, on a result check that could not confirm the result
+   * answers the request, or could not check it at all. `outcome` stays
+   * `failed`, fail-closed, for a client that does not read this; a client that
+   * does says "not confirmed", never "didn't pass": an unverified run that met
+   * its task read "Check result · Didn't pass" in red (t174-w85 D1).
+   */
+  unconfirmed?: true;
 };
 
 /**
@@ -56,6 +70,8 @@ export type ActivityAction = {
  */
 export type ActivityActionEvent = {
   phase: string;
+  /** Core's status sentence; read only to tell a result check's verdicts apart (`./result-check-labels.ts`). */
+  label?: string | undefined;
   detail?: {
     kind: string;
     title: string;

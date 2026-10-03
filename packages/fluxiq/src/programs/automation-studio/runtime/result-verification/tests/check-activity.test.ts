@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ACTIVITY_RESULT_CHECK_LABELS, activityActionOf } from "../../../../../ui/index.ts";
 import { automationStudioResultCheckActivity } from "../check-activity.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../contracts.ts";
 import { automationStudioResultVerificationAgreement } from "../agreement.ts";
@@ -41,5 +42,19 @@ describe("automationStudioResultCheckActivity", () => {
     expect(unconfirmed).toMatchObject({ label: "Couldn't confirm the result answers the request", status: "failed" });
     const skipped = automationStudioResultCheckActivity({ schemaVersion: "automation-studio.result-verification.v1", performed: false, code: "core.result.no_model_available", reason: "No model was available to judge this run's result." });
     expect(skipped).toEqual({ label: "The result couldn't be checked", status: "failed", text: "No model was available to judge this run's result." });
+  });
+
+  // t174-w85 D1 (run-murwd8le-79e735a8, 00019): the judges disagreed, so the result was
+  // unverified, and the chat's card read "Check result · Didn't pass" in red.
+  it("says an unconfirmed result in the label the chat's card reads as not confirmed, never as failed", () => {
+    const no = automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "no" }, basis: "model" });
+    const yes = automationStudioResultVerdict({ summary, diagnosis: { answersRequest: "yes" }, basis: "model" });
+    const card = (words: ReturnType<typeof automationStudioResultCheckActivity>) => activityActionOf({ phase: "verifying", label: words.label, detail: { kind: "check", title: "Result check", status: words.status, text: words.text } });
+    const unconfirmed = automationStudioResultCheckActivity(performed(automationStudioResultVerificationAgreement({ first: no, second: yes })));
+    expect(unconfirmed.label).toBe(ACTIVITY_RESULT_CHECK_LABELS.unconfirmed);
+    expect(card(unconfirmed)).toMatchObject({ kind: "result_check", unconfirmed: true });
+    const refuted = automationStudioResultCheckActivity(performed(automationStudioResultVerificationAgreement({ first: no, second: no })));
+    expect(card(refuted)).not.toHaveProperty("unconfirmed");
+    expect(card(automationStudioResultCheckActivity(performed(yes)))).toMatchObject({ outcome: "done" });
   });
 });
