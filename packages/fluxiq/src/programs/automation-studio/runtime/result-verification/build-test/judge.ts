@@ -82,7 +82,7 @@ export type AutomationStudioBuildTestVerdict =
     unconfirmedReading?: { expected?: string; observed?: string; advice?: string };
     spent: AutomationStudioBuildTestJudgeSpend;
   }
-  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records: AutomationStudioBuildTestRecordCounts; spent: AutomationStudioBuildTestJudgeSpend };
+  | { verdict: "no"; expected?: string; observed?: string; advice?: string; stillAchievable?: "yes" | "no" | "unknown"; findings: string[]; records: AutomationStudioBuildTestRecordCounts; spent: AutomationStudioBuildTestJudgeSpend };
 
 /** One question to the judge: the test's summary, and what the build has left to spend. */
 export type AutomationStudioBuildTestJudgeInput = {
@@ -166,6 +166,8 @@ export function automationStudioBuildTestJudge(deps: {
         ...(judgement?.expected ? { expected: judgement.expected } : {}),
         ...(judgement?.observed ? { observed: judgement.observed } : {}),
         ...(judgement?.advice ? { advice: judgement.advice } : {}),
+        // The build ends "not doable" only when the judge says this (t195-w37).
+        ...(judgement?.stillAchievable ? { stillAchievable: judgement.stillAchievable } : {}),
         findings: (outcome.repair?.findings ?? []).map((finding) => finding.code).filter((code) => !NOT_A_FINDING_OF_A_TEST.has(code)),
         // The counts the verdict was reached from, for the build to measure the next repair against (t240).
         records: { stored: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired },

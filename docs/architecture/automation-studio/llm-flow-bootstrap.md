@@ -785,11 +785,12 @@ wall, a covering popup -- that was gone after it. Only `true` is carried; any
 other value is withheld, never refused. The draft step keeps it, and a proposed
 step that says it, claims none of the instructed acts and has no routing of its
 own is wired as `optional` when the Flow is written
-(`runtime/flow-draft/sometimes-present.ts`,
+(`runtime/flow-draft/interruption.ts`, `runtime/flow-draft/sometimes-present.ts`,
 `runtime/flow-bootstrap/authoring/draft-routing.ts`): its failure reaches the
 join the next step runs from, so playback skips it on a visit where the site
-remembers the answer. The stored draft is not rewritten, and a step that does
-an instructed act is never made optional.
+remembers the answer. The test from the start passes over its failure the same
+way. The stored draft is not rewritten, and a step that does an instructed act
+is never made optional.
 
 **Each step records the page it started on and the page it left (t243).** A
 run that meets a step it cannot run continues at the node whose expected
@@ -838,7 +839,11 @@ instruction says a Flow is ready only when every act on the checklist is done.
 Each act includes its requested choices (quantity, size, colour or version),
 with their own `done` step or `todo` reason. A claim such as `act: "a2.quantity"`
 adds the step toward that choice; completing the parent act alone does not
-complete its choices.
+complete its choices. A choice made by a step positioned after the step that
+does its act stays done but carries `afterAct` and `afterActSaid` (the act ran
+before its choice), and the check's verdict lists it under `choicesAfterAct`:
+information for the model and, through `buildTest.checklist`, the judge, never
+a refusal (`runtime/flow-bootstrap/instructed-acts/choice-order.ts`).
 
 **Progress means the Flow advanced** (audit A1, cause 2). A call that applied
 an effect is no longer progress by itself: one that leaves a state the build
@@ -1337,8 +1342,14 @@ cannot tell apart from a site that remembers an earlier answer). Every answer
 but `replayed` refuses the completion, on every attempt: finishing again with
 the step unchanged is refused again. The only exemptions are a step the Flow
 would not always run (marked `optional`, made `only_if` on a check, the check
-guarding such a step, or a step another falls back to) and a step no longer
-proposed (dropped, exploratory or failed), which is not replayed. A step
+guarding such a step, a step another falls back to, or a step the host says
+answered an interruption, which the Flow is written with as optional) and a
+step no longer proposed (dropped, exploratory or failed), which is not
+replayed. The test, its verdict, a rerun's put-back and a partial run all read
+that one set (`automationStudioFlowDraftConditionalStepIds`), so the test
+judges the Flow as it will be written: in live run `run-murwdp4f-35f976d2`
+the test refused the Flow twice on a dismissed chat card alone, a step the Flow
+would have skipped, while every later step replayed (t193). A step
 reported before is marked `again: true` on the next refusal, which changes no
 verdict. Until 2026-09-30 an `unreproducible` step stopped blocking once it had
 been reported, and live runs 18, 21 and 33 were accepted or passed a dry run
@@ -1349,7 +1360,10 @@ action, the argument it runs with, its settings, its routing, whether it
 answers an interruption, and its acts), so a completion over the same unchanged
 Flow is not replayed again; its history row says `reused_clean`. A refused Flow
 completed again unchanged is replayed at most twice; after that it is refused
-again from what those replays found, never passed from them. Routing and
+again from what those replays found, never passed from them. Each refusal of a
+Flow whose signature equals the last refused one adds one line (`unchanged`):
+nothing changed since the last test, it failed the same way again (or was not
+run again), and the steps to change (t193). Routing and
 settings are in the signature because an edit to either is an edit to the Flow:
 a step marked optional or `only_if` since the refusal is a changed Flow, and
 the changed Flow is run (user, 2026-10-02). A refused replay that itself proved
@@ -1379,7 +1393,13 @@ own run moved the target, which Core reads by comparing the two steps'
 the page before the move. A verified step that did not move the target excuses
 nothing, because the site still holds the effect from exploring. Steps that
 declare none (an open, a filter, a navigation) are run again as before, since
-the steps after them stand on them. The build trace prints a dry run's own call
+the steps after them stand on them. A changing step that names one of the
+person's acts (a bare act id such as `a2`, never a choice such as
+`a2.quantity`) is verified whatever it declared, unless the next proposed step
+found the target on another page, when the declaration rule applies: live run
+`run-murwdp4f-35f976d2`'s Add to cart declared nothing and was pressed by both
+build tests. The same predicate decides for the dry run, a rerun's put-back and
+`core.run_flow`. The build trace prints a dry run's own call
 ids (`dryrun.<attempt>.<step|reset>`), so a completion that replayed can be told
 from one that reused a verdict.
 
@@ -1395,7 +1415,7 @@ the target as it stands**: nothing is reset first, which is the point -- a
 repaired step and the ones after it are tried without running everything
 before them. Each step is sent with the very call the dry run would send
 (`replay: "step"`, or `replay: "verify"` for a step that declares a lasting
-consequence, D1) through the loop's own executor, so the permission gate sees
+consequence or does one of the person's acts in place, D1) through the loop's own executor, so the permission gate sees
 it as it sees every call. Unlike the dry run there is no second try on a step's
 own page.
 

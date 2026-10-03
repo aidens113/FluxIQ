@@ -34,6 +34,12 @@
 // checklist is still read for it, as information: the Flow is judged on what
 // its test does.
 //
+// **The judge's word on whether it can still be done is kept (t195-w37).** A
+// `no` carries `stillAchievable` where the judge gave it: the one thing that
+// ends a build "not doable" (`./phases.ts`). Live run `run-murwcaj0-40e56557`
+// had a judge say "still achievable" twice, and the build ended "I found no
+// way to" all the same, because the judgement never carried it.
+//
 // **Steps that never ran in this build are named (t194-w70).** A re-author or
 // an extend seeds its draft from a stored Flow, and a step carried from it has
 // nothing it ran with and nothing to put the target back with until it is
@@ -189,7 +195,9 @@ function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, 
     ...(verdict.observed ? { observed: verdict.observed } : {}),
     ...(verdict.advice ? { advice: verdict.advice } : {}),
     findings: [...verdict.findings],
-    ...(verdict.records ? { records: { ...verdict.records } } : {})
+    ...(verdict.records ? { records: { ...verdict.records } } : {}),
+    // Whether what was asked can still be had: only a `no` here ends the build "not doable" (t195-w37, `./phases.ts`).
+    ...(verdict.stillAchievable ? { stillAchievable: verdict.stillAchievable } : {})
   };
 }
 

@@ -4,12 +4,14 @@
 // as the budget it is, never dressed up as "not doable" -- a build that ran
 // out of money had a route it did not get to finish. So the message names the
 // budget and its size, what of the request the Flow already does, what was
-// tried and what blocked it, and whether the Flow so far was kept for the next
+// tried and what blocked it, and whether the steps found so far were kept for the next
 // build to carry on from. It is also how a build that authored nothing ends
 // (supervisor, t208): never as a bare code, always with this message. A cost
 // ending says the figures that stopped it (F41); where one purse holds the
 // Flow's whole creation (t234), also what earlier builds of the Flow spent of
-// them and what of the Flow's ceiling building again has left.
+// them and what of the Flow's ceiling building again has left. What was kept
+// is said as a draft not put into the Flow (`./kept-said.ts`; t195-w37, live
+// run `run-murz83zy-5030820f`, whose chat also said the Flow was left empty).
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
   type AutomationStudioFlowBootstrapBudgetBound,
@@ -24,6 +26,7 @@ import {
   automationStudioFlowBootstrapStopSaid,
   automationStudioFlowBootstrapTestSaid
 } from "./not-done.ts";
+import { automationStudioFlowBootstrapKeptSaid } from "./kept-said.ts";
 import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The size of each budget, as the person is told it. */
@@ -83,7 +86,7 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   decisions: number;
   /** Why each live round stopped, in order (`./tried.ts`). */
   stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
-  /** Whether the Flow so far was kept for the next build. */
+  /** Whether the steps found so far were kept for the next build. */
   kept: boolean;
   /**
    * The figures that stopped a `cost` ending, said only for one, so the person
@@ -96,14 +99,12 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   const said = automationStudioFlowBootstrapProgressSaid(input.checklist, input.judgement);
   const progress = said ? ` ${said}` : "";
   const flowLeft = input.bound === "cost" && input.spending ? flowLeftSaid(input.spending) : "";
-  const kept = input.kept
-    ? ` The Flow so far was kept, and building again carries on from it${flowLeft}.`
-    : " Nothing was kept to carry on from.";
+  const kept = automationStudioFlowBootstrapKeptSaid(input.kept, flowLeft);
   const blocked = automationStudioFlowBootstrapBlockedSaid(input.judgement.lastIssueCodes)
     || (input.judgement.stopped === "budget" ? "" : automationStudioFlowBootstrapStopSaid(input.judgement.stopped));
   const tried = `I explored live ${input.rounds === 1 ? "once" : `${input.rounds} times`} over ${input.decisions} decisions${blocked ? `, and what held it up was that ${blocked}` : ""}.`;
   const spending = input.bound === "cost" && input.spending ? spendingSaid(input.spending, input.sizes.maxCostUsd) : "";
-  const message = [`The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished${spending}.${progress}`, automationStudioFlowBootstrapTestSaid(input.judgement), tried, kept.trim()]
+  const message = [`The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished${spending}.${progress}`, automationStudioFlowBootstrapTestSaid(input.judgement), tried, kept]
     .filter(Boolean)
     .join(" ");
   return {

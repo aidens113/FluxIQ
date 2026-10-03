@@ -3,8 +3,9 @@
 // on a `yes` about a test of the Flow as it finally stands -- the verdict's
 // `flowSignature` is that Flow's. Anything else -- `no`, an unsure verdict, one
 // not judged, a `yes` about another version or about no test -- is repaired
-// live with the judge's account, under the same funding and progress bounds,
-// and "not doable" only when a repair gets no further. The judge's spend
+// live with the judge's account, under the same funding and progress bounds; a
+// repair that gets no further ends it not finished, after one more round where
+// the judge named the fix (t195-w37). The judge's spend
 // counts against the build's budget. Judges are scripted: no provider.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
@@ -144,23 +145,21 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(requests[1]!.budget.maxCostUsd).toBeCloseTo(0.216, 6);
   });
 
-  it("ends not doable, saying what the judge found, when a repair hands back the same Flow judged no again", async () => {
-    const { input, requests, kept } = harness([
-      () => finished(wholeFlow()),
-      (request) => finished(request.repair!.seed.map((each) => ({ ...each })))
-    ], [() => NO, () => NO]);
+  it("repairs once more after a judge who named the fix, then ends not finished, saying what the judge left to change, when repairs hand back the same Flow judged no again", async () => {
+    const same = (request: AutomationStudioFlowBootstrapRoundRequest) => finished(request.repair!.seed.map((each) => ({ ...each })));
+    const { input, requests, kept } = harness([() => finished(wholeFlow()), same, same], [() => NO, () => NO, () => NO]);
 
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(3);
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
-    expect(outcome.ending).toMatchObject({ kind: "not_doable", notDone: [], tried: { rounds: 2, decisions: 4, stepsInFlow: 3, tested: "replayed_clean" } });
-    expect(outcome.ending.message).toMatch(/^I could not build this Flow, and I found no way to: it was tested from its start and judged not to do what you asked/u);
-    expect(outcome.ending.message).toContain("what you asked: \"two packs of Softly Paper Towels in the cart\"; what its test did: \"the test pressed Add on the Softly napkins\"");
+    expect(outcome.ending).toMatchObject({ kind: "not_finished", notDone: [], tried: { rounds: 3, decisions: 6, stepsInFlow: 3, tested: "replayed_clean" } });
+    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet: the last 2 repairs made no measurable progress, each on the round before it: it handed back the same Flow; no more of the 3 things you asked had a step \(3, as before\); the judge found the same as before\./u);
+    expect(outcome.ending.message).toContain("What the judge says is left to change: \"press Add on the towels' own card\".");
     expect(outcome.ending.message).toContain("ran from its start, but what it did was judged not to be what you asked");
     expect(outcome.ending.message).not.toContain("without failing");
-    expect(outcome.ending.message).toContain("and the last repair made no measurable progress on the round before it: it handed back the same Flow; no more of the 3 things you asked had a step (3, as before); the judge found the same as before.");
+    expect(outcome.ending.message).not.toContain("found no way");
     expect(kept[0]![0]).toBe("judged_wrong");
   });
 
@@ -243,7 +242,7 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(outcome).toMatchObject({ kind: "finished", rounds: 3 });
   });
 
-  it("ends not doable when a repair hands back the same Flow, still not judged", async () => {
+  it("ends not finished when a repair hands back the same Flow, still not judged", async () => {
     const unknown = (call: JudgeCall): AutomationStudioFlowBootstrapTestVerdict => ({ verdict: "unknown", why: "the test read no cart", spent: JUDGE_SPEND, flowSignature: call.signature });
     const { input, requests } = harness([
       () => finished(wholeFlow()),
@@ -253,7 +252,7 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
     expect(requests).toHaveLength(2);
-    expect(outcome.kind === "unfinished" && outcome.ending.kind).toBe("not_doable");
+    expect(outcome.kind === "unfinished" && outcome.ending.kind).toBe("not_finished");
   });
 
   // An extended draft's carried steps have no replay (`llm/node-tools/draft-from-flow.ts`):
@@ -329,7 +328,7 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(requests).toHaveLength(1);
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
     expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("which left $0.008, too little for another round: judging its Flow takes two judge calls held at up to $0.008, and its first decision at least $0.001 more.");
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("The Flow so far was kept");
+    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("The Flow so far was kept as a draft");
     // The Flow it finished with is kept whole, for building again to carry on from.
     expect(kept).toHaveLength(1);
     expect((kept[0]![2] as unknown[]).length).toBe(3);

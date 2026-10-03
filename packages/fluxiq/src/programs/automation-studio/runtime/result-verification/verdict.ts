@@ -116,7 +116,7 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     };
   }
   if (verdict === "does_not_answer") {
-    return failed(verdict, "model", codes.doesNotAnswer, "The result was judged not to answer the request the Flow was built for, although every step of the run succeeded.", observation, automationStudioResultRepairDirective({
+    return failed(verdict, "model", codes.doesNotAnswer, "The result was judged not to answer the request the Flow was built for.", observation, automationStudioResultRepairDirective({
       summary: input.summary,
       judgement: {
         ...(input.diagnosis?.expected !== undefined ? { expected: input.diagnosis.expected } : {}),
@@ -124,7 +124,10 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
         // `changed` is the field the diagnosis channel already asks a model to
         // fill with its reading, and the reply's summary stands in where it left
         // it empty. Neither is required and neither is asked for twice.
-        ...(advice(input) !== undefined ? { advice: advice(input) } : {})
+        ...(advice(input) !== undefined ? { advice: advice(input) } : {}),
+        // Whether what was asked can still be had: the one field a build reads
+        // to end "not doable" (t195-w37, live run `run-murwcaj0-40e56557`).
+        ...(input.diagnosis?.stillAchievable !== undefined ? { stillAchievable: input.diagnosis.stillAchievable } : {})
       }
     }));
   }

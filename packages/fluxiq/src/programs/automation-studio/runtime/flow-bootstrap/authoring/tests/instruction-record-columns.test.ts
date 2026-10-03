@@ -180,20 +180,55 @@ describe("the sentence beside the draft for a named column no read gives", () =>
   const FRIENDS = "Confirm every friend request from someone with at least 3 mutual friends, then give me a table with columns name and mutualFriends.";
 
   it("names the column and no step when no read of the draft gives it", () => {
-    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [["name", "url", "requestId"]] }))
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [{ fieldKeys: ["name", "url", "requestId"] }] }))
       .toBe("The instruction asks for a column \"mutualFriends\" that no read in the draft gives.");
   });
 
   it("holds the instruction to every read at once: a column one read gives is not missing", () => {
-    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [["name", "url"], ["name", "mutualFriends"]] })).toBeUndefined();
-    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, reads: [["name"], ["url"]] }))
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [{ fieldKeys: ["name", "url"] }, { fieldKeys: ["name", "mutualFriends"] }] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: RUN_12_INSTRUCTION, reads: [{ fieldKeys: ["name"] }, { fieldKeys: ["url"] }] }))
       .toBe("The instruction asks for columns \"price\", \"rating\" that no read in the draft gives.");
   });
 
   it("says nothing when there is no read with fields, or no named column", () => {
     expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [] })).toBeUndefined();
-    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [[]] })).toBeUndefined();
-    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: "Confirm every friend request.", reads: [["name"]] })).toBeUndefined();
-    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: undefined, reads: [["name"]] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: FRIENDS, reads: [{ fieldKeys: [] }] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: "Confirm every friend request.", reads: [{ fieldKeys: ["name"] }] })).toBeUndefined();
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: undefined, reads: [{ fieldKeys: ["name"] }] })).toBeUndefined();
+  });
+});
+
+// Run `run-murwcaj0-40e56557`, R4: the draft's only read of name and
+// mutualFriends was step 7, before the confirm at step 10, and nothing read the
+// list after it, so the table showed the page before the confirms and the judge
+// refuted it. The note names the last act step, never the read, and is never
+// said with the unread-column note.
+describe("the sentence beside the draft when every read giving the columns runs before the last act", () => {
+  const RUN = "Go through my pending friend requests and confirm everyone I have at least five mutual friends with, leaving the rest alone. Then give me a table of every request the list now shows as accepted, in list order, with columns name and mutualFriends.";
+  const BEFORE = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act; if the instruction asks for what the page shows after it, the draft needs a read after step 10.";
+
+  it("names the last act step, and no read, when every read giving every column runs before it", () => {
+    const sentence = automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: RUN, reads: [{ step: 7, fieldKeys: ["name", "mutualFriends", "requestId"] }], lastActStep: 10 });
+    expect(sentence).toBe(BEFORE);
+    expect(sentence).not.toContain("step 7");
+  });
+
+  it("is silent when a read giving every column follows the last act", () => {
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({
+      instructionText: RUN, reads: [{ step: 7, fieldKeys: ["name", "mutualFriends"] }, { step: 11, fieldKeys: ["name", "mutualFriends"] }], lastActStep: 10
+    })).toBeUndefined();
+  });
+
+  it("is silent with no act step", () => {
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: RUN, reads: [{ step: 7, fieldKeys: ["name", "mutualFriends"] }] })).toBeUndefined();
+  });
+
+  it("gives way to the unread-column note when no read gives every column", () => {
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: RUN, reads: [{ step: 7, fieldKeys: ["name", "requestId"] }], lastActStep: 10 }))
+      .toBe("The instruction asks for a column \"mutualFriends\" that no read in the draft gives.");
+    // Every column given, but by no one read: neither note.
+    expect(automationStudioFlowBootstrapDraftUnreadColumnsSentence({
+      instructionText: RUN, reads: [{ step: 7, fieldKeys: ["name"] }, { step: 8, fieldKeys: ["mutualFriends"] }], lastActStep: 10
+    })).toBeUndefined();
   });
 });

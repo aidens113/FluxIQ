@@ -2,8 +2,8 @@
 // as each action happens, the draft those steps make, the amendments the model
 // edits them with, what a step says about when it runs, the one entry the draft
 // is shown to the model under, the replay it must survive before it may be
-// proposed, which of its steps that replay only checks, what it says about a
-// step the site remembers, which it found are only sometimes there or the host
+// proposed, which of its steps that replay only checks, which it passed over
+// and why, what it says about a step the site remembers, which it found are only sometimes there or the host
 // says answered an interruption, the press that opened a kept step's page, the
 // domain's words for what a step's call named, the words of the control a
 // step acted on, what Flow version a draft stands for, and what a completion
@@ -14,8 +14,10 @@ export * from "./control-words.ts";
 export * from "./dry-run.ts";
 export * from "./draft.ts";
 export * from "./entry.ts";
+export * from "./excused.ts";
 export * from "./flow-signature.ts";
 export * from "./full-run-required.ts";
+export * from "./interruption.ts";
 export * from "./opener.ts";
 export * from "./routing.ts";
 export * from "./site-memory.ts";

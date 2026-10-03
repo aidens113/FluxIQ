@@ -79,6 +79,27 @@ describe("a build's judge", () => {
     expect(buildTest?.steps[0]?.observed).toEqual({ ok: true, read: { value: "$4.99" } });
   });
 
+  // Live run run-murwcaj0-40e56557 (J1): a repeated press's template row is not the row it acts on, and which argument
+  // key holds that row is the domain's declaration (`rowContextKeys`), carried here to the judge's packet.
+  it("leaves the domain's declared row keys out of a repeated step's words, and only those", async () => {
+    const press: AutomationStudioFlowDraftStep = {
+      position: 2, id: "d2", iteration: 2, actionId: "web.output.dom-click", toolId: "core.run_node", effect: "mutate", proposes: true, disposition: "kept",
+      input: { node: "web.output.dom-click", parameters: { element: { accessibleName: "Confirm", context: { row: { text: "Tom Becker1 mutual friend" } } } } },
+      routing: { kind: "repeat", over: "d1", through: "d2" }
+    };
+    const targets: unknown[] = [];
+    for (const rowContextKeys of [["row"], undefined]) {
+      const { provider, seen } = scripted();
+      const judge = automationStudioFlowBootstrapBuildJudge({
+        provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+        instructionText: ASKS_FOR_A_TABLE, plan: () => undefined, rowContextKeys
+      });
+      await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read, press], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
+      targets.push(seen[0]?.context.resultSummary?.buildTest?.steps[1]?.target);
+    }
+    expect(targets).toEqual([["Confirm", "in each row step 1 keeps"], ["Confirm", "Tom Becker1 mutual friend", "in each row step 1 keeps"]]);
+  });
+
   it("is told nothing beside the test when the check found nothing", async () => {
     const { provider, seen } = scripted();
     const judge = automationStudioFlowBootstrapBuildJudge({

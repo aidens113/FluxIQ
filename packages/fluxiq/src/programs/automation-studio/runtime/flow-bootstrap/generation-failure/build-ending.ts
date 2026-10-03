@@ -11,6 +11,15 @@
 // translate is the bare verdict the person was left with in 30 live runs that
 // ended "Build failed" and nothing after (audit A3, cause 1).
 //
+// **Not finished is not "not doable" (t195-w37).** A build that stopped with
+// a route still open -- a repair that got no further, twice in a row after a
+// judge who named the fix, or a round that handed back the Flow it started
+// from -- ends `not_finished`: the Flow so far kept, the honest reason, and
+// what the judge said is left to change. Live run `run-murwcaj0-40e56557`
+// ended "I found no way to" while its judge said the result was still
+// achievable and named the fix. "Not doable" is now only a judge's word that
+// what was asked can no longer be had (`noRoute: judged_unachievable`).
+//
 // So the message is written once, by Core, from Core's own words and the
 // person's own words for what they asked (the act quotes the instruction
 // reader took from their instruction), and never from anything a tool read off
@@ -38,15 +47,17 @@ export type AutomationStudioFlowBootstrapBudgetBound =
 /** What a build that could not finish says about itself. */
 export type AutomationStudioFlowBootstrapBuildEnding = {
   /**
-   * `not_doable`: no route to what was asked is left -- the repair after the
-   * test got no further. `budget_exhausted`: a budget ran out first.
+   * `not_doable`: no route to what was asked is left -- the judge said it can
+   * no longer be had. `not_finished`: a route is still open, but the build
+   * stopped on rounds that measurably got no further (t195-w37), with the
+   * Flow so far kept. `budget_exhausted`: a budget ran out first.
    * `replies_unreadable`: the model's replies kept arriving unreadable, each
    * asked again, until an unbroken run of them stopped the build (t211).
    * `provider_unavailable`: the model provider stopped answering -- an
    * unbroken run of requests got no answer -- and the build ended at once
    * (`../unfinished-build/provider-unavailable.ts`).
    */
-  kind: "not_doable" | "budget_exhausted" | "replies_unreadable" | "provider_unavailable";
+  kind: "not_doable" | "not_finished" | "budget_exhausted" | "replies_unreadable" | "provider_unavailable";
   /** What the person reads in the chat: Core's sentences and their own words for what they asked. */
   message: string;
   /** `budget_exhausted` only: which budget. */
@@ -58,7 +69,10 @@ export type AutomationStudioFlowBootstrapBuildEnding = {
    * all, the Flow's steps, and what the last test found. `stops` is why each
    * round stopped, in order (`../unfinished-build/phases.ts`): what a debug
    * reads to tell which bound ended which round (live run muqk713g). `noRoute`
-   * is which case left no route, on `not_doable` only. Closed words only, so
+   * is which case ended the build: on `not_doable` the case that left no route
+   * (`judged_unachievable`; `no_progress` and `repeated_unchanged` on records
+   * written before t195-w37), on `not_finished` what stood still
+   * (`no_progress`, `repeated_unchanged`). Closed words only, so
    * the run record and the Lab publish them as they are; absent on a record
    * written before they were kept.
    */
@@ -68,9 +82,12 @@ export type AutomationStudioFlowBootstrapBuildEnding = {
     stepsInFlow: number;
     tested: "replayed_clean" | "replay_failed" | "not_tested";
     stops?: Array<{ round: number; stopped: AutomationStudioFlowBootstrapRoundStopped }>;
-    noRoute?: { kind: "no_progress" | "repeated_unchanged" };
+    noRoute?: { kind: AutomationStudioFlowBootstrapEndingRoute };
   };
 };
+
+/** Which case ended a build, on `not_doable` and `not_finished` (`tried.noRoute`). */
+export type AutomationStudioFlowBootstrapEndingRoute = "no_progress" | "repeated_unchanged" | "judged_unachievable";
 
 /**
  * Why one live round stopped: the round's own stop
@@ -82,6 +99,7 @@ export type AutomationStudioFlowBootstrapRoundStopped = "iterations" | "tool_cal
 /** The code each ending is published under. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_CODES: Readonly<Record<AutomationStudioFlowBootstrapBuildEnding["kind"], AutomationStudioFlowBootstrapFailureDiagnostic["code"]>> = Object.freeze({
   not_doable: "flow_bootstrap.not_doable",
+  not_finished: "flow_bootstrap.build_not_finished",
   budget_exhausted: "flow_bootstrap.evidence_budget_exhausted",
   replies_unreadable: "flow_bootstrap.model_replies_unreadable",
   provider_unavailable: "flow_bootstrap.provider_unavailable"
@@ -96,7 +114,11 @@ const MAX_COUNT = 10_000;
 const BOUNDS: readonly string[] = ["cost", "tokens", "duration", "calls", "repair_rounds", "rounds"];
 const TESTED: readonly string[] = ["replayed_clean", "replay_failed", "not_tested"];
 const STOPPED: readonly string[] = ["iterations", "tool_calls", "unusable_decisions", "repeat_without_progress", "judged_wrong", "budget"] satisfies readonly AutomationStudioFlowBootstrapRoundStopped[];
-const NO_ROUTE: readonly string[] = ["no_progress", "repeated_unchanged"];
+/** The cases each ending may record as `tried.noRoute`. */
+const NO_ROUTE: Readonly<Partial<Record<AutomationStudioFlowBootstrapBuildEnding["kind"], readonly AutomationStudioFlowBootstrapEndingRoute[]>>> = Object.freeze({
+  not_doable: ["judged_unachievable", "no_progress", "repeated_unchanged"],
+  not_finished: ["no_progress", "repeated_unchanged"]
+});
 const ACT_ID = /^a[1-9][0-9]{0,2}(?:\.[a-z]{1,16})?$/u;
 const CODE = /^[a-z0-9_.:-]{1,100}$/iu;
 const CONTROL = /[\u0000-\u001f\u007f]/u;
@@ -125,7 +147,8 @@ export function parseAutomationStudioFlowBootstrapBuildEnding(value: unknown, co
   const stops = parseStops(tried.stops);
   if (stops === null) return null;
   const noRoute = tried.noRoute;
-  if (noRoute !== undefined && (value.kind !== "not_doable" || !isRecord(noRoute) || !exact(noRoute, ["kind"]) || typeof noRoute.kind !== "string" || !NO_ROUTE.includes(noRoute.kind))) return null;
+  const routes: readonly string[] = NO_ROUTE[value.kind as AutomationStudioFlowBootstrapBuildEnding["kind"]] ?? [];
+  if (noRoute !== undefined && (!isRecord(noRoute) || !exact(noRoute, ["kind"]) || typeof noRoute.kind !== "string" || !routes.includes(noRoute.kind))) return null;
   return {
     kind: value.kind as AutomationStudioFlowBootstrapBuildEnding["kind"],
     message: value.message,
@@ -137,7 +160,7 @@ export function parseAutomationStudioFlowBootstrapBuildEnding(value: unknown, co
       stepsInFlow: tried.stepsInFlow as number,
       tested: tried.tested as AutomationStudioFlowBootstrapBuildEnding["tried"]["tested"],
       ...(stops ? { stops } : {}),
-      ...(isRecord(noRoute) ? { noRoute: { kind: noRoute.kind as "no_progress" | "repeated_unchanged" } } : {})
+      ...(isRecord(noRoute) ? { noRoute: { kind: noRoute.kind as AutomationStudioFlowBootstrapEndingRoute } } : {})
     }
   };
 }

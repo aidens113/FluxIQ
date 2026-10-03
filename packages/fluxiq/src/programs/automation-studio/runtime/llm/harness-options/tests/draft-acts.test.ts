@@ -80,3 +80,44 @@ describe("the draft says when a read misses a column the instruction names", () 
     expect(draftActs.actsMissing(steps)).toEqual(draftActs.actsMissing([navigate, readStep(2, { name: ".name", price: ".p", rating: ".r" })]));
   });
 });
+
+// Run `run-murwcaj0-40e56557`, R4: the draft read name and mutualFriends at
+// step 7, confirmed at step 10 and read nothing after, so the table was the
+// page before the confirms and the judge refuted it. The draft now says so,
+// naming the last act step and never the read.
+describe("the draft says when every read giving the named columns runs before the last act", () => {
+  const RUN = "Go through my pending friend requests and confirm everyone I have at least five mutual friends with, leaving the rest alone. Then give me a table of every request the list now shows as accepted, in list order, with columns name and mutualFriends.";
+  const BEFORE = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act; if the instruction asks for what the page shows after it, the draft needs a read after step 10.";
+
+  function confirmStep(position: number, disposition: AutomationStudioFlowDraftStep["disposition"] = "taken"): AutomationStudioFlowDraftStep {
+    return {
+      position, id: `d${position}`, iteration: position, actionId: "web.output.dom-click", toolId: "core.run_node",
+      input: { node: "web.output.dom-click", parameters: { target: "button.confirm" }, consequences: [] },
+      effect: "mutate", effectApplied: true, disposition, proposes: true, acts: ["a1"]
+    };
+  }
+  const read7 = readStep(7, { name: ".name", mutualFriends: ".mutual", requestId: ".id" });
+
+  it("names step 10 and not the read at step 7", () => {
+    const steps = [navigate, read7, confirmStep(10)];
+    const notes = notesOf(automationStudioFlowBootstrapDraftActs({ instructionText: RUN }).acts(steps));
+    expect(notes).toEqual([BEFORE]);
+    expect(notes.join(" ")).not.toContain("step 7");
+  });
+
+  it("is silent once a read giving every column follows the last act", () => {
+    const steps = [navigate, read7, confirmStep(10), readStep(11, { name: ".name", mutualFriends: ".mutual" })];
+    expect(notesOf(automationStudioFlowBootstrapDraftActs({ instructionText: RUN }).acts(steps))).toEqual([]);
+  });
+
+  it("is silent with no step that does an instructed act, or when the only act step was withdrawn", () => {
+    expect(notesOf(automationStudioFlowBootstrapDraftActs({ instructionText: RUN }).acts([navigate, read7]))).toEqual([]);
+    expect(notesOf(automationStudioFlowBootstrapDraftActs({ instructionText: RUN }).acts([navigate, read7, confirmStep(10, "dropped")]))).toEqual([]);
+  });
+
+  it("says only the unread-column note when no read gives every column", () => {
+    const steps = [navigate, readStep(7, { name: ".name", requestId: ".id" }), confirmStep(10)];
+    expect(notesOf(automationStudioFlowBootstrapDraftActs({ instructionText: RUN }).acts(steps)))
+      .toEqual(["The instruction asks for a column \"mutualFriends\" that no read in the draft gives."]);
+  });
+});

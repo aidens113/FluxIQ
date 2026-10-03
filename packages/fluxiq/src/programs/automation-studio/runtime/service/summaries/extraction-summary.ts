@@ -74,13 +74,21 @@
 // many lead each list. Live run 15 (`run-muqj2bgb-d048ec37`) held 10 of 13
 // earbuds: its accessory rule removed by itself three sold "with Wireless
 // Charging Case", and its judge, told only "5 of them by itself", passed it.
-// Only each row's label is kept: its first text column, whole -- the title, in
-// a read of products -- which names the row without the rest of it, as a
-// one-column record so the column it came from can still be screened. Every
-// alone row, and no row that also failed another condition. Screened where it
-// is said (`result-verification/read-account/alone-rows.ts`). Rows that are not
-// one list per condition, or a lead longer than its list, drop the summary, as
-// any other malformed member does.
+// Each row leads with its label: its first text column, whole -- the title, in
+// a read of products -- as the record's first cell, so the column it came from
+// can still be screened. The rest of the row follows it, every declared column
+// in field order, text trimmed and an unreadable cell empty (t195-w34): this
+// projection does not know which column each condition tested, and the judge
+// is shown the label beside that one value (live run `run-murwcaj0-40e56557`:
+// a judge shown only "Jonas Weber" read a regex that dropped his five mutual
+// friends as one that kept them). The read account cuts each row to those two
+// cells by the authored condition before anything says it
+// (`result-verification/read-account/accounts.ts`), and screens them where it
+// says them (`result-verification/read-account/alone-rows.ts`); a record
+// written before then holds the label alone. Every alone row, and no row that
+// also failed another condition. Rows that are not one list per condition, or
+// a lead longer than its list, drop the summary, as any other malformed member
+// does.
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
@@ -259,11 +267,11 @@ function conditionReport(value: unknown): JsonObject | undefined {
 }
 
 /**
- * Per condition, the label of each row it removed by itself -- the leading
- * `leads[index]` rows of its list -- as `{ column: label }`. `undefined` when
- * the rows are not one list per condition of records of the read's own fields
- * holding text or `null`, or a lead is not a count within its list. A row with
- * no text says no label.
+ * Per condition, each row it removed by itself -- the leading `leads[index]`
+ * rows of its list -- label first (`{ column: label, ...rest }`, see the
+ * header). `undefined` when the rows are not one list per condition of records
+ * of the read's own fields holding text or `null`, or a lead is not a count
+ * within its list. A row with no text says no label and is not kept.
  */
 function aloneRowLabels(samples: unknown, leads: unknown, fieldNames: readonly string[], conditions: number): JsonObject[][] | undefined {
   if (!Array.isArray(samples) || !Array.isArray(leads) || samples.length !== conditions || leads.length !== conditions) return undefined;
@@ -280,14 +288,23 @@ function aloneRowLabels(samples: unknown, leads: unknown, fieldNames: readonly s
   return labels;
 }
 
-/** A row's first text column in the read's field order, whole: a value with a letter in it that is not an address, else its first value at all. */
+/**
+ * A row led by its label: its first text column in the read's field order,
+ * whole -- a value with a letter in it that is not an address, else its first
+ * value at all -- then each other column it holds, in field order, trimmed, or
+ * empty where it is `null`, but for a column keyed by digits alone. `undefined`
+ * for a row with no text.
+ */
 function rowLabel(row: Record<string, string | null>, fieldNames: readonly string[]): JsonObject | undefined {
   const cells = fieldNames.flatMap((key): Array<[string, string]> => {
     const value = row[key]?.trim();
     return value ? [[key, value]] : [];
   });
   const chosen = cells.find(([, value]) => /\p{L}/u.test(value) && !ADDRESS.test(value)) ?? cells[0];
-  return chosen ? { [chosen[0]]: chosen[1] } : undefined;
+  if (!chosen) return undefined;
+  // A key of digits alone would be ordered before the label by any object, so it is not carried after it.
+  const rest = fieldNames.filter((key) => key !== chosen[0] && !/^\d+$/u.test(key) && Object.hasOwn(row, key)).map((key) => [key, row[key]?.trim() ?? ""]);
+  return { [chosen[0]]: chosen[1], ...Object.fromEntries(rest) };
 }
 
 /** One count per condition, each at most that condition's rejections, or `undefined` for anything else. */

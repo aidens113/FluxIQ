@@ -1,6 +1,7 @@
 import { activityActionFailureReason } from "./failure-reason.ts";
 import { activityActionRecordOf } from "./record.ts";
 import { activityActionReplayFailing } from "./replay-failing.ts";
+import { activityActionTested } from "./tested.ts";
 import { ACTIVITY_RESULT_CHECK_LABELS } from "./result-check-labels.ts";
 import { activityActionResultCheckRow } from "./result-check-row.ts";
 import type { ActivityAction, ActivityActionEvent, ActivityActionKind, ActivityActionOutcome } from "./types.ts";
@@ -164,11 +165,12 @@ function actionKindOf(event: ActivityActionEvent, detail: Detail, code: string |
     ?? kindOfTitle(detail.title);
 }
 
-function failingCode(code: string): boolean {
-  return code.startsWith("core.replay.") ? activityActionReplayFailing(code) : FAILING.test(code);
+/** A failing code, unless it is a replay's for a step the test passes over (`excused`), which did not stand in the way. */
+function failingCode(code: string, excused: string | undefined): boolean {
+  return code.startsWith("core.replay.") ? activityActionReplayFailing(code) && excused === undefined : FAILING.test(code);
 }
 
-function outcomeOf(event: ActivityActionEvent, detail: Detail, code: string | undefined): ActivityActionOutcome {
+function outcomeOf(event: ActivityActionEvent, detail: Detail, code: string | undefined, excused: string | undefined): ActivityActionOutcome {
   if (detail.kind === "ask") {
     // Only the row that settles the wait says it is over; nothing after it is read for that.
     if (detail.resolution !== undefined && RESOLVED_DONE.has(detail.resolution)) return "done";
@@ -177,7 +179,7 @@ function outcomeOf(event: ActivityActionEvent, detail: Detail, code: string | un
   }
   if (event.phase === "waiting_permission") return "waiting";
   if (detail.status === "failed") return "failed";
-  if (code !== undefined && failingCode(code)) return "failed";
+  if (code !== undefined && failingCode(code, excused)) return "failed";
   if (code !== undefined && (PERSON_CODE.test(code) || PERMISSION_CODE.test(code))) return "waiting";
   if (detail.status === "succeeded") return "done";
   return "working";
@@ -254,7 +256,9 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * navigate's address path ("/help/index.html") is not one. A result check
  * that could not confirm the result, or could not check it, is `unconfirmed`,
  * read from Core's status sentence (`./result-check-labels.ts`). A replay code that says the step held (`./replay-failing.ts`: replayed,
- * verified, present, remembered) is done, not failed. `why` is set only for a failure: a settled ask's
+ * verified, present, remembered) is done, not failed, and so is one for a step
+ * the test passes over (its record's `Excused`); `tested` says which in words
+ * (`./tested.ts`), for each of them but a step done again. `why` is set only for a failure: a settled ask's
  * resolution in words ("you pressed Stop", "nobody answered in time"), or
  * else the refusal's own reason or the result code's last words
  * (`./failure-reason.ts`), and never is the code or the reason.
@@ -265,18 +269,22 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const record = activityActionRecordOf(detail.text);
   const kind = kindOf(event, detail, record.resultCode, record.node);
   if (!kind) return null;
-  const outcome = outcomeOf(event, detail, record.resultCode);
+  const outcome = outcomeOf(event, detail, record.resultCode, record.excused);
   const why = outcome !== "failed" ? null
     : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
       : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason) : null;
   const testing = kind !== "test" && testStep(event, detail, detail.ref ? CORE_TOOL_KINDS.get(detail.ref) : undefined);
   const unconfirmed = kind === "result_check" && outcome === "failed" && event.label !== undefined && NOT_CONFIRMED.has(event.label.trim());
+  // What a test did with the step, when it did not simply do it again: a test
+  // step is named by its action (`testing`), and one that names none by the verb of its title.
+  const tested = outcome === "done" && record.resultCode ? activityActionTested(record.resultCode, { excused: record.excused, kind: kind === "test" ? kindOfTitle(detail.title) : kind }) : null;
   return {
     kind,
     target: targetOf(event, detail, kind, testing),
     outcome,
     why,
     ...(testing ? { testing: true as const } : {}),
-    ...(unconfirmed ? { unconfirmed: true as const } : {})
+    ...(unconfirmed ? { unconfirmed: true as const } : {}),
+    ...(tested ? { tested } : {})
   };
 }

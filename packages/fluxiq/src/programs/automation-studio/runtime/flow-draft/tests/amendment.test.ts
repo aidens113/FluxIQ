@@ -140,3 +140,47 @@ describe("a repeat on a listing, run 37", () => {
     expect(change).toContain("that row's own control");
   });
 });
+
+// Live run `run-murz83zy-5030820f` (R8): the model pressed Amara's Confirm as
+// step 9 and ran the filtered request listing only at step 18, then sent
+// `9 repeat over 18` six times, each refused `over_not_before` with words that
+// asked for exactly that amendment. The listing has to be moved before the act
+// first; these pin that a refusal says where the act was, and that one
+// decision sending the reorder and then the repeat applies, the repeat read
+// against the numbering the reorder left.
+describe("a repeat on an act that sits before its listing, run murz83zy", () => {
+  function pressedBeforeListing(): AutomationStudioFlowDraftStep[] {
+    return [
+      { position: 1, id: "d1", iteration: 1, actionId: "go", input: {}, effect: "mutate", effectApplied: true, disposition: "kept" },
+      { position: 2, id: "d2", iteration: 2, actionId: "press", input: { target: "confirm" }, effect: "mutate", effectApplied: true, disposition: "kept", acts: ["a1"] },
+      { position: 3, id: "d3", iteration: 3, actionId: "press", input: { target: "dialog.ok" }, effect: "mutate", effectApplied: true, disposition: "kept" },
+      { position: 4, id: "d4", iteration: 4, actionId: "look", input: {}, effect: "observe", effectApplied: false, disposition: "taken" },
+      { position: 5, id: "d5", iteration: 5, actionId: "list", input: { where: "atLeast 5" }, effect: "observe", proposes: true, effectApplied: true, disposition: "kept" }
+    ];
+  }
+
+  it("is refused over_not_before carrying over, and through when one was given, and writes no routing", () => {
+    const draft = pressedBeforeListing();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 5 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before", over: 5 }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 5, through: 3 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "over_not_before", over: 5, through: 3 }] });
+    expect(draft[1]?.routing).toBeUndefined();
+  });
+
+  it("applies the reorder and then the repeat in one decision, the repeat numbered as the reorder left the draft", () => {
+    const draft = pressedBeforeListing();
+    // What the refusal tells it to send (`../../llm/draft-amendment-feedback.ts`):
+    // the listing moves to the act's place, the act and its confirmation shift one on.
+    const report = applyAutomationStudioFlowDraftAmendments(draft, [
+      { step: 5, change: "reorder", to: 2 },
+      { step: 3, change: "repeat", over: 2, through: 4 }
+    ]);
+    expect(report).toEqual({ applied: 2, refused: [] });
+    expect(draft.map((step) => [step.position, step.id])).toEqual([[1, "d1"], [2, "d5"], [3, "d2"], [4, "d3"], [5, "d4"]]);
+    expect(draft.find((step) => step.id === "d2")?.routing).toEqual({ kind: "repeat", through: "d3", over: "d5" });
+  });
+
+  it("the schema says a listing after the act is moved before it first", () => {
+    const change = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>).change!.description;
+    expect(change).toContain("When the listing comes after the act, reorder the listing to the act's position first");
+  });
+});

@@ -24,7 +24,9 @@
 // through `notes()` and put in the test's account, so the judge confirms them
 // against the steps and a repair hears them through its reasons. The domain's
 // view keys (`observedStateKeys`) are taken out of every observation, as the
-// evidence loop takes them out of every view but the newest.
+// evidence loop takes them out of every view but the newest, and its row keys
+// (`rowContextKeys`) out of a repeated step's words (live run
+// `run-murwcaj0-40e56557`, J1).
 //
 // **And the page the test ended on (t174-w89).** The test looks at the page
 // once, right after its replay passes (`endView` on the test's report), and
@@ -85,6 +87,8 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
   notes?: (() => readonly AutomationStudioBuildTestNote[] | undefined) | undefined;
   /** The domain's declared view keys, as the evidence loop is given them. */
   observedStateKeys?: readonly string[] | undefined;
+  /** The domain's declared row keys (`AutomationStudioLlmEvidenceRuntimeBinding.rowContextKeys`), left out of a repeated step's words. */
+  rowContextKeys?: readonly string[] | undefined;
   /** The build's tools, whose free look takes the page a test ended on, and the executor it is sent through. */
   look?: { tools: Parameters<typeof automationStudioEndViewLook>[0]["tools"]; executeTool: Parameters<AutomationStudioEndViewLook>[0]["executeTool"] } | undefined;
 }): AutomationStudioFlowBootstrapBuildJudge {
@@ -111,7 +115,7 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
         summary: automationStudioBuildTestResultSummary({
           steps: loop.steps, report: judgedTest, nodes: planNodes(input.plan()), instructionText: input.instructionText,
           result: loop.result, startLocation: input.startLocation, deniedEvidenceKeys: input.deniedEvidenceKeys,
-          observedStateKeys: input.observedStateKeys, notes: input.notes?.(),
+          observedStateKeys: input.observedStateKeys, rowContextKeys: input.rowContextKeys, notes: input.notes?.(),
           // The page the test ended on, looked at as its replay passed (`../../llm/node-tools/dry-run-gate.ts`).
           ...(judgedTest?.endView ? { endView: judgedTest.endView } : {})
         }),

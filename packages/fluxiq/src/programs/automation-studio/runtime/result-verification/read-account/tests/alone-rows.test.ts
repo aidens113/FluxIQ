@@ -51,6 +51,43 @@ describe("the rows a condition removed by itself", () => {
     expect(reads[0]?.conditions?.[3]?.leftOutOnlyByThis).toEqual([EARBUDS_REMOVED[0], "(withheld)", "(withheld)"]);
   });
 
+  // t195-w34, live run `run-murwcaj0-40e56557` (R6): shown only the labels, a judge read a regex that
+  // dropped five mutual friends as one that kept them. A playback's stored row holds every column, its
+  // label first (`service/summaries/extraction-summary.ts`); the account says the label with the value
+  // its condition tested.
+  it("say each row with the value its condition tested, by the column the condition reads", () => {
+    const stored = (name: string, price: string) => ({ name, price, rating: "4.5 out of 5 stars", url: "" });
+    const aloneRows = [[], [], [stored("Soundcrest Air Pro Max", "$89.99")], [stored(EARBUDS_REMOVED[0]!, "$26.99"), { name: "Budget Earbuds" }]];
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [playedBack(aloneRows)], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
+    // The price condition reads the very column `price` reads, so it tested that column.
+    expect(reads[0]?.conditions?.[2]?.leftOutOnlyByThis).toEqual(["Soundcrest Air Pro Max — price: $89.99"]);
+    // The accessory rule tests the name, which is the label: the label alone; a row stored before then, too.
+    expect(reads[0]?.conditions?.[3]?.leftOutOnlyByThis).toEqual([EARBUDS_REMOVED[0], "Budget Earbuds"]);
+    const full = automationStudioResultReadSentence(reads[0]!, "full");
+    expect(full).toContain(`(removed by itself: ${JSON.stringify("Soundcrest Air Pro Max — price: $89.99")})`);
+  });
+
+  it("say the value of a condition written over a column by its key, empty as no value, withheld as withheld", () => {
+    const node = earbudsNode();
+    const read = node.parameterValues!.extractList as Record<string, unknown>;
+    const byKey = { ...node, parameterValues: { ...node.parameterValues, extractList: { ...read, fields: { ...(read.fields as object), mutualFriends: { kind: "text", selector: ".mutual" } }, where: [{ field: "rating", atLeast: 4 }, { field: "mutualFriends", matches: "(?:[5-9]|[1-9][0-9]+) mutual friend" }, { field: "seller", is: "present" }, { field: "price", lessThan: 50 }] } } };
+    const aloneRows = [
+      [{ name: "Budget Earbuds", rating: "" }],
+      [{ name: "Jonas Weber", mutualFriends: "Aisha Khan and 4 other mutual friends" }],
+      [{ name: "No Seller Earbuds", price: "$9.99" }],
+      [{ name: "Gift Earbuds", price: "token sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c" }]
+    ];
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [playedBack(aloneRows)], flowNodes: [byKey], deniedEvidenceKeys: [] });
+    expect(reads[0]?.conditions?.map((condition) => condition.leftOutOnlyByThis)).toEqual([
+      ["Budget Earbuds — rating: (no value)"],
+      ["Jonas Weber — mutualFriends: Aisha Khan and 4 other mutual friends"],
+      // A column the row does not hold says no value at all.
+      ["No Seller Earbuds"],
+      ["Gift Earbuds — price: (withheld)"]
+    ]);
+    expect(JSON.stringify(reads)).not.toContain("sk-live");
+  });
+
   it("are not carried where the domain declared no keys, like the wording beside them", () => {
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [playedBack(RUN_15_ALONE)], flowNodes: [earbudsNode()] });
     expect(JSON.stringify(reads)).not.toContain("Lumo");
