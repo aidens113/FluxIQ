@@ -15,4 +15,5 @@ export * from "./provider-unavailable.ts";
 export * from "./replies-unreadable.ts";
 export * from "./round-ending.ts";
 export * from "./seed-signature.ts";
+export * from "./tried.ts";
 export * from "./unfinished-stall.ts";

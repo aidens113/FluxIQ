@@ -3,7 +3,7 @@
 // call, recorded `flow_bootstrap.unexpected_error`, and did nothing more.
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
-import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
+import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapBuildEndingFailure, flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRequestRefusedError } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID,
@@ -325,5 +325,41 @@ describe("a re-author that explored and built nothing", () => {
 
     expect(port.annotate).toHaveBeenCalledTimes(1);
     expect(marker(result).ladderSkipped).toBeUndefined();
+  });
+});
+
+// Live run muqk713g (Stage 6): the build's ending was dropped on the way to the
+// run, so nothing said why each of its rounds stopped or which no-route case
+// ended it. The attempt now carries the ending's closed facts -- its kind, each
+// round's stop, the no-route case and the ids and codes of what was not done --
+// never its message or the person's words.
+describe("a re-author that ended not doable", () => {
+  const notDoable = () => flowBootstrapBuildEndingFailure({
+    kind: "not_doable",
+    message: "I could not build this Flow, and I found no way to: \"save the kettle\": nothing I tried did it.",
+    notDone: [{ id: "a2", quote: "save the kettle", todo: "no_step_added" }],
+    tried: {
+      rounds: 2, decisions: 13, stepsInFlow: 2, tested: "replayed_clean",
+      stops: [{ round: 0, stopped: "iterations" }, { round: 1, stopped: "repeat_without_progress" }],
+      noRoute: { kind: "repeated_unchanged" }
+    }
+  }, { trace: [], accounting: { iterations: 13, toolCalls: 13, evidenceBytes: 100, inputTokens: 10, outputTokens: 10, totalTokens: 20, estimatedCostUsd: 0.01 } }, { requestId: "request.reauthor", estimatedInputTokens: 10, estimatedCostUsd: 0.01 });
+
+  it("records each round's stop and the no-route case on the attempt, in closed words only", async () => {
+    const port = deps({ generate: (async () => { throw notDoable(); }) as never });
+    const result = await automationStudioRefutedResultRepairPort(port)(request);
+
+    const attempt = marker(result).attempts[0];
+    expect(attempt).toMatchObject({ code: "flow_bootstrap.not_doable" });
+    expect(attempt.ending).toEqual({
+      kind: "not_doable",
+      notDone: [{ id: "a2", todo: "no_step_added" }],
+      tried: {
+        rounds: 2, decisions: 13, stepsInFlow: 2, tested: "replayed_clean",
+        stops: [{ round: 0, stopped: "iterations" }, { round: 1, stopped: "repeat_without_progress" }],
+        noRoute: { kind: "repeated_unchanged" }
+      }
+    });
+    expect(JSON.stringify(marker(result))).not.toContain("kettle");
   });
 });

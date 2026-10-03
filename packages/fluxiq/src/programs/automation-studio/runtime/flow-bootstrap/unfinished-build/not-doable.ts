@@ -28,6 +28,7 @@ import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE, type Automat
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapNoRouteLeft } from "./contracts.ts";
 import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapNotDoneSaid, automationStudioFlowBootstrapStopSaid, automationStudioFlowBootstrapTestSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The not-doable ending, from the last judgement and the checklist it was read by. */
 export function automationStudioFlowBootstrapNotDoable(input: {
@@ -37,6 +38,8 @@ export function automationStudioFlowBootstrapNotDoable(input: {
   rounds: number;
   /** Decisions across every round. */
   decisions: number;
+  /** Why each live round stopped, in order (`./tried.ts`). */
+  stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
   /** Why no route is left (`./phases.ts`): said as the last round's account. Absent: the older "got no further". */
   noRoute?: AutomationStudioFlowBootstrapNoRouteLeft | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
@@ -57,7 +60,7 @@ export function automationStudioFlowBootstrapNotDoable(input: {
     kind: "not_doable",
     message: message.slice(0, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE),
     notDone,
-    tried: { rounds: input.rounds, decisions: input.decisions, stepsInFlow: input.judgement.stepsInFlow, tested: input.judgement.tested }
+    tried: automationStudioFlowBootstrapTried(input)
   };
 }
 

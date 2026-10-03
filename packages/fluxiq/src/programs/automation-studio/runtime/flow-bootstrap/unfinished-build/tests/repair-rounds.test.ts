@@ -266,3 +266,54 @@ describe("a repair judged wrong for the same findings, measured by what its test
     expect(outcome.kind === "unfinished" && outcome.ending.kind).toBe("not_doable");
   });
 });
+
+// Live run muqk713g (Stage 6): no record said why each round stopped, so a
+// debug could not tell whether these bounds fired. The ending's `tried` now
+// carries each round's stop and, for "not doable", which no-route case ended it
+// -- closed words only, which the run record and the Lab publish as they are.
+describe("each round's stop, recorded on the ending", () => {
+  const seeded = () => [step(1, { acts: ["a1"] }), step(2, { acts: ["a1.quantity"], input: { quantity: "2" } })];
+
+  it("records a repair that stopped on refused repeats, and the no-route case that ended the build", async () => {
+    const { input } = harness([
+      () => outOfDecisions(seeded(), spent(10, 0.01)),
+      (request) => repeatsRefused(request.repair!.seed.map((each) => ({ ...each })), spent(3, 0.008))
+    ]);
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind === "unfinished" && outcome.ending.tried).toEqual({
+      rounds: 2, decisions: 13, stepsInFlow: 2, tested: "replayed_clean",
+      stops: [{ round: 0, stopped: "iterations" }, { round: 1, stopped: "repeat_without_progress" }],
+      noRoute: { kind: "repeated_unchanged" }
+    });
+  });
+
+  it("records rounds judged wrong, and a repair that made no measurable progress", async () => {
+    const { input } = harness([
+      () => finished(wholeFlow(), spent(2, 0.01)),
+      (request) => finished([...request.repair!.seed, step(4, { id: "d9", actionId: "web.navigate", ranWith: { url: "https://shop.example/" } })], spent(2, 0.01))
+    ], { judge: async () => no(["result.no_records_stored"]) });
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind === "unfinished" && outcome.ending.tried).toMatchObject({
+      stops: [{ round: 0, stopped: "judged_wrong" }, { round: 1, stopped: "judged_wrong" }],
+      noRoute: { kind: "no_progress" }
+    });
+  });
+
+  it("records every round of a build a bound ended, with no no-route case", async () => {
+    let added = 0;
+    const growing = (request: AutomationStudioFlowBootstrapRoundRequest) => {
+      added += 1;
+      return outOfDecisions([...(request.repair?.seed ?? []), step(added, { id: `d${10 + added}`, acts: added === 1 ? ["a1"] : [] })], spent(10, 0.001));
+    };
+    const { input } = harness([growing, growing], { maxRounds: 2 });
+
+    const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+
+    expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "rounds", tried: { stops: [{ round: 0, stopped: "iterations" }, { round: 1, stopped: "iterations" }] } });
+    expect(outcome.kind === "unfinished" && outcome.ending.tried.noRoute).toBeUndefined();
+  });
+});
