@@ -16,6 +16,12 @@
 // So a read the list ended (`stop.ts`) is said as having read every page, with
 // no bound beside it; only a read the page bound stopped is told the list may
 // go on and how to read further. Information only: nothing here refuses.
+//
+// **A read that moves page by page is never said not to deduplicate.** It
+// leaves out a row identical to one an earlier page yielded, dedupe or none, and
+// `run-muqk713g`'s judges, told "It does not deduplicate." of one that had left
+// out two such rows, all asked for the dedupe it already did. So such a read is
+// said to leave them out, with its count where it sent one.
 
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
 import { automationStudioResultReadStop } from "./stop.ts";
@@ -62,6 +68,10 @@ function briefTail(read: AutomationStudioResultReadAccount): string {
   const parts: string[] = [];
   if (read.paginates === true) parts.push("it pages");
   if (read.dedupes === true) parts.push(read.dedupeBy?.length ? `keeps one row per ${read.dedupeBy.join(" + ")}` : "dedupes");
+  if (read.dropsEarlierPageRepeats) {
+    const repeats = read.earlierPageRepeats;
+    parts.push(repeats === undefined ? "leaves out rows repeating an earlier page's" : `left out ${repeats} ${repeats === 1 ? "row" : "rows"} repeating an earlier page's`);
+  }
   const counts = (read.conditions ?? []).map((condition) => condition.rejected);
   if (counts.length) {
     const alone = (read.conditions ?? []).map((condition) => condition.alone);
@@ -85,7 +95,8 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
     lines.push(`Its page bound stopped it${read.pageLimit !== undefined ? ` at ${read.pageLimit}` : ""}, not the list, so the list may go on: raise its maxPages (maxScrolls for a read that scrolls) if the request needs rows past page ${read.pagesRead}.`);
   }
   if (read.dedupes === true) lines.push(`It already keeps one row per ${read.dedupeBy?.length ? read.dedupeBy.join(" + ") : "row identity"}.`);
-  if (read.dedupes === false) lines.push("It does not deduplicate.");
+  if (read.dropsEarlierPageRepeats) lines.push(earlierPageRepeats(read));
+  else if (read.dedupes === false) lines.push("It does not deduplicate.");
   const conditions = read.conditions ?? [];
   if (conditions.length) {
     const said = conditions.map((condition, index) => `${condition.condition ?? `condition ${index + 1} (wording withheld)`} rejected ${condition.rejected ?? "an unreported number of"} rows${condition.alone === undefined ? "" : `, ${condition.alone} of them by itself`}${leftOutOnlyByThis(condition.leftOutOnlyByThis)}`);
@@ -97,6 +108,25 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
   }
   if (read.unfiltered) lines.push("Every row failed its conditions, so it answered with the unfiltered rows.");
   return lines.length ? ` ${lines.join(" ")}` : "";
+}
+
+/**
+ * What a read that moves page by page does with a row an earlier page already
+ * yielded, and how many it left out, for the read that sent the count. Said in
+ * place of "It does not deduplicate.", which `run-muqk713g`'s judges were told
+ * of such a read and answered by asking for a dedupe it already did.
+ */
+function earlierPageRepeats(read: AutomationStudioResultReadAccount): string {
+  const repeats = read.earlierPageRepeats;
+  const kept = read.conditions?.length ? " its conditions had kept" : "";
+  const counted = repeats === undefined
+    ? "it left out an unreported number of such rows."
+    : `it left out ${repeats} such ${repeats === 1 ? "row" : "rows"}${kept}.`;
+  const what = "a row identical, field for field, to one an earlier page yielded";
+  if (read.dedupes === false) {
+    return `It names no dedupe, but as a read that moves page by page it already leaves out ${what}: ${counted} So the answer never holds such a row twice; a dedupe would only also merge rows that share its key and differ in another column.`;
+  }
+  return `As a read that moves page by page, it ${read.dedupes === true ? "also " : ""}leaves out ${what}: ${counted}`;
 }
 
 /** The rows a condition removed by itself, named, each label quoted whole; nothing when the read did not send them. */

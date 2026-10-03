@@ -11,7 +11,7 @@ import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../.
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
 import { assembleAutomationStudioFlowDraftPlan } from "../../../flow-bootstrap/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../../flow-bootstrap/plan/tests/index.ts";
-import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { automationStudioFlowDraftReplayable, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep, automationStudioFlowBootstrapDraftStepIsWritable } from "../draft-step.ts";
 import { automationStudioFlowDraftPlanNodeIds, automationStudioFlowDraftSeedFromFlow } from "../draft-from-flow.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../run-node.ts";
@@ -97,6 +97,36 @@ describe("what state routing recorded on a node, carried through the re-seed", (
       const nodes = flow().nodes.map((each) => ({ ...each, metadata: { routeSignatures } as never }));
       expect(automationStudioFlowDraftSeedFromFlow({ ...flow(), nodes }).steps.every((each) => each.routeSignatures === undefined)).toBe(true);
     }
+  });
+});
+
+// `run-muqk713g-d08ad3dc` (C6): every rerun of a seeded read ran on the page the
+// refuted run had left it on. The run had recorded where each node started; the
+// seed now keeps that beside its steps, for a rerun to put the page back to.
+describe("where each seeded step's node started in the run being repaired", () => {
+  const startPages = { "node.extract": { location: "https://example.test/catalog?page=1" } };
+
+  it("is kept by step id beside the steps, for the node that has one", () => {
+    const seed = automationStudioFlowDraftSeedFromFlow({ ...flow(), startPages });
+    expect(seed.startedOnByStepId).toEqual({ f2: { location: "https://example.test/catalog?page=1" } });
+    expect(seed.nodeIdByStepId.f2).toBe("node.extract");
+  });
+
+  it("is nothing when no run said where any node started", () => {
+    expect(automationStudioFlowDraftSeedFromFlow(flow()).startedOnByStepId).toEqual({});
+  });
+
+  it("leaves the steps exactly as they were, so the dry run sees the same draft and still does not gate it", () => {
+    const withPages = automationStudioFlowDraftSeedFromFlow({ ...flow(), startPages });
+    const without = automationStudioFlowDraftSeedFromFlow(flow());
+    expect(withPages.steps).toEqual(without.steps);
+    expect(automationStudioFlowDraftReplayable(withPages.steps)).toBe(false);
+  });
+
+  it("is a copy: changing it changes nothing the run recorded", () => {
+    const seed = automationStudioFlowDraftSeedFromFlow({ ...flow(), startPages });
+    (seed.startedOnByStepId.f2 as { location: string }).location = "changed";
+    expect(startPages["node.extract"].location).toBe("https://example.test/catalog?page=1");
   });
 });
 

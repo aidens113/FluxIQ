@@ -67,7 +67,7 @@ import {
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmRunFlowBinding, automationStudioNodeRerunFromItsPlace } from "./node-tools/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmRunFlowBinding, automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceNoted } from "./node-tools/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "./build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
 import {
@@ -426,7 +426,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // A rerun runs from its step's own page, never from where the last call left it (`./node-tools/step-place.ts`).
       const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, steps: draftSteps, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
-      ran = place?.kind === "unreachable" ? place.result : await runFlow.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) });
+      // The rerun's answer says where it ran (`rerunPlace`): run `run-muqk713g`'s re-author reran a seeded read on the
+      // results page the refuted run left, and nothing said so (C6).
+      ran = place?.kind === "unreachable" ? place.result : automationStudioNodeRerunPlaceNoted(place, await runFlow.executeTool({ callId, toolId: decision.toolId, value: decision.input, ...(input.signal ? { signal: input.signal } : {}) }));
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {

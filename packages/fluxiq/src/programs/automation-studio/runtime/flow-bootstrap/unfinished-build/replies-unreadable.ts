@@ -18,6 +18,7 @@ import type { AutomationStudioInstructedActChecklistItem } from "../instructed-a
 import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
 import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressSaid, automationStudioFlowBootstrapTestSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The ending of a build whose model replies could not be read. */
 export function automationStudioFlowBootstrapRepliesUnreadable(input: {
@@ -26,6 +27,8 @@ export function automationStudioFlowBootstrapRepliesUnreadable(input: {
   checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined;
   rounds: number;
   decisions: number;
+  /** Why each live round stopped, in order (`./tried.ts`). */
+  stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
   /** Whether the Flow so far was kept for the next build. */
   kept: boolean;
 }): AutomationStudioFlowBootstrapBuildEnding {
@@ -41,6 +44,6 @@ export function automationStudioFlowBootstrapRepliesUnreadable(input: {
     kind: "replies_unreadable",
     message: message.slice(0, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE),
     notDone,
-    tried: { rounds: input.rounds, decisions: input.decisions, stepsInFlow: input.judgement.stepsInFlow, tested: input.judgement.tested }
+    tried: automationStudioFlowBootstrapTried(input)
   };
 }

@@ -1,7 +1,9 @@
 // Barrel for the judge of a build's test: the packet the test is judged from
 // (`summary.ts`), what each step's observation is sent as (`observation.ts`),
-// and the judge that asks the results verifier about it and reads the answer
-// as a build's verdict (`judge.ts`).
+// the rows a replayed read names in it (`read-rows.ts`), and the judge that
+// asks the results verifier about it and reads the answer as a build's verdict
+// (`judge.ts`).
 export * from "./judge.ts";
 export * from "./observation.ts";
+export * from "./read-rows.ts";
 export * from "./summary.ts";

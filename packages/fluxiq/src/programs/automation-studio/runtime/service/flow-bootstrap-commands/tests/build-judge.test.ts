@@ -144,6 +144,29 @@ describe("a build's judge", () => {
     const unjudged = await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 0 } } as never);
     expect(unjudged).not.toHaveProperty("flowSignature");
   });
+
+  // Live run muqk713g (screenshot 00013): a judge reply the harness could not
+  // read put "(llm_output.invalid_diagnosis_text)" into the chat. The chat says
+  // what happened in words; the code stays on the verification record.
+  it("says a judge reply it could not read in words, with no diagnostic code in the chat", async () => {
+    const provider: AutomationStudioLlmProvider = {
+      metadata: { provider: "mock", model: "debug-model" },
+      runTask: async () => ({ response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "no", observed: 42 } }, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2, estimatedCostUsd: 0 } }) as never
+    };
+    const judge = automationStudioFlowBootstrapBuildJudge({
+      provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+      instructionText: ASKS_FOR_A_TABLE, plan: () => undefined
+    });
+    const judged = await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
+    expect(judged.verdict).toBe("unknown");
+    const said: Array<{ label?: string; text?: string }> = [];
+    judge.unverified({ kind: "finished", judged } as never, ((entry: { label?: string; text?: string }) => { said.push(entry); }) as never);
+    expect(said).toHaveLength(1);
+    const text = said[0]?.text ?? "";
+    expect(text).toContain("the judge's reply could not be read");
+    expect(text).not.toContain("llm_output.");
+    expect(text).not.toMatch(/\b[a-z_]+\.[a-z_.]+\b/);
+  });
 });
 
 /** A passing test of the one-step Flow, under `signature`. */

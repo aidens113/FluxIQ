@@ -190,6 +190,11 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
   const paginationStop = typeof summary.paginationStop === "string"
     ? (PAGINATION_STOPS.has(summary.paginationStop) ? summary.paginationStop : PAGINATION_STOP_UNKNOWN)
     : undefined;
+  // The rows a page-by-page read left out as repeats of an earlier page's: a
+  // count, absent from a read that did not count them, held to the rule every
+  // count is (`result-verification/read-account/accounts.ts` says it).
+  const earlierPageRepeats = count(summary.earlierPageRepeats);
+  if (summary.earlierPageRepeats !== undefined && earlierPageRepeats === undefined) return undefined;
   return {
     recordCount,
     pagesRead,
@@ -201,7 +206,8 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
     ...(typeof listPresence === "string" ? { listPresence } : {}),
     ...(listWait ? { listWait } : {}),
     ...(conditions ? { conditions } : {}),
-    ...(paginationStop !== undefined ? { paginationStop } : {})
+    ...(paginationStop !== undefined ? { paginationStop } : {}),
+    ...(earlierPageRepeats !== undefined ? { earlierPageRepeats } : {})
   };
 }
 

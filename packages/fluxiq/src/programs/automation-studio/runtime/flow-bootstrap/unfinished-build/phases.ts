@@ -276,6 +276,8 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
   let startSignature = input.seedSignature;
   /** What the purse last priced a decision and a judge call at: what one more round must be able to hold. */
   const holds: CallHolds = {};
+  /** Why each round that reached phase 2 stopped, in order: what the ending records, so a debug can tell which bound ended which round (live run muqk713g). */
+  const stops: NonNullable<AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"]> = [];
   for (let round = 0; ; round += 1) {
     const left = round === 0 ? { budget: input.budget, maxIterations: input.maxIterations } : remaining(input, spent, clock() - startedAt);
     let outcome: AutomationStudioLlmEvidenceLoopResult | AutomationStudioFlowBootstrapUnfinishedStall;
@@ -345,12 +347,13 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       phase2 = { stopped, judgement: judged.judgement, seed: judged.seed, lastIssueCodes: ending.lastIssueCodes, completionAttempts: ending.completionAttempts, progress: ending.progress };
     }
     const { stopped, judgement, seed } = phase2;
+    stops.push({ round, stopped });
     /** The next round's worst case, where the purse could not fund it though it was not spent: what a cost ending says it needed. */
     let unfunded: AutomationStudioFlowBootstrapNextRoundHold | undefined;
     const end = async (kind: "not_doable" | AutomationStudioFlowBootstrapBudgetBound | { unreadable: AutomationStudioLlmEvidenceLoopUnreadable } | { providerUnavailable: AutomationStudioLlmEvidenceLoopProviderUnavailable }, noRoute?: AutomationStudioFlowBootstrapNoRouteLeft): Promise<AutomationStudioFlowBootstrapBuildPhasesOutcome> => {
       const kept = await input.keep(kind === "not_doable" || typeof kind === "object" ? (stopped === "budget" ? "budget" : stopped) : "budget", phase2.lastIssueCodes, seed, phase2.completionAttempts);
       const checklist = input.checklist(seed);
-      const told = { judgement, checklist, rounds, decisions: spent.iterations };
+      const told = { judgement, checklist, rounds, decisions: spent.iterations, stops: [...stops] };
       return {
         kind: "unfinished",
         ending: kind === "not_doable"

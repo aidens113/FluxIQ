@@ -101,7 +101,28 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
       else value.instructions.forEach((instruction, index) => validateUnknownInstructionSuggestion(instruction, index, diagnostics));
     }
   }
-  return diagnostics.some((diagnostic) => diagnostic.severity === "error") ? undefined : value as unknown as AutomationStudioLlmStructuredResponse;
+  if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) return undefined;
+  if (kind === "diagnosis" && isRecord(value.diagnosis)) return { ...value, diagnosis: withoutBlankDiagnosisText(value.diagnosis) } as unknown as AutomationStudioLlmStructuredResponse;
+  return value as unknown as AutomationStudioLlmStructuredResponse;
+}
+
+const DIAGNOSIS_TEXT_FIELDS = ["expected", "observed", "changed"] as const;
+
+function isBlankText(value: unknown): boolean {
+  return typeof value === "string" && !value.trim();
+}
+
+/**
+ * The parsed diagnosis without the texts the model left blank. A blank text is
+ * a field it did not answer -- a judge that finds nothing to change says so
+ * with `changed: ""` -- so it is dropped rather than refused, and no consumer
+ * is handed an empty description. A copy, so the provider's reply is left as
+ * it came.
+ */
+function withoutBlankDiagnosisText(diagnosis: Record<string, unknown>): Record<string, unknown> {
+  const copy = { ...diagnosis };
+  for (const field of DIAGNOSIS_TEXT_FIELDS) if (isBlankText(copy[field])) delete copy[field];
+  return copy;
 }
 
 /**
@@ -120,9 +141,10 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
     return;
   }
   rejectUnexpectedFields(value, ["expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "explorationNeeded", "patchNeeded"], path, diagnostics);
-  for (const field of ["expected", "observed", "changed"] as const) {
-    if (value[field] === undefined) continue;
-    if (typeof value[field] !== "string" || !(value[field] as string).length || (value[field] as string).length > AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH) {
+  for (const field of DIAGNOSIS_TEXT_FIELDS) {
+    // Blank is omitted, not invalid: the instruction asks for an unanswerable field to be left out.
+    if (value[field] === undefined || isBlankText(value[field])) continue;
+    if (typeof value[field] !== "string" || (value[field] as string).length > AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH) {
       diagnostics.push({ severity: "error", code: "llm_output.invalid_diagnosis_text", message: `Diagnosis ${field} must be a string of at most ${AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH} characters.`, path: `${path}.${field}` });
     }
   }

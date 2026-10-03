@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmDiagnosisFields } from "../harness.ts";
-import { AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION } from "../diagnosis-instructions.ts";
+import { AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION, automationStudioDiagnosisPromptInstruction } from "../diagnosis-instructions.ts";
 
 const base = { taskKind: "runtime_diagnosis" as const, projectId: "project.llm", flowId: "flow.checkout", instructions: [] as AutomationStudioFlowInstruction[] };
 
@@ -113,5 +113,23 @@ describe("the judge is told what the rows a condition left out by itself are", (
   it("names the field and says none of its rows came back", () => {
     expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("leftOutOnlyByThis names the rows that condition alone left out of the result");
     expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("none of them came back");
+  });
+});
+
+// Live run `run-muqk713g` (C3, C5): the build-test judge saw a replayed read as
+// counts only, and both judges read an item "with Wireless Charging Case" as the
+// accessory the request left out. The build-test judge is now told what a
+// replayed read's rows are, and both what a row the request excludes is.
+describe("the judges are told what an excluded row is, and what a replayed read's rows are", () => {
+  it("says an excluded row is the excluded kind of thing, not one whose text only mentions it", () => {
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain(
+      "A row the request excludes is one that is the excluded kind of thing, not one whose text only mentions it: an item sold with or including an excluded part is still the item."
+    );
+  });
+
+  it("tells the build-test judge what readRows holds, and to read its leftOutOnlyByThis as a read's", () => {
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification");
+    expect(prompt).toContain("readRows");
+    expect(prompt).toContain("readRows.leftOutOnlyByThis");
   });
 });

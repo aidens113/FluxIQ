@@ -224,6 +224,7 @@ export function automationStudioRefutedResultReauthored(input: {
     ...(input.durationMs === undefined ? {} : { durationMs: Math.max(0, Math.round(input.durationMs)) }),
     ...(input.accounting ?? failure?.accounting ? { accounting: (input.accounting ?? failure?.accounting)! } : {}),
     ...(failure?.evidenceLoop ? { evidenceLoop: failure.evidenceLoop } : {}),
+    ...(failure?.ending ? { ending: failure.ending } : {}),
     ...(input.brief ? { brief: input.brief } : {})
   };
   return {
@@ -287,6 +288,15 @@ export type AutomationStudioRefutedResultFailure = {
   providerStatus?: number | undefined;
   accounting?: JsonObject | undefined;
   evidenceLoop?: JsonObject | undefined;
+  /**
+   * How a build that could not finish ended, in closed words only: its kind,
+   * the budget that ran out, the ids and codes of what was not done, and what
+   * was tried -- each round's stop and, for "not doable", which case left no
+   * route (`flow-bootstrap/generation-failure/build-ending.ts`). Never its
+   * message or the person's words. Live run muqk713g's re-author dropped it,
+   * so nothing said why each of its rounds stopped.
+   */
+  ending?: JsonObject | undefined;
 };
 
 /**

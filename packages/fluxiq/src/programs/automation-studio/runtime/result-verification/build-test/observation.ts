@@ -33,6 +33,10 @@
 // its counts, its conditions, a check's answer, the status, the control -- is
 // kept as the domain wrote it.
 //
+// A replayed list read's `readRows` (t194 w55) are made labels before any of
+// that, by the screen the runtime judge's rows pass (`./read-rows.ts`): a
+// withheld label is said as withheld rather than costing the observation.
+//
 // Screening then runs on what is left as before: no denied key, no
 // locator-shaped key or text, and nothing credential-shaped.
 
@@ -43,6 +47,7 @@ import {
   automationStudioWithoutLocators,
   screenAutomationStudioLlmEvidence
 } from "../../llm/index.ts";
+import { automationStudioBuildTestReadRows } from "./read-rows.ts";
 
 /** One step's observations made sendable: `withheld` when screening took anything out. */
 export type AutomationStudioBuildTestObservationReader = (
@@ -70,11 +75,13 @@ export function automationStudioBuildTestObservationReader(input: {
   const sent = new Map<string, number>();
   return (step, evidence) => {
     if (!evidence.length) return { withheld: false };
-    const lean = evidence.map((item) => withoutView(item, viewKeys)).map((item) => withoutBookkeeping(item, step.actionId));
+    // A replayed read's rows are made screened labels first (`./read-rows.ts`), so one label costs that label, not the observation.
+    const rows = evidence.map((item) => withoutView(item, viewKeys)).map((item) => automationStudioBuildTestReadRows(item, input.deniedEvidenceKeys));
+    const lean = rows.map((item) => withoutBookkeeping(item.value, step.actionId));
     const value = lean.length === 1 ? lean[0]! : lean;
     const kept = automationStudioWithoutLocators(withoutKeys(value, denied));
     if (screenAutomationStudioLlmEvidence(kept, []).secretShaped) return { withheld: true };
-    const withheld = JSON.stringify(kept) !== JSON.stringify(value);
+    const withheld = rows.some((item) => item.withheld) || JSON.stringify(kept) !== JSON.stringify(value);
     return { value: namingRepeats(kept, step.position, sent), withheld };
   };
 }

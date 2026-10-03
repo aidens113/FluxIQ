@@ -65,12 +65,46 @@ describe("automationStudioResultVerdict", () => {
     expect(verification.failure).toBeDefined();
   });
 
-  it("fails closed on a call that never came back, naming the code and not a message", () => {
+  it("fails closed on a call that never came back, saying what happened in words and keeping the code on the record", () => {
     const verification = automationStudioResultVerdict({ summary, basis: "model_unavailable", failureCode: "llm.provider_timeout" });
     expect(verification.verdict).toBe("unsure");
     expect(verification.code).toBe("core.result.verdict_unavailable");
-    expect(verification.reason).toContain("llm.provider_timeout");
+    expect(verification.reason).not.toContain("llm.provider_timeout");
+    expect(verification.reason).toContain("ran out of time");
+    expect(verification.failureCode).toBe("llm.provider_timeout");
     expect(verification.failure).toBeDefined();
+  });
+
+  // Live run muqk713g (screenshot 00013): the chat read "... did not come back
+  // usable (llm_output.invalid_diagnosis_text)". The reason is said in chat, so
+  // it names what happened by the code's family; the code stays on the record.
+  it.each([
+    ["llm_output.invalid_diagnosis_text", "reply could not be read"],
+    ["llm.provider_malformed_response", "reply could not be read"],
+    ["llm.provider_output_truncated", "reply could not be read"],
+    ["llm.provider_timeout", "ran out of time"],
+    ["llm.provider_aborted", "was stopped"],
+    ["llm.provider_network_error", "could not be reached"],
+    ["llm.provider_http_error", "could not be reached"],
+    ["llm.provider_rate_limited", "could not be reached"],
+    ["llm.provider_auth_failed", "could not be reached"],
+    ["llm_budget.run_cost_limit", "spending or size limit"],
+    ["llm.provider_input_budget_exceeded", "spending or size limit"],
+    ["llm.request.failure_evidence_invalid", "could not be sent"],
+    ["llm.provider_credential_in_request", "could not be sent"],
+    ["something.new", "did not come back usable"]
+  ])("says %s in plain words", (failureCode, words) => {
+    const verification = automationStudioResultVerdict({ summary, basis: "model_unavailable", failureCode });
+    expect(verification.reason).toContain(words);
+    expect(verification.reason).not.toContain(failureCode);
+    expect(verification.reason).not.toMatch(/\b[a-z_]+\.[a-z_.]+\b/);
+    expect(verification.failureCode).toBe(failureCode);
+  });
+
+  it("carries no failure code when the call gave none", () => {
+    const verification = automationStudioResultVerdict({ summary, basis: "model_unavailable" });
+    expect(verification.reason).toContain("did not come back usable");
+    expect("failureCode" in verification).toBe(false);
   });
 
   // This assertion is the inverse of the one it replaces, and the flip is
