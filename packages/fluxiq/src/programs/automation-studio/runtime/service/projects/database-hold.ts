@@ -5,15 +5,16 @@ import type { AutomationStudioProjectStore } from "./store.ts";
  * Runs one service operation with its project's database held open for the
  * operation's own duration.
  *
- * The pool closes a project database on its last release, so an operation
- * whose stores each acquire and release their own lease opened and closed the
+ * A pool that closes a project database on its last release made an operation
+ * whose stores each acquire and release their own lease open and close the
  * database once per store call: 120-215 times in one repaired run, measured.
  * Every close checkpoints the WAL and syncs it to disk, and every open creates
  * the WAL again and runs its pragmas, so under a busy disk those cycles were
  * the most expensive steps of the whole run. Holding one lease across the
- * operation lets every inner acquire reuse the open database. The pool still
- * closes it when the operation's lease is released: nothing stays open while
- * idle.
+ * operation lets every inner acquire reuse the open database. When the
+ * operation's lease is released the pool closes it, at once or, for the
+ * service's pool, once the project has been idle for its grace period, which
+ * lets the next operation reuse it too (t246).
  *
  * The project is checked first, because acquiring a lease creates the project's
  * database: an operation on a project the catalogue does not list runs unheld

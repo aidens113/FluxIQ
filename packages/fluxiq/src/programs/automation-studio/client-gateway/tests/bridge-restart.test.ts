@@ -19,7 +19,15 @@ beforeEach(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "automation-studio-client-gateway-bridge-restart-test-"));
 });
 
+// Closed before its data directory is removed: an idle project database stays open briefly.
+const services: AutomationStudioService[] = [];
+function closedAfterEach(service: AutomationStudioService): AutomationStudioService {
+  services.push(service);
+  return service;
+}
+
 afterEach(async () => {
+  await Promise.all(services.splice(0).map((service) => service.close()));
   await rm(tempRoot, { recursive: true, force: true });
 });
 
@@ -68,7 +76,7 @@ describe("AutomationStudioClientGatewayBridge, when a client restarts recording"
 /** A paired client with a recording it started itself, open in a project, on a bridge with no post-stop drain. */
 async function clientWithOpenRecording(clientId: string) {
   const gateway = new ClientGatewayService();
-  const automationStudio = new AutomationStudioService({ dataDir: path.join(tempRoot, clientId), seedFixture: false });
+  const automationStudio = closedAfterEach(new AutomationStudioService({ dataDir: path.join(tempRoot, clientId), seedFixture: false }));
   const project = await automationStudio.createProject({ name: clientId });
   const bridge = new AutomationStudioClientGatewayBridge({ gateway, automationStudio, io: ioRegistry(), stopDrainMs: 0, clientRecordingContextProvider: () => ({ ok: true, projectId: project.id }) });
   const session = gateway.connect();
