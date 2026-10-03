@@ -40,3 +40,22 @@ describe("activityActionFailureReason", () => {
     expect(activityActionFailureReason("not_found")).toBe("it wasn't on the page");
   });
 });
+
+describe("activityActionFailureReason: a refusal's own reason (t193)", () => {
+  it.each([
+    ["target_not_a_handle", "it didn't name a control from the page"],
+    ["malformed_handle", "it didn't name a control from the page"],
+    ["handle_in_wrong_parameter", "it didn't name a control from the page"],
+    ["handle_no_longer_on_page", "it was no longer on the page"],
+    ["covered_by_layer", "a popup or banner on the page was covering it"],
+    ["nothing_changed_while_waiting", "nothing on the page changed"],
+    ["page_unchanged_after_action", "nothing on the page changed"]
+  ])("says the reason %s as %s, whatever the code", (reason, why) => {
+    expect(activityActionFailureReason("web.action.rejected.target_unobserved", reason)).toBe(why);
+  });
+
+  it("falls back to the code when the reason names nothing it knows, and never says the reason", () => {
+    expect(activityActionFailureReason("web.action.rejected.target_unobserved", "vendor_specific_thing")).toBe("it wasn't on the page");
+    expect(activityActionFailureReason("web.action.failed", "vendor_specific_thing")).toBeNull();
+  });
+});

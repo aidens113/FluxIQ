@@ -16,8 +16,17 @@ export type AutomationStudioConversationCommandProgress = {
   /** Remembers an id the result should carry, whether it ends well or not. */
   carry(ids: Ids): void;
   succeeded(summary: string): AutomationStudioConversationCommandOutcome;
-  /** `cause` finishes "... because ...". */
-  failed(cause: string): AutomationStudioConversationCommandOutcome;
+  /**
+   * `cause` finishes "... because ..." and is always the outcome's `error`.
+   * `account.ending`, when given, is a work's own account of why it stopped,
+   * written for the person (a build's ending), and opens the answer alone in
+   * place of "<title> stopped because <cause>": both together said the
+   * failure three times ("stopped because the build could not finish. I could
+   * not build this Flow ...", t195 `run-murdouox-c5294247`). `account.left`
+   * says what the failure leaves behind in place of the steps that landed,
+   * for a command whose landed steps read as the opposite of the failure.
+   */
+  failed(cause: string, account?: { ending?: string | undefined; left?: string | undefined }): AutomationStudioConversationCommandOutcome;
 };
 
 export function automationStudioConversationCommandProgress(title: string, keyLocked: boolean): AutomationStudioConversationCommandProgress {
@@ -27,10 +36,11 @@ export function automationStudioConversationCommandProgress(title: string, keyLo
     landed: (step) => { steps.push(step); },
     carry: (next) => { Object.assign(ids, Object.fromEntries(Object.entries(next).filter(([, value]) => typeof value === "string" && value))); },
     succeeded: (summary) => ({ status: "done", summary, ...ids }),
-    failed: (cause) => {
-      const distance = steps.length ? `Before that I ${joined(steps)}.` : "Nothing was changed.";
+    failed: (cause, account = {}) => {
+      const opening = account.ending ? `${account.ending.replace(/\.$/u, "")}.` : `"${title}" stopped because ${cause}.`;
+      const distance = account.left ?? (steps.length ? `Before that I ${joined(steps)}.` : "Nothing was changed.");
       const locked = keyLocked ? " Your model key is locked for this browser: unlock your keys in FluxIQ, then ask again." : "";
-      return { status: "failed", summary: `"${title}" stopped because ${cause}. ${distance}${locked}`, error: cause, ...ids };
+      return { status: "failed", summary: `${opening} ${distance}${locked}`, error: cause, ...ids };
     }
   };
 }

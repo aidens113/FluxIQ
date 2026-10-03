@@ -32,11 +32,37 @@ const REASONS: readonly { words: RegExp; why: string }[] = [
 ];
 
 /**
- * Why an action failed, in a few plain words, read from its result code's last
- * words ("web.target.not_found" -> "it wasn't on the page"). Null when the
- * code names no reason this knows; never the code itself.
+ * Words only a refusal's own reason can say, which no result code does. A call
+ * refused because it named no control from the page (`target_not_a_handle`)
+ * read "it wasn't on the page" from its code (`target_unobserved`), when
+ * nothing had been looked up at all (t193, `run-muqiojz4-04a7a8fc`, `S/0090`).
+ * Generic words of a reason, as `REASONS` holds generic words of a code.
  */
-export function activityActionFailureReason(resultCode: string): string | null {
+const REFUSAL_REASONS: readonly { words: RegExp; why: string }[] = [
+  { words: /_(not_a_handle|malformed_handle|handle_in_wrong_parameter)_/u, why: "it didn't name a control from the page" },
+  { words: /_(no_longer_on_page)_/u, why: "it was no longer on the page" },
+  // Before `REASONS`, whose `changed` would say the opposite of "nothing changed".
+  { words: /_(nothing_changed|unchanged)_/u, why: "nothing on the page changed" }
+];
+
+/** `REASONS`' entry for a code segment or a reason, written `_like_this_`. */
+function reasonFor(table: readonly { words: RegExp; why: string }[], words: string): string | null {
+  return table.find((candidate) => candidate.words.test(words))?.why ?? null;
+}
+
+/**
+ * Why an action failed, in a few plain words. A refusal's own `reason` (the
+ * caller's code for why the call came to its result) decides first, when its
+ * words say something; else the result code's last words do
+ * ("web.target.not_found" -> "it wasn't on the page"). Null when neither names
+ * a reason this knows; never the code or the reason itself.
+ */
+export function activityActionFailureReason(resultCode: string, reason?: string): string | null {
+  const said = reason?.trim().toLowerCase().replace(/[\s.-]+/gu, "_");
+  if (said) {
+    const why = reasonFor(REFUSAL_REASONS, `_${said}_`) ?? reasonFor(REASONS, `_${said}_`);
+    if (why) return why;
+  }
   const code = resultCode.trim().toLowerCase();
   if (activityActionReplayFailing(code)) return "it didn't work the same way again";
   const segments = code.split(".").map((segment) => `_${segment.replace(/[\s-]+/gu, "_")}_`);
@@ -44,8 +70,8 @@ export function activityActionFailureReason(resultCode: string): string | null {
   // first segment is a namespace, not a reason.
   const ordered = [segments.at(-1) ?? "", ...segments.slice(1, -1).reverse()];
   for (const segment of ordered) {
-    const reason = REASONS.find((candidate) => candidate.words.test(segment));
-    if (reason) return reason.why;
+    const why = reasonFor(REASONS, segment);
+    if (why) return why;
   }
   return null;
 }

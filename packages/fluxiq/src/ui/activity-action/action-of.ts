@@ -54,6 +54,17 @@ const PERSON_TITLE = /\bcheck\b/iu;
 const QUOTED = /“([^”]+)”/u;
 /** Words a look searches for, which Core says in straight quotes: Looking for "USB-C hub" on the page. */
 const SAID = /"([^"]+)"/u;
+/**
+ * The title a result check's rows carry ("Result check started", "Result
+ * check": `programs/automation-studio/runtime/result-verification/verify.ts`).
+ * It checks what a run left; it runs nothing, so it is no test run.
+ */
+const RESULT_CHECK_TITLE = /^Result check\b/u;
+/**
+ * A page's address path as the navigate wording names it ("/ip/napkins", or
+ * "…/ip/napkins" cut at the front): a dot in it ("/help/index.html") is not an id.
+ */
+const ADDRESS_PATH = /^…?\/\S*$/u;
 /** Something shaped like a dotted id ("web.output.dom-click"), which a card never shows. */
 const ID_SHAPED = /[A-Za-z_][\w-]*\.[A-Za-z_][\w-]*/u;
 /** How a wait on the person ended, as the ask row that settles it says (`ClientGatewayActivity.detail.resolution`). */
@@ -114,6 +125,7 @@ function kindOf(event: ActivityActionEvent, detail: Detail, code: string | undef
   if (event.phase === "repairing") return "repair";
   if (code !== undefined && PERSON_CODE.test(code)) return "person_check";
   if (code !== undefined && PERMISSION_CODE.test(code)) return "permission";
+  if (detail.kind === "check" && RESULT_CHECK_TITLE.test(detail.title)) return "result_check";
   if (detail.kind === "check" || event.phase === "verifying" || core === "test") return "test";
   if (core) return core;
   const control = node ? CORE_NODE_KINDS.get(node) : undefined;
@@ -160,7 +172,7 @@ function declinedWhy(kind: ActivityActionKind, resolution: string | undefined): 
 function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActionKind): string | null {
   for (const candidate of [QUOTED.exec(detail.title)?.[1], event.step?.label]) {
     const name = candidate?.replace(/\s+/gu, " ").trim();
-    if (name && !ID_SHAPED.test(name)) return name;
+    if (name && (!ID_SHAPED.test(name) || (kind === "navigate" && ADDRESS_PATH.test(name)))) return name;
   }
   // A look that names no control is named by the words it looks for, kept in
   // their quotes so the card never reads them as a control's name.
@@ -179,7 +191,8 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * is an edit to the Flow; a dry run or a completion check is a test run); a
  * wait on a person (a check they have to complete, else a permission); the
  * `repairing` phase; a result code that says the page needs a person, or a
- * permission; a check row or a `verifying` row (a dry run's steps); and
+ * permission; a result check's rows (`result_check`, checking what a run
+ * left); any other check row or a `verifying` row (a dry run's steps); and
  * otherwise the verb named by the node id's last segment, the tool id, the
  * step's label, the result code's action word, or the title Core already said
  * it in. Generic verbs only; see `./verb.ts`.
@@ -191,11 +204,11 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  *
  * `target` is the name Core quoted in the title, else the step's label, else
  * for a look the words it looked for, in straight quotes, else null; never an
- * id. A replay code that says the step held (`./replay-failing.ts`: replayed,
+ * id, though a navigate's address path ("/help/index.html") is not one. A replay code that says the step held (`./replay-failing.ts`: replayed,
  * verified, present, remembered) is done, not failed. `why` is set only for a failure: a settled ask's
  * resolution in words ("you pressed Stop", "nobody answered in time"), or
- * else the result code's last words (`./failure-reason.ts`), and never is the
- * code.
+ * else the refusal's own reason or the result code's last words
+ * (`./failure-reason.ts`), and never is the code or the reason.
  */
 export function activityActionOf(event: ActivityActionEvent): ActivityAction | null {
   const detail = event.detail;
@@ -206,6 +219,6 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const outcome = outcomeOf(event, detail, record.resultCode);
   const why = outcome !== "failed" ? null
     : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
-      : record.resultCode ? activityActionFailureReason(record.resultCode) : null;
+      : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason) : null;
   return { kind, target: targetOf(event, detail, kind), outcome, why };
 }

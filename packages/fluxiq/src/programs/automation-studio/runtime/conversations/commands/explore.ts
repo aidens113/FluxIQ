@@ -47,7 +47,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
     }
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "create" });
-    if (!built.ok) return progress.failed(built.cause);
+    if (!built.ok) return progress.failed(built.cause, { ending: built.ending });
     progress.carry({ adaptationId: built.adaptationId });
     const where = automationStudioConversationPageShown(context.startLocation) ?? "the site";
     progress.landed(`explored ${where} and worked out the steps`);
