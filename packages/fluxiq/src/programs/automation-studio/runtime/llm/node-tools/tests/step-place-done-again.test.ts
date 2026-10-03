@@ -26,6 +26,8 @@ type SiteStep = {
   /** Not proposed: a look the model took, which is not in the Flow. */
   taken?: true;
   routing?: AutomationStudioFlowDraftStep["routing"];
+  /** The host saw this press answer a layer that was gone after it. */
+  interruption?: true;
 };
 
 const draft = (site: SiteStep[]): AutomationStudioFlowDraftStep[] => site.map((each, index) => {
@@ -44,6 +46,7 @@ const draft = (site: SiteStep[]): AutomationStudioFlowDraftStep[] => site.map((e
     proposes: !each.taken,
     stateBefore: `state-before-${index + 1}`,
     ...(each.routing ? { routing: each.routing } : {}),
+    ...(each.interruption ? { interruption: true as const } : {}),
     ...(each.from === undefined ? {} : { replay: { from: { location: each.from } } })
   };
 });
@@ -168,6 +171,24 @@ describe("a rerun's put-back", () => {
     const site: SiteStep[] = [
       { node: "node.go_towels", from: HOME },
       { node: "node.close_offer", from: TOWELS, routing: { kind: "optional" } },
+      { node: "node.plus", from: TOWELS },
+      { node: "node.add_to_cart", from: TOWELS }
+    ];
+    const host = towels({ missing: ["node.close_offer"] });
+    const place = await rerunOf(site, 4, host);
+
+    expect(host.calls.map((call) => call.callId)).toEqual(["rerun.4.place", "rerun.4.place.2", "rerun.4.place.3", "rerun.4"]);
+    expect(place).toMatchObject({ kind: "put_back", doneAgain: [{ step: 2, outcome: "failed" }, { step: 3, outcome: "replayed" }] });
+    expect(host.page.cart).toBe(2);
+  });
+
+  // Live run `run-murwdp4f-35f976d2`, step 0029: the put-back stopped at a
+  // failed press the host marked as answering an interruption, so the rerun
+  // ran nothing, although the Flow is written with that step optional.
+  it("passes over a failed step the host says answered an interruption, as the test from the start does", async () => {
+    const site: SiteStep[] = [
+      { node: "node.go_towels", from: HOME },
+      { node: "node.close_offer", from: TOWELS, interruption: true },
       { node: "node.plus", from: TOWELS },
       { node: "node.add_to_cart", from: TOWELS }
     ];

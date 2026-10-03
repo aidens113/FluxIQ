@@ -189,3 +189,46 @@ describe("how a checked step reads beside the replayed ones", () => {
     expect(String(feedback.instruction)).toContain("present:");
   });
 });
+
+// Lane B's run, on the same rule (t193-1002m, merged 2026-10-03). Live run
+// `run-murwdp4f-35f976d2`: draft step d12, Add to cart, carried act a2 and
+// declared `consequences: []`; both build tests pressed it and the person's cart
+// went from 2 to 3 to 4 items. Lane B first checked every step naming any act,
+// unless the next step had moved the page. Merged, the instruction's lasting
+// acts decide, and a lasting act is checked even when it moved the page: an
+// under-declared Submit must never be pressed again.
+const TOWELS = { location: "https://store.test/p/towels" };
+const CART = { location: "https://store.test/cart" };
+
+const actStep = (position: number, over: Partial<AutomationStudioFlowDraftStep> = {}, from: { location: string } = TOWELS): AutomationStudioFlowDraftStep => ({
+  position,
+  id: `d${position}`,
+  iteration: position,
+  actionId: "web.click",
+  input: { node: "web.click", parameters: {} },
+  ranWith: { node: "web.click", parameters: { target: `#s${position}` }, consequences: [] },
+  effect: "mutate",
+  effectApplied: true,
+  disposition: "kept",
+  proposes: true,
+  replay: { from },
+  ...over
+});
+
+describe("a step that does one of the person's lasting acts (lane B's run)", () => {
+  const lasting: ReadonlySet<string> = new Set(["a1", "a2", "a3"]);
+
+  it("is checked though it declared nothing lasting, and its choices are run again", () => {
+    expect(automationStudioFlowDraftStepReplayMode(actStep(12, { acts: ["a2"] }), lasting)).toBe("verify");
+    expect(automationStudioFlowDraftStepReplayMode(actStep(16, { acts: ["a2.quantity"] }), lasting)).toBe("replay");
+  });
+
+  it("is checked even when it moved the page, so a lasting act is never pressed twice", () => {
+    expect(automationStudioFlowDraftStepReplayMode(actStep(5, { acts: ["a1"] }, CART), lasting)).toBe("verify");
+  });
+
+  it("is run again when the instruction's read does not say its act lasts, or without the read", () => {
+    expect(automationStudioFlowDraftStepReplayMode(actStep(5, { acts: ["a4"] }), lasting)).toBe("replay");
+    expect(automationStudioFlowDraftStepReplayMode(actStep(12, { acts: ["a2"] }))).toBe("replay");
+  });
+});

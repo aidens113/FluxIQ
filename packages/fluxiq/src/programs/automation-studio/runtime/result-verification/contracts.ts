@@ -314,6 +314,13 @@ export type AutomationStudioBuildTestStep = {
   withheld?: true;
   /** The position of the checked step before this one whose withheld effect this step may have needed. */
   withheldBy?: number;
+  /**
+   * Set on a step that did not hold in this test and that the Flow passes
+   * over as written, saying why in Core's words ("optional: ...; in this test
+   * it did not run, which does not stop the Flow"). Not a defect: it is why the
+   * test passed with it (`../flow-draft/excused.ts`).
+   */
+  excused?: string;
   /** When the step runs, when it is not simply the next thing: optional, only if, on failure, or repeated over another step. */
   runs?: JsonValue;
   /** Set when the step was carried from an earlier Flow rather than run in this build. */

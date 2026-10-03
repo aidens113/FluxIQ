@@ -18,7 +18,11 @@
 //     keys and every locator-shaped string left out. A step that pressed
 //     "Add to cart" on the towels' page says so; one that never named the
 //     napkins does not.
-//   - `outcome`, from the test that passed, or `not_run`.
+//   - `outcome`, from the test that passed, or `not_run`, and `excused` beside
+//     an outcome that did not hold when the Flow passes over that step anyway,
+//     with why (`../../flow-draft/excused.ts`). Live run `run-murzln6g-11debe1d`
+//     showed an excused step as plain `failed`, and the judge asked to fix or
+//     remove it (t193 1002-M, C6).
 //   - `observed`, what the test saw for a step that reads (the rows) or a step
 //     it only checked, screened like any other evidence. A replayed list read
 //     names its rows, and the rows each condition left out by itself, by label
@@ -51,8 +55,11 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import {
+  automationStudioFlowDraftConditionalStepReasons,
+  automationStudioFlowDraftExcusedWords,
   automationStudioFlowDraftReplayOutcomeWord,
   automationStudioFlowDraftStepById,
+  automationStudioFlowDraftStepId,
   automationStudioFlowDraftStepIsProposed,
   type AutomationStudioFlowDraftReplayOutcome,
   type AutomationStudioFlowDraftStep,
@@ -162,8 +169,10 @@ export function automationStudioBuildTestResultSummary(input: {
   const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
   let withheld = denied === undefined;
   const claimed = resultClaims(input.result?.acts);
+  const reasons = automationStudioFlowDraftConditionalStepReasons(input.steps);
   const steps = proposed.map((step): AutomationStudioBuildTestStep => {
     const outcome = input.report ? outcomeOf(step, input.report.verdict.outcomes) : undefined;
+    const excused = outcome ? excusedWords(outcome, reasons.get(automationStudioFlowDraftStepId(step))) : undefined;
     const checked = outcome?.mode === "verify";
     const words = denied === undefined ? [] : targetWords(step, denied, input.steps, input.rowContextKeys ?? []);
     const claims = [...new Set([...(step.acts ?? []), ...claimed.filter((claim) => names(claim.step, step)).map((claim) => claim.action)])]
@@ -181,6 +190,7 @@ export function automationStudioBuildTestResultSummary(input: {
       outcome: outcome ? outcomeWord(outcome) : "not_run",
       ...(checked ? { withheld: true as const } : {}),
       ...(outcome?.withheldBy !== undefined ? { withheldBy: outcome.withheldBy } : {}),
+      ...(excused ? { excused } : {}),
       ...(runs ? { runs } : {}),
       ...(carriedStep(step) ? { carried: true as const } : {}),
       ...(observed?.value !== undefined ? { observed: observed.value } : {}),
@@ -246,6 +256,18 @@ export function automationStudioBuildTestUntestedCarried(account: AutomationStud
 function outcomeOf(step: AutomationStudioFlowDraftStep, outcomes: readonly AutomationStudioFlowDraftReplayOutcome[]): AutomationStudioFlowDraftReplayOutcome | undefined {
   const byId = step.id === undefined ? undefined : outcomes.find((outcome) => outcome.stepId === step.id);
   return byId ?? outcomes.find((outcome) => outcome.stepId === undefined && outcome.step === step.position) ?? step.replayed;
+}
+
+/**
+ * Why the test passed over a step that did not hold, in Core's words: as the
+ * replay excused it, else by what the draft now says of the step -- a step the
+ * test itself made optional (`madeOptional`) is excused by the routing that
+ * gave it, and its outcome predates it -- else by a withheld effect.
+ */
+function excusedWords(outcome: AutomationStudioFlowDraftReplayOutcome, reason: ReturnType<ReturnType<typeof automationStudioFlowDraftConditionalStepReasons>["get"]>): string | undefined {
+  if (outcome.status === "replayed") return undefined;
+  const excused = outcome.excused ?? reason ?? (outcome.withheldBy !== undefined ? "withheld" : undefined);
+  return excused ? automationStudioFlowDraftExcusedWords({ ...outcome, excused }) : undefined;
 }
 
 function outcomeWord(outcome: AutomationStudioFlowDraftReplayOutcome): AutomationStudioBuildTestStep["outcome"] {

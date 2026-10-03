@@ -7,8 +7,8 @@
 // with the same context and a note of what could not be read, and only an
 // unbroken run of them (`../../llm/unreadable-reply.ts`) ends the build -- as
 // this message: what happened, how many tries, which kind of damage it was
-// most often, what of the request the Flow already does, and whether the Flow
-// so far was kept. It is neither "not doable" -- nothing says the task cannot
+// most often, what of the request the Flow already does, and whether the steps
+// found so far were kept. It is neither "not doable" -- nothing says the task cannot
 // be done -- nor a budget: the budget had room left.
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
@@ -30,7 +30,7 @@ export function automationStudioFlowBootstrapRepliesUnreadable(input: {
   decisions: number;
   /** Why each live round stopped, in order (`./tried.ts`). */
   stops?: AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"] | undefined;
-  /** Whether the Flow so far was kept for the next build. */
+  /** Whether the steps found so far were kept for the next build. */
   kept: boolean;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const { inARow, total, cases, said } = input.unreadable;

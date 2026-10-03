@@ -6,7 +6,7 @@
 // checklist's reason put into a plain clause. Nothing here is page content.
 import type { AutomationStudioInstructedActChecklistItem, AutomationStudioInstructedActObjectTodo, AutomationStudioInstructedActTodo } from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
-import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
+import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
 
 const MAX_QUOTE = 200;
 const MAX_SAID_QUOTE = 90;
@@ -195,12 +195,19 @@ function boundedReason(reason: string): string {
  * (`AutomationStudioFlowBootstrapJudgement.proven`), and the rest is said as a
  * step not yet shown to work. Empty when the instruction asked for no act.
  *
+ * **"Worked" needs the judge's yes (t193 R2-C3).** A proven step is one that
+ * replayed or, since verify-only steps (`../../flow-draft/verify-only.ts`), one
+ * the test only checked could run; and live run `run-murzln6g-11debe1d` said
+ * "5 of the 6 things you asked worked" straight before "what it did was judged
+ * not to be what you asked". So without a judged yes a proven step is said as
+ * one that ran, or could run, and a judged no or an unjudged Flow is said with
+ * it.
  * One thing asked is said as one thing (t195-w37): live run
  * `run-murz83zy-5030820f` read "1 of the 1 things you asked worked".
  */
 export function automationStudioFlowBootstrapProgressSaid(
   checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined,
-  judgement: Pick<AutomationStudioFlowBootstrapJudgement, "tested" | "proven"> | undefined
+  judgement: (Pick<AutomationStudioFlowBootstrapJudgement, "tested" | "proven"> & { judge?: { verdict: "yes" | AutomationStudioFlowBootstrapJudgedWrong["verdict"] } | undefined }) | undefined
 ): string {
   const asked = (checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
   if (!asked) return "";
@@ -208,18 +215,22 @@ export function automationStudioFlowBootstrapProgressSaid(
   const named = Math.max(0, asked - notDone.length);
   const still = notDone.length ? `; still to do: ${automationStudioFlowBootstrapNotDoneSaid(notDone)}` : "";
   if (!named) return `${asked === 1 ? "The one thing you asked is not done" : `None of the ${asked} things you asked is done`}${still}.`;
+  const verdict = judgement?.judge?.verdict;
+  const judged = verdict === "no" ? ", but the Flow was judged not to do what you asked" : verdict && verdict !== "yes" ? ", but the Flow was not judged to do what you asked" : "";
   if (asked === 1) {
-    // Named, so done: the one thing has a step, which worked when run, did not, or was never run.
+    // Named, so done: the one thing has a step, which worked when run (by the judge's yes), ran without one, did not, or was never run.
     if (!judgement || judgement.tested === "not_tested") return "The one thing you asked has a step in the Flow, not yet shown to work by running it.";
-    return (judgement.proven ?? 0) > 0
+    if ((judgement.proven ?? 0) === 0) return "The one thing you asked has a step that did not work when the Flow was run from its start.";
+    return verdict === "yes"
       ? "The one thing you asked worked when the Flow was run from its start."
-      : "The one thing you asked has a step that did not work when the Flow was run from its start.";
+      : `The one thing you asked has a step that ran, or could run, when the Flow was run from its start${judged}.`;
   }
   const have = (count: number): string => (count === 1 ? "has" : "have");
   if (!judgement || judgement.tested === "not_tested") return `${named} of the ${asked} things you asked ${have(named)} a step in the Flow, not yet shown to work by running it${still}.`;
   const proven = Math.min(named, judgement.proven ?? 0);
   const rest = named > proven ? `, and ${named - proven} more ${have(named - proven)} a step that did not work in that run` : "";
-  return `${proven} of the ${asked} things you asked worked when the Flow was run from its start${rest}${still}.`;
+  if (verdict === "yes") return `${proven} of the ${asked} things you asked worked when the Flow was run from its start${rest}${still}.`;
+  return `${proven} of the ${asked} things you asked ${have(proven)} a step that ran, or could run, when the Flow was run from its start${rest}${judged}${still}.`;
 }
 
 /**

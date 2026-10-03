@@ -154,3 +154,39 @@ describe("a replay of a draft that branches", () => {
     expect([...automationStudioFlowDraftConditionalStepIds(draft)].sort()).toEqual(["d1", "d2", "d4"]);
   });
 });
+
+// Live run `run-murwdp4f-35f976d2`: draft step 11 pressed a chat card's "x"
+// that the host marked `interruption: true`. The Flow is written with such a
+// step optional (`../../flow-bootstrap/authoring/draft-routing.ts`), but the
+// test from the start judged it mandatory, its replay failed because the site
+// remembered the dismissal, and the test refused the Flow twice on that step
+// alone, while every later step replayed. Every judgement of the draft reads
+// this set, so the step is in it.
+describe("a step the host says answered an interruption", () => {
+  it("is one the Flow would not always run, exactly as the Flow is written", () => {
+    const draft = steps(4);
+    draft[1]!.interruption = true;
+    expect([...automationStudioFlowDraftConditionalStepIds(draft)]).toEqual(["d2"]);
+    const verdict = automationStudioFlowDraftDryRunVerdict({
+      attempt: 1,
+      reset: "ok",
+      outcomes: [
+        { step: 1, stepId: "d1", actionId: "press", status: "replayed" },
+        { step: 2, stepId: "d2", actionId: "press", status: "failed" },
+        { step: 3, stepId: "d3", actionId: "press", status: "replayed" },
+        { step: 4, stepId: "d4", actionId: "press", status: "replayed" }
+      ],
+      conditional: automationStudioFlowDraftConditionalStepIds(draft)
+    });
+    expect(verdict.ok).toBe(true);
+  });
+
+  it("is not, when it claims one of the person's acts or is not proposed", () => {
+    const draft = steps(4);
+    draft[1]!.interruption = true;
+    draft[1]!.acts = ["a1"];
+    draft[2]!.interruption = true;
+    draft[2]!.disposition = "dropped";
+    expect([...automationStudioFlowDraftConditionalStepIds(draft)]).toEqual([]);
+  });
+});

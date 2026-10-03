@@ -116,7 +116,7 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
     };
   }
   if (verdict === "does_not_answer") {
-    return failed(verdict, "model", codes.doesNotAnswer, "The result was judged not to answer the request the Flow was built for, although every step of the run succeeded.", observation, automationStudioResultRepairDirective({
+    return failed(verdict, "model", codes.doesNotAnswer, "The result was judged not to answer the request the Flow was built for.", observation, automationStudioResultRepairDirective({
       summary: input.summary,
       judgement: {
         ...(input.diagnosis?.expected !== undefined ? { expected: input.diagnosis.expected } : {}),

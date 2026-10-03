@@ -54,7 +54,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     // Flow ... and saved what it should do", read straight after "I could not
     // build this Flow", said the opposite of what had happened (t195,
     // `run-murdouox-c5294247`, UI review).
-    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: `What is left: the Flow "${name}", empty, with what you asked saved on it, so it can be built again.` });
+    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: automationStudioConversationCreateHereLeft(name, built) });
     progress.carry({ adaptationId: built.adaptationId });
     const where = automationStudioConversationPageShown(context.startLocation) ?? "the site";
     progress.landed(`explored ${where} and worked out the steps`);
@@ -71,4 +71,19 @@ function automationStudioConversationFlowName(instruction: string): string {
   const firstLine = instruction.split(/\r?\n/u)[0] ?? instruction;
   const sentence = (firstLine.split(/(?<=[.!?])\s/u)[0] ?? firstLine).trim();
   return sentence.length > NAME_MAX ? `${sentence.slice(0, NAME_MAX - 3).trimEnd()}...` : sentence;
+}
+
+/**
+ * What a failed build left, said once and true (t193 R2-C3, live run
+ * `run-murzln6g-11debe1d`): the ending said "The Flow so far was kept, and
+ * building again carries on from it", and this sentence then called the Flow
+ * empty. The Flow holds no step either way; what differs is whether the build
+ * kept the steps it found as a draft to carry on from. When it did and its own
+ * ending already said so, this names only the Flow; when it gave no ending, this
+ * says what was kept. When nothing was kept, the Flow is empty.
+ */
+function automationStudioConversationCreateHereLeft(name: string, built: { ending?: string | undefined; kept: boolean }): string {
+  if (!built.kept) return `What is left: the Flow "${name}", empty, with what you asked saved on it, so it can be built again.`;
+  if (built.ending) return `What is left: the Flow "${name}", with what you asked saved on it.`;
+  return `What is left: the Flow "${name}", with what you asked saved on it and the steps found so far kept, so building again carries on from them.`;
 }
