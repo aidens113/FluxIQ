@@ -411,7 +411,7 @@ export class AutomationStudioService {
         this.objectStore = new AutomationStudioObjectStore(automationDataDir);
         this.recordingStateIndexes = new RecordingStateIndexStore(automationDataDir);
       }
-      this.runtimeProjectDatabasePool = new AutomationStudioProjectDatabasePool({ rootDir: automationDataDir });
+      this.runtimeProjectDatabasePool = new AutomationStudioProjectDatabasePool({ rootDir: automationDataDir, idleCloseMs: process.env.T246_IDLE0 ? 0 : 1_000 });
       this.projectDatabasePool = this.runtimeProjectDatabasePool;
       projectRootDir = path.join(automationDataDir, "projects");
       const nodeRootDir = options.customNodeRootDir ?? (options.storageRootDir ? undefined : path.join(automationDataDir, "nodes"));
@@ -3949,7 +3949,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
       }));
       if (this.projectPaths.root) {
         if (this.objectStore) await ProgramJsonStore.deletePath(this.projectPaths.projectDirectory(projectId));
-        else await rm(this.projectPaths.projectDirectory(projectId), { recursive: true, force: true });
+        else { await this.runtimeProjectDatabasePool?.closeIdleProject(projectId); await rm(this.projectPaths.projectDirectory(projectId), { recursive: true, force: true }); } // An idle connection holds project.sqlite open.
       }
       await this.uiCache.purgeProject(projectId).catch(() => undefined);
       return { deletedProjectId: projectId };

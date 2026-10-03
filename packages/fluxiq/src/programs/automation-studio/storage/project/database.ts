@@ -29,19 +29,43 @@ export type AutomationStudioProjectDatabaseLease = {
 export type AutomationStudioProjectDatabasePoolOptions = {
   rootDir: string;
   busyTimeoutMs?: number;
+  /**
+   * How long a project database stays open after its last lease is released,
+   * in case another lease follows. 0 (the default) closes it on that release.
+   * See `AutomationStudioProjectDatabasePool`.
+   */
+  idleCloseMs?: number;
 };
 
-type PoolEntry = { database: AutomationStudioProjectDatabase; leases: number };
+type PoolEntry = { database: AutomationStudioProjectDatabase; leases: number; idleTimer: ReturnType<typeof setTimeout> | undefined };
 
+/**
+ * One open connection per project, shared by every lease on it.
+ *
+ * With `idleCloseMs` 0 the connection closes on its last release. With a grace
+ * period it stays open that long, and a lease taken in the meantime reuses it.
+ * A service runs its operations back to back, each releasing before the next
+ * acquires, so closing on every release reopened the database once per
+ * operation: measured 2026-10-02 (t246), 18 opens for the four calls that
+ * install a Flow's primary router and 25-37 per runtime-run test case, each
+ * paying an open that creates the WAL and runs its pragmas, the full migration
+ * check of every store set (the ready memo is per connection), and a close
+ * that checkpoints the WAL to disk and deletes it. Nothing stays open once the
+ * project has been idle for the grace period; `closeAll` and
+ * `closeIdleProject` close at once, so a caller about to remove a project's
+ * files does not wait for it.
+ */
 export class AutomationStudioProjectDatabasePool {
   readonly rootDir: string;
   private readonly busyTimeoutMs: number;
+  private readonly idleCloseMs: number;
   private readonly entries = new Map<string, Promise<PoolEntry>>();
   private closing = false;
 
   constructor(options: AutomationStudioProjectDatabasePoolOptions) {
     this.rootDir = path.resolve(options.rootDir);
     this.busyTimeoutMs = Math.max(100, Math.trunc(options.busyTimeoutMs ?? 10_000));
+    this.idleCloseMs = Math.max(0, Math.trunc(options.idleCloseMs ?? 0));
   }
 
   /** Whether `closeAll` has been called: every later `acquire` is refused. */
@@ -64,6 +88,9 @@ export class AutomationStudioProjectDatabasePool {
     }
     const currentEntryPromise = entryPromise;
     const currentEntry = entry;
+    // Counted in the same synchronous step as the check above, so an idle close
+    // either ran before it (the entry is gone and was not reused) or never runs.
+    clearIdleTimer(currentEntry);
     currentEntry.leases += 1;
     let released = false;
     return {
@@ -74,10 +101,44 @@ export class AutomationStudioProjectDatabasePool {
         released = true;
         currentEntry.leases = Math.max(0, currentEntry.leases - 1);
         if (currentEntry.leases || this.entries.get(normalizedProjectId) !== currentEntryPromise) return;
-        this.entries.delete(normalizedProjectId);
-        await currentEntry.database.close();
+        if (!this.idleCloseMs) {
+          this.entries.delete(normalizedProjectId);
+          await currentEntry.database.close();
+          return;
+        }
+        clearIdleTimer(currentEntry);
+        currentEntry.idleTimer = setTimeout(() => {
+          currentEntry.idleTimer = undefined;
+          if (currentEntry.leases || this.entries.get(normalizedProjectId) !== currentEntryPromise) return;
+          this.entries.delete(normalizedProjectId);
+          void currentEntry.database.close().catch(/* best-effort: nobody awaits an idle close, and the entry has already left the pool */ () => undefined);
+        }, this.idleCloseMs);
+        // An idle connection never keeps the process alive.
+        currentEntry.idleTimer.unref?.();
       }
     };
+  }
+
+  /**
+   * Closes a project's database now if no lease holds it, rather than at the end
+   * of its idle grace period. A caller about to remove the project's files calls
+   * this first: an open connection holds `project.sqlite` and its WAL.
+   */
+  async closeIdleProject(projectId: string): Promise<void> {
+    const normalizedProjectId = normalizeProjectId(projectId);
+    const entryPromise = this.entries.get(normalizedProjectId);
+    if (!entryPromise) return;
+    // Only waits for the open to settle: one that failed has left the map (see
+    // `currentOrOpenEntry`), and its error already went to the lease that asked.
+    await entryPromise.then(() => undefined, () => undefined);
+    if (this.entries.get(normalizedProjectId) !== entryPromise) return;
+    const entry = await entryPromise;
+    // Checked again after that await: a lease may have been taken, or the idle
+    // close may have run and a new entry taken this one's place.
+    if (entry.leases || this.entries.get(normalizedProjectId) !== entryPromise) return;
+    clearIdleTimer(entry);
+    this.entries.delete(normalizedProjectId);
+    await entry.database.close();
   }
 
   stats(): { openProjects: number; projects: Array<{ projectId: string; leases: number; queuedOperations: number }> } {
@@ -92,7 +153,11 @@ export class AutomationStudioProjectDatabasePool {
     this.closing = true;
     const entries = [...this.entries.values()];
     this.entries.clear();
-    await Promise.all(entries.map(async (entryPromise) => (await entryPromise).database.close()));
+    await Promise.all(entries.map(async (entryPromise) => {
+      const entry = await entryPromise;
+      clearIdleTimer(entry);
+      await entry.database.close();
+    }));
   }
 
   private currentOrOpenEntry(projectId: string): Promise<PoolEntry> {
@@ -114,8 +179,14 @@ export class AutomationStudioProjectDatabasePool {
       filePath: path.join(projectDir, "project.sqlite"),
       busyTimeoutMs: this.busyTimeoutMs
     });
-    return { database, leases: 0 };
+    return { database, leases: 0, idleTimer: undefined };
   }
+}
+
+function clearIdleTimer(entry: PoolEntry): void {
+  if (entry.idleTimer === undefined) return;
+  clearTimeout(entry.idleTimer);
+  entry.idleTimer = undefined;
 }
 
 export class AutomationStudioProjectDatabase implements AutomationStudioSqlExecutor {

@@ -166,3 +166,79 @@ describe("AutomationStudioStatementCache through a project connection", () => {
     await pool.closeAll();
   });
 });
+
+// A pool with an idle grace period keeps a project's connection open for that
+// long after its last release, so back-to-back operations share it (t246). These
+// cases pin when it is reused and when it closes; the cases above pin the
+// default, which closes on the last release.
+const GRACE_MS = 60;
+
+async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error("Condition was not met in time.");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+describe("AutomationStudioProjectDatabasePool idle grace period", () => {
+  beforeEach(async () => {
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-database-test-"));
+  });
+
+  afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+
+  it("reuses the connection for a lease taken within the grace period, and closes it once idle", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: GRACE_MS });
+    const first = await pool.acquire("project.idle");
+    await first.database.run("create table items (id text primary key)");
+    await first.release();
+    expect(pool.stats().openProjects).toBe(1);
+
+    const second = await pool.acquire("project.idle");
+    expect(second.database).toBe(first.database);
+    // A lease held past the grace period keeps the connection open.
+    await new Promise((resolve) => setTimeout(resolve, GRACE_MS * 3));
+    expect(pool.stats().openProjects).toBe(1);
+    await expect(second.database.get("select count(*) as count from items")).resolves.toEqual({ count: 0 });
+    await second.release();
+
+    await waitFor(() => pool.stats().openProjects === 0);
+    await expect(first.database.get("select 1")).rejects.toThrow(/is closed/);
+    const reopened = await pool.acquire("project.idle");
+    expect(reopened.database).not.toBe(first.database);
+    await reopened.release();
+    await pool.closeAll();
+  });
+
+  it("closes an idle project at once on request, and leaves a held one open", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 60_000 });
+    const idle = await pool.acquire("project.idle");
+    await idle.release();
+    const held = await pool.acquire("project.held");
+
+    await pool.closeIdleProject("project.idle");
+    await pool.closeIdleProject("project.held");
+    await pool.closeIdleProject("project.never-opened");
+
+    expect(pool.stats().openProjects).toBe(1);
+    await expect(idle.database.get("select 1")).rejects.toThrow(/is closed/);
+    await expect(held.database.get<{ one: number }>("select 1 as one")).resolves.toEqual({ one: 1 });
+    // With the idle connection closed its files can be removed, which Windows refuses while it is open.
+    await rm(path.join(rootDir, "projects", "project.idle"), { recursive: true });
+    await held.release();
+    await pool.closeAll();
+  });
+
+  it("closes idle connections on closeAll without waiting for their grace period", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir, idleCloseMs: 60_000 });
+    const lease = await pool.acquire("project.idle");
+    await lease.release();
+    const started = Date.now();
+    await pool.closeAll();
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(pool.stats().openProjects).toBe(0);
+    await expect(lease.database.get("select 1")).rejects.toThrow(/is closed/);
+    await expect(pool.acquire("project.idle")).rejects.toThrow(/closing/);
+  });
+});

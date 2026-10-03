@@ -330,6 +330,8 @@ describe("Automation Studio IO bridge", () => {
 
     expect(proposal.policy.nodes).toEqual([]);
     } finally {
+      // Closed first: an idle project database stays open briefly, and Windows will not delete it open.
+      await service.close();
       await rm(root, { recursive: true, force: true });
     }
   });
