@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../../../llm/index.ts";
+
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { type AutomationStudioImporterSdkManifest } from "../../../../nodes/index.ts";
@@ -86,7 +86,7 @@ describe("AutomationStudioService recording persistence", () => {
         requireApprovalForDestructiveChanges: false,
         requireApprovalForExternalSideEffects: false,
         maxInterventionsPerRun: 3,
-        maxEstimatedCostUsdPerRun: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD
+        maxEstimatedCostUsdPerRun: 0.25
       },
       trainingModeSettings: {
         mode: "continuous_adaptive",

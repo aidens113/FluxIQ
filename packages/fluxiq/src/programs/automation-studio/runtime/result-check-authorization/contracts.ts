@@ -45,11 +45,11 @@
 // as `redeem.ts` is about `loop_verification`: neither takes the kinds as an
 // argument, so no settings field and no caller can widen either.
 
-// The ceiling is read from the model's own resolver, not `../llm/flow-execution-limits/`:
+// The default is read from the model, not `../llm/flow-execution-limits/`:
 // that barrel reaches the LLM harness, which reaches back here, and the cycle left
 // `automationStudioLlmResolutionWithinFlowSettings` undefined for any importer that
-// loaded this module first. Both read FLUXIQ_LLM_RUN_COST_CEILING_USD once, at load.
-import { resolveAutomationStudioLlmRunCostCeilingUsd } from "../../model/run-cost-ceiling/index.ts";
+// loaded this module first. User-facing defaults remain independent of runtime scope.
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD } from "../../model/run-cost-ceiling/index.ts";
 
 /** The one task kind a standing check authorization can ever be redeemed for. */
 export const AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND = "loop_verification" as const;
@@ -74,8 +74,7 @@ export type AutomationStudioUnattendedRepairClause = {
    * and "a repair may spend up to this" is what a person can reason about;
    * `resolveAutomationStudioRecoveryRunBudget` divides it into per-call shares
    * as it does for every other recovery. It bounds the run *on top of* the
-   * run cost ceiling (`AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 by
-   * default), never above it.
+   * other explicit runtime limits and any isolated test runtime ceiling.
    */
   maxCostUsdPerRun: number;
 };
@@ -146,25 +145,15 @@ export type AutomationStudioResultCheckRedemption =
  * than the default schedule reaches in a Flow's first several thousand runs --
  * while still being a number a person can reason about. The per-call ceiling is
  * far above the measured call and below a recovery's own ceiling (the run cost
- * ceiling, $0.10 by default), so a
+ * default, $0.25), so a
  * verification whose packet grew unexpectedly is refused rather than billed.
  */
 export const AUTOMATION_STUDIO_RESULT_CHECK_AUTHORIZATION_DEFAULTS = Object.freeze({
   maxTotalCostUsd: 1,
   maxCostUsdPerCall: 0.05,
   ttlMs: 90 * 24 * 60 * 60 * 1000,
-  /**
-   * What one unattended repair may spend when the person turning repair on
-   * names no number: Core's own ceiling for any recovery,
-   * `AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD` ($0.10 unless
-   * FLUXIQ_LLM_RUN_COST_CEILING_USD says otherwise;
-   * `../recovery/annotation/run-budget.ts`), so this default authorizes the
-   * repair such a run would have made and nothing wider. It follows the
-   * constant rather than restating it: it was a literal $0.25 that outlived
-   * the ceiling it claimed to equal. Note it is **not** a default for
-   * `enabled`: repair stays off until somebody turns it on.
-   */
-  repairMaxCostUsdPerRun: resolveAutomationStudioLlmRunCostCeilingUsd()
+  /** User-facing repair default, independent of an isolated test runtime's ceiling. */
+  repairMaxCostUsdPerRun: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD
 });
 
 /** Why a standing authorization was not redeemed. One code per reason, so a reader can act on it. */

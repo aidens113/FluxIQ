@@ -136,7 +136,7 @@ describe("Flow settings round trip", () => {
       const flow = flowOf(metadata);
       const draft = flowSettingsDraftFromFlow(flow);
       expect(draft.maxAdaptationInterventionsPerRun, JSON.stringify(metadata)).toBe("3");
-      expect(draft.maxAdaptationCostUsdPerRun, JSON.stringify(metadata)).toBe("0.1");
+      expect(draft.maxAdaptationCostUsdPerRun, JSON.stringify(metadata)).toBe("0.25");
       const once = flowSettingsDraftFromFlow(buildFlowSettingsSavePayload(flow, draft));
       expect(flowSettingsNotPersisted(draft, once), JSON.stringify(metadata)).toEqual([]);
       const twice = flowSettingsDraftFromFlow(buildFlowSettingsSavePayload(buildFlowSettingsSavePayload(flow, draft), once));
@@ -150,17 +150,17 @@ describe("Flow settings round trip", () => {
   // so a form defaulting above it described a limit that does not exist. Pinned
   // to Core's source, as the permission defaults below are, because Core's only
   // public export of the constant also carries the server runtime.
-  it("defaults a Flow's adaptation cost per run to Core's default run ceiling, and accepts it", () => {
+  it("defaults a Flow's adaptation cost per run independently of test runtime limits", () => {
     const coreSource = (file: string) => readFileSync(new URL(`../../../../../../../packages/fluxiq/src/programs/automation-studio/${file}`, import.meta.url), "utf8");
     const ceiling = coreSource("model/run-cost-ceiling/run-cost-ceiling-env.ts").match(/AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD = ([0-9.]+);/)?.[1];
     const flows = coreSource("model/flows.ts");
     const draft = flowSettingsDraftFromFlow(flowOf());
-    expect(draft.maxAdaptationCostUsdPerRun).toBe("0.1");
+    expect(draft.maxAdaptationCostUsdPerRun).toBe("0.25");
     expect(Number(draft.maxAdaptationCostUsdPerRun)).toBe(Number(ceiling));
     // A new Flow's stored default is the ceiling itself, not a copy of it.
-    expect(flows).toContain("maxEstimatedCostUsdPerRun: resolveAutomationStudioLlmRunCostCeilingUsd()");
+    expect(flows).toContain("maxEstimatedCostUsdPerRun: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD");
     expect(flowLimitsInterfaceErrors(draft).filter((error) => error.startsWith("Adaptation cost per run"))).toEqual([]);
-    expect((buildFlowSettingsSavePayload(flowOf(), draft).metadata as any).adaptationPolicySettings.maxEstimatedCostUsdPerRun).toBe(0.1);
+    expect((buildFlowSettingsSavePayload(flowOf(), draft).metadata as any).adaptationPolicySettings.maxEstimatedCostUsdPerRun).toBe(0.25);
   });
 
   it("shows the permission defaults Core actually runs a Flow under", () => {

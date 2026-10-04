@@ -200,7 +200,7 @@ function shown(stood: AutomationStudioInstructedStanding | undefined): { done: n
 /** A done choice whose act's step comes before it: that step, and the sentence the verdict says (`./choice-order.ts`). */
 function madeAfterAct(choice: AutomationStudioInstructedChoice, stood: AutomationStudioInstructedStanding | undefined): { afterAct?: number; afterActSaid?: string } {
   if (!stood || !("done" in stood) || !stood.afterAct) return {};
-  const found = automationStudioInstructedChoiceAfterAct({ id: choice.id, of: choice.of, step: stood.done.position, actStep: stood.afterAct.position });
+  const found = automationStudioInstructedChoiceAfterAct({ id: choice.id, of: choice.of, step: stood.done, actStep: stood.afterAct });
   return found ? { afterAct: found.actStep, afterActSaid: found.said } : {};
 }
 

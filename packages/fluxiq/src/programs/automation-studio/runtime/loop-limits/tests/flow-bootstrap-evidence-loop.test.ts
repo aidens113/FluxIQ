@@ -38,16 +38,16 @@ describe("the Flow Bootstrap budget", () => {
     expect(limits.loop.maxIterations).toBe(64);
   });
 
-  it("names only the token bounds the resolution declared, and always the run cost ceiling", () => {
+  it("uses the ordinary default only when no total is specified", () => {
     expect(automationStudioFlowBootstrapEvidenceLoopLimits({}).loop.budget).toEqual({ maxCostUsd: CEILING, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS });
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxTotalEstimatedCostUsd: 0.5 }).loop.budget).toMatchObject({ maxCostUsd: CEILING });
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxTotalEstimatedCostUsd: 0.5 }).loop.budget).toMatchObject({ maxCostUsd: 0.5 });
   });
 
   // Spend safety is a plain configured limit read from Flow settings
   // (`adaptationPolicySettings.maxEstimatedCostUsdPerRun`), not a grant, and it
   // can only lower the ceiling.
-  it("takes the smallest of the ceiling, the resolution's total and the Flow's configured limit", () => {
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: 2 }, 0.5).loop.budget).toMatchObject({ maxCostUsd: CEILING });
+  it("takes the smaller of the resolution total and explicit Flow limit", () => {
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: 2 }, 0.5).loop.budget).toMatchObject({ maxCostUsd: 0.5 });
     expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: CEILING * 0.8 }, CEILING * 0.6).loop.budget).toMatchObject({ maxCostUsd: CEILING * 0.6 });
     expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: CEILING * 0.48 }, CEILING * 0.6).loop.budget).toMatchObject({ maxCostUsd: CEILING * 0.48 });
   });
@@ -66,9 +66,9 @@ describe("the Flow Bootstrap budget", () => {
     expect(limits.loop.maxToolCalls).toBe(49);
   });
 
-  it("keeps the run cost ceiling when the Flow sets no usable limit", () => {
+  it("keeps an explicit resolver limit when the Flow sets no usable limit", () => {
     for (const unset of [undefined, 0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: 2 }, unset).loop.budget).toMatchObject({ maxCostUsd: CEILING });
+      expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 10, maxTotalEstimatedCostUsd: 2 }, unset).loop.budget).toMatchObject({ maxCostUsd: 2 });
     }
   });
 });
@@ -99,7 +99,7 @@ describe("automationStudioFlowBootstrapEvidenceLoopLimits", () => {
   it("lets a 26-call resolution iterate 26 times, past the old cap of eight", () => {
     const limits = automationStudioFlowBootstrapEvidenceLoopLimits({ maxCallsPerRun: 26, maxTotalEstimatedCostUsd: 2 });
 
-    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, budget: { maxCostUsd: CEILING, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS } });
+    expect(limits.loop).toEqual({ minToolCalls: 1, maxIterations: 26, maxToolCalls: 27, budget: { maxCostUsd: 2, maxDurationMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_DURATION_MS } });
   });
 
   it("falls back to the loop's own ceiling, not to a small default, when nothing is declared", () => {
@@ -152,9 +152,9 @@ describe("the build's cost ceiling", () => {
     expect(automationStudioFlowBootstrapEvidenceLoopLimits({}).loop.budget.maxCostUsd).toBe(CEILING);
   });
 
-  it("never lets the Flow's setting raise it: a Flow set to $1 still gets the ceiling", () => {
+  it("honors an explicit resolver ceiling while allowing explicit user limits above the default", () => {
     expect(automationStudioFlowBootstrapEvidenceLoopLimits(hostDefaults, 1).loop.budget.maxCostUsd).toBe(CEILING);
-    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxTotalEstimatedCostUsd: 2 }, 5).loop.budget.maxCostUsd).toBe(CEILING);
+    expect(automationStudioFlowBootstrapEvidenceLoopLimits({ maxTotalEstimatedCostUsd: 2 }, 5).loop.budget.maxCostUsd).toBe(2);
   });
 
   it("lets the Flow's setting lower it: a Flow set below the ceiling gets its own figure", () => {
