@@ -18,6 +18,15 @@ type Entry = {
 const value = (steps: readonly AutomationStudioFlowDraftStep[]): Entry => automationStudioFlowDraftEntry({ steps })!.value as Entry;
 
 describe("the draft entry a decision is shown", () => {
+  it("shows checked intentions separately from private original performed proof", () => {
+    const original = step(1, "press", { target: "original" }, { ranWith: { target: "private-resolved" }, stateBefore: "private-before", stateAfter: "private-after", acts: ["a1"] });
+    const candidate = step(1, "press", { target: "replacement" }, { effectApplied: false, checkedCandidate: { callId: "checked", code: "core.replay.present" }, priorExecution: { ...original, lasting: true }, acts: ["a1"] });
+    delete candidate.callId;
+    const shown = value([candidate]);
+    expect(shown.steps[0]).toMatchObject({ changed: "no", disposition: "kept", inResult: true, checkedCandidate: { callId: "checked", performed: false }, priorExecution: { callId: "call.1", configuration: "original", performed: true }, actEvidence: "intended" });
+    expect(JSON.stringify(shown)).not.toContain("private-");
+    expect(shown.steps[0]).not.toHaveProperty("written");
+  });
   // The failure this exists for: the evidence window kept the newest result
   // of each tool, so five presses under one tool id left one visible and the
   // built Flow kept none of the dismissals the build had actually performed.

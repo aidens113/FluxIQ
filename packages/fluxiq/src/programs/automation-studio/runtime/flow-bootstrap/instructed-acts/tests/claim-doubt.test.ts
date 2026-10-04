@@ -37,6 +37,11 @@ describe("advisory act-claim feedback", () => {
     expect(automationStudioInstructedActClaimDoubt({ ...add, kind, verb: kind }, draft, [draft])).toBeUndefined();
   });
 
+  it.each(["Get coupons", "Get vouchers"])("recognizes plural claim controls: %s", (target) => {
+    const draft = step(target);
+    expect(automationStudioInstructedActClaimDoubt({ ...add, kind: "claim", verb: "claim" }, draft, [draft])).toBeUndefined();
+  });
+
   it("matches whole vocabulary words rather than substrings", () => {
     const draft = step("Address");
     expect(automationStudioInstructedActClaimDoubt(add, draft, [draft])).toBeDefined();

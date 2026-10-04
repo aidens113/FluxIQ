@@ -4,7 +4,7 @@ import type { AutomationStudioInstructedAct } from "./contracts.ts";
 export const AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS: Readonly<Record<AutomationStudioInstructedAct["kind"], readonly string[]>> = Object.freeze({
   save: ["save", "saved", "bookmark"],
   add_to: ["add", "added", "put", "cart", "basket", "watchlist", "wishlist"],
-  claim: ["coupon", "voucher", "collect", "claim", "redeem"],
+  claim: ["coupon", "coupons", "voucher", "vouchers", "collect", "claim", "redeem"],
   set: ["switch", "set", "change", "filter", "sort", "narrow", "store", "radius", "location"],
   move: ["move", "moved"],
   open: ["open", "opened", "go", "view", "visit"],

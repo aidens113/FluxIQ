@@ -99,7 +99,7 @@ export function automationStudioFlowDraftEntry(input: {
     steps: listed.map((step) => stepLine(step, listed)),
     // The Flow's inputs, declared by the bindings its steps carry (`./flow-inputs.ts`).
     ...(inputs.length ? { inputs: inputs.map((entry) => ({ name: entry.name, test: entry.test, steps: entry.steps })) } : {}),
-    instruction: input.authored ? AUTHORED_INSTRUCTION : DRAFT_INSTRUCTION
+    instruction: (input.authored ? AUTHORED_INSTRUCTION : DRAFT_INSTRUCTION) + (listed.some((step) => step.checkedCandidate) ? " A checkedCandidate is an exception to the recorded runs: its current configuration was checked, not performed; its act claims are intentions. priorExecution identifies the original configuration that performed the earlier effect, not this candidate. A verified/present test of a candidate establishes the check's result, never execution of its effect." : "")
   };
   return { callId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, value };
 }
@@ -112,6 +112,10 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     input: automationStudioFlowDraftRenderBindings(step.input),
     // Written, not run: checked and frozen by the domain, nothing performed (`./step.ts`).
     ...(step.written ? { written: true } : {}),
+    ...(step.checkedCandidate ? { checkedCandidate: { ...step.checkedCandidate, performed: false }, actEvidence: "intended" } : {}),
+    // Only provenance identity is model-facing; private resolved parameters
+    // and state/output evidence of the old execution stay on the internal record.
+    ...(step.priorExecution ? { priorExecution: { ...(step.priorExecution.callId ? { callId: step.priorExecution.callId } : {}), performed: true, configuration: "original" } } : {}),
     // What the call named, in the domain's words: the control a handle in
     // `input` stood for, and the words typed or looked for (`./step.ts`,
     // `words`). A handle is a name for a control on one page, so without this
@@ -171,7 +175,7 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
  */
 function shownDisposition(step: AutomationStudioFlowDraftStep): string {
   // A written step changed nothing by construction: it was never performed.
-  if (step.written !== true && step.effectApplied === false && (step.effect === "mutate" || automationStudioFlowDraftStepIsAction(step))) return "did_not_work";
+  if (step.written !== true && step.checkedCandidate === undefined && step.effectApplied === false && (step.effect === "mutate" || automationStudioFlowDraftStepIsAction(step))) return "did_not_work";
   // Not of the kind a Flow is made of: listed only so its number shows, and
   // no amendment puts it in the Flow (`./amendment.ts`).
   return automationStudioFlowDraftStepIsAction(step) ? step.disposition : "look";

@@ -74,7 +74,7 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE = "llm_evide
  * a reason added to the draft's set fail to compile until it is explained here.
  */
 const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"], string> = {
-  no_such_step: "There is no step at that number. Step numbers are the ones the draft entry shows, and they are renumbered whenever a step moves.",
+  no_such_step: "There is no step at that number. Step numbers are the ones the draft entry shows, and they are renumbered whenever a step moves. An add amendment includes an existing step; it does not create a new action from input. To author a missing action, issue a new tool_call using an offered tool and its input schema, with add:true and the intended act when applicable. Use that call's resulting draft step number for later amendments.",
   already_so: "The step already says that, and the amendment carried nothing else to change.",
   no_such_position: "There is no position to move a step to at that number.",
   run_by_the_loop: "A rerun is carried out by the loop rather than written onto the draft, and this one was not carried out. A rerun needs an input saying what changes in the step's argument, its step's action has to be one still offered, and only the first rerun of a decision runs -- ask for one, and do the rest in the next decision.",

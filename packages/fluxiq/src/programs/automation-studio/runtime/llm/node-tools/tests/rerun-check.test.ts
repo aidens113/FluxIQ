@@ -11,6 +11,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
+import { automationStudioFlowDraftEntry, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { automationStudioNodeRerunAnswer } from "../rerun-check.ts";
 
 const tools = [{ toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true }];
 const PEOPLE = ["Amara", "Tom"];
@@ -204,6 +206,52 @@ describe("a rerun refused on the page its step was put back to", () => {
 // the step runs with, so how the old argument answered the last test is no
 // longer about it.
 describe("a checked rerun that takes the new argument", () => {
+  it("invalidates following test marks while retaining earlier evidence", async () => {
+    const seed: AutomationStudioFlowDraftStep[] = [1, 2, 3].map((position) => ({
+      position, id: `d${position}`, iteration: 1, actionId: "web.click", toolId: "press", input: { target: "Confirm Amara" },
+      effect: "mutate", effectApplied: true, disposition: "kept", acts: ["a1"], replay: { from: { location: "requests" } },
+      replayed: { step: position, actionId: "web.click", status: "replayed" }
+    }));
+    const decide = vi.fn().mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { target: "Confirm Tom" } }] }).mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    // No put-back is needed for this fixture: it isolates dependent test marks.
+    delete seed[1]!.replay;
+    const executeTool = async ({ value }: { value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: value.replay === "verify" ? "core.replay.verified" : "core.replay.replayed", effectApplied: value.replay !== "verify" });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed }, dryRun: false, lastingActs: async () => new Set(["a1"]), maxIterations: 4, maxToolCalls: 8 });
+    const steps = (result as { steps: AutomationStudioFlowDraftStep[] }).steps;
+    expect(steps[0]!.replayed).toBeDefined();
+    expect(steps[1]!.checkedCandidate).toBeDefined();
+    expect(steps[1]!.replayed).toBeUndefined();
+    expect(steps[2]!.replayed).toBeUndefined();
+  });
+
+  it.each(["core.replay.verified", "core.replay.present"])("separates checked bound configuration from original execution and protects the next rerun (%s)", async (code) => {
+    const original = { target: "Confirm Amara", value: { $input: "person", test: "Amara" }, row: { $row: "person" } };
+    const replaces: AutomationStudioFlowDraftStep = {
+      position: 1, id: "d1", iteration: 1, callId: "original", actionId: "web.click", toolId: "press",
+      input: original, ranWith: { target: "#amara" }, effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", acts: ["a1"],
+      stateBefore: "before", stateAfter: "after", resultCode: "acted", control: "Amara", instance: original,
+      replay: { from: { location: "requests" }, produced: { accepted: "Amara" } }, replayed: { step: 1, actionId: "web.click", status: "replayed" }
+    };
+    const executeTool = vi.fn(async (_request: { callId: string; toolId: string; value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: code, effectApplied: false }));
+    const candidate = { target: "Confirm Tom", value: { $input: "person", test: "Tom" }, row: { $row: "person" } };
+    await automationStudioNodeRerunAnswer({ place: undefined, replaces, call: { callId: "check.1", toolId: "press", value: candidate }, executeTool, lastingActs: new Set(["a1"]) });
+    expect(replaces).toMatchObject({ input: candidate, effectApplied: false, checkedCandidate: { callId: "check.1", code }, priorExecution: { lasting: true, input: original, callId: "original", stateBefore: "before", stateAfter: "after", replay: { produced: { accepted: "Amara" } } } });
+    for (const key of ["stateBefore", "stateAfter", "callId", "control", "instance", "written", "replayed"]) expect(replaces).not.toHaveProperty(key);
+    expect(replaces.replay).toEqual({ from: { location: "requests" } });
+    const shown = automationStudioFlowDraftEntry({ steps: [replaces], authored: true })!.value as JsonObject;
+    expect((shown.steps as JsonObject[])[0]).toMatchObject({ disposition: "kept", inResult: true, changed: "no", checkedCandidate: { performed: false }, act: "a1", actEvidence: "intended" });
+    expect((shown.steps as JsonObject[])[0]).not.toHaveProperty("written");
+    // The old lasting effect survives a changed claim and changed binding test value.
+    replaces.acts = ["a2"];
+    await automationStudioNodeRerunAnswer({ place: undefined, replaces, call: { callId: "check.2", toolId: "press", value: { ...candidate, value: { $input: "person", test: "Other" } } }, executeTool, lastingActs: new Set() });
+    expect(executeTool.mock.calls.map(([call]) => (call as { value: JsonObject }).value.replay)).toEqual(["verify", "verify"]);
+    expect(replaces.priorExecution?.input).toEqual(original);
+    expect(replaces.checkedCandidate?.callId).toBe("check.2");
+    const beforeRefusal = structuredClone(replaces);
+    await automationStudioNodeRerunAnswer({ place: undefined, replaces, call: { callId: "refused", toolId: "press", value: { target: "Nobody" } }, executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: false }, effectApplied: false, resultCode: "core.replay.unreproducible" }) });
+    expect(replaces).toEqual(beforeRefusal);
+  });
+
   it("leaves the step untested with it", async () => {
     const { automationStudioNodeRerunAnswer } = await import("../rerun-check.ts");
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, code: "core.replay.verified" }, effectApplied: false, resultCode: "core.replay.verified" }));

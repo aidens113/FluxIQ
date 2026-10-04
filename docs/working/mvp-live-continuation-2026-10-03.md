@@ -11,13 +11,13 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 
 ## Current State
 
-- Active paired t262 continuation; downstream owns coordination/briefs/runs/Claude handoff. Original Claude lane trees untouched. Source checkpoint9f756676 after Core384 focused tests/package check/build/audit passed.
-- Integrated strict toggle/stale-mark safety and advisory false-act claim evidence, preserving t261 Lab-only .10 ceiling and ordinary UI policies. No full suite repeated (two today already).
-- First fresh A run run-mut4fvkm-e2fc03e6 via real extension chat created Flow;26explore+1read+2judge+1chat=30calls, .040120068 build/.04025919 total, all4cartoracle held, runtime0provider. Actual terminal Core status failed; launcherexit1. Not clean live acceptance.
-- Coupon press rate_limited/unacted was followed by succeeded deterministic retry. Historical failed attempt still supplied to known-recovery gate. Graph executor already has successful-retry behavior, so do not guess that status should be succeeded or erase history. Actual terminal trace omitted from disposed run artifacts.
-- Worker resume-live-prep owns focused unresolved-failed-attempt helper, two service callback replacements and annotation fallback/boundary tests. Worker resume-ab owns explicit unrepeat amendment/contextual feedback for B quantity-repeat dead end. Source may be edited now; no live process active. Supervisor freezes/reviews/checks before next runtime build/run.
-- Downstream worker retains screened terminal metadata and recovered-aware unvisited diagnostics. This is observability, not status/verdict override. First disposable workspace cleaned by owning lifecycle, so later same-Flow reuse unproven. Next build persistent-isolated named t262-a, then separate no-provider replay with unchanged saved Flow content hash.
-- D route29file partition remains unintegrated with safety gaps documented; C paging bound fixed provider-free, live result pending. No higher budget/Pro/overrides.
+- Active paired t262; downstream owns current briefs, complete per-run debug, Lab/browser work and Claude handoff. Original dirty Claude trees preserved. Source checkpoint42434f42 before latest live; supervisor Core467owner tests/check/build/audit observed pass. Two full suites already today, no repeat.
+- Both persistent live lanes ended failed before usable Flow: A2 run-mut58jbo-fbc8a57a63calls/total .079036554/build .078897432; B run-mut5amuc-c617cc2151calls/total .074950068/build .074802696. Lab .10 ceiling held, normal UI independent. No further paid run queued, workspaces/evidence preserved.
+- FirstA run-mut4fvkm-e2fc03e6 all4oraclefactsheld but actual Corestatusfailed, exact graph cause unproven; complete30turn/six-stage debug now authored downstream. Disposable first workspace prevents reuse claim.
+- Source freeze released only after A2 launcher37152exit1 and B launcher13190exit1. Worker resume-live-prep implements explicit checked-candidate/proof separation and separate historical lasting guard; worker resume-cd implements parser source-clause provenance for counted-object lasting-act attribution in disjoint owners. Failing-before tests required. No permission change, invented execution, cart-specific Core behavior or extra provider call.
+- Supervisor fixed plural coupon/voucher advisory vocabulary: observed1fail/14pass before;40owner tests passed after. Full source unit still under implementation, not live certified.
+- Existing integrated toggle/stale marks/unrepeat/healed-attempt selector and downstream screened terminal evidence retained. D route integration safety gaps and C live paging acceptance pending. No overall MVP completion or unchanged-Flow reuse claim.
+- Next: complete latest full per-turn debug, independently verify corrections/tests/types/audits/build, freeze source checkpoint, then guarded changed-source persistent live and zero-provider same-Flow reuse when created. All detailed briefs/report links in paired downstream document.
 
 ## Work Ledger
 
@@ -64,3 +64,30 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 - Validation: Core build exit0 (34.913seconds), regenerated3080public declarations; structure audit passed240warnings349baselined. Paired domain check exit0(27.735seconds), extension check exit0(34.684seconds). Source unchanged after467test union/check.
 - Outcome: provider-free repeat/recovery unit independently verified and checkpointed; terminal evidence owner remains downstream work.
 - Follow-up: downstream metadata tests/types/audit/build, then changed-source persistentA .10.
+
+### 2026-10-03 - Both persistent builds failed under Lab ceiling
+- Agent: supervisor.
+- Validation: owning Lab run commands recorded in paired downstream brief; A2 launcherexit1/buildfailed63calls .079036554total/.078897432build; B51calls .074950068total/.074802696build. No budget breach or override; repeated repairs and B cart test effects remain quality defects.
+- Changed: read-only designs converted to disjoint checked-candidate and lasting-source-provenance implementation briefs after both exited. Source freeze respected. Plural coupon advisory fail-first regression corrected,40owner tests pass.
+- Outcome: active fix, not certified; no further paid run queued.
+- Follow-up: full exact run debug and supervisor narrow integration verification, then changed-source live/reuse.
+
+### 2026-10-03 - Independent proof/provenance integration verified
+- Agent: supervisor.
+- Validation: supervisor pnpm --filter fluxiq exec vitest run on exact owner union printed383focused tests/18files pass; Corecheck31.715s pass; final wording12owner tests pass; fresh Corebuild33.868s pass; generatedreference3080public declarations; linked downstream domaincheck21.645s pass. Extensioncheck/audits/checkpoint pending.
+- Changed: checked candidate/current proof separation, historical lasting guard, following replay invalidation, candidate-safe amendments/bind/zero-row semantics; split-object source provenance and scoped coupon plural vocabulary. Generic behavior, no permission change/new provider call/budget increase.
+- Outcome: frozen candidate source unit, live acceptance unverified. Downstream all latest full run debug records complete; supervisor verified ordered63/51turn counts and actual ending/screenshots.
+- Follow-up: indexes/audits/checkpoint, changed-source persistent live, exact saved-Flow zero-provider reuse after acceptance.
+
+### 2026-10-03 - Structural ownership and missing-action guidance
+- Agent: supervisor.
+- Validation: after helper extraction, independent rerun-check owner12tests pass and Corecheck24.628s pass. Previous downstream extensioncheck26.398s pass. Core audit found loop804lines, nonbarrel imports and two ledgerbullets; fixed without baseline change. Final feedback-owner test and Corecheck pending.
+- Changed: helper owns dependent replay invalidation via explicit steps parameter; loop restored800lines, test imports use barrel. no_such_step feedback explicitly distinguishes including an existing step from authoring a new offered tool_call with addtrue; no automatic action or new restriction.
+- Outcome: source frozen, final narrow validation/audit/checkpoint required before next paid run.
+- Follow-up: actual live cost/quality measurement, not an assumed saving from instruction wording.
+
+### 2026-10-03 - Final narrow gates before paid retry
+- Agent: supervisor.
+- Validation: independent pnpm --filter fluxiq exec vitest run rerun-check owner12tests and draft-amendment-feedback owner30tests pass after final edits; pnpm --filter fluxiq check21.313s and build32.246s pass; docs-reference3080declarations regenerated; linked domaincheck16.815s and extensioncheck27.817s pass. Core structure audit passed240warnings/349baseline, downstream passed165warnings/118baseline. No full suites/baseline increases.
+- Outcome: source frozen and verified provider-free; live quality/cost/reuse acceptance pending.
+- Follow-up: paired checkpoint then one guarded persistent Flash/.10 live per selected lane, every ending debugged, no automatic relaunch.

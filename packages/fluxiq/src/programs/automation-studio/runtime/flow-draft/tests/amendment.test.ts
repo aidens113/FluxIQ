@@ -11,6 +11,19 @@ function steps(): AutomationStudioFlowDraftStep[] {
 }
 
 describe("amending the draft", () => {
+  it("can route and bind a checked candidate without inventing executed instance proof", () => {
+    const draft = steps();
+    const original = structuredClone(draft[1]!);
+    draft[1]!.priorExecution = { ...original, lasting: true };
+    draft[1]!.checkedCandidate = { callId: "check", code: "core.replay.verified" };
+    draft[1]!.effectApplied = false;
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "optional" }])).toEqual({ applied: 1, refused: [] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { target: { $input: "target", test: "other" } } }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[1]!.instance).toBeUndefined();
+    expect(draft[1]!.priorExecution?.input).toEqual(original.input);
+    expect(draft[1]!.effectApplied).toBe(false);
+    expect(draft[1]).not.toHaveProperty("written");
+  });
   it("explicitly removes a mistaken repeat without changing the quantity step or its claims", () => {
     const draft = steps();
     draft[1]!.routing = { kind: "repeat", through: "p3", over: "p1" };

@@ -311,3 +311,13 @@ The unrepeat draft amendment accepts only step and change. It removes a repeat o
 ### Selecting a terminal recovery cause
 
 Terminal recovery selects the newest failed or unknown attempt that has no later successful attempt of the same node. Both canonical execution callbacks and the durable annotation fallback use this selector. It preserves every historical attempt and the actual run status: a graph can still fail after all action faults have healed. Genuine unresolved failures and result-refutation attempts remain eligible, while no unresolved attempt retains the provider-free no-failed-attempt refusal.
+
+### Lasting acts from counted-object instructions
+
+When one original instruction clause names multiple counted objects, each parsed act keeps its own display quote and parser-owned source clause/object provenance. The cached consequence read attributes a lasting act only when its grounded quote includes that child object and matches the original clause or display quote. A combined clause can protect both objects during build tests; a narrow sibling quote or shared verb cannot. Dotted choice IDs remain ordinary preparation, and this attribution changes no permissions or normal Flow execution.
+
+### Checked configuration and prior execution
+
+An accepted verify-only rerun stores its replacement as checkedCandidate with performed=false and intended act claims. Its old performed record stays under priorExecution tied to the original arguments; old state, output and resolved configuration cannot prove the replacement ran. The candidate remains authorable without acquiring the stronger written contract. Following test marks are invalidated, zero-row candidates remain not reached, and binding a candidate does not invent an executed instance. A separate historical lasting-effect guard keeps subsequent reruns read-only even after current effectApplied becomes false. Ordinary explicit actions and their existing permission gates remain unchanged.
+
+A refused nonexistent-step amendment explains that add includes an existing draft step; a new action is authored through an offered tool_call with add:true and an intended act where appropriate. Its returned draft position is used for later edits. The feedback changes no action permissions or execution behavior.

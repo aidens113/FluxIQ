@@ -427,7 +427,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, startedOn, steps: draftSteps, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal, ...(lastingActs ? { lastingActs: await lastingActs() } : {}) }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
       // The answer says where a rerun ran (`rerunPlace`; run `run-muqk713g` C6), and a rerun of a done lasting act is checked, not done again (R7).
-      ({ ran, took: rerunTook } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
+      ({ ran, took: rerunTook } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, steps: draftSteps, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {

@@ -282,6 +282,14 @@ export type AutomationStudioFlowDraftStep = {
    * `ranWith` and `replay`, so the test runs it like any step.
    */
   written?: true;
+  /** A replacement configuration checked by the host, never performed by this check. */
+  checkedCandidate?: { callId: string; code: string };
+  /**
+   * The original performed configuration, retained privately when a lasting
+   * step is replaced by a checked candidate. Its proof belongs to that input,
+   * never to the candidate. The lasting guard survives further retargets.
+   */
+  priorExecution?: Omit<AutomationStudioFlowDraftStep, "priorExecution" | "checkedCandidate"> & { lasting: true };
   /**
    * The argument the step first ran with, kept when `bind` lifted a value of it
    * into a binding (`./amendment.ts`): the evidence that the step worked with
@@ -316,7 +324,7 @@ export function automationStudioFlowDraftStepIsProposed(step: AutomationStudioFl
  */
 export function automationStudioFlowDraftStepIsProposable(step: AutomationStudioFlowDraftStep): boolean {
   // A written step did nothing by construction, so "changed nothing" is not a failure of it.
-  return automationStudioFlowDraftStepIsAction(step) && (step.written === true || step.effectApplied !== false);
+  return automationStudioFlowDraftStepIsAction(step) && (step.written === true || step.checkedCandidate !== undefined || step.effectApplied !== false);
 }
 
 /**

@@ -269,7 +269,7 @@ export function applyAutomationStudioFlowDraftAmendments(
     // A failed press the caller marked as no step of a Flow is the same failed
     // press, and the draft entry shows it the same way (`./entry.ts`).
     // A written step changed nothing by construction: it was never performed.
-    if (step.written !== true && (automationStudioFlowDraftStepIsAction(step) || step.effect === "mutate") && step.effectApplied === false) {
+    if (step.written !== true && step.checkedCandidate === undefined && (automationStudioFlowDraftStepIsAction(step) || step.effect === "mutate") && step.effectApplied === false) {
       refused.push({ step: amendment.step, reason: "did_not_work" });
       continue;
     }
@@ -515,7 +515,7 @@ function bindStep(
   const unchanged = bindings.every(({ path, binding }) => JSON.stringify(valueAt(parameters, path)) === JSON.stringify(binding));
   if (unchanged && amendment.settings === undefined) return { ok: false, reason: "already_so" };
   // The run that worked, once: a later bind never replaces it, and a written step has none.
-  if (step.instance === undefined && step.written !== true && !automationStudioFlowDraftHoldsBinding(argument)) step.instance = structuredClone(argument);
+  if (step.instance === undefined && step.written !== true && step.checkedCandidate === undefined && !automationStudioFlowDraftHoldsBinding(argument)) step.instance = structuredClone(argument);
   for (const { path, binding } of bindings) {
     if (step.ranWith) setAt(containerOf(step.ranWith, nested), path, binding);
     if (step.input !== step.ranWith) setAt(containerOf(step.input, nested), path, binding);

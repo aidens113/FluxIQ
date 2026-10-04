@@ -395,7 +395,7 @@ function notReached(steps: readonly AutomationStudioFlowDraftStep[], verdict: Au
     const step = steps.find((candidate) => candidate.position === outcome.step);
     if (!step) return [];
     const rowNeverGiven = unwalked && outcome.resultCode === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE;
-    if (!(step.written || rowNeverGiven) || (unwalked && !repeated.has(automationStudioFlowDraftStepId(step)))) return [];
+    if (!(step.written || step.checkedCandidate || rowNeverGiven) || (unwalked && !repeated.has(automationStudioFlowDraftStepId(step)))) return [];
     return [{ position: step.position, actionId: step.actionId, word: "not_reached" as const }];
   });
 }

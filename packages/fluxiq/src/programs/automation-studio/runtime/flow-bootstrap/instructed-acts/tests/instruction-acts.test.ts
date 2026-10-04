@@ -216,4 +216,14 @@ describe("one verb over coordinated objects", () => {
     expect(new Set(acts.map((act) => act.quote)).size).toBe(acts.length);
     expect(acts.some((act) => act.kind === "submit")).toBe(false);
   });
+
+  it("retains the original clause and each counted object's contiguous source words", () => {
+    const acts = automationStudioInstructedActs("Add two packs of Towels in Large and one pack of Napkins in Small to my cart, both for pickup. Do not buy anything.");
+    const clause = "Add two packs of Towels in Large and one pack of Napkins in Small to my cart, both for pickup";
+    expect(acts).toMatchObject([
+      { id: "a1", source: { clause, object: "two packs of Towels in Large" } },
+      { id: "a2", source: { clause, object: "one pack of Napkins in Small" } }
+    ]);
+    expect(automationStudioInstructedActs("Add one pack of Towels to my cart")[0]).not.toHaveProperty("source");
+  });
 });
