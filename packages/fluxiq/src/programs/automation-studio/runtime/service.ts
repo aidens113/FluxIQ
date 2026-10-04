@@ -85,7 +85,7 @@ import {
   type AutomationStudioLlmProviderResolverInput,
 } from "./llm/index.ts";
 export type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
-import { adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
+import { adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, automationStudioUnresolvedFailedAttempt, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioFlowBootstrapDraftStepIsWritable, automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftDryRunGate, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
 import { automationStudioFlowDraftPlanNodeIds, automationStudioLlmEvidenceRuntimeBindingChecked, automationStudioLlmResolutionWithinFlowSettings, automationStudioLlmResolverWithDomainInstructions, automationStudioLlmStepLogTool, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm, automationStudioLlmRunCostCeilingUsd } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
@@ -2621,7 +2621,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           && selectedFlow.metadata?.parentSubflowId === route.selectedSubflow.subflowId);
         let routedFailedTraceAttempt: AutomationStudioNodeAttemptTrace | undefined;
         const trace = route.selectedSubflow && selectedFlow && selectedFlowIsOwned
-          ? await runCanonicalAutomationStudioFlow(selectedFlow, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { routedFailedTraceAttempt = [...executed.attempts].reverse().find((attempt) => attempt.status === "failed"); })
+          ? await runCanonicalAutomationStudioFlow(selectedFlow, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { routedFailedTraceAttempt = automationStudioUnresolvedFailedAttempt(executed.attempts); })
           : {
             status: "failed" as const,
             startedAt,
@@ -2707,7 +2707,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           : "Top-level orchestration Flow has no Router-selected Subflow execution path."
       }
       : runtimeCanonical
-      ? await runCanonicalAutomationStudioFlow(runtimeCanonical, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { failedTraceAttempt = [...executed.attempts].reverse().find((attempt) => attempt.status === "failed"); })
+      ? await runCanonicalAutomationStudioFlow(runtimeCanonical, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { failedTraceAttempt = automationStudioUnresolvedFailedAttempt(executed.attempts); })
       : await runAutomationStudioGraph(runtimeFlow, graphOptions);
     const next: AutomationStudioRuntimeSession = {
       ...session,

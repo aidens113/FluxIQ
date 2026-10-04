@@ -303,3 +303,11 @@ every stored Flow does when it runs, which is the user's decision.
 ### Advisory action-claim feedback
 
 An explicit act claim on a control whose wording does not name that act now includes informational claimSaid feedback. It preserves the claim and coverage; whole-Flow judgement remains authoritative. The feedback asks the author to review the actual control and add a distinct executable step when needed. A checked rerun verifies an existing target and does not add the claimed action. Existing act-kind vocabulary recognizes legitimate action wording; blank controls and set/open choices avoid speculative warnings.
+
+### Removing an accidental row repeat
+
+The unrepeat draft amendment accepts only step and change. It removes a repeat on that step without changing the input, act claims or disposition, and invalidates replay marks from that step onward. Existing keep and keep with act preserve intentional repeats. Quantity-is-a-repeat feedback names unrepeat on the beginning of the repeated span, followed by the item quantity control; missing cart actions still prevent completion.
+
+### Selecting a terminal recovery cause
+
+Terminal recovery selects the newest failed or unknown attempt that has no later successful attempt of the same node. Both canonical execution callbacks and the durable annotation fallback use this selector. It preserves every historical attempt and the actual run status: a graph can still fail after all action faults have healed. Genuine unresolved failures and result-refutation attempts remain eligible, while no unresolved attempt retains the provider-free no-failed-attempt refusal.

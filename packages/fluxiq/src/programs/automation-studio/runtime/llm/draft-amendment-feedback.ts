@@ -86,7 +86,7 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   already_in_flow: "That step is already in the Flow (inResult: true). Every step with inResult true is part of the finished Flow as it stands, so there is nothing to confirm: do not keep it again. Run what the Flow still lacks, or complete.",
   already_out: "That step is already out of the Flow (inResult: false), so dropping it again changes nothing. Leave it, or keep it to put it back.",
   act_on_a_read: "That step only reads -- a listing, a look or another read that changes nothing -- so it does no act: the rest of your change to it was made, but the act was not recorded on it. An act is done by the step that changes something, such as the press: name the act there. To do it to every item a listing kept, add the listing without act, add the press with act, then repeat the press over the listing.",
-  act_already_named: "That step already names that act (act beside it in the draft), so naming it again changes nothing. If the acts checklist shows the act done, nothing is left to do for it: go on with the acts and choices the checklist still shows not done. If it still shows the act not done, its todo says why and its step says which step: correct exactly that -- repeat the press over its listing, or rerun a read that names it, since a rerun of a read does not carry the act -- rather than naming the act again.",
+  act_already_named: "That step already names that act or choice (act beside it in the draft), so naming it again changes nothing. If the acts checklist shows the act done, nothing is left to do for it: go on with the acts and choices still not done. Otherwise its todo says why and its step says which step: correct exactly that fault rather than naming it again. A singular quantity is set with the item's quantity control, not a repeat over a list. Remove a mistaken repeat explicitly with unrepeat on the step that carries it; keep and keep with act preserve intentional repeats.",
   bind_not_a_binding: "bind only lifts values into bindings: every value its input sets has to be a binding form, {\"$input\": <name>, \"test\": <value>} or {\"$row\": <field>}, and parameter names the first one that is not. To change a value to another concrete value, rerun the step with it instead.",
   bind_new_key: "bind lifts a value the step already has into a binding; it never adds one. parameter names a key the step has no value at: name a parameter it already has, as the draft shows it, or rerun the step with the new parameter first.",
   bind_row_outside_loop: "{\"$row\": <field>} is the field of the row a repeat is on, and this step is in no repeat, so it has no row. Put the step in a repeat over the listing first (repeat, with over the listing), or bind the value as {\"$input\": <name>, \"test\": <value>} when it is the same for every row.",
@@ -183,7 +183,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
  * tell a listing from a press. A step given as a position alone gets the
  * general reason and no `next`.
  */
-type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: string; effectApplied?: boolean; disposition?: string };
+type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: string; effectApplied?: boolean; disposition?: string; routing?: { kind: string } };
 
 /**
  * What to do instead of a refused amendment about a listing, in the draft's
@@ -195,6 +195,9 @@ type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: s
  */
 function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string | undefined {
   const at = (position: number | undefined) => position === undefined ? undefined : steps.find((step) => step.position === position);
+  if (refusal.reason === "act_already_named" && refusal.act?.endsWith(".quantity") && at(refusal.step)?.routing?.kind === "repeat") {
+    return `Step ${refusal.step} names ${refusal.act} but repeats over other items. If the quantity checklist says quantity_is_a_repeat, send {"step": ${refusal.step}, "change": "unrepeat"}, then set this item's quantity with its own quantity control and go on with missing acts. Do not repeat the add over a list to set a singular quantity.`;
+  }
   const reads = (step: AutomationStudioDraftAmendmentFeedbackStep | undefined): step is AutomationStudioDraftAmendmentFeedbackStep => step?.effect !== undefined && step.effect !== "mutate";
   if (refusal.reason === "over_not_before") {
     const act = at(refusal.step);

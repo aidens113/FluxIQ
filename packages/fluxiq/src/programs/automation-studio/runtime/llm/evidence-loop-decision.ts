@@ -503,6 +503,9 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
     if (item.act !== undefined && (typeof item.act !== "string" || !AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(item.act))) continue;
     if (!Number.isSafeInteger(item.step) || (item.step as number) < 1) continue;
     if (typeof item.change !== "string" || !(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES as readonly string[]).includes(item.change)) continue;
+    // Explicit repeat removal changes only routing, not an act/argument or
+    // another route: mixed requests must be separate amendments.
+    if (item.change === "unrepeat" && !exactKeys(item, ["step", "change"])) continue;
     if (item.settings !== undefined && !isJsonObject(item.settings)) continue;
     if (item.input !== undefined && !isJsonObject(item.input)) continue;
     // Every key that names another step is one position, read the same way, so

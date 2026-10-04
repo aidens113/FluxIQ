@@ -11,6 +11,34 @@ function steps(): AutomationStudioFlowDraftStep[] {
 }
 
 describe("amending the draft", () => {
+  it("explicitly removes a mistaken repeat without changing the quantity step or its claims", () => {
+    const draft = steps();
+    draft[1]!.routing = { kind: "repeat", through: "p3", over: "p1" };
+    draft[1]!.acts = ["a2.quantity"];
+    draft[1]!.settings = { attempts: 2 };
+    for (const step of draft) step.replayed = { step: step.position, actionId: step.actionId, status: "replayed" };
+    const prior = structuredClone(draft);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "unrepeat" }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[1]!.routing).toBeUndefined();
+    expect(draft[1]).toMatchObject({ input: prior[1]!.input, acts: ["a2.quantity"], disposition: "kept", settings: { attempts: 2 } });
+    expect(draft.map((step) => step.replayed?.status)).toEqual(["replayed", undefined, undefined]);
+    expect(draft[0]).toEqual(prior[0]);
+  });
+
+  it("unrepeat leaves other routing and the draft untouched, and repeated removal is no progress", () => {
+    for (const routing of [undefined, { kind: "optional" as const }, { kind: "only_if" as const, check: "p1" }, { kind: "on_failed" as const, to: "p3" }]) {
+      const draft = steps();
+      if (routing) draft[1]!.routing = routing;
+      const before = structuredClone(draft);
+      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "unrepeat" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "already_so" }] });
+      expect(draft).toEqual(before);
+    }
+    const draft = steps();
+    draft[1]!.routing = { kind: "repeat", through: "p2", over: "p1" };
+    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "unrepeat" }]);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "unrepeat" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "already_so" }] });
+  });
+
   it("drops, marks exploratory and puts back, and carries settings alongside", () => {
     const draft = steps();
     const report = applyAutomationStudioFlowDraftAmendments(draft, [

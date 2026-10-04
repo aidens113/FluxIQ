@@ -42,6 +42,28 @@ const amendRow = (trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStud
   trace.find((entry) => entry.decision === "amend_draft");
 
 describe("an amendment the draft refused", () => {
+  it("does not prescribe a row loop for a singular quantity claim already named", () => {
+    const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
+      refusals: [{ step: 8, reason: "act_already_named", act: "a2.quantity" }], applied: 0,
+      steps: [{ position: 8, effect: "mutate", disposition: "kept" }],
+      stepsWithoutProgress: 1, maxStepsWithoutProgress: 4, actsNotDone: ["a2.quantity", "a2", "a3"]
+    });
+    const reason = (feedback.reasons as Record<string, string>).act_already_named!;
+    expect(reason).not.toContain("repeat the press over its listing");
+    expect(reason).toContain("todo");
+  });
+
+  it("names an explicit repair for an already-claimed quantity that carries a mistaken repeat", () => {
+    const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
+      refusals: [{ step: 8, reason: "act_already_named", act: "a2.quantity" }], applied: 0,
+      steps: [{ position: 8, effect: "mutate", disposition: "kept", routing: { kind: "repeat" } }],
+      stepsWithoutProgress: 2, maxStepsWithoutProgress: 4, actsNotDone: ["a2.quantity", "a2", "a3"]
+    });
+    expect((feedback.refused as { next: string }[])[0]!.next).toContain('{"step": 8, "change": "unrepeat"}');
+    expect((feedback.refused as { next: string }[])[0]!.next).toContain("quantity_is_a_repeat");
+  });
+
+
   it("is told to the model, by step and reason, before it is asked again", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(pressed(1))

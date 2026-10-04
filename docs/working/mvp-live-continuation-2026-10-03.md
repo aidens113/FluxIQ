@@ -11,13 +11,13 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 
 ## Current State
 
-- User resumed MVP implementation and live testing, with durable Claude handoff required. Supervisor alerted user before any new Core source edit.
-- Task t262 starts from Core dev f6ef9f48; t261 generic test-scope ceiling and page-aware authoring advice are integrated.
-- Existing dirty t174/t193/t194/t195 Core trees are read-only evidence; supervisor reconciles their coherent source units into t262 after bounded worker inventory.
-- Downstream paired document owns coordination/briefs, live authorization, runs, screenshots, accounting and handoff. Core owns generic authoring/judgement/recovery changes and focused validation.
-- Core source is frozen and its 384 combined owning tests, package check and fresh build passed. No fresh provider/live test yet. No extra full suites: two already ran today.
-- Reviewed toggle/stale-mark source is now ported. Cancellation preserves intervening executable steps; opposite adjacent choices can be removed with honest draft explanations. Worker observed 140 focused tests; supervisor verification/typecheck/build follows final source freeze.
-- A run3 debug exposed false cart act coverage on a configuration step and nonexecuting retargeted checks. A separate advisory checklist feedback unit is released; it preserves claims, permission rules and whole-Flow judge authority instead of guessing that a new act happened.
+- Active paired t262 continuation; downstream owns coordination/briefs/runs/Claude handoff. Original Claude lane trees untouched. Source checkpoint9f756676 after Core384 focused tests/package check/build/audit passed.
+- Integrated strict toggle/stale-mark safety and advisory false-act claim evidence, preserving t261 Lab-only .10 ceiling and ordinary UI policies. No full suite repeated (two today already).
+- First fresh A run run-mut4fvkm-e2fc03e6 via real extension chat created Flow;26explore+1read+2judge+1chat=30calls, .040120068 build/.04025919 total, all4cartoracle held, runtime0provider. Actual terminal Core status failed; launcherexit1. Not clean live acceptance.
+- Coupon press rate_limited/unacted was followed by succeeded deterministic retry. Historical failed attempt still supplied to known-recovery gate. Graph executor already has successful-retry behavior, so do not guess that status should be succeeded or erase history. Actual terminal trace omitted from disposed run artifacts.
+- Worker resume-live-prep owns focused unresolved-failed-attempt helper, two service callback replacements and annotation fallback/boundary tests. Worker resume-ab owns explicit unrepeat amendment/contextual feedback for B quantity-repeat dead end. Source may be edited now; no live process active. Supervisor freezes/reviews/checks before next runtime build/run.
+- Downstream worker retains screened terminal metadata and recovered-aware unvisited diagnostics. This is observability, not status/verdict override. First disposable workspace cleaned by owning lifecycle, so later same-Flow reuse unproven. Next build persistent-isolated named t262-a, then separate no-provider replay with unchanged saved Flow content hash.
+- D route29file partition remains unintegrated with safety gaps documented; C paging bound fixed provider-free, live result pending. No higher budget/Pro/overrides.
 
 ## Work Ledger
 
@@ -46,3 +46,21 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 - Validation: pnpm --filter fluxiq build exit0 (35.215 seconds); node scripts/docs-reference.mjs regenerated3079 public declarations; node scripts/structure-audit.mjs passed240 warnings/349 baselined. Paired downstream types and91 extraction owner tests passed; downstream owns live evidence.
 - Outcome: tested paired source checkpoint, live acceptance pending.
 - Follow-up: one supervised real-chat run at .10, debug before any retry.
+
+### 2026-10-03 - Actual live result and bounded follow-up
+- Agent: supervisor.
+- Validation: downstream supervised run-mut4fvkm-e2fc03e6 real chat/headed Chromium134.0.6998.35,30calls/build.040120068 under.10;2judges yes,4oraclefactsheld,actual playback. Corestatusfailed after recoveredcouponpress; no runtimeprovider.
+- Outcome: mixed live result; stale historical recovery cause proven in callbacks, actual terminal graph reason unavailable. No clean acceptance/reuse claim.
+- Follow-up: exact bounded briefs in paired document for unresolved-attempt selector and B explicit repeat removal; source freeze/owner tests/package checks/build/audits, then persistent live build and zero-provider saved-Flow replay.
+
+### 2026-10-03 - Repeat and recovery union verified
+- Agent: supervisor.
+- Validation: heavy-wrapper pnpm --filter fluxiq exec vitest run on instructed-acts plus named draft/replay/amendment-feedback/recovery-selector/annotation/invocation/graph-ladder owners passed20files467tests, exit0. Core pnpm --filter fluxiq check exit0 (32.239seconds). Core fresh build pending.
+- Outcome: combined unrepeat and unresolved-failure selection verified provider-free; no terminal-status success inferred.
+- Follow-up: freshbuild, paired Lab metadata owner tests/types/audits, then persistentA .10 realchat run and no-provider replay.
+
+### 2026-10-03 - Fresh verified Core repeat/recovery checkpoint
+- Agent: supervisor.
+- Validation: Core build exit0 (34.913seconds), regenerated3080public declarations; structure audit passed240warnings349baselined. Paired domain check exit0(27.735seconds), extension check exit0(34.684seconds). Source unchanged after467test union/check.
+- Outcome: provider-free repeat/recovery unit independently verified and checkpointed; terminal evidence owner remains downstream work.
+- Follow-up: downstream metadata tests/types/audit/build, then changed-source persistentA .10.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { applyAutomationStudioFlowDraftAmendments, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioInstructedActObject } from "../act-object.ts";
 import { checkAutomationStudioInstructedActs } from "../check.ts";
 import { automationStudioInstructedActsChecklist } from "../checklist.ts";
@@ -76,6 +76,23 @@ const check = (draftSteps: readonly AutomationStudioFlowDraftStep[], acts: unkno
   checkAutomationStudioInstructedActs({ instructionText: PICKUP_CART, startLocation: SITE, result: { summary: "x", acts: acts as never }, draftSteps });
 
 describe("a claim is held to what its step acted on", () => {
+  it("B run mustzxhi: removing the quantity repeat corrects that fault but missing cart acts still refuse completion", () => {
+    const quantity = { ...structuredClone(stepper), routing: { kind: "repeat" as const, over: "d28", through: "d30" }, acts: ["a2.quantity"] };
+    const draft = [navigate(1), structuredClone(store), structuredClone(towelsSize()), quantity];
+    const claims = [{ action: "a1", step: "7" }, { action: "a2.size", step: "28" }, { action: "a2.quantity", step: "30" }];
+    const before = check(draft, claims);
+    expect(before.ok).toBe(false);
+    if (before.ok) return;
+    expect(before.missing.some((item) => item.reason === "quantity_is_a_repeat")).toBe(true);
+    expect(before.instruction).toContain("amend_draft unrepeat");
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 30, change: "unrepeat" }])).toEqual({ applied: 1, refused: [] });
+    const after = check(draft, claims);
+    expect(after.ok).toBe(false);
+    if (after.ok) return;
+    expect(after.missing.some((item) => item.reason === "quantity_is_a_repeat")).toBe(false);
+    expect(after.missing.filter((item) => item.id === "a2" || item.id === "a3").map((item) => item.id)).toEqual(["a2", "a3"]);
+  });
+
   it("reads each act's object in the person's words", () => {
     expect(automationStudioInstructedActs(PICKUP_CART).map((act) => automationStudioInstructedActObject(act)?.name)).toEqual([
       "my pickup store to Millbrook Crossing Supercenter",

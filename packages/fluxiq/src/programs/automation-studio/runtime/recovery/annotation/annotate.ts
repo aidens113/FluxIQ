@@ -66,6 +66,7 @@ import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
 import { AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES, automationStudioRuntimePatchRefusalIsCheckableByExploration, type AutomationStudioRuntimeRecoveryRung } from "../diagnosis-chain.ts";
 import { summarizeAutomationStudioRuntimeRecoveryContext } from "../context-summary.ts";
 import { decideAutomationStudioRuntimeLlmInvocation } from "../llm-invocation.ts";
+import { automationStudioUnresolvedFailedAttempt } from "../unresolved-failed-attempt.ts";
 import { planAutomationStudioRuntimeRecovery } from "../plan.ts";
 import { startAutomationStudioRecoveryDeadline } from "../recovery-deadline.ts";
 import { automationStudioRuntimeRecoveryRefusedTrace, automationStudioRuntimeRecoveryTrace } from "../stages.ts";
@@ -170,7 +171,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const invocation = decideAutomationStudioRuntimeLlmInvocation({ projectId: input.context.projectId, flowId: input.context.flowId, runId: input.detail.summary.runId, ...(input.subflowId ? { subflowId: input.subflowId } : {}), settings: input.context.settings, policy: input.context.policy, runsCompleted: input.context.runsCompleted, stabilityScore: input.context.metrics.stabilityScore, budgetState: input.context.budgetState, ...(input.failedTraceAttempt ? { failedAttempt: input.failedTraceAttempt } : {}), adaptations: input.context.recentAdaptations });
   // Deterministic-first: a known recovery or a reroute must run before the model is asked, and the provider is not even resolved when one is available.
   if (!invocation.invoke) return { ...input.detail, metadata: { ...(input.detail.metadata ?? {}), llmGate: { invoked: false, code: `llm.gate.${invocation.requiredPriorAction}`, reason: invocation.reason, requiredPriorAction: invocation.requiredPriorAction }, recoveryTrace: automationStudioRuntimeRecoveryTrace({ invocation, policy: input.context.policy }) as unknown as JsonObject } };
-  const failedAttempt = [...(input.detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
+  const failedAttempt = automationStudioUnresolvedFailedAttempt(input.detail.actionAttempts ?? []);
   // Nothing failed that a diagnosis could be about, and nothing a patch could be
   // applied to. The diagnosis call used to be made anyway, billed, and followed
   // by a plan that asked for a patch and then ended `llm.runtime_patch_unavailable`

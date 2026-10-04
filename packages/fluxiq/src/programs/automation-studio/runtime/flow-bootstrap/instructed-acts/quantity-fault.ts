@@ -45,7 +45,7 @@ export type AutomationStudioInstructedQuantityStanding =
 /** What a refusal adds for each of these reasons (`./check.ts`), said only when one of them is refused. */
 export const AUTOMATION_STUDIO_INSTRUCTED_QUANTITY_INSTRUCTIONS: ReadonlyArray<readonly ["quantity_is_a_repeat" | "quantity_presses_differ", string]> = [
   ["quantity_is_a_repeat", " A reason of quantity_is_a_repeat means the step named for a quantity runs under a repeat, which runs it once for each item of a list, not that many times on this item: "
-    + "set the quantity with the item's own quantity control (its stepper, quantity field or select) before adding, keep that step and name it for the choice; do not repeat the add over a list for it."],
+    + "remove the mistaken repeat with amend_draft unrepeat on the step whose runs line begins that repeated span (keep preserves repeats), then set the quantity with the item's own quantity control (its stepper, quantity field or select) before adding, keep that step and name it for the choice; do not repeat the add over a list for it."],
   ["quantity_presses_differ", " A reason of quantity_presses_differ means the step named for a quantity is a press of the act's own add, and the kept presses of that add on that item (presses) are not exactly the number asked for: "
     + "keep exactly that many presses, or set the quantity control to the number and name that step for the choice."]
 ];

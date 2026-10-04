@@ -94,7 +94,7 @@ import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
 import { automationStudioFlowDraftPrecedingProposedStep, automationStudioFlowDraftStepId } from "./routing.ts";
 
 /** Every change one amendment may ask for. */
-export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES = ["add", "drop", "exploratory", "keep", "reorder", "rerun", "optional", "only_if", "on_failed", "repeat", "bind"] as const;
+export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES = ["add", "drop", "exploratory", "keep", "reorder", "rerun", "optional", "only_if", "on_failed", "repeat", "unrepeat", "bind"] as const;
 
 export type AutomationStudioFlowDraftAmendmentChange = (typeof AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES)[number];
 
@@ -205,7 +205,7 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA: JsonObject = {
     step: { type: "integer", minimum: 1, description: "The step number shown in the draft." },
     change: {
       enum: [...AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES],
-      description: "add: put this step you ran into the Flow -- a step you run is not in the Flow until you add it -- at the position given by to when given, and act names the act it does. drop: leave this step out of the result. exploratory: I did this only to look around. keep: put it back in, and make it unconditional again (it clears optional, only_if and on_failed, never repeat, and nothing when it carries act). reorder: move it to the position given by to. rerun: do it again with input's changes; the run replaces this step. optional: the Flow carries on when this step fails, for something that is not always there. only_if: run this step only when the step before it succeeded, or the one given by check. on_failed: when this step fails, run the step given by to instead, then carry on. repeat: do this step, through the one given by through, once for each row the step given by over produced, or while that step keeps succeeding. To do one act to every listed item, three steps in this order: the listing, with a where that keeps only the items to act on (every row it returns is acted on; rerun it only when its where is missing or wrong, never to run it again as it stands); the act done to one row it kept -- that row's own control, never one on a row it leaves out -- added with its act; then repeat on that act, with over the listing. The repeat goes on the act, never on the listing itself; each pass acts on its own row. When the listing comes after the act, reorder the listing to the act's position first, then repeat the act, which the move put one later: the amendments of one decision are read in order, each against the numbers the one before it left. Drop any other step that does the same act to a single row. bind: make a step in the Flow general without running it again: input names parameters it already has, each set to a binding -- {\"$input\": <name>, \"test\": <value>} for a value the person gave that would change between runs (test is that value, and defaults to the one the step ran with), {\"$row\": <field>} for a field of the row a repeat is on (only for a step inside a repeat). The run that worked is kept as evidence."
+      description: "add: put this step you ran into the Flow -- a step you run is not in the Flow until you add it -- at the position given by to when given, and act names the act it does. drop: leave this step out of the result. exploratory: I did this only to look around. keep: put it back in, and make it unconditional again (it clears optional, only_if and on_failed, never repeat, and nothing when it carries act). reorder: move it to the position given by to. rerun: do it again with input's changes; the run replaces this step. optional: the Flow carries on when this step fails, for something that is not always there. only_if: run this step only when the step before it succeeded, or the one given by check. on_failed: when this step fails, run the step given by to instead, then carry on. unrepeat: explicitly remove only the repeat carried by this step, preserving its input, acts, disposition and other routing; send only step and change. Use this on the first step of a mistakenly repeated span (such as a quantity repeated over a list); keep preserves intentional repeats. repeat: do this step, through the one given by through, once for each row the step given by over produced, or while that step keeps succeeding. To do one act to every listed item, three steps in this order: the listing, with a where that keeps only the items to act on (every row it returns is acted on; rerun it only when its where is missing or wrong, never to run it again as it stands); the act done to one row it kept -- that row's own control, never one on a row it leaves out -- added with its act; then repeat on that act, with over the listing. The repeat goes on the act, never on the listing itself; each pass acts on its own row. When the listing comes after the act, reorder the listing to the act's position first, then repeat the act, which the move put one later: the amendments of one decision are read in order, each against the numbers the one before it left. Drop any other step that does the same act to a single row. bind: make a step in the Flow general without running it again: input names parameters it already has, each set to a binding -- {\"$input\": <name>, \"test\": <value>} for a value the person gave that would change between runs (test is that value, and defaults to the one the step ran with), {\"$row\": <field>} for a field of the row a repeat is on (only for a step inside a repeat). The run that worked is kept as evidence."
     },
     settings: { type: "object", description: "Settings to carry on the step, merged over any it already has." },
     to: { type: "integer", minimum: 1, description: "add or reorder: the position to put the step at. on_failed: the step to run when this one fails. Counting from 1." },
@@ -244,6 +244,20 @@ export function applyAutomationStudioFlowDraftAmendments(
     // Running something again is the loop's to carry out, not the draft's.
     if (amendment.change === "rerun") {
       refused.push({ step: amendment.step, reason: "run_by_the_loop" });
+      continue;
+    }
+    // A mistaken repeat needs its own explicit edit: keep (with or without an
+    // act) preserves a deliberate row loop. B run mustzxhi could not undo a
+    // quantity loop with keep. No disposition, claim, input or settings change.
+    if (amendment.change === "unrepeat") {
+      if (step.routing?.kind !== "repeat") {
+        refused.push({ step: amendment.step, reason: "already_so" });
+      } else {
+        delete step.routing;
+        // The span and everything following it now run in another context.
+        for (const changed of steps.slice(steps.indexOf(step))) delete changed.replayed;
+        applied += 1;
+      }
       continue;
     }
     // A step that did not work is out of the Flow whatever it is called, so the

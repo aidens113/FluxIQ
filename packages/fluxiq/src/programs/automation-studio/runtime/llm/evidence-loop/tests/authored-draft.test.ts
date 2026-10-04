@@ -37,6 +37,29 @@ type Shown = ReadonlyArray<{ toolId: string; value: JsonObject }>;
 const shownAt = (decide: { mock: { calls: unknown[][] } }, index: number): Shown => (decide.mock.calls[index]![0] as { evidence: Shown }).evidence;
 
 describe("a step the model runs", () => {
+  it("parses explicit repeat removal, withholding mixed edits rather than changing an act or argument", () => {
+    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat" }] }))
+      .toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat" }] });
+    for (const extra of [{ act: "a2" }, { input: { target: "other" } }, { over: 1 }, { settings: { attempts: 2 } }]) {
+      expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat", ...extra }] })).toBeUndefined();
+    }
+  });
+
+  it("a mistaken repeat can be removed in the authoring loop without another tool call or losing the act", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(call(1, { add: true }))
+      .mockResolvedValueOnce(call(2, { act: "a2.quantity" }))
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", over: 1 }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat" }] })
+      .mockResolvedValueOnce(complete);
+    const executeTool = vi.fn().mockResolvedValue(worked);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    expect(result.ok).toBe(true);
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(result.steps[1]).toMatchObject({ disposition: "kept", acts: ["a2.quantity"] });
+    expect(result.steps[1]!.routing).toBeUndefined();
+  });
+
   it("is evidence, not a step of the Flow, until the model adds it", async () => {
     const decide = vi.fn().mockResolvedValueOnce(call(1)).mockResolvedValueOnce(call(2, { add: true })).mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
