@@ -334,6 +334,42 @@ Restoration and instructed-act evidence classify arrival using the runtime bindi
 
 The existing flow.explore chat capability builds or continues eligible creation in the same Flow. Continuing the saved goal omits instruction; a genuinely changed goal can make old draft evidence incompatible. flow.improve remains for a Flow with applied steps and retains its apply confirmation. Service target validation and exact incomplete-draft dependency digest/instruction-ID compatibility remain authoritative, and a catalog name alone does not establish successful work. Saving an identical canonical active generation goal returns the existing document without changing its timestamp or digest; changed or disabled goals retain the normal write path. No new capability or automatic fallback is introduced.
 
+An automatic reauthor build retries once only after a canonically classified
+transient provider request failure: rate limiting, network failure, timeout,
+or a retryable HTTP server error with matching provider provenance. Public
+`retryable` also permits a person to continue an unfinished draft; it does not
+authorize another automatic build after budget, iteration, unreadable-reply,
+unchanged or no-progress endings. Each actual attempt retains its accounting
+and append order, and a permitted retry receives only the remaining repair
+purse. Approval or application failure after an adaptation exists cannot
+trigger another generate. Internal HTTP retries remain within their original
+logical provider question.
+
+### Scoped Lab build-call allowance
+
+The public `resolveAutomationStudioLlmBuildCallLimit` reader accepts an optional
+positive safe integer from `FLUXIQ_LLM_BUILD_CALL_LIMIT` only when
+`FLUXIQ_LLM_BUILD_CALL_LIMIT_SCOPE=test`. An unscoped process ignores the value,
+including a malformed one. There is no implicit call limit for ordinary UI.
+The Lab forwards its resolved plan before starting its owned Core process;
+explicit Flow/provider settings can narrow that allowance.
+
+The creation purse admits each logical provider question before sending it.
+Pending questions reserve slots; settlement consumes one, and an explicitly
+unsent request releases it. Internal HTTP retries share the original question's
+slot. Reader, decision, repair-round and judge questions share the allowance;
+deterministic replay consumes none. The configured judge pair is kept back from
+nonjudge questions, without recording the reserve as paid usage. Calls and
+dollars retain separate refusal fields and closed budget endings.
+
+Failed builds can publish optional root `totalProviderCallCount` from the
+actual current purse. This aggregate is separate from evidence-loop decision
+count and includes settled questions outside the loop. Legacy absence remains
+unknown; setup failures before a purse exists do not acquire an invented zero.
+Call-refused judging preserves actual usage and reports its settled question
+delta, including zero when nothing was sent. Whole-test, current-signature,
+lasting-effect and permission gates remain authoritative.
+
 ### Paging Evidence Sent To The Result Judge
 
 The result verifier adds paging wording to its provider-facing summary copy after unread-column annotation. A consistent observed end with no truncation and plausible page counts states the observed end and omits the authored page limit on that copy. Real page-bound termination retains the limit and incomplete-list advice. Missing or unknown stop, contradictory truncation, impossible counts and an absent first-page continuation control retain the facts and uncertainty. This projection changes no verdict, default bound, executed read or durable raw account; the saved evidence remains available unchanged. Owner regressions cover the actual judge request as well as the projection boundaries; live extraction acceptance remains a separate requirement.

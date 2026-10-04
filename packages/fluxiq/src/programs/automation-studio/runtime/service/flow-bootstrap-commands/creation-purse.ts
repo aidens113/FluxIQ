@@ -53,11 +53,12 @@ export async function automationStudioFlowBootstrapCreationPurse(input: {
   /** What the chat's reading of the message that asked for the build cost: carried on top of the record's spend. A repair ignores it. */
   interpretationCostUsd?: number | undefined;
   ceilingUsd: number;
+  maxCalls?: number;
 }): Promise<AutomationStudioFlowBootstrapCreationPurse> {
   const { store, projectId, flowId, repair } = input;
   const creation = repair ? undefined : await store.get(projectId, flowId);
   const interpretationUsd = repair ? 0 : input.interpretationCostUsd ?? 0;
-  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: input.ceilingUsd, carriedUsd: (creation?.spentUsd ?? 0) + interpretationUsd });
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: input.ceilingUsd, ...(input.maxCalls === undefined ? {} : { maxCalls: input.maxCalls }), carriedUsd: (creation?.spentUsd ?? 0) + interpretationUsd });
   const part = repair ? "reauthor" : "creation";
   let creationEnded = false; // A Flow proposed, or the build ended not doable: the creation is over, and its record goes with it.
   // A call the purse refused, never sent: its own figures, read off the harness's refusal.

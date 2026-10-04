@@ -52,6 +52,7 @@ export type AutomationStudioFlowBootstrapReserveJudging =
  * build's, with its spend already accounted by the caller.
  */
 export async function automationStudioFlowBootstrapJudgeAtReserve(input: {
+  bound?: "cost" | "calls";
   judgement: AutomationStudioFlowBootstrapJudgement;
   seed: AutomationStudioFlowDraftStep[];
   progress: AutomationStudioFlowBootstrapRoundProgress;
@@ -61,7 +62,7 @@ export async function automationStudioFlowBootstrapJudgeAtReserve(input: {
 }): Promise<AutomationStudioFlowBootstrapReserveJudging> {
   if (!input.judgement.stepsInFlow || input.judgement.tested !== "replayed_clean") return { kind: "not_judged" };
   // The round's own record, and the Flow as its test ran it: the judge's test report numbers steps as the seed does.
-  const loop: FinishedLoop = { ok: true, result: { summary: RESERVE_JUDGED_SUMMARY }, trace: [...input.progress.trace], steps: input.seed, accounting: { ...input.progress.accounting } };
+  const loop: FinishedLoop = { ok: true, result: { summary: input.bound === "calls" ? "Flow built from the steps that ran before the build reached its model call allowance." : RESERVE_JUDGED_SUMMARY }, trace: [...input.progress.trace], steps: input.seed, accounting: { ...input.progress.accounting } };
   if (input.accept && !(await input.accept(loop))) return { kind: "not_judged" };
   const verdict = await input.judge(loop);
   if (verdict === "cancelled") return { kind: "cancelled" };

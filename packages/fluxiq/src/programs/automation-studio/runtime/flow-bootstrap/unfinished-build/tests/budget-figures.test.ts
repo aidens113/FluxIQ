@@ -30,12 +30,12 @@ function spent(iterations: number, estimatedCostUsd: number, budgetBreaches?: nu
   return { iterations, toolCalls: iterations, evidenceBytes: 100, inputTokens: 1_000 * iterations, cacheHitInputTokens: 0, outputTokens: 100 * iterations, totalTokens: 1_100 * iterations, estimatedCostUsd, ...(budgetBreaches === undefined ? {} : { budgetBreaches }) };
 }
 
-function refusal(spentUsd: number, projectedCostUsd: number | undefined, ceilingUsd: number, pendingUsd = 0): AutomationStudioLlmBuildPurseRefusal {
+function refusal(spentUsd: number, projectedCostUsd: number | undefined, ceilingUsd: number, pendingUsd = 0): Extract<AutomationStudioLlmBuildPurseRefusal, { code: "llm_budget.run_cost_limit" }> {
   return { code: "llm_budget.run_cost_limit", ...(projectedCostUsd === undefined ? {} : { projectedCostUsd }), estimatedInputTokens: 477_506, maxOutputTokens: 8_000, spentUsd, pendingUsd, ceilingUsd };
 }
 
 /** A round its cost budget stopped: by the purse's refusal when one is given, by the loop's own arithmetic when not. */
-function stoppedByCost(steps: AutomationStudioFlowDraftStep[], accounting: AutomationStudioLlmEvidenceLoopAccounting, costRefusal?: AutomationStudioLlmBuildPurseRefusal): AutomationStudioLlmEvidenceLoopResult {
+function stoppedByCost(steps: AutomationStudioFlowDraftStep[], accounting: AutomationStudioLlmEvidenceLoopAccounting, costRefusal?: Extract<AutomationStudioLlmBuildPurseRefusal, { code: "llm_budget.run_cost_limit" }>): AutomationStudioLlmEvidenceLoopResult {
   return {
     ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting,
     exhaustion: { bound: "budget", budgetBound: "cost", maxIterations: 64, iterations: accounting.iterations, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [], ...(costRefusal ? { costRefusal } : {}) }

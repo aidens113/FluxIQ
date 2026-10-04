@@ -4,5 +4,6 @@ export * from "./build-call-reserves.ts";
 export * from "./harness-hold.ts";
 export * from "./projected-cost.ts";
 export * from "./purse.ts";
+export * from "./call-allowance.ts";
 export * from "./refused.ts";
 export * from "./run.ts";

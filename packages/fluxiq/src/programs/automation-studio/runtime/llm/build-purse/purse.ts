@@ -2,7 +2,7 @@
 //
 // **Why a build needs one of its own.** A build has no run ledger
 // (`../run-budget.ts`); its ceiling -- the run cost ceiling, $0.25 then and
-// $0.10 by default now, or the Flow's lower setting -- was
+// $0.10 in Lab test scope, or the Flow's lower setting -- was
 // held only by the loop's arithmetic (`../loop-budget.ts`), which counts
 // decisions left at the *average* reported cost of the ones before. Reported
 // costs are cache-discounted and the request grows every decision, so the
@@ -31,8 +31,8 @@
 // the cached rate and off-peak calls at half (`../deepseek/pricing.ts`).
 //
 // **One purse per Flow creation, and the only cost authority (t234).** The
-// user's limit is a Flow's: $0.10 (FLUXIQ_LLM_RUN_COST_CEILING_USD) for
-// creating it. Two counts used to stop a build -- this purse and the loop's own
+// user's limit is a Flow's: the resolved normal policy, or the Lab-only scoped
+// FLUXIQ_LLM_RUN_COST_CEILING_USD when testing it. Two counts used to stop a build -- this purse and the loop's own
 // count of decisions left (`../loop-budget.ts`), which held back an extra
 // average decision and stopped `run-muqbzu32-8691a65e` with $0.026 unspent and
 // no figures -- and every round, the judge and every later build each started
@@ -68,10 +68,16 @@
 // in what the loop is told is left (`../loop-budget.ts`) and in a refusal's
 // `keptBackUsd`.
 
+import { AutomationStudioLlmBuildCallAllowance } from "./call-allowance.ts";
 import type { AutomationStudioLlmUsageSummary } from "../harness/index.ts";
 
 /** Why a call was not sent, in figures. */
 export type AutomationStudioLlmBuildPurseRefusal = {
+  code: "llm_budget.run_call_limit";
+  maxCalls: number; spentCalls: number; pendingCalls: number; keptBackCalls: number;
+} | AutomationStudioLlmBuildPurseCostRefusal;
+
+type AutomationStudioLlmBuildPurseCostRefusal = {
   code: "llm_budget.run_cost_limit";
   /** The call's hold: every input token uncached, its reply at its reserve (`./build-call-reserves.ts`). Absent where the provider does not price. */
   projectedCostUsd?: number;
@@ -124,6 +130,7 @@ export type AutomationStudioLlmBuildPurseHold = {
 export type AutomationStudioLlmBuildPurseOptions = {
   /** The most the build may spend from here. */
   ceilingUsd: number;
+  maxCalls?: number;
   /**
    * What the build's own accounting says it has spent, where it keeps one. The
    * purse charges the larger of this and what its own calls settled at, so a
@@ -159,6 +166,7 @@ export class AutomationStudioLlmBuildPurse {
   /** What earlier builds of the same Flow creation spent: part of `spentUsd`, never charged again. */
   readonly carriedUsd: number;
   private settledUsd = 0;
+  private readonly callAllowance: AutomationStudioLlmBuildCallAllowance;
   /** The most any call settled on this purse reported costing: what an unpriced call is held at. */
   private largestReportedUsd = 0;
   private readonly pending = new Map<number, number>();
@@ -174,6 +182,7 @@ export class AutomationStudioLlmBuildPurse {
     if (!Number.isFinite(options.ceilingUsd) || options.ceilingUsd < 0) throw new Error("A build purse's ceiling must be a finite, non-negative amount.");
     const carried = options.carriedUsd ?? 0;
     if (!Number.isFinite(carried) || carried < 0) throw new Error("A build purse's carried spend must be a finite, non-negative amount.");
+    this.callAllowance = new AutomationStudioLlmBuildCallAllowance(options.maxCalls);
     this.ceilingUsd = options.ceilingUsd;
     this.carriedUsd = carried;
   }
@@ -183,6 +192,9 @@ export class AutomationStudioLlmBuildPurse {
     const reported = this.options.spentUsd?.() ?? 0;
     return this.carriedUsd + Math.max(this.settledUsd, Number.isFinite(reported) ? reported : 0);
   }
+
+  /** Actual logical provider questions settled by this build, excluding interpretation. */
+  spentCalls(): number { return this.callAllowance.spentCalls(); }
 
   /** What calls in flight are held at. */
   pendingUsd(): number {
@@ -241,6 +253,11 @@ export class AutomationStudioLlmBuildPurse {
     const projected = call.projectedCostUsd;
     if (projected !== undefined) this.lastProjectedCostUsd = projected;
     if (call.judge && projected !== undefined) this.largestJudgeHoldUsd = Math.max(this.largestJudgeHoldUsd ?? 0, projected);
+    const keptBackCalls = call.judge ? 0 : (this.judging?.calls ?? 0);
+    if (!this.callAllowance.canHold(keptBackCalls)) {
+      this.refusal = { code: "llm_budget.run_call_limit", maxCalls: this.callAllowance.maxCalls!, spentCalls: this.callAllowance.spentCalls(), pendingCalls: this.callAllowance.pendingCalls(), keptBackCalls };
+      return { ok: false, refusal: this.refusal };
+    }
     const keptBackUsd = call.judge ? 0 : this.keptBackUsd();
     const heldUsd = projected ?? this.largestReportedUsd;
     const over = heldUsd > 0
@@ -260,6 +277,7 @@ export class AutomationStudioLlmBuildPurse {
       };
       return { ok: false, refusal: this.refusal };
     }
+    const callHold = this.callAllowance.hold();
     const id = this.holds += 1;
     this.pending.set(id, heldUsd);
     let settled = false;
@@ -270,6 +288,7 @@ export class AutomationStudioLlmBuildPurse {
           if (settled) return;
           settled = true;
           this.pending.delete(id);
+          callHold.settle();
           const reported = usage?.estimatedCostUsd;
           const valid = typeof reported === "number" && Number.isFinite(reported) && reported >= 0;
           this.settledUsd += valid ? reported : heldUsd;
@@ -284,6 +303,7 @@ export class AutomationStudioLlmBuildPurse {
           if (settled) return;
           settled = true;
           this.pending.delete(id);
+          callHold.release();
         }
       }
     };

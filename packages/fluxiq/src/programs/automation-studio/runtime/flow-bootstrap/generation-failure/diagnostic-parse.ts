@@ -23,8 +23,9 @@ import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstra
 export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   value: unknown
 ): AutomationStudioFlowBootstrapFailureDiagnostic | null {
-  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending", "totalProviderCallCount"])) return null;
   if (typeof value.code !== "string") return null;
+  if (value.totalProviderCallCount !== undefined && (!Number.isSafeInteger(value.totalProviderCallCount) || (value.totalProviderCallCount as number) < 0)) return null;
   // The stage a code belongs to, which is also the only stage it may claim. A
   // code the taxonomy does not have belongs to none, and is not Core's.
   const stage = FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE.get(value.code);
@@ -58,6 +59,7 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   const ending = parseAutomationStudioFlowBootstrapBuildEnding(value.ending, value.code);
   if (ending === null || (state.ending === "required") !== (ending !== undefined)) return null;
   return {
+    ...(value.totalProviderCallCount === undefined ? {} : { totalProviderCallCount: value.totalProviderCallCount as number }),
     code: value.code,
     stage,
     retryable: value.retryable,
@@ -237,7 +239,7 @@ type EvidenceLoopExhausted = NonNullable<NonNullable<AutomationStudioFlowBootstr
 const EVIDENCE_LOOP_EXHAUSTED_BOUNDS: readonly string[] = ["iterations", "budget", "tool_calls"];
 const EVIDENCE_LOOP_EXHAUSTED_FIELDS = ["bound", "maxIterations", "iterations", "draftSteps", "proposableSteps", "completionAttempts", "budgetBound"];
 /** Which of the budget's bounds ran out, in `runtime/llm/loop-budget.ts`'s closed set; only beside `bound: "budget"`. */
-const EVIDENCE_LOOP_BUDGET_BOUNDS: readonly string[] = ["iterations", "tokens", "cost", "duration"];
+const EVIDENCE_LOOP_BUDGET_BOUNDS: readonly string[] = ["iterations", "tokens", "cost", "duration", "calls"];
 /**
  * The most draft steps an exhausted record may claim: a seeded extend build
  * keeps a whole supported Flow and may append one step in every iteration.

@@ -8,7 +8,7 @@ import type { AutomationStudioLlmBuildPurseRefusal } from "./purse.ts";
  */
 export class AutomationStudioLlmBuildPurseRefused extends Error {
   constructor(readonly refusal: AutomationStudioLlmBuildPurseRefusal) {
-    super("The build's spending limit cannot pay for its next call, so it was not sent.");
+    super(refusal.code === "llm_budget.run_call_limit" ? "The build call limit cannot admit its next question, so it was not sent." : "The build's spending limit cannot pay for its next call, so it was not sent.");
     this.name = "AutomationStudioLlmBuildPurseRefused";
   }
 }

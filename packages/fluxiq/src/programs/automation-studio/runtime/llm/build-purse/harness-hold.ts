@@ -35,6 +35,7 @@ export function automationStudioLlmBuildPurseHoldCall(input: {
   });
   if (held.ok) return held;
   const { refusal } = held;
+  if (refusal.code === "llm_budget.run_call_limit") return { ok: false, diagnostic: { severity: "error", code: refusal.code, message: `The build limit of ${refusal.maxCalls} logical model calls cannot admit another: ${refusal.spentCalls} sent, ${refusal.pendingCalls} pending, ${refusal.keptBackCalls} kept for judging. It was not sent.`, metadata: { ...refusal } } };
   const cost = refusal.projectedCostUsd !== undefined
     ? ` and this request (${refusal.estimatedInputTokens} input tokens, ${refusal.maxOutputTokens} for the reply) would cost up to ${usd(refusal.projectedCostUsd)}`
     : "";

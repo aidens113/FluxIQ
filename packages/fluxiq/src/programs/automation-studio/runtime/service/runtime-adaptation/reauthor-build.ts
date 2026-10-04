@@ -1,5 +1,5 @@
 // One re-author build, held to the repair's purse: build, approve, apply, and
-// once more after a failure that may pass.
+// once more only after a named transient provider request failure.
 //
 // Two routes re-author a Flow from the run: a result the check refuted
 // (`refuted-result-port.ts`) and a step the patch ladder could not repair
@@ -11,7 +11,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
-import { automationStudioFlowBootstrapFailureDiagnosticOf, flowBootstrapPhaseFailure, type AutomationStudioFlowBootstrapFailureDiagnostic } from "../../flow-bootstrap/index.ts";
+import { automationStudioFlowBootstrapFailureDiagnosticOf, flowBootstrapPhaseFailure, type AutomationStudioFlowBootstrapFailureDiagnostic } from "../../flow-bootstrap/generation-failure/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { automationStudioRunNodeStartPages, type AutomationStudioLlmModelCaller } from "../../llm/index.ts";
 import {
@@ -69,7 +69,7 @@ const COST_BOUND_FAILURE: AutomationStudioRefutedResultFailure = Object.freeze({
 /**
  * Builds the extend-mode edit from `brief`, approves and applies it, and
  * records each attempt on the run through `record`. A build that failed for a
- * reason that may pass is built again once, handed only what the first left.
+ * transient provider request reason is built again once, handed only what the first left.
  * A build the purse has nothing left for is not started: it asks no model and
  * is recorded under the cost bound.
  */
@@ -126,13 +126,35 @@ export async function automationStudioReauthorBuild(input: {
   };
   let built = await build();
   let detail = input.record(input.detail, built);
-  // A build that failed for a reason that may pass is built again once, and
-  // both builds are on the run. The second is handed only what the first left.
-  if (!built.adaptationId && built.failure?.retryable === true) {
+  // Public retryability also covers continuing a kept draft after an unfinished
+  // or budget ending. Only a named transient request failure merits immediately
+  // rebuilding the unchanged brief. Both attempts remain on the same purse.
+  if (!built.adaptationId && automaticRequestRetry(built.failure)) {
     built = await build();
     detail = input.record(detail, built);
   }
   return { detail, built, purse };
+}
+
+function automaticRequestRetry(failure: AutomationStudioRefutedResultFailure | undefined): boolean {
+  if (failure?.retryable !== true || failure.stage !== "provider_request") return false;
+  switch (failure.code) {
+    case "flow_bootstrap.provider_timeout":
+      // An explicit timeout has canonical unknown/attempted invocation authority;
+      // unknown transport without that typed cause never enters this branch.
+      return (failure.providerInvocation === "unknown" || failure.providerInvocation === "attempted")
+        && failure.providerResponse === "not_received";
+    case "flow_bootstrap.provider_network_error":
+      return failure.providerInvocation === "attempted" && failure.providerResponse === "unknown";
+    case "flow_bootstrap.provider_rate_limited":
+      return failure.providerInvocation === "attempted" && failure.providerResponse === "received";
+    case "flow_bootstrap.provider_http_error":
+      return failure.providerInvocation === "attempted" && failure.providerResponse === "received"
+        && typeof failure.providerStatus === "number" && Number.isInteger(failure.providerStatus)
+        && failure.providerStatus >= 500 && failure.providerStatus <= 599;
+    default:
+      return false;
+  }
 }
 
 /**

@@ -46,10 +46,11 @@ function charge(purse: AutomationStudioLlmBuildPurse | undefined, costUsd: numbe
 }
 
 /** A call the purse refuses: its refusal, as the loop's exhaustion carries it. */
-function refused(purse: AutomationStudioLlmBuildPurse | undefined, projectedCostUsd: number): AutomationStudioLlmBuildPurseRefusal {
+function refused(purse: AutomationStudioLlmBuildPurse | undefined, projectedCostUsd: number): Extract<AutomationStudioLlmBuildPurseRefusal, { code: "llm_budget.run_cost_limit" }> {
   if (!purse) throw new Error("the round was handed no purse");
   const held = purse.hold({ projectedCostUsd, estimatedInputTokens: 72_677, maxOutputTokens: 8_000 });
   if (held.ok) throw new Error("the purse paid for a call the test expected it to refuse");
+  if (held.refusal.code !== "llm_budget.run_cost_limit") throw new Error("Expected a cost-only refusal");
   return held.refusal;
 }
 
@@ -61,7 +62,7 @@ function outOfDecisions(steps: AutomationStudioFlowDraftStep[], accounting: Auto
 }
 
 /** A round the purse stopped: the loop ends on cost only with the purse's refusal (t234). */
-function stoppedByPurse(steps: AutomationStudioFlowDraftStep[], accounting: AutomationStudioLlmEvidenceLoopAccounting, costRefusal: AutomationStudioLlmBuildPurseRefusal): AutomationStudioLlmEvidenceLoopResult {
+function stoppedByPurse(steps: AutomationStudioFlowDraftStep[], accounting: AutomationStudioLlmEvidenceLoopAccounting, costRefusal: Extract<AutomationStudioLlmBuildPurseRefusal, { code: "llm_budget.run_cost_limit" }>): AutomationStudioLlmEvidenceLoopResult {
   return {
     ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting,
     exhaustion: { bound: "budget", budgetBound: "cost", maxIterations: 64, iterations: accounting.iterations, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [], costRefusal }

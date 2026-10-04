@@ -62,6 +62,7 @@ import {
   validateAutomationStudioFlowAdaptation, automationStudioFlowMaxNodesPerSubflow,
   projectPublishedFlowSnapshotToNodeDefinition,
   validateFlowComposition,
+  resolveAutomationStudioLlmBuildCallLimit,
   validateAutomationStudioFlow
 } from "../model/index.ts";
 import type { LearnedTaskModel } from "../learning/index.ts";
@@ -93,7 +94,7 @@ import { automationStudioActivityDecisionReason, bindAutomationStudioActivityRun
 import { automationStudioFlowGraphVersion, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions, type AutomationStudioFlowGraphJudgement } from "./flow-version/index.ts";
 import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts, type AutomationStudioResultVerificationStatus } from "./result-verification/index.ts";
 import { automationStudioFlowDraftReplayable } from "./flow-draft/index.ts";
-import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapSeedSignature, automationStudioFlowBootstrapFailureDiagnosticOf, automationStudioFlowBootstrapIncompleteDraftContinuation, automationStudioFlowBootstrapIncompleteDraftKeeper, automationStudioInstructedActsChecklist, flowBootstrapEvidenceCompletionFailure, flowBootstrapHarnessFailure, runAutomationStudioFlowBootstrapBuildPhases, automationStudioFlowBootstrapUnchangedCompleteRefusal, type AutomationStudioFlowBootstrapRoundRequest, flowBootstrapPhaseFailure, flowBootstrapUnclassifiedThrowCode, parseAutomationStudioFlowBootstrapGenerationError, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode, automationStudioInstructedActs } from "./flow-bootstrap/index.ts";
+import { automationStudioFlowBootstrapGenerationCatch, AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapSeedSignature, automationStudioFlowBootstrapFailureDiagnosticOf, automationStudioFlowBootstrapIncompleteDraftContinuation, automationStudioFlowBootstrapIncompleteDraftKeeper, automationStudioInstructedActsChecklist, flowBootstrapEvidenceCompletionFailure, flowBootstrapHarnessFailure, runAutomationStudioFlowBootstrapBuildPhases, automationStudioFlowBootstrapUnchangedCompleteRefusal, type AutomationStudioFlowBootstrapRoundRequest, flowBootstrapPhaseFailure, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode, automationStudioInstructedActs } from "./flow-bootstrap/index.ts";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "./action-permissions/index.ts";
 import { automationStudioEvidenceFlowBootstrapDraftCompletionSchema, automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapPersonNeeded, automationStudioFlowBootstrapSizeLimitsOf, buildAutomationStudioFlowBootstrapContext, validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "./flow-bootstrap/index.ts";
 import { assertAutomationStudioBootstrapHasNoRecordingProvenance, automationStudioBootstrapTargetRefusal, bootstrapAdaptationAsFlowAdaptation, normalizeAutomationStudioFlowBuildPlan, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioBootstrapAdaptation, type AutomationStudioBootstrapAdaptationMode, type AutomationStudioBootstrapAdaptationOrigin, type AutomationStudioBootstrapExistingTopology } from "./flow-bootstrap/index.ts";
@@ -1473,6 +1474,7 @@ export class AutomationStudioService {
     let failureStage: AutomationStudioFlowBootstrapFailureStage = "pre_provider_validation";
     let failureCode: AutomationStudioFlowBootstrapPhaseFailureCode = "flow_bootstrap.invalid_input";
     let failureAccounting: AutomationStudioBootstrapAccounting | undefined;
+    let buildProviderCalls: (() => number) | undefined;
     try {
       // Every field of the request, read and refused in one place
       // (`./service/flow-bootstrap-commands/generation-request.ts`).
@@ -1549,7 +1551,9 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         const nodeDescriptions = automationStudioLlmNodeDescriptions({ registry, resolution }), harnessOptions = automationStudioHarnessOptionRegistry({ binding: this.llmEvidenceRuntime, nodeIds: registry.list(resolution).map((definition) => definition.id), startLocation: callStartLocation, nodeDescriptions }).evidenceLoopBinding({ projectId, flowId }, { ...resolution, allowSideEffectsWithoutPolicy: true }); // The nodes this build has been shown whole, shared by every round of it (`llm/node-tools/node-descriptions.ts`).
         const bootstrapLoopLimits = automationStudioFlowBootstrapEvidenceLoopLimits(unresolvedProvider, automationStudioLlmRunCostCeilingUsd(adaptationPolicyFromFlowMetadata(parent, flowSettings).maxEstimatedCostUsdPerRun, repairCostLeftUsd)); // A repair build spends only what its repair has left (`service/runtime-adaptation/refuted-result-port.ts`).
         // One purse per Flow creation, the only cost authority, under which the build's whole body runs; its record is kept or dropped however the build ends (`service/flow-bootstrap-commands/creation-purse.ts`).
-        const creation = await automationStudioFlowBootstrapCreationPurse({ store: this.creationSpends, projectId, flowId, repair: Boolean(repairBrief), interpretationCostUsd, ceilingUsd: bootstrapLoopLimits.loop.budget.maxCostUsd ?? automationStudioLlmRunCostCeilingUsd() });
+        const testCalls = resolveAutomationStudioLlmBuildCallLimit();
+        const creation = await automationStudioFlowBootstrapCreationPurse({ store: this.creationSpends, projectId, flowId, repair: Boolean(repairBrief), interpretationCostUsd, ...(testCalls === undefined ? {} : { maxCalls: Math.min(testCalls, unresolvedProvider.maxCallsPerRun ?? testCalls) }), ceilingUsd: bootstrapLoopLimits.loop.budget.maxCostUsd ?? automationStudioLlmRunCostCeilingUsd() });
+        buildProviderCalls = () => creation.purse.spentCalls();
         return await creation.run(async () => {
         const authority = automationStudioFlowBootstrapInstructionAuthority({ run: creation.reading(runHarness), projectId, flowId, instructions, active: resolvedInstructions.instructions, provider: unresolvedProvider });
         // The gate belongs to the build, not to the loop: a build that explored and one that wrote its Flow in a single call both put a step with a lasting consequence to the same person, through the Flow's own thread.
@@ -1697,12 +1701,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         });
       });
     } catch (error) {
-      const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
-      if (diagnostic) throw new AutomationStudioFlowBootstrapGenerationError(diagnostic);
-      // Which kind of throw it was, where nothing above recognised it. This
-      // outer fallback covers setup and later named phases; an exception from
-      // the harness itself is converted at its scoped request boundary above.
-      throw flowBootstrapPhaseFailure(failureStage, failureAccounting, flowBootstrapUnclassifiedThrowCode(error, failureStage, failureCode), error);
+      throw automationStudioFlowBootstrapGenerationCatch(error, failureStage, failureAccounting, failureCode, buildProviderCalls?.());
     }
   };
   async createFlowBootstrapAdaptation(input: {

@@ -13,6 +13,7 @@
 // explicit adaptation policy supplies its total when configured. An isolated
 // test runtime alone applies the environment ceiling to every such total.
 
+import { resolveAutomationStudioLlmBuildCallLimit } from "../../model/index.ts";
 import {
   AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
   isAutomationStudioDeepSeekModel,
@@ -88,8 +89,10 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
     const policy = input.metadata?.adaptationPolicySettings;
     const policyCost = policy && typeof policy === "object" && !Array.isArray(policy) ? policy.maxEstimatedCostUsdPerRun : undefined;
     const totalCostUsd = automationStudioLlmRunCostCeilingUsd(policyCost);
+    const buildCalls = resolveAutomationStudioLlmBuildCallLimit();
     return {
       provider,
+      ...(buildCalls === undefined ? {} : { maxCallsPerRun: buildCalls }),
       tokenLimits: { ...automationStudioSessionKeyProviderTokenLimits(AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS[model].contextTokens) },
       timeoutMs: defaults.timeoutMs,
       maxEstimatedCostUsd: totalCostUsd,

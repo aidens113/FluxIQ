@@ -122,6 +122,7 @@ export function automationStudioBuildTestJudge(deps: {
     // The purse the harness holds each call against (`../../llm/build-purse/harness-hold.ts`); a refusal set after this one is the judge's.
     const purse = automationStudioLlmCurrentBuildPurse();
     const refusedBefore = purse?.refusal;
+    const callsBefore = purse?.spentCalls();
     const bounded = await automationStudioResultVerificationWithinDeadline({
       ...(deps.deadlineMs !== undefined ? { deadlineMs: deps.deadlineMs } : {}),
       signal: deps.signal,
@@ -145,8 +146,10 @@ export function automationStudioBuildTestJudge(deps: {
     // A call the purse refused reaches verify as a harness failure, which it reads as an unsure verdict; the judge says what it was.
     const refused = purse?.refusal !== undefined && purse.refusal !== refusedBefore ? purse.refusal : undefined;
     // A refused confirmation of a first yes contradicts nothing (`../agreement.ts`): the yes stands, and is read below.
+    const judgeSpend = bounded.settled ? spentBy(bounded.value.interventions) : { ...NOTHING_SPENT };
+    if (refused?.code === "llm_budget.run_call_limit" && purse && callsBefore !== undefined) judgeSpend.calls = Math.max(0, purse.spentCalls() - callsBefore);
     const yesStood = bounded.settled && bounded.value.outcome.performed && bounded.value.outcome.verdict === "answers";
-    if (refused && !yesStood) return { verdict: "not_judged", why: refusedSaid(refused), ...carried, spent: bounded.settled ? spentBy(bounded.value.interventions) : { ...NOTHING_SPENT } };
+    if (refused && !yesStood) return { verdict: "not_judged", why: refusedSaid(refused), ...carried, spent: judgeSpend };
     if (!bounded.settled) {
       // An abandoned call's spend is not known: it is still running, and its
       // interventions arrive only with its answer.
@@ -155,7 +158,7 @@ export function automationStudioBuildTestJudge(deps: {
         : "The judge failed before it answered, so the test was not judged.";
       return { verdict: "not_judged", why, ...carried, spent: { ...NOTHING_SPENT } };
     }
-    const spent = spentBy(bounded.value.interventions);
+    const spent = judgeSpend;
     const outcome = bounded.value.outcome;
     if (!outcome.performed) return { verdict: "not_judged", why: outcome.reason, ...carried, spent };
     if (outcome.verdict === "answers") return { verdict: "yes", spent };
@@ -182,6 +185,7 @@ export function automationStudioBuildTestJudge(deps: {
 
 /** Why a judge the purse refused did not judge, in the purse's figures. */
 function refusedSaid(refusal: AutomationStudioLlmBuildPurseRefusal): string {
+  if (refusal.code === "llm_budget.run_call_limit") return `The build's model call allowance of ${refusal.maxCalls} had ${Math.max(0, refusal.maxCalls - refusal.spentCalls - refusal.pendingCalls)} calls left, too few for the judge's call, so its test was not judged.`;
   const call = refusal.projectedCostUsd !== undefined ? `the judge's call, which could have cost up to $${refusal.projectedCostUsd.toFixed(3)}` : "the judge's call";
   const left = Math.max(0, refusal.ceilingUsd - refusal.spentUsd - refusal.pendingUsd);
   return `The build's spending limit of $${refusal.ceilingUsd.toFixed(2)} had $${left.toFixed(3)} left, too little for ${call}, so its test was not judged.`;

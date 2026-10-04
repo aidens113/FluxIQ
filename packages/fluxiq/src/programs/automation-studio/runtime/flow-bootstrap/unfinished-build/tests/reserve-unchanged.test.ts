@@ -26,7 +26,7 @@ const accounting = (iterations: number, estimatedCostUsd: number): AutomationStu
 const ROUND_0_NO: Extract<AutomationStudioFlowBootstrapTestVerdict, { verdict: "no" }> = { verdict: "no", expected: "two packs in the cart", observed: "one pack was added", advice: "set the quantity to 2 before adding", findings: ["result.required_values_missing"], stillAchievable: "yes", spent: SPENT };
 
 /** The purse's refusal of the repair's decision, which would have eaten into the $0.008 kept back for judging. */
-const refusal: AutomationStudioLlmBuildPurseRefusal = {
+const refusal: Extract<AutomationStudioLlmBuildPurseRefusal, { code: "llm_budget.run_cost_limit" }> = {
   code: "llm_budget.run_cost_limit", projectedCostUsd: 0.01, estimatedInputTokens: 20_000, maxOutputTokens: 750, spentUsd: 0.084, pendingUsd: 0, ceilingUsd: 0.1, carriedUsd: 0.07, keptBackUsd: 0.008
 };
 

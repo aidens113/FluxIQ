@@ -23,7 +23,7 @@ const draft = () => [step(1, { acts: ["a1"] }), step(2, { acts: ["a1.quantity"],
 const accounting = (iterations: number, estimatedCostUsd: number): AutomationStudioLlmEvidenceLoopAccounting => ({ iterations, toolCalls: iterations, evidenceBytes: 0, inputTokens: 0, cacheHitInputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd });
 
 /** The purse's refusal of a decision that would have eaten into the judging kept back (`keptBackUsd`), or of one that simply did not fit (none kept back). */
-const refusal = (keptBackUsd: number | undefined): AutomationStudioLlmBuildPurseRefusal => ({
+const refusal = (keptBackUsd: number | undefined): Extract<AutomationStudioLlmBuildPurseRefusal, { code: "llm_budget.run_cost_limit" }> => ({
   code: "llm_budget.run_cost_limit", projectedCostUsd: 0.006, estimatedInputTokens: 20_000, maxOutputTokens: 750, spentUsd: 0.09, pendingUsd: 0, ceilingUsd: 0.1, carriedUsd: 0.07, ...(keptBackUsd !== undefined ? { keptBackUsd } : {})
 });
 
@@ -142,4 +142,37 @@ describe("a round the judging reserve stopped (t254 stage 2)", () => {
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
     expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("it had spent $0.090 ($0.070 of it by earlier builds of this Flow), and its next call could have cost up to $0.006.");
   });
+});
+
+
+it("uses actual reserved call slots to judge a full test after call admission stops exploration", async () => {
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 3 });
+  const sent = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1 });
+  if (sent.ok) sent.hold.settle();
+  let tests = 0;
+  let judges = 0;
+  const steps = draft();
+  const outcome = await runAutomationStudioFlowBootstrapBuildPhases({
+    purse, maxIterations: 64, budget: { maxCostUsd: 1 },
+    round: async () => {
+      const held = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1 });
+      expect(held.ok).toBe(false);
+      if (held.ok || held.refusal.code !== "llm_budget.run_call_limit") throw new Error("Expected reserved call refusal");
+      return { ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(1, 0.001),
+        exhaustion: { bound: "budget", budgetBound: "calls", callRefusal: held.refusal, maxIterations: 64, iterations: 1, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] } };
+    },
+    test: async () => { tests += 1; return undefined; }, replayable: () => true,
+    checklist: (current) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: current }),
+    judge: async ({ loop }) => {
+      for (let index = 0; index < 2; index += 1) {
+        const held = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1, judge: true });
+        expect(held.ok).toBe(true); if (held.ok) held.hold.settle(); judges += 1;
+      }
+      return { verdict: "yes", spent: SPENT, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) };
+    },
+    acceptStopped: async () => true, keep: async () => undefined
+  });
+  expect(outcome.kind).toBe("finished");
+  expect(tests).toBe(1); expect(judges).toBe(2); expect(purse.spentCalls()).toBe(3);
+  expect(outcome.kind === "finished" && outcome.loop.result.summary).toContain("model call allowance");
 });
