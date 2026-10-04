@@ -14,6 +14,7 @@ import {
 } from "../evidence-loop/index.ts";
 import { automationStudioLlmEvidenceRepeatStop } from "./refused-repeat.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext, AutomationStudioLlmEvidenceRerunHeld } from "./types.ts";
+import { automationStudioRerunArgumentNote, type AutomationStudioRerunArgumentMetadata, type AutomationStudioRerunAttempt } from "../rerun-arguments/index.ts";
 
 /**
  * Answers one `amend_draft` decision. `canAmend` is whether this iteration
@@ -39,7 +40,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // is recorded, digested and checked like any other; the step it replaces
   // is found before a reorder beside it renumbers the draft, and withdrawn
   // only once that call has worked (`../evidence-loop/rerun-replacement.ts`).
-  const rerun = automationStudioLlmEvidenceRerunRequest(decision.amendments, draftSteps, context.toolIds, (toolId, input, at) => context.repeats.blocks(toolId, input, at) !== undefined);
+  const rerun = automationStudioLlmEvidenceRerunRequest(decision.amendments, draftSteps, context.toolIds, (toolId, input, at) => context.repeats.blocks(toolId, input, at) !== undefined, context.input.deniedEvidenceKeys);
   // An amendment naming the step the rerun replaces is about the step that
   // will replace it, so it waits for the rerun; the rest apply now, in order
   // (`../evidence-loop/held-amendments.ts`, live run `run-mup2i28c-6c7fc209`).
@@ -132,9 +133,13 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // is one the model must still be told about. Where amendments wait for the
   // rerun, the whole decision is told once they are settled, below.
   if ((refused.length || sameDraftAs !== undefined) && !split.held.length) tell(context, iteration, refusals, amended.applied, sameDraftAs);
+  if (rerun.retainedRefusals?.length) {
+    automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");
+    for (const refusal of rerun.retainedRefusals) tellRetained(context, iteration, refusal.retained, { kind: "refused", reason: refusal.reason });
+  }
   if (!rerun.request) return { kind: "continue" };
-  const held: AutomationStudioLlmEvidenceRerunHeld | undefined = split.held.length && rerunReplaces
-    ? { amendments: split, nodeId: rerunReplaces.actionId, applied: amended.applied, refusals }
+  const held: AutomationStudioLlmEvidenceRerunHeld | undefined = rerunReplaces
+    ? { amendments: split, nodeId: rerunReplaces.actionId, applied: amended.applied, refusals: split.held.length ? refusals : [], ...(rerun.request.retained ? { retained: rerun.request.retained } : {}) }
     : undefined;
   return { kind: "rerun", decision: { kind: "tool_call", callId: rerun.request.callId, toolId: rerun.request.toolId, input: rerun.request.input }, replaces: rerunReplaces, ...(held ? { held } : {}) };
 }
@@ -150,13 +155,23 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
   iteration: number,
   held: AutomationStudioLlmEvidenceRerunHeld,
-  rerun: AutomationStudioFlowDraftStep | undefined
+  rerun: AutomationStudioFlowDraftStep | undefined,
+  attempt: AutomationStudioRerunAttempt
 ): Pick<AutomationStudioLlmEvidenceLoopTrace, "amended" | "amendmentsRefused"> {
+  automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");
+  if (held.retained) tellRetained(context, iteration, held.retained, attempt);
   const settled = held.amendments.settle(context.draftSteps, rerun);
   const refused = settled.refused.map((refusal) => ({ ...refusal, nodeId: held.nodeId }));
   const refusals = [...held.refusals, ...context.amendmentMemory.refusals(refused)];
   if (refusals.length) tell(context, iteration, refusals, held.applied + settled.applied, undefined);
-  return { amended: settled.applied, ...(refused.length ? { amendmentsRefused: refused } : {}) };
+  return held.amendments.held.length ? { amended: settled.applied, ...(refused.length ? { amendmentsRefused: refused } : {}) } : {};
+}
+
+function tellRetained(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, metadata: AutomationStudioRerunArgumentMetadata, attempt: AutomationStudioRerunAttempt): void {
+  const value = automationStudioRerunArgumentNote(metadata, attempt);
+  if (!value) return;
+  context.accountEvidence(value);
+  context.evidence.push({ callId: `core.rerun_check.${iteration}.${metadata.step}`, toolId: "core.rerun_check", value });
 }
 
 /**

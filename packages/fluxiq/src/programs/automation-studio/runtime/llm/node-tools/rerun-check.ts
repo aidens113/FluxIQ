@@ -86,7 +86,7 @@ export async function automationStudioNodeRerunAnswer(input: {
   // A refusal after a put-back says the page was loaded again and names the control the argument meant (`./step-place.ts`, run `run-musq0b1m-0472cfa0` Cause 4).
   const named = input.replaces ? { step: input.replaces.position, ...(input.words ? { words: input.words } : {}) } : undefined;
   const ran = automationStudioNodeRerunPlaceNoted(input.place, await input.executeTool({ callId: input.call.callId, toolId: input.call.toolId, value, ...(input.signal ? { signal: input.signal } : {}) }), named);
-  return step ? checked(step, input.call.callId, input.call.value, input.words, ran, input.steps) : { ran, took: false };
+  return step ? checked(step, input.call.callId, input.call.toolId, input.call.value, input.words, ran, input.steps) : { ran, took: false };
 }
 
 /** The dry run's check of `step`, with the rerun's new argument in place of what the step ran with (`./replay.ts`). */
@@ -95,7 +95,7 @@ function checkCall(step: AutomationStudioFlowDraftStep, value: JsonObject): Json
 }
 
 /** What a check's answer does to the step, and the answer with the plain account of it. */
-function checked(step: AutomationStudioFlowDraftStep, callId: string, value: JsonObject, words: AutomationStudioFlowDraftStepWords | undefined, ran: Answer, steps: readonly AutomationStudioFlowDraftStep[] | undefined): { ran: Answer; took: boolean } {
+function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: string, value: JsonObject, words: AutomationStudioFlowDraftStepWords | undefined, ran: Answer, steps: readonly AutomationStudioFlowDraftStep[] | undefined): { ran: Answer; took: boolean } {
   const parsed = automationStudioLlmEvidenceParseToolExecutionResult(ran, "mutate");
   const code = parsed?.resultCode;
   const took = code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE || code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE;
@@ -106,7 +106,20 @@ function checked(step: AutomationStudioFlowDraftStep, callId: string, value: Jso
       const { priorExecution: _prior, checkedCandidate: _candidate, ...performed } = step;
       step.priorExecution = { ...structuredClone(performed), lasting: true };
     }
-    step.input = value;
+    // The caller's parsed declaration is the same authority normal callRecord
+    // uses. A checked replacement can change which action a shared tool runs:
+    // carrying its arguments under the earlier action would assemble that old
+    // node with the replacement's parameters. Never infer identity from an
+    // arbitrary argument such as value.node.
+    const declared = parsed?.draft;
+    if (declared?.actionId !== undefined) {
+      step.actionId = declared.actionId;
+      if (declared.actionId === toolId) delete step.toolId;
+      else step.toolId = toolId;
+    }
+    step.input = declared?.input ?? value;
+    if (declared?.effect !== undefined) step.effect = declared.effect;
+    if (declared?.proposes !== undefined) step.proposes = declared.proposes;
     step.effectApplied = false;
     step.checkedCandidate = { callId, code: code! };
     step.resultCode = code;

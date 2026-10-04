@@ -342,7 +342,12 @@ function parseProviderDiagnostics(value: unknown): AutomationStudioLlmDiagnostic
 function rejectUnexpectedFields(value: Record<string, unknown>, allowed: string[], path: string, diagnostics: AutomationStudioLlmDiagnostic[]): void {
   const allowedFields = new Set(allowed);
   for (const key of Object.keys(value)) {
-    if (!allowedFields.has(key)) diagnostics.push({ severity: "error", code: "llm_output.unexpected_field", message: "Provider output contained an unexpected field.", path });
+    if (!allowedFields.has(key)) diagnostics.push({
+      severity: "error", code: "llm_output.unexpected_field", message: "Provider output contained an unexpected field.",
+      // Only a known grammar key can refine this path. Reflecting arbitrary
+      // provider keys would carry private text through the diagnostic channel.
+      path: path === "response.decision" && value.kind === "tool_call" && key === "write" ? "response.decision.write" : path
+    });
   }
 }
 

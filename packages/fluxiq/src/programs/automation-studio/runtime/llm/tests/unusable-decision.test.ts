@@ -9,6 +9,9 @@
 // with one.
 
 import { describe, expect, it, vi } from "vitest";
+import { runAutomationStudioLlmHarness } from "../harness.ts";
+import { automationStudioLlmUnusableDecisionFeedback } from "../unusable-decision.ts";
+import { automationStudioLlmProviderPaidUsage } from "../provider-contract.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID,
   AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID,
@@ -16,6 +19,7 @@ import {
   AutomationStudioLlmUnusableDecisionError,
   automationStudioLlmTaskResultSpentWithoutDecision,
   automationStudioLlmUnusableDecisionError,
+  buildAutomationStudioLlmEvidenceLoopDecisionSchema,
   runAutomationStudioLlmEvidenceLoop,
   type AutomationStudioLlmTaskResult
 } from "../index.ts";
@@ -23,6 +27,171 @@ import {
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];
 const complete = { kind: "complete", result: { done: true } };
 const look = (callId: string) => ({ kind: "tool_call", callId, toolId: "inspect", input: { area: callId } });
+
+const misplacedWriteIssue = {
+  code: "llm_output.unexpected_field",
+  path: "response.decision.write",
+  expectedPath: "response.decision.input.write"
+} as const;
+
+function schemaDecision(decision: Record<string, unknown>, usage?: AutomationStudioLlmTaskResult["usage"]): Promise<AutomationStudioLlmTaskResult> {
+  return runAutomationStudioLlmHarness({
+    taskKind: "evidence_tool_decision", projectId: "project.grammar", flowId: "flow.grammar", instructions: [],
+    deniedEvidenceKeys: [], evidenceLoop: { tools, evidence: [], iteration: 1,
+      decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, { type: "object" }), completionSchema: { type: "object" }, canComplete: true },
+    tokenLimits: { maxInputTokens: 100_000, maxOutputTokens: 2_000, maxTotalTokens: 102_000 },
+    provider: { metadata: { provider: "fixture", model: "fixture" }, runTask: async () => ({
+      response: { kind: "evidence_tool_decision", summary: "Grammar fixture", decision },
+      ...(usage ? { usage } : {})
+    }) }
+  });
+}
+
+describe("screened field feedback from the actual provider schema", () => {
+  it("keeps the paid-reply default strict while allowing explicitly requested partial numeric usage", () => {
+    const partial = { inputTokens: 10, estimatedCostUsd: 0.001, PRIVATE_TOKEN: "PRIVATE_VALUE" };
+    expect(automationStudioLlmProviderPaidUsage(partial)).toBeUndefined();
+    expect(automationStudioLlmProviderPaidUsage(partial, { requireOutputTokens: false })).toEqual({ inputTokens: 10, estimatedCostUsd: 0.001 });
+    for (const invalid of [{}, { estimatedCostUsd: Number.NaN }, { outputTokens: -1, estimatedCostUsd: -1 }, { inputTokens: 1.5, PRIVATE_TOKEN: "PRIVATE_VALUE" }]) {
+      expect(automationStudioLlmProviderPaidUsage(invalid, { requireOutputTokens: false })).toBeUndefined();
+    }
+    expect(automationStudioLlmProviderPaidUsage({ outputTokens: 0, estimatedCostUsd: 0 })).toEqual({ outputTokens: 0, estimatedCostUsd: 0 });
+  });
+
+  it("preserves a valid cost-only parsed usage report without inventing output tokens", async () => {
+    const paid = { estimatedCostUsd: 0.001 };
+    const decision = await schemaDecision({ ...look("cost-only"), write: true }, paid);
+    const error = automationStudioLlmUnusableDecisionError(decision)!;
+    expect(error.usage).toEqual(paid);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide: vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce(complete), executeTool: async () => ({}), unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") } });
+    expect(result.accounting.estimatedCostUsd).toBe(0.001);
+    expect(result.trace[0]?.usage).toEqual(paid);
+    expect(result.trace[0]?.usage).not.toHaveProperty("outputTokens");
+  });
+
+  it("carries paid usage from a schema-invalid reply without inventing an unreadable reply account", async () => {
+    const usage = { inputTokens: 100, outputTokens: 10, totalTokens: 110, estimatedCostUsd: 0.001 };
+    const result = await schemaDecision({ ...look("paid-invalid"), write: true }, usage);
+    expect(result.ok).toBe(false);
+    expect(result.usage).toEqual(usage);
+    const error = automationStudioLlmUnusableDecisionError(result)!;
+    expect(error.usage).toEqual(usage);
+    expect(error.reply).toBeUndefined();
+    expect(error.fieldIssues).toEqual([misplacedWriteIssue]);
+  });
+
+  it("counts and traces schema-invalid paid usage exactly once through the actual harness and loop", async () => {
+    const paid = { inputTokens: 100, outputTokens: 10, totalTokens: 110, estimatedCostUsd: 0.001 };
+    const completed = { inputTokens: 20, outputTokens: 2, totalTokens: 22, estimatedCostUsd: 0.0002 };
+    const host = vi.fn(async () => ({}));
+    let asked = 0;
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, executeTool: host, propagateDecisionErrors: true,
+      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") },
+      decide: async () => {
+        asked += 1;
+        const decision = await schemaDecision(asked === 1 ? { ...look("bad-paid"), write: true } : complete, asked === 1 ? paid : completed);
+        if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw automationStudioLlmUnusableDecisionError(decision);
+        return { ...decision.response.decision, usage: decision.usage };
+      }
+    });
+    expect(result.ok).toBe(true);
+    expect(asked).toBe(2);
+    expect(host).not.toHaveBeenCalled();
+    expect(result.accounting).toMatchObject({ iterations: 2, inputTokens: 120, outputTokens: 12, totalTokens: 132 });
+    expect(result.accounting.estimatedCostUsd).toBeCloseTo(0.0012, 12);
+    expect(result.trace[0]).toMatchObject({ decision: "unusable", usage: paid });
+  });
+
+  it("screens explicit numeric usage independently from reply and preserves constructor compatibility", () => {
+    const usage = { inputTokens: 10, outputTokens: 1, totalTokens: 11, estimatedCostUsd: 0.001, PRIVATE_TOKEN: "PRIVATE_VALUE" };
+    const error = new AutomationStudioLlmUnusableDecisionError(["llm_output.unexpected_field"], undefined, [misplacedWriteIssue], usage);
+    expect(error.usage).toEqual({ inputTokens: 10, outputTokens: 1, totalTokens: 11, estimatedCostUsd: 0.001 });
+    expect(error.fieldIssues).toEqual([misplacedWriteIssue]);
+    expect(error.reply).toBeUndefined();
+    expect(JSON.stringify(error)).not.toMatch(/PRIVATE_TOKEN|PRIVATE_VALUE/);
+    expect(new AutomationStudioLlmUnusableDecisionError(["llm_output.invalid_summary"]).usage).toBeUndefined();
+  });
+
+  it("counts explicitly known paid usage on an unanswered call without executing a host action", async () => {
+    const usage = { inputTokens: 10, outputTokens: 1, totalTokens: 11, estimatedCostUsd: 0.001 };
+    const host = vi.fn(async () => ({}));
+    const decide = vi.fn()
+      .mockRejectedValueOnce(new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"], undefined, undefined, usage))
+      .mockResolvedValueOnce(complete);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: host, unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") } });
+    expect(result.ok).toBe(true);
+    expect(host).not.toHaveBeenCalled();
+    expect(result.accounting).toMatchObject({ inputTokens: 10, outputTokens: 1, totalTokens: 11, estimatedCostUsd: 0.001 });
+    expect(result.trace[0]).toMatchObject({ decision: "unusable", usage });
+  });
+
+  it("refuses misplaced write and preserves its known corrective path through harness and feedback", async () => {
+    const result = await schemaDecision({ ...look("call.grammar"), write: true });
+    expect(result.ok).toBe(false);
+    expect(result.response).toBeUndefined();
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({
+      code: "llm_output.unexpected_field", path: "response.decision.write"
+    }));
+    const error = automationStudioLlmUnusableDecisionError(result);
+    const feedback = automationStudioLlmUnusableDecisionFeedback({
+      issueCodes: error!.issueCodes, ...(error!.fieldIssues ? { fieldIssues: error!.fieldIssues } : {}),
+      stepsWithoutProgress: 1, maxStepsWithoutProgress: 3
+    });
+    expect(feedback.fieldIssues).toEqual([misplacedWriteIssue]);
+    expect(feedback.instruction).toContain("response.decision.input.write");
+  });
+
+  it("keeps valid nested write unchanged and withholds unrelated provider-controlled field names and values", async () => {
+    const valid = await schemaDecision({ ...look("call.valid"), input: { area: "fixture", write: true } });
+    expect(valid.ok).toBe(true);
+    expect(valid.response).toMatchObject({ decision: { input: { write: true } } });
+    const invalid = await schemaDecision({ ...look("call.private"), PRIVATE_FIELD_NAME: "PRIVATE_FIELD_VALUE" });
+    const error = automationStudioLlmUnusableDecisionError(invalid)!;
+    const feedback = automationStudioLlmUnusableDecisionFeedback({
+      issueCodes: error.issueCodes, ...(error.fieldIssues ? { fieldIssues: error.fieldIssues } : {}),
+      stepsWithoutProgress: 1, maxStepsWithoutProgress: 3
+    });
+    expect(feedback.fieldIssues).toBeUndefined();
+    expect(JSON.stringify({ diagnostics: invalid.diagnostics, error, feedback })).not.toMatch(/PRIVATE_FIELD_NAME|PRIVATE_FIELD_VALUE/);
+  });
+
+  it("reconstructs known path constants without extras and withholds unrelated or mismatched grammar paths", () => {
+    const withExtras = { ...misplacedWriteIssue, page: "PRIVATE_PAGE_VALUE", metadata: { token: "PRIVATE_TOKEN_VALUE" } };
+    const error = new AutomationStudioLlmUnusableDecisionError(["llm_output.unexpected_field"], undefined, [withExtras, withExtras]);
+    expect(error.fieldIssues).toEqual([misplacedWriteIssue]);
+    const feedback = automationStudioLlmUnusableDecisionFeedback({
+      issueCodes: error.issueCodes, fieldIssues: [withExtras], stepsWithoutProgress: 1, maxStepsWithoutProgress: 3
+    });
+    expect(feedback.fieldIssues).toEqual([misplacedWriteIssue]);
+    expect(JSON.stringify({ error, feedback })).not.toMatch(/PRIVATE_PAGE_VALUE|PRIVATE_TOKEN_VALUE/);
+    const hostile = { ...misplacedWriteIssue, path: "response.decision.PRIVATE_FIELD_NAME" };
+    expect(automationStudioLlmUnusableDecisionFeedback({
+      issueCodes: error.issueCodes, fieldIssues: [hostile] as never, stepsWithoutProgress: 1, maxStepsWithoutProgress: 3
+    }).fieldIssues).toBeUndefined();
+    expect(new AutomationStudioLlmUnusableDecisionError(["llm_output.invalid_summary"], undefined, [withExtras]).fieldIssues).toBeUndefined();
+  });
+
+  it("delivers precise feedback to the next real loop decision without executing the rejected host call", async () => {
+    const host = vi.fn(async () => ({}));
+    let asked = 0;
+    const result = await runAutomationStudioLlmEvidenceLoop({
+      tools, executeTool: host, propagateDecisionErrors: true,
+      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") },
+      decide: async ({ evidence }) => {
+        asked += 1;
+        if (asked === 1) throw automationStudioLlmUnusableDecisionError(await schemaDecision({ ...look("call.bad"), write: true }));
+        expect(host).not.toHaveBeenCalled();
+        expect(evidence.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID)?.value)
+          .toMatchObject({ fieldIssues: [misplacedWriteIssue] });
+        return complete;
+      }
+    });
+    expect(result.ok).toBe(true);
+    expect(asked).toBe(2);
+    expect(host).not.toHaveBeenCalled();
+  });
+});
 
 function failed(codes: Array<{ code: string; status?: number }>, reached = true): AutomationStudioLlmTaskResult {
   return {

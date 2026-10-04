@@ -46,6 +46,7 @@ import {
   type AutomationStudioFlowDraftStep
 } from "../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceRerunInput } from "./rerun-input.ts";
+import { automationStudioRerunRetainedPaths, automationStudioRerunScreenedPaths, type AutomationStudioRerunArgumentMetadata } from "../rerun-arguments/index.ts";
 
 /** The key that asks for a node call to be written rather than run (`../node-tools/replay.ts`). */
 const WRITE_KEY = "write";
@@ -53,7 +54,7 @@ const WRITE_KEY = "write";
 const PARAMETERS_KEY = "parameters";
 
 /** A step to run again: which step it replaces, and the call that replaces it, with the whole argument it runs with. */
-export type AutomationStudioLlmEvidenceRerunCall = { step: number; toolId: string; input: JsonObject; callId: string };
+export type AutomationStudioLlmEvidenceRerunCall = { step: number; toolId: string; input: JsonObject; callId: string; retained?: AutomationStudioRerunArgumentMetadata };
 
 /**
  * The `rerun` a decision asked for that the loop can carry out, and a refusal
@@ -73,10 +74,12 @@ export function automationStudioLlmEvidenceRerunRequest(
    * started on, where the rerun is put back to (`../node-tools/step-place.ts`),
    * or absent for the page as it is now.
    */
-  ranAlready: (toolId: string, input: JsonObject, at?: string) => boolean = () => false
-): { request: AutomationStudioLlmEvidenceRerunCall | undefined; refused: AutomationStudioFlowDraftAmendmentRefusal[] } {
+  ranAlready: (toolId: string, input: JsonObject, at?: string) => boolean = () => false,
+  deniedEvidenceKeys?: readonly string[]
+): { request: AutomationStudioLlmEvidenceRerunCall | undefined; refused: AutomationStudioFlowDraftAmendmentRefusal[]; retainedRefusals?: { retained: AutomationStudioRerunArgumentMetadata; reason: "rerun_holds_binding" }[] } {
   let request: AutomationStudioLlmEvidenceRerunCall | undefined;
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
+  const retainedRefusals: { retained: AutomationStudioRerunArgumentMetadata; reason: "rerun_holds_binding" }[] = [];
   for (const amendment of amendments) {
     if (amendment.change !== "rerun") continue;
     const step = steps.find((candidate) => candidate.position === amendment.step);
@@ -96,6 +99,9 @@ export function automationStudioLlmEvidenceRerunRequest(
     }
     // Only the keys that change, merged over what the step ran with (`./rerun-input.ts`).
     const merged = automationStudioLlmEvidenceRerunInput(step.input, amendment.input);
+    const collected = automationStudioRerunRetainedPaths(step.input, amendment.input, merged);
+    const paths = automationStudioRerunScreenedPaths(collected.paths, deniedEvidenceKeys);
+    const retained = paths.length ? { step: step.position, paths, parameters: collected.parameters } : undefined;
     const input = step.written ? writtenInput(merged) : merged;
     if (input === undefined) {
       refused.push({ step: amendment.step, reason: "bind_malformed" });
@@ -103,6 +109,7 @@ export function automationStudioLlmEvidenceRerunRequest(
     }
     if (!step.written && automationStudioFlowDraftHoldsBinding(input)) {
       refused.push({ step: amendment.step, reason: "rerun_holds_binding" });
+      if (retained) retainedRefusals.push({ retained, reason: "rerun_holds_binding" });
       continue;
     }
     // The same call on the same untouched page answers the same: refused, unrun (`../repeat-guard/outcomes.ts`).
@@ -110,9 +117,9 @@ export function automationStudioLlmEvidenceRerunRequest(
       refused.push({ step: amendment.step, reason: "changes_nothing" });
       continue;
     }
-    request = { step: step.position, toolId, input, callId: `rerun.${step.position}` };
+    request = { step: step.position, toolId, input, callId: `rerun.${step.position}`, ...(retained ? { retained } : {}) };
   }
-  return { request, refused };
+  return { request, refused, ...(retainedRefusals.length ? { retainedRefusals } : {}) };
 }
 
 /**

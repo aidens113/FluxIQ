@@ -14,6 +14,12 @@ const screen = (parameters: Record<string, unknown>) =>
   automationStudioScreenedNodeParameters(parameters as never, [...DENIED]);
 
 describe("automationStudioScreenedNodeParameters", () => {
+  it("carries a keyboard key while retaining the shared secret-name screening policy", () => {
+    const screened = screen({ key: "Enter", hotkey: "Ctrl+K" });
+    expect(screened.values).toEqual({ key: "Enter", hotkey: "Ctrl+K" });
+    expect(screened.withheld).toEqual([]);
+  });
+
   it("carries numbers and booleans whole: a timeout and a row minimum say what the step did and name nobody", () => {
     expect(screen({ timeoutMs: 10_000, paginate: false, minItems: 0 }).values)
       .toEqual({ timeoutMs: 10_000, paginate: false, minItems: 0 });

@@ -78,7 +78,10 @@ are cleared so they cannot continue claiming instruction coverage.
 
 Reordering invalidates `replayed` marks from the first changed position
 onward. A successful checked rerun replaces its argument/resolved form and
-clears the old target words and replay mark. It still performs no lasting act;
+uses the validated host draft declaration to update its action/tool identity,
+effect and proposal metadata. It never derives an action from an arbitrary
+argument field. The previous execution keeps its original identity; the new
+candidate clears the old target words and replay mark. It still performs no lasting act;
 verification means the revised step is runnable, not that a newly targeted
 act was performed. Failed dry-run rows can show the opaque recorded
 `actedOn` place; this does not claim to know the actual place a replay ran.
@@ -334,3 +337,20 @@ The existing flow.explore chat capability builds or continues eligible creation 
 ### Paging Evidence Sent To The Result Judge
 
 The result verifier adds paging wording to its provider-facing summary copy after unread-column annotation. A consistent observed end with no truncation and plausible page counts states the observed end and omits the authored page limit on that copy. Real page-bound termination retains the limit and incomplete-list advice. Missing or unknown stop, contradictory truncation, impossible counts and an absent first-page continuation control retain the facts and uncertainty. This projection changes no verdict, default bound, executed read or durable raw account; the saved evidence remains available unchanged. Owner regressions cover the actual judge request as well as the projection boundaries; live extraction acceptance remains a separate requirement.
+
+### Unusable decision field feedback
+
+Strict provider grammar still refuses extra decision-envelope keys. For a
+known misplaced tool-call write flag, the next decision receives the constant
+response.decision.write path and supported response.decision.input.write
+location. Only this closed grammar metadata is carried through the unusable
+decision error and model feedback; arbitrary key names, values and provider
+messages remain withheld. Feedback does not execute the rejected call or
+change its permission requirements.
+
+Paid usage is independent of reply readability. A rejected schema reply keeps
+its parsed numeric usage through the unusable-decision error, aggregate and
+trace; an unreadable reply account remains a compatible fallback. An explicit
+partial account can retain known cost without inventing token counts. The
+active creation purse already settles these calls before schema refusal; this
+reporting path neither charges them again nor changes the spend ceiling.

@@ -11,6 +11,8 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 
 ## Current State
 
+- Immediate gate cleared: supervisor Core200/200 tests, package typecheck and structure audit PASS. Actual service/model fixture recovered after helper runtime-return imports removed; no fixture workaround. Fresh affected builds and paired checkpoints pending before guarded Lab .10 live retries.
+
 - Active paired t262; downstream owns current briefs, complete per-run debug, Lab/browser work and Claude handoff. Original dirty Claude trees preserved; no overall MVP or unchanged-Flow reuse acceptance.
 - Last live verified source checkpoints Core80116d0e/downstreamf9afcb12. Checked-candidate/proof separation, historical lasting guard and counted-object source provenance integrated. Supervisor independent383-test union, final helper12/feedback30, affected types/fresh Corebuild and both audits passed. Two full sweeps today; none repeated.
 - A3 run-mut6b2re-d0e475d1 failed at normal chat routing after1call/.000241638: improve.extend rejected unfinished target before build. B2 run-mut6bevx-d8b7956f failed build53calls/total .073861872/build .073644534, both judges no. Full six-stage debug saved downstream; supervisor matched all53turns and inspected ending/screenshot. Five cart build tests core.replay.verified/oktrue, but quantity click still falsely step_only_arrives. Lab .10 held; normal UI independent. No paid run active/queued, persistent data preserved.
@@ -172,3 +174,30 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 - Downstream completed both six-stage reports and supervisor independently reviewed endings, screenshots, normalized candidate versus playback calls and raw cost/project/hash metadata. A5 failed47turns/.058057620; B4 failed67turns/.092695098; no accepted Flow/reuse. Full stored A executable export remains unavailable.
 - Released file-partitioned checked-node-identity, unusable-field-feedback and retained-rerun-feedback briefs in paired downstream coordinator. No paid launch/build/full-suite release. Parser feedback lacks response.decision.write location; bound rerun advice and retained-key feedback need truthful screened correction.
 - Validation: evidence inspection only at this release; worker source claims require root independent regression review. Preserve .10 Lab-only cap, ordinary UI defaults, lasting guard and checked candidate proof distinction.
+
+### 2026-10-03 ? checked action identity and parser feedback integrated for review
+- Checked rerun now updates current action/tool/input/effect/proposal solely from validated host draft metadata; priorExecution retains original identity and lasting guard. Worker fail-first4failures then18owner passes; root reviewed ordinary callRecord and canonical writer contract.
+- Closed known parser field paths passed through optional typed error/feedback metadata, then supervisor serial loop import/refuseDecision/catch forwarding after settlement owner freeze. Parser worker67passed/1integrated-loop pending; no permissive outer write parsing.
+- Validation: source/contract review only at root, independent union/types/audits still pending final worker freeze. No paid retry/build release; ordinary UI defaults and Lab .10 cap preserved.
+
+### 2026-10-03 ? independent integrated checks exposed bounded cleanup
+- Root12-owner union observed183passed/1failed of184, failure only a new test expecting nonexistent priorExecution.performed instead of original effectApplied plus lasting. Actual service/model denied-note and closed parser path/paidusage checks passed.
+- Structure audit failed loop806lines and llm value import from recovery. Released focused failed-decision usage selector childmodule/barrel plus original secret-key helper/test shared move to loop-limits and compatibility reexport, preserving screening semantics.
+- Validation: failed narrow gates observed, no pass claimed. Workers correct exact owners; root final union/types/audit needed before fresh runtime build/freeze/live. No baseline increase/fullsuite.
+
+### 2026-10-03 ? service export regression pinned and exact correction released
+- Safe callee probe found roundStarted/observer functions, missing loop export from service llmbarrel. New helper?llmbarrel?mainloop runtime return-edge confirmed by bounded graph inspection; sharedclassifier leaf import-free.
+- Approved only usage helper typed narrowed error/type-only import, coordinator existing instanceof/enablement, and feedback helper authoritative toolId argument to eliminate new return values. No duplicated constants or fixture/export import-order workaround.
+- Validation: source/probe diagnosis only; probes restored. Actualservice1fixture plus72usage owners and root full narrow union/types/audit pending before runtimebuild/freeze/live.
+
+### Supervisor final repair gates (2026-10-03)
+
+- Independently observed Core200/200 tests across14 owner files, package check and structure audit PASS. Checked action identity, retained safe path feedback, closed parser guidance and paid unusable accounting included.
+- Fresh runtime build and generated references underway; downstream linked checks/builds before paired frozen checkpoints and live retry.
+- Validation: sessions87908/72932 exited0; structure audit exited0. No full sweep/provider/browser operation.
+
+### Paired repair checkpoint readiness (2026-10-03)
+
+- Root observed Core200 tests/types/audit and fresh affected runtime build/reference generation PASS; downstream domain source/test check PASS after explicit fixture non-null assertion, focused four-file Node owner tests exit0, structure audit PASS, fresh domain/host/extension/Lab runtime builds PASS. Full sweeps not repeated.
+- A6 and B5 Stage1 written before future artifacts, same public tasks/Flash/Lab .10, fresh authorized projects on preserved persistent workspaces. Expected checked action metadata, grammar guidance, retained safe binding feedback, dynamic target authority and truthful paid usage pinned.
+- Validation: final checks observed by supervisor, all validation sessions closed; source frozen. Paired local checkpoints prepared; dev merge/push withheld pending actual functional acceptance.

@@ -37,7 +37,8 @@
 
 import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioLlmProviderFailureSpendsCall } from "./failure-disposition.ts";
-import type { AutomationStudioLlmTaskResult } from "./harness.ts";
+import type { AutomationStudioLlmTaskResult, AutomationStudioLlmUsageSummary } from "./harness.ts";
+import { automationStudioLlmProviderPaidUsage } from "./provider-contract.ts";
 import { automationStudioLlmProviderReplyAccount, type AutomationStudioLlmProviderReplyAccount } from "./reply-account.ts";
 import { automationStudioLlmProviderUnanswered } from "./unanswered-calls.ts";
 import { automationStudioLlmUnreadableReplySaid } from "./unreadable-reply.ts";
@@ -71,6 +72,19 @@ function acceptedDecision(offers: AutomationStudioLlmUnusableDecisionOffers | un
 
 /** Which kinds of decision the loop offered the decision that could not be used. */
 export type AutomationStudioLlmUnusableDecisionOffers = { tools: boolean; complete: boolean; amend: boolean };
+
+/** A closed grammar correction, never a provider-authored key or value. */
+export type AutomationStudioLlmUnusableDecisionFieldIssue = {
+  code: "llm_output.unexpected_field";
+  path: "response.decision.write";
+  expectedPath: "response.decision.input.write";
+};
+
+function screenedFieldIssues(issues: readonly AutomationStudioLlmUnusableDecisionFieldIssue[] | undefined): AutomationStudioLlmUnusableDecisionFieldIssue[] {
+  return issues?.some((issue) => issue?.code === "llm_output.unexpected_field"
+    && issue.path === "response.decision.write" && issue.expectedPath === "response.decision.input.write")
+    ? [{ code: "llm_output.unexpected_field", path: "response.decision.write", expectedPath: "response.decision.input.write" }] : [];
+}
 
 const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used, for the listed issue codes, and nothing ran. "
   + "Answer again with exactly one decision of the accepted shape. The same issues again count toward stopping this exploration.";
@@ -114,6 +128,9 @@ export class AutomationStudioLlmUnusableDecisionError extends Error {
   readonly name = "AutomationStudioLlmUnusableDecisionError";
   readonly issueCodes: readonly string[];
   readonly reply?: AutomationStudioLlmProviderReplyAccount;
+  /** Paid numeric usage, including parsed replies rejected by schema rather than unreadable JSON. */
+  readonly usage?: AutomationStudioLlmUsageSummary;
+  readonly fieldIssues?: readonly AutomationStudioLlmUnusableDecisionFieldIssue[];
   /**
    * Whether the provider gave no answer at all -- timed out, unreachable, a
    * server error, rate limited (`./unanswered-calls.ts`). Said on the error so
@@ -122,13 +139,17 @@ export class AutomationStudioLlmUnusableDecisionError extends Error {
    */
   readonly providerUnanswered: boolean;
 
-  constructor(issueCodes: readonly string[], reply?: AutomationStudioLlmProviderReplyAccount) {
+  constructor(issueCodes: readonly string[], reply?: AutomationStudioLlmProviderReplyAccount, fieldIssues?: readonly AutomationStudioLlmUnusableDecisionFieldIssue[], usage?: AutomationStudioLlmUsageSummary) {
     const codes = issueCodes.filter((code) => ISSUE_CODE.test(code));
     super(`The decision call returned nothing usable${codes.length ? `: ${codes.join(", ")}` : "."}`);
     this.issueCodes = Object.freeze([...codes]);
     this.providerUnanswered = automationStudioLlmProviderUnanswered(codes);
     const account = automationStudioLlmProviderReplyAccount(reply);
     if (account) this.reply = account;
+    const paid = automationStudioLlmProviderPaidUsage(usage, { requireOutputTokens: false });
+    if (paid) this.usage = Object.freeze(paid);
+    const fields = codes.includes("llm_output.unexpected_field") ? screenedFieldIssues(fieldIssues) : [];
+    if (fields.length) this.fieldIssues = Object.freeze(fields.map((field) => Object.freeze(field)));
   }
 }
 
@@ -154,7 +175,10 @@ export function automationStudioLlmUnusableDecisionError(result: AutomationStudi
   if (!automationStudioLlmTaskResultSpentWithoutDecision(result)) return undefined;
   const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
   const reply = errors.map((diagnostic) => providerReply(diagnostic.metadata)).find((account) => account !== undefined);
-  return new AutomationStudioLlmUnusableDecisionError(errors.map((diagnostic) => diagnostic.code), reply);
+  const fields: AutomationStudioLlmUnusableDecisionFieldIssue[] = errors.some((diagnostic) => diagnostic.code === "llm_output.unexpected_field"
+    && diagnostic.path === "response.decision.write")
+    ? [{ code: "llm_output.unexpected_field", path: "response.decision.write", expectedPath: "response.decision.input.write" }] : [];
+  return new AutomationStudioLlmUnusableDecisionError(errors.map((diagnostic) => diagnostic.code), reply, fields, result.usage);
 }
 
 /**
@@ -169,6 +193,8 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
   maxStepsWithoutProgress: number;
   /** What the unusable decision was offered, so the accepted shapes are the ones it could have given. */
   offers?: AutomationStudioLlmUnusableDecisionOffers;
+  /** Known parser grammar locations only; screened again at this model boundary. */
+  fieldIssues?: readonly AutomationStudioLlmUnusableDecisionFieldIssue[];
   /**
    * Present when the reply arrived and could not be read (`./unreadable-reply.ts`):
    * the note says what could not be read and how many in a row stop the loop,
@@ -178,6 +204,7 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
 }): JsonObject {
   // Every well-formed issue code (2026-09-30): it was the first eight.
   const issueCodes = [...new Set(input.issueCodes.filter((code) => ISSUE_CODE.test(code)))];
+  const fieldIssues = issueCodes.includes("llm_output.unexpected_field") ? screenedFieldIssues(input.fieldIssues) : [];
   if (input.unreadable) {
     const { reply, inARow, maxInARow } = input.unreadable;
     const said = automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes: input.issueCodes });
@@ -198,8 +225,11 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     issueCodes,
     stepsWithoutProgress: input.stepsWithoutProgress,
     maxStepsWithoutProgress: input.maxStepsWithoutProgress,
+    ...(fieldIssues.length ? { fieldIssues } : {}),
     accepted: acceptedDecision(input.offers),
-    instruction: [DECISION_FEEDBACK_INSTRUCTION, ...[...new Set(input.issueCodes)].flatMap((code) => ISSUE_INSTRUCTIONS[code] ?? [])].join(" ")
+    instruction: [DECISION_FEEDBACK_INSTRUCTION,
+      ...(fieldIssues.length ? ["Place write at response.decision.input.write, inside the tool call input, rather than response.decision.write. This corrects grammar only; existing permission and tool checks still apply."] : []),
+      ...[...new Set(input.issueCodes)].flatMap((code) => ISSUE_INSTRUCTIONS[code] ?? [])].join(" ")
   };
 }
 

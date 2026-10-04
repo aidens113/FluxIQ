@@ -206,6 +206,90 @@ describe("a rerun refused on the page its step was put back to", () => {
 // the step runs with, so how the old argument answered the last test is no
 // longer about it.
 describe("a checked rerun that takes the new argument", () => {
+  function performedLibraryStep(): AutomationStudioFlowDraftStep {
+    return {
+      position: 1, id: "d1", iteration: 0, callId: "performed", actionId: "library.press", toolId: "press",
+      input: { node: "library.press", parameters: { target: "original" } },
+      ranWith: { parameters: { target: "resolved-original" } },
+      effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", acts: ["a1"]
+    };
+  }
+
+  it.each(["core.replay.verified", "core.replay.present"])("takes authoritative changed action and argument without performing it (%s)", async (code) => {
+    const step = performedLibraryStep();
+    const original = structuredClone(step);
+    const declared = { node: "library.enter", parameters: { target: "candidate", text: "3" } };
+    const resolved = { parameters: { target: "resolved-candidate", text: "3" } };
+    const executeTool = vi.fn(async (_request: { callId: string; toolId: string; value: JsonObject }) => ({
+      kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: code, effectApplied: false,
+      draft: { actionId: "library.enter", input: declared, ranWith: resolved, effect: "mutate" as const, proposes: true }
+    }));
+    const result = await automationStudioNodeRerunAnswer({
+      place: undefined, replaces: step, call: { callId: "candidate", toolId: "press", value: { node: "arbitrary.claim", parameters: { target: "candidate", text: "3" } } },
+      executeTool, lastingActs: new Set(["a1"])
+    });
+    expect(result.took).toBe(true);
+    expect(step).toMatchObject({ actionId: "library.enter", toolId: "press", input: declared, ranWith: resolved, effectApplied: false, checkedCandidate: { callId: "candidate", code } });
+    expect(step.priorExecution).toMatchObject({ ...original, lasting: true });
+    expect(step.callId).toBeUndefined();
+    expect(executeTool.mock.calls).toHaveLength(1);
+    expect(executeTool.mock.calls[0]![0].value.replay).toBe("verify");
+  });
+
+  it("does not infer action identity from an arbitrary node argument when the caller declares none", async () => {
+    const step = performedLibraryStep();
+    await automationStudioNodeRerunAnswer({
+      place: undefined, replaces: step, call: { callId: "generic-check", toolId: "press", value: { node: "arbitrary.claim", parameters: { target: "candidate" } } },
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, resultCode: "core.replay.verified", effectApplied: false }),
+      lastingActs: new Set(["a1"])
+    });
+    expect(step).toMatchObject({ actionId: "library.press", toolId: "press", input: { node: "arbitrary.claim" }, effectApplied: false });
+    expect(step.priorExecution?.actionId).toBe("library.press");
+  });
+
+  it("keeps same-action metadata and removes a redundant tool identity when the declared action is the tool", async () => {
+    const step = performedLibraryStep();
+    step.actionId = "press";
+    await automationStudioNodeRerunAnswer({
+      place: undefined, replaces: step, call: { callId: "same-action", toolId: "press", value: { target: "candidate" } },
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, resultCode: "core.replay.present", effectApplied: false, draft: { actionId: "press", input: { target: "normalized" } } }),
+      lastingActs: new Set(["a1"])
+    });
+    expect(step.actionId).toBe("press");
+    expect(step.toolId).toBeUndefined();
+    expect(step.input).toEqual({ target: "normalized" });
+    expect(step.ranWith).toBeUndefined();
+    expect(step.priorExecution).toMatchObject({ actionId: "press", toolId: "press" });
+  });
+
+  it("does not change identity or arguments when authoritative replacement metadata accompanies a refused check", async () => {
+    const step = performedLibraryStep();
+    const original = structuredClone(step);
+    const result = await automationStudioNodeRerunAnswer({
+      place: undefined, replaces: step, call: { callId: "refused-change", toolId: "press", value: { node: "library.enter" } },
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: false }, resultCode: "core.replay.unreproducible", effectApplied: false, draft: { actionId: "library.enter", input: { node: "library.enter" } } }),
+      lastingActs: new Set(["a1"])
+    });
+    expect(result.took).toBe(false);
+    expect(step).toEqual(original);
+  });
+
+  it("keeps the accepted action identity through the real loop while retaining original lasting execution", async () => {
+    const seed = performedLibraryStep();
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { node: "library.enter", parameters: { target: "candidate", text: "3" } } }] })
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const executeTool = vi.fn(async ({ value }: { value: JsonObject }) => ({
+      kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: "core.replay.verified", effectApplied: false,
+      draft: { actionId: "library.enter", input: value, ranWith: { parameters: { target: "resolved", text: "3" } }, effect: "mutate" as const, proposes: true }
+    }));
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: [seed] }, dryRun: false, lastingActs: async () => new Set(["a1"]), maxIterations: 3, maxToolCalls: 4 });
+    const kept = result.steps?.find((step) => step.id === "d1");
+    expect(kept).toMatchObject({ actionId: "library.enter", toolId: "press", input: { node: "library.enter" }, effectApplied: false, priorExecution: { actionId: "library.press", lasting: true } });
+    expect(executeTool.mock.calls).toHaveLength(1);
+    expect(executeTool.mock.calls[0]![0].value.replay).toBe("verify");
+  });
+
   it("invalidates following test marks while retaining earlier evidence", async () => {
     const seed: AutomationStudioFlowDraftStep[] = [1, 2, 3].map((position) => ({
       position, id: `d${position}`, iteration: 1, actionId: "web.click", toolId: "press", input: { target: "Confirm Amara" },

@@ -291,13 +291,16 @@ const PAID_TOKEN_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheH
 /**
  * What a call reported costing, bounded to the usage summary's numeric fields:
  * every count a non-negative safe integer, the cost a non-negative finite
- * number, anything else left behind. `undefined` when there is no output count,
- * the same bar `./reply-account.ts` sets for a reply's usage. Read wherever a
+ * number, anything else left behind. By default `undefined` when there is no
+ * output count, the same bar `./reply-account.ts` sets for a reply's usage.
+ * An already parsed partial summary may explicitly relax that requirement;
+ * this preserves known cost without inventing tokens, and an empty account
+ * still answers nothing. Read wherever a
  * reported cost crosses a boundary -- off a refusal, or off a result the harness
  * could not parse -- so a value built by anything but an adapter carries
  * numbers only.
  */
-export function automationStudioLlmProviderPaidUsage(value: unknown): AutomationStudioLlmUsageSummary | undefined {
+export function automationStudioLlmProviderPaidUsage(value: unknown, options: { requireOutputTokens?: boolean } = {}): AutomationStudioLlmUsageSummary | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   const usage: AutomationStudioLlmUsageSummary = {};
@@ -307,7 +310,7 @@ export function automationStudioLlmProviderPaidUsage(value: unknown): Automation
   }
   const cost = record.estimatedCostUsd;
   if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) usage.estimatedCostUsd = cost;
-  return usage.outputTokens === undefined ? undefined : usage;
+  return Object.keys(usage).length === 0 || (options.requireOutputTokens !== false && usage.outputTokens === undefined) ? undefined : usage;
 }
 
 function sizedInputBudgetMessage(size: AutomationStudioLlmProviderInputSize): string {

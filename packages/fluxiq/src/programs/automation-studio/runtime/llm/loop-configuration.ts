@@ -61,6 +61,8 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * empty, every result is shown whole.
    */
   observedStateKeys?: readonly string[] | undefined;
+  /** Explicit bound-domain screening authority for authored rerun path diagnostics. Absent, omit paths. */
+  deniedEvidenceKeys?: readonly string[] | undefined;
   maxIterations?: number;
   maxToolCalls?: number;
   /**
