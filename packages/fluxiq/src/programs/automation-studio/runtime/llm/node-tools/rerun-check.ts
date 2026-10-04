@@ -81,7 +81,9 @@ export async function automationStudioNodeRerunAnswer(input: {
   if (input.place?.kind === "unreachable") return { ran: input.place.result, took: false };
   const step = input.replaces !== undefined && automationStudioFlowDraftStepActDone(input.replaces, input.lastingActs) ? input.replaces : undefined;
   const value = step ? checkCall(step, input.call.value) : input.call.value;
-  const ran = automationStudioNodeRerunPlaceNoted(input.place, await input.executeTool({ callId: input.call.callId, toolId: input.call.toolId, value, ...(input.signal ? { signal: input.signal } : {}) }));
+  // A refusal after a put-back says the page was loaded again and names the control the argument meant (`./step-place.ts`, run `run-musq0b1m-0472cfa0` Cause 4).
+  const named = input.replaces ? { step: input.replaces.position, ...(input.words ? { words: input.words } : {}) } : undefined;
+  const ran = automationStudioNodeRerunPlaceNoted(input.place, await input.executeTool({ callId: input.call.callId, toolId: input.call.toolId, value, ...(input.signal ? { signal: input.signal } : {}) }), named);
   return step ? checked(step, input.call.value, input.words, ran) : { ran, took: false };
 }
 
@@ -106,6 +108,8 @@ function checked(step: AutomationStudioFlowDraftStep, value: JsonObject, words: 
     else delete step.words;
     // The words of the control the earlier run pressed: the old target's, not this one's.
     delete step.control;
+    // How the old argument answered the last test is not about this one (run `run-musq0b1m-0472cfa0`, Cause 6).
+    delete step.replayed;
   }
   const does = acts.length ? `does ${acts.join(", ")}` : "changes something that lasts";
   const why = `Step ${position} ${does} and already did it once while this Flow was being built, so this rerun was checked and not done again: running it would do that a second time.`;

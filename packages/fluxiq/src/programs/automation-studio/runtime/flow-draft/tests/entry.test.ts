@@ -122,6 +122,34 @@ describe("the draft entry a decision is shown", () => {
     ]);
   });
 
+  // Live runs `run-murwd8le-79e735a8` and `run-musp8nz1-dbd3905a` shipped a
+  // Space Grey pair that un-chose the colour the page arrived with and chose it
+  // again; Core now takes such a pair out (`../reversal.ts`) and says why.
+  it("says why Core took out a press, naming its partner's step, and nothing on a step it did not", () => {
+    const lines = value([
+      step(1, "press", { target: "grey" }, { id: "d1", disposition: "dropped", toggle: { key: "t941", to: "off" }, cancels: "d3" }),
+      step(2, "press", { target: "spain" }, { id: "d2" }),
+      step(3, "press", { target: "grey" }, { id: "d3", disposition: "dropped", toggle: { key: "t941", to: "on" }, cancels: "d1" }),
+      step(4, "press", { target: "red" }, { id: "d4", disposition: "taken", toggle: { key: "t942", to: "off" } }),
+      step(5, "press", { target: "red" }, { id: "d5", disposition: "dropped", toggle: { key: "t942", to: "on" }, cancels: "d4" })
+    ]).steps as Array<Record<string, unknown>>;
+    expect(lines.map((line) => line.inResult)).toEqual([false, true, false, false, false]);
+    expect(String(lines[0]!.out)).toContain("step 3 pressed the same control back");
+    expect(String(lines[2]!.out)).toContain("step 1");
+    // The control was already in the state the Flow needs before the pair: chosen, here.
+    expect(String(lines[0]!.out)).toMatch(/already chosen before step 1/u);
+    expect(String(lines[0]!.out)).toContain("the step after which the page first showed it chosen");
+    expect(String(lines[0]!.out)).toMatch(/pressing it again would undo/u);
+    expect(lines[1]).not.toHaveProperty("out");
+    expect(lines[3]).not.toHaveProperty("out");
+    // Rule b: the step it put back is not in the Flow.
+    expect(String(lines[4]!.out)).toContain("step 4");
+    expect(String(lines[4]!.out)).toContain("is not in the Flow");
+    // A half the model put back is in the Flow and says nothing more.
+    const back = value([step(1, "press", { target: "grey" }, { id: "d1", toggle: { key: "t941", to: "off" }, cancels: "d2" })]).steps[0] as Record<string, unknown>;
+    expect(back).not.toHaveProperty("out");
+  });
+
   // Live run 36: step 11, a listing, named a1, and the model could not see it.
   it("shows the act each step names, and nothing on a step that names none", () => {
     const shown = value([

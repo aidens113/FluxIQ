@@ -176,3 +176,44 @@ describe("a rerun of a step whose act was already done while building", () => {
     expect(site.executeTool.mock.calls.map(([call]) => call.value.replay ?? null)).toEqual([null, "reset", null]);
   });
 });
+
+// Live run `run-musq0b1m-0472cfa0`, Cause 4: the rerun of step 7 was put back
+// (the item page loaded again) and its handle refused `handle_not_in_packet`.
+// The answer the loop shows carries the put-back account and the control the
+// argument meant, in the words the domain gave for it before the reset.
+describe("a rerun refused on the page its step was put back to", () => {
+  it("is answered with the page put back and the control the argument named", async () => {
+    const { automationStudioNodeRerunAnswer } = await import("../rerun-check.ts");
+    const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: false, code: "target_unobserved", detail: { reason: "handle_not_in_packet", target: "t985" } }, effectApplied: false }));
+    const replaces = { position: 7, id: "d7", iteration: 3, actionId: "web.output.dom-click", toolId: "core.run_node", input: { parameters: { target: { handle: "t974" } } }, effect: "mutate" as const, disposition: "kept" as const, replay: { from: { location: "item" } } };
+    const { ran, took } = await automationStudioNodeRerunAnswer({
+      place: { kind: "put_back", callId: "rerun.7.place", startPage: "step", doneAgain: [] },
+      replaces,
+      call: { callId: "rerun.7", toolId: "core.run_node", value: { node: "web.output.dom-click", parameters: { target: { handle: "t985" } } } },
+      words: { target: "7-in-1" },
+      executeTool
+    });
+    expect(took).toBe(false);
+    const note = ((ran as { evidence: JsonObject }).evidence.rerunPlace) as JsonObject;
+    expect(note).toMatchObject({ place: "put_back", named: "7-in-1" });
+    expect(String(note.detail)).toMatch(/put back where step 7 started before this rerun ran/u);
+  });
+});
+
+// Cause 6 for a rerun: a checked rerun that takes the new argument changes what
+// the step runs with, so how the old argument answered the last test is no
+// longer about it.
+describe("a checked rerun that takes the new argument", () => {
+  it("leaves the step untested with it", async () => {
+    const { automationStudioNodeRerunAnswer } = await import("../rerun-check.ts");
+    const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, code: "core.replay.verified" }, effectApplied: false, resultCode: "core.replay.verified" }));
+    const replaces = {
+      position: 6, id: "d6", iteration: 2, actionId: "web.click", toolId: "press", input: { target: "Confirm Amara" }, effect: "mutate" as const, effectApplied: true, disposition: "kept" as const, acts: ["a1"],
+      replay: { from: { location: "requests" } }, replayed: { step: 6, actionId: "web.click", status: "unreproducible" as const }
+    };
+    const { took } = await automationStudioNodeRerunAnswer({ place: undefined, replaces, call: { callId: "rerun.6", toolId: "press", value: { target: "Confirm Tom" } }, executeTool, lastingActs: new Set(["a1"]) });
+    expect(took).toBe(true);
+    expect(replaces.input).toEqual({ target: "Confirm Tom" });
+    expect((replaces as { replayed?: unknown }).replayed).toBeUndefined();
+  });
+});

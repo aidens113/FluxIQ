@@ -68,6 +68,7 @@ import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftStepGoesToLocation } from "../reachability/index.ts";
 import { automationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
+import { automationStudioInstructedActClaimDoubt } from "./claim-doubt.ts";
 import type { AutomationStudioInstructedChoice } from "./contracts.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
 import { automationStudioInstructedActRepeatSpans } from "./span.ts";
@@ -133,6 +134,8 @@ export type AutomationStudioInstructedActChecklistItem = {
   verb: string;
   /** The person's own words for this act. */
   quote: string;
+  /** Possible control/claim mismatch for model and judge review; preserves coverage and whole-Flow authority. */
+  claimSaid?: string;
   plural?: true;
   /** The position of the step of the Flow that does it. */
   done?: number;
@@ -175,8 +178,10 @@ export function automationStudioInstructedActsChecklist(input: {
     const stood = standing.get(act.id);
     const doer = stood ? ("done" in stood ? stood.done : stood.step) : undefined;
     const once = act.plural && doer ? singleRowSteps(act.id, doer, input.draftSteps) : undefined;
+    const claimSaid = doer ? automationStudioInstructedActClaimDoubt(act, doer, input.draftSteps) : undefined;
     const item: AutomationStudioInstructedActChecklistItem = {
       id: act.id, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true as const } : {}), ...shown(stood),
+      ...(claimSaid ? { claimSaid } : {}),
       ...(once ? { drop: once.drop, dropSaid: once.said } : {})
     };
     if (!act.requires?.length) return item;

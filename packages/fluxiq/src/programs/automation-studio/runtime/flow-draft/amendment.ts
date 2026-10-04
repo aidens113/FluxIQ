@@ -86,6 +86,7 @@ import {
   automationStudioFlowDraftTranslateBindings
 } from "./binding-forms.ts";
 import { automationStudioFlowDraftKeepOpeners } from "./opener.ts";
+import { automationStudioFlowDraftDropReversals } from "./reversal.ts";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
@@ -331,6 +332,9 @@ export function applyAutomationStudioFlowDraftAmendments(
     // One act, one step: the claim moves here from any step that held it (`./act-claim.ts`).
     if (act !== undefined) automationStudioFlowDraftClaimAct(steps, step, act);
     if (moves) moveStep(steps, step, amendment.to, undefined);
+    // A press a later press of the same control undid leaves the Flow with it, once the
+    // step, its openers, its act and its place are settled (`./reversal.ts`).
+    if (disposition === "kept") automationStudioFlowDraftDropReversals(steps);
     if (amendment.settings) step.settings = { ...(step.settings ?? {}), ...amendment.settings };
     applied += 1;
   }
@@ -410,6 +414,14 @@ function same(left: AutomationStudioFlowDraftStepRouting | undefined, right: Aut
  * is shown next is numbered 1..n in the order the steps now stand, so the
  * number it reads is the number an amendment takes. Settings ride along, since
  * "put this last and give it a longer wait" is one thought.
+ *
+ * A move leaves every step from where it begins untested (`replayed` cleared,
+ * `./step.ts`): each of them now runs after other steps than the test ran it
+ * after. Live run `run-musq0b1m-0472cfa0` (Cause 6) moved an `unreproducible`
+ * Space Grey press after the listing click that brings it onto its page, and
+ * the draft went on showing it `unreproducible` -- the model reordered four
+ * times. The steps before the move ran after exactly what they run after now,
+ * so their marks stand.
  */
 function moveStep(
   steps: AutomationStudioFlowDraftStep[],
@@ -424,6 +436,7 @@ function moveStep(
   steps.splice(from, 1);
   steps.splice(to! - 1, 0, step);
   steps.forEach((entry, index) => { entry.position = index + 1; });
+  if (from !== to! - 1) for (const moved of steps.slice(Math.min(from, to! - 1))) delete moved.replayed;
   if (settings) step.settings = { ...(step.settings ?? {}), ...settings };
   return true;
 }

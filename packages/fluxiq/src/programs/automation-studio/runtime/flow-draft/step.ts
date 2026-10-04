@@ -66,6 +66,14 @@ export type AutomationStudioFlowDraftStepDisposition = "kept" | "taken" | "dropp
  */
 export type AutomationStudioFlowDraftStepWords = { target?: string; text?: string };
 
+/**
+ * The host's word that a step flipped whether the control it acted on is
+ * chosen: `key` names the control, as an opaque code the host keeps for one
+ * control for the whole build, and `to` says which way it went
+ * (`./reversal.ts`). Core compares keys for equality and reads nothing else.
+ */
+export type AutomationStudioFlowDraftStepToggle = { key: string; to: "on" | "off" };
+
 export type AutomationStudioFlowDraftStep = {
   /** Where it is in the draft, counting from 1: what an amendment names. */
   position: number;
@@ -142,6 +150,26 @@ export type AutomationStudioFlowDraftStep = {
    */
   interruption?: true;
   /**
+   * The host says this step flipped whether the control it acted on is chosen,
+   * as the caller stated it on its own call (`./reversal.ts`).
+   *
+   * A press that a later press of the same control undoes is a pair that
+   * changed nothing, and whole-page digests cannot show it: live run
+   * `run-murwd8le-79e735a8` shipped Space Grey off and on again, kept and
+   * brought in as an opener of Add to cart, with steps between them that
+   * changed the page. Only the host can name the control, so it does.
+   */
+  toggle?: AutomationStudioFlowDraftStepToggle;
+  /**
+   * The id of the step this one undid or was undone by, set when Core took it
+   * out of the Flow for that (`./reversal.ts`): both halves of a pair carry
+   * each other's id, a lone reversal carries the id of the step it put back.
+   * Kept when the model puts the step back, and then the model's decision
+   * stands: Core never takes out a step that carries it again. The draft entry
+   * says why the step is out (`./entry.ts`, `out`).
+   */
+  cancels?: string;
+  /**
    * What the call names, in the domain's words, kept when the step was
    * appended: the draft line shows it as `does` (`./entry.ts`).
    *
@@ -198,6 +226,13 @@ export type AutomationStudioFlowDraftStep = {
    * of what the Flow did when it was run as a Flow travels with the step it is
    * about -- the draft the model is shown reads it, and so does anyone reading
    * the steps afterwards.
+   *
+   * It is about the step as the test ran it: after the steps before it then,
+   * with the argument it had then. So a move clears it on every step from
+   * where the move begins (`./amendment.ts`), and a checked rerun that gives
+   * the step a new argument clears it (`../llm/node-tools/rerun-check.ts`):
+   * absent, the step has not been tested as it now stands (live run
+   * `run-musq0b1m-0472cfa0`, Cause 6).
    */
   replayed?: AutomationStudioFlowDraftReplayOutcome;
   /**

@@ -16,6 +16,16 @@ function step(position: number, overrides: Partial<AutomationStudioFlowDraftStep
 }
 
 describe("the acts checklist", () => {
+  it("warns about a cart act claimed on a same-place choice without changing claim coverage", () => {
+    const draft = [step(1, { acts: ["a1"], words: { target: "Spain" } })];
+    const items = automationStudioInstructedActsChecklist({ instructionText: "Add the hub to my cart.", draftSteps: draft })!;
+    expect(items[0]).toMatchObject({ done: 1, claimSaid: expect.stringContaining('"Spain"') });
+    expect((items[0] as { claimSaid?: string }).claimSaid).toContain("distinct step");
+    expect(items[0]!.todo).toBeUndefined();
+    expect(automationStudioInstructedActsNotDone(items)).toEqual([]);
+    expect(draft[0]!.acts).toEqual(["a1"]);
+    expect(checkAutomationStudioInstructedActs({ instructionText: "Add the hub to my cart.", result: { summary: "x" }, draftSteps: draft }).ok).toBe(true);
+  });
   it("shows every act as todo before anything is authored, with the ids a completion is judged by", () => {
     const items = automationStudioInstructedActsChecklist({ instructionText: TABLES, draftSteps: [] })!;
     const verdict = checkAutomationStudioInstructedActs({ instructionText: TABLES, result: { summary: "x" }, draftSteps: [step(1, { disposition: "taken" })] });

@@ -46,7 +46,7 @@ import { automationStudioFlowDraftInputs } from "./flow-inputs.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
 import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
-import { automationStudioFlowDraftStepById } from "./routing.ts";
+import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepId } from "./routing.ts";
 import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 
 // The per-item sentence in both tellings names the three steps in order and
@@ -125,6 +125,9 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     changed: step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
     disposition: shownDisposition(step),
     inResult: automationStudioFlowDraftStepIsProposed(step),
+    // Why Core took the step out (`./reversal.ts`): shown only on such a step,
+    // so no other draft pays for it, and gone once the model puts it back.
+    ...(step.cancels !== undefined && step.disposition !== "kept" ? { out: takenOutLine(step, all) } : {}),
     // The act the step says it does, under the word the amendment took. Not
     // shown until live run 36, whose model could not see that its listing on
     // step 11 named a1 and spent 24 decisions naming a1 on the Confirm.
@@ -184,6 +187,33 @@ function routingLine(routing: AutomationStudioFlowDraftStepRouting, all: readonl
   if (routing.kind === "only_if") return `only if step ${at(routing.check)} succeeded`;
   if (routing.kind === "on_failed") return `on failure, step ${at(routing.to)} runs instead`;
   return `repeats through step ${at(routing.through)}, over step ${at(routing.over)}`;
+}
+
+/**
+ * Why Core took a step out of the Flow (`./reversal.ts`), in the step numbers
+ * the model reads: the step it undid or was undone by, the state the control
+ * was in before the first of them -- the state the Flow needs, since the pair
+ * changed nothing -- and so where an act about that control belongs.
+ *
+ * Live run `run-musp8nz1-dbd3905a` added Space Grey off and Space Grey on,
+ * both for `a1.colour`, with the colour already chosen when the page arrived:
+ * the model had to be told that the act was done before either press, and that
+ * pressing the control again undoes it.
+ */
+function takenOutLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationStudioFlowDraftStep[]): string {
+  const partner = automationStudioFlowDraftStepById(all, step.cancels!);
+  if (!partner) return "taken out by Core: it pressed back a control a step no longer in the draft pressed, so it changed nothing the Flow needs";
+  const first = partner.position < step.position ? partner : step;
+  const later = first === step ? partner : step;
+  // Two states: before the first press, the control was where the later one put it back.
+  const before = later.toggle?.to === "off" ? "not chosen" : "chosen";
+  const state = `The control was already ${before} before step ${first.position}, the state the Flow needs: an act about it belongs on the step after which the page first showed it chosen, and pressing it again would undo that state.`;
+  const paired = partner.cancels === automationStudioFlowDraftStepId(step);
+  if (!paired) return `taken out by Core: it pressed back the control step ${partner.position} pressed, and step ${partner.position} is not in the Flow, so in the Flow it would flip the control the wrong way. ${state} Add it back only if the Flow needs the control the other way.`;
+  const why = step === first
+    ? `step ${later.position} pressed the same control back, so the two together changed nothing.`
+    : `it pressed back the control step ${first.position} pressed, so the two together changed nothing.`;
+  return `taken out by Core: ${why} ${state} Add both back only if a step between them needs the control the other way.`;
 }
 
 /**

@@ -65,6 +65,24 @@ repetitive work is a loop (list with a `where`, do or write the act on one kept
 row, then `repeat` over the listing), to prefer writing a lasting act a loop
 does, and the binding forms.
 
+### Cancelling Choices And Changed Test Evidence
+
+The host may attach `toggle: {key, to}` to a mutating recorded step. Core
+compares the opaque control key and `on`/`off`; it does not interpret browser
+targets. `runtime/flow-draft/reversal.ts` removes opposite presses only when
+no kept proposable step between them could use or return the temporary state.
+An intervening action or exported read preserves both presses. Conditional
+steps and an explicit model decision to restore a removed step are preserved.
+Removed steps retain `cancels` and an `out` explanation; their old act claims
+are cleared so they cannot continue claiming instruction coverage.
+
+Reordering invalidates `replayed` marks from the first changed position
+onward. A successful checked rerun replaces its argument/resolved form and
+clears the old target words and replay mark. It still performs no lasting act;
+verification means the revised step is runnable, not that a newly targeted
+act was performed. Failed dry-run rows can show the opaque recorded
+`actedOn` place; this does not claim to know the actual place a replay ran.
+
 ### `amend_draft bind`
 
 `bind` generalizes a kept step, recorded or written, by lifting concrete
@@ -281,3 +299,7 @@ it. A materialised Flow node keeps its plan node's declaration as
 it at run time:** a plain run of a stored Flow gates nothing per node, for
 recorded and written steps alike. Gating stored runs on it would change what
 every stored Flow does when it runs, which is the user's decision.
+
+### Advisory action-claim feedback
+
+An explicit act claim on a control whose wording does not name that act now includes informational claimSaid feedback. It preserves the claim and coverage; whole-Flow judgement remains authoritative. The feedback asks the author to review the actual control and add a distinct executable step when needed. A checked rerun verifies an existing target and does not add the claimed action. Existing act-kind vocabulary recognizes legitimate action wording; blank controls and set/open choices avoid speculative warnings.

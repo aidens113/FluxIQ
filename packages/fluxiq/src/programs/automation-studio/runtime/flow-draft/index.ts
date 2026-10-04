@@ -5,6 +5,7 @@
 // proposed, which of its steps that replay only checks, which it passed over
 // and why, what it says about a step the site remembers, which it found are only sometimes there or the host
 // says answered an interruption, the press that opened a kept step's page, the
+// pair of presses on one control that changed nothing and leaves the Flow, the
 // domain's words for what a step's call named, the words of the control a
 // step acted on, what Flow version a draft stands for, what a completion
 // is told when steps carried into it never ran in this build, the bindings a
@@ -24,6 +25,7 @@ export * from "./flow-signature.ts";
 export * from "./full-run-required.ts";
 export * from "./interruption.ts";
 export * from "./opener.ts";
+export * from "./reversal.ts";
 export * from "./routing.ts";
 export * from "./site-memory.ts";
 export * from "./sometimes-present.ts";

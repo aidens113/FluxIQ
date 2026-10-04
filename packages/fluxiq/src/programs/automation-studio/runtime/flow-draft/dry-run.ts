@@ -91,6 +91,7 @@ import { automationStudioFlowDraftExcusedWords, type AutomationStudioFlowDraftEx
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
 import { automationStudioFlowDraftPathToStep } from "./path-to-step.ts";
+import { automationStudioFlowDraftStepById } from "./routing.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REANCHORED_CODE } from "./site-memory.ts";
 import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 
@@ -355,6 +356,12 @@ const DRY_RUN_INSTRUCTION = "You said the Flow is ready, so it was tested: run o
  * those steps (`notInFlow`): run muqk4u32's refusals listed step 1 replayed and
  * 6-13 unreproducible, and the ×, the search and the listing that reach the
  * item page (3-5) had to be inferred from the draft (t174 F41).
+ *
+ * Given it too, a row that did not replay carries the page its step acted on
+ * (`actedOn`, the step's `replay.from` as the host wrote it, read never): live
+ * run `run-musq0b1m-0472cfa0` (Cause 6) refused 7-in-1 and Space Grey with rows
+ * naming no page, while both ran on the search results and acted on the item
+ * page.
  */
 export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudioFlowDraftDryRun, told: ReadonlySet<string> = new Set(), steps?: readonly AutomationStudioFlowDraftStep[]): JsonObject {
   const missing = steps ? notInFlow(verdict, steps) : undefined;
@@ -374,11 +381,23 @@ export function automationStudioFlowDraftDryRunFeedback(verdict: AutomationStudi
       ...(excusedLine(outcome)),
       ...(outcome.reanchored ? { reanchored: true } : {}),
       ...automationStudioFlowDraftReplayPassWords(outcome),
-      ...(outcome.status !== "replayed" && told.has(automationStudioFlowDraftReplayOutcomeKey(outcome)) ? { again: true } : {})
+      ...(outcome.status !== "replayed" && told.has(automationStudioFlowDraftReplayOutcomeKey(outcome)) ? { again: true } : {}),
+      ...(steps && outcome.status !== "replayed" ? actedOnLine(outcome, steps) : {})
     })),
     ...(missing ? { notInFlow: missing } : {}),
     instruction: DRY_RUN_INSTRUCTION
   };
+}
+
+/**
+ * A row's `actedOn`: the page its step acted on while exploring, from the step
+ * the outcome is about -- by its id, which survives a move after the test, else
+ * by the position it had -- or nothing when the step recorded none.
+ */
+function actedOnLine(outcome: AutomationStudioFlowDraftReplayOutcome, steps: readonly AutomationStudioFlowDraftStep[]): { actedOn?: JsonObject } {
+  const step = (outcome.stepId !== undefined ? automationStudioFlowDraftStepById(steps, outcome.stepId) : undefined) ?? steps.find((each) => each.position === outcome.step);
+  const from = step?.replay?.from;
+  return from ? { actedOn: from } : {};
 }
 
 /** A feedback line's `excused`, for a step the test passed over. */
