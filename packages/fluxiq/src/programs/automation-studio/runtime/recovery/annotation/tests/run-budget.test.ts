@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTOMATION_STUDIO_LLM_DEFAULT_TOKEN_LIMITS,
   AUTOMATION_STUDIO_LLM_RUN_CALL_BACKSTOP,
@@ -10,6 +10,8 @@ import {
   AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES,
   resolveAutomationStudioRecoveryRunBudget
 } from "../run-budget.ts";
+
+afterEach(() => { vi.unstubAllEnvs(); vi.resetModules(); });
 
 // The numbers one recovery runs under. These are the answer to "what is the
 // most one recovery can cost", so they are pinned to the run cost ceiling
@@ -41,7 +43,7 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
 
     expect(budget.ledger).toMatchObject({ maxTotalTokensPerRun: 20_000, maxEstimatedCostUsdPerRun: policy });
     // A policy can only lower that purse, never raise it.
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false, policyMaxEstimatedCostUsdPerRun: 5 }).ledger.maxEstimatedCostUsdPerRun).toBe(CEILING);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false, policyMaxEstimatedCostUsdPerRun: 5 }).ledger.maxEstimatedCostUsdPerRun).toBe(5);
   });
 
   // A resolver's call count is a real outside limit, so it is honoured, and a
@@ -56,7 +58,7 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
     expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: false }).declaredCallsPerRun).toBeUndefined();
   });
 
-  it("uses a smaller resolver total for a run a person asked for, and never more than the run cost ceiling", () => {
+  it("honors explicit resolver totals up to the server maximum", () => {
     const resolverTotal = CEILING * 0.6;
     const asked = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: 10, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: resolverTotal } });
     expect(asked.ledger).toEqual({ maxCallsPerRun: 10, maxTotalTokensPerRun: 10 * WINDOW, maxOutputTokensPerRun: 10 * WINDOW, maxEstimatedCostUsdPerRun: resolverTotal });
@@ -65,8 +67,8 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
     // A resolver that gives a per-call cost and no total would otherwise be
     // multiplied into many times the ceiling; the ceiling holds it.
     const untotalled = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxEstimatedCostUsd: CEILING } });
-    expect(untotalled.ledger.maxEstimatedCostUsdPerRun).toBe(CEILING);
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxTotalEstimatedCostUsd: 9 } }).ledger.maxEstimatedCostUsdPerRun).toBe(CEILING);
+    expect(untotalled.ledger.maxEstimatedCostUsdPerRun).toBe(CEILING * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxTotalEstimatedCostUsd: 9 } }).ledger.maxEstimatedCostUsdPerRun).toBe(9);
   });
 
   // The ledger reserves each call's share, rounded to a billionth, against the
@@ -75,7 +77,7 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
   it.each([10, 25, 26, 64])("fits every reservation of a %i-call run inside its total", (calls) => {
     const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: calls, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: 2 } });
     const total = budget.ledger.maxEstimatedCostUsdPerRun;
-    expect(total).toBe(CEILING);
+    expect(total).toBe(2);
     const rounded = (value: number) => Math.round(value * 1_000_000_000) / 1_000_000_000;
     // A resolver that declared no per-call limits has no worst case of its own
     // to reserve -- the default is the whole window, which no call fills -- so
@@ -95,19 +97,19 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
   it("caps the token pot at a resolver's whole-run token exposure, however many calls it declared", () => {
     const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxTotalEstimatedCostUsd: 2 } });
 
-    expect(budget.ledger).toEqual({ maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: CEILING });
+    expect(budget.ledger).toEqual({ maxCallsPerRun: 26, maxTotalTokensPerRun: 100_000, maxOutputTokensPerRun: 100_000, maxEstimatedCostUsdPerRun: 2 });
   });
 
   // The Flow's configured spend limit lowers the ceiling of a run a person
   // asked for, and the resolver's total lowers it too; neither raises it.
-  it("holds a run a person asked for to the smallest of the ceiling, the resolver's total and the Flow's limit", () => {
+  it("holds a run to the smaller of explicit resolver and Flow limits", () => {
     const resolution = { maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: 2 };
     const policy = CEILING * 0.8;
     const resolverTotal = CEILING * 0.6;
     expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution, policyMaxEstimatedCostUsdPerRun: policy }).ledger.maxEstimatedCostUsdPerRun).toBe(policy);
     expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxTotalEstimatedCostUsd: resolverTotal }, policyMaxEstimatedCostUsdPerRun: policy }).ledger.maxEstimatedCostUsdPerRun).toBe(resolverTotal);
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution, policyMaxEstimatedCostUsdPerRun: 5 }).ledger.maxEstimatedCostUsdPerRun).toBe(CEILING);
-    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution }).ledger.maxEstimatedCostUsdPerRun).toBe(CEILING);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution, policyMaxEstimatedCostUsdPerRun: 5 }).ledger.maxEstimatedCostUsdPerRun).toBe(2);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution }).ledger.maxEstimatedCostUsdPerRun).toBe(2);
   });
 
   it("ignores a nonsensical declared call count rather than letting it zero the run", () => {
@@ -122,19 +124,30 @@ describe("resolveAutomationStudioRecoveryRunBudget", () => {
 // person asked for used to take the Flow's configured figure, or the
 // resolver's $2 default total, up to a $2 recovery ceiling.
 describe("the recovery's cost ceiling", () => {
+  it("keeps absent-policy recovery at .25 and clamps explicit policies only in test scope", async () => {
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true }).ledger.maxEstimatedCostUsdPerRun).toBe(0.25);
+    expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, policyMaxEstimatedCostUsdPerRun: 1 }).ledger.maxEstimatedCostUsdPerRun).toBe(1);
+    vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_SCOPE", "test");
+    vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_USD", "0.1");
+    vi.resetModules();
+    const scoped = await import("../run-budget.ts");
+    expect(scoped.resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true }).ledger.maxEstimatedCostUsdPerRun).toBe(0.1);
+    expect(scoped.resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution: { maxTotalEstimatedCostUsd: 1 }, policyMaxEstimatedCostUsdPerRun: 2 }).ledger.maxEstimatedCostUsdPerRun).toBe(0.1);
+  });
+
   const hostDefaults = { maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: 2 };
 
-  it("defaults a recovery a person asked for to the ceiling, and derives each call's reservation from it", () => {
-    for (const resolution of [hostDefaults, { maxEstimatedCostUsd: CEILING }, undefined]) {
+  it("uses explicit resolver totals or the ordinary fallback and derives reservations", () => {
+    for (const [resolution, total] of [[hostDefaults, 2], [{ maxEstimatedCostUsd: CEILING }, CEILING * AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES], [undefined, CEILING]] as const) {
       const budget = resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget: true, resolution });
-      expect(budget.ledger.maxEstimatedCostUsdPerRun, JSON.stringify(resolution)).toBe(CEILING);
-      expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(CEILING / AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES, 8);
+      expect(budget.ledger.maxEstimatedCostUsdPerRun, JSON.stringify(resolution)).toBe(total);
+      expect(budget.maxEstimatedCostUsdPerCall).toBeCloseTo(total / AUTOMATION_STUDIO_RECOVERY_BUDGET_SHARES, 8);
     }
   });
 
-  it("never lets the Flow's setting raise it, and lets it lower it", () => {
+  it("honors explicit Flow budgets above and below the normal default", () => {
     for (const explicitRunBudget of [true, false]) {
-      expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, resolution: hostDefaults, policyMaxEstimatedCostUsdPerRun: 1 }).ledger.maxEstimatedCostUsdPerRun).toBe(CEILING);
+      expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, resolution: hostDefaults, policyMaxEstimatedCostUsdPerRun: 1 }).ledger.maxEstimatedCostUsdPerRun).toBe(1);
       expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, resolution: hostDefaults, policyMaxEstimatedCostUsdPerRun: CEILING * 0.4 }).ledger.maxEstimatedCostUsdPerRun).toBe(CEILING * 0.4);
     }
   });
@@ -147,7 +160,7 @@ describe("a recovery that is part of a repair", () => {
     for (const explicitRunBudget of [true, false]) {
       expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, resolution: { maxTotalEstimatedCostUsd: 2 }, costLeftUsd: CEILING * 0.2 }).ledger.maxEstimatedCostUsdPerRun).toBe(CEILING * 0.2);
       expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, policyMaxEstimatedCostUsdPerRun: CEILING * 0.12, costLeftUsd: CEILING * 0.2 }).ledger.maxEstimatedCostUsdPerRun).toBe(CEILING * 0.12);
-      expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, costLeftUsd: 1 }).ledger.maxEstimatedCostUsdPerRun).toBe(CEILING);
+      expect(resolveAutomationStudioRecoveryRunBudget({ explicitRunBudget, costLeftUsd: 1 }).ledger.maxEstimatedCostUsdPerRun).toBe(1);
     }
   });
 });

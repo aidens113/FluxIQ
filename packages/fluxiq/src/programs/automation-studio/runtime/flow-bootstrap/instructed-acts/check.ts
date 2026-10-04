@@ -280,7 +280,7 @@ function choicesAfterAct(
   const found = choices.flatMap((choice) => {
     const stood = standing.get(choice.id);
     if (!stood || !("done" in stood) || !stood.afterAct) return [];
-    return automationStudioInstructedChoiceAfterAct({ id: choice.id, of: choice.of, step: stood.done.position, actStep: stood.afterAct.position }) ?? [];
+    return automationStudioInstructedChoiceAfterAct({ id: choice.id, of: choice.of, step: stood.done, actStep: stood.afterAct }) ?? [];
   });
   return found.length ? { choicesAfterAct: found } : {};
 }

@@ -176,7 +176,7 @@ describe("what bounds a recovery", () => {
 
   // A person who asked the model into an exploring recovery is held to the
   // run's own budget -- twenty-six calls, 100,000 tokens, and the run cost
-  // ceiling, which the resolver's $2 cannot raise -- and the training
+  // ceiling explicitly declared by the resolver -- and the training
   // budget being spent does not stop it. The per-call window is derived from
   // the budget, not from the prompt: the largest input that keeps one call's
   // worst case at peak under its even share of the $0.10 ceiling, so the share
@@ -201,7 +201,7 @@ describe("what bounds a recovery", () => {
       requests,
       asked: {
         intent: "explore_and_adapt",
-        resolution: { maxCallsPerRun: declaredCalls, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: 2, tokenLimits: { maxInputTokens, maxOutputTokens, maxTotalTokens: maxInputTokens + maxOutputTokens } }
+        resolution: { maxCallsPerRun: declaredCalls, maxTotalTokensPerRun: 100_000, maxEstimatedCostUsd: CEILING, maxTotalEstimatedCostUsd: CEILING, tokenLimits: { maxInputTokens, maxOutputTokens, maxTotalTokens: maxInputTokens + maxOutputTokens } }
       }
     });
 

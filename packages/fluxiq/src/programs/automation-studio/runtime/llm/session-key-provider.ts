@@ -9,10 +9,9 @@
 // not an integrity failure.
 //
 // The limits returned are defaults for one call and one run, not checks: the
-// run's own budget enforces them. The run's total is the run cost ceiling,
-// $0.10 unless FLUXIQ_LLM_RUN_COST_CEILING_USD says otherwise
-// (`flow-execution-limits/run-cost-ceiling.ts`), which the Flow's configured
-// `maxEstimatedCostUsdPerRun` may lower and never raise.
+// run's own budget enforces them. Ordinary runs default to $0.25; the Flow's
+// explicit adaptation policy supplies its total when configured. An isolated
+// test runtime alone applies the environment ceiling to every such total.
 
 import {
   AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL,
@@ -26,7 +25,7 @@ import { AUTOMATION_STUDIO_DEEPSEEK_MAX_CONTEXT_TOKENS, AUTOMATION_STUDIO_DEEPSE
 import { AUTOMATION_STUDIO_LLM_DEFAULT_REPLY_TOKENS, type AutomationStudioLlmTokenLimits } from "./harness/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "./provider-factories.ts";
 import { AUTOMATION_STUDIO_LLM_MAX_TIMEOUT_MS } from "./provider-contract.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "./flow-execution-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, automationStudioLlmRunCostCeilingUsd } from "./flow-execution-limits/index.ts";
 import type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./resolver-contract.ts";
 
 /** What one call reserves for the model's reply: the harness's own reply reserve, so the two cannot drift. */
@@ -86,12 +85,15 @@ export function createAutomationStudioSessionKeyProviderResolver(options: {
       }
     });
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
+    const policy = input.metadata?.adaptationPolicySettings;
+    const policyCost = policy && typeof policy === "object" && !Array.isArray(policy) ? policy.maxEstimatedCostUsdPerRun : undefined;
+    const totalCostUsd = automationStudioLlmRunCostCeilingUsd(policyCost);
     return {
       provider,
       tokenLimits: { ...automationStudioSessionKeyProviderTokenLimits(AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS[model].contextTokens) },
       timeoutMs: defaults.timeoutMs,
-      maxEstimatedCostUsd: defaults.maxEstimatedCostUsd,
-      maxTotalEstimatedCostUsd: defaults.maxTotalEstimatedCostUsd
+      maxEstimatedCostUsd: totalCostUsd,
+      maxTotalEstimatedCostUsd: totalCostUsd
     };
   };
 }

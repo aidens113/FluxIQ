@@ -6,7 +6,7 @@ import type { AutomationStudioFlowExpansionReferences } from "./flow-adaptation.
 import type { AutomationStudioFlowRegion, AutomationStudioFlowRegionHandoff } from "./regions.ts";
 import { AUTOMATION_STUDIO_FLOW_SIZE_SETTING } from "./flow-size/index.ts";
 import { AUTOMATION_STUDIO_TOKENS_PER_RUN_DEFAULT_CLEARED_KEY } from "./tokens-per-run/index.ts";
-import { resolveAutomationStudioLlmRunCostCeilingUsd } from "./run-cost-ceiling/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD } from "./run-cost-ceiling/index.ts";
 
 /** The workspace in which a canonical Flow is authored and may execute. */
 export type AutomationStudioFlowScope =
@@ -289,12 +289,8 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
     requireApprovalForDestructiveChanges: false,
     requireApprovalForExternalSideEffects: false,
     maxInterventionsPerRun: 3,
-    // The run cost ceiling (`runtime/llm/flow-execution-limits/
-    // run-cost-ceiling.ts`), which this setting may lower and never raise.
-    // Written as a literal because the model does not import the runtime;
-    // `runtime/llm/flow-execution-limits/tests/run-cost-ceiling.test.ts` holds
-    // the two equal.
-    maxEstimatedCostUsdPerRun: resolveAutomationStudioLlmRunCostCeilingUsd()
+    // A user-facing default, independent of an isolated test runtime's ceiling.
+    maxEstimatedCostUsdPerRun: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD
   };
   return {
     adaptationModeVersion: AUTOMATION_STUDIO_INTERVENTION_MODE_VERSION,

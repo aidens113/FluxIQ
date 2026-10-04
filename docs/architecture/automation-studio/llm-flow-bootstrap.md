@@ -846,7 +846,12 @@ complete its choices. A choice made by a step positioned after the step that
 does its act stays done but carries `afterAct` and `afterActSaid` (the act ran
 before its choice), and the check's verdict lists it under `choicesAfterAct`:
 information for the model and, through `buildTest.checklist`, the judge, never
-a refusal (`runtime/flow-bootstrap/instructed-acts/choice-order.ts`).
+a refusal (`runtime/flow-bootstrap/instructed-acts/choice-order.ts`). When the
+two steps' recorded domain places differ, the feedback asks the model to review
+the act claim or a legitimate change after the act rather than prescribing a
+reorder ahead of the place containing the choice's target. Places are compared
+opaquely; absent place evidence preserves existing advice. Whole-Flow testing
+and judgement still decide completion.
 
 **Progress means the Flow advanced** (audit A1, cause 2). A call that applied
 an effect is no longer progress by itself: one that leaves a state the build
@@ -1157,9 +1162,14 @@ One purse per Flow creation is the only cost authority for a build
 (`runtime/llm/build-purse/purse.ts`, `run.ts`). A Flow creation runs from its
 first build until a Flow is proposed or a build ends not doable. Every build of
 it -- continuations after a budget ending included, with each one's rounds,
-test, judge and repairs -- draws from one ceiling:
-`FLUXIQ_LLM_RUN_COST_CEILING_USD`, $0.10 by default, which the Flow's
-`maxEstimatedCostUsdPerRun` may lower and nothing may raise. The whole build
+test, judge and repairs -- draws from one purse. Ordinary user builds use
+the Flow's `maxEstimatedCostUsdPerRun` ($0.25 by default), narrowed by any
+explicit resolver/request limit and the existing server maximum. An isolated
+test runtime opts in with `FLUXIQ_LLM_RUN_COST_CEILING_SCOPE=test`; only then
+does `FLUXIQ_LLM_RUN_COST_CEILING_USD` impose its ceiling ($0.10 when unset).
+That test ceiling may only narrow a Flow's settings and never changes stored
+or browser UI defaults. An ordinary process ignores the test variable.
+The whole build
 body runs inside `automationStudioLlmBuildPurseScope`, so reading the
 instruction, every decision, the test and the judge are all held against it.
 
@@ -1290,10 +1300,11 @@ The series has no fixed length of its own. It makes at most 64 decisions, or
 fewer when the resolution declares a call count, with at most one more tool
 call than decisions. No decision has a cost share: each is held against the
 Flow creation's one purse at its own worst case, and the loop's budget holds
-the build's token totals on every call. The cost ceiling is
-`FLUXIQ_LLM_RUN_COST_CEILING_USD` ($0.10 by default), which the Flow setting
-`adaptationPolicySettings.maxEstimatedCostUsdPerRun` may lower and nothing may
-raise ([One purse per Flow creation](#one-purse-per-flow-creation)). The
+the build's token totals on every call. The cost ceiling follows the Flow's
+explicit policy, defaulting to $0.25. An explicitly scoped test process may
+add a lower environment ceiling ($0.10 when unset); ordinary UI processes
+ignore that environment control
+([One purse per Flow creation](#one-purse-per-flow-creation)). The
 ordinary proposed Bootstrap Adaptation is written only from a completion the
 completion check accepted.
 
@@ -1752,7 +1763,7 @@ is retained outside the patch.
 
 Runtime Debug exposes `Build Flow from instructions` only for a blank top-level orchestration Flow with no Router or Subflows, at least one active applicable instruction, an enabled DeepSeek key, and saved limits that exactly match the build profile: 4,000 input tokens, 1,000 output tokens, 5,000 total tokens, 20 seconds, USD 0.25, and zero provider retries. The build always asks Core for one call; the Flow's saved call count is not consulted. Ordinary Run remains unavailable while the Flow has no executable topology.
 
-The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the request at action time: 8,000 input, 4,000 output, and 12,000 total tokens per call, 45 seconds and USD 0.25 per call. It names no call count and ignores the Flow's saved one. The build is bounded by the Flow creation's one purse -- `FLUXIQ_LLM_RUN_COST_CEILING_USD`, $0.10 by default, lowered by the Flow's `maxEstimatedCostUsdPerRun` when that is smaller -- and by its token budget and its deadline, and the panel describes the run by what ends it (a proposal, a lack of progress, the token budget, the total cost, or the deadline) rather than by a call count. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
+The `Website task` exploration action is available on the same blank Flow as soon as the DeepSeek provider, model, and key reference are configured; it does not require the user to first persist an exact exploration profile. The client derives the request at action time: 8,000 input, 4,000 output, and 12,000 total tokens per call, 45 seconds and USD 0.25 per call. It names no call count and ignores the Flow's saved one. The build is bounded by the Flow creation's one purse -- the explicit Flow policy, defaulting to $0.25, with a lower environment ceiling only in an explicitly scoped test process -- and by its token budget and its deadline, and the panel describes the run by what ends it (a proposal, a lack of progress, the token budget, the total cost, or the deadline) rather than by a call count. This does not relax the exact persisted-limit requirement for the ordinary one-call instruction build.
 
 The authoring action runs on the current authenticated session's own unlocked key and does not ask for the account password or PIN again, or for any confirmation of its size. The browser route adds the authenticated session, so browser code never derives or exposes it. Where the person has allowed lasting consequences, the request carries them as `permittedConsequences`. The surface keeps availability checks visible, and a rejected check offers an explicit retry.
 

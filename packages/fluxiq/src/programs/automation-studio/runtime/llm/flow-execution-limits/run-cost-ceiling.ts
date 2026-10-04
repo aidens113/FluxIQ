@@ -1,32 +1,18 @@
-// The most one run may spend on the model: $0.10 (the user's rule, 2026-10-01; was $0.25).
-//
-// This is a plain configured limit, not a grant. It is the default total of a
-// build, of a build that re-authors a Flow whose result was refuted, and of a
-// run's recovery, and every one of them is held to it from what each decision
-// reports having cost (`../loop-budget.ts` for a build, `../run-budget.ts` for
-// a recovery).
-//
-// A total used to come from wherever was nearest: the Flow's configured
-// `maxEstimatedCostUsdPerRun` when set -- $1 as the web app saves it -- or else
-// the resolver's default of $2, and the Flow's figure won even when it was the
-// higher of the two. A limit that anything upstream can raise is not a limit.
-// So the ceiling is fixed here, and what a Flow, a resolver or an authorization
-// says can only lower it.
+import {
+  AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD,
+  AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD,
+  resolveAutomationStudioLlmTestRunCostCeilingUsd
+} from "../../../model/run-cost-ceiling/index.ts";
 
-import { resolveAutomationStudioLlmRunCostCeilingUsd } from "../../../model/run-cost-ceiling/index.ts";
+// Read once at startup; malformed test configuration fails before provider calls.
+const testCeilingUsd = resolveAutomationStudioLlmTestRunCostCeilingUsd();
 
-/**
- * The most one run -- a build, or a recovery -- may be estimated to spend:
- * FLUXIQ_LLM_RUN_COST_CEILING_USD (the developer and Lab knob, default $0.10),
- * read once when Core loads, so an invalid value stops Core at start.
- */
-export const AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD: number = resolveAutomationStudioLlmRunCostCeilingUsd();
+/** Default purse; user-specified policies may replace the ordinary default. */
+export const AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD: number = testCeilingUsd ?? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_DEFAULT_USD;
 
-/**
- * A run's total: the ceiling, lowered by each limit given that is a positive
- * finite number, and never raised by any. A limit that is absent, zero,
- * negative or not a number is ignored rather than trusted.
- */
+/** Explicit policies narrow one another; only a test ceiling and server maximum are absolute. */
 export function automationStudioLlmRunCostCeilingUsd(...limits: readonly unknown[]): number {
-  return Math.min(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, ...limits.filter((limit): limit is number => typeof limit === "number" && Number.isFinite(limit) && limit > 0));
+  const specified = limits.filter((limit): limit is number => typeof limit === "number" && Number.isFinite(limit) && limit > 0);
+  const requested = specified.length ? Math.min(...specified) : AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
+  return Math.min(requested, testCeilingUsd ?? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD, AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD);
 }

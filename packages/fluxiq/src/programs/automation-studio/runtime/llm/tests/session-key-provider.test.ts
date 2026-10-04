@@ -1,13 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import type { AutomationStudioSessionKeyPorts } from "../deepseek/index.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_MODEL_LIMITS, AUTOMATION_STUDIO_DEEPSEEK_MODELS } from "../deepseek/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../flow-execution-limits/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, automationStudioLlmResolutionWithinFlowSettings } from "../flow-execution-limits/index.ts";
 import { AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS, createAutomationStudioSessionKeyProviderResolver } from "../session-key-provider.ts";
 
 // A model call made for a person needs no grant: nothing is issued, held or
 // checked first. The call runs on the person's own key, released per call to
 // their unlocked session, and fails only when that key cannot be released.
+
+afterEach(() => { vi.unstubAllEnvs(); vi.resetModules(); });
 
 describe("session-key provider resolver", () => {
   it("makes a model call with no grant, on the caller's own key, released to their session", async () => {
@@ -33,6 +35,26 @@ describe("session-key provider resolver", () => {
 
   // The one per-request limit is the model's context window (2026-09-30): the
   // profile is the whole window, the reply reserved out of it.
+  it("clamps a session-backed Flow to the isolated test budget while leaving settings untouched", async () => {
+    vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_SCOPE", "test");
+    vi.stubEnv("FLUXIQ_LLM_RUN_COST_CEILING_USD", "0.1");
+    vi.resetModules();
+    const scoped = await import("../session-key-provider.ts");
+    const resolve = scoped.createAutomationStudioSessionKeyProviderResolver({ ports: ports() });
+    const metadata = { adaptationPolicySettings: { maxEstimatedCostUsdPerRun: 1 } };
+    const resolution = resolve({ projectId: "p", flowId: "f", caller: { actorUserId: "u", actorSessionId: "s" }, metadata });
+    expect(resolution).toMatchObject({ maxEstimatedCostUsd: 0.1, maxTotalEstimatedCostUsd: 0.1 });
+    expect(metadata.adaptationPolicySettings.maxEstimatedCostUsdPerRun).toBe(1);
+  });
+
+  it("honors a normal user's explicit Flow budget rather than lowering it to the default", () => {
+    const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: ports() });
+    const resolution = resolve({ projectId: "p", flowId: "f", caller: { actorUserId: "u", actorSessionId: "s" }, metadata: { adaptationPolicySettings: { maxEstimatedCostUsdPerRun: 1 } } });
+    expect(resolution).toMatchObject({ maxEstimatedCostUsd: 1, maxTotalEstimatedCostUsd: 1 });
+    const narrowed = automationStudioLlmResolutionWithinFlowSettings(resolution, { llmExecutionSettings: { maxEstimatedCostUsd: 0.05 } });
+    expect(narrowed).toMatchObject({ maxEstimatedCostUsd: 0.05, maxTotalEstimatedCostUsd: 1 });
+  });
+
   it("sizes one call to the model's whole context window", () => {
     const resolve = createAutomationStudioSessionKeyProviderResolver({ ports: ports() });
     const caller = { actorUserId: "user.one", actorSessionId: "session.one" };

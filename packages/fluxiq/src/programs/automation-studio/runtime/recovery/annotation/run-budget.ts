@@ -148,7 +148,7 @@ export function resolveAutomationStudioRecoveryRunBudget(input: AutomationStudio
   const maxOutputTokensPerRun = Math.max(1, Math.trunc(Math.min(maxTotalTokensPerRun, (tokenLimits?.maxOutputTokens ?? maxTotalTokensPerRun) * tokenShares)));
   // A resolver that gives a per-call cost and no total is multiplied into a
   // purse, which the run cost ceiling then lowers like any other.
-  const requestedCost = resolution?.maxTotalEstimatedCostUsd ?? (resolution?.maxEstimatedCostUsd ?? AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD) * costShares;
+  const requestedCost = resolution?.maxTotalEstimatedCostUsd ?? (typeof resolution?.maxEstimatedCostUsd === "number" && Number.isFinite(resolution.maxEstimatedCostUsd) && resolution.maxEstimatedCostUsd > 0 ? resolution.maxEstimatedCostUsd * costShares : undefined);
   // Whoever asked for the run: the ceiling, lowered by the resolver's total, by
   // the Flow's configured limit and by what a repair has left, and raised by none.
   const maxEstimatedCostUsdPerRun = automationStudioLlmRunCostCeilingUsd(requestedCost, input.policyMaxEstimatedCostUsdPerRun, input.costLeftUsd);

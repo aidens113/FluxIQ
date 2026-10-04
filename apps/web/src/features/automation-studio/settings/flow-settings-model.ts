@@ -585,7 +585,7 @@ const FLOW_ADAPTATION_POLICY_DEFAULTS = {
   // never spends more whatever is stored here, so the form offers that and lets
   // a person lower it. A literal because Core's only public export holding it
   // also carries the server runtime; tests/settings-round-trip.test.tsx pins it.
-  maxEstimatedCostUsdPerRun: 0.1
+  maxEstimatedCostUsdPerRun: 0.25
 } as const;
 
 function flowSettingsTrainingMode(value: unknown): FlowSettingsDraft["trainingMode"] {
