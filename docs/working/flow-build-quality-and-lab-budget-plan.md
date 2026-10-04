@@ -18,8 +18,16 @@ Related: downstream paired plan (path above).
 - Session-provider metadata supplies the configured Flow policy; test scope narrows it. Recovery without a resolver cost retains the default instead of multiplying a synthetic purse. Existing per-call settings still narrow provider resolution.
 - Authoring feedback compares opaque recorded places before suggesting a choice reorder; different-place choices require claim review rather than an unsafe reorder. Whole-Flow testing and judgement remain required.
 - Supervisor independently observed 26 owning test files / 430 tests, 16 web settings tests, Core build/check and web check pass. Downstream Lab/environment tests passed 136/136. Compiled subprocess probe confirmed ordinary .25 default and explicit policy 1 versus scoped-test .10 default/ceiling, while stored defaults remained .25. Both structure audits and git diff --check passed; paired dev integration follows these verified gates. No paid/provider/browser run or panel operation; actual live cost savings remain unmeasured. The downstream paired plan contains the live comparison protocol.
+- Paired task t261 merged and pushed to Core dev 70eeffe6 and downstream dev 048d42fa. Core finish's obsolete full-suite gate was skipped only after the independently observed narrow gates above, honoring the user's suite limit. The Core task worktree is detached; Claude's authoring lanes remain untouched.
 
 ## Work Ledger
+
+### 2026-10-03 — Paired task integrated and pushed
+- Agent: supervisor.
+- Changed: closed Core task after downstream integration, preserving both merge boundaries; pushed both dev branches.
+- Validation: pnpm task finish t261 --skip-checks printed applied true; git push origin dev exited 0 and printed 6beae684..70eeffe6. Downstream task finish observed its structure gate and git push printed 1d0e9e66..048d42fa. Narrow checks are recorded above; no additional full suite ran.
+- Outcome: Complete implementation unit is on both dev branches; private configuration and run artifacts were not committed.
+- Follow-up: downstream live comparison protocol remains pending explicit panel-management authorization; no measured saving claimed.
 
 ### 2026-10-03 — Final structure gate and paired integration decision
 - Agent: supervisor.
