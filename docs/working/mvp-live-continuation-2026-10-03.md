@@ -12,11 +12,13 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 ## Current State
 
 - Active paired t262; downstream owns current briefs, complete per-run debug, Lab/browser work and Claude handoff. Original dirty Claude trees preserved; no overall MVP or unchanged-Flow reuse acceptance.
-- Latest verified source checkpoint97e279de (downstream7b5a3aa1), with local docs checkpointbc9c8bb8/downstreame2aeb5b1. Checked-candidate/proof separation, historical lasting guard and counted-object source provenance integrated. Supervisor independent383-test union, final helper12/feedback30, affected types/fresh Corebuild and both audits passed. Two full sweeps today; none repeated.
+- Last live verified source checkpoints Core80116d0e/downstreamf9afcb12. Checked-candidate/proof separation, historical lasting guard and counted-object source provenance integrated. Supervisor independent383-test union, final helper12/feedback30, affected types/fresh Corebuild and both audits passed. Two full sweeps today; none repeated.
 - A3 run-mut6b2re-d0e475d1 failed at normal chat routing after1call/.000241638: improve.extend rejected unfinished target before build. B2 run-mut6bevx-d8b7956f failed build53calls/total .073861872/build .073644534, both judges no. Full six-stage debug saved downstream; supervisor matched all53turns and inspected ending/screenshot. Five cart build tests core.replay.verified/oktrue, but quantity click still falsely step_only_arrives. Lab .10 held; normal UI independent. No paid run active/queued, persistent data preserved.
-- Source freeze released after both latest runs stopped. Core worker owns declared-arrival classifier plus consistent restoration/check/model/judge propagation through existing binding; fail-first real service/model/judge fixture required. Downstream worker independently owns new run-owned creation project and explicit replay project identity. Normal UI unfinished-draft continuation design read-only; no new capability/permission restriction presumed.
+- A4/B3 ended before provider calls; source freeze released for bounded downstream project-chat correction and disjoint Core judge-paging evidence. Declared-arrival classification, model/judge/restoration propagation, normal continuation guidance/idempotent goal save and new Lab project/readiness/replay identity now implemented. Supervisor194tests plus9after extraction/Coretypes/audits and Lab41tests/linkedtypes/freshbuilds passed. No new capability/permission restriction.
 - FirstA all4oraclefacts held but Corestatusfailed remains qualified; exact old graph cause unproven and disposable first workspace prevents reuse. Historical A2/B incomplete drafts preserved. Advisory plural correction and no_such_step feedback verified.
 - Next: root independently verifies new source/tests/types/audits, builds linked runtime, freezes checkpoints then guarded changed-source actual chat build. Saved accepted Flow uses exact actual project/Flow/hash for zero-provider replay. C paging13records/D named-route safety/P5 earlier-output remain pending, standalone t224 UI paused.
+
+- Confirmed zero-call setup cause: new readiness gate assumes browser session.projectId reflects selected chat, but panel actually sends shown thread projectId; HTTP selected context has no session/thread notification. Existing relay already supports explicit project override. Next coherent UI/Lab project-scoped thread target+beforeSend readiness, preserving old chats/drafts; no recording/reset/reconnect/forcedcapability workaround. Full A4/B3six-stage debug complete.
 
 ## Work Ledger
 
@@ -133,3 +135,22 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 ### 2026-10-03 - Independent validation and structural integration
 - Validation: supervisor combined13owners194tests passed. Identical-goal fail-first1failed/3passed on updatedAt; after correction4passed with unchanged digest/core.resumed and changed/disabled goal controls. Core typecheck initially found incomplete command test context, worker corrected full typed context; rerun passed. Downstream audit passed165warnings118baseline. Core audit found tests directory26files, large service growth4lines and old direct fixture import.
 - Changed: supervisor extracted generation-goal validation/persistence into focused service/flow-bootstrap-commands/save-goal.ts plus barrel, keeping public method as delegation and shrinking service. Fixture barrel relocated to service-bootstrap/index.ts, quantity/confirm fixture imports synchronized; no baseline increases. Revalidating affected owners/types/audit before runtime build/live. Lab creation owners coherently grouped under chat-build/creation; new public readiness verified beforeSend.
+
+### 2026-10-03 - New live source checkpoint release
+- Checkpoints: downstreamf9afcb12/Core80116d0e. Every independent narrow gate observed pass, fresh runtime built. One A and one B actual headed chat launch released under Lab.10/Flash, source frozen until both end; full debug then exact-project zero-provider replay onlywhen usableFlow exists.
+- Validation: supervisor Core194+9affected tests, Lab41tests, Core/domain/extension/Labtypes and both audits passed. No live outcome yet; no source/build mutations during live.
+
+### 2026-10-03 - Post-pair project readiness blocked both Sends
+- A4 root64080/B3 worker43963 exited1; both failures literal Timed out waiting for extension connection state from new creation readiness poll, distinct from pairing-stage errors. New project IDs preserved, creation-contextfailed/Flow/hashnull, no model calls/spend. Root independently inspected summary/events/identity and A failure panel screenshot retaining old conversation. Actual last-polled project value absent from artifacts; do not claim exact staleID without evidence.
+- Validation: zero central provider folders and actual launcher exits/failed endings verified. Full6stagedebug workers authoring; public postpair context selection sequencing read-only investigation, no paidretry/source/store/profile reset.
+
+### 2026-10-03 - Actual chat scope owner identified
+- Source proof: public getStatus projectId is session.projectId; ProjectContext hydrates recording scope only; HTTP selection storescontext without notification; chat target currentlylatest/automation/question and shown thread determines sendproject. Existing conversation relay honors explicit requestprojectId forlist/get/send/answer. New read-only investigation traced exact owners, not machine/load blame.
+- Validation: both zero-provider fullsixstage debug complete; root independently viewed A/Bfailure panel screenshots and ending/identity/calls. Actual lastpolledsessionID unrecorded, keepgapexplicit. No new sourcefix or paidretry yet.
+
+### 2026-10-03 - Project scope correction and C evidence release
+- Agent: supervisor; resume-live-prep owns written c-judge-paging-evidence partition downstream.
+- Changed: A4/B3 zero-call debug complete; wrong downstream readiness contract is under scoped UI/Lab correction. Released only Core read-account judge-copy projection/verify and owning tests, preserving durable raw accounts and unknown/truncated evidence. No provider/browser execution authorized to worker.
+- Validation: latest run summaries, creation identities, zero provider directories and failure screenshots independently checked downstream. New source units not yet validated; no new live run queued.
+- Outcome: Active bounded implementation. Lab .10 only, ordinary UI defaults independent. No claim of C13-record/52-field or A/B reuse acceptance.
+- Follow-up: independent owner tests/types/audits; finish all source edits before builds and provider-free headed scope validation, then guarded actual creation.
