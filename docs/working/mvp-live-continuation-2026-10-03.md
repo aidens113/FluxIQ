@@ -18,7 +18,7 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 - FirstA all4oraclefacts held but Corestatusfailed remains qualified; exact old graph cause unproven and disposable first workspace prevents reuse. Historical A2/B incomplete drafts preserved. Advisory plural correction and no_such_step feedback verified.
 - Next: root independently verifies new source/tests/types/audits, builds linked runtime, freezes checkpoints then guarded changed-source actual chat build. Saved accepted Flow uses exact actual project/Flow/hash for zero-provider replay. C paging13records/D named-route safety/P5 earlier-output remain pending, standalone t224 UI paused.
 
-- Confirmed zero-call setup cause: new readiness gate assumes browser session.projectId reflects selected chat, but panel actually sends shown thread projectId; HTTP selected context has no session/thread notification. Existing relay already supports explicit project override. Next coherent UI/Lab project-scoped thread target+beforeSend readiness, preserving old chats/drafts; no recording/reset/reconnect/forcedcapability workaround. Full A4/B3six-stage debug complete.
+- A4/B3 zero-call setup fault corrected downstream: actual scoped chat target/readiness/activity/question/draft handling uses existing authorized relay. Root independent98app/22Labtests +7post-barrel/typechecks/audits/freshbuilds passed; provider-free headed Chrome scope proof endedexit0/pass with ready emptyproject/0conversations/0Flows. Core Cjudge-copy paging projection51tests/types/audit/build passed, rawaccounts unchanged. Latest source checkpoints downstream408ec3da/Core5c893a98; live gitHEADf32b7dc8 docs-only atop downstreamsource.
 
 ## Work Ledger
 
@@ -161,3 +161,14 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 - Validation: root observed first51owner tests pass but Corecheck failed exactOptionalPropertyTypes; corrected independent4file51tests pass, Core check exit0 current matching stamp after worker actual tsc28.472s, audit241warnings/349baseline pass. Fresh Core build exit0/30.410s; docs-reference regenerated3083declarations. No full suite.
 - Outcome: source frozen for downstream provider-free scope verification; C13records/52fields, live judges and saved reuse unverified. No permission/default-bound/default-budget change.
 - Follow-up: downstream linked builds and actual UI setup check before guarded live creation; missing C retained-key/carried replay/provider-only retry remain separate units.
+
+### 2026-10-03 - Corrected scoped chat reaches live building
+- Agent: supervisor, downstream A28546/resume-ab evidence, B41725/resume-cd launcher/evidence.
+- Validation: provider-free interactive63612endedexit0 actualUIproof pass; A5run-mut8rxuc-06cc941e and B4run-mut8t1fk-e14fee21 now active after real extensionchat/newproject, no prior readiness timeout. Interim root pricedcalls31/A .039637518 and26/B .034587942 only, not finalaccounting. No acceptedFlow/ending claim yet; ordinaryUI default independent of Lab .10.
+- Outcome: all source frozen during live; C rerun-feedback preflight read-only, no tests/build/keyremove/replay/paidretry. Local tasksource/documentcheckpoint notmerged/pusheddev.
+- Follow-up: fullsixstage debug exactcalls/tests/judges/finaldefinition/oracles/identity/cost/screenshots; source release only afterbothend, accepted savedFlow exactproject/hash providerfree reuses separately.
+
+### 2026-10-03 ? A5/B4 full debug and bounded repair continuation
+- Downstream completed both six-stage reports and supervisor independently reviewed endings, screenshots, normalized candidate versus playback calls and raw cost/project/hash metadata. A5 failed47turns/.058057620; B4 failed67turns/.092695098; no accepted Flow/reuse. Full stored A executable export remains unavailable.
+- Released file-partitioned checked-node-identity, unusable-field-feedback and retained-rerun-feedback briefs in paired downstream coordinator. No paid launch/build/full-suite release. Parser feedback lacks response.decision.write location; bound rerun advice and retained-key feedback need truthful screened correction.
+- Validation: evidence inspection only at this release; worker source claims require root independent regression review. Preserve .10 Lab-only cap, ordinary UI defaults, lasting guard and checked candidate proof distinction.
