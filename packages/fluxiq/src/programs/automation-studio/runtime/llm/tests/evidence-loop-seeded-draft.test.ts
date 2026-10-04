@@ -9,6 +9,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftReplayable } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftSeedFromFlow } from "../node-tools/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../evidence-loop.ts";
 import { automationStudioLlmEvidenceLoopSeedSteps } from "../loop-configuration.ts";
 
@@ -23,6 +25,14 @@ function seed(): AutomationStudioFlowDraftStep[] {
 }
 
 describe("the steps a loop starts with", () => {
+  it("transfers saved scheduling correspondence only through the ordinary initial seed copy", () => {
+    const saved = automationStudioFlowDraftSeedFromFlow({ nodes: [{ id: "saved", definitionId: "fixture.open", metadata: { declaredConsequences: [] } }], edges: [], startPages: { saved: { location: "fixture://start" } } });
+    const copied = automationStudioLlmEvidenceLoopSeedSteps({ seed: saved.steps });
+    expect(copied[0]).not.toBe(saved.steps[0]);
+    expect(automationStudioFlowDraftReplayable(copied)).toBe(true);
+    expect(automationStudioFlowDraftReplayable(automationStudioLlmEvidenceLoopSeedSteps({ seed: saved.steps.map((step) => ({ ...step })) }))).toBe(false);
+    expect(copied[0]!.ranWith).toBeUndefined();
+  });
   it("renumbers the seed from 1, whatever the caller numbered it", () => {
     expect(automationStudioLlmEvidenceLoopSeedSteps({ seed: seed() }).map((step) => step.position)).toEqual([1, 2]);
     expect(automationStudioLlmEvidenceLoopSeedSteps({ seed: seed() }).map((step) => step.id)).toEqual(["f1", "f2"]);

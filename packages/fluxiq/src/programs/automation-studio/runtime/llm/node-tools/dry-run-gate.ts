@@ -51,6 +51,7 @@
 // identical verdict with nothing saying the Flow had not changed.
 
 import type { JsonValue } from "../../../../../core/index.ts";
+import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_PAGE_TOOL_ID,
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
@@ -272,7 +273,9 @@ export function automationStudioFlowDraftDryRunGate(
     // "not a draft this gate applies to" and passed untested. Nothing is
     // replayed, so the target has not moved and nothing was observed.
     const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
-    const cannotRun = proposed.filter((step) => step.ranWith === undefined || step.replay === undefined);
+    const cannotRun = proposed.filter((step) => step.scheduledCandidate !== undefined
+      ? !automationStudioFlowDraftScheduledCandidateCall(step) || !input.nodeOf?.(step.actionId)?.outputAction?.fixed
+      : step.ranWith === undefined || step.replay === undefined);
     const noStart = !cannotRun.length && proposed.length > 0 && automationStudioFlowDraftReplayFrom(input.steps) === undefined;
     // Only a Flow-authoring caller is refused for steps it cannot run again, or
     // for a Flow with no step that ran in this build (one the model wrote out

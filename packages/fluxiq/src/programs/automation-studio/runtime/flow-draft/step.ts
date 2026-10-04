@@ -28,6 +28,7 @@
 // beside it.
 
 import type { JsonObject } from "../../../../core/index.ts";
+import type { AutomationStudioFlowDraftScheduledCandidate } from "./scheduled-candidate/index.ts";
 import type { AutomationStudioFlowDraftReplayOutcome, AutomationStudioFlowDraftStepReplay } from "./dry-run.ts";
 import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
 
@@ -125,6 +126,8 @@ export type AutomationStudioFlowDraftStep = {
    * step down.
    */
   ranWith?: JsonObject;
+  /** Unperformed unchanged saved configuration; private correspondence is required to schedule it. */
+  scheduledCandidate?: AutomationStudioFlowDraftScheduledCandidate;
   /**
    * The words of the control the step acted on, as the call's own result showed
    * them, when it acted on one (`./control-words.ts`).

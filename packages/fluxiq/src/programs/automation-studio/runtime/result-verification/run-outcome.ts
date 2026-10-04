@@ -89,6 +89,7 @@ import {
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES, verifyAutomationStudioRunResult } from "./verify.ts";
 import { automationStudioZeroProviderGate } from "./zero-provider-run.ts";
+import { AutomationStudioCompletedVerificationChecks } from "./completed-checks/index.ts";
 
 /**
  * A resolver's answer, normalized to the one shape the verification reads.
@@ -274,14 +275,16 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   // The whole verification, under one deadline: nothing it does can leave the
   // run unfinished, and nothing it does writes, so an abandoned one cannot
   // write over the record this call is about to write.
+  const completedChecks = new AutomationStudioCompletedVerificationChecks();
   const bounded = await automationStudioResultVerificationWithinDeadline({
     ...(input.verificationDeadlineMs !== undefined ? { deadlineMs: input.verificationDeadlineMs } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
-    judge: async () => await runVerification(input)
+    judge: async () => await runVerification(input, completedChecks.record)
   });
+  const retainedInterventions = completedChecks.finish();
   const report: AutomationStudioRuntimeSessionVerificationReport = bounded.settled
     ? bounded.value
-    : { outcome: verificationDidNotFinish(bounded.reason, bounded.error), interventions: [] };
+    : { outcome: verificationDidNotFinish(bounded.reason, bounded.error), interventions: retainedInterventions };
   const outcome = report.outcome;
   const failing = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
   const scheduled = recordedResultCheck(input, outcome);
@@ -290,7 +293,7 @@ export async function verifyAutomationStudioRuntimeSessionResult(
     ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } }
     : { ...input.session, metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } };
   await input.ports.writeRuntimeSession(input.projectId, next);
-  const record = await recordOnRunDetail(input, next, outcome, report.interventions, flowVersions);
+  const record = await recordOnRunDetail(input, next, outcome, report.interventions, flowVersions, bounded.settled);
   const recorded = record?.detail;
   // The join this module exists to make: the verdict, against the versions the
   // run executed. It is written after the run's own record, so a reader who
@@ -482,7 +485,7 @@ type AutomationStudioRuntimeSessionVerificationReport = Awaited<ReturnType<typeo
 };
 
 /** The verification, plus what the run produced and the first record set it judged. */
-async function runVerification(input: AutomationStudioRuntimeSessionVerificationInput): Promise<AutomationStudioRuntimeSessionVerificationReport> {
+async function runVerification(input: AutomationStudioRuntimeSessionVerificationInput, recordIntervention: NonNullable<Parameters<typeof verifyAutomationStudioRunResult>[0]["recordIntervention"]>): Promise<AutomationStudioRuntimeSessionVerificationReport> {
   const session = input.session;
   let recordSets: AutomationStudioResultRecordSetInput[];
   try {
@@ -534,6 +537,7 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(runDetail ? { runDetail } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {}),
     ...(resolved ? { provider: resolved.provider } : {}),
+    recordIntervention,
     ...(input.policy ? { policy: input.policy } : {}),
     ...(resolved?.tokenLimits ? { tokenLimits: resolved.tokenLimits } : {}),
     ...(resolved?.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
@@ -732,12 +736,13 @@ async function recordOnRunDetail(
   session: AutomationStudioRuntimeSession,
   outcome: AutomationStudioResultVerificationOutcome,
   interventions: Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>["interventions"],
-  flowVersions: readonly AutomationStudioFlowGraphVersion[]
+  flowVersions: readonly AutomationStudioFlowGraphVersion[],
+  verificationSettled: boolean
 ): Promise<{ detail: AutomationStudioFlowRunDetail; askedNoModel: boolean } | undefined> {
   const detail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
   if (!detail) return undefined;
   // In this save and no other, so the verdict and the run's zero cost are one write.
-  const zeroGate = automationStudioZeroProviderGate(detail, interventions);
+  const zeroGate = automationStudioZeroProviderGate(detail, interventions, verificationSettled);
   const failed = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
   const scheduled = recordedResultCheck(input, outcome);
   // Answered as well as saved, because the repair that may follow continues

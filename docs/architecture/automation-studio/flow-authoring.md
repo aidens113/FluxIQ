@@ -22,6 +22,35 @@ parameters, without going through every iteration.
 
 ## The Draft
 
+### Unchanged Saved Candidates During Repair
+
+A repair seed retains a saved node's explicit consequence declaration, including
+`[]`, and the first start token actually captured by its ordinary execution.
+Missing declarations or starts remain missing. A separate private scheduled
+candidate represents the unchanged configuration awaiting a fresh whole test;
+it is neither `ranWith` nor evidence of an earlier performed action.
+
+Module-private correspondence binds the candidate to its original step object
+and configuration. Only the loop's trusted initial seed copy transfers that
+correspondence. Copied, edited or stale configurations cannot borrow it. The
+full-test gate and replay walker also require the registered node's fixed output
+mapping. Fresh replay still uses ordinary reset, binding resolution, output
+schema and permission checks. Lasting candidates use the existing verification
+mode without repeating their mutation or inventing prior execution proof.
+
+The actual public-service/native/domain-adapter repair fixture independently
+verified fresh reset, unchanged saved opener, repaired bound value and acceptance
+in that order. Core eligibility/refusal owners cover missing provenance, copied
+or edited candidates, unmapped outputs, unresolved binding and lasting verify.
+These scripted fixtures do not prove live browser behavior or provider-free
+saved reuse. Candidate scheduling remains private to `runtime/flow-draft/`;
+ordinary recorded/written steps retain their existing contracts.
+
+Authored guidance also distinguishes preparation from the parent act: claim an
+advertised child choice for its setting, or retain necessary preparation without
+an act claim when no child is listed. It does not invent a child ID or remap
+claims; the whole original requirement remains in the checklist.
+
 ### Recorded And Written Steps
 
 A step enters the draft one of two ways, and both become the same kind of Flow
@@ -390,3 +419,27 @@ trace; an unreadable reply account remains a compatible fallback. An explicit
 partial account can retain known cost without inventing token counts. The
 active creation purse already settles these calls before schema refusal; this
 reporting path neither charges them again nor changes the spend ceiling.
+
+## Verification Accounting At Settlement
+
+The bounded runtime result check retains each actual completed intervention
+before starting confirmation. A private collector closes when the outer check
+settles; timeout, abort or error fallback keeps genuine completed paid usage,
+and late responses cannot append to the saved terminal record.
+
+An unfinished verification has unknown request accounting. It cannot publish a
+synthetic zero ledger or qualify a deterministic replay. The existing public
+zero-provider helper now requires affirmative completed verification as its
+third argument; omitted proof returns unknown. Ordinary completed no-model
+checks remain explicit zero when no prior/current gate or intervention exists.
+This narrows old two-argument absence inference. It adds no provider wrapper,
+request counter, pending-call cost estimate or verification-local total claimed
+as whole-run usage. Existing request admission, retries, policies and provider
+identity remain unchanged.
+
+Independently observed mocked-transport regressions cover pending first check,
+paid first check followed by pending confirmation, unsent input refusal,
+completed no-provider checks and prevention of late writes. Actual public
+FluxIQ disabled construction also executed a saved native Flow, preserving a
+nonempty fixture key/session and publishing explicit zero with fresh network
+and key-release observers. Live browser saved reuse remains separate.

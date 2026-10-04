@@ -76,6 +76,8 @@ export type FluxIQOptions = {
   io?: IoRegistration[];
   nativeNodeRuntime?: AutomationStudioNativeNodeRuntime;
   loadEnv?: boolean;
+  /** Omitted enables the host's built-in model provider bindings. */
+  modelProvidersEnabled?: boolean;
   envFiles?: string[];
 };
 
@@ -174,7 +176,7 @@ export class FluxIQ {
       artifacts: resolveInside(root, path.join(fluxiqDir, "artifacts")),
       cache: resolveInside(root, path.join(fluxiqDir, "cache"))
     };
-    this.programs = createGlobalProgramRuntime(this.paths);
+    this.programs = createGlobalProgramRuntime(this.paths, { ...(options.modelProvidersEnabled !== undefined ? { modelProvidersEnabled: options.modelProvidersEnabled } : {}) });
     this.runtime = this.programs.runtime;
     this.programs.automationStudio.bindIoRuntime(this.io, activeDomainId);
     if (options.nativeNodeRuntime) this.programs.automationStudio.bindNativeNodeRuntime(options.nativeNodeRuntime);

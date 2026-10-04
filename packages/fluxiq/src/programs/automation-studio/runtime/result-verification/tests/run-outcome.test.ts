@@ -1,9 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioRecordSchema } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import { verifyAutomationStudioRuntimeSessionResult } from "../run-outcome.ts";
-import { ANSWER, UNAVAILABLE, datasetSummary, flow, harness, instruction, runDetail, session, verify } from "./run-outcome-harness.ts";
+import { ANSWER, UNAVAILABLE, datasetSummary, flow, harness, instruction, provider, runDetail, session, verify } from "./run-outcome-harness.ts";
 // The whole path, driven end to end: a run that finished without a failed step,
 // its stored records read, one question asked, and the run's own record written
 // back.
@@ -15,6 +15,44 @@ import { ANSWER, UNAVAILABLE, datasetSummary, flow, harness, instruction, runDet
 // reason anyone noticed is that the test facility held a written answer key.
 
 describe("verifyAutomationStudioRuntimeSessionResult", () => {
+  it("retains a settled paid first check when its actual second confirmation dispatch is pending at the deadline", async () => {
+    vi.useFakeTimers();
+    const context = harness();
+    const configured = provider(ANSWER.no, context.requests);
+    const answered = configured.runTask;
+    let release!: (value: unknown) => void;
+    const pending = new Promise<unknown>((resolve) => { release = resolve; });
+    const dispatch = vi.fn<typeof configured.runTask>(async (request) => {
+      if (context.requests.length === 0) return await answered(request);
+      context.requests.push(request);
+      return await pending;
+    });
+    configured.runTask = dispatch;
+    context.ports.resolveProvider = async () => ({ provider: configured });
+    try {
+      const running = verify(context, { verificationDeadlineMs: 20 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(dispatch).toHaveBeenCalledTimes(2);
+      expect(context.requests).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(21);
+      const next = await running;
+      expect(next.status).toBe("succeeded");
+      const detail = context.saved.at(-1);
+      expect(detail?.metadata?.resultVerification).toMatchObject({ performed: false, code: "core.result.verification_did_not_finish" });
+      expect.soft(detail?.interventions).toEqual(expect.arrayContaining([expect.objectContaining({
+        tokenUsage: expect.objectContaining({ inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 })
+      })]));
+      expect.soft(detail?.metadata?.llmGate).not.toEqual(expect.objectContaining({ costAccounting: expect.objectContaining({ calls: 0, pendingCalls: 0 }) }));
+    } finally {
+      const writes = context.saved.length;
+      const request = context.requests[1];
+      if (request) release(await provider(ANSWER.yes, []).runTask(request));
+      await vi.advanceTimersByTimeAsync(0);
+      vi.useRealTimers();
+      expect(context.saved).toHaveLength(writes);
+    }
+  });
+
   it("fails a succeeded run whose result the model says, twice, does not answer the request", async () => {
     const context = harness({ answer: ANSWER.no });
     const next = await verify(context);

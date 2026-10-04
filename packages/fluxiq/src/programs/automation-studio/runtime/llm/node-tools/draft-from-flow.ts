@@ -18,17 +18,11 @@
 // the one place this stretches the draft's contract, and it is stated on every
 // seeded step rather than inferred: `proposes` is written `true` because the
 // node is already part of the result, and nothing claims the step ran in this
-// session. Two consequences follow and both are deliberate.
-//
-//   - No `replay`, so an extended draft is not dry-run gated
-//     (`flow-draft/dry-run.ts` gates only a draft whose proposed steps all say
-//     they can be run again). Core cannot say how to put a page back the way a
-//     node it never watched found it, and inventing one would gate the build on
-//     a claim nobody made.
-//   - No consequence declaration. A step that says nothing and a step that says
-//     it causes nothing lasting are different answers
-//     (`harness-options/plan-step-consequences.ts`), and Core does not get to
-//     make the second one on the model's behalf for a node it did not author.
+// session. Persisted consequence declarations are retained exactly, including
+// an explicit empty declaration; missing declarations remain missing. An
+// unchanged declared saved configuration with a captured start may be scheduled
+// for a fresh full test. That private correspondence never becomes `ranWith`,
+// `replay` or evidence that an action already happened.
 //
 // **Where a node started is kept beside the steps, never on them.** A rerun of
 // a seeded step used to run wherever the last call left the page: live run
@@ -40,9 +34,8 @@
 // page back to (`./step-place.ts`). Not as `replay.from`: that field is read as
 // "this step can be run again" by the dry run's gate and by every reader that
 // compares where steps acted (`flow-draft/verify-only.ts`,
-// `flow-bootstrap/instructed-acts/`), and a page the step started on in an
-// earlier run says nothing about either. So the steps are the same with or
-// without it, and the gate sees exactly the draft it saw before.
+// `flow-bootstrap/instructed-acts/`). A separate scheduling candidate retains
+// that captured token for the new test, without inventing performed proof.
 //
 // **Order is the Flow's own.** The assembler numbers a plan's nodes by the
 // order of the steps it is given, so the seed walks the graph from the node
@@ -65,6 +58,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftScheduleCandidate } from "../../flow-draft/scheduled-candidate/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "./run-node.ts";
 
 /**
@@ -149,7 +143,7 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
       iteration: 0,
       actionId: node.definitionId,
       toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
-      input: { [NODE_KEY]: node.definitionId, [PARAMETERS_KEY]: parameters },
+      input: { [NODE_KEY]: node.definitionId, [PARAMETERS_KEY]: parameters, ...(Array.isArray(node.metadata?.declaredConsequences) ? { consequences: structuredClone(node.metadata.declaredConsequences) } : {}) },
       // What the node would do if it ran. It is not a claim that it ran here:
       // `proposes` below is what says the result contains this step, and it is
       // written rather than read off the effect for exactly that reason.
@@ -165,6 +159,7 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
     nodeIdByStepId[id] = node.id;
     const startedOn = input.startPages?.[node.id];
     if (startedOn) startedOnByStepId[id] = structuredClone(startedOn);
+    automationStudioFlowDraftScheduleCandidate(steps.at(-1)!, node.id, startedOn);
   }
   return { steps, nodeIdByStepId, startedOnByStepId };
 }

@@ -21,13 +21,14 @@ const ZERO_ACCOUNTING = Object.freeze({ calls: 0, explorationCalls: 0, inputToke
 
 /**
  * The gate a run carries when nothing on it reached for a model -- no gate
- * already, no intervention on the run, none from this verification -- or
+ * already, no intervention on the run, none from this completed verification -- or
  * `undefined` when something did. `invoked: false` with no `code`: nothing was
  * declined, because nothing was asked. The call list is present and empty with
  * nothing omitted, so a reader that certifies a count only against an itemized
- * list can certify this one.
+ * list can certify this one. A missing or unfinished verification remains
+ * unknown: its provider question may still be pending after the outer deadline.
  */
-export function automationStudioZeroProviderGate(detail: AutomationStudioFlowRunDetail, verificationInterventions: readonly unknown[]): JsonObject | undefined {
-  if (detail.metadata?.llmGate !== undefined || detail.interventions.length > 0 || verificationInterventions.length > 0) return undefined;
+export function automationStudioZeroProviderGate(detail: AutomationStudioFlowRunDetail, verificationInterventions: readonly unknown[], verificationSettled = false): JsonObject | undefined {
+  if (!verificationSettled || detail.metadata?.llmGate !== undefined || detail.interventions.length > 0 || verificationInterventions.length > 0) return undefined;
   return { invoked: false, ok: true, costAccounting: { ...ZERO_ACCOUNTING }, providerCalls: [], providerCallsOmitted: 0 };
 }

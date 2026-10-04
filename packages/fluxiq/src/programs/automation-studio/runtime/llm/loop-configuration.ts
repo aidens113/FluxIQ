@@ -21,6 +21,7 @@ import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
+import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-draft/scheduled-candidate/index.ts";
 import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_UNREADABLE_REPLIES_IN_A_ROW } from "./unreadable-reply.ts";
@@ -366,7 +367,11 @@ export type AutomationStudioLlmEvidenceLoopInput = {
 export function automationStudioLlmEvidenceLoopSeedSteps(
   draft: AutomationStudioLlmEvidenceLoopInput["draft"]
 ): AutomationStudioFlowDraftStep[] {
-  return (draft === false ? [] : draft?.seed ?? []).map((step, index) => ({ ...step, position: index + 1 }));
+  return (draft === false ? [] : draft?.seed ?? []).map((step, index) => {
+    const copy = { ...step, position: index + 1 };
+    automationStudioFlowDraftCopyScheduledCandidate(step, copy);
+    return copy;
+  });
 }
 
 export type EvidenceLoopLimits = {

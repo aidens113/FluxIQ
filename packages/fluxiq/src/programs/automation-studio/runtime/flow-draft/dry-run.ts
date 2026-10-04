@@ -87,6 +87,7 @@
 // whatever it declared (t174-w83).
 
 import type { JsonObject } from "../../../../core/index.ts";
+import { automationStudioFlowDraftScheduledCandidateCall } from "./scheduled-candidate/index.ts";
 import { automationStudioFlowDraftExcusedWords, type AutomationStudioFlowDraftExcusedReason } from "./excused.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsProposed } from "./step.ts";
@@ -212,13 +213,14 @@ export type AutomationStudioFlowDraftDryRun = {
 export function automationStudioFlowDraftReplayable(steps: readonly AutomationStudioFlowDraftStep[]): boolean {
   const proposed = steps.filter(automationStudioFlowDraftStepIsProposed);
   if (!proposed.length) return false;
-  if (!proposed.every((step) => step.ranWith !== undefined && step.replay !== undefined)) return false;
+  if (!proposed.every((step) => step.scheduledCandidate !== undefined ? automationStudioFlowDraftScheduledCandidateCall(step) !== undefined : step.ranWith !== undefined && step.replay !== undefined)) return false;
   return automationStudioFlowDraftReplayFrom(steps) !== undefined;
 }
 
 /** Where a replay of this draft starts: what the first proposed step found. */
 export function automationStudioFlowDraftReplayFrom(steps: readonly AutomationStudioFlowDraftStep[]): JsonObject | undefined {
-  return steps.filter(automationStudioFlowDraftStepIsProposed)[0]?.replay?.from;
+  const first = steps.find(automationStudioFlowDraftStepIsProposed);
+  return first?.scheduledCandidate !== undefined ? automationStudioFlowDraftScheduledCandidateCall(first)?.from : first?.replay?.from;
 }
 
 /**

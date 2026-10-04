@@ -58,6 +58,7 @@
 // exported here so a host mirrors them rather than restating them.
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE,
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REMEMBERED_CODE,
@@ -141,14 +142,15 @@ export function automationStudioNodeReplayResetCall(from: JsonObject): JsonObjec
  * `pass`, on a step a test repeats, is the row and the resolved parameters.
  */
 export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDraftStep, pass: AutomationStudioNodeReplayPass = {}): JsonObject | undefined {
-  const ranWith = step.ranWith;
+  const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
+  const ranWith = step.scheduledCandidate !== undefined ? scheduled?.input : step.ranWith;
   if (!ranWith || AUTOMATION_STUDIO_NODE_REPLAY_KEY in ranWith) return undefined;
   return {
     ...ranWith,
     ...passed(pass),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "step",
-    ...(step.replay?.from === undefined ? {} : { from: step.replay.from }),
-    ...(step.replay?.produced === undefined ? {} : { produced: step.replay.produced })
+    ...(scheduled ? { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from }),
+    ...(scheduled || step.replay?.produced === undefined ? {} : { produced: step.replay.produced })
   };
 }
 
@@ -162,13 +164,14 @@ export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDra
  * compare. `pass` as for the step call.
  */
 export function automationStudioNodeReplayVerifyCall(step: AutomationStudioFlowDraftStep, pass: AutomationStudioNodeReplayPass = {}): JsonObject | undefined {
-  const ranWith = step.ranWith;
+  const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
+  const ranWith = step.scheduledCandidate !== undefined ? scheduled?.input : step.ranWith;
   if (!ranWith || AUTOMATION_STUDIO_NODE_REPLAY_KEY in ranWith) return undefined;
   return {
     ...ranWith,
     ...passed(pass),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "verify",
-    ...(step.replay?.from === undefined ? {} : { from: step.replay.from })
+    ...(scheduled ? { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from })
   };
 }
 

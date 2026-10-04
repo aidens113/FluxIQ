@@ -115,3 +115,20 @@ actions and drawers retain a 520px maximum. At narrow widths, dialogs and
 drawers become full-viewport sheets, footer commands become full width, and
 inline-notice actions reflow below their message. Automation Studio region
 recomposition remains owned by the strict workspace phase.
+## Model provider admission at construction
+
+`FluxIQOptions.modelProvidersEnabled` is optional and defaults to enabled.
+`FluxIQ` forwards it to `createGlobalProgramRuntime`, whose second options
+argument preserves existing one-argument callers. Explicit false omits the
+standing result-check resolver, session-key execution resolver and chat
+model/key bindings before any provider-key release or request. It preserves
+ordinary program services, authentication, Secret Keys, storage, native
+libraries, gateway and unlocked-session lookup. It does not rewrite stored
+result policies or guarantee immutability against trusted later manual binding.
+
+The web host accepts `FLUXIQ_MODEL_PROVIDERS_ENABLED`: absent or `true` enables,
+`false` disables. Other values, including blank or whitespace, refuse before
+construction. Both initial and inferred-domain construction paths receive the
+same resolved value; reload validates before closing the prior host. Consumers
+must measure actual run provider usage separately; configuration alone is not
+proof of zero calls.
