@@ -24,44 +24,14 @@
 // said to leave them out, with its count where it sent one.
 
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
-import { automationStudioResultReadStop } from "./stop.ts";
+import { automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
 
 /** Core's sentence for how one read went. */
 export function automationStudioResultReadSentence(read: AutomationStudioResultReadAccount, length: "brief" | "full"): string {
   const seen = read.itemsSeen !== undefined ? ` of ${read.itemsSeen} items seen` : "";
   const attempts = read.attempts ? ` (the last of ${read.attempts} reads of this step)` : "";
-  const head = `step ${read.nodeId} read ${pagesClause(read)} and kept ${read.kept}${seen}${attempts}`;
+  const head = `step ${read.nodeId} read ${automationStudioResultReadPagesClause(read)} and kept ${read.kept}${seen}${attempts}`;
   return length === "brief" ? `${head}${briefTail(read)}` : `${capitalized(head)}.${fullTail(read)}`;
-}
-
-/** The pages read and why paging stopped, as what the stop means. */
-function pagesClause(read: AutomationStudioResultReadAccount): string {
-  const pages = pageCount(read.pagesRead);
-  const stop = automationStudioResultReadStop(read);
-  const cut = read.truncated ? ", cut short by a limit" : "";
-  const ended = (how: string) => `every page (${read.pagesRead}) and the list ended${how}${cut}`;
-  if (stop === "list_ended") return ended(listEnd(read));
-  if (stop === "page_bound") {
-    // Said as before: a read its page bound stopped is the one case "of at most N" describes.
-    const bound = read.pageLimit !== undefined ? ` of at most ${read.pageLimit}` : "";
-    return `${pages}${bound}${read.stop ? `, paging stopped on ${read.stop}` : ", as many as its page bound allows"}${cut}`;
-  }
-  // Something other than the list or the page bound stopped it: say the word, and that the bound was not it.
-  const before = read.pageLimit !== undefined && read.pagesRead < read.pageLimit ? ` before its page bound of ${read.pageLimit}` : "";
-  return `${pages}${read.stop ? `, paging stopped on ${read.stop}${before}` : read.pageLimit !== undefined ? ` of at most ${read.pageLimit}` : ""}${cut}`;
-}
-
-/** How the list showed it had ended, from the read's own stop word. */
-function listEnd(read: AutomationStudioResultReadAccount): string {
-  const last = `page ${read.pagesRead}`;
-  if (read.stop === "control_disabled") return `: its next control was disabled on ${last}`;
-  if (read.stop === "no_following_page") return `: its pager showed no page after ${last}`;
-  if (read.stop === "scrolled_to_end") return ": it scrolled to the end of the list";
-  if (read.stop === "control_absent") {
-    // `control_absent` on the first page is also what a next control that names nothing looks like.
-    return read.pagesRead > 1 ? `: no next control was on ${last}` : ": no next control was on the first page, which a next control that names nothing on the page would also show";
-  }
-  return read.pageLimit !== undefined ? ` before its page bound of ${read.pageLimit}` : "";
 }
 
 function briefTail(read: AutomationStudioResultReadAccount): string {
@@ -92,7 +62,7 @@ function fullTail(read: AutomationStudioResultReadAccount): string {
   }
   if (read.paginates === false) lines.push("It does not follow pages.");
   if (stop === "page_bound") {
-    lines.push(`Its page bound stopped it${read.pageLimit !== undefined ? ` at ${read.pageLimit}` : ""}, not the list, so the list may go on: raise its maxPages (maxScrolls for a read that scrolls) if the request needs rows past page ${read.pagesRead}.`);
+    lines.push(automationStudioResultReadPageBoundSentence(read));
   }
   if (read.dedupes === true) lines.push(`It already keeps one row per ${read.dedupeBy?.length ? read.dedupeBy.join(" + ") : "row identity"}.`);
   if (read.dropsEarlierPageRepeats) lines.push(earlierPageRepeats(read));
@@ -132,10 +102,6 @@ function earlierPageRepeats(read: AutomationStudioResultReadAccount): string {
 /** The rows a condition removed by itself, named, each label quoted whole; nothing when the read did not send them. */
 function leftOutOnlyByThis(labels: readonly string[] | undefined): string {
   return labels?.length ? ` (removed by itself: ${labels.map((label) => JSON.stringify(label)).join(", ")})` : "";
-}
-
-function pageCount(pages: number): string {
-  return `${pages} ${pages === 1 ? "page" : "pages"}`;
 }
 
 function capitalized(text: string): string {

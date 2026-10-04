@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 3080
+- Public declarations: 3083
 - Class: 93
 - Interface: 2
 - Object: 386
 - Type: 1712
 - Type Alias: 1
-- Value: 886
+- Value: 889
 
 ## Public Declarations
 
@@ -1774,6 +1774,8 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioResultReadConditionText` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/condition.ts:66` | - |
 | `automationStudioResultReadDedupe` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/dedupe.ts:32` | - |
 | `automationStudioResultReadEmptiedColumns` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/emptied-columns.ts:26` | - |
+| `automationStudioResultReadPageBoundSentence` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/page-bound-sentence.ts:5` | - |
+| `automationStudioResultReadPagesClause` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/pages-clause.ts:6` | - |
 | `automationStudioResultReadSentence` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/sentence.ts:30` | - |
 | `automationStudioResultReadStop` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/stop.ts:27` | - |
 | `AutomationStudioResultReadStopMeaning` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/stop.ts:21` | Why a read's paging stopped, as what a reader does about it. |
@@ -1800,6 +1802,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioResultRepairStop` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/history.ts:54` | Why a refuted run was not re-authored again, in codes a reader can key on. |
 | `automationStudioResultRepairUnchangedInARow` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/history.ts:143` | - |
 | `automationStudioResultRepairWithPurse` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/recovery/refuted-result/purse.ts:128` | - |
+| `automationStudioResultSummaryWithPagingWords` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/judge-paging.ts:7` | - |
 | `automationStudioResultSummaryWithUnreadColumns` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/read-account/unread-columns.ts:21` | - |
 | `automationStudioResultVerdict` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/verdict.ts:96` | - |
 | `AutomationStudioResultVerdict` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/contracts.ts:46` | The verdict on whether a finished run's result answers the request. Three words, because two would force a model with no view to guess. `unsure` exists so that "I cannot tell" is sayable, and it is emphatically not a pass: `automationStudioResultVerificationAnswers` is the one reader of these values, and only `answers` passes. What any other verdict does to the run is `automationStudioResultVerificationFailsRun`'s to say: it fails the run unless two checks of the same result did not settle it. |

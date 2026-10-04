@@ -154,3 +154,10 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 - Validation: latest run summaries, creation identities, zero provider directories and failure screenshots independently checked downstream. New source units not yet validated; no new live run queued.
 - Outcome: Active bounded implementation. Lab .10 only, ordinary UI defaults independent. No claim of C13-record/52-field or A/B reuse acceptance.
 - Follow-up: independent owner tests/types/audits; finish all source edits before builds and provider-free headed scope validation, then guarded actual creation.
+
+### 2026-10-03 - Independent C judge-copy gates
+- Agent: supervisor.
+- Changed: reviewed judge-only paging projection, preserved raw accounts/classifier; shared wording split into focused one-export modules and true omitted-stop fixtures after initial Core type failure. Architecture flow-authoring page documents truthful provider-copy boundaries.
+- Validation: root observed first51owner tests pass but Corecheck failed exactOptionalPropertyTypes; corrected independent4file51tests pass, Core check exit0 current matching stamp after worker actual tsc28.472s, audit241warnings/349baseline pass. Fresh Core build exit0/30.410s; docs-reference regenerated3083declarations. No full suite.
+- Outcome: source frozen for downstream provider-free scope verification; C13records/52fields, live judges and saved reuse unverified. No permission/default-bound/default-budget change.
+- Follow-up: downstream linked builds and actual UI setup check before guarded live creation; missing C retained-key/carried replay/provider-only retry remain separate units.
