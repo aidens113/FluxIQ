@@ -1,3 +1,4 @@
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harness-options/index.ts";
 // The step that took a build to where its Flow starts is kept in the Flow,
 // whatever the amendments since said about it.
 //
@@ -59,14 +60,15 @@ export type AutomationStudioFlowBootstrapDraftWithStartStep = {
 export function automationStudioFlowBootstrapDraftWithStartStep(input: {
   steps: readonly AutomationStudioFlowDraftStep[];
   startLocation?: string | undefined;
+  arrival?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["runsNodes"]>["arrival"] | undefined;
 }): AutomationStudioFlowBootstrapDraftWithStartStep {
   const unchanged = { steps: input.steps };
   const startLocation = input.startLocation?.trim();
   if (!startLocation) return unchanged;
   const kept = input.steps.filter(automationStudioFlowDraftStepIsProposed);
-  if (!kept.length || kept.some((step) => goesThere(step, startLocation))) return unchanged;
+  if (!kept.length || kept.some((step) => goesThere(step, startLocation, input.arrival))) return unchanged;
   const arrival = input.steps.find((step) =>
-    step.disposition !== "kept" && automationStudioFlowDraftStepIsProposable(step) && goesThere(step, startLocation));
+    step.disposition !== "kept" && automationStudioFlowDraftStepIsProposable(step) && goesThere(step, startLocation, input.arrival));
   if (!arrival) return unchanged;
 
   // Put back as `keep` puts a step back, and ahead of every kept step: nothing

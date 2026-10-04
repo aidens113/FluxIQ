@@ -1,3 +1,4 @@
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harness-options/index.ts";
 // Phase 2's judge for one build, as the service wires it.
 //
 // **The rule (coordinator, 2026-10-01, under the user's three-phase build and
@@ -89,6 +90,7 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
   signal?: AbortSignal | undefined;
   instructionText: string;
   startLocation?: string | undefined;
+  arrival?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["runsNodes"]>["arrival"] | undefined;
   /** The plan the completion check accepted last, whose nodes are the Flow's shape. */
   plan(): AutomationStudioFlowBootstrapPlan | undefined;
   /** What the completion check found the plan it accepted last cannot do; information for the judge. */
@@ -127,7 +129,7 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
       const verdict = counted(await ask({
         summary: automationStudioBuildTestResultSummary({
           steps: loop.steps, report: judgedTest, nodes: planNodes(input.plan()), instructionText: input.instructionText,
-          result: loop.result, startLocation: input.startLocation, deniedEvidenceKeys: input.deniedEvidenceKeys,
+          result: loop.result, startLocation: input.startLocation, arrival: input.arrival, deniedEvidenceKeys: input.deniedEvidenceKeys,
           observedStateKeys: input.observedStateKeys, rowContextKeys: input.rowContextKeys, notes: input.notes?.(),
           // The page the test ended on, looked at as its replay passed (`../../llm/node-tools/dry-run-gate.ts`).
           ...(judgedTest?.endView ? { endView: judgedTest.endView } : {})

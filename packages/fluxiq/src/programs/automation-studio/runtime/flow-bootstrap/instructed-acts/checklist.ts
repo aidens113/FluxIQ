@@ -1,3 +1,4 @@
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harness-options/index.ts";
 // The instructed acts as the model's own checklist, shown beside the draft from
 // the first decision.
 //
@@ -167,12 +168,13 @@ export function automationStudioInstructedActsChecklist(input: {
   instructionText?: string | undefined;
   draftSteps: readonly AutomationStudioFlowDraftStep[];
   startLocation?: string | undefined;
+  arrival?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["runsNodes"]>["arrival"] | undefined;
 }): AutomationStudioInstructedActChecklistItem[] | undefined {
   const acts = automationStudioInstructedActs(input.instructionText ?? "");
   if (!acts.length) return undefined;
   const startLocation = input.startLocation?.trim();
   const onlyArrives = (step: AutomationStudioFlowDraftStep): boolean =>
-    startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation) : false;
+    startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation, input.arrival) : false;
   const standing = automationStudioInstructedActsStanding({ acts, steps: input.draftSteps, onlyArrives });
   return acts.map((act) => {
     const stood = standing.get(act.id);

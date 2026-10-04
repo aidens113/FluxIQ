@@ -1,3 +1,4 @@
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harness-options/index.ts";
 // Whether every lasting act the instruction asks for has a step in the draft
 // that does it (`./contracts.ts` says why, and which run it was measured on).
 //
@@ -167,6 +168,7 @@ export function checkAutomationStudioInstructedActs(input: {
    * there answers no act but one of opening. Absent, nothing is held to it.
    */
   startLocation?: string | undefined;
+  arrival?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["runsNodes"]>["arrival"] | undefined;
 }): AutomationStudioInstructedActsVerdict {
   const acts = automationStudioInstructedActs(input.instructionText ?? "");
   if (!acts.length || !input.draftSteps) return { ok: true, acts };
@@ -174,7 +176,7 @@ export function checkAutomationStudioInstructedActs(input: {
   const steps = input.draftSteps;
   const startLocation = input.startLocation?.trim();
   const onlyArrives = (step: AutomationStudioFlowDraftStep): boolean =>
-    startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation) : false;
+    startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation, input.arrival) : false;
   // An authored step that says which act it does is the model's claim already
   // (`../../flow-draft/step.ts`, `acts`); a claim written in the result is one
   // more, tried after them, never dropped for them (`./standing.ts`).

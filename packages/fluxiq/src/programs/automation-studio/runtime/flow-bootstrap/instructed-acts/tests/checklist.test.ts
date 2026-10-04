@@ -1,4 +1,4 @@
-// The instructed acts as the model's checklist beside its draft (audit A1,
+﻿// The instructed acts as the model's checklist beside its draft (audit A1,
 // cause 1): the same reading and the same rule the completion check applies,
 // so an act shown done is an act a completion accepts.
 import { describe, expect, it } from "vitest";
@@ -185,4 +185,15 @@ describe("a plural act done by a repeat names the steps that do it to one row", 
     expect(a1.todo).toBe("act_needs_repeat");
     expect(a1.drop).toBeUndefined();
   });
+});
+
+it("separates declared arrival from a successful quantity action retaining location", () => {
+  const instructionText = "Put two of the paper towels in my cart.";
+  const arrival = { node: "arrive", parameter: "destination" };
+  const draft = step(1, { actionId: "increment", input: { parameters: { destination: "warehouse-A", amount: 2 } }, acts: ["a1.quantity"] });
+  const input = { instructionText, draftSteps: [draft], startLocation: "warehouse-A", arrival };
+  expect(automationStudioInstructedActsChecklist(input)?.[0]?.choices?.find((item) => item.id === "a1.quantity")).toMatchObject({ done: 1 });
+  const declaredArrival = { ...draft, actionId: "arrive" };
+  expect(automationStudioInstructedActsChecklist({ ...input, draftSteps: [declaredArrival] })?.[0]?.choices?.find((item) => item.id === "a1.quantity")).toMatchObject({ todo: "step_only_arrives" });
+  expect(automationStudioInstructedActsChecklist({ ...input, draftSteps: [{ ...draft, effectApplied: false }] })?.[0]?.choices?.find((item) => item.id === "a1.quantity")).toMatchObject({ todo: "step_changed_nothing" });
 });

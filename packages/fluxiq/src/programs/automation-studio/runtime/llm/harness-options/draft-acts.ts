@@ -1,3 +1,4 @@
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./index.ts";
 // What a Flow Bootstrap's loop shows beside the draft about the instruction's
 // acts, and what it names as still owed when the build stops making progress.
 //
@@ -55,6 +56,7 @@ import { automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/
 export function automationStudioFlowBootstrapDraftActs(input: {
   instructionText?: string | undefined;
   startLocation?: string | undefined;
+  arrival?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["runsNodes"]>["arrival"] | undefined;
   /** The node library, so an act that needs a repeat is shown the amendment that gives it one. Absent, none is shown. */
   registry?: AutomationStudioNodeRegistry | undefined;
   resolution?: AutomationStudioNodeRegistryResolution | undefined;
@@ -63,7 +65,7 @@ export function automationStudioFlowBootstrapDraftActs(input: {
   actsMissing(steps: readonly AutomationStudioFlowDraftStep[]): readonly string[];
 } {
   const checklist = (steps: readonly AutomationStudioFlowDraftStep[]) =>
-    automationStudioInstructedActsChecklist({ instructionText: input.instructionText, draftSteps: steps, startLocation: input.startLocation });
+    automationStudioInstructedActsChecklist({ instructionText: input.instructionText, draftSteps: steps, startLocation: input.startLocation, arrival: input.arrival });
   return {
     acts: (steps) => {
       const value = automationStudioInstructedActsChecklistValue(checklist(steps)?.map((item) => withRepeat(item, steps, input.registry, input.resolution)));

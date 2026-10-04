@@ -1,3 +1,4 @@
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harness-options/index.ts";
 // What the judge of a build's test is shown: every step the Flow proposes, in
 // order, each with its own words and how the test answered it.
 //
@@ -159,6 +160,7 @@ export function automationStudioBuildTestResultSummary(input: {
   /** The loop's result, for the acts it claims. */
   result?: JsonObject | undefined;
   startLocation?: string | undefined;
+  arrival?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["runsNodes"]>["arrival"] | undefined;
   deniedEvidenceKeys?: readonly string[] | undefined;
   /**
    * The keys under which the domain's step arguments carry the row a control
@@ -222,13 +224,13 @@ export function automationStudioBuildTestResultSummary(input: {
   const checklist = automationStudioInstructedActsChecklistValue(automationStudioInstructedActsChecklist({
     instructionText: input.instructionText,
     draftSteps: input.steps,
-    startLocation: input.startLocation
+    startLocation: input.startLocation, arrival: input.arrival
   }));
   const check = checkAutomationStudioInstructedActs({
     instructionText: input.instructionText,
     result: input.result ?? {},
     draftSteps: input.steps,
-    startLocation: input.startLocation
+    startLocation: input.startLocation, arrival: input.arrival
   });
   const tested = denied === undefined ? undefined : automationStudioBuildTestInputs(input.steps, denied);
   if (tested?.withheld) withheld = true;

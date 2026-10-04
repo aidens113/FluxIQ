@@ -191,7 +191,7 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   flowId: string;
   registry: AutomationStudioNodeRegistry;
   resolution: AutomationStudioNodeRegistryResolution;
-  binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters"> | undefined;
+  binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters" | "runsNodes"> | undefined;
   /**
    * The draft the build accrued, when the Flow is to be built from what the
    * build did rather than from what the model wrote at the end.
@@ -247,7 +247,7 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // here is the Flow the reachability refusal would have asked the model for,
   // without the turn (`flow-bootstrap/reachability/start-step.ts`).
   const withStart = input.draftSteps
-    ? automationStudioFlowBootstrapDraftWithStartStep({ steps: input.draftSteps, startLocation: input.startLocation })
+    ? automationStudioFlowBootstrapDraftWithStartStep({ steps: input.draftSteps, startLocation: input.startLocation, arrival: input.binding?.runsNodes?.arrival })
     : undefined;
   const draftSteps = withStart?.steps;
   // Said on the record whichever way the check goes: the Flow judged here has a

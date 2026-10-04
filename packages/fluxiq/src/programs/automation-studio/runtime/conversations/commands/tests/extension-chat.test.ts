@@ -33,7 +33,7 @@ import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.
 import type { AutomationStudioLlmProviderResolverInput } from "../../../service.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { automationStudioReplayingBinding } from "../../../tests/replaying-binding.ts";
-import { automationStudioConversationCommandWork } from "../index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_EXPLORE, automationStudioConversationCommandWork } from "../index.ts";
 
 const OPEN_ID = "domain.example.open";
 const SEARCH_ID = "domain.example.search";
@@ -108,6 +108,8 @@ type World = Awaited<ReturnType<typeof createWorld>>;
 async function createWorld(options: { unlocked: string | null }) {
   const toolInputs: Array<Record<string, unknown>> = [];
   const resolutions: AutomationStudioLlmProviderResolverInput[] = [];
+  const buildRequests: AutomationStudioLlmTaskRequest[] = [];
+  const judgeAppliedCounts: number[] = [];
   let buildDecisions: Array<Record<string, unknown>> = [];
   // The test of the whole Flow runs its steps again through this, answered without reaching the page.
   const binding: AutomationStudioLlmEvidenceRuntimeBinding = automationStudioReplayingBinding({
@@ -132,10 +134,13 @@ async function createWorld(options: { unlocked: string | null }) {
         provider: {
           metadata: { provider: "mock-production", model: "mock-bootstrap" },
           runTask: async (request: AutomationStudioLlmTaskRequest) => {
+            buildRequests.push(request);
             // The real provider releases the key to the caller's session per call (`session-key-provider.ts`).
             if (input.caller?.actorSessionId !== options.unlocked) throw new Error("Secret key session unlock is unavailable");
             // The judge of a build's test of the whole Flow: it says the Flow does what was asked.
             if (request.taskKind === "loop_verification") {
+              const summaries = await service.listFlowAdaptationSummaries({ projectId: project.id, flowId: input.flowId!, limit: 50 }) as unknown as { adaptations?: Array<{ status: string }> };
+              judgeAppliedCounts.push((summaries.adaptations ?? []).filter((entry) => entry.status === "applied").length);
               return { response: { kind: "diagnosis", summary: "The Flow's test does what was asked.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.0005 } };
             }
             const decision = buildDecisions.shift() ?? { kind: "complete", result: { summary: "Search the catalog." } };
@@ -175,6 +180,8 @@ async function createWorld(options: { unlocked: string | null }) {
     conversationId,
     toolInputs,
     resolutions,
+    buildRequests,
+    judgeAppliedCounts,
     activity,
     stopActivity,
     call,
@@ -295,6 +302,52 @@ describe("the extension's chat, end to end in Core", () => {
     expect(await flowNodes(world.service, world.project.id, flow.flowId)).toContain(SEARCH_ID);
     expect(resultTurns((await world.thread()).turns, "flow.explore")[0]?.text).not.toMatch(/stopped because/u);
   }, 60_000);
+
+  it("continues a kept creation through the real explore registry command without adding an instruction or another Flow", async () => {
+    world = await createWorld({ unlocked: UNLOCKED_SESSION });
+    world.scriptBuild([
+      SEARCH_THEN_COMPLETE[0]!,
+      ...Array.from({ length: 8 }, (_, index) => ({ kind: "tool_call", callId: `look.${index}`, toolId: "example.inspect", input: {} }))
+    ]);
+    await world.say("Find the kettles here", { do: "flow.createHere", with: { instruction: "Search the catalog for kettles." } });
+    await automationStudioConversationCommandWork.idle();
+    const flow = await onlyFlow(world.service, world.project.id);
+    expect(await world.service.getFlowRouter(world.project.id, flow.flowId)).toBeNull();
+    const beforeInstructions = await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" });
+    const beforeRequests = world.buildRequests.length;
+    world.scriptBuild([
+      { kind: "tool_call", callId: "continued.look", toolId: "example.inspect", input: {} },
+      { kind: "complete", result: { summary: "Search the catalog for kettles." } }
+    ]);
+    const response = await world.say("Continue building it", { do: "flow.explore", with: { flowId: flow.flowId } });
+    expect(response?.execution).toMatchObject({ capabilityId: "flow.explore", status: "started" });
+    await automationStudioConversationCommandWork.idle();
+    const continued = world.buildRequests.slice(beforeRequests);
+    const resume = continued.flatMap((request) => request.context.evidenceLoop?.evidence ?? []).find((entry) => entry.toolId === "core.resumed");
+    expect(resume?.value).toMatchObject({ revision: 1, draftSteps: 2, proposableSteps: 1 });
+    expect(continued.some((request) => request.taskKind === "loop_verification")).toBe(true);
+    expect(world.judgeAppliedCounts.length).toBeGreaterThan(0);
+    expect(world.judgeAppliedCounts.every((count) => count === 0)).toBe(true);
+    expect(await flowNodes(world.service, world.project.id, flow.flowId)).toContain(SEARCH_ID);
+    expect((await onlyFlow(world.service, world.project.id)).flowId).toBe(flow.flowId);
+    expect(await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" })).toEqual(beforeInstructions);
+    expect(automationStudioConversationCommandWork.takeUnreported()).toEqual([]);
+  }, 60_000);
+
+  it("does not apply an explored creation while its adaptation carries a permission request", async () => {
+    const calls: string[] = [];
+    const result = await AUTOMATION_STUDIO_CONVERSATION_EXPLORE.run({
+      projectId: "project.example", conversationId: "conversation.example", sessionId: UNLOCKED_SESSION, keyLocked: false, startLocation: null,
+      host: {
+        async appendAutomationTurn() { throw new Error("Explore must return its pending-permission outcome without writing a turn itself"); },
+        async pendingAsks() { return []; },
+        async getAsk() { return null; }
+      },
+      port: { async call(endpoint: string) { calls.push(endpoint); return { ok: true, payload: { adaptation: { adaptationId: "adaptation.pending", permissionRequest: { askId: "ask.pending" } } } }; } }
+    }, { flowId: "flow.example" });
+    expect(calls).toEqual(["generate-flow-bootstrap-adaptation"]);
+    expect(result.status).toBe("failed");
+  });
 
   it("improves an automation, asks before applying, sets the change aside on no and applies it on yes", async () => {
     world = await createWorld({ unlocked: UNLOCKED_SESSION });

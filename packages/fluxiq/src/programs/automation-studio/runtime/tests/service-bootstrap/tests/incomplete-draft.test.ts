@@ -6,7 +6,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
@@ -51,6 +51,63 @@ async function storedDraft(projectId: string, flowId: string) {
 }
 
 describe("a Flow build that runs out, and the build after it", () => {
+  it("preserves a compatible incomplete draft when the same generation goal is supplied again", async () => {
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    let calls = 0;
+    const instance = new AutomationStudioService({
+      dataDir: tempRoot,
+      llmProviderResolver: (() => ({ provider: mockProvider(async (request) => {
+        requests.push(request);
+        const callId = `same-goal.${++calls}`;
+        return { response: { kind: "evidence_tool_decision", summary: "Gather.", decision: {
+          kind: "tool_call", callId, toolId: "example.act", input: { press: calls }, add: true
+        } }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
+      }), maxCallsPerRun: 4, maxEstimatedCostUsd: 0.25, maxTotalEstimatedCostUsd: 2 })) as never,
+      llmEvidenceRuntime: automationStudioReplayingBinding({ domainId: "example", deniedEvidenceKeys: [],
+        tools: [{ toolId: "example.act", description: "Change target.", inputSchema: { type: "object" }, effect: "mutate" }],
+        executeTool: async (input) => ({ kind: "llm_evidence_tool_execution", evidence: { changed: input.callId }, effectApplied: true, resultCode: "example.acted" }) })
+    });
+    services.add(instance);
+    const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
+    const goal = await instance.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "Build the active instruction." });
+    const request = { projectId: project.id, flowId: flow.flowId, evidenceGuided: true as const, caller: caller() };
+    await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
+    const record = await storedDraft(project.id, flow.flowId);
+    expect(record?.steps.length).toBeGreaterThan(0);
+    const digest = await instance.getLlmExecutionDependencyDigest(project.id, flow.flowId);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(goal.updatedAt + 1_000);
+    let saved;
+    try {
+      saved = await instance.saveFlowGenerationInstruction({ projectId: project.id, flowId: flow.flowId, instruction: "  Build the active instruction.  " });
+    } finally { clock.mockRestore(); }
+    expect(saved).toEqual(goal);
+    expect(await instance.getLlmExecutionDependencyDigest(project.id, flow.flowId)).toBe(digest);
+    const before = requests.length;
+    await rejectedGenerationDiagnostic(instance.generateFlowBootstrapAdaptation(request));
+    const firstLook = requests[before]?.context.evidenceLoop?.evidence ?? [];
+    expect(firstLook.find((entry) => entry.toolId === "core.resumed")?.value).toMatchObject({
+      code: "llm_evidence_loop.resumed", revision: record!.revision, draftSteps: record!.steps.length
+    });
+  });
+
+  it("still writes a changed or disabled generation goal and changes its dependency digest", async () => {
+    const instance = new AutomationStudioService({ dataDir: tempRoot });
+    services.add(instance);
+    const { project, flow } = structuredClone(await copyDataDirSeed(example, tempRoot));
+    const scope = { projectId: project.id, flowId: flow.flowId };
+    const goal = await instance.saveFlowGenerationInstruction({ ...scope, instruction: "Original goal." });
+    const digest = await instance.getLlmExecutionDependencyDigest(project.id, flow.flowId);
+    const changed = await instance.saveFlowGenerationInstruction({ ...scope, instruction: "Different goal." });
+    expect(changed.instructionId).toBe(goal.instructionId);
+    expect(changed.body).toBe("Different goal.");
+    expect(await instance.getLlmExecutionDependencyDigest(project.id, flow.flowId)).not.toBe(digest);
+    await instance.saveFlowInstruction(project.id, { ...changed, status: "disabled" });
+    const disabledDigest = await instance.getLlmExecutionDependencyDigest(project.id, flow.flowId);
+    const reactivated = await instance.saveFlowGenerationInstruction({ ...scope, instruction: "Different goal." });
+    expect(reactivated.status).toBe("active");
+    expect(await instance.getLlmExecutionDependencyDigest(project.id, flow.flowId)).not.toBe(disabledDigest);
+  });
+
   it("keeps the proposable steps as an incomplete draft, reports the exhaustion truthfully, and the next build continues and clears it", async () => {
     // Undefined while the first build runs; the call at which the second began once it does.
     let continuedAt: number | undefined;

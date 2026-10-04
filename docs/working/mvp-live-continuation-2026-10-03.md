@@ -11,13 +11,12 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 
 ## Current State
 
-- Active paired t262; downstream owns current briefs, complete per-run debug, Lab/browser work and Claude handoff. Original dirty Claude trees preserved. Frozen source checkpoint97e279de (paired downstream7b5a3aa1); supervisor Core467owner tests/check/build/audit observed pass. Two full suites already today, no repeat.
-- Both persistent live lanes ended failed before usable Flow: A2 run-mut58jbo-fbc8a57a63calls/total .079036554/build .078897432; B run-mut5amuc-c617cc2151calls/total .074950068/build .074802696. Lab .10 ceiling held, normal UI independent. No further paid run queued, workspaces/evidence preserved.
-- FirstA run-mut4fvkm-e2fc03e6 all4oraclefactsheld but actual Corestatusfailed, exact graph cause unproven; complete30turn/six-stage debug now authored downstream. Disposable first workspace prevents reuse claim.
-- Source freeze released only after A2 launcher37152exit1 and B launcher13190exit1. Worker resume-live-prep implements explicit checked-candidate/proof separation and separate historical lasting guard; worker resume-cd implements parser source-clause provenance for counted-object lasting-act attribution in disjoint owners. Failing-before tests required. No permission change, invented execution, cart-specific Core behavior or extra provider call.
-- Supervisor fixed plural coupon/voucher advisory vocabulary: observed1fail/14pass before;40owner tests passed after. Full source unit still under implementation, not live certified.
-- Existing integrated toggle/stale marks/unrepeat/healed-attempt selector and downstream screened terminal evidence retained. D route integration safety gaps and C live paging acceptance pending. No overall MVP completion or unchanged-Flow reuse claim.
-- Next: complete latest full per-turn debug, independently verify corrections/tests/types/audits/build, freeze source checkpoint, then guarded changed-source persistent live and zero-provider same-Flow reuse when created. All detailed briefs/report links in paired downstream document.
+- Active paired t262; downstream owns current briefs, complete per-run debug, Lab/browser work and Claude handoff. Original dirty Claude trees preserved; no overall MVP or unchanged-Flow reuse acceptance.
+- Latest verified source checkpoint97e279de (downstream7b5a3aa1), with local docs checkpointbc9c8bb8/downstreame2aeb5b1. Checked-candidate/proof separation, historical lasting guard and counted-object source provenance integrated. Supervisor independent383-test union, final helper12/feedback30, affected types/fresh Corebuild and both audits passed. Two full sweeps today; none repeated.
+- A3 run-mut6b2re-d0e475d1 failed at normal chat routing after1call/.000241638: improve.extend rejected unfinished target before build. B2 run-mut6bevx-d8b7956f failed build53calls/total .073861872/build .073644534, both judges no. Full six-stage debug saved downstream; supervisor matched all53turns and inspected ending/screenshot. Five cart build tests core.replay.verified/oktrue, but quantity click still falsely step_only_arrives. Lab .10 held; normal UI independent. No paid run active/queued, persistent data preserved.
+- Source freeze released after both latest runs stopped. Core worker owns declared-arrival classifier plus consistent restoration/check/model/judge propagation through existing binding; fail-first real service/model/judge fixture required. Downstream worker independently owns new run-owned creation project and explicit replay project identity. Normal UI unfinished-draft continuation design read-only; no new capability/permission restriction presumed.
+- FirstA all4oraclefacts held but Corestatusfailed remains qualified; exact old graph cause unproven and disposable first workspace prevents reuse. Historical A2/B incomplete drafts preserved. Advisory plural correction and no_such_step feedback verified.
+- Next: root independently verifies new source/tests/types/audits, builds linked runtime, freezes checkpoints then guarded changed-source actual chat build. Saved accepted Flow uses exact actual project/Flow/hash for zero-provider replay. C paging13records/D named-route safety/P5 earlier-output remain pending, standalone t224 UI paused.
 
 ## Work Ledger
 
@@ -100,6 +99,15 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 
 ## Worker Briefs
 
+### Brief: normal-continuation-guidance (resume-cd; disjoint implementation)
+- Read Current State and own unfinished-draft-continuation-design. No service.ts edit: arrival worker owns it now; supervisor serially owns identical-goal idempotency and incomplete-draft test after arrival unit releases.
+- Own Core runtime conversations/commands/explore.ts, conversations/instructions/prompt.ts, commands/tests/extension-chat.test.ts, instructions/tests/prompt.test.ts only. Architecture shared docs supervisor-owned. Read new prompt test owner and relevant public barrels as needed, no broad discovery.
+- Clarify existing explore for continue/finish unfinished creation, omit unchanged instruction/use saved goal; genuinely changed goal supplied explicitly and old evidence may not remain compatible. Genuine nonblank improve stays extend with apply confirmation. Newautomation stays createHere, only recommend actually offered capabilities. No name-only task success inference/forced capability/fallback/permission/default-budget change.
+- Fail-first prompt contract, actual registry/service continuation fixture (omitted goal) preserving oneFlow/seededrevision/no extra improvementinstruction/test+judge-beforeapply/no pending-permission application; preserve existing improve yes/no. Explicit unchanged supplied-goal test may remain failed until supervisor idempotency unit, report that dependency honestly rather than workaround.
+- No service/draft/checklist/arrival owners/incomplete-draft.test edits. No paid/live/provider/browser/build/fullsuite/store/env/slot/guard/shared docs/commit actions. Narrow three/four owning tests via heavywrapper only.
+- Own reports/normal-continuation-guidance.md with exact edits/failbefore/passafter and remaining dependency/live model routing unverified. Ask exact owner expansion first. This is source release only for disjoint guidance/test paths.
+
+
 ### Brief: declared-arrival-proof (resume-live-prep; implementation)
 - Both live lanes stopped; Core source release for this coherent unit after final two adapter reads. Read Current State, own quantity-action-proof-design report, Core AGENTS and named owners. No domain/action permissions/provider policy changes.
 - Fix only actual declared arrival classification via existing binding.runsNodes.arrival node/parameter. Require opaque action identity, read only declared parameter with resolved input precedence; absent declaration does not infer arrival from arbitrary strings. Preserve location-agreement other consumers. No URL/cart/browser heuristic in Core.
@@ -113,3 +121,15 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 ### 2026-10-03 - Next source corrections released after both live endings
 - A3 failed at chat routing; B2 failed build under .10. No paid run active/queued. Lab independent creation project and Core declared-arrival evidence units partitioned in written briefs.
 - Validation: supervisor confirmed B2 full debug contains53 contiguous model rows; actual final screenshot/status/cost inspected. No functional pass/reuse claim. Worker reports and persistent data preserved.
+
+### 2026-10-03 - Current State reconciled after newest live failures
+- Changed: authoritative Current State now names completed candidate/provenance checks, A3/B2 exact endings and current declared-arrival implementation; previous snapshot moved into historical ledger context.
+- Validation: supervisor exact53provider sequence and five replay result codes independently observed; no functional acceptance claimed.
+
+### 2026-10-03 - Normal UI continuation split safely by file
+- Existing explore supports eligible unfinished creation; identical saved goal currently rewrites updatedAt and invalidates execution digest. Guidance/test worker released disjoint from arrival unit; supervisor owns service idempotency serially after arrival source release. No generic compatibility relaxation/new capability.
+- Validation: bounded17owner read-only design complete; source regressions/live routing not yet verified.
+
+### 2026-10-03 - Independent validation and structural integration
+- Validation: supervisor combined13owners194tests passed. Identical-goal fail-first1failed/3passed on updatedAt; after correction4passed with unchanged digest/core.resumed and changed/disabled goal controls. Core typecheck initially found incomplete command test context, worker corrected full typed context; rerun passed. Downstream audit passed165warnings118baseline. Core audit found tests directory26files, large service growth4lines and old direct fixture import.
+- Changed: supervisor extracted generation-goal validation/persistence into focused service/flow-bootstrap-commands/save-goal.ts plus barrel, keeping public method as delegation and shrinking service. Fixture barrel relocated to service-bootstrap/index.ts, quantity/confirm fixture imports synchronized; no baseline increases. Revalidating affected owners/types/audit before runtime build/live. Lab creation owners coherently grouped under chat-build/creation; new public readiness verified beforeSend.

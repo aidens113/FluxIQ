@@ -151,7 +151,7 @@ describe("a step that only arrives where the Flow starts", () => {
   const quantity = { action: "a1.quantity", step: "d9" };
 
   it("refuses run 15's two arrivals named for the add to cart and the coupon", () => {
-    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUBS, startLocation: START, result: { summary: "x", acts: [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }, quantity] }, draftSteps: [arrivesByRun, arrivesAsWritten, press(9)] });
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUBS, startLocation: START, arrival: { node: "web.output.browser-navigate", parameter: "url" }, result: { summary: "x", acts: [{ action: "a1", step: "d1" }, { action: "a2", step: "d2" }, quantity] }, draftSteps: [arrivesByRun, arrivesAsWritten, press(9)] });
     expect(verdict.acts.map((act) => act.kind)).toEqual(["add_to", "claim"]);
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
@@ -161,7 +161,7 @@ describe("a step that only arrives where the Flow starts", () => {
   });
 
   it("accepts the same acts named for presses that are not arrivals", () => {
-    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUBS, startLocation: START, result: { summary: "x", acts: [{ action: "a1", step: "d3" }, { action: "a2", step: "d4" }, quantity] }, draftSteps: [arrivesByRun, arrivesAsWritten, press(3), press(4), press(9)] });
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUBS, startLocation: START, arrival: { node: "web.output.browser-navigate", parameter: "url" }, result: { summary: "x", acts: [{ action: "a1", step: "d3" }, { action: "a2", step: "d4" }, quantity] }, draftSteps: [arrivesByRun, arrivesAsWritten, press(3), press(4), press(9)] });
     expect(verdict.ok).toBe(true);
   });
 
@@ -169,11 +169,11 @@ describe("a step that only arrives where the Flow starts", () => {
     const opens = "Open my saved items and give me a table of what is there.";
     const acts = checkAutomationStudioInstructedActs({ instructionText: opens, result: { summary: "x" }, draftSteps: [arrivesByRun] }).acts;
     expect(acts.map((act) => act.kind)).toEqual(["open"]);
-    expect(checkAutomationStudioInstructedActs({ instructionText: opens, startLocation: START, result: { summary: "x", acts: [{ action: "a1", step: "d1" }] }, draftSteps: [arrivesByRun] }).ok).toBe(true);
+    expect(checkAutomationStudioInstructedActs({ instructionText: opens, startLocation: START, arrival: { node: "web.output.browser-navigate", parameter: "url" }, result: { summary: "x", acts: [{ action: "a1", step: "d1" }] }, draftSteps: [arrivesByRun] }).ok).toBe(true);
   });
 
   it("gives the plain instruction, with nothing about arriving, when no claim named an arrival", () => {
-    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUBS, startLocation: START, result: { summary: "x" }, draftSteps: [arrivesByRun] });
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUBS, startLocation: START, arrival: { node: "web.output.browser-navigate", parameter: "url" }, result: { summary: "x" }, draftSteps: [arrivesByRun] });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.instruction).not.toContain("does not do the act");
   });
@@ -263,7 +263,7 @@ describe("a quantity or a size the instruction attaches to an item", () => {
   // s1 arrives; s2 consent; s4-s5 the store; s7-s8 search; s9 and s14 product pages; s12 and s15 the add presses.
   const RUN_28_DRAFT = [go(1, START), press(2), press(4), press(5), step(7, { actionId: "web.output.dom-type" }), press(8), go(9, `${START}/p/1`), press(10), press(12), go(14, `${START}/p/2`), press(15)];
   const RUN_28_CLAIMS = [{ action: "a1", step: "d5" }, { action: "a2", step: "d12" }, { action: "a3", step: "d15" }];
-  const check = (draftSteps: AutomationStudioFlowDraftStep[], acts: unknown) => checkAutomationStudioInstructedActs({ instructionText: RUN_28, startLocation: START, result: { summary: "x", acts: acts as never }, draftSteps });
+  const check = (draftSteps: AutomationStudioFlowDraftStep[], acts: unknown) => checkAutomationStudioInstructedActs({ instructionText: RUN_28, startLocation: START, arrival: { node: "web.output.browser-navigate", parameter: "url" }, result: { summary: "x", acts: acts as never }, draftSteps });
 
   it("refuses run 28's Flow, naming the quantity and both sizes no step chooses", () => {
     const verdict = check(RUN_28_DRAFT, RUN_28_CLAIMS);
@@ -380,7 +380,7 @@ describe("a repeat that stops one step short, and an act declared as a class nob
   });
 
   it("holds a single act to its own step's declaration, and an act whose verb names no such class to nothing", () => {
-    const offer = "Send the seller an offer of £140 for the cheapest folding bike.";
+    const offer = "Send the seller an offer of Â£140 for the cheapest folding bike.";
     const send = (consequences: string[]) => checkAutomationStudioInstructedActs({ instructionText: offer, result: { summary: "x", acts: [{ action: "a1", step: "d2" }] }, draftSteps: [listing, declaring(2, consequences)] });
     expect(send(["send_or_publish"]).ok).toBe(true);
     const unasked = send([]);
