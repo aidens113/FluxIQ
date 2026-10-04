@@ -11,7 +11,7 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 
 ## Current State
 
-- Active paired t262; downstream owns current briefs, complete per-run debug, Lab/browser work and Claude handoff. Original dirty Claude trees preserved. Source checkpoint42434f42 before latest live; supervisor Core467owner tests/check/build/audit observed pass. Two full suites already today, no repeat.
+- Active paired t262; downstream owns current briefs, complete per-run debug, Lab/browser work and Claude handoff. Original dirty Claude trees preserved. Frozen source checkpoint97e279de (paired downstream7b5a3aa1); supervisor Core467owner tests/check/build/audit observed pass. Two full suites already today, no repeat.
 - Both persistent live lanes ended failed before usable Flow: A2 run-mut58jbo-fbc8a57a63calls/total .079036554/build .078897432; B run-mut5amuc-c617cc2151calls/total .074950068/build .074802696. Lab .10 ceiling held, normal UI independent. No further paid run queued, workspaces/evidence preserved.
 - FirstA run-mut4fvkm-e2fc03e6 all4oraclefactsheld but actual Corestatusfailed, exact graph cause unproven; complete30turn/six-stage debug now authored downstream. Disposable first workspace prevents reuse claim.
 - Source freeze released only after A2 launcher37152exit1 and B launcher13190exit1. Worker resume-live-prep implements explicit checked-candidate/proof separation and separate historical lasting guard; worker resume-cd implements parser source-clause provenance for counted-object lasting-act attribution in disjoint owners. Failing-before tests required. No permission change, invented execution, cart-specific Core behavior or extra provider call.
@@ -91,3 +91,25 @@ Related: [budget fix](./flow-build-quality-and-lab-budget-plan.md)
 - Validation: independent pnpm --filter fluxiq exec vitest run rerun-check owner12tests and draft-amendment-feedback owner30tests pass after final edits; pnpm --filter fluxiq check21.313s and build32.246s pass; docs-reference3080declarations regenerated; linked domaincheck16.815s and extensioncheck27.817s pass. Core structure audit passed240warnings/349baseline, downstream passed165warnings/118baseline. No full suites/baseline increases.
 - Outcome: source frozen and verified provider-free; live quality/cost/reuse acceptance pending.
 - Follow-up: paired checkpoint then one guarded persistent Flash/.10 live per selected lane, every ending debugged, no automatic relaunch.
+
+### 2026-10-03 - Changed-source live release
+- Agent: supervisor.
+- Validation: final narrow gates passed as above; paired local checkpoint97e279de/7b5a3aa1. Downstream admitted newrun IDs A3run-mut6b2re-d0e475d1/B2run-mut6bevx-d8b7956f at sameFlash/.10, provider calls still0at first observation.
+- Outcome: two persistent real-chat headed lanes active; sources frozen, no manual library rebuild/edit. No devpush yet.
+- Follow-up: actual endings/full debug/oracles/UI and deterministic saved-Flow reuse, no compilation-only success.
+
+## Worker Briefs
+
+### Brief: declared-arrival-proof (resume-live-prep; implementation)
+- Both live lanes stopped; Core source release for this coherent unit after final two adapter reads. Read Current State, own quantity-action-proof-design report, Core AGENTS and named owners. No domain/action permissions/provider policy changes.
+- Fix only actual declared arrival classification via existing binding.runsNodes.arrival node/parameter. Require opaque action identity, read only declared parameter with resolved input precedence; absent declaration does not infer arrival from arbitrary strings. Preserve location-agreement other consumers. No URL/cart/browser heuristic in Core.
+- Own exactly nine source owners in design: reachability/{step-goes-to-location,start-step}, instructed-acts/{check,checklist}, llm/harness-options/{draft-acts,bootstrap-completion}, service/flow-bootstrap-commands/build-judge, result-verification/build-test/summary, service.ts matching propagation contexts only. Existing public arrival type, no new tool-result proof/field.
+- Own nearest tests listed in design, including new runtime/tests/service-authoring/tests/quantity-arrival-build.test.ts. Update true-arrival fixtures to explicit declaration; request exact other fixture owner before editing. Must propagate identically to restoration, model checklist, stopped checklist, completion check and judge summary.
+- Fail-first succeeded nonarrival increment with stale matching location must not be step_only_arrives; real declared arrival still is, wrong parameter/absent declaration/opaque location/resolved precedence boundaries. Meaningful actual service-host model and judge fixture required, not helper-only. Preserve failed/permission-denied/candidate/lasting verify/no-effect/repeat behavior.
+- Run narrow design command through heavy wrapper only. No whole suite/build/live/provider/store/env/guards/slots/shared doc/commit. Report exact before/after outputs and compatibility contract/unverified live claims in own reports/declared-arrival-proof.md downstream.
+- Request scope if needed rather than silently reading/editing broadly. Root independently reviews/tests/types/audits/builds and releases changed-source live run. New classifier correction alone is not requested-quantity acceptance.
+
+
+### 2026-10-03 - Next source corrections released after both live endings
+- A3 failed at chat routing; B2 failed build under .10. No paid run active/queued. Lab independent creation project and Core declared-arrival evidence units partitioned in written briefs.
+- Validation: supervisor confirmed B2 full debug contains53 contiguous model rows; actual final screenshot/status/cost inspected. No functional pass/reuse claim. Worker reports and persistent data preserved.
