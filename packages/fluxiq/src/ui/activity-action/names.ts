@@ -14,7 +14,9 @@ const PAIRS: readonly (readonly [ActivityActionKind, string])[] = [
   ["wait", "Wait"],
   ["person_check", "Robot check"],
   ["permission", "Permission"],
-  ["draft", "Edit Flow"],
+  // What was asked, in Core's words: a refused edit's card reads "Edit the
+  // Flow · Not done: ..." (t193 1003, C13).
+  ["draft", "Edit the Flow"],
   ["test", "Test run"],
   ["result_check", "Check result"],
   ["repair", "Repair"],

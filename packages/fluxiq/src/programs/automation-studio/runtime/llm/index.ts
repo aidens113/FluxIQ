@@ -123,3 +123,6 @@ export * from "./flow-execution-limits/index.ts";
 // because the service's test of a stopped build's Flow wraps its tool calls
 // with it, and the build's phases set the round and phase of each step.
 export * from "./step-log/index.ts";
+// The build trace's lines for a build's steps outside its loop -- its judges,
+// the build call and the apply (`evidence-progress/build-trace.ts`, t174-w116).
+export { automationStudioLlmBuildTrace } from "./evidence-progress/index.ts";

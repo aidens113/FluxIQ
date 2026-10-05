@@ -6,6 +6,7 @@ import type { AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.t
 import { parseAutomationStudioFlowBootstrapBuildEnding } from "../../generation-failure/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import { runAutomationStudioFlowBootstrapBuildPhases, type AutomationStudioFlowBootstrapBuildPhasesInput } from "../index.ts";
+import { automationStudioFlowBootstrapRepliesUnreadable } from "../replies-unreadable.ts";
 
 const INSTRUCTION = "Add two packs of the Softly Paper Towels to my cart, then save the Brightline kettle to my saved items.";
 
@@ -75,5 +76,19 @@ describe("a build whose model replies kept arriving unreadable", () => {
     expect(parseAutomationStudioFlowBootstrapBuildEnding(outcome.ending, "flow_bootstrap.model_replies_unreadable")).toEqual(outcome.ending);
     expect(parseAutomationStudioFlowBootstrapBuildEnding(outcome.ending, "flow_bootstrap.not_doable")).toBeNull();
     expect(outcome.ending.message).toContain("No step I found belonged in the Flow.");
+  });
+});
+
+// t193 round 1003 (w9): the progress and the last test said once, never "not judged" twice.
+describe("an unreadable-replies ending after a judged test", () => {
+  it("says the Flow was not judged once, with its step count in the progress sentence", () => {
+    const checklist = [{ id: "a1", verb: "add", quote: "add two packs", done: 1 }, { id: "a2", verb: "save", quote: "save the kettle", done: 2 }];
+    const message = automationStudioFlowBootstrapRepliesUnreadable({
+      unreadable: { inARow: 6, total: 8, cases: ["content_mismatched"], said: "its brackets did not match" },
+      judgement: { round: 1, stopped: "unusable_decisions", tested: "replayed_clean", testIssueCodes: [], failedSteps: [], stepsInFlow: 7, done: 2, proven: 2, todo: [], lastIssueCodes: [], judge: { verdict: "unknown", findings: [] } },
+      checklist, rounds: 2, decisions: 40, kept: true
+    }).message;
+    expect(message).toContain("2 of the 2 things you asked have a step that ran, or could run, when the Flow (7 steps) was run from its start, but the Flow was not judged to do what you asked.");
+    expect(message.match(/judged/gu)).toHaveLength(1);
   });
 });

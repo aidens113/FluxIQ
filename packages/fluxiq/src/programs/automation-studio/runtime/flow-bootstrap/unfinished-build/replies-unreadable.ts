@@ -9,16 +9,16 @@
 // this message: what happened, how many tries, which kind of damage it was
 // most often, what of the request the Flow already does, and whether the steps
 // found so far were kept. It is neither "not doable" -- nothing says the task cannot
-// be done -- nor a budget: the budget had room left.
-import {
-  AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
-  type AutomationStudioFlowBootstrapBuildEnding
-} from "../generation-failure/index.ts";
+// be done -- nor a budget: the budget had room left. The message is fitted,
+// never cut inside a sentence (`./ending-fit.ts`; t193 round 1003): what was
+// kept closes it, always whole.
+import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
+import { automationStudioFlowBootstrapEndingFitted } from "./ending-fit.ts";
 import { automationStudioFlowBootstrapKeptSaid } from "./kept-said.ts";
-import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressSaid, automationStudioFlowBootstrapTestSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressAndTestSaid } from "./not-done.ts";
 import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The ending of a build whose model replies could not be read. */
@@ -38,12 +38,15 @@ export function automationStudioFlowBootstrapRepliesUnreadable(input: {
   const why = cases.length ? ` -- ${cases.length > 1 ? "most often because " : "because "}${said} --` : "";
   const happened = `The build stopped because the model's replies could not be read: ${inARow} in a row came back unreadable${why} and each was asked again with a note of what was wrong.`;
   const tries = `In all, ${total} of ${Math.max(total, input.decisions)} replies could not be read, over ${input.rounds === 1 ? "one live round" : `${input.rounds} live rounds`}; each was paid for and counted in the build's budget.`;
-  const progress = automationStudioFlowBootstrapProgressSaid(input.checklist, input.judgement);
   const kept = automationStudioFlowBootstrapKeptSaid(input.kept);
-  const message = [happened, tries, progress, automationStudioFlowBootstrapTestSaid(input.judgement), kept].filter(Boolean).join(" ");
+  // How far it got and what its test found, said once (`./not-done.ts`).
+  const message = automationStudioFlowBootstrapEndingFitted((room) => ({
+    body: [happened, tries, automationStudioFlowBootstrapProgressAndTestSaid(input.checklist, input.judgement, room)],
+    close: [kept]
+  }));
   return {
     kind: "replies_unreadable",
-    message: message.slice(0, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE),
+    message,
     notDone,
     tried: automationStudioFlowBootstrapTried(input)
   };

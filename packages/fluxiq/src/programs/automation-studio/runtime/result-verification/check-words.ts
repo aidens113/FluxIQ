@@ -1,0 +1,67 @@
+// The words of the result check's card, before the chat's own screen bounds them.
+//
+// Built from what Core knows for certain -- how many rows came back, read off
+// Core's own observation, and Core's sentence for the verdict -- and, on a
+// refusal, the check's reading of the request and of the result. The check is
+// a model, and in live run musp39u8 (t194-w81, U6) its reading was written in
+// the judge's vocabulary: "endView shows page 5 ...; reads.stop is
+// control_disabled at pageLimit 5". So each of its sentences is shown only when
+// it names nothing internal -- no dotted path, field or parameter name, node id,
+// closed code word or hash -- and is otherwise left out whole, because a
+// sentence with its names cut out no longer says anything. Its advice is never
+// shown: it is the repair's instruction, written in the step's parameter names
+// and node ids, and it travels to the repair unchanged (`repair-directive.ts`).
+
+import type { AutomationStudioResultVerification } from "./contracts.ts";
+
+/** A dotted path or handle: `reads.stop`, `extractList.paginate.maxPages`, `node.bootstrap.….main.s7`, `extraction.4`. */
+const DOTTED = /\b[A-Za-z_][\w-]+\.[A-Za-z0-9_][\w-]*/u;
+/** A camelCase field or parameter name: `endView`, `pageLimit`, `leftOutOnlyByThis`. Brand casing (`iPhone`, `eBay`) is not. */
+const CAMEL = /\b[a-z]{2,}[A-Z][A-Za-z0-9]*/u;
+/** A snake_case code word or definition name: `control_disabled`, `extract_list`. */
+const SNAKE = /\b[A-Za-z0-9]+_[A-Za-z0-9_]+/u;
+/** A hash or id run: `64c205b534adb35d`. */
+const HEX = /\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]{10,}\b/u;
+/** Code punctuation a sentence for a person does not carry. */
+const CODE = /[`{}]/u;
+const INTERNAL = [DOTTED, CAMEL, SNAKE, HEX, CODE];
+
+/** Core's own count at the head of its observation: "13 records stored", "0 stored", "… of 13 stored". */
+const STORED = /(\d+)(?: records?)? stored/u;
+
+/**
+ * The card's text for a performed check: the rows that came back (where Core's
+ * observation counts them), Core's verdict sentence and, when the check
+ * refused the result, what it looked for and what it found, in its sentences
+ * that name nothing internal. Never its advice.
+ */
+export function automationStudioResultCheckWords(outcome: AutomationStudioResultVerification): string {
+  const judgement = outcome.verdict === "does_not_answer" ? outcome.repair?.judgement : undefined;
+  const lookedFor = plain(judgement?.expected);
+  const found = plain(judgement?.observed);
+  return [
+    ...rowsWords(outcome.observation),
+    outcome.reason,
+    ...(lookedFor ? [`It looked for: ${lookedFor}`] : []),
+    ...(found ? [`What it found: ${found}`] : [])
+  ].join(" ");
+}
+
+function rowsWords(observation: string): string[] {
+  const match = STORED.exec(observation);
+  if (!match) return [];
+  const count = Number(match[1]);
+  if (count === 0) return ["No rows came back."];
+  return [`${count} ${count === 1 ? "row" : "rows"} came back.`];
+}
+
+/** The model's sentences a person may read, joined, or nothing when none survives. */
+function plain(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const kept = text
+    .split(/(?<=[.!?])\s+/u)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence && !INTERNAL.some((shape) => shape.test(sentence)))
+    .map((sentence) => (/[.!?]["')]?$/u.test(sentence) ? sentence : `${sentence}.`));
+  return kept.length ? kept.join(" ") : undefined;
+}

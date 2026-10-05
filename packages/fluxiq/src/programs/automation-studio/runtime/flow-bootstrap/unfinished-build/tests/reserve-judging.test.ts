@@ -105,7 +105,9 @@ describe("a round the judging reserve stopped (t254 stage 2)", () => {
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
     const message = outcome.kind === "unfinished" ? outcome.ending.message : "";
     expect(message).toContain("so that went on testing and judging the Flow as it stood ($0.004), and it had spent $0.094 ($0.070 of it by earlier builds of this Flow) in all.");
-    expect(message).toContain("The Flow (3 steps) ran from its start, but what it did was judged not to be what you asked.");
+    // The test is said once, inside how much was done (t193 round 1003): its step count there, never "judged not" twice.
+    expect(message).toContain("when the Flow (3 steps) was run from its start, and 3 more have a step that did not work in that run, but the Flow was judged not to do what you asked.");
+    expect(message).not.toContain("what it did was judged not to be what you asked");
     expect(message).toContain('The judge found: one pack was added. What the judge says is left to change: "set the quantity to 2 before adding".');
     expect(message).toContain("The Flow so far was kept as a draft, not put into the Flow");
     expect(message).not.toContain("kept back for judging the Flow, and its next call");

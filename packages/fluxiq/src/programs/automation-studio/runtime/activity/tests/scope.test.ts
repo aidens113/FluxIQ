@@ -73,6 +73,15 @@ describe("withAutomationStudioBuildActivity", () => {
     expect(seen[0]!.activityId).toBe(seen[1]!.activityId);
   });
 
+  // t174-w108 D9 (`run-musp8nz1-dbd3905a`, screenshot 00011): the overlay read
+  // "Flow ready / Build finished: a Flow is proposed"; "proposed" meant nothing
+  // to the person, and the Flow ran a second later.
+  it("says a finished build in plain words", async () => {
+    await withAutomationStudioBuildActivity({ projectId: "p1" }, async () => "built");
+    expect(seen[1]).toMatchObject({ phase: "done", label: "Your Flow is ready", detail: { title: "Build finished", status: "succeeded" } });
+    expect(JSON.stringify(seen)).not.toMatch(/proposed/u);
+  });
+
   it("says failed and rethrows the same error", async () => {
     const error = new Error("refused");
     await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw error; })).rejects.toBe(error);
@@ -122,6 +131,30 @@ describe("withAutomationStudioRunActivity", () => {
     const error = new Error("boom");
     await expect(withAutomationStudioRunActivity({ projectId: "p1" }, async () => { bindAutomationStudioActivityRun("r2"); throw error; })).rejects.toBe(error);
     expect(seen.map((event) => event.phase)).toEqual(["running", "failed"]);
+  });
+
+  it("ends a failed run with what came back and why, read from the run's record (U3, run-musp39u8-9ac026ab)", async () => {
+    const record = {
+      resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer", code: "core.result.does_not_answer_request", observation: "13 records stored, across 1 record set" },
+      resultRepair: { attempted: true, attempts: 1, history: [{ attempt: 1, totalRecordCount: 13 }], phase: "settled", outcome: "not_rerun" },
+      resultReauthor: { code: "flow_bootstrap.evidence_budget_exhausted", attempts: [{ attempt: 1, ending: { kind: "budget_exhausted", bound: "rounds", tried: { tested: "not_tested" } } }] }
+    };
+    const read: string[] = [];
+    await withAutomationStudioRunActivity({ projectId: "p1" }, async () => { bindAutomationStudioActivityRun("r4"); return { status: "failed", runId: "r4" }; }, {
+      readRecord: async (session) => { read.push(session.runId); return record; }
+    });
+    const sentence = "It returned 13 rows, but the check found they don't answer what you asked, and the fix used all its rounds before it could test a change.";
+    expect(read).toEqual(["r4"]);
+    expect(seen.at(-1)).toMatchObject({ phase: "failed", final: true, label: `Run failed: ${sentence}`, detail: { kind: "step", title: "Run failed", status: "failed", text: sentence } });
+  });
+
+  it("falls back to the session's own record, and to a bare \"Run failed\" when the record cannot be read", async () => {
+    const metadata = { resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer", observation: "2 records stored" } };
+    await withAutomationStudioRunActivity({ projectId: "p1" }, async () => { bindAutomationStudioActivityRun("r5"); return { status: "failed", metadata }; });
+    expect(seen.at(-1)).toMatchObject({ label: "Run failed: It returned 2 rows, but the check found they don't answer what you asked." });
+    await withAutomationStudioRunActivity({ projectId: "p1" }, async () => { bindAutomationStudioActivityRun("r6"); return { status: "failed" }; }, { readRecord: async () => { throw new Error("store closed"); } });
+    expect(seen.at(-1)).toMatchObject({ label: "Run failed", detail: { title: "Run failed", status: "failed" } });
+    expect(seen.at(-1)!.detail).not.toHaveProperty("text");
   });
 
   it("runs unobserved without a project", async () => {

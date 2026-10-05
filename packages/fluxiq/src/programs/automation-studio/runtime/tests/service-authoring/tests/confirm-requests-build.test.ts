@@ -221,9 +221,11 @@ async function build(script: { decisions: JsonObject[]; judge: ("yes" | "no")[];
   let decided = 0;
   let judged = 0;
   const provider = mockProvider(async (request) => {
-    // The build's one read of the instruction: nothing lasting is read from it, so the steps' own declarations decide.
+    // The build's one read of the instruction: it answers its one act, "Confirm every friend request ...", with
+    // nothing lasting. An act the read leaves unanswered would be lasting (t174-w107); a confirm is lasting anyway
+    // by its kind, `submit`, whatever the read says (lane B, F1), so a Confirm step claiming it is checked per row.
     if (request.metadata?.source === "instructionAuthority") {
-      return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { instructed: [] } } }, usage: USAGE };
+      return { response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result: { acts: { a1: ["none"] }, instructed: [] } } }, usage: USAGE };
     }
     requests.push(request);
     if (isJudgeRequest(request)) {
@@ -372,13 +374,21 @@ describe("confirm every friend request with 5 or more mutual friends", () => {
     expect(run.domain.declared.find((entry) => entry.nodeDefinitionId === CONFIRM_ID)).toMatchObject({ parameters: { person: { $state: { path: "item.name" } } }, declaredConsequences: LASTING });
   }, TIMEOUT_MS);
 
-  it("runs a Confirm that declares nothing lasting once per kept row, each with its row, and never only checks it", async () => {
+  /**
+   * The step declares nothing lasting, and the read answered its act "none",
+   * yet confirming is a `submit`: lasting by its kind
+   * (`flow-bootstrap/action-permissions.ts`, `instructedLastingActs`). This is
+   * the press run `run-murwcaj0-40e56557` (R3) repeated on the person's real
+   * requests. Before the kind rule (t264, from lane B's F1) the step ran once
+   * per row, as its declaration said.
+   */
+  it("checks a Confirm that declares nothing lasting once per kept row, each with its row, because confirming lasts by its kind", async () => {
     const run = await build({ decisions: [list(), confirmLive([]), repeat(), bind(), complete()], judge: ["yes", "yes"] });
     const result = await run.generation;
 
     expect(result.status).toBe("proposed");
-    expectSentPerRow(run.domain.calls, "step");
-    expectJudgedPerRow(run.requests, "replayed");
+    expectSentPerRow(run.domain.calls, "verify");
+    expectJudgedPerRow(run.requests, "verified");
     await expectRowGeneralFlow(run, result.adaptationId, []);
   }, TIMEOUT_MS);
 

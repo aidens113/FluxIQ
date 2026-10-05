@@ -45,6 +45,25 @@ describe("one attempt to finish", () => {
       .resolves.toEqual({ kind: "refused", issueCodes: ["dry_run.step_failed"] });
   });
 
+  // R3c, live run `run-musp39u8-9ac026ab`: the check passed three completions
+  // the test then refused `full_run_required`, and what wraps the check (the
+  // log, the chat) heard only the pass. A check that listens is told.
+  it("tells a check that listens when the test refused what it accepted, with the codes and the steps", async () => {
+    const heard: unknown[] = [];
+    const checkCompletion = Object.assign(() => ({ ok: true as const }), { testRefused: (refused: unknown) => { heard.push(refused); } });
+    const refusedSteps = Object.defineProperty({ issueCodes: ["llm_evidence_loop.full_run_required"] }, "steps", { value: [2, 4], enumerable: false });
+    await expect(automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, checkCompletion, dryRun: async () => refusedSteps }))
+      .resolves.toEqual({ kind: "refused", issueCodes: ["llm_evidence_loop.full_run_required"] });
+    expect(heard).toEqual([{ issueCodes: ["llm_evidence_loop.full_run_required"], steps: [2, 4] }]);
+
+    // Not told when the check itself refused, nor when the test passed.
+    heard.length = 0;
+    const refusing = Object.assign(() => refusal("check.one"), { testRefused: (value: unknown) => { heard.push(value); } });
+    await automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, checkCompletion: refusing, dryRun: async () => refusedSteps });
+    await automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, checkCompletion, dryRun: async () => undefined });
+    expect(heard).toEqual([]);
+  });
+
   it("de-duplicates a code the check repeats", async () => {
     const attempt = await automationStudioLlmEvidenceCompletionAttempt({ result: {}, steps, checkCompletion: () => refusal("a.issue", "b.issue", "a.issue"), dryRun: async () => undefined });
     expect(attempt).toMatchObject({ kind: "refused", issueCodes: ["a.issue", "b.issue"] });

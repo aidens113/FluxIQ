@@ -24,10 +24,16 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 //     with why (`../../flow-draft/excused.ts`). Live run `run-murzln6g-11debe1d`
 //     showed an excused step as plain `failed`, and the judge asked to fix or
 //     remove it (t193 1002-M, C6).
-//   - `observed`, what the test saw for a step that reads (the rows) or a step
-//     it only checked, screened like any other evidence. A replayed list read
-//     names its rows, and the rows each condition left out by itself, by label
-//     (`readRows`, `./read-rows.ts`).
+//   - `observed`, what the test saw for a step that reads (the rows), a step
+//     it only checked, or a changing step it ran again whose answer says
+//     what it changed or what the page answered (`changed`, `notice`) (run
+//     `run-musp4h2f-72e8ed99`'s "+", t193 1003), screened like any other
+//     evidence. A replayed list read names its rows, and the rows each
+//     condition left out by itself, by label (`readRows`, `./read-rows.ts`).
+//     A changing step's change lines are bounded, the lines about the control
+//     it acted on first (`./change-lines.ts`, t174-w106): run
+//     `run-musp8nz1-dbd3905a`'s judges saw a press that un-chose Space Grey and
+//     the one that chose it again as two `replayed`.
 //   - `explored`, what a checked step did while the build explored it, since
 //     the test did not do it again.
 //   - `claims`, `checklist` and `missingActs`: the model's claims and the
@@ -193,16 +199,19 @@ export function automationStudioBuildTestResultSummary(input: {
     const claims = [...new Set([...(step.acts ?? []), ...claimed.filter((claim) => names(claim.step, step)).map((claim) => claim.action)])]
       .filter((claim) => claim.trim() && !automationStudioLocatorShapedText(claim));
     const runs = step.routing ? routingValue(step.routing, input.steps) : undefined;
-    const observing = observe && input.report && (step.effect !== "mutate" || checked) ? observe : undefined;
+    // A changing step run again is observed only for what its answer adds to its outcome (`./observation.ts`).
+    const restating = step.effect === "mutate" && !checked ? replayedCodes(outcome) : undefined;
+    const changing = restating ? { restating, words } : undefined;
+    const observing = observe && input.report && (step.effect !== "mutate" || checked || changing) ? observe : undefined;
     const lines = automationStudioBuildTestPassLines({
       step,
       outcome,
       observations: input.report ? observationsOf(step, input.report.observations) : [],
       rows: rowsOf(step),
-      observe: observing ? (evidence) => observing(step, evidence) : undefined,
+      observe: observing ? (evidence) => observing(step, evidence, changing) : undefined,
       stepOutcome: outcome ? outcomeWord(outcome) : "not_run"
     });
-    const observed = observing ? observing(step, lines.unpassed) : undefined;
+    const observed = observing ? observing(step, lines.unpassed, changing) : undefined;
     if (observed?.withheld || lines.withheld) withheld = true;
     if (observed?.value !== undefined) shown.set(automationStudioFlowDraftStepId(step), observed.value);
     return {
@@ -277,6 +286,13 @@ function lastView(report: AutomationStudioBuildTestReportInput | undefined, view
 /** The positions of the carried steps the test did not run: no evidence their acts are done. */
 export function automationStudioBuildTestUntestedCarried(account: AutomationStudioBuildTestAccount | undefined): number[] {
   return (account?.steps ?? []).filter((step) => step.carried && step.outcome === "not_run").map((step) => step.step);
+}
+
+/** The codes a step run again was answered with, its own and each pass's; absent when it was not run again. */
+function replayedCodes(outcome: AutomationStudioFlowDraftReplayOutcome | undefined): ReadonlySet<string> | undefined {
+  if (!outcome || (outcome.status !== "replayed" && outcome.passes === undefined)) return undefined;
+  // An answer without a code of its own is the replay's `core.replay.<status>` (`../../flow-draft/dry-run.ts`).
+  return new Set([outcome, ...outcome.passes ?? []].map((answer) => answer.resultCode ?? `core.replay.${answer.status}`));
 }
 
 /** How the test answered this step: by its id, or by its position where neither side has one. */

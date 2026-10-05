@@ -243,7 +243,13 @@ status is its first non-passing pass's, else `replayed`. A pass answering
 A member's mode is the same on every pass
 (`automationStudioFlowDraftStepReplayMode`, `runtime/flow-draft/verify-only.ts`):
 a step with a declared lasting consequence, or one doing an act of the
-person's, is sent `replay: "verify"` once per row, and is never pressed.
+person's, is sent `replay: "verify"` once per row, and is never pressed. An act
+of the person's is lasting by its kind (an add, save, claim, move or submit), by
+a quote of the build's instruction read that grounds it (a split act by its
+original clause), or when the read answered it with a class or left it
+unanswered; any other act -- a setting or an open the read neither quotes nor
+answered as lasting -- runs again (t174-w107,
+[the instruction's read](llm-flow-bootstrap.md#permission-on-the-authoring-path)).
 
 **A step the test ran per row is excused only by a withheld act.** The verdict
 (`runtime/flow-draft/dry-run.ts`) never exempts an outcome that carries
@@ -346,7 +352,7 @@ Terminal recovery selects the newest failed or unknown attempt that has no later
 
 ### Lasting acts from counted-object instructions
 
-When one original instruction clause names multiple counted objects, each parsed act keeps its own display quote and parser-owned source clause/object provenance. The cached consequence read attributes a lasting act only when its grounded quote includes that child object and matches the original clause or display quote. A combined clause can protect both objects during build tests; a narrow sibling quote or shared verb cannot. Dotted choice IDs remain ordinary preparation, and this attribution changes no permissions or normal Flow execution.
+When one original instruction clause names multiple counted objects, each parsed act keeps its own display quote and parser-owned source clause/object provenance. On the quote path of the lasting-act rule (`instructedLastingActs`, `runtime/flow-bootstrap/action-permissions.ts`), the cached consequence read attributes such an act only when a grounded quote includes that child object and matches the original clause or display quote: a combined clause grounds both objects; a narrow sibling quote or shared verb grounds neither. The quote path is one of three. An add, save, claim, move or submit act is lasting by its kind whatever the read quoted, so split adds are checked, never pressed again, by build tests; and an act the per-act read answered with a class, or left unanswered, is lasting too ([the instruction's read](llm-flow-bootstrap.md#permission-on-the-authoring-path)). In the read itself, a split act's answered classes are recorded as entries quoting its original clause, because the assembled display quote is not the person's words; sibling splits of one clause give one entry per class. Dotted choice IDs remain ordinary preparation, and this attribution changes no permissions or normal Flow execution.
 
 ### Checked configuration and prior execution
 

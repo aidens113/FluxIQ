@@ -33,6 +33,8 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
     consequences: ["modify_existing"],
     reauthorizes: false
   },
+  // An improvement is built from the Flow as it is, not from the page open now (`build.ts`), so no page is named.
+  announce: ({ flowName }) => `I'll work out the change${flowName ? ` to "${flowName}"` : ""} by trying it on the website, then ask you here whether to apply it.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const flowId = automationStudioConversationCommandText(args, "flowId");

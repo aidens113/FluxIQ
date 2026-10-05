@@ -63,6 +63,25 @@ describe("an answer step", () => {
     expect(json(path.join(directory, "0002-answer-amend_draft", "result.json"))).toMatchObject({ verdict: "ignored", reason: "llm_evidence_loop.draft_unchanged", refused: [] });
   });
 
+  // t174-w108 R3 (`run-musp8nz1-dbd3905a`, step 0028): the answer folder kept
+  // each refusal's step and code, while the model was told `next`, the
+  // positions, each reason's sentence and the progress counts; what it read
+  // could be seen only in the next request.
+  it("keeps the whole amendment answer the next request carries, word for word", () => {
+    const amendmentCheck = {
+      ok: false, code: "llm_evidence_loop.draft_amendments_refused",
+      refused: [{ step: 13, reason: "act_already_named", next: "The acts checklist shows a1.quantity done, so nothing is left to do for it: do not name it again." }, { step: 14, reason: "no_such_step" }],
+      applied: 0, steps: 13, positions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      reasons: { act_already_named: "That step already names that act.", no_such_step: "There is no step at that number." },
+      stepsWithoutProgress: 1, maxStepsWithoutProgress: 8, instruction: "The listed amendments changed nothing."
+    };
+    automationStudioLlmStepLogAnswer({ ...refusedAgain, amendmentsRefused: [{ step: 13, reason: "act_already_named" }, { step: 14, reason: "no_such_step" }], amendmentCheck }, env());
+    expect(json(path.join(directory, "0001-answer-amend_draft", "result.json"))).toMatchObject({ verdict: "refused", told: amendmentCheck });
+    // A row with no answer to the model says so by leaving it out.
+    automationStudioLlmStepLogAnswer(refusedAgain, env());
+    expect(json(path.join(directory, "0002-answer-amend_draft", "result.json"))).not.toHaveProperty("told");
+  });
+
   it("writes nothing for a row whose tool ran, which has its tool step, nor with the step log off", () => {
     automationStudioLlmStepLogAnswer({ iteration: 2, decision: "tool_call", toolId: "core.run_node", resultCode: "web.action.succeeded" }, env());
     automationStudioLlmStepLogAnswer({ iteration: 3, decision: "complete" }, env());
@@ -83,5 +102,24 @@ describe("an answer step", () => {
       progress: { draftRevisionBefore: 1, draftRevisionAfter: 1, draftState: "unchanged" }
     });
     expect(existsSync(path.join(directory, "0001-answer-amend_draft", "meta.json"))).toBe(true);
+  });
+
+  // t174-w116 (debug `run-musq0b1m-0472cfa0` R5, step 0061): one answer read `applied: 0` beside
+  // `draftChange.appliedCount: 1`, because a rerun the decision asked for counted in one and not the other.
+  it("counts a rerun among what was applied, as the row's draft change does", () => {
+    automationStudioLlmStepLogAnswer({ ...rerun, amendmentsRefused: [{ step: 9, reason: "run_by_the_loop" }], draftChange: { targetedStepIds: ["d9"], appliedCount: 1, refusedCount: 1, keptStepCount: 9 } }, env());
+    expect(json(path.join(directory, "0001-answer-amend_draft", "result.json"))).toMatchObject({ verdict: "partly_applied", applied: 1, draftChange: { appliedCount: 1 } });
+  });
+
+  // t174-w116 R3: the answer is written as the row is recorded, and what Core then tells the model
+  // is known only after its guard has counted the row; it is added to that same answer step.
+  it("adds what the model was told to the answer step already written for that row, not as a new step", () => {
+    const row: AutomationStudioLlmEvidenceLoopTrace = { ...refusedAgain };
+    automationStudioLlmStepLogAnswer(row, env());
+    const told = { ok: false, code: "llm_evidence_loop.draft_amendments_refused", refused: [{ step: 10, reason: "act_already_named" }], applied: 0 };
+    automationStudioLlmStepLogAnswer(row, env(), told);
+    expect(readdirSync(directory).sort()).toEqual(["0001-answer-amend_draft", "index.md"]);
+    expect(json(path.join(directory, "0001-answer-amend_draft", "result.json"))).toMatchObject({ verdict: "refused", told });
+    expect(readFileSync(path.join(directory, "index.md"), "utf8").match(/\| answer \|/gu)).toHaveLength(1);
   });
 });

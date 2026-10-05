@@ -180,9 +180,9 @@ describe("a Flow build that stops before its Flow is ready", () => {
     expect(requests.some((request) => repairEntry(request))).toBe(true);
     expect(diagnostic.code).toBe("flow_bootstrap.build_not_finished");
     expect(diagnostic.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 2, stepsInFlow: 1 } });
-    expect(diagnostic.ending?.message).toMatch(/^I have not finished this Flow yet: /u);
+    expect(diagnostic.ending?.message).toMatch(/^I have not finished this Flow yet\. /u);
     expect(diagnostic.ending?.message).not.toContain("found no way");
-    expect(diagnostic.ending?.message).toContain("I tried 2 times live -- exploring, then one repair after testing what I had");
+    expect(diagnostic.ending?.message).toContain("I worked on it live twice: first exploring the page, then fixing it once after testing what I had.");
   });
 });
 
@@ -227,6 +227,6 @@ describe("a continuation whose first round ends on repeats with the kept draft u
     // Not finished, not "not doable" (t195-w37): a route is still open; another identical round would only repeat it.
     expect(diagnostic.code).toBe("flow_bootstrap.build_not_finished");
     expect(diagnostic.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 1 } });
-    expect(diagnostic.ending?.message).toContain("ended on refused repeats of the same calls and handed back the Flow it started from, unchanged");
+    expect(diagnostic.ending?.message).toContain("kept retrying the same things, which had already failed or done nothing, and left the Flow just as it started");
   });
 });

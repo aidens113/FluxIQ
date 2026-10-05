@@ -281,7 +281,10 @@ describe("the instruction's lasting acts, read once before the first test", () =
 
   it("grounds split objects in the original combined clause without classifying an unquoted sibling", async () => {
     const instruction = "Switch my pickup store to Example Store, then add two packs of Towels in Large and one pack of Napkins in Small to my cart, both for pickup. Do not buy anything.";
-    const acts = automationStudioInstructedActs(instruction);
+    const kinded = automationStudioInstructedActs(instruction);
+    // Both adds last by their kind whatever the read quoted (lane B, F1), so grounding alone is shown on kind-less copies.
+    expect([...await reading([{ ...READ[0]!, quote: "add" }]).permissions.instructedLastingActs(kinded)].sort()).toEqual(["a2", "a3"]);
+    const acts = kinded.map((act) => ({ id: act.id, quote: act.quote, ...(act.source ? { source: act.source } : {}) }));
     const combined = reading([{ ...READ[0]!, quote: "add two packs of Towels in Large and one pack of Napkins in Small to my cart" }]);
     expect([...await combined.permissions.instructedLastingActs(acts)]).toEqual(["a2", "a3"]);
     await combined.permissions.instructedLastingActs(acts);
@@ -294,11 +297,47 @@ describe("the instruction's lasting acts, read once before the first test", () =
     expect([...await unrelated.permissions.instructedLastingActs(acts)]).toEqual([]);
   });
 
-  it("names nothing when the read fails, and does not try again at the cross-check", async () => {
+  it("names nothing by quote when the read fails, and does not try again at the cross-check", async () => {
     const run = reading(new Error("provider down"));
     expect([...await run.permissions.instructedLastingActs(ACTS)]).toEqual([]);
     await run.permissions.executeTool({ callId: "call.add", toolId: "example.press", value: { declaration: NOTHING } as unknown as JsonObject });
     await run.permissions.crossCheck();
     expect(run.derived()).toBe(1);
+  });
+
+  /**
+   * Run `run-musp4h2f-72e8ed99` (lane B): Core split the coordinated objects
+   * into a2 and a3, each quote composed from the verb and its own object, and
+   * the read quoted the whole coordinated sentence. Neither quote contained the
+   * other, so neither add was lasting, the Add to cart steps -- declared `[]` --
+   * were pressed again by all four tests, and the cart grew from 1 to 12 items.
+   * An add is lasting by its kind, whatever the read quoted.
+   */
+  describe("an act whose kind lasts, whatever the read quoted", () => {
+    const RUN_B = "Switch my pickup store to Millbrook Crossing Supercenter, then add two packs of the ValueRidge Essentials Select-A-Size Paper Towels in the 12 Double Rolls size and one pack of the ValueRidge Everyday Dinner Napkins in the 250 Count size to my cart, both for pickup. Keep what is already in my cart as it is, and do not check out.";
+    const RUN_B_READ: AutomationStudioInstructedConsequence[] = [
+      { consequence: "modify_existing", instructionId: "instruction.goal", instructionDigest: DIGEST, quote: "Switch my pickup store to Millbrook Crossing Supercenter" },
+      { consequence: "create_new", instructionId: "instruction.goal", instructionDigest: DIGEST, quote: "add two packs of the ValueRidge Essentials Select-A-Size Paper Towels in the 12 Double Rolls size and one pack of the ValueRidge Everyday Dinner Napkins in the 250 Count size to my cart" }
+    ];
+
+    it("names both split adds of that run's instruction, and the store switch the read quoted", async () => {
+      const acts = automationStudioInstructedActs(RUN_B);
+      expect(acts.map((act) => [act.id, act.kind])).toEqual([["a1", "set"], ["a2", "add_to"], ["a3", "add_to"]]);
+      const run = reading(RUN_B_READ);
+      expect([...await run.permissions.instructedLastingActs(acts)].sort()).toEqual(["a1", "a2", "a3"]);
+    });
+
+    it("leaves out an open the read does not quote, and never names a choice", async () => {
+      const acts = [...automationStudioInstructedActs(RUN_B), { id: "a4", kind: "open" as const, quote: "open my saved items" }, { id: "a2.quantity", kind: "add_to" as const, quote: "two packs" }];
+      const run = reading(RUN_B_READ);
+      const lasting = await run.permissions.instructedLastingActs(acts);
+      expect(lasting.has("a4")).toBe(false);
+      expect(lasting.has("a2.quantity")).toBe(false);
+    });
+
+    it("still names the lasting kinds when the read fails, and only those", async () => {
+      const run = reading(new Error("provider down"));
+      expect([...await run.permissions.instructedLastingActs(automationStudioInstructedActs(RUN_B))].sort()).toEqual(["a2", "a3"]);
+    });
   });
 });

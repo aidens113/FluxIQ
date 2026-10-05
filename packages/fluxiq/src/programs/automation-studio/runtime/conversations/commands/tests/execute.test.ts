@@ -73,6 +73,8 @@ const command = (id: string) => {
 
 const BUILD_OK: Handler = () => ({ ok: true, payload: { adaptation: { adaptationId: "adaptation.1", status: "proposed" } } });
 const REVIEW_OK: Handler = (payload) => ({ ok: true, payload: { adaptation: { adaptationId: payload.adaptationId, status: payload.action === "apply" ? "applied" : "validated" } } });
+/** What a failed build that kept nothing leaves: one plain sentence (t195 `run-musp474o-e0ed7432`). */
+const NOTHING_KEPT = 'The Flow "Kettles" has no steps yet, but it keeps your instruction, so you can build it again.';
 
 describe("conversation commands", () => {
   beforeEach(async () => {
@@ -117,10 +119,58 @@ describe("conversation commands", () => {
     const [result] = await turnsOf(conversations, conversationId);
     expect(result?.author).toBe("automation");
     expect(result?.attachment).toEqual({ kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.createHere" });
-    // The page is named by origin and path; its query and fragment stay out of the thread.
-    expect(result?.text).toContain('Created the Flow "Find the cheapest blue kettle."');
-    expect(result?.text).toContain("https://shop.example/kettles");
+    // The site is named by its name; no address, query or fragment reaches the thread (UI D9).
+    expect(result?.text).toContain('Your automation "Find the cheapest blue kettle." is ready');
+    expect(result?.text).toContain("shop.example");
+    expect(result?.text).not.toContain("https://");
     expect(result?.text).not.toContain("token=secret");
+    // True whether or not a run follows: it never tells the person to start one (live run
+    // `run-musp8nz1-dbd3905a` showed `Say "run it" to try it.` above "Running your Flow").
+    expect(result?.text).not.toContain('Say "run it"');
+  });
+
+  it("names a page served from this machine as the page the person had open, never its address", async () => {
+    const conversations = openConversations();
+    const conversationId = await chat(conversations);
+    const { port } = fakePort({
+      "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.towels" } } }),
+      "save-flow-generation-instruction": () => ({ ok: true }),
+      "generate-flow-bootstrap-adaptation": BUILD_OK,
+      "review-flow-adaptation": REVIEW_OK
+    });
+    const context = contextFor(conversations, conversationId, port, { startLocation: "http://127.0.0.1:4100/scenarios/towels" });
+    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context, arguments: { instruction: "Find towels", name: "Towels" } });
+    await executeAutomationStudioConversationCommand({ command: command("flow.explore"), context, arguments: { flowId: "flow.blank" } });
+    await automationStudioConversationCommandWork.idle();
+
+    // The two run in the background and may finish in either order.
+    const turns = await turnsOf(conversations, conversationId);
+    const said = (ref: string) => turns.find((turn) => turn.attachment?.ref === ref)?.text ?? "";
+    const texts = [said("flow.createHere"), said("flow.explore")];
+    expect(turns).toHaveLength(2);
+    for (const text of texts) {
+      expect(text).toContain("the page you had open");
+      expect(text).not.toMatch(/127\.0\.0\.1|https?:\/\//u);
+      expect(text).not.toContain('Say "run it"');
+    }
+    expect(texts[0]).toContain('Your automation "Towels" is ready');
+    expect(texts[1]).toContain("The Flow's steps are in");
+  });
+
+  it("says how far a build got in the site's name, never its address", async () => {
+    const conversations = openConversations();
+    const conversationId = await chat(conversations);
+    const { port } = fakePort({
+      "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.towels" } } }),
+      "save-flow-generation-instruction": () => ({ ok: true }),
+      "generate-flow-bootstrap-adaptation": BUILD_OK,
+      "review-flow-adaptation": () => ({ ok: false, error: "The change could not be applied." })
+    });
+    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port), arguments: { instruction: "Find towels", name: "Towels" } });
+    await automationStudioConversationCommandWork.idle();
+    const [result] = await turnsOf(conversations, conversationId);
+    expect(result?.text).toContain("tried the steps on shop.example and worked out which ones work");
+    expect(result?.text).not.toContain("https://");
   });
 
   // The rule is a ceiling per Flow, and the chat call that decided to build the
@@ -169,7 +219,7 @@ describe("conversation commands", () => {
     // What is left, said plainly and never as work done after a build that failed (t195,
     // `run-murdouox-c5294247`: "I could not build this Flow ... Before that I created the Flow").
     expect(result?.text).not.toContain("Before that I");
-    expect(result?.text).toContain('What is left: the Flow "Kettles", empty, with what you asked saved on it, so it can be built again.');
+    expect(result?.text).toContain(NOTHING_KEPT);
     expect(result?.text).toContain("Your model key is locked");
   });
 
@@ -194,7 +244,7 @@ describe("conversation commands", () => {
     expect(result?.text).not.toContain("stopped because");
     expect(result?.text).not.toContain("could not finish");
     expect(result?.text.split("I could not build this Flow")).toHaveLength(2);
-    expect(result?.text).toContain('What is left: the Flow "Kettles", empty, with what you asked saved on it, so it can be built again.');
+    expect(result?.text).toContain(NOTHING_KEPT);
   });
 
   // t193 R2-C3 (`run-murzln6g-11debe1d`, 09-failure-panel): "The Flow so far was
@@ -215,7 +265,13 @@ describe("conversation commands", () => {
 
     const [result] = await turnsOf(conversations, conversationId);
     expect(result?.text).not.toContain("empty");
-    expect(result?.text).toContain('What is left: the Flow "Kettles", with what you asked saved on it.');
+    // t195 `run-musp474o-e0ed7432` (12-failure-panel): "What is left: the Flow ..., with what
+    // you asked saved on it" read as a label, not a sentence, after the build's own ending.
+    // The ending already says what was kept and that building again carries on from it, so
+    // this says only what the Flow keeps (t193 round 1003, `run-musp4h2f-72e8ed99`).
+    expect(result?.text).toContain('The Flow "Kettles" keeps your instruction.');
+    expect(result?.text).not.toContain("What is left");
+    expect(result?.text).not.toMatch(/build(?:ing)? it again/u);
     expect(result?.text.split("carries on from")).toHaveLength(2);
   });
 
@@ -233,7 +289,8 @@ describe("conversation commands", () => {
 
     const [result] = await turnsOf(conversations, conversationId);
     expect(result?.text).not.toContain("empty");
-    expect(result?.text).toContain('What is left: the Flow "Kettles", with what you asked saved on it and the steps found so far kept, so building again carries on from them.');
+    expect(result?.text).toContain('The Flow "Kettles" keeps your instruction, and the steps found so far were kept as a draft, so building it again carries on from them.');
+    expect(result?.text).not.toContain("What is left");
   });
 
   it("routes the work's own questions and activity into the chat thread", async () => {
@@ -361,7 +418,7 @@ describe("conversation commands", () => {
     expect(calls.filter((call) => call.endpoint === "review-flow-adaptation").map((call) => call.payload.flowId)).toEqual(["flow.blank", "flow.blank"]);
     expect(calls.filter((call) => call.endpoint === "save-flow-generation-instruction")).toHaveLength(1);
     const texts = (await turnsOf(conversations, conversationId)).map((turn) => turn.text);
-    expect(texts.some((text) => text.includes("put the steps that worked into the Flow"))).toBe(true);
+    expect(texts.some((text) => text.includes("The Flow's steps are in: I tried them on shop.example and kept the ones that worked."))).toBe(true);
     expect(texts.some((text) => text.includes("requires a blank top-level orchestration Flow") && text.includes("Nothing was changed."))).toBe(true);
   });
 

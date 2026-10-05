@@ -321,6 +321,16 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     expect(verdict).toMatchObject({ verdict: "unknown", unconfirmedReading: { expected: NO.expected, observed: NO.observed, advice: NO.changed }, spent: { calls: 2 } });
   });
 
+  // Live run run-musp4h2f-72e8ed99 (t193 round 1003): the last judgement was no, then yes. The build must know one
+  // call said yes (`oneCallSaidYes`) to measure the repair that got there as progress; a no then unknown never says so.
+  it("no, then yes, is unknown with oneCallSaidYes; no, then unknown, is unknown without it", async () => {
+    const split = await judge(PICKUP_CART, { provider: answering(NO, { answersRequest: "yes" }).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(split).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, unconfirmedReading: { observed: NO.observed } });
+    const unconfirmed = await judge(PICKUP_CART, { provider: answering(NO, { answersRequest: "unknown" }).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(unconfirmed.verdict).toBe("unknown");
+    expect(unconfirmed).not.toHaveProperty("oneCallSaidYes");
+  });
+
   it("yes, then unknown or a call that did not come back, leaves the yes standing", async () => {
     for (const second of [{ answersRequest: "unknown" }, {}]) {
       const { provider } = answering({ answersRequest: "yes" }, second);

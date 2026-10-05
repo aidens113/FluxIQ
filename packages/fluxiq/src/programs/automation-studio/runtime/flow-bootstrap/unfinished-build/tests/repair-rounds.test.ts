@@ -156,7 +156,7 @@ describe("a repair round opens only after a round that measurably progressed", (
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 2 } });
     expect(outcome.ending.message).toContain(
-      "the last repair made no measurable progress on the round before it: no more of the 3 things you asked had a step (3, as before); the judge found the same as before."
+      "My last attempt to fix it got no further than the one before: 3 of the 3 things you asked have a step, no more than before, and the judge found the same as before."
     );
   });
 
@@ -210,7 +210,7 @@ describe("a round that ended on refused repeats and handed back the Flow it star
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 1, stepsInFlow: 2 } });
-    expect(outcome.ending.message).toContain("the last attempt ended on refused repeats of the same calls and handed back the Flow it started from, unchanged, so another round would only repeat it.");
+    expect(outcome.ending.message).toContain("My first attempt kept retrying the same things, which had already failed or done nothing, and left the Flow just as it started, so trying again would only do the same.");
   });
 
   it("ends a repair that handed back its seed unchanged the same way", async () => {
@@ -222,7 +222,7 @@ describe("a round that ended on refused repeats and handed back the Flow it star
     const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
 
     expect(requests).toHaveLength(2);
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("the last repair ended on refused repeats of the same calls and handed back the Flow it started from, unchanged");
+    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("My last attempt to fix it kept retrying the same things, which had already failed or done nothing, and left the Flow just as it started");
   });
 
   it("still repairs a first round that changed the Flow it started from, or that started from none", async () => {

@@ -4,9 +4,15 @@
 // Both come from the checklist (`../instructed-acts/checklist.ts`): the ids
 // and the person's own words for each act and choice still to do, and the
 // checklist's reason put into a plain clause. Nothing here is page content.
+// Its own directory, not the `result-verification` barrel: that directory reads this one through its barrel, so the barrel here would be a load cycle.
+import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS } from "../../result-verification/unsettled/index.ts";
 import type { AutomationStudioInstructedActChecklistItem, AutomationStudioInstructedActObjectTodo, AutomationStudioInstructedActTodo } from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
+import type { AutomationStudioFlowBootstrapEndingRoom } from "./ending-fit.ts";
+
+/** How many acts still to do are quoted, and how long each quote is (`./ending-fit.ts`). */
+type QuoteRoom = Pick<AutomationStudioFlowBootstrapEndingRoom, "most" | "quote">;
 
 const MAX_QUOTE = 200;
 const MAX_SAID_QUOTE = 90;
@@ -34,18 +40,20 @@ const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo | Automation
 
 /** Why each round stopped, as a clause that finishes "The build stopped because ...". */
 const STOP_WORDS: Readonly<Record<AutomationStudioFlowBootstrapUnfinishedStop, string>> = Object.freeze({
-  iterations: "it used every decision it had without the Flow being finished",
-  tool_calls: "it used every action it had without the Flow being finished",
+  // Words a person reads in the chat (t195-w48): no "decision", "model" or
+  // "round"; which bound it was stays in the ending's `tried.stops`.
+  iterations: "it used all the tries it had before the Flow was finished",
+  tool_calls: "it used all the actions it had before the Flow was finished",
   // Any run of decisions the loop could not use ends a round this way -- a
   // completion refused, an edit to the Flow that changed nothing, a call
   // refused as a repeat -- so the words claim none of them. Live run
   // `run-muqiojz4-04a7a8fc` was told "every attempt to finish was refused"
   // after five refused amendments and no attempt to finish at all.
-  unusable_decisions: "too many of its decisions in a row could not be used",
+  unusable_decisions: "too many attempts in a row went nowhere",
   repeat_without_progress: "it kept repeating itself without getting further",
   // A `no`, an unsure verdict, one not judged, or a yes about another version
   // of the Flow or about no test (user, 2026-10-02): none is a judged success.
-  judged_wrong: "the Flow it said was ready was not judged to do what you asked"
+  judged_wrong: "the Flow it thought was ready was not judged to do what you asked"
 });
 
 /** The acts and choices not done, as the ending's record keeps them. */
@@ -56,25 +64,29 @@ export function automationStudioFlowBootstrapNotDone(checklist: readonly Automat
   ]).slice(0, 16);
 }
 
-/** "`"add two packs ..."`: nothing I tried did it; ..." -- at most four, then how many more. */
-export function automationStudioFlowBootstrapNotDoneSaid(notDone: AutomationStudioFlowBootstrapBuildEnding["notDone"]): string {
-  const said = notDone.slice(0, MAX_SAID).map((item) => `"${bounded(item.quote, MAX_SAID_QUOTE)}": ${TODO_WORDS[item.todo as AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo] ?? "nothing I tried did it"}`);
-  const more = notDone.length > MAX_SAID ? `; and ${notDone.length - MAX_SAID} more` : "";
+/**
+ * "`"add two packs ..."`: nothing I tried did it; ..." -- at most four, then how
+ * many more; fewer and shorter where an ending has less room (`./ending-fit.ts`).
+ */
+export function automationStudioFlowBootstrapNotDoneSaid(notDone: AutomationStudioFlowBootstrapBuildEnding["notDone"], room: QuoteRoom = { most: MAX_SAID, quote: MAX_SAID_QUOTE }): string {
+  const most = Math.max(1, room.most);
+  const said = notDone.slice(0, most).map((item) => `"${boundedAtWord(item.quote, room.quote)}": ${TODO_WORDS[item.todo as AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo] ?? "nothing I tried did it"}`);
+  const more = notDone.length > most ? `; and ${notDone.length - most} more` : "";
   return `${said.join("; ")}${more}`;
 }
 
-/** A refusal the model was shown, as the clause that finishes "... because ...". First match wins. */
+/** A refusal the model was shown, as the clause that finishes "... because ...", in a person's words (never "the model"). First match wins. */
 const BLOCKED_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/^bootstrap\.instructed_act_missing$/u, "the Flow did not yet do what you asked"],
   [/^bootstrap\.cannot_answer_instruction$/u, "the Flow could not give the answer you asked for"],
   [/dry_run|replay/u, "a step did not work when the Flow was run from its start"],
   [/permission/u, "a step needed your permission"],
-  [/^llm_output\.|malformed|unreadable|provider_output/u, "the model's replies could not be read"],
-  [/^llm_evidence_loop\.(?:already_answered|already_observed|look_withdrawn|no_progress)/u, "the model kept asking for what it had already been shown"],
+  [/^llm_output\.|malformed|unreadable|provider_output/u, "the replies it got back could not be read"],
+  [/^llm_evidence_loop\.(?:already_answered|already_observed|look_withdrawn|no_progress)/u, "it kept looking again at what it had already seen"],
   // Its edits to the draft, refused again and again (`../../llm/draft-amendment-feedback.ts`).
-  [/^llm_evidence_loop\.draft_amendments?_(?:refused|undone)$/u, "the model kept asking for changes to the Flow that changed nothing"],
+  [/^llm_evidence_loop\.draft_amendments?_(?:refused|undone)$/u, "it kept trying changes to the Flow that changed nothing"],
   // A call refused unrun, because the same call had already failed or changed nothing there (`../../llm/repeat-guard/`).
-  [/^llm_evidence_loop\.repeat_refused$/u, "the model kept trying again what had already failed or changed nothing"],
+  [/^llm_evidence_loop\.repeat_refused$/u, "it kept retrying things that had already failed or done nothing"],
   [/plan|flow_draft|validation|node|subflow/u, "the Flow it wrote was not one that could run"]
 ];
 
@@ -172,10 +184,23 @@ function positionsSaid(positions: readonly number[]): string {
  */
 export function automationStudioFlowBootstrapRepairingJudgedSaid(judge: NonNullable<AutomationStudioFlowBootstrapJudgement["judge"]>): string {
   const carried = judge.untestedCarried ?? [];
-  if (carried.length) return `The Flow was not judged to do what you asked: steps ${carried.join(", ")} came from the earlier Flow and were not run when it was tested. Repairing the Flow live, running them again.`;
-  const said = boundedReason((judge.observed ?? judge.findings[0] ?? "").replace(/\s+/gu, " ").trim());
+  if (carried.length) return `The Flow was not judged to do what you asked: steps ${carried.join(", ")} came from the earlier Flow and were not run when it was tested. Repairing it live, running them again.`;
+  const said = boundedReason(automationStudioFlowBootstrapUnsettledForBuild((judge.observed ?? judge.findings[0] ?? "").replace(/\s+/gu, " ").trim()));
   if (judge.verdict !== "no") return `The Flow is not yet confirmed to do what you asked${said ? `: ${said}` : ""}. Repairing it live, to test it from its start and check it again.`;
   return `The Flow was tested from its start and judged not to do what you asked${said ? `: ${said}` : ""}. Repairing it live.`;
+}
+
+/**
+ * A judge's reason as a build says it: the closing sentence of two checks that
+ * did not settle it -- "the run is not marked as failed for it", which is true
+ * of a run -- swapped for what such a split means in a build, that it cannot
+ * finish on this test (`../../result-verification/unsettled/unsettled-words.ts`; t193
+ * round 1003, D10 and the not-finished ending). Any other reason is unchanged.
+ */
+export function automationStudioFlowBootstrapUnsettledForBuild(reason: string): string {
+  let said = reason;
+  for (const words of Object.values(AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS)) said = said.split(words.run).join(words.build);
+  return said;
 }
 
 /** A reason of at most 160 characters, cut after its last whole sentence that fits, else mid-way; never ending in a full stop the heading adds. */
@@ -207,30 +232,62 @@ function boundedReason(reason: string): string {
  */
 export function automationStudioFlowBootstrapProgressSaid(
   checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined,
-  judgement: (Pick<AutomationStudioFlowBootstrapJudgement, "tested" | "proven"> & { judge?: { verdict: "yes" | AutomationStudioFlowBootstrapJudgedWrong["verdict"] } | undefined }) | undefined
+  judgement: (Pick<AutomationStudioFlowBootstrapJudgement, "tested" | "proven"> & { judge?: { verdict: "yes" | AutomationStudioFlowBootstrapJudgedWrong["verdict"] } | undefined }) | undefined,
+  /** The Flow's step count, said in the run clause of a sentence that also says the Flow was not judged a success (`automationStudioFlowBootstrapProgressAndTestSaid`). */
+  stepsInFlow?: number,
+  /** How much of the still-to-do list is quoted (`./ending-fit.ts`). */
+  room?: QuoteRoom
 ): string {
   const asked = (checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
   if (!asked) return "";
   const notDone = automationStudioFlowBootstrapNotDone(checklist);
   const named = Math.max(0, asked - notDone.length);
-  const still = notDone.length ? `; still to do: ${automationStudioFlowBootstrapNotDoneSaid(notDone)}` : "";
+  const still = notDone.length ? `; still to do: ${automationStudioFlowBootstrapNotDoneSaid(notDone, room)}` : "";
   if (!named) return `${asked === 1 ? "The one thing you asked is not done" : `None of the ${asked} things you asked is done`}${still}.`;
   const verdict = judgement?.judge?.verdict;
   const judged = verdict === "no" ? ", but the Flow was judged not to do what you asked" : verdict && verdict !== "yes" ? ", but the Flow was not judged to do what you asked" : "";
+  const run = judged && stepsInFlow !== undefined ? `when the Flow (${stepsInFlow} step${stepsInFlow === 1 ? "" : "s"}) was run from its start` : "when the Flow was run from its start";
   if (asked === 1) {
     // Named, so done: the one thing has a step, which worked when run (by the judge's yes), ran without one, did not, or was never run.
     if (!judgement || judgement.tested === "not_tested") return "The one thing you asked has a step in the Flow, not yet shown to work by running it.";
     if ((judgement.proven ?? 0) === 0) return "The one thing you asked has a step that did not work when the Flow was run from its start.";
     return verdict === "yes"
       ? "The one thing you asked worked when the Flow was run from its start."
-      : `The one thing you asked has a step that ran, or could run, when the Flow was run from its start${judged}.`;
+      : `The one thing you asked has a step that ran, or could run, ${run}${judged}.`;
   }
   const have = (count: number): string => (count === 1 ? "has" : "have");
   if (!judgement || judgement.tested === "not_tested") return `${named} of the ${asked} things you asked ${have(named)} a step in the Flow, not yet shown to work by running it${still}.`;
   const proven = Math.min(named, judgement.proven ?? 0);
   const rest = named > proven ? `, and ${named - proven} more ${have(named - proven)} a step that did not work in that run` : "";
   if (verdict === "yes") return `${proven} of the ${asked} things you asked worked when the Flow was run from its start${rest}${still}.`;
-  return `${proven} of the ${asked} things you asked ${have(proven)} a step that ran, or could run, when the Flow was run from its start${rest}${judged}${still}.`;
+  return `${proven} of the ${asked} things you asked ${have(proven)} a step that ran, or could run, ${run}${rest}${judged}${still}.`;
+}
+
+/**
+ * How much of what was asked the Flow does, then what its last test found, said
+ * once (t193 round 1003). Live run `run-musp4h2f-72e8ed99` read "6 of the 6
+ * things you asked have a step that ran, or could run, when the Flow was run
+ * from its start, but the Flow was not judged to do what you asked. The Flow
+ * (16 steps) ran from its start, but what it did was not judged to be what you
+ * asked": one point, twice. Where the progress sentence already says the Flow
+ * ran and was not judged a success, the test's step count goes into it and the
+ * test's own sentence is left out; where the test says more (steps carried and
+ * not run, or not run whole), both are said.
+ */
+export function automationStudioFlowBootstrapProgressAndTestSaid(
+  checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined,
+  judgement: AutomationStudioFlowBootstrapJudgement | undefined,
+  /** How much of the still-to-do list is quoted (`./ending-fit.ts`). */
+  room?: QuoteRoom
+): string {
+  const progress = automationStudioFlowBootstrapProgressSaid(checklist, judgement, undefined, room);
+  const test = automationStudioFlowBootstrapTestSaid(judgement);
+  const plain = judgement?.judge && !judgement.judge.untestedCarried?.length && !judgement.notRunInThisBuild?.length;
+  if (judgement && plain) {
+    const merged = automationStudioFlowBootstrapProgressSaid(checklist, judgement, judgement.stepsInFlow, room);
+    if (merged !== progress) return merged;
+  }
+  return [progress, test].filter(Boolean).join(" ");
 }
 
 /**
@@ -242,6 +299,35 @@ export function automationStudioFlowBootstrapStopSaid(stopped: AutomationStudioF
   if (stopped === "budget") return "a budget ran out";
   const blocked = stopped === "unusable_decisions" ? automationStudioFlowBootstrapBlockedSaid(issueCodes) : "";
   return blocked ? `${STOP_WORDS[stopped]}, because ${blocked}` : STOP_WORDS[stopped];
+}
+
+/**
+ * What was tried live, as a person reads it, without its closing full stop:
+ * "I worked on it live twice: first exploring the page, then fixing it once
+ * after testing what I had" (t195-w48). The counts a debug needs -- rounds,
+ * decisions, each round's stop -- stay in the ending's `tried` (`./tried.ts`);
+ * live runs `run-musr9pv3-f4bf6256` and `run-musp474o-e0ed7432` read "I tried 2
+ * times live -- exploring, then one repair ... -- over 73 decisions".
+ */
+export function automationStudioFlowBootstrapWorkedLiveSaid(rounds: number): string {
+  const repairs = rounds - 1;
+  return repairs > 0
+    ? `I worked on it live ${timesSaid(rounds)}: first exploring the page, then fixing it ${timesSaid(repairs)} after testing what I had`
+    : "I worked on it live once, exploring the page";
+}
+
+/** "once", "twice", "3 times". */
+function timesSaid(count: number): string {
+  return count === 1 ? "once" : count === 2 ? "twice" : `${count} times`;
+}
+
+/** A quote of at most `most` characters, cut after its last whole word that fits where one does. */
+function boundedAtWord(text: string, most: number): string {
+  const folded = bounded(text, Number.MAX_SAFE_INTEGER);
+  if (folded.length <= most) return folded;
+  const room = folded.slice(0, most - 2);
+  const space = room.lastIndexOf(" ");
+  return space > most / 2 ? `${room.slice(0, space).replace(/[\s,;:]+$/u, "")}...` : bounded(folded, most);
 }
 
 function bounded(text: string, most: number): string {

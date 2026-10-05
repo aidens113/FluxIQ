@@ -16,10 +16,14 @@
 //   test's replay, hold `call.json`, `result.json`, `page.txt` when the result
 //   carries a page view, and `meta.json`. A replay's row (`item` in the call) and
 //   output values (`outputs` in `meta.json`) are written as field names only.
-// - Answer folders `NNNN-answer-amend_draft`, and `NNNN-answer-<toolId>` for a
-//   call refused unrun as a repeat, hold `result.json` -- Core's answer:
-//   `applied`, `partly_applied`, `refused` or `ignored`, with each reason --
-//   and `meta.json` (kind `answer`). They carry no provider and cost nothing.
+// - Answer folders `NNNN-answer-amend_draft`, `NNNN-answer-unusable` for a
+//   decision Core refused (no decision shape, a refused completion, a call not
+//   offered), and `NNNN-answer-<toolId>` for a call refused unrun as a repeat
+//   or answered from memory, hold `result.json` -- Core's answer: `applied`,
+//   `partly_applied`, `refused` or `ignored`, with each reason, the steps a
+//   refusal listed (`steps`) and the entries Core showed the model about it
+//   (`feedback`) -- and `meta.json` (kind `answer`). They carry no provider and
+//   cost nothing.
 // - `meta.json` is written last: a folder with it is complete.
 // - `index.md` in the directory lists every completed step.
 //

@@ -462,6 +462,17 @@ describe("a Flow holding steps carried from an earlier Flow that never ran in th
     expect(run.shown).toEqual(["core.dry_run.unrun.1", "core.dry_run.unrun.2"]);
   });
 
+  // R3c, live run `run-musp39u8-9ac026ab`: three completions refused this way
+  // left nothing in core.log or the chat. The refusal carries the steps it
+  // names beside its codes, not among them, so the log and the chat can say
+  // which, and a caller comparing refusals by their codes reads them as before.
+  it("carries the steps it names beside its codes, for the log and the chat", async () => {
+    const run = harness([carried(1), step(2), carried(3)], {});
+    const { answer } = await run.complete();
+    expect(answer).toEqual({ issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] });
+    expect((answer as { steps?: readonly number[] }).steps).toEqual([1, 3]);
+  });
+
   it("is replayed once each carried step was rerun and carries ranWith and replay", async () => {
     const steps = [carried(1), step(2)];
     const run = harness(steps, {});

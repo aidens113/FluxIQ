@@ -32,6 +32,26 @@ describe("a budget ending", () => {
   it("never says worked of a Flow judged not to do what was asked", () => {
     const message = automationStudioFlowBootstrapBudgetExhausted({ ...told, kept: true }).message;
     expect(message).not.toContain("worked");
-    expect(message).toContain("2 of the 2 things you asked have a step that ran, or could run, when the Flow was run from its start, but the Flow was judged not to do what you asked.");
+    expect(message).toContain("2 of the 2 things you asked have a step that ran, or could run, when the Flow (13 steps) was run from its start, but the Flow was judged not to do what you asked.");
+    expect(message.match(/not to do what you asked|not to be what you asked/gu)).toHaveLength(1);
+  });
+});
+
+// t193 round 1003 (w9, w6): the merged progress-and-test sentence, and a split
+// judge said as what it means in a build, never "the run is not marked as failed".
+describe("a budget ending after a judge that did not settle it", () => {
+  const disagreed = "This result was checked twice with the same evidence, and the answers differed. Neither answer counts for more than the other, so the result is not confirmed, and the run is not marked as failed for it.";
+  const unsure: AutomationStudioFlowBootstrapJudgement = { ...judgedNo, stopped: "budget", judge: { verdict: "unknown", findings: [disagreed] } };
+
+  it("says not judged once, with the step count in the progress sentence", () => {
+    const message = automationStudioFlowBootstrapBudgetExhausted({ ...told, judgement: unsure, spending: { ...told.spending, judgedUsd: 0.01 }, kept: true }).message;
+    expect(message).toContain("2 of the 2 things you asked have a step that ran, or could run, when the Flow (13 steps) was run from its start, but the Flow was not judged to do what you asked.");
+    expect(message).not.toContain("what it did was not judged");
+  });
+
+  it("says the build cannot finish on the split, never that the run is not failed", () => {
+    const message = automationStudioFlowBootstrapBudgetExhausted({ ...told, judgement: unsure, spending: { ...told.spending, judgedUsd: 0.01 }, kept: true }).message;
+    expect(message).toContain("The judge could not confirm it: This result was checked twice with the same evidence, and the answers differed. Since they disagree, the build cannot finish on this test.");
+    expect(message).not.toContain("not marked as failed");
   });
 });

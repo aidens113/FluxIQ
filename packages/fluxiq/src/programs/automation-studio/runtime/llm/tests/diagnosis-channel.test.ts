@@ -195,6 +195,21 @@ describe("the build-test judge is told what a repeated step's passes and the Flo
   });
 });
 
+// t174-w106 (live run `run-musp8nz1-dbd3905a`, Causes 2 and 3): the judge cited
+// exploration's "3 Cart" as the Flow's result, and was shown a press that
+// un-chose Space Grey as plain `replayed`. t193 1003 w3 (`run-musp4h2f-72e8ed99`):
+// the judge never saw the quantity a replayed "+" set. Only a build's test is told.
+describe("the build-test judge is told the page kept what exploration did, and what a replayed step changed", () => {
+  it("says a count or a collected state may predate the test, and how to read observed.changed", () => {
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(prompt).toContain("The test started from a page that kept what the build did while it explored");
+    expect(prompt).toContain("is exploration's doing, not proof the Flow does it");
+    expect(prompt).toContain("for a changing step run again, what it changed or what the page answered");
+    expect(prompt).toContain("observed.changed gives the lines about its own control first, then text that now reads otherwise");
+    expect(automationStudioDiagnosisPromptInstruction("loop_verification")).not.toContain("kept what the build did while it explored");
+  });
+});
+
 // t193 1002-M (live run `run-murzln6g-11debe1d`, C6): the drawer's "×" the Flow
 // passes over failed in the test, the judge was shown it as plain `failed`,
 // and its second answer asked to "fix or remove the failed step 15".

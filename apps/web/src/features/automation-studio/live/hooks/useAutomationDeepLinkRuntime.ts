@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { AutomationSelection } from "../../shared/selection-contracts";
 import { automationStudioDefaultViewForLink, automationStudioFlowScope, type AutomationStudioDeepLink } from "../../navigation";
+import { automationStudioViewId } from "../../views";
 
 type Options = {
   deepLink: AutomationStudioDeepLink;
@@ -20,14 +21,24 @@ type Options = {
   openSubflow: (flowId: string, subflowId: string, mode: "preview") => Promise<void>;
   selectFlow: (selection: AutomationSelection, mode: "preview") => boolean;
   openView: (viewId: string, mode: "preview") => void;
+  /** Opens Suggested changes for the Flow with one adaptation selected (useAdaptationWorkspaceNavigation.openAdaptation). */
+  openAdaptation: (flowId: string, adaptationId: string) => void;
 };
+
+/** The adaptation a link asks to show: only on a top-level Flow, and only in the adaptations view. */
+function linkedAdaptationId(link: AutomationStudioDeepLink): string | null {
+  if (!link.flowId || link.subflowId || link.detail?.kind !== "adaptation") return null;
+  if (link.viewId && link.viewId !== automationStudioViewId.adaptations) return null;
+  return link.detail.id;
+}
 
 export function useAutomationDeepLinkRuntime(options: Options): void {
   const restoredRef = useRef<string | null>(null);
   useEffect(() => {
     const link = options.deepLink;
     if (!link.projectId || options.activeProjectId !== link.projectId || options.loadedProjectId !== options.activeProjectId) return;
-    const targetViewId = automationStudioDefaultViewForLink(link);
+    const adaptationId = linkedAdaptationId(link);
+    const targetViewId = adaptationId ? automationStudioViewId.adaptations : automationStudioDefaultViewForLink(link);
     const key = [
       link.projectId,
       link.flowId ?? "",
@@ -44,6 +55,7 @@ export function useAutomationDeepLinkRuntime(options: Options): void {
     );
     if (alreadyVisible) {
       restoredRef.current = key;
+      if (adaptationId) options.openAdaptation(link.flowId!, adaptationId);
       return;
     }
     if (link.flowId) {
@@ -57,7 +69,8 @@ export function useAutomationDeepLinkRuntime(options: Options): void {
         await options.loadFlow(link.flowId);
         options.selectFlow({ kind: "flow", id: link.flowId }, "preview");
       }
-      if (targetViewId) options.openView(targetViewId, "preview");
+      if (adaptationId) options.openAdaptation(link.flowId!, adaptationId);
+      else if (targetViewId) options.openView(targetViewId, "preview");
     })();
   }, [
     options.activeProjectId,
@@ -67,6 +80,7 @@ export function useAutomationDeepLinkRuntime(options: Options): void {
     options.lastOpenFlowId,
     options.loadFlow,
     options.loadedProjectId,
+    options.openAdaptation,
     options.openSubflow,
     options.openView,
     options.projectFlowSignature,

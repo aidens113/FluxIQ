@@ -71,6 +71,22 @@
 // has already paid for it, and a build that acted on nothing has nothing to
 // compare.
 //
+// **The read is made before a press, never inside one (t174-w107).** The gate
+// derives the instruction's read when an action first declares something
+// lasting -- from inside the domain's permission check, mid-press: run
+// `run-musp8nz1-dbd3905a` read (0031) inside its Add to cart (0030). So
+// `executeTool` makes the read before handing the domain a call whose input
+// declares a lasting consequence, and the gate's check finds it made. Later
+// points run no press: the first test (`instructedLastingActs`), the
+// completion check, the cross-check. One read per build, whichever is first;
+// only a class the domain adds to a call that declared none is read in the
+// check. An act the read gave no answer (skipped, or a failed read) is read as
+// lasting, so the tests check it rather than do it again, and the Flow's
+// thread is told once which act, in the person's words. Which acts the tests
+// check is composed in `instructedLastingActs` below: an act's kind (lane B,
+// F1), a grounded quote (t174-w83, split acts by their clause since t262), or
+// the act's own answer (t174-w107).
+//
 // A build that finishes while carrying an unanswered request is proposed with
 // the request on it. The person is asked before anything is applied, never
 // instead of getting a Flow:
@@ -81,6 +97,7 @@ import {
   AutomationStudioActionPermissionGate,
   automationStudioActionDeclarationCrossCheck,
   automationStudioDestructiveConsequences,
+  automationStudioInstructedActReads,
   type AutomationStudioActionDeclarationCrossCheck,
   type AutomationStudioActionDeclarationRecord,
   type AutomationStudioActionPermissionCheck,
@@ -88,8 +105,10 @@ import {
   type AutomationStudioInstructedConsequence
 } from "../action-permissions/index.ts";
 import { automationStudioActivityAskPort } from "../activity/index.ts";
+import { automationStudioFlowDraftDeclaresLasting } from "../flow-draft/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, automationStudioPermissionAskOutcome, type AutomationStudioPermissionAsk } from "../parking/index.ts";
+import type { AutomationStudioInstructedActKind } from "./instructed-acts/index.ts";
 import { flowBootstrapPermissionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure/index.ts";
 
 /**
@@ -118,22 +137,47 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
   /** What the instruction was read to ask for, once the build first needed to know; stored with what it builds. */
   instructed(): readonly AutomationStudioInstructedConsequence[] | undefined;
   /**
-   * The ids of the instruction's acts that its read says ask for something
-   * lasting, for the build's tests (`../flow-draft/verify-only.ts`): a step
-   * claiming one is checked rather than run again, whatever it declared.
+   * The ids of the instruction's acts that ask for something lasting, for the
+   * build's tests (`../flow-draft/verify-only.ts`): a step claiming one is
+   * checked rather than run again, whatever it declared.
    *
    * Forces the instruction's read now -- the one read the build makes, which
    * the cross-check after the build reuses rather than paying for again -- so
-   * a caller asks before the first test. An act is lasting when one of the
-   * read's quotes contains its words, or its words contain the quote, after
-   * case and spacing are set aside: the read quotes the person's words and so
-   * does the act (`./instructed-acts/instruction-acts.ts`), each bounded its
-   * own way, so neither is reliably the longer. Only an act's own id is
-   * named; a choice of it (`a1.colour`) never is. No acts, no read: an
-   * instruction that asks for no act has nothing for the tests to withhold. A
-   * read that fails names nothing, and the tests run as the declarations say.
+   * a caller asks before the first test, even when every act is lasting by its
+   * kind. An act is lasting when any of three holds:
+   *
+   * (a) **Its kind.** An act whose kind does something to an item that stays
+   * done -- `add_to`, `save`, `claim`, `move`, `submit`, the kinds
+   * `./instructed-acts/instruction-acts.ts` already counts per item -- whatever
+   * the read quoted. Run `run-musp4h2f-72e8ed99` (lane B, F1) is why: Core
+   * split "add two packs of ... and one pack of ... to my cart" into two adds,
+   * the read quoted the coordinated sentence, neither quote contained the
+   * other, and the four tests pressed both Add to cart steps again until the
+   * cart held 12 items.
+   *
+   * (b) **A grounded quote** (t174-w83). One of the read's quotes contains the
+   * act's words, or its words contain the quote, after case and spacing are
+   * set aside: the read quotes the person's words and so does the act, each
+   * bounded its own way, so neither is reliably the longer. An act split from
+   * one clause (`source`, t262) has a display quote Core assembled, so it is
+   * grounded in its original clause and its own object's words instead: a
+   * sibling's narrow quote or the shared verb alone proves nothing for it.
+   *
+   * (c) **Its own answer** (t174-w107). When the read carries per-act answers,
+   * an act whose answer -- same id, same words -- is missing, unanswered, or
+   * names a class is lasting until shown otherwise; only an act answered with
+   * nothing lasting is left to run again. Run `run-musp8nz1-dbd3905a`
+   * (Cause 5) is why: its read answered the cart and not the coupon.
+   *
+   * Every other act (a `set` or an `open` the read neither quotes nor
+   * answered as lasting) is sent again: that is what keeps "sort the results"
+   * or "open saved items" running, while "switch my pickup store" the read
+   * calls a change stays checked. Only an act's own id is named; a choice of
+   * it (`a1.colour`) never is. No acts, no read: an instruction that asks for
+   * no act has nothing for the tests to withhold. A read that throws holds no
+   * quotes and no answers, so it names only the acts lasting by their kind.
    */
-  instructedLastingActs(acts: readonly { id: string; quote: string; source?: { clause: string; object: string } }[]): Promise<ReadonlySet<string>>;
+  instructedLastingActs(acts: readonly { id: string; quote: string; kind?: AutomationStudioInstructedActKind | undefined; source?: { clause: string; object: string } | undefined }[]): Promise<ReadonlySet<string>>;
   /** The request the latest refusal carried, or `undefined` when none stands. Stored with a build that finished anyway. */
   request(): AutomationStudioActionPermissionRequest | undefined;
   /** What every action put to the gate declared about itself, in the order it was asked. */
@@ -224,8 +268,21 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       return await check(declaration);
     };
   };
+  // The read, once, with any act it left unanswered said once in the thread.
+  let unansweredSaid = false;
+  const read = async (): Promise<readonly AutomationStudioInstructedConsequence[]> => {
+    const entries = await gate.resolveInstructed();
+    const unanswered = (automationStudioInstructedActReads(entries) ?? []).filter((act) => act.consequences === null);
+    if (unanswered.length && !unansweredSaid) {
+      unansweredSaid = true;
+      await saidUnanswered(input.say, unanswered.map((act) => act.quote));
+    }
+    return entries;
+  };
   return {
     executeTool: async (call) => {
+      // Before the domain has the call, not from inside its permission check (see the header).
+      if (automationStudioFlowDraftDeclaresLasting(call.value.consequences)) await read();
       const permission = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
       const execution = await input.executeTool({ ...call, permission });
       gate.observe(execution);
@@ -249,20 +306,20 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     instructedLastingActs: async (acts) => {
       const own = acts.filter((act) => !act.id.includes("."));
       if (!own.length) return new Set<string>();
-      // The gate holds the read, so this and `crossCheck` share one provider call.
-      const quotes = (await gate.resolveInstructed()).map((entry) => folded(entry.quote)).filter((quote) => quote.length > 0);
+      // The gate holds the read, so this and `crossCheck` share one provider call; it is made even when every act lasts by its kind.
+      const entries = await read();
+      const quotes = entries.map((entry) => folded(entry.quote)).filter((quote) => quote.length > 0);
+      const answers = automationStudioInstructedActReads(entries);
       return new Set(own.filter((act) => {
+        // (a) Its kind.
+        if (act.kind && LASTING_KINDS.has(act.kind)) return true;
+        // (b) A grounded quote.
         const words = folded(act.quote);
-        if (!words.length) return false;
-        if (!act.source) return quotes.some((quote) => quote.includes(words) || words.includes(quote));
-        // Split-object display quotes are assembled, not original spans.
-        // Ground attribution in the original clause and this object's words;
-        // a sibling's narrow quote or a shared verb alone proves nothing here.
-        const clause = folded(act.source.clause);
-        const object = folded(act.source.object);
-        return object.length > 0 && clause.includes(object) && words.includes(object) && quotes.some((quote) =>
-          quote.includes(object) && (quote.includes(words) || words.includes(quote) || quote.includes(clause) || clause.includes(quote))
-        );
+        if (quotedLasting(act, words, quotes)) return true;
+        // (c) Its own answer: one the read did not give, or gave under other words, is lasting until shown otherwise.
+        if (!answers) return false;
+        const answer = answers.find((candidate) => candidate.act === act.id && folded(candidate.quote) === words);
+        return !answer || answer.consequences === null || answer.consequences.length > 0;
       }).map((act) => act.id));
     },
     request: () => gate.request,
@@ -271,7 +328,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       if (!gate.declarations.length) return undefined;
       const crossCheck = automationStudioActionDeclarationCrossCheck({
         declarations: gate.declarations,
-        instructed: await gate.resolveInstructed()
+        instructed: await read()
       });
       if (crossCheck.verdict === "undeclared") await saidOutLoud(input, crossCheck);
       return crossCheck;
@@ -280,6 +337,45 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       ? flowBootstrapPermissionRequiredFailure(gate.request, progress ?? NO_LOOP_PROGRESS, accounting)
       : undefined
   };
+}
+
+/** The act kinds that do something to an item that stays done: lasting whatever the read quoted (`instructedLastingActs`, (a)). */
+const LASTING_KINDS: ReadonlySet<AutomationStudioInstructedActKind> = new Set(["add_to", "save", "claim", "move", "submit"]);
+
+/**
+ * Whether one of the read's quotes grounds the act (`instructedLastingActs`,
+ * (b)). Split-object display quotes are assembled, not original spans: such an
+ * act is grounded in its original clause and its own object's words, and a
+ * sibling's narrow quote or a shared verb alone proves nothing for it.
+ */
+function quotedLasting(act: { source?: { clause: string; object: string } | undefined }, words: string, quotes: readonly string[]): boolean {
+  if (!words.length) return false;
+  if (!act.source) return quotes.some((quote) => quote.includes(words) || words.includes(quote));
+  const clause = folded(act.source.clause);
+  const object = folded(act.source.object);
+  return object.length > 0 && clause.includes(object) && words.includes(object) && quotes.some((quote) =>
+    quote.includes(object) && (quote.includes(words) || words.includes(quote) || quote.includes(clause) || clause.includes(quote))
+  );
+}
+
+/** How much of each unanswered act's words the thread is shown. */
+const UNANSWERED_QUOTE_MAX = 120;
+
+/**
+ * Says, once, which of the person's acts the instruction's read gave no answer
+ * for, and what the build does about it. A plain line, never a question: the
+ * build carries on and loses nothing by it. Best-effort, like every line the
+ * gate says; the read's own step record keeps the answer it gave either way.
+ */
+async function saidUnanswered(say: ((text: string) => Promise<unknown>) | undefined, quotes: readonly string[]): Promise<void> {
+  if (!say) return;
+  const named = quotes.map((quote) => `"${quote.length > UNANSWERED_QUOTE_MAX ? `${quote.slice(0, UNANSWERED_QUOTE_MAX - 1)}…` : quote}"`).join(", ");
+  const one = quotes.length === 1;
+  try {
+    await say(`Reading your instruction gave no answer for ${named}, so the build's tests check ${one ? "the step that does it" : "the steps that do them"} rather than do ${one ? "it" : "them"} again.`);
+  } catch {
+    /* best-effort: a thread that could not be written to changes nothing the build does. */
+  }
 }
 
 /** A quote as `instructedLastingActs` compares it: lower case, every run of spacing one space. */

@@ -51,10 +51,24 @@ export type AutomationStudioFlowBootstrapJudgeSpend = { inputTokens: number; out
  * not settle, where one call judged it not to do what was asked: that call's
  * expected, observed and advice. One judge's reading the other call did not
  * confirm, kept apart from a `no`'s own fields so nothing reads it as one.
+ *
+ * `oneCallSaidYes` is set only on an `unknown` whose two checks disagreed
+ * because one of them said the test does what was asked (`model_disagreed`,
+ * `../../result-verification/agreement.ts`): which pair it was, never what
+ * either call said. A `no` then nothing said (`model_unconfirmed`) never sets
+ * it. What `./progress.ts` measures a judge that stopped refuting by.
+ *
+ * A `yes` may carry the judge's `confidence` and, under `unconfirmedAdvice`,
+ * the advice and `patchNeeded` it gave beside its yes. Both are kept for the
+ * record only (`./finishing-verdict.ts`): the build decides from `verdict` and
+ * `flowSignature` alone, and a yes's advice is never a repair directive -- it
+ * is never put on a judgement, a resume or a re-author's seed (live run
+ * `run-murwd8le-79e735a8`, cause 10: a yes with `patchNeeded: true` advised
+ * "Remove or reorder step 11", and removing it would have broken the Flow).
  */
 export type AutomationStudioFlowBootstrapTestVerdict =
-  | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
-  | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; unconfirmedReading?: AutomationStudioFlowBootstrapJudgeReading; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
+  | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string; confidence?: number; unconfirmedAdvice?: AutomationStudioFlowBootstrapYesAdvice }
+  | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; unconfirmedReading?: AutomationStudioFlowBootstrapJudgeReading; oneCallSaidYes?: true; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
   | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; stillAchievable?: AutomationStudioFlowBootstrapStillAchievable; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
 
 /**
@@ -71,6 +85,14 @@ export type AutomationStudioFlowBootstrapStillAchievable = "yes" | "no" | "unkno
  * reported none.
  */
 export type AutomationStudioFlowBootstrapJudgedRecords = { stored: number; refused: number; missingRequired: number };
+
+/**
+ * What a judge that said `yes` also advised: its advice and whether it said a
+ * patch was needed. Unconfirmed by construction -- the verdict it came with did
+ * not act on it, and nothing checked its premise -- so it is information on the
+ * record, never a directive (cause 10, `run-murwd8le-79e735a8`).
+ */
+export type AutomationStudioFlowBootstrapYesAdvice = { advice?: string; patchNeeded?: boolean };
 
 /** What one judge call said of a test: what was asked, what the test did, and what to change. Every part optional. */
 export type AutomationStudioFlowBootstrapJudgeReading = { expected?: string; observed?: string; advice?: string };
@@ -98,6 +120,12 @@ export type AutomationStudioFlowBootstrapJudgedWrong = {
    * verdict.
    */
   unconfirmedReading?: AutomationStudioFlowBootstrapJudgeReading;
+  /**
+   * An `unknown`'s only: one of its two judge calls said the test does what
+   * was asked (`model_disagreed`). The pair, not the judge's words: what a
+   * repair after a `no` is measured by (`judge_no_longer_refutes`, `./progress.ts`).
+   */
+  oneCallSaidYes?: true;
   /** A `no`'s record counts, where the judge reported them. */
   records?: AutomationStudioFlowBootstrapJudgedRecords;
   /** A `no`'s word on whether what was asked can still be had, where the judge gave it. */
@@ -177,6 +205,7 @@ export type AutomationStudioFlowBootstrapRoundEnding =
  * - `more_working_steps`: with no judge on either side, more steps worked when it ran;
  * - `finished_and_judged`: the model said it was ready and its test passed, where the round before stopped short;
  * - `judged_after_unjudged`: the Flow before was not judged to do what was asked or not to (the judge unsure, not run, its yes about another version or no test, steps carried and never run), and this one was judged: a `no` (a `yes` about this Flow finishes the build and never reaches a measure);
+ * - `judge_no_longer_refutes`: the Flow before was judged not to do what was asked by two agreeing judge calls (`no`), and this one was not: of its two calls one said it does (`unknown` with `oneCallSaidYes`, `model_disagreed`). A `no` and a call that said nothing (`model_unconfirmed`) is not this measure;
  * - `judge_findings_resolved`: a finding the judge reported before is no longer reported;
  * - `records_stored`: the test stored rows where it stored none;
  * - `fewer_records_refused`: fewer rows were refused, with no fewer stored;
@@ -192,6 +221,7 @@ export type AutomationStudioFlowBootstrapProgressMeasure =
   | "more_working_steps"
   | "finished_and_judged"
   | "judged_after_unjudged"
+  | "judge_no_longer_refutes"
   | "judge_findings_resolved"
   | "records_stored"
   | "fewer_records_refused"
