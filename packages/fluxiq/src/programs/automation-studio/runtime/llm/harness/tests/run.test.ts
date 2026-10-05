@@ -14,6 +14,7 @@
 // provider said about it.
 
 import { describe, expect, it } from "vitest";
+import { AutomationStudioLlmBuildPurse, automationStudioLlmBuildPurseScope } from "../../build-purse/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../../deepseek/index.ts";
 import { AutomationStudioLlmProviderError } from "../../provider-contract.ts";
@@ -354,3 +355,38 @@ function deepSeek(response: () => Response): AutomationStudioLlmProvider {
     fetchImpl: (async () => response()) as typeof fetch
   });
 }
+
+
+it("counts internal transient transport retries once under shared build call admission", async () => {
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 1 });
+  const provider = rateLimitedUntil(1);
+  const result = await automationStudioLlmBuildPurseScope(purse, () => harness({ provider: provider.provider, requestId: "build.retry" }));
+  expect(provider.asked).toBe(2);
+  expect(result.ok).toBe(true);
+  expect(purse.spentCalls()).toBe(1);
+  const refused = await automationStudioLlmBuildPurseScope(purse, () => harness({ provider: provider.provider, requestId: "build.next" }));
+  expect(refused.providerInvocation).toBe("not_attempted");
+  expect(refused.provider).toBeUndefined();
+  expect(refused.diagnostics.some((diagnostic) => diagnostic.code === "llm_budget.run_call_limit")).toBe(true);
+  expect(provider.asked).toBe(2);
+  expect(purse.spentCalls()).toBe(1);
+});
+
+
+it("releases an explicit unsent adapter refusal and charges a sent malformed reply once", async () => {
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 1 });
+  const unsent = await automationStudioLlmBuildPurseScope(purse, () => harness({
+    requestId: "build.unsent", provider: { metadata: { provider: "mock", model: "mock" }, runTask: async () => {
+      throw new AutomationStudioLlmProviderError("llm.provider_input_budget_exceeded", "Synthetic preflight", false, undefined, { providerInvocation: "not_attempted", providerResponse: "not_received" });
+    } }
+  }));
+  expect(unsent.providerInvocation).toBe("not_attempted");
+  expect(purse.spentCalls()).toBe(0);
+  const malformed = await automationStudioLlmBuildPurseScope(purse, () => harness({
+    requestId: "build.malformed", provider: { metadata: { provider: "mock", model: "mock" }, runTask: async () => ({ response: "invalid", usage: { inputTokens: 100, outputTokens: 20, totalTokens: 120, estimatedCostUsd: 0.002 } }) }
+  }));
+  expect(malformed.ok).toBe(false);
+  expect(malformed.providerInvocation).toBe("attempted");
+  expect(purse.spentCalls()).toBe(1);
+  expect(purse.spentUsd()).toBeCloseTo(0.002);
+});

@@ -36,6 +36,26 @@ function flow(): { nodes: AutomationStudioFlowNode[]; edges: AutomationStudioFlo
 }
 
 describe("a Flow read back as a draft", () => {
+  it("schedules an unchanged declared saved configuration from its captured start without performed evidence", () => {
+    const seed = declaredSeed();
+    expect(seed.steps[0]!.input.consequences).toEqual([]);
+    expect(automationStudioFlowDraftReplayable(seed.steps)).toBe(true);
+    expect(seed.steps[0]!.ranWith).toBeUndefined();
+    expect(seed.steps[0]!.replay).toBeUndefined();
+    expect(seed.steps[0]!.checkedCandidate).toBeUndefined();
+    expect(seed.steps[0]!.effectApplied).toBeUndefined();
+    expect(seed.steps[0]!.priorExecution).toBeUndefined();
+  });
+
+  it("refuses missing declarations or captured start, changed configuration and copied steps", () => {
+    const node = { id: "saved", definitionId: "fixture.open", metadata: { declaredConsequences: [] } };
+    expect(automationStudioFlowDraftReplayable(automationStudioFlowDraftSeedFromFlow({ nodes: [node], edges: [] }).steps)).toBe(false);
+    expect(automationStudioFlowDraftReplayable(automationStudioFlowDraftSeedFromFlow({ nodes: [{ id: "saved", definitionId: "fixture.open" }], edges: [], startPages: { saved: { location: "fixture://start" } } }).steps)).toBe(false);
+    const seed = declaredSeed();
+    expect(automationStudioFlowDraftReplayable(seed.steps.map((step) => ({ ...step })))).toBe(false);
+    seed.steps[0]!.input.parameters = { changed: true };
+    expect(automationStudioFlowDraftReplayable(seed.steps)).toBe(false);
+  });
   it("orders the steps the way the Flow runs them, not the way the document lists them", () => {
     const seed = automationStudioFlowDraftSeedFromFlow(flow());
     expect(seed.steps.map((step) => step.actionId)).toEqual(["web.page.navigate", "web.dom.extract_list"]);
@@ -79,6 +99,13 @@ describe("a Flow read back as a draft", () => {
     expect(automationStudioFlowDraftSeedFromFlow(flow()).steps.every((step) => step.replay === undefined && step.ranWith === undefined)).toBe(true);
   });
 });
+
+function declaredSeed() {
+  return automationStudioFlowDraftSeedFromFlow({
+    nodes: [{ id: "saved", definitionId: "fixture.open", parameterValues: { text: { $state: { path: "text", fallback: "fixture" } } }, metadata: { declaredConsequences: [] } }],
+    edges: [], startPages: { saved: { location: "fixture://start" } }
+  });
+}
 
 describe("what state routing recorded on a node, carried through the re-seed", () => {
   // Supervisor (t243 -> t244): a node keeps `metadata.routeSignatures`, the

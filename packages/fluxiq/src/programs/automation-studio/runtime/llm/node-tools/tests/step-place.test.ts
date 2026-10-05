@@ -146,3 +146,35 @@ describe("what a rerun's result says about where it ran", () => {
     expect(automationStudioNodeRerunPlaceNoted({ kind: "unreachable", callId: "r.place", result: unreachable }, unreachable)).toBe(unreachable);
   });
 });
+
+// Live run `run-musq0b1m-0472cfa0`, Cause 4 (steps 0060-0073). The rerun of
+// step 7 put the item page back -- the host reloads it -- and then sent the
+// handle the model had read before the reload. The host answered
+// `handle_not_in_packet`; the note said only `put_back`, so the model never
+// learnt that the page it had read was gone, and tried again with the handle
+// the reloaded page had shown, which the next reload took away too.
+describe("a rerun refused after its page was put back", () => {
+  const putBack: AutomationStudioNodeRerunPlace = { kind: "put_back", callId: "rerun.7.place", startPage: "step", doneAgain: [] };
+  const refused = { kind: "llm_evidence_tool_execution" as const, evidence: { ok: false, code: "target_unobserved", detail: { reason: "handle_not_in_packet", target: "t985" } }, effectApplied: false };
+
+  it("says the page was put back before it ran, and names the control the argument meant", () => {
+    const noted = automationStudioNodeRerunPlaceNoted(putBack, refused, { step: 7, words: { target: "7-in-1" } }) as { evidence: JsonObject };
+    const note = noted.evidence.rerunPlace as JsonObject;
+    expect(note).toMatchObject({ place: "put_back", startPage: "step", named: "7-in-1" });
+    expect(String(note.detail)).toMatch(/put back where step 7 started/u);
+    expect(String(note.detail)).toMatch(/before this rerun ran/u);
+    expect(String(note.detail)).toMatch(/"7-in-1"/u);
+    expect(String(note.detail)).toMatch(/name it as the page in this answer shows it/u);
+  });
+
+  it("still says so when the domain gave no words for the control", () => {
+    const note = (automationStudioNodeRerunPlaceNoted(putBack, refused, { step: 7 }) as { evidence: JsonObject }).evidence.rerunPlace as JsonObject;
+    expect(note.named).toBeUndefined();
+    expect(String(note.detail)).toMatch(/put back where step 7 started/u);
+  });
+
+  it("adds nothing to a put-back rerun that worked", () => {
+    expect(automationStudioNodeRerunPlaceNoted(putBack, { rows: 1 }, { step: 7, words: { target: "7-in-1" } }))
+      .toEqual({ rows: 1, rerunPlace: { place: "put_back", startPage: "step" } });
+  });
+});

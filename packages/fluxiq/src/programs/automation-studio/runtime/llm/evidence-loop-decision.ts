@@ -20,6 +20,7 @@ import {
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA,
   type AutomationStudioFlowDraftAmendment,
   type AutomationStudioFlowDraftStepReplay,
+  type AutomationStudioFlowDraftStepToggle,
   automationStudioFlowDraftControlWords,
   automationStudioFlowDraftHoldsBinding,
   automationStudioFlowDraftTranslateBindings,
@@ -219,7 +220,7 @@ function closedCode(value: unknown): value is string {
 function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown): { draft: NonNullable<AutomationStudioLlmEvidenceToolExecutionResult["draft"]> } | { refused: AutomationStudioLlmEvidenceToolResultCheck } | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) return { refused: "draft.not_object" };
-  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption", "written"])) return { refused: "draft.unknown_key" };
+  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption", "written", "toggle"])) return { refused: "draft.unknown_key" };
   if (value.actionId !== undefined && !validId(value.actionId)) return { refused: "draft.action_id" };
   if (value.input !== undefined && !isJsonObject(value.input)) return { refused: "draft.input" };
   if (value.ranWith !== undefined && !isJsonObject(value.ranWith)) return { refused: "draft.ran_with" };
@@ -239,6 +240,10 @@ function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown
   // so. A caller that ignored `write` and acted answered another code, so its
   // step is an ordinary recorded one rather than a false "written".
   const written = value.written === true && resultCode === WRITTEN_CODE;
+  // The host's word that a press flipped whether its control is chosen
+  // (`../flow-draft/reversal.ts`). Withheld, never refused, when it is not one:
+  // the call happened either way, and only a statement that changed something can say it.
+  const toggle = value.effect === "mutate" ? toggleOf(value.toggle) : undefined;
   return { draft: {
     ...(value.actionId === undefined ? {} : { actionId: value.actionId }),
     ...(value.input === undefined ? {} : { input: value.input }),
@@ -248,8 +253,19 @@ function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown
     ...(replay ? { replay } : {}),
     ...(control === undefined ? {} : { control }),
     ...(interruption ? { interruption: true as const } : {}),
-    ...(written ? { written: true as const } : {})
+    ...(written ? { written: true as const } : {}),
+    ...(toggle ? { toggle } : {})
   } };
+}
+
+/**
+ * A press's flip of its control, or nothing when the value is not one: exactly
+ * `key` and `to`, the key a code Core compares and never reads, `to` one of two
+ * words.
+ */
+function toggleOf(value: unknown): AutomationStudioFlowDraftStepToggle | undefined {
+  if (!isRecord(value) || !exactKeys(value, ["key", "to"]) || !closedCode(value.key)) return undefined;
+  return value.to === "on" || value.to === "off" ? { key: value.key, to: value.to } : undefined;
 }
 
 /**
@@ -487,6 +503,9 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
     if (item.act !== undefined && (typeof item.act !== "string" || !AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(item.act))) continue;
     if (!Number.isSafeInteger(item.step) || (item.step as number) < 1) continue;
     if (typeof item.change !== "string" || !(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES as readonly string[]).includes(item.change)) continue;
+    // Explicit repeat removal changes only routing, not an act/argument or
+    // another route: mixed requests must be separate amendments.
+    if (item.change === "unrepeat" && !exactKeys(item, ["step", "change"])) continue;
     if (item.settings !== undefined && !isJsonObject(item.settings)) continue;
     if (item.input !== undefined && !isJsonObject(item.input)) continue;
     // Every key that names another step is one position, read the same way, so

@@ -22,6 +22,16 @@ function steps(count = 4): AutomationStudioFlowDraftStep[] {
 }
 
 describe("saying when a step runs", () => {
+  it("removes exactly the named repeat span and retains a separate deliberate loop", () => {
+    const draft = steps(6);
+    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", over: 1, through: 3 }, { step: 5, change: "repeat", over: 4, through: 6 }]);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "unrepeat" }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[1]!.routing).toBeUndefined();
+    expect(draft[4]!.routing).toEqual({ kind: "repeat", over: "d4", through: "d6" });
+    expect(automationStudioFlowDraftConditionalStepIds(draft)).toEqual(new Set(["d5", "d6"]));
+    expect(draft.every((step) => step.disposition === "kept")).toBe(true);
+  });
+
   it("fills in what the model left out: the check before it, and a span of one", () => {
     const draft = steps();
     const report = applyAutomationStudioFlowDraftAmendments(draft, [

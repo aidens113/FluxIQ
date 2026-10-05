@@ -7,10 +7,11 @@
 // recorded, and the model was asked again with no word about why its edit had
 // not taken. These hold every way it declines to the refusal it now produces.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
-import { automationStudioLlmEvidenceRerunRequest } from "../rerun-request.ts";
+import { automationStudioLlmEvidenceRerunRequest } from "../index.ts";
+import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
 
 const step = (position: number, actionId: string, toolId?: string): AutomationStudioFlowDraftStep => ({
   position,
@@ -21,6 +22,101 @@ const step = (position: number, actionId: string, toolId?: string): AutomationSt
   input: { url: "https://example.test" },
   effect: "mutate",
   disposition: "kept"
+});
+
+describe("a retained argument after the actual rerun", () => {
+  const tool = { toolId: "list", description: "List records.", inputSchema: { type: "object" }, effect: "observe" as const };
+  const old = { extractList: { maxPages: 1, selector: "private-locator", paginate: { maxPages: 1 } } };
+  const patch = { extractList: { paginate: { maxPages: 5 } } };
+  const complete = { kind: "complete", result: { done: true } };
+  // The preceding successful read permits editing after the later failed read.
+  const draft = { seed: [{ ...step(1, "list"), effect: "observe" as const, effectApplied: true, proposes: true }] };
+  const note = (decide: ReturnType<typeof vi.fn>, at: number) => {
+    const shown = decide.mock.calls[at]?.[0].evidence as { toolId: string; value: JsonObject }[];
+    return shown.find((entry) => entry.toolId === "core.rerun_check")?.value;
+  };
+
+  it.each(["refused", "threw", "invalid"])("shows safe retained paths after a %s rerun with no companion amendments", async (outcome) => {
+    const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "first", toolId: "list", input: old })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(2, patch)] }).mockResolvedValueOnce(complete);
+    const executeTool = vi.fn().mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: false }, effectApplied: false, draft: { proposes: true } });
+    if (outcome === "threw") executeTool.mockRejectedValueOnce(new Error("synthetic failure"));
+    else executeTool.mockResolvedValueOnce(outcome === "invalid" ? undefined : { kind: "llm_evidence_tool_execution", evidence: { ok: false, code: "malformed:extractList.maxPages" }, effectApplied: false, draft: { proposes: true } });
+    await runAutomationStudioLlmEvidenceLoop({ tools: [tool], decide, executeTool, draft, deniedEvidenceKeys: ["selector"], unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 5, maxToolCalls: 5, dryRun: false });
+    expect(note(decide, 2)).toMatchObject({ step: 2, kept: ["extractList.maxPages"], removal: { extractList: { maxPages: null } }, attempt: { kind: "failed", callId: "rerun.2" } });
+    expect(JSON.stringify(note(decide, 2))).not.toContain("selector");
+    expect(JSON.stringify(note(decide, 2))).not.toContain("private-locator");
+  });
+
+  it("lets the next model remove the retained malformed key through the ordinary rerun", async () => {
+    const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "first", toolId: "list", input: old })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(2, patch)] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(3, { extractList: { maxPages: null } })] }).mockResolvedValueOnce(complete);
+    const executeTool = vi.fn(async ({ value }: { value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const,
+      evidence: { ok: !Object.hasOwn(value.extractList as JsonObject, "maxPages") }, effectApplied: !Object.hasOwn(value.extractList as JsonObject, "maxPages"), draft: { proposes: true } }));
+    await runAutomationStudioLlmEvidenceLoop({ tools: [tool], decide, executeTool, draft, deniedEvidenceKeys: ["selector"], unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 6, maxToolCalls: 6, dryRun: false });
+    expect(note(decide, 2)?.kept).toEqual(["extractList.maxPages"]);
+    expect(executeTool).toHaveBeenCalledTimes(3);
+    expect(executeTool.mock.calls[2]![0].value.extractList).not.toHaveProperty("maxPages");
+    expect(note(decide, 3)).toBeUndefined();
+  });
+
+  it("does not emit paths without a declaration, or after a successful no-effect observation", async () => {
+    for (const declared of [false, true]) {
+      const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "first", toolId: "list", input: old })
+        .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(2, patch)] }).mockResolvedValueOnce(complete);
+      const executeTool = vi.fn().mockResolvedValue({ kind: "llm_evidence_tool_execution", evidence: { ok: declared }, effectApplied: false, draft: { proposes: true } });
+      await runAutomationStudioLlmEvidenceLoop({ tools: [tool], decide, executeTool, draft, ...(declared ? { deniedEvidenceKeys: ["selector"] } : {}), unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 5, maxToolCalls: 5, dryRun: false });
+      expect(note(decide, 2)).toBeUndefined();
+    }
+  });
+
+  it("keeps failed-rerun companion claims withheld", async () => {
+    const press = { toolId: "press", description: "Change state.", inputSchema: { type: "object" }, effect: "mutate" as const };
+    const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "first", toolId: "press", input: { config: { control: "first", kept: true } }, add: true })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(1, { config: { control: "second" } }), { step: 1, change: "keep", act: "a2" }] }).mockResolvedValueOnce(complete);
+    const executeTool = vi.fn().mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true })
+      .mockResolvedValueOnce({ kind: "llm_evidence_tool_execution", evidence: { ok: false }, effectApplied: false });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool, deniedEvidenceKeys: [], maxIterations: 5, maxToolCalls: 5, dryRun: false });
+    const shown = decide.mock.calls[2]![0].evidence as { toolId: string; value: JsonObject }[];
+    expect(shown.find((entry) => entry.toolId === "core.amendment_check")?.value).toMatchObject({ refused: [{ reason: "did_not_work" }] });
+    expect(result.steps.some((candidate) => candidate.acts?.includes("a2"))).toBe(false);
+    expect(note(decide, 2)?.attempt).toEqual({ kind: "failed", callId: "rerun.1" });
+  });
+
+  it("uses current checked acceptance instead of old failed evidence and never repeats the lasting act", async () => {
+    const press = { toolId: "press", description: "Change state.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true };
+    let performed = 0;
+    const executeTool = vi.fn(async ({ value }: { value: JsonObject }) => {
+      if (value.replay === "reset") return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };
+      if (value.replay === "verify") return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: false, resultCode: "core.replay.verified" };
+      performed += 1;
+      // A lasting effect was applied before an error; old failure is not this check's outcome.
+      return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: false }, effectApplied: true,
+        draft: { actionId: "press", ranWith: value, effect: "mutate" as const, proposes: true, replay: { from: { location: "fixture" } } } };
+    });
+    const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "first", toolId: "press", input: { config: { control: "first", kept: true } }, add: true, act: "a1" })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(1, { config: { control: "second" } })] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(1, { config: { control: "third" } })] }).mockResolvedValueOnce(complete);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [press], decide, executeTool, deniedEvidenceKeys: [], lastingActs: async () => new Set(["a1"]), maxIterations: 7, maxToolCalls: 7, dryRun: false });
+    expect(performed).toBe(1);
+    expect(executeTool.mock.calls.filter(([call]) => call.value.replay === "verify")).toHaveLength(2);
+    expect(note(decide, 2)).toBeUndefined();
+    expect(note(decide, 3)).toBeUndefined();
+    expect(result.steps[0]).toMatchObject({ effectApplied: false, checkedCandidate: { code: "core.replay.verified" }, priorExecution: { effectApplied: true, lasting: true } });
+  });
+
+  it("reports retained binding paths as unexecuted and never turns write:true into written proof", async () => {
+    const seeded: AutomationStudioFlowDraftStep = { ...step(1, "demo.press", "core.run_node"), input: { node: "demo.press", parameters: { query: { $state: { path: "query" } }, note: "before" }, consequences: [] }, effectApplied: true };
+    const decide = vi.fn().mockResolvedValueOnce({ kind: "amend_draft", amendments: [rerun(1, { parameters: { note: "after" }, write: true })] }).mockResolvedValueOnce(complete);
+    const executeTool = vi.fn();
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [{ toolId: "core.run_node", description: "Run a node.", inputSchema: { type: "object" }, effect: "mutate" }], decide, executeTool, deniedEvidenceKeys: [], draft: { seed: [seeded] }, maxIterations: 5, maxToolCalls: 5, dryRun: false });
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(note(decide, 1)).toMatchObject({ kept: ["query"], attempt: { kind: "refused", reason: "rerun_holds_binding" } });
+    expect(note(decide, 1)?.attempt).not.toHaveProperty("callId");
+    expect(JSON.stringify(note(decide, 1))).not.toContain("$state");
+    expect(result.steps[0]?.written).toBeUndefined();
+  });
 });
 
 const steps = [step(1, "web.observe_page"), step(2, "web.output.dom-extract_list", "core.run_node")];

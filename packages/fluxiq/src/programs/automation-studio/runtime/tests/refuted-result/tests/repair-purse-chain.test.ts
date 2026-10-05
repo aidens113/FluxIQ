@@ -1,8 +1,7 @@
 // A wrong answer's whole repair, through the real service, spends from one
-// purse: $0.25, lowered by the Flow's own setting.
+// purse, lowered by the Flow's own setting.
 //
-// The user's rule: a build, and its repair, each spend at most $0.25 in total,
-// and a Flow's setting may lower that and never raise it. Each part of a repair
+// A Flow's setting may lower the repair total and never raise it. Each part of a repair
 // used to be held to the total on its own -- the re-author build, the build
 // again after a failure that may pass, and the patch ladder the repair falls
 // back to -- so a Flow set to $0.10 could have its repair spend $0.30.
@@ -194,7 +193,7 @@ async function createHarness(flowMaxCostUsd: number) {
 }
 
 describe("a refuted result's whole repair, through the service", () => {
-  it("is capped at a Flow's $0.10, re-author, retry and patch ladder together", { timeout: 120_000 }, async () => {
+  it("charges the failed re-author and patch ladder once within a Flow's $0.10", { timeout: 120_000 }, async () => {
     const harness = await createHarness(0.1);
 
     const run = await harness.service.runRuntimeSession({ projectId: harness.projectId, flowId: harness.flowId, llmExecution: { ...ACTOR, intent: "build_and_adapt" } });
@@ -204,9 +203,14 @@ describe("a refuted result's whole repair, through the service", () => {
     // What the repair's calls reported costing, the result check's apart.
     const repairCalls = harness.calls.filter((call) => call.taskKind !== "loop_verification");
     const repairSpend = repairCalls.reduce((sum, call) => sum + call.costUsd, 0);
-    expect(repairCalls.length).toBeGreaterThan(0);
+    expect(repairCalls).toHaveLength(3);
+    expect(repairSpend).toBeCloseTo(0.09, 9);
     expect(repairSpend).toBeLessThanOrEqual(0.1 + 1e-9);
-    expect(reauthor?.purse).toMatchObject({ limitUsd: 0.1, bound: "cost" });
+    expect(reauthor?.purse).toMatchObject({ limitUsd: 0.1, spentUsd: 0.09, leftUsd: 0.01 });
+    expect(reauthor?.purse?.bound).toBeUndefined();
+    expect(reauthor?.attempts).toHaveLength(1);
+    expect(reauthor?.attempts?.[0]).toMatchObject({ routed: true, retryable: true, accounting: { estimatedCostUsd: 0.09 } });
+    expect(detail?.summary.status).toBe("failed");
     expect(reauthor?.purse?.spentUsd as number).toBeLessThanOrEqual(0.1);
   });
 });

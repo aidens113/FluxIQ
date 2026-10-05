@@ -11,6 +11,47 @@ function steps(): AutomationStudioFlowDraftStep[] {
 }
 
 describe("amending the draft", () => {
+  it("can route and bind a checked candidate without inventing executed instance proof", () => {
+    const draft = steps();
+    const original = structuredClone(draft[1]!);
+    draft[1]!.priorExecution = { ...original, lasting: true };
+    draft[1]!.checkedCandidate = { callId: "check", code: "core.replay.verified" };
+    draft[1]!.effectApplied = false;
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "optional" }])).toEqual({ applied: 1, refused: [] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { target: { $input: "target", test: "other" } } }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[1]!.instance).toBeUndefined();
+    expect(draft[1]!.priorExecution?.input).toEqual(original.input);
+    expect(draft[1]!.effectApplied).toBe(false);
+    expect(draft[1]).not.toHaveProperty("written");
+  });
+  it("explicitly removes a mistaken repeat without changing the quantity step or its claims", () => {
+    const draft = steps();
+    draft[1]!.routing = { kind: "repeat", through: "p3", over: "p1" };
+    draft[1]!.acts = ["a2.quantity"];
+    draft[1]!.settings = { attempts: 2 };
+    for (const step of draft) step.replayed = { step: step.position, actionId: step.actionId, status: "replayed" };
+    const prior = structuredClone(draft);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "unrepeat" }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[1]!.routing).toBeUndefined();
+    expect(draft[1]).toMatchObject({ input: prior[1]!.input, acts: ["a2.quantity"], disposition: "kept", settings: { attempts: 2 } });
+    expect(draft.map((step) => step.replayed?.status)).toEqual(["replayed", undefined, undefined]);
+    expect(draft[0]).toEqual(prior[0]);
+  });
+
+  it("unrepeat leaves other routing and the draft untouched, and repeated removal is no progress", () => {
+    for (const routing of [undefined, { kind: "optional" as const }, { kind: "only_if" as const, check: "p1" }, { kind: "on_failed" as const, to: "p3" }]) {
+      const draft = steps();
+      if (routing) draft[1]!.routing = routing;
+      const before = structuredClone(draft);
+      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "unrepeat" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "already_so" }] });
+      expect(draft).toEqual(before);
+    }
+    const draft = steps();
+    draft[1]!.routing = { kind: "repeat", through: "p2", over: "p1" };
+    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "unrepeat" }]);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "unrepeat" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "already_so" }] });
+  });
+
   it("drops, marks exploratory and puts back, and carries settings alongside", () => {
     const draft = steps();
     const report = applyAutomationStudioFlowDraftAmendments(draft, [
@@ -268,5 +309,41 @@ describe("a repeat on an act that sits before its listing, run murz83zy", () => 
   it("the schema says a listing after the act is moved before it first", () => {
     const change = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>).change!.description;
     expect(change).toContain("When the listing comes after the act, reorder the listing to the act's position first");
+  });
+});
+
+// Live run `run-musq0b1m-0472cfa0`, Cause 6 (steps 0052-0058): test 1 marked
+// the Space Grey step `replayed: unreproducible`; the model reordered it after
+// the listing click, which fixed it, and the draft still showed it
+// unreproducible -- the model reordered four times. A step's mark is how it
+// answered with the steps before it as they stood then, so a move that changes
+// what comes before a step leaves it untested in the new order.
+describe("a move leaves the steps it reorders untested", () => {
+  const marked = (): AutomationStudioFlowDraftStep[] => [1, 2, 3, 4].map((position) => ({
+    position, iteration: position, actionId: "press", input: { target: `target.${position}` }, effect: "mutate" as const, effectApplied: true, disposition: "kept" as const,
+    replayed: { step: position, actionId: "press", status: position === 3 ? "unreproducible" as const : "replayed" as const }
+  }));
+
+  it("clears the moved step's mark, and every mark from where the move begins", () => {
+    const draft = marked();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "reorder", to: 2 }])).toEqual({ applied: 1, refused: [] });
+    expect(draft.map((step) => step.input.target)).toEqual(["target.1", "target.3", "target.2", "target.4"]);
+    expect(draft.map((step) => step.replayed?.status)).toEqual(["replayed", undefined, undefined, undefined]);
+  });
+
+  it("does the same for a step moved later, and for an add that places it", () => {
+    const later = marked();
+    applyAutomationStudioFlowDraftAmendments(later, [{ step: 2, change: "reorder", to: 3 }]);
+    expect(later.map((step) => step.replayed?.status)).toEqual(["replayed", undefined, undefined, undefined]);
+    const placed = marked();
+    placed[2]!.disposition = "taken";
+    applyAutomationStudioFlowDraftAmendments(placed, [{ step: 3, change: "add", to: 4 }]);
+    expect(placed.map((step) => step.replayed?.status)).toEqual(["replayed", "replayed", undefined, undefined]);
+  });
+
+  it("keeps every mark when nothing moved", () => {
+    const draft = marked();
+    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "reorder", to: 3, settings: { waitFor: "results" } }]);
+    expect(draft.map((step) => step.replayed?.status)).toEqual(["replayed", "replayed", "unreproducible", "replayed"]);
   });
 });

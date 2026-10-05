@@ -8,7 +8,7 @@
 // are left out, and the id need not be spelt perfectly.
 
 import { automationStudioPanelCapabilityVocabulary } from "../../panel-capabilities/index.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE, automationStudioConversationPageShown } from "../commands/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE, AUTOMATION_STUDIO_CONVERSATION_EXPLORE, AUTOMATION_STUDIO_CONVERSATION_IMPROVE, automationStudioConversationPageShown } from "../commands/index.ts";
 import type { AutomationStudioConversationDecisionContext } from "./invocation.ts";
 
 const ANSWER_SHAPE = [
@@ -37,9 +37,27 @@ export function automationStudioConversationInstructions(
   notes: { transcriptWithheld: boolean; domainInstructions?: string | undefined }
 ): string {
   const sections = [automationStudioPanelCapabilityVocabulary(context.capabilities), ...(notes.domainInstructions ? ["", notes.domainInstructions] : []), "", flowSection(context), "", onScreenSection(context)];
+  const building = buildContinuationGuidance(context);
+  if (building) sections.push("", building);
   if (notes.transcriptWithheld) sections.push("", "The earlier part of this conversation could not be read just now, so only the latest message is shown.");
   sections.push("", ANSWER_SHAPE);
   return sections.join("\n");
+}
+
+/** Describe only existing offered commands; the service checks target and draft eligibility. */
+function buildContinuationGuidance(context: AutomationStudioConversationDecisionContext): string {
+  const offered = (id: string) => context.capabilities.some((capability) => capability.id === id);
+  const lines = ["A Flow's name alone does not prove it already does the requested job. Use what the conversation actually established; ask which Flow when the intended one is ambiguous."];
+  if (offered(AUTOMATION_STUDIO_CONVERSATION_EXPLORE.capability.id)) {
+    lines.push("When they ask to continue or finish an unfinished creation, choose flow.explore for that Flow and omit instruction to use its saved goal. A compatible saved draft continues while the Flow and instructions are unchanged; the service checks this. A genuinely changed goal goes in instruction and may make old draft evidence incompatible. Repeating the same task is not by itself a request to change its saved goal.");
+  }
+  if (offered(AUTOMATION_STUDIO_CONVERSATION_IMPROVE.capability.id)) {
+    lines.push("Changing a Flow with applied steps uses flow.improve, which works out a change and asks the person before applying it. An unfinished creation is not an applied Flow to improve.");
+  }
+  if (offered(AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability.id)) {
+    lines.push("An explicit request for a separate new automation uses flow.createHere; continuing an existing unfinished Flow does not create another one.");
+  }
+  return lines.join("\n");
 }
 
 function flowSection(context: AutomationStudioConversationDecisionContext): string {

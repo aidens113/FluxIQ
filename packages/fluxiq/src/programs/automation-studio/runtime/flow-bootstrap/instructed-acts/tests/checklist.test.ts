@@ -1,4 +1,4 @@
-// The instructed acts as the model's checklist beside its draft (audit A1,
+﻿// The instructed acts as the model's checklist beside its draft (audit A1,
 // cause 1): the same reading and the same rule the completion check applies,
 // so an act shown done is an act a completion accepts.
 import { describe, expect, it } from "vitest";
@@ -16,6 +16,16 @@ function step(position: number, overrides: Partial<AutomationStudioFlowDraftStep
 }
 
 describe("the acts checklist", () => {
+  it("warns about a cart act claimed on a same-place choice without changing claim coverage", () => {
+    const draft = [step(1, { acts: ["a1"], words: { target: "Spain" } })];
+    const items = automationStudioInstructedActsChecklist({ instructionText: "Add the hub to my cart.", draftSteps: draft })!;
+    expect(items[0]).toMatchObject({ done: 1, claimSaid: expect.stringContaining('"Spain"') });
+    expect((items[0] as { claimSaid?: string }).claimSaid).toContain("distinct step");
+    expect(items[0]!.todo).toBeUndefined();
+    expect(automationStudioInstructedActsNotDone(items)).toEqual([]);
+    expect(draft[0]!.acts).toEqual(["a1"]);
+    expect(checkAutomationStudioInstructedActs({ instructionText: "Add the hub to my cart.", result: { summary: "x" }, draftSteps: draft }).ok).toBe(true);
+  });
   it("shows every act as todo before anything is authored, with the ids a completion is judged by", () => {
     const items = automationStudioInstructedActsChecklist({ instructionText: TABLES, draftSteps: [] })!;
     const verdict = checkAutomationStudioInstructedActs({ instructionText: TABLES, result: { summary: "x" }, draftSteps: [step(1, { disposition: "taken" })] });
@@ -175,4 +185,15 @@ describe("a plural act done by a repeat names the steps that do it to one row", 
     expect(a1.todo).toBe("act_needs_repeat");
     expect(a1.drop).toBeUndefined();
   });
+});
+
+it("separates declared arrival from a successful quantity action retaining location", () => {
+  const instructionText = "Put two of the paper towels in my cart.";
+  const arrival = { node: "arrive", parameter: "destination" };
+  const draft = step(1, { actionId: "increment", input: { parameters: { destination: "warehouse-A", amount: 2 } }, acts: ["a1.quantity"] });
+  const input = { instructionText, draftSteps: [draft], startLocation: "warehouse-A", arrival };
+  expect(automationStudioInstructedActsChecklist(input)?.[0]?.choices?.find((item) => item.id === "a1.quantity")).toMatchObject({ done: 1 });
+  const declaredArrival = { ...draft, actionId: "arrive" };
+  expect(automationStudioInstructedActsChecklist({ ...input, draftSteps: [declaredArrival] })?.[0]?.choices?.find((item) => item.id === "a1.quantity")).toMatchObject({ todo: "step_only_arrives" });
+  expect(automationStudioInstructedActsChecklist({ ...input, draftSteps: [{ ...draft, effectApplied: false }] })?.[0]?.choices?.find((item) => item.id === "a1.quantity")).toMatchObject({ todo: "step_changed_nothing" });
 });

@@ -83,7 +83,9 @@ describe("a build's purse", () => {
     expect(sent).toBe(3);
     expect(purse.spentUsd()).toBeCloseTo(0.09, 9);
     expect(purse.refusal).toMatchObject({ spentUsd: 0.09, ceilingUsd: 0.1 });
-    expect(purse.refusal?.projectedCostUsd).toBeUndefined();
+    expect(purse.refusal?.code).toBe("llm_budget.run_cost_limit");
+    if (purse.refusal?.code !== "llm_budget.run_cost_limit") throw new Error("Expected a cost-only refusal");
+    expect(purse.refusal.projectedCostUsd).toBeUndefined();
   });
 
   it("counts what earlier builds of the same Flow creation spent, and says so when it refuses (t234)", () => {

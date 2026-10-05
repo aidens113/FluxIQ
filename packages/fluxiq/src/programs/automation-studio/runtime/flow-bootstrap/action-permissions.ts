@@ -133,7 +133,7 @@ export type AutomationStudioFlowBootstrapActionPermissions = {
    * instruction that asks for no act has nothing for the tests to withhold. A
    * read that fails names nothing, and the tests run as the declarations say.
    */
-  instructedLastingActs(acts: readonly { id: string; quote: string }[]): Promise<ReadonlySet<string>>;
+  instructedLastingActs(acts: readonly { id: string; quote: string; source?: { clause: string; object: string } }[]): Promise<ReadonlySet<string>>;
   /** The request the latest refusal carried, or `undefined` when none stands. Stored with a build that finished anyway. */
   request(): AutomationStudioActionPermissionRequest | undefined;
   /** What every action put to the gate declared about itself, in the order it was asked. */
@@ -253,7 +253,16 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       const quotes = (await gate.resolveInstructed()).map((entry) => folded(entry.quote)).filter((quote) => quote.length > 0);
       return new Set(own.filter((act) => {
         const words = folded(act.quote);
-        return words.length > 0 && quotes.some((quote) => quote.includes(words) || words.includes(quote));
+        if (!words.length) return false;
+        if (!act.source) return quotes.some((quote) => quote.includes(words) || words.includes(quote));
+        // Split-object display quotes are assembled, not original spans.
+        // Ground attribution in the original clause and this object's words;
+        // a sibling's narrow quote or a shared verb alone proves nothing here.
+        const clause = folded(act.source.clause);
+        const object = folded(act.source.object);
+        return object.length > 0 && clause.includes(object) && words.includes(object) && quotes.some((quote) =>
+          quote.includes(object) && (quote.includes(words) || words.includes(quote) || quote.includes(clause) || clause.includes(quote))
+        );
       }).map((act) => act.id));
     },
     request: () => gate.request,

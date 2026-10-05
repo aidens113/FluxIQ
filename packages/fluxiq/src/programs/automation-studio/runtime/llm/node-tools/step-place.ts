@@ -70,7 +70,8 @@ import {
   automationStudioFlowDraftStepIsProposed,
   automationStudioFlowDraftWithheldStepIds,
   type AutomationStudioFlowDraftReplayOutcome,
-  type AutomationStudioFlowDraftStep
+  type AutomationStudioFlowDraftStep,
+  type AutomationStudioFlowDraftStepWords
 } from "../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
@@ -223,33 +224,74 @@ const RERUN_PLACE_KEY = "rerunPlace";
 const IN_PLACE_DETAIL = "This rerun ran where the page is now, not where its step started: nothing recorded the page the step started on, so the page was not put back. If an earlier call moved the page (another results page, a scroll, a filter), this answer is about that page and not the step's own.";
 
 /**
+ * The step a rerun replaces, for the note on a refused rerun: its position, and
+ * what its new argument named in the domain's words, asked before the page was
+ * put back (`../../flow-draft/step-words.ts`).
+ */
+export type AutomationStudioNodeRerunNamed = { step: number; words?: AutomationStudioFlowDraftStepWords | undefined };
+
+/**
  * The rerun's result, saying where it ran.
  *
  * Written into the result's evidence object under `rerunPlace`, so the model
  * reads it beside the answer it qualifies and the run's step record keeps it.
  * A result whose evidence is not an object is left as it is rather than
  * reshaped, and so is a place that ran nothing: its own answer already says so.
+ *
+ * **A rerun refused after its page was put back** (live run
+ * `run-musq0b1m-0472cfa0`, Cause 4) says so in words: putting a page back loads
+ * it again, so what the model read on the page before -- a control's name, for
+ * the web a handle -- is resolved against the page as it loaded, and the answer
+ * is about that page. `named` is the control the argument meant, in the
+ * domain's words from before the reset, so the model can find it on the page
+ * the answer shows. A refusal is the answer's own `ok: false`, read as the loop
+ * reads it; nothing else in the answer is read.
  */
 export function automationStudioNodeRerunPlaceNoted(
   place: AutomationStudioNodeRerunPlace | undefined,
-  ran: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult
+  ran: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult,
+  replaces?: AutomationStudioNodeRerunNamed | undefined
 ): JsonValue | AutomationStudioLlmEvidenceToolExecutionResult {
-  const note = placeNote(place);
-  if (!note || !isObject(ran)) return ran;
-  if (ran.kind !== "llm_evidence_tool_execution") return { ...ran, [RERUN_PLACE_KEY]: note };
+  if (!isObject(ran)) return ran;
+  if (ran.kind !== "llm_evidence_tool_execution") {
+    const note = placeNote(place, (ran as JsonObject).ok === false ? replaces : undefined);
+    return note ? { ...ran, [RERUN_PLACE_KEY]: note } : ran;
+  }
   const execution = ran as AutomationStudioLlmEvidenceToolExecutionResult;
-  return isObject(execution.evidence) ? { ...execution, evidence: { ...execution.evidence, [RERUN_PLACE_KEY]: note } } : ran;
+  if (!isObject(execution.evidence)) return ran;
+  const note = placeNote(place, execution.evidence.ok === false ? replaces : undefined);
+  return note ? { ...execution, evidence: { ...execution.evidence, [RERUN_PLACE_KEY]: note } } : ran;
 }
 
-function placeNote(place: AutomationStudioNodeRerunPlace | undefined): JsonObject | undefined {
+/** `refused` is given only when the rerun's answer refused it. */
+function placeNote(place: AutomationStudioNodeRerunPlace | undefined, refused?: AutomationStudioNodeRerunNamed): JsonObject | undefined {
   if (!place) return undefined;
   // The steps done again say the rerun ran after them (t193's open item: the
   // model was not told which steps a rerun redid).
-  if (place.kind === "put_back") return { place: "put_back", startPage: place.startPage, ...(place.doneAgain.length ? { doneAgain: place.doneAgain.map(({ step, actionId, outcome }) => ({ step, actionId, outcome })) } : {}) };
+  if (place.kind === "put_back") {
+    return {
+      place: "put_back",
+      startPage: place.startPage,
+      ...(place.doneAgain.length ? { doneAgain: place.doneAgain.map(({ step, actionId, outcome }) => ({ step, actionId, outcome })) } : {}),
+      ...(refused ? putBackRefused(refused) : {})
+    };
+  }
   if (place.kind === "unreachable") return undefined;
   return place.why === "already_there"
     ? { place: "in_place", reason: "already_on_start_page" }
     : { place: "in_place", reason: "start_page_unknown", detail: IN_PLACE_DETAIL };
+}
+
+/** What a rerun refused on a page put back is told: the page was loaded again first, and which control its argument meant. */
+function putBackRefused(refused: AutomationStudioNodeRerunNamed): JsonObject {
+  const target = refused.words?.target?.trim();
+  const meant = target
+    ? `Your argument named "${target}" on the page you read before; find that control and name it as the page in this answer shows it, then rerun.`
+    : "Find the control your argument meant and name it as the page in this answer shows it, then rerun.";
+  return {
+    ...(target ? { named: target } : {}),
+    detail: `The page was put back where step ${refused.step} started before this rerun ran, which loads it again, so the rerun was asked on the page as it loaded and this answer is about that page. A name read on the page before it was put back may name nothing on it now, or another control. ${meant}`
+  };
 }
 
 function isObject(value: unknown): value is JsonObject {

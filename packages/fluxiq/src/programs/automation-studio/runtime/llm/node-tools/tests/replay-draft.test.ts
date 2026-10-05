@@ -24,13 +24,94 @@ import {
   type AutomationStudioFlowDraftStep
 } from "../../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../../evidence-loop.ts";
-import { replayAutomationStudioFlowDraft } from "../index.ts";
+import { automationStudioFlowDraftDryRunGate, automationStudioFlowDraftSeedFromFlow, replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "../index.ts";
 
 const HOME = "https://bigbox.test/";
 const PRODUCT = "https://bigbox.test/p/towels";
 const CART = "https://bigbox.test/cart";
 const CHECKOUT = "https://bigbox.test/checkout";
 const CONFIRMATION = "https://bigbox.test/order/confirmation";
+
+function savedCandidate(options: { declarations?: string[]; missingDeclarations?: true; missingStart?: true; unresolved?: true } = {}) {
+  return automationStudioFlowDraftSeedFromFlow({
+    nodes: [{ id: "saved", definitionId: "fixture.open", parameterValues: { selector: "#open", text: { $state: { path: "text", ...(options.unresolved ? {} : { fallback: "authored" }) } } }, ...(options.missingDeclarations ? {} : { metadata: { declaredConsequences: options.declarations ?? [] } }) }],
+    edges: [], ...(options.missingStart ? {} : { startPages: { saved: { location: HOME } } })
+  }).steps;
+}
+
+const mappedCandidateNode: NonNullable<ReturnType<NonNullable<AutomationStudioFlowDraftReplayInput["nodeOf"]>>> = { inputs: [], outputs: [], outputAction: { required: true, fixed: "fixture.output.open" } };
+
+describe("fresh full tests of carried saved configurations", () => {
+  it("resets then dispatches unchanged saved arguments with fallback resolved, retaining no performed proof", async () => {
+    const steps = savedCandidate();
+    const calls: JsonObject[] = [];
+    const executeTool = async ({ value }: { value: JsonObject }) => { calls.push(value); return answer("core.replay.replayed", true); };
+    const result = await replayAutomationStudioFlowDraft({ steps, attempt: 1, executeTool, nodeOf: () => mappedCandidateNode });
+    expect(calls.map((call) => call.replay)).toEqual(["reset", "step"]);
+    expect(calls[1]).toMatchObject({ node: "fixture.open", parameters: { selector: "#open", text: "authored" }, consequences: [], from: { location: HOME } });
+    expect(calls[1]!.produced).toBeUndefined();
+    expect(result.verdict.ok).toBe(true);
+    expect(steps[0]!.ranWith).toBeUndefined();
+    expect(steps[0]!.replay).toBeUndefined();
+    expect(steps[0]!.effectApplied).toBeUndefined();
+  });
+
+  it.each(["unknown", "unmapped", "nonfixed"])("refuses %s registered output authority before dispatch", async (kind) => {
+    let calls = 0;
+    const gate = automationStudioFlowDraftDryRunGate({ enabled: true, requireRunnable: true, requireLibrarySteps: true, steps: savedCandidate(),
+      nodeOf: () => kind === "unknown" ? undefined : kind === "unmapped" ? { inputs: [], outputs: [] } : { inputs: [], outputs: [], outputAction: { required: true, allowed: ["fixture.output.open"] } },
+      executeTool: async () => { calls++; return answer("core.replay.replayed", true); }, accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined });
+    expect(await gate()).toEqual({ issueCodes: ["llm_evidence_loop.full_run_required"] });
+    expect(calls).toBe(0);
+  });
+
+  it.each(["declaration", "start", "copy", "edit"])("refuses missing or invalid %s before dispatch", async (kind) => {
+    let steps = savedCandidate({ ...(kind === "declaration" ? { missingDeclarations: true } : {}), ...(kind === "start" ? { missingStart: true } : {}) });
+    if (kind === "copy") steps = steps.map((step) => ({ ...step }));
+    if (kind === "edit") steps[0]!.input.parameters = { selector: "#other" };
+    let calls = 0;
+    const gate = automationStudioFlowDraftDryRunGate({ enabled: true, requireRunnable: true, steps, nodeOf: () => mappedCandidateNode,
+      executeTool: async () => { calls++; return answer("core.replay.replayed", true); }, accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined });
+    expect(await gate()).toEqual({ issueCodes: ["llm_evidence_loop.full_run_required"] });
+    expect(calls).toBe(0);
+  });
+
+  it("refuses an unresolved saved binding without dispatching the action", async () => {
+    const calls: JsonObject[] = [];
+    const result = await replayAutomationStudioFlowDraft({ steps: savedCandidate({ unresolved: true }), attempt: 1, nodeOf: () => mappedCandidateNode,
+      executeTool: async ({ value }) => { calls.push(value); return answer("core.replay.replayed", true); } });
+    expect(calls.map((call) => call.replay)).toEqual(["reset"]);
+    expect(result.verdict.outcomes[0]?.resultCode).toBe("core.replay.unresolved_binding");
+    expect(result.verdict.ok).toBe(false);
+  });
+
+  it("retains an executor's permission refusal without claiming mutation or a clean test", async () => {
+    let mutations = 0;
+    const steps = savedCandidate();
+    const result = await replayAutomationStudioFlowDraft({ steps, attempt: 1, nodeOf: () => mappedCandidateNode,
+      executeTool: async ({ value }) => {
+        if (value.replay === "reset") return answer("core.replay.replayed", true);
+        if (value.replay === "step") return answer("action.permission.denied");
+        mutations++; return answer("core.replay.failed");
+      } });
+    expect(mutations).toBe(0);
+    expect(result.verdict.ok).toBe(false);
+    expect(result.verdict.outcomes[0]?.resultCode).toBe("action.permission.denied");
+    expect(steps[0]!.effectApplied).toBeUndefined();
+  });
+
+  it("sends lasting carried configuration only as verify, with no mutation or historical proof", async () => {
+    const steps = savedCandidate({ declarations: ["create_new"] });
+    const calls: JsonObject[] = [];
+    const result = await replayAutomationStudioFlowDraft({ steps, attempt: 1, nodeOf: () => mappedCandidateNode,
+      executeTool: async ({ value }) => { calls.push(value); return value.replay === "reset" ? answer("core.replay.replayed", true) : answer("core.replay.verified"); } });
+    expect(calls.map((call) => call.replay)).toEqual(["reset", "verify"]);
+    expect(calls[1]!.consequences).toEqual(["create_new"]);
+    expect(result.verdict.ok).toBe(true);
+    expect(steps[0]!.priorExecution).toBeUndefined();
+    expect(steps[0]!.effectApplied).toBeUndefined();
+  });
+});
 
 /** One step of a draft, and how the site answers it now. */
 type SiteStep = {

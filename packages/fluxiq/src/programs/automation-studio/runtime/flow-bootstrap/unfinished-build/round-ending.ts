@@ -17,7 +17,8 @@ import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall
 const BUDGET_BOUNDS: Readonly<Record<Exclude<AutomationStudioLlmEvidenceLoopBudgetBound, "iterations">, AutomationStudioFlowBootstrapBudgetBound>> = Object.freeze({
   cost: "cost",
   tokens: "tokens",
-  duration: "duration"
+  duration: "duration",
+  calls: "calls"
 });
 
 /** The round's ending: finished, stopped short, stopped by a budget or by unreadable replies, or one this lifecycle does not reach past. */

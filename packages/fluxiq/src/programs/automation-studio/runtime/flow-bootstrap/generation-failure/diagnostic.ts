@@ -17,6 +17,8 @@ import type { AutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts
 import type { AutomationStudioFlowBootstrapFailureStage } from "./codes.ts";
 
 export type AutomationStudioFlowBootstrapFailureDiagnostic = {
+  /** Actual logical provider calls of this build, including reader and judges. */
+  totalProviderCallCount?: number;
   code: string;
   stage: AutomationStudioFlowBootstrapFailureStage;
   retryable: boolean;

@@ -22,14 +22,14 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
   capability: {
     id: "flow.explore",
     title: TITLE,
-    summary: "Opens the real website, works out what the Flow's instruction needs, builds the Flow from what actually worked, and puts it into a Flow that has no steps yet.",
+    summary: "Builds a Flow that has no applied steps yet, or continues its compatible saved unfinished draft, then puts the completed steps into that same Flow.",
     group: "Flows",
     control: "Explore and build",
     arguments: [
       { name: "flowId", describe: "The Flow it is about.", required: true },
-      { name: "instruction", describe: "What the Flow should do, when the person says it now. Left out, the Flow's saved instruction is used.", required: false }
+      { name: "instruction", describe: "A genuinely changed goal, when the person asks for one. Omit it to continue using the saved goal; changed instructions may make old draft evidence incompatible.", required: false }
     ],
-    phrases: ["explore the site", "try it on the website", "work it out live", "build it by exploring"],
+    phrases: ["explore the site", "try it on the website", "work it out live", "build it by exploring", "continue building it", "finish the unfinished flow", "build it again"],
     consequences: ["modify_existing"],
     reauthorizes: false
   },

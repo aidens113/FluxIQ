@@ -18,6 +18,15 @@ describe("whether a step is proposable", () => {
     expect(automationStudioFlowDraftStepIsProposable({ ...base, effectApplied: false })).toBe(false);
   });
 
+  it("proposes a checked candidate without claiming it was written or performed", () => {
+    const candidate = { ...base, effectApplied: false, checkedCandidate: { callId: "check", code: "core.replay.verified" } };
+    expect(automationStudioFlowDraftStepIsProposable(candidate)).toBe(true);
+    expect(automationStudioFlowDraftStepIsProposed(candidate)).toBe(true);
+    expect(automationStudioFlowDraftStepIsProposed({ ...candidate, disposition: "dropped" })).toBe(false);
+    expect(automationStudioFlowDraftStepIsProposable({ ...candidate, proposes: false })).toBe(false);
+    expect(candidate).not.toHaveProperty("written");
+  });
+
   it("still leaves a withdrawn written step out", () => {
     expect(automationStudioFlowDraftStepIsProposed({ ...base, written: true, disposition: "dropped" })).toBe(false);
   });

@@ -171,7 +171,9 @@ export function automationStudioFlowDraftStepReplayMode(step: AutomationStudioFl
  * the effect again (see the header, R7).
  */
 export function automationStudioFlowDraftStepActDone(step: AutomationStudioFlowDraftStep, lastingActs?: ReadonlySet<string>): boolean {
-  return step.effectApplied === true && step.proposes !== false && automationStudioFlowDraftStepReplayMode(step, lastingActs) === "verify";
+  // A checked candidate did nothing, but changing its claims/configuration
+  // cannot erase the lasting effect already performed by its prior record.
+  return step.priorExecution?.lasting === true || (step.effectApplied === true && step.proposes !== false && automationStudioFlowDraftStepReplayMode(step, lastingActs) === "verify");
 }
 
 /**

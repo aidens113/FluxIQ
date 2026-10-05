@@ -22,6 +22,35 @@ parameters, without going through every iteration.
 
 ## The Draft
 
+### Unchanged Saved Candidates During Repair
+
+A repair seed retains a saved node's explicit consequence declaration, including
+`[]`, and the first start token actually captured by its ordinary execution.
+Missing declarations or starts remain missing. A separate private scheduled
+candidate represents the unchanged configuration awaiting a fresh whole test;
+it is neither `ranWith` nor evidence of an earlier performed action.
+
+Module-private correspondence binds the candidate to its original step object
+and configuration. Only the loop's trusted initial seed copy transfers that
+correspondence. Copied, edited or stale configurations cannot borrow it. The
+full-test gate and replay walker also require the registered node's fixed output
+mapping. Fresh replay still uses ordinary reset, binding resolution, output
+schema and permission checks. Lasting candidates use the existing verification
+mode without repeating their mutation or inventing prior execution proof.
+
+The actual public-service/native/domain-adapter repair fixture independently
+verified fresh reset, unchanged saved opener, repaired bound value and acceptance
+in that order. Core eligibility/refusal owners cover missing provenance, copied
+or edited candidates, unmapped outputs, unresolved binding and lasting verify.
+These scripted fixtures do not prove live browser behavior or provider-free
+saved reuse. Candidate scheduling remains private to `runtime/flow-draft/`;
+ordinary recorded/written steps retain their existing contracts.
+
+Authored guidance also distinguishes preparation from the parent act: claim an
+advertised child choice for its setting, or retain necessary preparation without
+an act claim when no child is listed. It does not invent a child ID or remap
+claims; the whole original requirement remains in the checklist.
+
 ### Recorded And Written Steps
 
 A step enters the draft one of two ways, and both become the same kind of Flow
@@ -64,6 +93,27 @@ model it may write a step once it knows the node and parameters, that
 repetitive work is a loop (list with a `where`, do or write the act on one kept
 row, then `repeat` over the listing), to prefer writing a lasting act a loop
 does, and the binding forms.
+
+### Cancelling Choices And Changed Test Evidence
+
+The host may attach `toggle: {key, to}` to a mutating recorded step. Core
+compares the opaque control key and `on`/`off`; it does not interpret browser
+targets. `runtime/flow-draft/reversal.ts` removes opposite presses only when
+no kept proposable step between them could use or return the temporary state.
+An intervening action or exported read preserves both presses. Conditional
+steps and an explicit model decision to restore a removed step are preserved.
+Removed steps retain `cancels` and an `out` explanation; their old act claims
+are cleared so they cannot continue claiming instruction coverage.
+
+Reordering invalidates `replayed` marks from the first changed position
+onward. A successful checked rerun replaces its argument/resolved form and
+uses the validated host draft declaration to update its action/tool identity,
+effect and proposal metadata. It never derives an action from an arbitrary
+argument field. The previous execution keeps its original identity; the new
+candidate clears the old target words and replay mark. It still performs no lasting act;
+verification means the revised step is runnable, not that a newly targeted
+act was performed. Failed dry-run rows can show the opaque recorded
+`actedOn` place; this does not claim to know the actual place a replay ran.
 
 ### `amend_draft bind`
 
@@ -281,3 +331,115 @@ it. A materialised Flow node keeps its plan node's declaration as
 it at run time:** a plain run of a stored Flow gates nothing per node, for
 recorded and written steps alike. Gating stored runs on it would change what
 every stored Flow does when it runs, which is the user's decision.
+
+### Advisory action-claim feedback
+
+An explicit act claim on a control whose wording does not name that act now includes informational claimSaid feedback. It preserves the claim and coverage; whole-Flow judgement remains authoritative. The feedback asks the author to review the actual control and add a distinct executable step when needed. A checked rerun verifies an existing target and does not add the claimed action. Existing act-kind vocabulary recognizes legitimate action wording; blank controls and set/open choices avoid speculative warnings.
+
+### Removing an accidental row repeat
+
+The unrepeat draft amendment accepts only step and change. It removes a repeat on that step without changing the input, act claims or disposition, and invalidates replay marks from that step onward. Existing keep and keep with act preserve intentional repeats. Quantity-is-a-repeat feedback names unrepeat on the beginning of the repeated span, followed by the item quantity control; missing cart actions still prevent completion.
+
+### Selecting a terminal recovery cause
+
+Terminal recovery selects the newest failed or unknown attempt that has no later successful attempt of the same node. Both canonical execution callbacks and the durable annotation fallback use this selector. It preserves every historical attempt and the actual run status: a graph can still fail after all action faults have healed. Genuine unresolved failures and result-refutation attempts remain eligible, while no unresolved attempt retains the provider-free no-failed-attempt refusal.
+
+### Lasting acts from counted-object instructions
+
+When one original instruction clause names multiple counted objects, each parsed act keeps its own display quote and parser-owned source clause/object provenance. The cached consequence read attributes a lasting act only when its grounded quote includes that child object and matches the original clause or display quote. A combined clause can protect both objects during build tests; a narrow sibling quote or shared verb cannot. Dotted choice IDs remain ordinary preparation, and this attribution changes no permissions or normal Flow execution.
+
+### Checked configuration and prior execution
+
+An accepted verify-only rerun stores its replacement as checkedCandidate with performed=false and intended act claims. Its old performed record stays under priorExecution tied to the original arguments; old state, output and resolved configuration cannot prove the replacement ran. The candidate remains authorable without acquiring the stronger written contract. Following test marks are invalidated, zero-row candidates remain not reached, and binding a candidate does not invent an executed instance. A separate historical lasting-effect guard keeps subsequent reruns read-only even after current effectApplied becomes false. Ordinary explicit actions and their existing permission gates remain unchanged.
+
+A refused nonexistent-step amendment explains that add includes an existing draft step; a new action is authored through an offered tool_call with add:true and an intended act where appropriate. Its returned draft position is used for later edits. The feedback changes no action permissions or execution behavior.
+
+
+### Declared arrival evidence
+
+Restoration and instructed-act evidence classify arrival using the runtime binding's existing runsNodes.arrival opaque node identity and declared parameter. Only that action and parameter can match the start location, with resolved arguments taking precedence. A nonarrival action carrying stale location arguments cannot be refused as merely arriving; absent a declaration, arbitrary strings do not confer arrival. The same declaration reaches completion restoration, model/stopped checklists and build-test judge summaries. Other plan location comparisons remain unchanged; this classification does not invent performed evidence or alter permission, replay or host effect semantics.
+
+### Continuing unfinished creation
+
+The existing flow.explore chat capability builds or continues eligible creation in the same Flow. Continuing the saved goal omits instruction; a genuinely changed goal can make old draft evidence incompatible. flow.improve remains for a Flow with applied steps and retains its apply confirmation. Service target validation and exact incomplete-draft dependency digest/instruction-ID compatibility remain authoritative, and a catalog name alone does not establish successful work. Saving an identical canonical active generation goal returns the existing document without changing its timestamp or digest; changed or disabled goals retain the normal write path. No new capability or automatic fallback is introduced.
+
+An automatic reauthor build retries once only after a canonically classified
+transient provider request failure: rate limiting, network failure, timeout,
+or a retryable HTTP server error with matching provider provenance. Public
+`retryable` also permits a person to continue an unfinished draft; it does not
+authorize another automatic build after budget, iteration, unreadable-reply,
+unchanged or no-progress endings. Each actual attempt retains its accounting
+and append order, and a permitted retry receives only the remaining repair
+purse. Approval or application failure after an adaptation exists cannot
+trigger another generate. Internal HTTP retries remain within their original
+logical provider question.
+
+### Scoped Lab build-call allowance
+
+The public `resolveAutomationStudioLlmBuildCallLimit` reader accepts an optional
+positive safe integer from `FLUXIQ_LLM_BUILD_CALL_LIMIT` only when
+`FLUXIQ_LLM_BUILD_CALL_LIMIT_SCOPE=test`. An unscoped process ignores the value,
+including a malformed one. There is no implicit call limit for ordinary UI.
+The Lab forwards its resolved plan before starting its owned Core process;
+explicit Flow/provider settings can narrow that allowance.
+
+The creation purse admits each logical provider question before sending it.
+Pending questions reserve slots; settlement consumes one, and an explicitly
+unsent request releases it. Internal HTTP retries share the original question's
+slot. Reader, decision, repair-round and judge questions share the allowance;
+deterministic replay consumes none. The configured judge pair is kept back from
+nonjudge questions, without recording the reserve as paid usage. Calls and
+dollars retain separate refusal fields and closed budget endings.
+
+Failed builds can publish optional root `totalProviderCallCount` from the
+actual current purse. This aggregate is separate from evidence-loop decision
+count and includes settled questions outside the loop. Legacy absence remains
+unknown; setup failures before a purse exists do not acquire an invented zero.
+Call-refused judging preserves actual usage and reports its settled question
+delta, including zero when nothing was sent. Whole-test, current-signature,
+lasting-effect and permission gates remain authoritative.
+
+### Paging Evidence Sent To The Result Judge
+
+The result verifier adds paging wording to its provider-facing summary copy after unread-column annotation. A consistent observed end with no truncation and plausible page counts states the observed end and omits the authored page limit on that copy. Real page-bound termination retains the limit and incomplete-list advice. Missing or unknown stop, contradictory truncation, impossible counts and an absent first-page continuation control retain the facts and uncertainty. This projection changes no verdict, default bound, executed read or durable raw account; the saved evidence remains available unchanged. Owner regressions cover the actual judge request as well as the projection boundaries; live extraction acceptance remains a separate requirement.
+
+### Unusable decision field feedback
+
+Strict provider grammar still refuses extra decision-envelope keys. For a
+known misplaced tool-call write flag, the next decision receives the constant
+response.decision.write path and supported response.decision.input.write
+location. Only this closed grammar metadata is carried through the unusable
+decision error and model feedback; arbitrary key names, values and provider
+messages remain withheld. Feedback does not execute the rejected call or
+change its permission requirements.
+
+Paid usage is independent of reply readability. A rejected schema reply keeps
+its parsed numeric usage through the unusable-decision error, aggregate and
+trace; an unreadable reply account remains a compatible fallback. An explicit
+partial account can retain known cost without inventing token counts. The
+active creation purse already settles these calls before schema refusal; this
+reporting path neither charges them again nor changes the spend ceiling.
+
+## Verification Accounting At Settlement
+
+The bounded runtime result check retains each actual completed intervention
+before starting confirmation. A private collector closes when the outer check
+settles; timeout, abort or error fallback keeps genuine completed paid usage,
+and late responses cannot append to the saved terminal record.
+
+An unfinished verification has unknown request accounting. It cannot publish a
+synthetic zero ledger or qualify a deterministic replay. The existing public
+zero-provider helper now requires affirmative completed verification as its
+third argument; omitted proof returns unknown. Ordinary completed no-model
+checks remain explicit zero when no prior/current gate or intervention exists.
+This narrows old two-argument absence inference. It adds no provider wrapper,
+request counter, pending-call cost estimate or verification-local total claimed
+as whole-run usage. Existing request admission, retries, policies and provider
+identity remain unchanged.
+
+Independently observed mocked-transport regressions cover pending first check,
+paid first check followed by pending confirmation, unsent input refusal,
+completed no-provider checks and prevention of late writes. Actual public
+FluxIQ disabled construction also executed a saved native Flow, preserving a
+nonempty fixture key/session and publishing explicit zero with fresh network
+and key-release observers. Live browser saved reuse remains separate.

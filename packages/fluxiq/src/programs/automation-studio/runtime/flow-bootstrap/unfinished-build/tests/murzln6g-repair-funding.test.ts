@@ -91,6 +91,7 @@ async function murzln6g(atMs: number, repairVerdict: "yes" | "no" = "yes") {
       const first = call(FIRST_REPAIR_SENT, DECISION_REPLY, 0.0025);
       firstRepairHolds.push(first);
       if (!first.ok) {
+        if (purse.refusal?.code !== "llm_budget.run_cost_limit") throw new Error("Expected a cost-only refusal");
         refusal = purse.refusal && { ...purse.refusal };
         return {
           ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps: request.repair!.seed, accounting: accounting(0, 0),

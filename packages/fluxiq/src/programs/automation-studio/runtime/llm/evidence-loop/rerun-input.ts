@@ -98,26 +98,15 @@
 // be renames none. This cannot remove a withheld key: the model cannot write the
 // value of one it never saw. Leaving a key out still keeps it; `null` removes it.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioRerunPatchPlacement } from "../rerun-arguments/index.ts";
 
-/** The keys of a `core.run_node` argument (`../node-tools/run-node.ts`). */
-const NODE_KEY = "node";
-const PARAMETERS_KEY = "parameters";
-const CONSEQUENCES_KEY = "consequences";
 /** The key an object names what it is by. */
 const KIND_KEY = "kind";
 
 /** The argument a rerun runs with: `patch` merged over `previous` (RFC 7386). */
 export function automationStudioLlmEvidenceRerunInput(previous: JsonObject | undefined, patch: JsonObject): JsonObject {
   const target = structuredClone(previous ?? {});
-  return mergePatch(target, placed(target, patch));
-}
-
-/** The patch where it was meant: a node's parameters when it was written as their keys alone. */
-function placed(target: JsonObject, patch: JsonObject): JsonObject {
-  const names = Object.keys(patch);
-  if (names.length === 0 || !Object.hasOwn(target, NODE_KEY) || !isObject(target[PARAMETERS_KEY])) return patch;
-  if (names.some((name) => name === NODE_KEY || name === PARAMETERS_KEY || name === CONSEQUENCES_KEY)) return patch;
-  return { [PARAMETERS_KEY]: patch };
+  return mergePatch(target, automationStudioRerunPatchPlacement(target, patch));
 }
 
 function mergePatch(target: JsonObject, patch: JsonObject): JsonObject {

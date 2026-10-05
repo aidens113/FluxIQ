@@ -279,6 +279,21 @@ describe("the instruction's lasting acts, read once before the first test", () =
     expect(run.derived()).toBe(0);
   });
 
+  it("grounds split objects in the original combined clause without classifying an unquoted sibling", async () => {
+    const instruction = "Switch my pickup store to Example Store, then add two packs of Towels in Large and one pack of Napkins in Small to my cart, both for pickup. Do not buy anything.";
+    const acts = automationStudioInstructedActs(instruction);
+    const combined = reading([{ ...READ[0]!, quote: "add two packs of Towels in Large and one pack of Napkins in Small to my cart" }]);
+    expect([...await combined.permissions.instructedLastingActs(acts)]).toEqual(["a2", "a3"]);
+    await combined.permissions.instructedLastingActs(acts);
+    expect(combined.derived()).toBe(1);
+    const narrow = reading([{ ...READ[0]!, quote: "one pack of Napkins in Small to my cart" }]);
+    expect([...await narrow.permissions.instructedLastingActs(acts)]).toEqual(["a3"]);
+    const sharedVerb = reading([{ ...READ[0]!, quote: "add" }]);
+    expect([...await sharedVerb.permissions.instructedLastingActs(acts)]).toEqual([]);
+    const unrelated = reading([{ ...READ[0]!, quote: "add two packs of Unrelated to my cart" }]);
+    expect([...await unrelated.permissions.instructedLastingActs(acts)]).toEqual([]);
+  });
+
   it("names nothing when the read fails, and does not try again at the cross-check", async () => {
     const run = reading(new Error("provider down"));
     expect([...await run.permissions.instructedLastingActs(ACTS)]).toEqual([]);

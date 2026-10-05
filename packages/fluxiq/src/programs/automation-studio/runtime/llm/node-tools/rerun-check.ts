@@ -70,6 +70,8 @@ export async function automationStudioNodeRerunAnswer(input: {
   place: AutomationStudioNodeRerunPlace | undefined;
   /** The step the rerun replaces; absent for an ordinary call. */
   replaces: AutomationStudioFlowDraftStep | undefined;
+  /** The draft in execution order: later test evidence depends on the replaced configuration. */
+  steps?: readonly AutomationStudioFlowDraftStep[] | undefined;
   call: { callId: string; toolId: string; value: JsonObject };
   /** What the call names in the domain's words, asked before it ran (`../../flow-draft/step-words.ts`). */
   words?: AutomationStudioFlowDraftStepWords | undefined;
@@ -81,8 +83,10 @@ export async function automationStudioNodeRerunAnswer(input: {
   if (input.place?.kind === "unreachable") return { ran: input.place.result, took: false };
   const step = input.replaces !== undefined && automationStudioFlowDraftStepActDone(input.replaces, input.lastingActs) ? input.replaces : undefined;
   const value = step ? checkCall(step, input.call.value) : input.call.value;
-  const ran = automationStudioNodeRerunPlaceNoted(input.place, await input.executeTool({ callId: input.call.callId, toolId: input.call.toolId, value, ...(input.signal ? { signal: input.signal } : {}) }));
-  return step ? checked(step, input.call.value, input.words, ran) : { ran, took: false };
+  // A refusal after a put-back says the page was loaded again and names the control the argument meant (`./step-place.ts`, run `run-musq0b1m-0472cfa0` Cause 4).
+  const named = input.replaces ? { step: input.replaces.position, ...(input.words ? { words: input.words } : {}) } : undefined;
+  const ran = automationStudioNodeRerunPlaceNoted(input.place, await input.executeTool({ callId: input.call.callId, toolId: input.call.toolId, value, ...(input.signal ? { signal: input.signal } : {}) }), named);
+  return step ? checked(step, input.call.callId, input.call.toolId, input.call.value, input.words, ran, input.steps) : { ran, took: false };
 }
 
 /** The dry run's check of `step`, with the rerun's new argument in place of what the step ran with (`./replay.ts`). */
@@ -91,14 +95,46 @@ function checkCall(step: AutomationStudioFlowDraftStep, value: JsonObject): Json
 }
 
 /** What a check's answer does to the step, and the answer with the plain account of it. */
-function checked(step: AutomationStudioFlowDraftStep, value: JsonObject, words: AutomationStudioFlowDraftStepWords | undefined, ran: Answer): { ran: Answer; took: boolean } {
+function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: string, value: JsonObject, words: AutomationStudioFlowDraftStepWords | undefined, ran: Answer, steps: readonly AutomationStudioFlowDraftStep[] | undefined): { ran: Answer; took: boolean } {
   const parsed = automationStudioLlmEvidenceParseToolExecutionResult(ran, "mutate");
   const code = parsed?.resultCode;
   const took = code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE || code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE;
   const position = step.position;
   const acts = [...(step.acts ?? [])];
   if (took) {
-    step.input = value;
+    if (!step.priorExecution) {
+      const { priorExecution: _prior, checkedCandidate: _candidate, ...performed } = step;
+      step.priorExecution = { ...structuredClone(performed), lasting: true };
+    }
+    // The caller's parsed declaration is the same authority normal callRecord
+    // uses. A checked replacement can change which action a shared tool runs:
+    // carrying its arguments under the earlier action would assemble that old
+    // node with the replacement's parameters. Never infer identity from an
+    // arbitrary argument such as value.node.
+    const declared = parsed?.draft;
+    if (declared?.actionId !== undefined) {
+      step.actionId = declared.actionId;
+      if (declared.actionId === toolId) delete step.toolId;
+      else step.toolId = toolId;
+    }
+    step.input = declared?.input ?? value;
+    if (declared?.effect !== undefined) step.effect = declared.effect;
+    if (declared?.proposes !== undefined) step.proposes = declared.proposes;
+    step.effectApplied = false;
+    step.checkedCandidate = { callId, code: code! };
+    step.resultCode = code;
+    // Proof of the previous execution remains solely under its old input.
+    delete step.callId;
+    delete step.stateBefore;
+    delete step.stateAfter;
+    delete step.instance;
+    delete step.toggle;
+    delete step.interruption;
+    delete step.cancels;
+    delete step.routeSignatures;
+    delete step.written;
+    if (step.replay?.from !== undefined) step.replay = { from: step.replay.from };
+    else delete step.replay;
     const resolved = parsed?.draft?.ranWith;
     if (resolved !== undefined) step.ranWith = resolved;
     else delete step.ranWith;
@@ -106,14 +142,18 @@ function checked(step: AutomationStudioFlowDraftStep, value: JsonObject, words: 
     else delete step.words;
     // The words of the control the earlier run pressed: the old target's, not this one's.
     delete step.control;
+    // How the old argument answered the last test is not about this one (run `run-musq0b1m-0472cfa0`, Cause 6).
+    delete step.replayed;
+    // Any following result was measured with the old configuration before it.
+    const at = steps?.indexOf(step) ?? -1;
+    if (steps && at >= 0) for (const following of steps.slice(at + 1)) delete following.replayed;
   }
-  const does = acts.length ? `does ${acts.join(", ")}` : "changes something that lasts";
-  const why = `Step ${position} ${does} and already did it once while this Flow was being built, so this rerun was checked and not done again: running it would do that a second time.`;
+  const why = `Step ${position} replaces an original configuration that already did it once while this Flow was being built: a lasting effect was performed. This rerun was checked and not done again; that history prevents a second execution, but does not prove the replacement configuration or its current act claims were performed.`;
   const found = code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE
-    ? "The check found the step's effect already in place on the page it started on"
+    ? "The check reported the effect present on the recorded page; this is not proof that the replacement configuration was performed"
     : "The check found the step could run now with the new argument";
   const detail = took
-    ? `${why} ${found}, so step ${position} now runs with the new argument. When the Flow runs, the step does its act each time it runs: a repeated step does it on each row its listing keeps.`
+    ? `${why} ${found}, so step ${position} now holds the new argument as a checked candidate, not performed evidence. Its act claims describe intention; the earlier execution remains tied to the original argument. When the Flow runs, the step does its act each time it runs: a repeated step does it on each row its listing keeps.`
     : `${why} The check did not find the step able to run with the new argument on the page it started on (${code ?? "no answer"}), so nothing changed: step ${position} keeps the argument it ran with, as after a rerun that did not work.`;
   return { ran: noted(ran, { checked: true, doneAgain: false, acts, ...(code ? { answer: code } : {}), took, detail }), took };
 }

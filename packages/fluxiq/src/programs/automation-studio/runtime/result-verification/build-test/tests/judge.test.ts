@@ -348,3 +348,27 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     expect(verdict).toMatchObject({ verdict: "yes", spent: { totalTokens: USAGE.totalTokens, calls: 2 } });
   });
 });
+
+
+it("reports a refused judge's call allowance without invented dollar spend", async () => {
+  const { provider, seen } = scripted(["yes"]);
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 1 });
+  const previous = purse.hold({ projectedCostUsd: 0, estimatedInputTokens: 1, maxOutputTokens: 1 });
+  if (previous.ok) previous.hold.settle({ estimatedCostUsd: 0 });
+  const verdict = await automationStudioLlmBuildPurseScope(purse, () => judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 1 } }));
+  expect(seen).toHaveLength(0);
+  expect(verdict).toMatchObject({ verdict: "not_judged", why: expect.stringContaining("call allowance of 1"), spent: { calls: 0, totalTokens: 0, estimatedCostUsd: 0 } });
+  expect("why" in verdict && verdict.why).not.toContain("$");
+  expect(purse.spentCalls()).toBe(1);
+  expect(purse.spentUsd()).toBe(0);
+});
+
+
+it("keeps a scoped first yes and its paid usage when call admission refuses confirmation", async () => {
+  const { provider, seen } = scripted(["yes"]);
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 1 });
+  const verdict = await automationStudioLlmBuildPurseScope(purse, () => judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 1 } }));
+  expect(seen).toHaveLength(1);
+  expect(verdict).toMatchObject({ verdict: "yes", spent: { calls: 1, inputTokens: USAGE.inputTokens, outputTokens: USAGE.outputTokens, totalTokens: USAGE.totalTokens, estimatedCostUsd: USAGE.estimatedCostUsd } });
+  expect(purse.spentCalls()).toBe(1);
+});

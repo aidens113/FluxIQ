@@ -35,7 +35,7 @@ const goTo = (position: number, options?: Parameters<typeof step>[2]) => step(po
 const press = (position: number, options?: Parameters<typeof step>[2]) => step(position, { target: `h${position}` }, options);
 
 function restore(steps: AutomationStudioFlowDraftStep[], ...startLocation: [string?]) {
-  return automationStudioFlowBootstrapDraftWithStartStep({ steps, startLocation: startLocation.length ? startLocation[0] : START });
+  return automationStudioFlowBootstrapDraftWithStartStep({ steps, arrival: { node: "web.output.browser-navigate", parameter: "url" }, startLocation: startLocation.length ? startLocation[0] : START });
 }
 
 describe("completion keeps the step that arrived where the Flow starts", () => {
@@ -125,4 +125,13 @@ describe("it changes nothing it has no reason to", () => {
 
     expect(restore(steps)).toEqual({ steps });
   });
+});
+
+it("restores the withdrawn declared arrival despite a kept increment's stale location", () => {
+  const dropped: AutomationStudioFlowDraftStep = { position: 1, id: "arrival", iteration: 1, actionId: "arrive", input: { parameters: { destination: "warehouse-A" } }, effect: "mutate", effectApplied: true, disposition: "dropped" };
+  const increment: AutomationStudioFlowDraftStep = { position: 2, id: "increment", iteration: 2, actionId: "increment", input: { parameters: { destination: "warehouse-A", amount: 2 } }, effect: "mutate", effectApplied: true, disposition: "kept" };
+  const restored = automationStudioFlowBootstrapDraftWithStartStep({ steps: [dropped, increment], startLocation: "warehouse-A", arrival: { node: "arrive", parameter: "destination" } });
+  expect(restored.restored?.id).toBe("arrival");
+  expect(restored.steps.map((step) => step.disposition)).toEqual(["kept", "kept"]);
+  expect(dropped.disposition).toBe("dropped");
 });

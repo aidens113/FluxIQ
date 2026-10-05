@@ -43,6 +43,7 @@
 // `../../flow-draft/excused.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../../nodes/index.ts";
 import {
   automationStudioFlowDraftHoldsBinding,
@@ -79,6 +80,7 @@ const FOR_EACH_NODE_ID = "builtin.control.for-each";
 export type AutomationStudioFlowDraftReplayNode = {
   inputs: readonly { id: string }[];
   outputs: readonly { id: string; type: string }[];
+  outputAction?: { required: true; fixed?: string; allowed?: string[] };
 };
 
 /** The node a step names, by the step's `actionId`, or nothing for a node the caller cannot describe. */
@@ -172,9 +174,12 @@ export function automationStudioFlowDraftReplayTakesRow(node: AutomationStudioFl
 export function automationStudioFlowDraftReplayPassCall(
   step: AutomationStudioFlowDraftStep,
   mode: AutomationStudioFlowDraftReplayMode,
-  row?: { item: JsonObject; takesRow: boolean }
+  row?: { item: JsonObject; takesRow: boolean },
+  node?: AutomationStudioFlowDraftReplayNode
 ): { value: JsonObject } | { unresolved: string[] } | undefined {
-  const parameters = step.ranWith?.parameters;
+  const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
+  if (step.scheduledCandidate !== undefined && (!scheduled || !node?.outputAction?.fixed)) return undefined;
+  const parameters = (scheduled?.input ?? step.ranWith)?.parameters;
   const pass: AutomationStudioNodeReplayPass = {};
   if (isRecord(parameters) && automationStudioFlowDraftHoldsBinding(parameters)) {
     const resolved = resolveAutomationNodeParameterValues(parameters, row ? { item: row.item } : {});
@@ -228,7 +233,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
   const runPass = async (pass: number, row?: JsonObject): Promise<boolean> => {
     for (const member of plan.members) {
       const mode = input.modeOf(member);
-      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(input.nodeOf(member.actionId)) } : undefined);
+      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(input.nodeOf(member.actionId)) } : undefined, input.nodeOf(member.actionId));
       let answered: AutomationStudioFlowDraftReplayPass;
       if (built && "unresolved" in built) answered = { pass, status: "failed", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE };
       else {

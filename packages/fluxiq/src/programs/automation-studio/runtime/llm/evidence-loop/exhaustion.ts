@@ -132,11 +132,12 @@ export type AutomationStudioLlmEvidenceLoopExhaustion = {
    * stopped at $0.0738 of $0.10 with a next decision the purse would have paid
    * for; the count no longer ends a loop on cost (t234).
    */
-  costRefusal?: AutomationStudioLlmBuildPurseRefusal;
+  costRefusal?: Extract<AutomationStudioLlmBuildPurseRefusal, { code: "llm_budget.run_cost_limit" }>;
+  callRefusal?: Extract<AutomationStudioLlmBuildPurseRefusal, { code: "llm_budget.run_call_limit" }>;
 };
 
 /** A budget bound that can run out, as `../loop-budget.ts` counts them. */
-export type AutomationStudioLlmEvidenceLoopBudgetBound = "iterations" | "tokens" | "cost" | "duration";
+export type AutomationStudioLlmEvidenceLoopBudgetBound = "iterations" | "tokens" | "cost" | "duration" | "calls";
 
 /**
  * What an exhausted loop has to say for itself, read off the loop's state at
@@ -178,7 +179,7 @@ export function automationStudioLlmEvidenceLoopExhaustion(state: {
     // decision it could use has no last refusal, and reporting the one before
     // it would be the same conflation in a smaller field.
     lastIssueCodes: state.unusableInARow ? [...state.lastIssueCodes] : [],
-    ...(purseRefusal ? { budgetBound: "cost" as const, costRefusal: { ...purseRefusal } } : bound === "budget" && lastRemaining ? { budgetBound: lastRemaining.limitedBy } : {}),
+    ...(purseRefusal ? (purseRefusal.code === "llm_budget.run_call_limit" ? { budgetBound: "calls" as const, callRefusal: { ...purseRefusal } } : { budgetBound: "cost" as const, costRefusal: { ...purseRefusal } }) : bound === "budget" && lastRemaining ? { budgetBound: lastRemaining.limitedBy } : {}),
     // What a continuation of this build is told it still owes.
     outstandingIssueCodes: state.outstandingIssueCodes
   };

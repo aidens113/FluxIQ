@@ -399,18 +399,18 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       if (asked !== undefined) throw asked;
       // A round stopped because its next call would have eaten into the judging kept back: that reserve is spent judging the Flow as it stands (`./reserve-judging.ts`, t254 stage 2).
       const judge = input.judge;
-      const stoppedAtReserve = ending.kind === "budget" && ending.bound === "cost" && input.purse !== undefined && judge !== undefined && (ending.progress.exhaustion?.costRefusal?.keptBackUsd ?? 0) > 0;
+      const stoppedAtReserve = ending.kind === "budget" && (ending.bound === "cost" || ending.bound === "calls") && input.purse !== undefined && judge !== undefined && ((ending.progress.exhaustion?.costRefusal?.keptBackUsd ?? 0) > 0 || (ending.progress.exhaustion?.callRefusal?.keptBackCalls ?? 0) > 0);
       const toTest = automationStudioFlowBootstrapRepairSeed(ending.steps);
       // The Flow a judge last said no to, unchanged (t254 stage 3): testing and judging it again would buy the same answer, so the reserve is not spent on it.
       unchangedAtStop = stoppedAtReserve && judgedNo !== undefined && toTest.length > 0 && automationStudioFlowDraftFlowSignature(toTest) === judgedNo.flowSignature;
       const atReserve = stoppedAtReserve && !unchangedAtStop;
       if (unchangedAtStop) {
-        input.announce?.({ phase: "verifying", label: "Flow unchanged since judged", text: "The build reached its spending limit before the Flow was finished. The Flow is unchanged since the judge said it does not do what was asked, so what was kept back for judging is not spent judging it again." });
+        input.announce?.({ phase: "verifying", label: "Flow unchanged since judged", text: `The build reached its ${ending.kind === "budget" && ending.bound === "calls" ? "model call allowance" : "spending limit"} before the Flow was finished. The Flow is unchanged since the judge said it does not do what was asked, so what was kept back for judging is not spent judging it again.` });
       }
       // Said only when the test will run: a Flow with steps in it that carries what a replay needs, exactly as `automationStudioFlowBootstrapJudgeUnfinished` decides. An empty Flow has nothing to run, and one nothing can replay is not run; announcing a test then was followed by none (live run murwcmx2, UI-4).
       if ((ending.kind === "unfinished" || atReserve) && toTest.length && input.replayable(toTest)) {
         input.announce?.(atReserve
-          ? { phase: "verifying", label: "Testing the Flow so far", text: "The build reached its spending limit before the Flow was finished. Running the Flow as far as it got from its start, and judging it with what was kept back for judging." }
+          ? { phase: "verifying", label: "Testing the Flow so far", text: `The build reached its ${ending.kind === "budget" && ending.bound === "calls" ? "model call allowance" : "spending limit"} before the Flow was finished. Running the Flow as far as it got from its start, and judging it with what was kept back for judging.` }
           : { phase: "verifying", label: "Testing the Flow so far", text: `The build stopped before the Flow was finished: ${automationStudioFlowBootstrapStopSaid(stopped, ending.lastIssueCodes)}. Running the Flow as far as it got from its start, to judge what it does and what is left.` });
       }
       // Phase 2: a round any other budget stopped is judged from the checklist alone; nothing more is run for a build that is ending.
@@ -427,7 +427,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       if (unchangedAtStop && judgedNo) phase2 = { ...phase2, judgement: { ...judged.judgement, judge: judgedNo.judge } };
       if (atReserve && judge) {
         const reserve = await automationStudioFlowBootstrapJudgeAtReserve({
-          judgement: judged.judgement, seed: judged.seed, progress: ending.progress, accept: input.acceptStopped,
+          bound: ending.kind === "budget" && ending.bound === "calls" ? "calls" : "cost", judgement: judged.judgement, seed: judged.seed, progress: ending.progress, accept: input.acceptStopped,
           judge: (loop) => judgeAccounted(input, judge, { round, loop }, spent, clock() - startedAt)
         });
         if (reserve.kind === "cancelled") return cancelled();

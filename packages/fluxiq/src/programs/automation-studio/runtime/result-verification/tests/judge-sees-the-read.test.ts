@@ -50,6 +50,31 @@ function readSummary(nodes: AutomationStudioFlowNode[]): AutomationStudioRunResu
 }
 
 describe("the judge sees how the read went", () => {
+  it.each([
+    { stop: "control_disabled", truncated: false, complete: true },
+    { stop: "page_limit", truncated: true, complete: false },
+    { stop: "rate_limited", truncated: false, complete: false },
+    { stop: "control_disabled", truncated: true, complete: false }
+  ])("projects paging truth into the actual judge request ($stop, truncated=$truncated)", async ({ stop, truncated, complete }) => {
+    const readFlow: AutomationStudioFlowDocument = { ...flow, nodes: steps() };
+    const original = earbudsAttempt();
+    const attempt = earbudsAttempt({ metadata: { ...original.metadata, extraction: { ...original.metadata!.extraction as JsonObject, paginationStop: stop, truncated } } });
+    const detail: AutomationStudioFlowRunDetail = { ...runDetail(), actionAttempts: [attempt] };
+    const raw = summarizeAutomationStudioRunResult({ recordSets: [], flowNodes: readFlow.nodes, actionAttempts: [attempt], deniedEvidenceKeys: [] });
+    const before = structuredClone(raw);
+    const context = harness({ answer: ANSWER.yes, datasets: [datasetSummary({ datasetId: "earbuds", recordCount: 8 })], schema, rows });
+    await verify(context, { flow: readFlow, session: session({ flow: readFlow }), ports: { ...context.ports, getFlowRunDetail: async () => detail } });
+    const sent = context.requests[0]?.context.resultSummary?.reads?.[0];
+    expect(sent).toMatchObject({ pagesRead: 5, stop, truncated, kept: 8, paging: expect.any(String) });
+    expect(sent?.pageLimit).toBe(complete ? undefined : 5);
+    const paging = (sent as { paging?: string } | undefined)?.paging;
+    if (complete) expect(paging).toContain("There is no further page");
+    else expect(paging?.includes("every page")).toBe(false);
+    expect(raw).toEqual(before);
+    expect(raw.reads?.[0]).toMatchObject({ pageLimit: 5, stop, truncated });
+    expect(attempt.metadata?.extraction).toMatchObject({ paginationStop: stop, truncated });
+  });
+
   it("carries the read's pages, stop and each condition's rejections beside the step's parameters", () => {
     const summary = readSummary(steps());
     // The parameters the judge used to be left without are there, whole...

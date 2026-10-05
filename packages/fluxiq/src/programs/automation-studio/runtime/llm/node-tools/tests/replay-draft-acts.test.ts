@@ -63,6 +63,26 @@ function site() {
 }
 
 describe("a step that does one of the person's acts, in the build's test", () => {
+  it("checks a lasting candidate without turning checked parameters into performed proof", async () => {
+    const draft = structuredClone(DRAFT);
+    const performed = structuredClone(draft[2]!);
+    draft[2]!.input = { ...draft[2]!.input, parameters: { target: "replacement", person: { $input: "person", test: "Tom" } } };
+    draft[2]!.ranWith = { ...draft[2]!.input };
+    draft[2]!.effectApplied = false;
+    draft[2]!.checkedCandidate = { callId: "check", code: "core.replay.verified" };
+    draft[2]!.priorExecution = { ...performed, lasting: true };
+    delete draft[2]!.stateBefore;
+    const { state, executeTool, sent } = site();
+    const result = await replayAutomationStudioFlowDraft({ steps: draft, attempt: 1, executeTool, lastingActs: LASTING });
+    expect(result.verdict.ok).toBe(true);
+    expect(sent("node.add_to_cart")).toEqual(["verify"]);
+    expect(state.cart).toBe(2);
+    expect(draft[2]!.effectApplied).toBe(false);
+    expect(draft[2]!.priorExecution?.input).toEqual(performed.input);
+    expect(draft[2]).not.toHaveProperty("written");
+    expect(draft[2]).not.toHaveProperty("stateBefore");
+  });
+
   it("is checked and not pressed, and the steps around it are run again", async () => {
     const { state, executeTool, sent } = site();
     const replayed = await replayAutomationStudioFlowDraft({ steps: DRAFT, attempt: 1, executeTool, lastingActs: LASTING });

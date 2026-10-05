@@ -6,7 +6,7 @@
 // call -- which is what lets one tool run a whole library of actions.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftStepReplay } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
 
 export type AutomationStudioLlmEvidenceToolExecutionResult = {
   kind: "llm_evidence_tool_execution";
@@ -179,5 +179,16 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
      * ordinary recorded one, never a false "written" (`../../flow-draft/step.ts`).
      */
     written?: true;
+    /**
+     * The caller's word that the call flipped whether the control it acted on
+     * is chosen: `key` an opaque code naming that control for the whole build,
+     * `to` which way it went. Carried only on a statement whose `effect` is
+     * `mutate`, and only when `key` is a code and `to` is `on` or `off`;
+     * anything else is withheld, never refused. A later step that flips the
+     * same key back leaves the Flow with this one
+     * (`../../flow-draft/reversal.ts`). **Learned here before any caller sends
+     * it**: the key list of a statement is exact.
+     */
+    toggle?: AutomationStudioFlowDraftStepToggle;
   };
 };

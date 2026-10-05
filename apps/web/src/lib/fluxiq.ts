@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseAllowedOrigins, startClientGatewayWebSocketServer, type ClientGatewayWebSocketServerHandle } from "../server/client-gateway-websocket";
 import { resolveAutomationStudioContext, resolveClientRecordingProject, setAutomationStudioContext, type AutomationStudioWebContext } from "./automation-studio-context";
+import { resolveFluxIQModelProvidersEnabled } from "./model-provider-admission";
 
 type FluxIQHostModuleRegistration = (fluxiq: FluxIQ) => FluxIQ | void;
 
@@ -73,6 +74,7 @@ export function setAutomationStudioWebContext(input: { operatorUserId: string; c
 }
 
 export async function reloadFluxIQWebInstance(): Promise<FluxIQ> {
+  resolveFluxIQModelProvidersEnabled();
   // Before anything closes, so a host that fails to load leaves the old runtime serving.
   await loadFluxIQHostModule();
   const state = getWebRuntimeState();
@@ -165,13 +167,14 @@ function getWebRuntimeState(): NonNullable<FluxIQWebGlobal["__fluxiqWebRuntime"]
 }
 
 export function createFluxIQWebInstance(): FluxIQ {
+  const modelProvidersEnabled = resolveFluxIQModelProvidersEnabled();
   const rootDir = resolveFluxIQWebHostRoot(process.cwd());
-  const fluxiq = applyFluxIQHostModule(FluxIQ.create({ rootDir }));
+  const fluxiq = applyFluxIQHostModule(FluxIQ.create({ rootDir, modelProvidersEnabled }));
   if (fluxiq.activeDomainId) return fluxiq;
   if (explicitFluxIQDomainId()) return fluxiq;
   const domains = fluxiq.domains.summaries();
   if (domains.length !== 1) return fluxiq;
-  return applyFluxIQHostModule(FluxIQ.create({ rootDir, domainId: domains[0]!.id }));
+  return applyFluxIQHostModule(FluxIQ.create({ rootDir, domainId: domains[0]!.id, modelProvidersEnabled }));
 }
 
 /**

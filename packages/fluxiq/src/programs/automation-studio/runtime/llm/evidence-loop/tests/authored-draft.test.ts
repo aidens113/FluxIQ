@@ -37,6 +37,29 @@ type Shown = ReadonlyArray<{ toolId: string; value: JsonObject }>;
 const shownAt = (decide: { mock: { calls: unknown[][] } }, index: number): Shown => (decide.mock.calls[index]![0] as { evidence: Shown }).evidence;
 
 describe("a step the model runs", () => {
+  it("parses explicit repeat removal, withholding mixed edits rather than changing an act or argument", () => {
+    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat" }] }))
+      .toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat" }] });
+    for (const extra of [{ act: "a2" }, { input: { target: "other" } }, { over: 1 }, { settings: { attempts: 2 } }]) {
+      expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat", ...extra }] })).toBeUndefined();
+    }
+  });
+
+  it("a mistaken repeat can be removed in the authoring loop without another tool call or losing the act", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(call(1, { add: true }))
+      .mockResolvedValueOnce(call(2, { act: "a2.quantity" }))
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", over: 1 }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "unrepeat" }] })
+      .mockResolvedValueOnce(complete);
+    const executeTool = vi.fn().mockResolvedValue(worked);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
+    expect(result.ok).toBe(true);
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(result.steps[1]).toMatchObject({ disposition: "kept", acts: ["a2.quantity"] });
+    expect(result.steps[1]!.routing).toBeUndefined();
+  });
+
   it("is evidence, not a step of the Flow, until the model adds it", async () => {
     const decide = vi.fn().mockResolvedValueOnce(call(1)).mockResolvedValueOnce(call(2, { add: true })).mockResolvedValueOnce(complete);
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool: vi.fn().mockResolvedValue(worked), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled } });
@@ -320,6 +343,76 @@ describe("a call's statement that it answered an interruption", () => {
       .mockResolvedValueOnce({ kind: "complete", result: { flow: "ready" } });
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [pressTool], decide, executeTool: vi.fn().mockResolvedValue(interrupting(true)), maxIterations: 4, maxToolCalls: 4, dryRun: false, unusableDecisions: { stalled: () => new Error("stalled") } });
     expect(result.steps[0]?.interruption).toBe(true);
+  });
+});
+
+// The host's statement that a press flipped whether the control it pressed is
+// chosen, under the control's own handle (t174-w94/w103). Core pairs a press
+// with a later one that flips the same control back and takes both out of the
+// Flow (`../../../flow-draft/reversal.ts`). Live run `run-murwd8le-79e735a8`
+// kept one half and brought the other in as an opener; `run-musp8nz1-dbd3905a`
+// added both halves itself, each for `a1.colour`.
+const toggling = (toggle: unknown, states?: { before: string; after: string }, effect: "observe" | "mutate" = "mutate"): JsonValue => ({
+  kind: "llm_evidence_tool_execution",
+  evidence: { ok: true },
+  effectApplied: true,
+  ...(states ? { stateDigests: states } : {}),
+  draft: { actionId: "web.output.dom-click", input: { target: { handle: "t941" } }, effect, proposes: true, ...(toggle === undefined ? {} : { toggle }) }
+}) as JsonValue;
+
+describe("a call's statement that its press flipped the control it pressed", () => {
+  it("is carried on the parse path", () => {
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(toggling({ key: "t941", to: "off" }), "mutate")?.draft?.toggle).toEqual({ key: "t941", to: "off" });
+  });
+
+  it("is withheld, never refused, when malformed or on a statement that changed nothing", () => {
+    const cases: Array<[unknown, "observe" | "mutate"]> = [[{ key: "<b>", to: "off" }, "mutate"], [{ key: "t941", to: "maybe" }, "mutate"], ["on", "mutate"], [{}, "mutate"], [{ key: "t941", to: "on", by: "x" }, "mutate"], [{ key: "t941", to: "on" }, "observe"]];
+    for (const [toggle, effect] of cases) {
+      const value = toggling(toggle, undefined, effect);
+      const parsed = automationStudioLlmEvidenceParseToolExecutionResult(value, "mutate");
+      expect(parsed?.effectApplied, JSON.stringify(toggle)).toBe(true);
+      expect(parsed?.draft, JSON.stringify(toggle)).not.toHaveProperty("toggle");
+      expect(automationStudioLlmEvidenceToolResultInvalidCode(value, "mutate"), JSON.stringify(toggle)).toBeUndefined();
+    }
+  });
+
+  it("is copied onto the call's record", () => {
+    const parsed = automationStudioLlmEvidenceParseToolExecutionResult(toggling({ key: "t941", to: "on" }), "mutate")!;
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, parsed).toggle).toEqual({ key: "t941", to: "on" });
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, {})).not.toHaveProperty("toggle");
+  });
+
+  it("a loop that presses a control off with add, then on, then adds the next press leaves the pair out of the Flow", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(call(1, { add: true })).mockResolvedValueOnce(call(2)).mockResolvedValueOnce(call(3, { add: true }))
+      .mockResolvedValueOnce(complete);
+    const executeTool = vi.fn()
+      .mockResolvedValueOnce(toggling({ key: "t941", to: "off" }, { before: "s0", after: "s1" }))
+      .mockResolvedValueOnce(toggling({ key: "t941", to: "on" }, { before: "s1", after: "s2" }))
+      .mockResolvedValueOnce(toggling(undefined, { before: "s2", after: "s3" }));
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    expect(result.steps.map((step) => step.disposition)).toEqual(["dropped", "dropped", "kept"]);
+    expect(result.steps.map((step) => step.cancels)).toEqual(["d2", "d1", undefined]);
+  });
+
+  it("run musp8nz1: Space Grey off then on, both added for a1.colour, both leave the Flow and neither keeps the act", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(call(1, { add: true }))
+      .mockResolvedValueOnce(call(2, { add: true, act: "a1.colour" }))
+      .mockResolvedValueOnce(call(3, { add: true, act: "a1.colour" }))
+      .mockResolvedValueOnce(complete);
+    const executeTool = vi.fn()
+      .mockResolvedValueOnce(toggling(undefined, { before: "s0", after: "s1" }))
+      .mockResolvedValueOnce(toggling({ key: "t941", to: "off" }, { before: "s1", after: "s2" }))
+      .mockResolvedValueOnce(toggling({ key: "t941", to: "on" }, { before: "s2", after: "s3" }));
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 6, maxToolCalls: 6, dryRun: false, unusableDecisions: { stalled } });
+    expect(result.steps.map((step) => [step.id, step.disposition, step.acts, step.cancels])).toEqual([
+      ["d1", "kept", undefined, undefined], ["d2", "dropped", undefined, "d3"], ["d3", "dropped", undefined, "d2"]
+    ]);
+    // The draft the completing decision read says why both are out, and where an act about the colour belongs.
+    const draft = shownAt(decide, 3).find((entry) => entry.toolId === "core.flow_draft")!.value as { steps: Array<Record<string, unknown>> };
+    expect(String(draft.steps[1]!.out)).toContain("step 3 pressed the same control back");
+    expect(String(draft.steps[1]!.out)).toContain("already chosen before step 2");
   });
 });
 

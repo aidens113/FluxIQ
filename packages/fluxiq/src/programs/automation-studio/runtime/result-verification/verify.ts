@@ -63,7 +63,7 @@ import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResu
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain } from "./agreement.ts";
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
-import { automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
+import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 
@@ -115,6 +115,8 @@ export type AutomationStudioResultVerificationRequest = {
    * whose `yes` finishes a build; the runtime result check leaves it unset.
    */
   confirmAnswer?: boolean | undefined;
+  /** Completed receipts survive a later check's outer deadline; this does not count dispatches. */
+  recordIntervention?: ((intervention: AutomationStudioFlowIntervention) => void) | undefined;
 };
 
 /** The outcome, and the intervention record of each call made: none, one, or two. */
@@ -150,6 +152,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
   const confirmAnswer = request.confirmAnswer === true;
   const first = await askOnce(request, provider, 1);
+  request.recordIntervention?.(first.intervention);
   if (!automationStudioResultVerificationAskAgain(first.verification, { confirmAnswer })) {
     return said({ outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification }), performed: true }, interventions: [first.intervention] });
   }
@@ -159,6 +162,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   const secondIntervention = second.intervention.interventionId === first.intervention.interventionId
     ? { ...second.intervention, interventionId: `${second.intervention.interventionId}.2` }
     : second.intervention;
+  request.recordIntervention?.(secondIntervention);
   return said({
     outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification, second: second.verification, confirmAnswer }), performed: true },
     interventions: [first.intervention, secondIntervention]
@@ -191,7 +195,7 @@ async function askOnce(
     ...(request.runDetail ? { runDetail: request.runDetail } : {}),
     // With the instruction's named columns no stored column reads, said once
     // (`read-account/unread-columns.ts`): information for the judge, not a verdict.
-    resultSummary: automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions),
+    resultSummary: automationStudioResultSummaryWithPagingWords(automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions)),
     ...(request.deniedEvidenceKeys ? { deniedEvidenceKeys: request.deniedEvidenceKeys } : {}),
     ...(request.policy ? { policy: request.policy } : {}),
     provider,

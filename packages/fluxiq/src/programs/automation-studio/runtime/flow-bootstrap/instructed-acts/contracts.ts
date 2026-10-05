@@ -64,6 +64,13 @@ export type AutomationStudioInstructedAct = {
    */
   quote: string;
   /**
+   * Parser-owned provenance for one of several counted objects of one verb.
+   * The original clause stays contiguous, unlike the display quote assembled
+   * from its verb, this object and the shared destination. The object's own
+   * source words distinguish a narrowly quoted sibling from this act.
+   */
+  source?: { clause: string; object: string };
+  /**
    * Present, and true, when the act is asked for every member of a set:
    * "confirm everyone ...", "withdraw every request ...", "save all ...". One
    * step that acts once does not do it; a step the Flow repeats over a list

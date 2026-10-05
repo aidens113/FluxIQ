@@ -264,7 +264,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       continue;
     }
     const mode = automationStudioFlowDraftStepReplayMode(step, input.lastingActs);
-    const built = automationStudioFlowDraftReplayPassCall(step, mode);
+    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId));
     const unresolved = built !== undefined && "unresolved" in built;
     const value = built && "value" in built ? built.value : undefined;
     const callId = input.callIdOf(step);

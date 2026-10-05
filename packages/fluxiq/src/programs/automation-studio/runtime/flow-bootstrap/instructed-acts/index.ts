@@ -35,3 +35,5 @@ export * from "./permission.ts";
 export * from "./span.ts";
 export * from "./standing.ts";
 export * from "./step-fault.ts";
+export * from "./claim-doubt.ts";
+export * from "./kind-words.ts";

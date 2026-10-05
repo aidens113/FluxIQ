@@ -56,6 +56,46 @@ function build() {
 }
 
 describe("a build whose step declares [] and claims an instructed lasting act", () => {
+  it("never repeats either split-object mutation during two whole tests and still runs ordinary authored execution", async () => {
+    const instruction = "Add two packs of Towels in Large and one pack of Napkins in Small to my cart. Do not buy anything.";
+    const counts = new Map<string, number>();
+    let reads = 0;
+    const domain = vi.fn(async (call: { callId: string; toolId: string; value: JsonObject; permission?: (declaration: AutomationStudioActionDeclaration) => Promise<unknown> }) => {
+      if (call.value.replay === "reset") return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };
+      const target = String(call.value.target);
+      if (call.value.replay === "verify") return { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, said: "checked and not run" }, effectApplied: false, resultCode: "core.replay.verified" };
+      await call.permission?.(ADD);
+      counts.set(target, (counts.get(target) ?? 0) + 1);
+      return {
+        kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: true,
+        resultCode: call.value.replay === "step" ? "core.replay.replayed" : "web.action.succeeded",
+        draft: { actionId: "example.add", effect: "mutate" as const, proposes: true, ranWith: { target, consequences: [] }, replay: { from: ITEM } }
+      };
+    });
+    const permissions = automationStudioFlowBootstrapActionPermissions({
+      permittedConsequences: [], instructionIds: ["instruction.goal"],
+      deriveInstructed: async () => { reads += 1; return [{ ...READ[0]!, quote: instruction.split(".")[0]! }]; }, executeTool: domain
+    });
+    let lasting: Promise<ReadonlySet<string>> | undefined;
+    const lastingActs = () => (lasting ??= permissions.instructedLastingActs(automationStudioInstructedActs(instruction)));
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "add.towels", toolId: "press", input: { target: "towels", consequences: [] }, add: true, act: "a1" })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "add.napkins", toolId: "press", input: { target: "napkins", consequences: [] }, add: true, act: "a2" })
+      .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: permissions.executeTool, maxIterations: 5, maxToolCalls: 5, propagateDecisionErrors: true, fullRunRequired: true, lastingActs });
+    expect(result.ok).toBe(true);
+    expect(Object.fromEntries(counts)).toEqual({ towels: 1, napkins: 1 });
+    const test = automationStudioFlowDraftDryRunGate({ enabled: true, steps: result.steps.map((step) => ({ ...step })), executeTool: permissions.executeTool, accountEvidence: () => 0, showEvidence: () => undefined, targetMoved: () => undefined, lastingActs });
+    expect(await test()).toBeUndefined();
+    expect(Object.fromEntries(counts)).toEqual({ towels: 1, napkins: 1 });
+    expect(domain.mock.calls.filter(([call]) => call.value.replay === "verify")).toHaveLength(4);
+    expect(reads).toBe(1);
+    // Classification protects build checks, never changes normal execution.
+    await permissions.executeTool({ callId: "runtime.towels", toolId: "press", value: { target: "towels", consequences: [], replay: "step" } });
+    expect(Object.fromEntries(counts)).toEqual({ towels: 2, napkins: 1 });
+    expect(reads).toBe(1);
+  });
+
   it("is checked in its dry run, not pressed again, and the instruction is read exactly once", async () => {
     const run = build();
     expect(automationStudioInstructedActs(INSTRUCTION).map((act) => act.id)).toEqual(["a1"]);

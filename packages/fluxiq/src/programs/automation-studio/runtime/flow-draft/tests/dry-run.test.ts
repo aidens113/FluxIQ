@@ -319,3 +319,45 @@ describe("the loop's gate on proposing", () => {
     expect(shown?.value).toMatchObject({ code: "llm_evidence_loop.full_run_required", steps: [{ step: 1, actionId: "press", replayed: "cannot_run_again" }] });
   });
 });
+
+// Live run `run-musq0b1m-0472cfa0`, Cause 6: test 1 refused 7-in-1 and Space
+// Grey `unreproducible`, and its rows named no page. They had run on the search
+// results, while both steps acted on the item page; only a page view the model
+// had to read across said so. A row that did not replay carries the page its
+// step acted on, as the host wrote it (`replay.from`, read by Core never), so
+// the row says where the step belongs beside how it answered there.
+describe("where a step that did not replay belongs", () => {
+  const ITEM = { location: "https://store.test/item/1005008123450" };
+  const steps = (): AutomationStudioFlowDraftStep[] => [
+    step(1, { stepId: undefined, replay: { from: { location: "https://store.test/" } } } as StepOverrides),
+    step(2, { id: "d2", replay: { from: ITEM } }),
+    step(3, { id: "d3", replay: { from: ITEM } }),
+    step(4, { id: "d4", replay: undefined })
+  ];
+  const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 1, reset: "ok", outcomes: [
+    { step: 1, actionId: "node.click", status: "replayed" },
+    { step: 2, stepId: "d2", actionId: "node.click", status: "unreproducible", resultCode: "core.replay.unreproducible" },
+    { step: 3, stepId: "d3", actionId: "node.click", status: "failed" },
+    { step: 4, stepId: "d4", actionId: "node.click", status: "unreproducible" }
+  ] });
+
+  it("gives each row that did not replay the page its step acted on, and none to a row that replayed", () => {
+    const rows = automationStudioFlowDraftDryRunFeedback(verdict, new Set(), steps()).steps as JsonObject[];
+    expect(rows.map((row) => row.actedOn)).toEqual([undefined, ITEM, ITEM, undefined]);
+  });
+
+  it("finds the step by its id when the draft moved it after the test", () => {
+    const moved = steps();
+    moved.splice(1, 0, moved.splice(2, 1)[0]!);
+    moved.forEach((each, index) => { each.position = index + 1; });
+    moved[1]!.replay = { from: { location: "https://store.test/search" } };
+    const rows = automationStudioFlowDraftDryRunFeedback(verdict, new Set(), moved).steps as JsonObject[];
+    expect(rows[1]!.actedOn).toEqual(ITEM);
+    expect(rows[2]!.actedOn).toEqual({ location: "https://store.test/search" });
+  });
+
+  it("says nothing of it without the draft", () => {
+    const rows = automationStudioFlowDraftDryRunFeedback(verdict).steps as JsonObject[];
+    expect(rows.every((row) => !("actedOn" in row))).toBe(true);
+  });
+});

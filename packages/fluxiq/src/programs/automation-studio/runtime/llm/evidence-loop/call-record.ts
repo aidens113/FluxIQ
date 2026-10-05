@@ -7,7 +7,7 @@
 // calls cannot answer for any of them.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftStepReplay } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "./tool.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "./tool-execution.ts";
 import { automationStudioLlmEvidenceDiagnostic } from "../evidence-diagnostic/index.ts";
@@ -43,7 +43,7 @@ export function automationStudioLlmEvidenceCallRecord(
   tool: AutomationStudioLlmEvidenceTool,
   input: JsonObject,
   execution?: { draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] }
-): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true; written?: true } {
+): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true; written?: true; toggle?: AutomationStudioFlowDraftStepToggle } {
   const declared = execution?.draft;
   const actionId = declared?.actionId ?? tool.toolId;
   return {
@@ -62,6 +62,9 @@ export function automationStudioLlmEvidenceCallRecord(
     // (`../../flow-draft/step.ts`, `written`). The parse path carries it only
     // beside the code `core.run_node.written` (`../evidence-loop-decision.ts`),
     // so a host that ignored `write` and acted never makes a step "written".
-    ...(declared?.written === true ? { written: true as const } : {})
+    ...(declared?.written === true ? { written: true as const } : {}),
+    // The press flipped whether its control is chosen, already read on the parse path; a pair
+    // of such flips on one control leaves the Flow (`../../flow-draft/reversal.ts`).
+    ...(declared?.toggle === undefined ? {} : { toggle: { key: declared.toggle.key, to: declared.toggle.to } })
   };
 }

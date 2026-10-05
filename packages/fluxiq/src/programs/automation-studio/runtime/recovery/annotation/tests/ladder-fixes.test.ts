@@ -13,6 +13,16 @@ import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../annotate.ts"
 import { adaptationPolicy } from "./annotate-harness.ts";
 
 describe("the repair ladder's patch request and empty ladder", () => {
+  it("keeps healed failure history and a genuinely failed terminal status without diagnosing the healed node", async () => {
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    let resolved = 0;
+    const detail = await recover({ requests, healedAttempt: true, onResolve: () => { resolved += 1; } });
+    expect(resolved).toBe(0);
+    expect(requests).toHaveLength(0);
+    expect(detail.summary.status).toBe("failed");
+    expect(detail.actionAttempts?.map((attempt) => attempt.status)).toEqual(["failed", "succeeded"]);
+    expect(detail.metadata?.llmGate).toMatchObject({ invoked: false, code: "llm.runtime_patch_no_failed_attempt" });
+  });
   // C3. The plan for a `target_not_found` allows a target override and a wait
   // retry; the model was shown all five kinds and wrote ones the plan refused.
   it("tells the patch call the plan's allowed kinds, and the schema offers exactly those", async () => {
@@ -47,6 +57,7 @@ type RecoverOptions = {
   requests: AutomationStudioLlmTaskRequest[];
   tokenLimits?: AutomationStudioLlmTokenLimits;
   noFailedAttempt?: boolean;
+  healedAttempt?: boolean;
   onResolve?: () => void;
 };
 
@@ -62,6 +73,7 @@ async function recover(options: RecoverOptions): Promise<AutomationStudioFlowRun
     }
   };
   const detail = runDetail(options.noFailedAttempt === true);
+  if (options.healedAttempt) detail.actionAttempts!.push({ attemptId: "node.action.attempt.2", nodeId: "node.action", definitionId: "builtin.policy.action", order: 2, status: "succeeded", startedAt: 3, finishedAt: 4 });
   return await annotateAutomationStudioRunDetailWithRuntimeLlm({
     ports: {
       resolveLlmProvider: () => {
@@ -79,7 +91,7 @@ async function recover(options: RecoverOptions): Promise<AutomationStudioFlowRun
     detail,
     context: context(),
     runtimeFlow: { schemaVersion: "0.1", flowId: "flow.recovery", ownerKind: "policy", ownerId: "project.recovery", name: "Recovery flow", nodes: [{ id: "node.action", definitionId: "builtin.policy.action" }], edges: [], createdAt: 1, updatedAt: 1 },
-    ...(options.noFailedAttempt ? {} : { failedTraceAttempt: failedAttempt() })
+    ...(options.noFailedAttempt || options.healedAttempt ? {} : { failedTraceAttempt: failedAttempt() })
   });
 }
 

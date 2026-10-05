@@ -174,7 +174,7 @@ export function automationStudioInstructedActs(instructionText: string): Automat
         found.push({ kind: act.kind, verb, quote: quoted(act.written + rest), at: start + act.index, object: rest, ...plural });
         return;
       }
-      for (const object of objects) found.push({ kind: act.kind, verb, quote: quoted(`${act.written} ${object.quote}`), at: start + act.index + object.offset, object: ` ${object.quote}`, ...plural });
+      for (const object of objects) found.push({ kind: act.kind, verb, quote: quoted(`${act.written} ${object.quote}`), source: { clause: quoted(act.written + rest), object: object.source }, at: start + act.index + object.offset, object: ` ${object.quote}`, ...plural });
     });
   }
   // A build reads its instruction as its title, a newline, then its body
@@ -194,7 +194,7 @@ export function automationStudioInstructedActs(instructionText: string): Automat
       const id = `a${index + 1}`;
       const requires = choosesItem(act.kind, act.verb) ? automationStudioInstructedChoices(id, act.object) : [];
       const consequence = automationStudioInstructedActImpliedConsequence(act.verb);
-      return { id, kind: act.kind, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: act.plural } : {}), ...(requires.length ? { requires } : {}), ...(consequence ? { consequence } : {}) };
+      return { id, kind: act.kind, verb: act.verb, quote: act.quote, ...(act.source ? { source: act.source } : {}), ...(act.plural ? { plural: act.plural } : {}), ...(requires.length ? { requires } : {}), ...(consequence ? { consequence } : {}) };
     });
 }
 
@@ -204,7 +204,7 @@ export function automationStudioInstructedActs(instructionText: string): Automat
  * stand before the place they go. Each quotes its own object and that place.
  * Anything less certain is one act, as before.
  */
-function coordinatedObjects(rest: string): Array<{ quote: string; offset: number }> | undefined {
+function coordinatedObjects(rest: string): Array<{ quote: string; source: string; offset: number }> | undefined {
   if (!COUNTED_OBJECT.test(rest)) return undefined;
   const destination = DESTINATION.exec(rest);
   if (!destination) return undefined;
@@ -218,7 +218,10 @@ function coordinatedObjects(rest: string): Array<{ quote: string; offset: number
   }
   if (bounds.length === 0) return undefined;
   bounds.push({ from, to: destination.index });
-  return bounds.map((bound) => ({ quote: `${rest.slice(bound.from, bound.to).trim()} ${place}`, offset: bound.from }));
+  return bounds.map((bound) => {
+    const source = rest.slice(bound.from, bound.to).trim();
+    return { quote: `${source} ${place}`, source, offset: bound.from };
+  });
 }
 
 /** A quote in the person's words, whole: whitespace folded, and what only joins it to the next act trimmed. */

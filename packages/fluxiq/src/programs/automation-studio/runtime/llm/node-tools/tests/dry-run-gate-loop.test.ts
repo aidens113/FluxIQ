@@ -67,6 +67,29 @@ const loop = (written: boolean) => [
 ];
 
 describe("a written step a repeat never reached in the test", () => {
+  it("reports a checked candidate on zero rows as not_reached without performed proof", async () => {
+    const steps = loop(false);
+    steps[1]!.effectApplied = false;
+    steps[1]!.checkedCandidate = { callId: "checked", code: "core.replay.verified" };
+    const run = harness(steps, []);
+    expect(await run.gate()).toEqual({ issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] });
+    expect(run.shown.at(-1)!.value).toMatchObject({ steps: [{ step: 2, replayed: "not_reached" }] });
+    expect(run.reports).toEqual([]);
+    expect(steps[1]!.effectApplied).toBe(false);
+    expect(steps[1]).not.toHaveProperty("written");
+  });
+
+  it("tests a checked candidate on each bound row without changing its build provenance", async () => {
+    const steps = loop(false);
+    steps[1]!.effectApplied = false;
+    steps[1]!.checkedCandidate = { callId: "checked", code: "core.replay.verified" };
+    steps[1]!.ranWith = { node: "node.press", parameters: { target: "#s2", person: { $state: { path: "item.name" } } }, consequences: [] };
+    const run = harness(steps, [{ name: "Ada" }, { name: "Ben" }]);
+    expect(await run.gate()).toBeUndefined();
+    expect(steps[1]!.replayed).toMatchObject({ status: "replayed", passes: [{ pass: 1 }, { pass: 2 }] });
+    expect(steps[1]!.effectApplied).toBe(false);
+    expect(steps[1]!.checkedCandidate).toEqual({ callId: "checked", code: "core.replay.verified" });
+  });
   it("is refused full_run_required, named not_reached, and the test is not reported as passed", async () => {
     const run = harness(loop(true), []);
     expect(await run.gate()).toEqual({ issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] });

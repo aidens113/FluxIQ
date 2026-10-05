@@ -29,7 +29,7 @@ import type { AutomationStudioActionDeclaration } from "../../../action-permissi
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
-import { blankFixture, caller, copyDataDirSeed, expectNoTopology, isJudgeRequest, judgeReply, mockProvider, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "../../service-bootstrap/tests/fixtures.ts";
+import { blankFixture, caller, copyDataDirSeed, expectNoTopology, isJudgeRequest, judgeReply, mockProvider, rejectedGenerationDiagnostic, seedDataDir, type DataDirSeed } from "../../service-bootstrap/index.ts";
 
 const TIMEOUT_MS = 60_000;
 

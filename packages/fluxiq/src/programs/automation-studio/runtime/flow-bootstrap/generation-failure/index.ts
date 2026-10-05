@@ -19,6 +19,7 @@
 export * from "./build-ending.ts";
 export * from "./codes.ts";
 export * from "./diagnostic.ts";
+export * from "./with-total-provider-calls.ts";
 export * from "./diagnostic-parse.ts";
 export * from "./error.ts";
 export * from "./evidence-failure.ts";
@@ -28,3 +29,4 @@ export * from "./harness-failure.ts";
 export * from "./harness-vocabulary.ts";
 export * from "./phase-failure.ts";
 export * from "./thrown-issue-codes.ts";
+export * from "./generation-catch.ts";

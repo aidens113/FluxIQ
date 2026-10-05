@@ -128,6 +128,8 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
  * decision already came to, so the model is told the whole decision at once.
  */
 export type AutomationStudioLlmEvidenceRerunHeld = {
+  /** Screened authored merge provenance, never current or previous resolved arguments. */
+  retained?: import("../rerun-arguments/index.ts").AutomationStudioRerunArgumentMetadata;
   amendments: AutomationStudioLlmEvidenceHeldAmendments;
   /** The node the rerun's step ran: what a held refusal is recorded against. */
   nodeId: string;

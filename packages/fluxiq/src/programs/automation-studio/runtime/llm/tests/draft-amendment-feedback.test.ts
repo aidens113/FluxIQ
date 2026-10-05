@@ -42,6 +42,28 @@ const amendRow = (trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStud
   trace.find((entry) => entry.decision === "amend_draft");
 
 describe("an amendment the draft refused", () => {
+  it("does not prescribe a row loop for a singular quantity claim already named", () => {
+    const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
+      refusals: [{ step: 8, reason: "act_already_named", act: "a2.quantity" }], applied: 0,
+      steps: [{ position: 8, effect: "mutate", disposition: "kept" }],
+      stepsWithoutProgress: 1, maxStepsWithoutProgress: 4, actsNotDone: ["a2.quantity", "a2", "a3"]
+    });
+    const reason = (feedback.reasons as Record<string, string>).act_already_named!;
+    expect(reason).not.toContain("repeat the press over its listing");
+    expect(reason).toContain("todo");
+  });
+
+  it("names an explicit repair for an already-claimed quantity that carries a mistaken repeat", () => {
+    const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
+      refusals: [{ step: 8, reason: "act_already_named", act: "a2.quantity" }], applied: 0,
+      steps: [{ position: 8, effect: "mutate", disposition: "kept", routing: { kind: "repeat" } }],
+      stepsWithoutProgress: 2, maxStepsWithoutProgress: 4, actsNotDone: ["a2.quantity", "a2", "a3"]
+    });
+    expect((feedback.refused as { next: string }[])[0]!.next).toContain('{"step": 8, "change": "unrepeat"}');
+    expect((feedback.refused as { next: string }[])[0]!.next).toContain("quantity_is_a_repeat");
+  });
+
+
   it("is told to the model, by step and reason, before it is asked again", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(pressed(1))
@@ -237,7 +259,8 @@ describe("the feedback an amendment refusal is shown as", () => {
   // t252: a recorded step that holds a binding cannot be run live.
   it("says a bound step runs only in the Flow, and how to rerun or write it", () => {
     const reasons = built([{ step: 2, reason: "rerun_holds_binding" }]).reasons as Record<string, string>;
-    expect(reasons.rerun_holds_binding).toContain("bound step runs only in the Flow: rerun it with a concrete value for every bound parameter, or write it");
+    expect(reasons.rerun_holds_binding).toContain("Replace every binding with a concrete value");
+    expect(reasons.rerun_holds_binding).toContain("new tool_call");
   });
 
   it("explains each distinct reason once, however many amendments met it", () => {
@@ -343,11 +366,12 @@ describe("a refusal about a listing says what comes next", () => {
   it("an unchanged rerun of a listing: its rows stand, do not run it again, go on to the act", () => {
     const feedback = told([{ step: 13, reason: "changes_nothing", repeated: true }]);
     const next = nextOf(feedback);
-    expect(next).toContain("Step 13 already ran with exactly this argument, so its result stands as shown: do not run it again.");
+    expect(next).toContain("Step 13's identical request was not sent again");
+    expect(next).toContain("only if it actually returned the intended rows");
     expect(next).toContain(`{"step": <that press>, "change": "repeat", "over": 13}`);
     expect(feedback.instruction).toContain("stop sending it");
     expect(feedback.instruction).toContain("next, beside a refusal");
-    expect((feedback.reasons as Record<string, string>).changes_nothing).toContain("A listing whose rows are right is never run again");
+    expect((feedback.reasons as Record<string, string>).changes_nothing).toContain("Inspect the previous result");
   });
 
   it("says nothing extra where the refused step is not a listing, or the draft gives no effects", () => {
@@ -371,6 +395,27 @@ describe("a refusal about a listing says what comes next", () => {
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "over_not_before" }] });
     expect(nextOf(feedback!)).toContain(`No step after step 1 does anything to a row yet`);
     expect(nextOf(feedback!)).toContain(`"over": 1}`);
+  });
+
+  it("does not claim usable rows after a failed read's unchanged rerun, and does not run it again", async () => {
+    const list = { toolId: "list", description: "List rows.", inputSchema: { type: "object" }, effect: "observe" as const };
+    const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: false }, effectApplied: false, stateDigests: { before: "same-state", after: "same-state" }, draft: { proposes: true } }));
+    const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "failed-list", toolId: "list", input: { where: "wrong" } })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { where: "wrong" } }] }).mockResolvedValueOnce(complete);
+    await runAutomationStudioLlmEvidenceLoop({ tools: [list], decide, executeTool, draft: { seed: [{ position: 1, iteration: 0, actionId: "list", input: { where: "previous valid read" }, effect: "observe", effectApplied: true, proposes: true, disposition: "kept" }] }, unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 5, maxToolCalls: 5, dryRun: false });
+    const feedback = feedbackShown(decide, 2)!;
+    expect(feedback).toMatchObject({ refused: [{ step: 2, reason: "changes_nothing" }] });
+    expect(nextOf(feedback)).toContain("only if it actually returned the intended rows");
+    expect(nextOf(feedback)).not.toContain("its result stands");
+    expect(executeTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not advise write:true on a rerun as conversion of a recorded bound step", () => {
+    const feedback = told([{ step: 13, reason: "rerun_holds_binding" }]);
+    const reason = (feedback.reasons as Record<string, string>).rerun_holds_binding!;
+    expect(reason).toContain("omitted bound parameters remain bound");
+    expect(reason).toContain("new tool_call");
+    expect(reason).toContain("does not convert");
   });
 });
 

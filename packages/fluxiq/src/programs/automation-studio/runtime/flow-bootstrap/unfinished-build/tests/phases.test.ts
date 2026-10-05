@@ -7,6 +7,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioLlmStepLogScope, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmStepLogContext } from "../../../llm/index.ts";
+import { AutomationStudioLlmBuildPurse } from "../../../llm/build-purse/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
   AutomationStudioFlowBootstrapUnfinishedStall,
@@ -388,4 +389,25 @@ describe("the round and phase every step of a build is written under", () => {
     expect(seen).toEqual([{ round: 0, phase: "explore" }, { round: 0, phase: "test" }, { round: 1, phase: "repair" }]);
     expect(automationStudioLlmStepLogScope.current()).toBeUndefined();
   });
+});
+
+
+it("keeps reader and both repair rounds on one logical call allowance", async () => {
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 3 });
+  const send = () => {
+    const held = purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1 });
+    expect(held.ok).toBe(true);
+    if (held.ok) held.hold.settle();
+  };
+  send(); // The reader shares the creation purse before exploration.
+  const partial = [step(1, { acts: ["a1"] })];
+  const { input, requests } = harness([
+    () => { send(); return outOfDecisions(partial, spent(1, 0.001)); },
+    (request) => { send(); return finished([...request.repair!.seed, step(2, { acts: ["a1.quantity"], input: { quantity: "2" } }), step(3, { acts: ["a2"] })], spent(1, 0.001)); }
+  ], { purse });
+  const outcome = await runAutomationStudioFlowBootstrapBuildPhases(input);
+  expect(outcome.kind).toBe("finished");
+  expect(requests).toHaveLength(2);
+  expect(purse.spentCalls()).toBe(3);
+  expect(purse.hold({ projectedCostUsd: 0.001, estimatedInputTokens: 1, maxOutputTokens: 1 })).toMatchObject({ ok: false, refusal: { code: "llm_budget.run_call_limit", spentCalls: 3 } });
 });

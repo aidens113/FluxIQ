@@ -23,6 +23,16 @@ type Shown = { evidence: ReadonlyArray<{ toolId: string; value: unknown }> };
 const feedbackOf = (call: [Shown] | undefined) => call?.[0].evidence.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID)?.value as Record<string, unknown> | undefined;
 
 describe("an unreadable reply", () => {
+  it("prefers explicit paid usage over legacy reply usage without charging or tracing it twice", async () => {
+    const explicit = { inputTokens: 100, outputTokens: 10, totalTokens: 110, estimatedCostUsd: 0.001 };
+    const error = new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"], { case: "content_mismatched", finishReason: "stop", contentChars: 2100, usage }, undefined, explicit);
+    const decide = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce(complete);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool: async () => ({}), unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") } });
+    expect(result.ok).toBe(true);
+    expect(result.accounting).toMatchObject({ inputTokens: 100, outputTokens: 10, totalTokens: 110, estimatedCostUsd: 0.001 });
+    expect(result.trace[0]).toMatchObject({ decision: "unusable", resultReason: "content_mismatched", usage: explicit });
+  });
+
   it("is asked again with the same context and a note of what could not be read, and the build carries on", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(look("call.1"))

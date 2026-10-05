@@ -1,3 +1,4 @@
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harness-options/index.ts";
 // Whether every lasting act the instruction asks for has a step in the draft
 // that does it (`./contracts.ts` says why, and which run it was measured on).
 //
@@ -104,6 +105,7 @@ import type {
   AutomationStudioInstructedChoice
 } from "./contracts.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
+import { AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS } from "./kind-words.ts";
 import { automationStudioInstructedActsOnSaid } from "./object-binding.ts";
 import { AUTOMATION_STUDIO_INSTRUCTED_QUANTITY_INSTRUCTIONS } from "./quantity-fault.ts";
 import { automationStudioInstructedChoiceAfterAct, type AutomationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
@@ -116,17 +118,6 @@ export const AUTOMATION_STUDIO_INSTRUCTED_ACT_MISSING_ISSUE_CODE = "bootstrap.in
 const MAX_CLAIM_TEXT = 200;
 /** The shortest word that can tell one act's object from another's. */
 const MIN_DISTINCTIVE_WORD = 4;
-
-/** Words a claim may use to name each kind, beside its verb and id. */
-const KIND_WORDS: Readonly<Record<AutomationStudioInstructedAct["kind"], readonly string[]>> = Object.freeze({
-  save: ["save", "saved", "bookmark"],
-  add_to: ["add", "added", "put", "cart", "basket", "watchlist", "wishlist"],
-  claim: ["coupon", "voucher", "collect", "claim", "redeem"],
-  set: ["switch", "set", "change", "filter", "sort", "narrow", "store", "radius", "location"],
-  move: ["move", "moved"],
-  open: ["open", "opened", "go", "view", "visit"],
-  submit: ["book", "buy", "order", "send", "post", "create", "confirm", "withdraw", "submit", "place", "check out", "checkout", "ask", "request", "apply", "quote", "bid"]
-});
 
 /** What a refusal over the acts is told first; `./permission.ts` says it too. */
 export const AUTOMATION_STUDIO_INSTRUCTED_ACTS_INSTRUCTION = "Nothing was created and this build is still open. "
@@ -177,6 +168,7 @@ export function checkAutomationStudioInstructedActs(input: {
    * there answers no act but one of opening. Absent, nothing is held to it.
    */
   startLocation?: string | undefined;
+  arrival?: NonNullable<AutomationStudioLlmEvidenceRuntimeBinding["runsNodes"]>["arrival"] | undefined;
 }): AutomationStudioInstructedActsVerdict {
   const acts = automationStudioInstructedActs(input.instructionText ?? "");
   if (!acts.length || !input.draftSteps) return { ok: true, acts };
@@ -184,7 +176,7 @@ export function checkAutomationStudioInstructedActs(input: {
   const steps = input.draftSteps;
   const startLocation = input.startLocation?.trim();
   const onlyArrives = (step: AutomationStudioFlowDraftStep): boolean =>
-    startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation) : false;
+    startLocation ? automationStudioFlowBootstrapDraftStepGoesToLocation(step, startLocation, input.arrival) : false;
   // An authored step that says which act it does is the model's claim already
   // (`../../flow-draft/step.ts`, `acts`); a claim written in the result is one
   // more, tried after them, never dropped for them (`./standing.ts`).
@@ -370,7 +362,7 @@ function assign(acts: readonly AutomationStudioInstructedAct[], choices: readonl
       return [act.id, (action: string) => own.some((ownWord) => containsWord(action, ownWord))] as const;
     }),
     acts.map((act) => [act.id, (action: string) => containsWord(action, act.verb)] as const),
-    acts.map((act) => [act.id, (action: string) => KIND_WORDS[act.kind].some((kindWord) => containsWord(action, kindWord)) || action === act.kind] as const)
+    acts.map((act) => [act.id, (action: string) => AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS[act.kind].some((kindWord) => containsWord(action, kindWord)) || action === act.kind] as const)
   ];
   for (const tier of tiers) {
     for (const [id, matches] of tier) if (!assigned.has(id)) give(id, named(matches).slice(0, 1));

@@ -33,7 +33,8 @@ export type GlobalProgramRuntime = {
   secretKeys: SecretKeysService;
 };
 
-export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgramRuntime {
+export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { modelProvidersEnabled?: boolean } = {}): GlobalProgramRuntime {
+  const modelProvidersEnabled = options.modelProvidersEnabled !== false;
   const storageLayoutVersion = paths && path.basename(paths.config) === "config.json" ? 2 : 1;
   const storageOptions = paths ? { dataDir: paths.data } : {};
   const secretKeysRepository = paths ? new SQLiteRepository({ rootDir: paths.databases, kind: SecretKeysService.storeKind, layoutVersion: storageLayoutVersion }) : undefined;
@@ -64,9 +65,9 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
       ? {
         storageRootDir: paths.recordings,
         customNodeRootDir: path.join(paths.domainPrograms, "automation-studio", "nodes"),
-        resultCheckProviderResolver
+        ...(modelProvidersEnabled ? { resultCheckProviderResolver } : {})
       }
-    : { ...storageOptions, resultCheckProviderResolver });
+    : { ...storageOptions, ...(modelProvidersEnabled ? { resultCheckProviderResolver } : {}) });
   const trustedClientTtlMs = positiveNumber(process.env.FLUXIQ_CLIENT_GATEWAY_TRUST_TTL_MS);
   const clientGateway = new ClientGatewayService({
     enabled: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false",
@@ -104,11 +105,11 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths): GlobalProgr
   // key, released per call to their unlocked session. No grant is issued,
   // held, digest-checked or revoked around it; the run's budget bounds it, and
   // a lasting consequence of an action is still asked about act by act.
-  automationStudio.bindLlmExecutionProvider(createAutomationStudioSessionKeyProviderResolver({ ports: secretKeys }));
+  if (modelProvidersEnabled) automationStudio.bindLlmExecutionProvider(createAutomationStudioSessionKeyProviderResolver({ ports: secretKeys }));
   // The chat window reads plain requests with DeepSeek, on the key of whoever
   // sent the message, released to their own unlocked session. With no key, or
   // a locked session, the conversation still answers from its offline reading.
-  automationStudio.conversations.bindModel(createAutomationStudioDeepSeekPanelCommandModel({
+  if (modelProvidersEnabled) automationStudio.conversations.bindModel(createAutomationStudioDeepSeekPanelCommandModel({
     resolveKey: automationStudioPanelCommandKeyFromSecretKeys(secretKeys)
   }));
   // A paired client (the browser extension) acts under a session of its own,

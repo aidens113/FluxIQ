@@ -74,24 +74,24 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE = "llm_evide
  * a reason added to the draft's set fail to compile until it is explained here.
  */
 const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"], string> = {
-  no_such_step: "There is no step at that number. Step numbers are the ones the draft entry shows, and they are renumbered whenever a step moves.",
+  no_such_step: "There is no step at that number. Step numbers are the ones the draft entry shows, and they are renumbered whenever a step moves. An add amendment includes an existing step; it does not create a new action from input. To author a missing action, issue a new tool_call using an offered tool and its input schema, with add:true and the intended act when applicable. Use that call's resulting draft step number for later amendments.",
   already_so: "The step already says that, and the amendment carried nothing else to change.",
   no_such_position: "There is no position to move a step to at that number.",
   run_by_the_loop: "A rerun is carried out by the loop rather than written onto the draft, and this one was not carried out. A rerun needs an input saying what changes in the step's argument, its step's action has to be one still offered, and only the first rerun of a decision runs -- ask for one, and do the rest in the next decision.",
   no_step_before_it: "This change was about the step before the one it named, and there is none. Name the step it is about: check for only_if, over for repeat.",
   over_not_before: "repeat goes on the act that is done to each row -- the press, or the first of the steps done to a row -- never on the step that lists the rows. over names that listing, and it must come before the act: send {\"step\": <the act>, \"change\": \"repeat\", \"over\": <the listing>}. When the listing comes after the act, sending that again is refused again: move the listing before the act first with reorder, {\"step\": <the listing>, \"change\": \"reorder\", \"to\": <the act>}, which makes the act one step later, then repeat the act at its new number over the listing at its new one -- both in one decision is fine, since each amendment reads the numbers the one before it left. When no step does the act to a row yet, do it to one row the listing kept and add it first: there is nothing to repeat until then.",
   not_a_kept_step: "It named a step the Flow does not contain -- one dropped, marked exploratory, or that did not work. Routing describes the Flow, so it may only name steps the Flow runs.",
-  changes_nothing: "That rerun was already run with exactly this argument on this same page, and its result is the one already shown: running it again changes nothing, so it was not run. Change what differs in the step's argument, change the page first, or go on with the result you have. A listing whose rows are right is never run again: go on to the act on one row it kept.",
+  changes_nothing: "This identical request was not sent again on the same state. Inspect the previous result: only if it actually returned the intended rows should you go on to the act; otherwise correct the failed/refused argument or gather new evidence. A rerun patch merges over the step's argument: an omitted key remains, and null explicitly removes an unneeded key. Required parameters still need valid values.",
   did_not_work: "That step did not work, so it is already out of the Flow and nothing needs dropping or keeping about it. The only amendment that changes it is rerun with a corrected argument; or run the action again as a new call. If the Flow does not need it, leave it alone.",
   already_in_flow: "That step is already in the Flow (inResult: true). Every step with inResult true is part of the finished Flow as it stands, so there is nothing to confirm: do not keep it again. Run what the Flow still lacks, or complete.",
   already_out: "That step is already out of the Flow (inResult: false), so dropping it again changes nothing. Leave it, or keep it to put it back.",
   act_on_a_read: "That step only reads -- a listing, a look or another read that changes nothing -- so it does no act: the rest of your change to it was made, but the act was not recorded on it. An act is done by the step that changes something, such as the press: name the act there. To do it to every item a listing kept, add the listing without act, add the press with act, then repeat the press over the listing.",
-  act_already_named: "That step already names that act (act beside it in the draft), so naming it again changes nothing. If the acts checklist shows the act done, nothing is left to do for it: go on with the acts and choices the checklist still shows not done. If it still shows the act not done, its todo says why and its step says which step: correct exactly that -- repeat the press over its listing, or rerun a read that names it, since a rerun of a read does not carry the act -- rather than naming the act again.",
+  act_already_named: "That step already names that act or choice (act beside it in the draft), so naming it again changes nothing. If the acts checklist shows the act done, nothing is left to do for it: go on with the acts and choices still not done. Otherwise its todo says why and its step says which step: correct exactly that fault rather than naming it again. A singular quantity is set with the item's quantity control, not a repeat over a list. Remove a mistaken repeat explicitly with unrepeat on the step that carries it; keep and keep with act preserve intentional repeats.",
   bind_not_a_binding: "bind only lifts values into bindings: every value its input sets has to be a binding form, {\"$input\": <name>, \"test\": <value>} or {\"$row\": <field>}, and parameter names the first one that is not. To change a value to another concrete value, rerun the step with it instead.",
   bind_new_key: "bind lifts a value the step already has into a binding; it never adds one. parameter names a key the step has no value at: name a parameter it already has, as the draft shows it, or rerun the step with the new parameter first.",
   bind_row_outside_loop: "{\"$row\": <field>} is the field of the row a repeat is on, and this step is in no repeat, so it has no row. Put the step in a repeat over the listing first (repeat, with over the listing), or bind the value as {\"$input\": <name>, \"test\": <value>} when it is the same for every row.",
   bind_malformed: "That binding is not one bind can write. {\"$input\": <name>, \"test\": <value>}: name starts with a lowercase letter, then letters and digits, at most 32, never item, and test is a value, not null. {\"$row\": <field>}: field is one of the row's own field names, with no dot or space. Nothing else may sit beside either. {\"$step\": ...}, an earlier step's output, cannot be bound yet.",
-  rerun_holds_binding: "A bound step runs only in the Flow: rerun it with a concrete value for every bound parameter, or write it (write true)."
+  rerun_holds_binding: "A bound step runs only in the Flow. Rerun patches merge: omitted bound parameters remain bound. Replace every binding with a concrete value, or null-remove an unneeded parameter where the node schema permits removal. If evidence is sufficient to author a new written step, use a new tool_call to the offered core.run_node with input.write:true and declared parameters/consequences. That does not convert or remove the old recorded step, prove an act performed, or bypass permissions and whole-Flow testing. write:true on a recorded step's rerun does not convert it to written."
 };
 
 const AMENDMENT_FEEDBACK_INSTRUCTION = "The listed amendments changed nothing, for the reason beside each one, and the draft is as it was for them. "
@@ -183,7 +183,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
  * tell a listing from a press. A step given as a position alone gets the
  * general reason and no `next`.
  */
-type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: string; effectApplied?: boolean; disposition?: string };
+type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: string; effectApplied?: boolean; disposition?: string; routing?: { kind: string } };
 
 /**
  * What to do instead of a refused amendment about a listing, in the draft's
@@ -195,6 +195,9 @@ type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: s
  */
 function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string | undefined {
   const at = (position: number | undefined) => position === undefined ? undefined : steps.find((step) => step.position === position);
+  if (refusal.reason === "act_already_named" && refusal.act?.endsWith(".quantity") && at(refusal.step)?.routing?.kind === "repeat") {
+    return `Step ${refusal.step} names ${refusal.act} but repeats over other items. If the quantity checklist says quantity_is_a_repeat, send {"step": ${refusal.step}, "change": "unrepeat"}, then set this item's quantity with its own quantity control and go on with missing acts. Do not repeat the add over a list to set a singular quantity.`;
+  }
   const reads = (step: AutomationStudioDraftAmendmentFeedbackStep | undefined): step is AutomationStudioDraftAmendmentFeedbackStep => step?.effect !== undefined && step.effect !== "mutate";
   if (refusal.reason === "over_not_before") {
     const act = at(refusal.step);
@@ -206,7 +209,7 @@ function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: rea
   if (refusal.reason === "changes_nothing") {
     const listing = at(refusal.step);
     if (!reads(listing)) return undefined;
-    return `Step ${listing.position} already ran with exactly this argument, so its result stands as shown: do not run it again. If it lists the rows an act is done to and they are the right ones, go on to the act. ${rowAct(listing.position, steps)}`;
+    return `Step ${listing.position}'s identical request was not sent again. Inspect the previous result: only if it actually returned the intended rows should you go on to the act; otherwise correct the failed/refused argument or gather new evidence. If those rows are right: ${rowAct(listing.position, steps)}`;
   }
   return undefined;
 }

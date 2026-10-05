@@ -2,7 +2,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
-  automationStudioFlowDraftClaimAct, automationStudioFlowDraftKeepOpeners,
+  automationStudioFlowDraftClaimAct, automationStudioFlowDraftDropReversals, automationStudioFlowDraftKeepOpeners,
   automationStudioFlowDraftReplaySignature,
   automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsAction,
   automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf,
@@ -67,6 +67,7 @@ import {
   type AutomationStudioLlmEvidenceLoopTrace,
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
+import { automationStudioLlmFailedDecisionFeedback, automationStudioLlmFailedDecisionUsage } from "./failed-decision/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioNodeRerunAnswer, automationStudioNodeRerunFromItsPlace } from "./node-tools/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "./build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
@@ -84,11 +85,11 @@ import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenc
 import { automationStudioLlmEvidenceLoopSeedSteps, resolveLimits, type AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS, automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopBudgetValid, automationStudioLlmEvidenceLoopRemaining, type AutomationStudioLlmEvidenceLoopBudget, type AutomationStudioLlmEvidenceLoopRemaining } from "./loop-budget.ts";
 import {
-  AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID,
-  AutomationStudioLlmUnusableDecisionError,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, AutomationStudioLlmUnusableDecisionError,
   automationStudioLlmUnusableDecisionFeedback,
   automationStudioLlmUnusableDecisionIssueSet,
-  type AutomationStudioLlmUnusableDecisionOffers
+  type AutomationStudioLlmUnusableDecisionOffers,
+  type AutomationStudioLlmUnusableDecisionFieldIssue
 } from "./unusable-decision.ts";
 import { automationStudioLlmReplyUnreadable, automationStudioLlmUnreadableReplies } from "./unreadable-reply.ts";
 import { automationStudioLlmProviderUnanswered, automationStudioLlmProviderUnansweredCount } from "./unanswered-calls.ts";
@@ -213,7 +214,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       if (authored.act !== undefined && appended.effect === "mutate") automationStudioFlowDraftClaimAct(draftSteps, appended, authored.act); // A read does no act (`../flow-draft/amendment.ts`, `act_on_a_read`); one act, one step (`../flow-draft/act-claim.ts`).
     }
     draftSteps.push(appended);
-    if (authoring && appended.disposition === "kept") automationStudioFlowDraftKeepOpeners(draftSteps, appended); // The press that opened its page joins it (`../flow-draft/opener.ts`).
+    if (authoring && appended.disposition === "kept") { automationStudioFlowDraftKeepOpeners(draftSteps, appended); automationStudioFlowDraftDropReversals(draftSteps); } // The press that opened its page joins it (`../flow-draft/opener.ts`); a pair of presses on one control that changed nothing leaves (`../flow-draft/reversal.ts`).
     return drafting && automationStudioFlowDraftStepIsAction(appended);
   };
   // A digest of the whole state, when the caller offered to take one. It is
@@ -332,17 +333,16 @@ export async function runAutomationStudioLlmEvidenceLoop(
     issueCodes: readonly string[],
     offers: { tools: boolean; complete: boolean; amend: boolean },
     usage?: AutomationStudioLlmEvidenceLoopTrace["usage"],
-    resultReason?: string
+    resultReason?: string,
+    fieldIssues?: readonly AutomationStudioLlmUnusableDecisionFieldIssue[]
   ): "ask_again" | { error: unknown } => {
     const resultCode = issueCodes[0];
     history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes }), issueCodes });
     const stalled = unusable({ iteration, decision: "unusable", ...(resultCode ? { resultCode } : {}), ...(resultReason ? { resultReason } : {}), ...(usage ? { usage } : {}) }, issueCodes);
     if (stalled) return stalled;
     // The model is told what was wrong, as evidence, before it is asked again.
-    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers });
-    accountEvidence(feedback);
-    automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID);
-    evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, value: feedback });
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers, ...(fieldIssues ? { fieldIssues } : {}) });
+    automationStudioLlmFailedDecisionFeedback({ iteration, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, feedback, evidence, accountEvidence });
     return "ask_again";
   };
   // A reply that arrived and could not be read (`./unreadable-reply.ts`): its own
@@ -356,14 +356,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const unanswered = automationStudioLlmProviderUnansweredCount();
   const unreadableReply = (iteration: number, thrown: AutomationStudioLlmUnusableDecisionError, offers: AutomationStudioLlmUnusableDecisionOffers): "ask_again" | AutomationStudioLlmEvidenceLoopResult => {
     const { issueCodes, reply } = thrown;
+    const usage = automationStudioLlmFailedDecisionUsage(thrown instanceof AutomationStudioLlmUnusableDecisionError ? thrown : undefined);
     const ended = unreadable.unread(reply?.case ?? issueCodes[0]!);
     history.record(iteration, { kind: "unusable", signature: automationStudioLlmDecisionContextSignature({ kind: "unusable", issueCodes }), issueCodes });
-    recordRow({ iteration, decision: "unusable", resultCode: issueCodes[0]!, ...(reply ? { resultReason: reply.case } : {}), ...(reply?.usage ? { usage: reply.usage } : {}) });
+    recordRow({ iteration, decision: "unusable", resultCode: issueCodes[0]!, ...(reply ? { resultReason: reply.case } : {}), ...(usage ? { usage } : {}) });
     if (ended) return failure(draftSteps, "llm_evidence_loop.unreadable_replies", trace, accounting, undefined, unreadable.summary());
     const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress, offers, unreadable: { reply, inARow: unreadable.inARow, maxInARow: limits.maxUnreadableRepliesInARow } });
-    accountEvidence(feedback);
-    automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID);
-    evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, value: feedback });
+    automationStudioLlmFailedDecisionFeedback({ iteration, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, feedback, evidence, accountEvidence });
     return "ask_again";
   };
   // **A loop that ran out of turns ends as that, whatever its last decision
@@ -427,7 +426,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, startedOn, steps: draftSteps, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal, ...(lastingActs ? { lastingActs: await lastingActs() } : {}) }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
       // The answer says where a rerun ran (`rerunPlace`; run `run-muqk713g` C6), and a rerun of a done lasting act is checked, not done again (R7).
-      ({ ran, took: rerunTook } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
+      ({ ran, took: rerunTook } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, steps: draftSteps, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {
@@ -436,7 +435,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (execution === "threw" || !execution) {
       // Nothing answered the request, so asking it again is not a repeat.
       answeredRequests.delete(toolRequestSignature);
-      if (rerunHeld) automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, undefined);
+      if (rerunHeld) automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, undefined, { kind: "failed", callId });
       const next = automationStudioLlmEvidenceHandleFailedCall(handling, iteration, callId, tool, execution ? "llm_evidence_loop.tool_failed" : automationStudioLlmEvidenceToolResultInvalidCode(ran, tool.effect) ?? "llm_evidence_loop.tool_result_invalid", decision.input, decision.usage, stateBefore, toolRequestSignature);
       return next.kind === "end" ? next.result : undefined;
     }
@@ -478,8 +477,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     });
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
     const draftChanged = decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
-    automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring });
-    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, rerunTook ? rerunReplaces : draftSteps.find((step) => step.callId === callId)) : {};
+    automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring }); if (authoring) automationStudioFlowDraftDropReversals(draftSteps); // A rerun that took a kept step's place joined the Flow too (`../flow-draft/reversal.ts`).
+    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, rerunTook ? rerunReplaces : draftSteps.find((step) => step.callId === callId), { kind: rerunTook || (!refusedCall && (record.effect !== "mutate" || effectApplied || record.written === true)) ? "accepted" : "failed", callId }) : {};
     // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
     const addedToFlow = authored?.advanced() === true;
     const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
@@ -666,24 +665,23 @@ export async function runAutomationStudioLlmEvidenceLoop(
     } catch (thrown) { const costRefusal = purse.refused(thrown); if (costRefusal) { accounting.iterations = iteration - 1; return exhausted("budget", costRefusal); } // Not sent: the purse could not pay for it at worst, the only cost ending.
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;
+      const unusableUsage = automationStudioLlmFailedDecisionUsage(input.unusableDecisions !== undefined && thrown instanceof AutomationStudioLlmUnusableDecisionError ? thrown : undefined);
+      automationStudioLlmEvidenceLoopAddUsage(accounting, unusableUsage);
+      if (unusableUsage) reportedDecisions += 1;
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError && automationStudioLlmProviderUnanswered(thrown.issueCodes)) {
-        recordRow({ iteration, decision: "unusable", resultCode: thrown.issueCodes[0]! });
+        recordRow({ iteration, decision: "unusable", resultCode: thrown.issueCodes[0]!, ...(unusableUsage ? { usage: unusableUsage } : {}) });
         if (!unanswered.unanswered(thrown.issueCodes[0]!)) continue;
         return failure(draftSteps, "llm_evidence_loop.provider_unavailable", trace, accounting, undefined, undefined, unanswered.summary());
       }
       if (input.unusableDecisions && thrown instanceof AutomationStudioLlmUnusableDecisionError) {
         unanswered.answered(); // A reply arrived, unusable or not.
-        // A reply that arrived unreadable was still paid for: its cost counts,
-        // and its row says which malformed case it was (`./unusable-decision.ts`).
-        automationStudioLlmEvidenceLoopAddUsage(accounting, thrown.reply?.usage);
-        if (thrown.reply?.usage) reportedDecisions += 1;
         if (automationStudioLlmReplyUnreadable(thrown.issueCodes)) {
           const asked = unreadableReply(iteration, thrown, offers());
           if (asked === "ask_again") continue;
           return asked;
         }
         unreadable.readable();
-        const refused = refuseDecision(iteration, thrown.issueCodes, offers(), thrown.reply?.usage, thrown.reply?.case);
+        const refused = refuseDecision(iteration, thrown.issueCodes, offers(), unusableUsage, thrown.reply?.case, thrown.fieldIssues);
         if (refused === "ask_again") continue;
         error = refused.error;
       }

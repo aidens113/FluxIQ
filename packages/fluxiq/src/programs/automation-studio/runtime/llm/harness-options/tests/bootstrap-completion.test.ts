@@ -238,7 +238,7 @@ describe("a completed plan that could not reach where the Flow starts", () => {
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary: "Scrape the products", plan: planWith({ extractList }) },
       projectId: "project.1", flowId: "flow.1", registry, resolution,
-      startLocation: START_LOCATION
+      binding: { runsNodes: { arrival: { node: "web.browser.navigate", parameter: "url" } } }, startLocation: START_LOCATION
     });
 
     expect(verdict.ok).toBe(true);
@@ -270,7 +270,7 @@ describe("a completed plan that could not reach where the Flow starts", () => {
         ].join(NEWLINE)
       },
       projectId: "project.1", flowId: "flow.1", registry, resolution,
-      startLocation: START_LOCATION
+      binding: { runsNodes: { arrival: { node: "web.browser.navigate", parameter: "url" } } }, startLocation: START_LOCATION
     });
 
     expect(verdict.ok).toBe(true);
@@ -297,7 +297,7 @@ describe("a completed plan that could not reach where the Flow starts", () => {
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary: "Scrape the products" },
       projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps,
-      startLocation: START_LOCATION
+      binding: { runsNodes: { arrival: { node: "web.browser.navigate", parameter: "url" } } }, startLocation: START_LOCATION
     });
 
     expect(verdict.ok).toBe(true);
@@ -320,7 +320,7 @@ describe("a completed plan that could not reach where the Flow starts", () => {
     const refused = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary: "Scrape the products" }, projectId: "project.1", flowId: "flow.1", registry, resolution,
       draftSteps: [step(1, "web.browser.navigate", { url: START_LOCATION }, "dropped"), step(2, "web.not.a_registered_node", {}, "kept")],
-      startLocation: START_LOCATION
+      binding: { runsNodes: { arrival: { node: "web.browser.navigate", parameter: "url" } } }, startLocation: START_LOCATION
     });
     expect(refused.ok).toBe(false);
     expect(refused.check.restoredStep).toEqual({ step: 1, withdrawnAs: "dropped" });
@@ -329,7 +329,7 @@ describe("a completed plan that could not reach where the Flow starts", () => {
     expect((refused.check.feedback as unknown as Feedback).previous).toContain("run or write the step it is missing");
     const plain = await checkAutomationStudioFlowBootstrapCompletion({
       result: { summary: "Scrape the products" }, projectId: "project.1", flowId: "flow.1", registry, resolution,
-      draftSteps: [step(1, "web.browser.navigate", { url: START_LOCATION }, "kept")], startLocation: START_LOCATION
+      draftSteps: [step(1, "web.browser.navigate", { url: START_LOCATION }, "kept")], binding: { runsNodes: { arrival: { node: "web.browser.navigate", parameter: "url" } } }, startLocation: START_LOCATION
     });
     expect(plain.check.restoredStep).toBeUndefined();
   });
@@ -342,7 +342,7 @@ describe("a completed plan that could not reach where the Flow starts", () => {
       { position: 2, id: "d2", iteration: 2, actionId: "web.dom.extract_list", toolId: "core.run_node", input: { node: "web.dom.extract_list", parameters: { extractList }, consequences: [] }, effect: "observe", effectApplied: true, disposition: "kept", proposes: true }
     ];
     const long = "Open the store,   pick the Millbrook store for pickup, and read every towel on the page. ".repeat(4);
-    const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result: { summary: long }, projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, startLocation: START_LOCATION });
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({ result: { summary: long }, projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, binding: { runsNodes: { arrival: { node: "web.browser.navigate", parameter: "url" } } }, startLocation: START_LOCATION });
 
     expect(verdict.ok).toBe(true);
     if (!verdict.ok) return;

@@ -3,10 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FluxIQ } from "fluxiq";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { applyFluxIQHostModule, closeFluxIQWebRuntime, createFluxIQWebInstance, getFluxIQ, initializeFluxIQWebRuntime, loadFluxIQHostModule, reloadFluxIQWebInstance, resolveFluxIQHostModulePath, resolveFluxIQWebHostRoot } from "../fluxiq";
 
 const originalEnv = {
+  FLUXIQ_MODEL_PROVIDERS_ENABLED: process.env.FLUXIQ_MODEL_PROVIDERS_ENABLED,
   FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT: process.env.FLUXIQ_ALLOW_FRAMEWORK_REPO_ROOT,
   FLUXIQ_CLIENT_GATEWAY_ENABLED: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED,
   FLUXIQ_DOMAIN_ID: process.env.FLUXIQ_DOMAIN_ID,
@@ -300,5 +301,48 @@ describe("FluxIQ web host root resolution", () => {
     expect(() => resolveFluxIQWebHostRoot(root)).toThrow("Refusing to use the FluxIQ framework source checkout");
 
     rmSync(root, { recursive: true, force: true });
+  });
+});
+
+
+describe("web model-provider construction admission", () => {
+  it.each(["false", "true", undefined])("forwards admission %j through inferred-domain second creation and reload", async (admission) => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-web-provider-admission-"));
+    const host = path.join(root, "host.cjs");
+    writeFileSync(host, "module.exports.registerFluxIQHost = (fluxiq) => { fluxiq.registerDomain({manifest:{id:'admission.example',title:'Example',category:'Tests',description:'Example',icon:'blocks'}}); };\n");
+    process.env.FLUXIQ_IMPORTER_ROOT = root; process.env.FLUXIQ_HOST_MODULE = host;
+    process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED = "false";
+    if (admission === undefined) delete process.env.FLUXIQ_MODEL_PROVIDERS_ENABLED;
+    else process.env.FLUXIQ_MODEL_PROVIDERS_ENABLED = admission;
+    delete process.env.FLUXIQ_DOMAIN_ID; delete process.env.FLUXIQ_HOST_DOMAIN;
+    const globalState = globalThis as typeof globalThis & { __fluxiqWebRuntime?: unknown };
+    delete globalState.__fluxiqWebRuntime;
+    const create = vi.spyOn(FluxIQ, "create").mockImplementation((options) => ({
+      activeDomainId: options?.domainId, domains: { summaries: () => [{ id: "admission.example" }] },
+      registerDomain() { return this; }, inspectStorage: () => ({ layout: "v2" }), close: vi.fn(async () => {}),
+      programs: { automationStudioClientGateway: { setClientRecordingContextProvider: vi.fn() } }
+    }) as unknown as FluxIQ);
+    try {
+      await initializeFluxIQWebRuntime();
+      await reloadFluxIQWebInstance();
+      expect(create).toHaveBeenCalledTimes(4);
+      expect(create.mock.calls.map(([options]) => options?.modelProvidersEnabled)).toEqual(Array(4).fill(admission !== "false"));
+      expect(create.mock.calls.filter(([options]) => options?.domainId === "admission.example")).toHaveLength(2);
+      const prior = getFluxIQ();
+      process.env.FLUXIQ_MODEL_PROVIDERS_ENABLED = "off";
+      const close = vi.spyOn(prior, "close");
+      await expect(reloadFluxIQWebInstance()).rejects.toThrow("FLUXIQ_MODEL_PROVIDERS_ENABLED");
+      expect(create).toHaveBeenCalledTimes(4);
+      expect(close).not.toHaveBeenCalled();
+    } finally {
+      await closeFluxIQWebRuntime(); for (const result of create.mock.results) if (result.type === "return") await result.value.close(); create.mockRestore(); delete globalState.__fluxiqWebRuntime;
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it("invalid explicit activation refuses before any FluxIQ construction", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "fluxiq-web-admission-invalid-")); process.env.FLUXIQ_IMPORTER_ROOT = root; process.env.FLUXIQ_MODEL_PROVIDERS_ENABLED = "off";
+    const create = vi.spyOn(FluxIQ, "create");
+    try { expect(() => createFluxIQWebInstance()).toThrow("FLUXIQ_MODEL_PROVIDERS_ENABLED"); expect(create).not.toHaveBeenCalled(); }
+    finally { for (const result of create.mock.results) if (result.type === "return") await result.value.close(); create.mockRestore(); rmSync(root, { recursive: true, force: true }); }
   });
 });
