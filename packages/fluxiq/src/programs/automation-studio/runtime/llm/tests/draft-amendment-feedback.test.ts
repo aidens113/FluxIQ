@@ -42,6 +42,19 @@ const amendRow = (trace: AutomationStudioLlmEvidenceLoopTrace[]): AutomationStud
   trace.find((entry) => entry.decision === "amend_draft");
 
 describe("an amendment the draft refused", () => {
+  it("explains an unavailable original alias using only current public binding paths", () => {
+    const steps = [{ position: 1, effect: "mutate", disposition: "kept",
+      input: { parameters: { target: { handle: "fixture-handle" }, text: "fixture-text" } },
+      ranWith: { parameters: { selector: "private-locator", element: { identity: "private-identity" }, text: "fixture-text" } } }];
+    const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
+      refusals: [{ step: 1, reason: "bind_new_key", parameter: "target" }], applied: 0, steps,
+      stepsWithoutProgress: 1, maxStepsWithoutProgress: 8
+    });
+    expect(feedback.refused).toEqual([{ step: 1, reason: "bind_new_key", parameter: "target", bindable: ["text"] }]);
+    expect((feedback.reasons as Record<string, string>).bind_new_key).toContain("current runnable");
+    expect((feedback.reasons as Record<string, string>).bind_new_key).not.toContain("rerun the step with the new parameter");
+    expect(JSON.stringify(feedback)).not.toMatch(/private-locator|private-identity|"selector"|"element"/u);
+  });
   it("does not prescribe a row loop for a singular quantity claim already named", () => {
     const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
       refusals: [{ step: 8, reason: "act_already_named", act: "a2.quantity" }], applied: 0,

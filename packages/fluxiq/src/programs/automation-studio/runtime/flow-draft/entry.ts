@@ -42,6 +42,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { automationStudioFlowDraftRenderBindings } from "./binding-render.ts";
+import { automationStudioFlowDraftBindablePaths } from "./bindable/index.ts";
 import { automationStudioFlowDraftInputs } from "./flow-inputs.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
@@ -99,7 +100,9 @@ export function automationStudioFlowDraftEntry(input: {
     steps: listed.map((step) => stepLine(step, listed)),
     // The Flow's inputs, declared by the bindings its steps carry (`./flow-inputs.ts`).
     ...(inputs.length ? { inputs: inputs.map((entry) => ({ name: entry.name, test: entry.test, steps: entry.steps })) } : {}),
-    instruction: (input.authored ? AUTHORED_INSTRUCTION : DRAFT_INSTRUCTION) + (listed.some((step) => step.checkedCandidate) ? " A checkedCandidate is an exception to the recorded runs: its current configuration was checked, not performed; its act claims are intentions. priorExecution identifies the original configuration that performed the earlier effect, not this candidate. A verified/present test of a candidate establishes the check's result, never execution of its effect." : "")
+    instruction: (input.authored ? AUTHORED_INSTRUCTION : DRAFT_INSTRUCTION)
+      + " input is the model-safe tool argument; a resolved runnable argument may differ. bindable lists only current runnable parameter paths compatible with that shown argument; bind those paths, not an unavailable tool alias. An empty bindable list offers no public parameter to bind. No private resolved identity is shown or authorized by this list."
+      + (listed.some((step) => step.checkedCandidate) ? " A checkedCandidate is an exception to the recorded runs: its current configuration was checked, not performed; its act claims are intentions. priorExecution identifies the original configuration that performed the earlier effect, not this candidate. A verified/present test of a candidate establishes the check's result, never execution of its effect." : "")
   };
   return { callId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, value };
 }
@@ -110,6 +113,7 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     actionId: step.actionId,
     // A stored binding is shown as the form the model writes (`./binding-render.ts`).
     input: automationStudioFlowDraftRenderBindings(step.input),
+    ...(automationStudioFlowDraftStepIsProposed(step) ? { bindable: automationStudioFlowDraftBindablePaths(step) } : {}),
     // Written, not run: checked and frozen by the domain, nothing performed (`./step.ts`).
     ...(step.written ? { written: true } : {}),
     ...(step.checkedCandidate ? { checkedCandidate: { ...step.checkedCandidate, performed: false }, actEvidence: "intended" } : {}),

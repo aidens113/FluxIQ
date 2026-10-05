@@ -18,6 +18,17 @@ type Entry = {
 const value = (steps: readonly AutomationStudioFlowDraftStep[]): Entry => automationStudioFlowDraftEntry({ steps })!.value as Entry;
 
 describe("the draft entry a decision is shown", () => {
+  it("offers only public current runnable binding paths when the tool input used a resolved alias", () => {
+    const input = { node: "fixture.type", parameters: { target: { handle: "fixture-handle" }, text: "fixture-text" } };
+    const recorded: AutomationStudioFlowDraftStep = { ...step(1, "fixture.type", {}), input,
+      ranWith: { node: "fixture.type", parameters: { selector: "private-locator", element: { identity: "private-identity" }, text: "fixture-text" } } };
+    const before = structuredClone(recorded);
+    const shown = value([recorded]);
+    expect(shown.steps[0]).toMatchObject({ input, bindable: ["text"] });
+    expect(shown.instruction).toContain("bindable");
+    expect(JSON.stringify(shown)).not.toMatch(/private-locator|private-identity|"selector"|"element"/u);
+    expect(recorded).toEqual(before);
+  });
   it("shows checked intentions separately from private original performed proof", () => {
     const original = step(1, "press", { target: "original" }, { ranWith: { target: "private-resolved" }, stateBefore: "private-before", stateAfter: "private-after", acts: ["a1"] });
     const candidate = step(1, "press", { target: "replacement" }, { effectApplied: false, checkedCandidate: { callId: "checked", code: "core.replay.present" }, priorExecution: { ...original, lasting: true }, acts: ["a1"] });

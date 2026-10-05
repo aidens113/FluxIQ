@@ -186,6 +186,18 @@ describe("a repeat on a listing, run 37", () => {
 // binding the Flow resolves at run time, and the run that worked stays as the
 // step's `instance` (design D2, t252).
 describe("binding a step's arguments", () => {
+  it("supports a whole existing object binding with its explicit object test or the replaced object default", () => {
+    for (const explicit of [false, true]) {
+      const object = { label: "fixture", options: { count: 2 } };
+      const argument = { parameters: { configuration: object } };
+      const draft: AutomationStudioFlowDraftStep[] = [{ position: 1, iteration: 1, actionId: "fixture.configure",
+        input: structuredClone(argument), ranWith: structuredClone(argument), effect: "mutate", effectApplied: true, disposition: "kept" }];
+      const form = { $input: "configuration", ...(explicit ? { test: object } : {}) };
+      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "bind", input: { configuration: form } }])).toEqual({ applied: 1, refused: [] });
+      expect(draft[0]?.ranWith).toEqual({ parameters: { configuration: { $state: { path: "configuration", fallback: object } } } });
+      expect(draft[0]?.instance).toEqual(argument);
+    }
+  });
   // d1 lists the rows, d2 searches with a typed value, d3 acts on one row and repeats over d1.
   function loopDraft(): AutomationStudioFlowDraftStep[] {
     const search = { node: "node.search", parameters: { query: "blue towels", options: { limit: 5 } }, consequences: [] };

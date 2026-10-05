@@ -88,7 +88,7 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   act_on_a_read: "That step only reads -- a listing, a look or another read that changes nothing -- so it does no act: the rest of your change to it was made, but the act was not recorded on it. An act is done by the step that changes something, such as the press: name the act there. To do it to every item a listing kept, add the listing without act, add the press with act, then repeat the press over the listing.",
   act_already_named: "That step already names that act or choice (act beside it in the draft), so naming it again changes nothing. If the acts checklist shows the act done, nothing is left to do for it: go on with the acts and choices still not done. Otherwise its todo says why and its step says which step: correct exactly that fault rather than naming it again. A singular quantity is set with the item's quantity control, not a repeat over a list. Remove a mistaken repeat explicitly with unrepeat on the step that carries it; keep and keep with act preserve intentional repeats.",
   bind_not_a_binding: "bind only lifts values into bindings: every value its input sets has to be a binding form, {\"$input\": <name>, \"test\": <value>} or {\"$row\": <field>}, and parameter names the first one that is not. To change a value to another concrete value, rerun the step with it instead.",
-  bind_new_key: "bind lifts a value the step already has into a binding; it never adds one. parameter names a key the step has no value at: name a parameter it already has, as the draft shows it, or rerun the step with the new parameter first.",
+  bind_new_key: "bind lifts a value the step already has in its current runnable argument; it never adds one. Binding is unavailable at parameter: a shown tool-input alias may differ from the resolved runnable parameters. Use only the public current paths in bindable, also listed beside the draft step. An empty list offers no public binding here. Do not guess private resolved keys or add a locator by rerun.",
   bind_row_outside_loop: "{\"$row\": <field>} is the field of the row a repeat is on, and this step is in no repeat, so it has no row. Put the step in a repeat over the listing first (repeat, with over the listing), or bind the value as {\"$input\": <name>, \"test\": <value>} when it is the same for every row.",
   bind_malformed: "That binding is not one bind can write. {\"$input\": <name>, \"test\": <value>}: name starts with a lowercase letter, then letters and digits, at most 32, never item, and test is a value, not null. {\"$row\": <field>}: field is one of the row's own field names, with no dot or space. Nothing else may sit beside either. {\"$step\": ...}, an earlier step's output, cannot be bound yet.",
   rerun_holds_binding: "A bound step runs only in the Flow. Rerun patches merge: omitted bound parameters remain bound. Replace every binding with a concrete value, or null-remove an unneeded parameter where the node schema permits removal. If evidence is sufficient to author a new written step, use a new tool_call to the offered core.run_node with input.write:true and declared parameters/consequences. That does not convert or remove the old recorded step, prove an act performed, or bypass permissions and whole-Flow testing. write:true on a recorded step's rerun does not convert it to written."
@@ -149,6 +149,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
       reason: refusal.reason,
       // A refused bind names its parameter, in the model's own key names.
       ...(refusal.parameter === undefined ? {} : { parameter: refusal.parameter }),
+      ...(refusal.reason === "bind_new_key" ? bindingPaths(refusal.step, input.steps) : {}),
       ...(refusal.repeated ? { repeated: true } : {}),
       ...(next ? { next } : {})
     };
@@ -183,7 +184,12 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
  * tell a listing from a press. A step given as a position alone gets the
  * general reason and no `next`.
  */
-type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: string; effectApplied?: boolean; disposition?: string; routing?: { kind: string } };
+type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: string; effectApplied?: boolean; disposition?: string; routing?: { kind: string }; input?: JsonObject; ranWith?: JsonObject };
+
+function bindingPaths(position: number, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): { bindable?: string[] } {
+  const step = steps.find((candidate) => candidate.position === position);
+  return step?.input === undefined ? {} : { bindable: automationStudioFlowDraftBindablePaths({ input: step.input, ...(step.ranWith === undefined ? {} : { ranWith: step.ranWith }) }) };
+}
 
 /**
  * What to do instead of a refused amendment about a listing, in the draft's
