@@ -75,7 +75,10 @@ describe("a call already tried on this same page", () => {
     expect(decide).toHaveBeenCalledTimes(5);
     const feedback = shownAt(decide, 3).find((entry) => entry.toolId === "core.amendment_check")?.value;
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "changes_nothing" }] });
-    expect(JSON.stringify(feedback)).toContain("running it again changes nothing");
+    // t262's wording (`../../draft-amendment-feedback.ts`): the identical request was not sent, and the model
+    // is told to inspect the result it already has rather than to take a listing's rows as right.
+    expect(JSON.stringify(feedback)).toContain("identical request was not sent again");
+    expect(JSON.stringify(feedback)).toContain("only if it actually returned the intended rows");
   });
 
   it("is let through when its outcome said to try again later: a rate-limited press", async () => {

@@ -30,9 +30,12 @@ describe("the limits a caller's default resolution and a recovery share", () => 
   it("gives a default run a diagnosis, a patch and decisions left over to explore with", () => {
     const defaults = AUTOMATION_STUDIO_SESSION_KEY_PROVIDER_DEFAULTS;
     expect(defaults.maxTotalEstimatedCostUsd).toBeLessThanOrEqual(AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD);
+    // One moment, so the reservation and the worst case below are priced at the same rate, peak or off-peak (t254).
+    const now = Date.now();
 
     const budget = resolveAutomationStudioRecoveryRunBudget({
       explicitRunBudget: true,
+      now: () => now,
       resolution: {
         tokenLimits: defaults.tokenLimits,
         maxEstimatedCostUsd: defaults.maxEstimatedCostUsd,
@@ -42,12 +45,15 @@ describe("the limits a caller's default resolution and a recovery share", () => 
     expect(budget.ledger.maxEstimatedCostUsdPerRun).toBe(defaults.maxTotalEstimatedCostUsd);
 
     // The defaults are the model's whole window (992,000 / 8,000 / 1,000,000),
-    // so one call's worst case is the whole purse and the per-call ceiling is
-    // the purse itself. What keeps a recovery going is that each call is
-    // reserved at its own measured size and priced by the provider, under that
-    // ceiling (`../llm/harness/run.ts`), and the patch's share is sized on the
-    // diagnosis the run already made (`../recovery/annotation/patch-reserve.ts`).
-    expect(budget.maxEstimatedCostUsdPerCall).toBe(budget.ledger.maxEstimatedCostUsdPerRun);
+    // so the per-call ceiling is one call's worst case over that window, or the
+    // whole purse where that is less: at the Lab's $0.10 the purse, at the
+    // ordinary $0.25 (t261) the window's worst case. What keeps a recovery going
+    // is that each call is reserved at its own measured size and priced by the
+    // provider, under that ceiling (`../llm/harness/run.ts`), and the patch's
+    // share is sized on the diagnosis the run already made
+    // (`../recovery/annotation/patch-reserve.ts`).
+    const windowWorstCase = estimateAutomationStudioDeepSeekCostUsd(defaults.tokenLimits.maxInputTokens, defaults.tokenLimits.maxOutputTokens, 0, undefined, now);
+    expect(budget.maxEstimatedCostUsdPerCall).toBe(Math.floor(Math.min(budget.ledger.maxEstimatedCostUsdPerRun, windowWorstCase) * 1_000_000_000) / 1_000_000_000);
     const price = ({ inputTokens, outputTokens }: { inputTokens: number; outputTokens: number }) => estimateAutomationStudioDeepSeekCostUsd(inputTokens, outputTokens);
     // As the harness reserves a call: the build purse's worst-case projection
     // (every input token a cache miss, the whole reply allowance), under the

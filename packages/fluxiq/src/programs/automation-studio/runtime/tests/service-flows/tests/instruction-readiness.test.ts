@@ -7,6 +7,12 @@ import { AutomationStudioService } from "../../../service.ts";
 import { type AutomationStudioProjectStore, withAutomationStudioProjectDatabaseHeld } from "../../../service/projects/index.ts";
 import type { AutomationStudioProjectDatabasePool } from "../../../../storage/index.ts";
 
+// 102 sequential SQLite saves through the service. Alone it takes 3-7 s on the
+// development machine (2026-10-05, t266); under the full suite's parallel load
+// it ran past the 15 s default twice, and once took 14.985 s beside six other
+// files. Its size is the case, not a defect, so its budget says so.
+const SEEDED_CASE_TIMEOUT_MS = 60_000;
+
 describe("AutomationStudioService instruction readiness summaries", () => {
   it("finds one active applicable instruction beyond an unfiltered 100-item page and reports none when all are inactive", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-instruction-readiness-"));
@@ -43,5 +49,5 @@ describe("AutomationStudioService instruction readiness summaries", () => {
       await service.close();
       await rm(rootDir, { recursive: true, force: true });
     }
-  });
+  }, SEEDED_CASE_TIMEOUT_MS);
 });
