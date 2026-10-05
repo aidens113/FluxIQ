@@ -6,14 +6,20 @@ import { describe, expect, it, vi } from "vitest";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
+import { automationStudioConversationEffectiveCaller } from "../../../runtime/conversations/commands/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 
 const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
 
+/** The service's conversations, answering `callerFor` the way Core does, with the person's unlocked session (or none). */
+function conversationsWith(unlockedSession: string | null) {
+  return { callerFor: (who: { userId: string; sessionId: string }) => automationStudioConversationEffectiveCaller(who, () => unlockedSession) };
+}
+
 async function runWith(getFlowRunDetail: () => Promise<unknown>) {
   const runRuntimeSession = vi.fn().mockResolvedValue({ runId: "run.one", status: "succeeded", trace: { message: "Done." } });
   const registry = new GlobalProgramApiRegistry();
-  registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn(getFlowRunDetail) } as any);
+  registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn(getFlowRunDetail), conversations: conversationsWith(null) } as any);
   const response = await registry.call({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession,
@@ -37,12 +43,48 @@ describe("the run endpoint and a run's model intent", () => {
   it("makes the run's llmExecution from runIntent and the signed-in actor, with nothing held first", async () => {
     const runRuntimeSession = vi.fn(async () => ({ runId: "run.one", status: "failed" }));
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn(async () => ({ adaptationIds: [], summary: { runId: "run.one", interventionCount: 0 } })) } as any);
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn(async () => ({ adaptationIds: [], summary: { runId: "run.one", interventionCount: 0 } })), conversations: conversationsWith("session.unlocked") } as any);
 
     const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", runIntent: "explore_and_adapt" } });
 
     expect(response).toMatchObject({ ok: true });
     expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" } });
+  });
+
+  // The extension's Automations Run calls as a paired client, under a session
+  // Secret Keys never releases a key to; its model pays with the approving
+  // person's unlocked session, the way a chat turn's does.
+  const paired: ProgramApiActor = { sessionId: "client-gateway:gateway.one", userId: "user.one", roleId: "paired", permissions: ["runtime.control"] };
+
+  async function pairedRun(unlockedSession: string | null, payload: Record<string, unknown>) {
+    const runRuntimeSession = vi.fn(async () => ({ runId: "run.one", status: "succeeded" }));
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn(async () => ({ adaptationIds: [], summary: { runId: "run.one", interventionCount: 0 } })), conversations: conversationsWith(unlockedSession) } as any);
+    const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor: paired, payload: { projectId: "project.one", flowId: "flow.one", ...payload } });
+    return { response, runRuntimeSession };
+  }
+
+  it("runs a paired client's model run under the person's unlocked session", async () => {
+    const { response, runRuntimeSession } = await pairedRun("session.unlocked", { runIntent: "explore_and_adapt" });
+
+    expect(response).toMatchObject({ ok: true });
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.unlocked", intent: "explore_and_adapt" } });
+  });
+
+  it("runs a paired client's Flow deterministically, without a model, when the person has no unlocked session", async () => {
+    const { response, runRuntimeSession } = await pairedRun(null, { runIntent: "explore_and_adapt" });
+
+    expect(response).toMatchObject({ ok: true, payload: { runtimeSession: { runId: "run.one" } } });
+    expect(runRuntimeSession).toHaveBeenCalledTimes(1);
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one" });
+    expect(Object.keys((response as { payload: object }).payload).sort()).toEqual(["createdAdaptationIds", "durableBehaviorChanged", "interventionCount", "runDetailLink", "runSummary", "runtimeSession", "terminalReason"]);
+  });
+
+  it("still refuses an intent Core does not support from a paired client, and runs nothing", async () => {
+    const { response, runRuntimeSession } = await pairedRun("session.unlocked", { runIntent: "spend_freely" });
+
+    expect(response).toEqual({ ok: false, error: "The run intent is not one Core supports." });
+    expect(runRuntimeSession).not.toHaveBeenCalled();
   });
 
   it("refuses a run intent with no signed-in person, and runs nothing", async () => {

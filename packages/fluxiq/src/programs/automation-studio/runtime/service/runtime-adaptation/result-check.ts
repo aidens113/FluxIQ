@@ -16,7 +16,7 @@
 // this whole area exists to stop.
 
 import { redeemAutomationStudioResultCheckAuthorization, AUTOMATION_STUDIO_RESULT_CHECK_TASK_KIND } from "../../result-check-authorization/index.ts";
-import { AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS, type AutomationStudioResultCheckDecision, type AutomationStudioResultCheckState } from "../../result-check-schedule/index.ts";
+import { AUTOMATION_STUDIO_RESULT_CHECK_CODES, AUTOMATION_STUDIO_RESULT_CHECK_DEFAULTS, type AutomationStudioResultCheckDecision, type AutomationStudioResultCheckState } from "../../result-check-schedule/index.ts";
 import type { AutomationStudioResultVerificationProvider } from "../../result-verification/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "./contracts.ts";
 
@@ -141,6 +141,18 @@ function scheduleFallback(shape: AutomationStudioRuntimeAdaptationContext["resul
 }
 
 /**
+ * When a run's own caller pays for its result check.
+ *
+ * `every_run` is how it has always been: a caller who asked the model into the
+ * run pays for whatever check that run makes. `repair_checks` narrows it to the
+ * checks that judge a repair -- after a repair landed, or after a result was
+ * refuted -- because a routine run's caller pays for judging a repair, never
+ * for routine sampling (MVP item 23); that sampling is paid only by a standing
+ * result-check authorization.
+ */
+export type AutomationStudioResultCheckCallerPays = "every_run" | "repair_checks";
+
+/**
  * The model that judges this run's result, from whichever authority this run
  * actually has -- and nothing when it has neither.
  *
@@ -150,6 +162,12 @@ function scheduleFallback(shape: AutomationStudioRuntimeAdaptationContext["resul
  * is the narrower of the two: it names one key, one call ceiling, and the one
  * task kind, and it is reached only after the schedule has already said this
  * run is checked.
+ *
+ * `callerPays: "repair_checks"` keeps the caller's provider to the checks that
+ * judge a repair (`afterRepair`, `afterRefutation`); any other check falls
+ * through to the standing authorization exactly as if no caller had asked, and
+ * the caller's provider is not even resolved. Absent is `every_run`. Nothing
+ * passes `repair_checks` yet: the service's wiring is a later change.
  *
  * `resolveStandingProvider` is the host's, because obtaining the key is the
  * host's business and Core holds no credential. It is handed only what the
@@ -161,11 +179,14 @@ export async function resolveAutomationStudioResultCheckProvider(input: {
   check: AutomationStudioRunResultCheck | null;
   /** The run's own caller's provider, when a person asked the model into this run. */
   resolveCallerProvider?: (() => Promise<AutomationStudioResultCheckProviderResolution | undefined>) | undefined;
+  /** Which of the run's checks its caller pays for. Absent is `every_run`. */
+  callerPays?: AutomationStudioResultCheckCallerPays | undefined;
   resolveStandingProvider?: ((request: AutomationStudioResultCheckProviderRequest) => Promise<AutomationStudioResultCheckProviderResolution | undefined>) | undefined;
 }): Promise<AutomationStudioResultCheckProviderResolution | undefined> {
-  const callers = await input.resolveCallerProvider?.();
-  if (callers) return callers;
   const check = input.check;
+  const callerPaysThisCheck = input.callerPays !== "repair_checks" || automationStudioResultCheckJudgesRepair(check);
+  const callers = callerPaysThisCheck ? await input.resolveCallerProvider?.() : undefined;
+  if (callers) return callers;
   if (!check?.checked || !check.keyId || !check.unlockSessionId || !check.authorizedByUserId || check.maxEstimatedCostUsd === undefined || !input.resolveStandingProvider) return undefined;
   const resolved = await input.resolveStandingProvider({ ...input.scope, keyId: check.keyId, unlockSessionId: check.unlockSessionId, authorizedByUserId: check.authorizedByUserId, maxEstimatedCostUsd: check.maxEstimatedCostUsd });
   if (!resolved) return undefined;
@@ -174,6 +195,12 @@ export async function resolveAutomationStudioResultCheckProvider(input: {
   // that returned an unbounded provider must not thereby spend more than the
   // person authorized.
   return { ...resolved, maxEstimatedCostUsd: Math.min(resolved.maxEstimatedCostUsd ?? check.maxEstimatedCostUsd, check.maxEstimatedCostUsd) };
+}
+
+/** True for a check the schedule made because a repair landed or a result was refuted. */
+function automationStudioResultCheckJudgesRepair(check: AutomationStudioRunResultCheck | null): boolean {
+  if (check?.decision.check !== true) return false;
+  return check.decision.code === AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRepair || check.decision.code === AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRefutation;
 }
 
 /**

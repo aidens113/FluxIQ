@@ -58,7 +58,16 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
         const intent = AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS.find((candidate) => candidate === requestedIntent);
         if (!intent) return { ok: false, error: "The run intent is not one Core supports." };
         if (!request.actor) return { ok: false, error: "A run the model takes part in needs a signed-in person." };
-        llmExecution = { actorUserId: request.actor.userId, actorSessionId: request.actor.sessionId, intent };
+        // A paired client -- the extension's Automations Run -- calls as
+        // `client-gateway:<id>`, a session Secret Keys never releases a key to,
+        // so its model always ran keyless. It is mapped to the approving
+        // person's unlocked session the way a chat turn is
+        // (`runtime/conversations/commands/caller.ts`): whose key pays changes,
+        // never what may be done. With no unlocked session the Flow runs
+        // deterministically, exactly as it did before, rather than being
+        // refused. A person's own session passes through unchanged.
+        const caller = service.conversations.callerFor(request.actor);
+        if (!caller.keyLocked) llmExecution = { actorUserId: caller.userId, actorSessionId: caller.sessionId, intent };
       }
       // What the person allowed the run's actions to do. Absent is nothing; a
       // class Core does not know refuses the run rather than being dropped.
