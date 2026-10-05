@@ -179,8 +179,13 @@ export type AutomationStudioFlowDraftDryRunGateInput = {
    * instruction read -- and handed to the replay, which checks a step claiming
    * one rather than running it again (`./replay-draft.ts`; run
    * `run-murwd8le-79e735a8` Cause 3: Add to cart, declared `[]`, was pressed
-   * again by every test). A build whose read failed answers an empty set, and
-   * its steps last by their declarations alone, as before.
+   * again by every test). The read is usually made before this asks -- before
+   * the first call that declared something lasting ran -- and this only reuses
+   * it. An add, save, claim, move or submit is in the set by its kind, whatever
+   * the read quoted (`run-musp4h2f-72e8ed99`), and so is an act the read gave
+   * no answer for: lasting until shown otherwise (t174-w107, run
+   * `run-musp8nz1-dbd3905a` Cause 5). A read that throws names the acts
+   * lasting by their kind alone.
    */
   lastingActs?: (() => Promise<ReadonlySet<string>>) | undefined;
   /**
@@ -249,8 +254,9 @@ export function automationStudioFlowDraftDryRunGate(
     // A look that failed is no page for the judge, and the test it followed still passed.
     return "endView" in looked ? looked.endView : undefined;
   };
-  // The build's lasting acts, asked for once and only when a replay first needs them. A read that
-  // fails answers no acts (`instructedLastingActs`); a provider that throws is a fault, and ends the build.
+  // The build's lasting acts, asked for once and only when a replay first needs them. An add, save,
+  // claim, move or submit lasts by its kind, and an act a read did not answer is lasting, so a read
+  // that fails still names those (`instructedLastingActs`); a provider that throws is a fault, and ends the build.
   let lasting: Promise<ReadonlySet<string>> | undefined;
   const lastingActs = (): Promise<ReadonlySet<string>> | undefined => input.lastingActs && (lasting ??= input.lastingActs());
   // The steps the model is told the test cannot run, with why, as one refusal.

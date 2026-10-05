@@ -13,9 +13,13 @@
 // gives the set as it stood before the derivation, which for the build this
 // exists to catch -- every action declaring nothing lasting -- is empty.
 // A build whose instruction asks for acts reads it earlier, before its first
-// test (`instructedLastingActs`, t174-w83); the gate holds that one read, so
-// `crossCheck()` reuses it without a second call and `instructed()` read after
-// it is the same set. The order still matters for every other build.
+// test (`instructedLastingActs`, t174-w83), and one that declared something
+// lasting reads it earlier still, before that call reached the domain
+// (t174-w107); the gate holds that one read, so `crossCheck()` reuses it
+// without a second call and `instructed()` read after it is the same set. The
+// read answers each act, so two acts of one class are two entries here; the
+// per-act answers themselves are not copied, since `[...instructed]` keeps the
+// entries alone. The order still matters for every other build.
 
 import type {
   AutomationStudioActionDeclarationCrossCheck,

@@ -130,6 +130,44 @@ below. Every class is still declared, kept in the declaration record, and
 compared with the instruction. Only a gated subset no person has permitted
 produces an `automation-studio.action-permission-request.v1`.
 
+**The instruction's read: one call per build, about its acts, before any press
+needs it (t174-w107).** The read is `service/instruction-authority.ts`: one
+`evidence_tool_decision` with no tools, `metadata.source: "instructionAuthority"`,
+counted with the build (step-log phase `read`). Where the instruction's acts are
+read with no model (`runtime/flow-bootstrap/instructed-acts/instruction-acts.ts`,
+the same ids as the build's checklist), its completion
+(`automationStudioInstructedConsequencesSchema`, `action-permissions/instructed.ts`)
+asks first for `acts`: one required key per act id, described by the act's own
+words, answered with the classes that act asks for or `["none"]`; then the free
+`instructed` list as before, for what no act names (a refund). The decision
+schema says it reads the instruction alone, with no page and nothing to do next.
+Each act answered with a class adds a grounded entry quoting that act, so two
+acts of one class are two stored entries. An act split from one clause with
+several counted objects (t262) quotes words Core assembled from the verb and its
+own object, so its entries quote the original clause (`source.clause`) instead,
+and sibling splits of one class share that clause's one entry. An act the answer
+skipped, or every act of a read that failed, is kept as unanswered
+(`consequences: null`) on the read the gate holds, never on the stored entries,
+and the Flow's thread is told once which act, in the person's words.
+
+The build's tests check, rather than do again, a step claiming an act that is
+lasting (`flow-bootstrap/action-permissions.ts`, `instructedLastingActs`;
+`flow-draft/verify-only.ts`). An act is lasting when any of three holds: (a) its
+kind does something to an item that stays done -- `add_to`, `save`, `claim`,
+`move`, `submit` -- whatever the read said (run `run-musp4h2f-72e8ed99`, whose
+two split adds the read quoted as one sentence were pressed again until the cart
+held 12 items); (b) one of the read's quotes grounds it, a split act by its
+original clause and its own object's words (t174-w83, t262); or (c) the read
+carries per-act answers and this act's answer is missing, unanswered, or names a
+class. Only a `set` or an `open` that the read neither quotes nor answered as
+lasting runs again. A read that throws holds no quotes and no answers, so only
+(a) applies. The read is made at the first of: an exploration call whose input
+declares a lasting consequence (before the domain receives it, not from inside
+its permission check), the build's first test, the completion check, or the
+cross-check. Run `run-musp8nz1-dbd3905a` (Cause 5) is why: its read was posed
+with the page decision's framing, asked for classes only, answered the cart and
+not the coupon, and ran inside the Add to cart press.
+
 **The request is put to the person, in the Flow's own thread.** The request's
 `requestId` is the id of a `permission` ask
 (`runtime/conversations/ask.ts`), so the gate and the conversation name the same
