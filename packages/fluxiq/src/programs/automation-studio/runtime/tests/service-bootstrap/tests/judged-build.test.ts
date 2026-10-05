@@ -384,6 +384,11 @@ function reserveBinding(): AutomationStudioLlmEvidenceRuntimeBinding {
 /**
  * A build whose first decision runs the read and costs $0.07, so its second
  * does not fit beside the judging kept back; the judge answers `judge` in turn.
+ *
+ * The build's total is $0.10, set by the resolver's own total. It used to be
+ * the run cost ceiling's default; since t261 (2026-10-03) the ordinary default
+ * is $0.25 and $0.10 binds only a Lab-scoped runtime, under which a second
+ * decision fits beside the reserve and the scenario is a different one.
  */
 async function reserveBuild(judge: Array<"yes" | "no">) {
   const runtime = reserveRuntime();
@@ -408,7 +413,7 @@ async function reserveBuild(judge: Array<"yes" | "no">) {
   const provider: AutomationStudioLlmProvider = { ...scripted, estimateCostUsd: ({ inputTokens, outputTokens }) => (inputTokens + outputTokens) * RESERVE_PER_TOKEN_USD };
   const instance = new AutomationStudioService({
     dataDir: tempRoot,
-    llmProviderResolver: (() => ({ provider, tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 }, maxCallsPerRun: 24, maxEstimatedCostUsd: 0.1, timeoutMs: 20_000 })) as never,
+    llmProviderResolver: (() => ({ provider, tokenLimits: { maxInputTokens: 992_000, maxOutputTokens: 8_000, maxTotalTokens: 1_000_000 }, maxCallsPerRun: 24, maxEstimatedCostUsd: 0.1, maxTotalEstimatedCostUsd: 0.1, timeoutMs: 20_000 })) as never,
     llmEvidenceRuntime: evidenceRuntime
   });
   instance.bindNativeNodeRuntime(runtime);

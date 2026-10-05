@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapBuildEndingFailure, flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRequestRefusedError } from "../../../llm/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRequestRefusedError, automationStudioLlmRunCostCeilingUsd } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID,
   AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY,
@@ -155,18 +155,32 @@ describe("a re-author whose build fails", () => {
 });
 
 // The user's rule: a build, and its repair, each spend at most the run cost
-// ceiling in total ($0.10 since 2026-10-01; was $0.25), lowered and never
-// raised by the Flow's own setting. Each part of the repair was held to the
-// ceiling on its own, so one repair -- a build, the build again, the patch
-// ladder -- could spend about three times it.
+// ceiling in total. Each part of the repair was held to the ceiling on its own,
+// so one repair -- a build, the build again, the patch ladder -- could spend
+// about three times it. Since t261 (2026-10-03) the ordinary default is $0.25,
+// the $0.10 knob binds only a test-scoped (Lab) runtime, and a Flow's own
+// explicit limit is the user's policy: it replaces the default, bounded only by
+// a test ceiling and the server maximum (`llm/flow-execution-limits/run-cost-ceiling.ts`).
+//
+// Since t262 the build is retried only after a named transient provider request
+// failure (`reauthor-build.ts`); an iteration or budget ending is continued by a
+// person, never rebuilt automatically. So the retry here follows a rate limit.
 //
 // Amounts are fractions of the ceiling, rounded to the billionth as the purse
 // rounds, so the scenarios hold whatever the ceiling is set to.
 describe("the repair's one purse", () => {
   const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
   const usd = (value: number): number => Math.round(value * 1_000_000_000) / 1_000_000_000;
-  /** A build that ran out of turns having reported `costUsd`: a failure that may pass, so it is built again. */
-  const outOfTurns = (costUsd: number) => flowBootstrapPhaseFailure("provider_output_validation", { requestId: `request.${costUsd}`, estimatedInputTokens: 10, estimatedCostUsd: costUsd }, "flow_bootstrap.evidence_iteration_limit");
+  /**
+   * A build the provider rate-limited, having reported `costUsd` (and, where
+   * given, made `decisions` decisions first): a transient request failure, so it
+   * is built again once.
+   */
+  const rateLimited = (costUsd: number, decisions?: number) => new AutomationStudioFlowBootstrapGenerationError({
+    code: "flow_bootstrap.provider_rate_limited", stage: "provider_request", retryable: true, providerInvocation: "attempted", providerResponse: "received",
+    accounting: { requestId: `request.${costUsd}`, estimatedInputTokens: 10, estimatedCostUsd: costUsd, providerStatus: 429 },
+    ...(decisions === undefined ? {} : { evidenceLoop: { iterationCount: decisions, decisionCount: decisions, toolCallCount: decisions, evidenceBytes: 100 } })
+  });
   /** What the recovery's own gate record says it spent, as `annotate.ts` writes it. */
   const ladderSpending = (costUsd: number) => vi.fn(async (refuted: { detail: AutomationStudioFlowRunDetail }) => ({ ...refuted.detail, metadata: { ...(refuted.detail.metadata ?? {}), llmGate: { invoked: true, costAccounting: { calls: 1, estimatedCostUsd: costUsd } } } }));
 
@@ -174,7 +188,7 @@ describe("the repair's one purse", () => {
     let calls = 0;
     const generate = vi.fn(async () => {
       calls += 1;
-      if (calls === 1) throw outOfTurns(usd(CEILING * 0.8));
+      if (calls === 1) throw rateLimited(usd(CEILING * 0.8));
       return { adaptationId: "adaptation.two", accounting: { requestId: "request.two", estimatedInputTokens: 10, estimatedCostUsd: usd(CEILING * 0.16) } };
     });
     const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))(request);
@@ -186,7 +200,7 @@ describe("the repair's one purse", () => {
 
   it("does not run the patch ladder once the re-authors have spent the purse, and names cost as why", async () => {
     const spent = [usd(CEILING * 0.6), usd(CEILING * 0.4)];
-    const generate = vi.fn(async () => { throw outOfTurns(spent.shift()!); });
+    const generate = vi.fn(async () => { throw rateLimited(spent.shift()!); });
     const port = deps({ generate: generate as never });
     const result = await automationStudioRefutedResultRepairPort(port)(request);
 
@@ -195,13 +209,13 @@ describe("the repair's one purse", () => {
     // The ladder is a recovery that asks a model; it was not called at all.
     expect(port.annotate).not.toHaveBeenCalled();
     expect(marker(result)).toMatchObject({
-      degraded: { to: "patch_ladder", afterCode: "flow_bootstrap.evidence_iteration_limit", bound: "cost" },
+      degraded: { to: "patch_ladder", afterCode: "flow_bootstrap.provider_rate_limited", bound: "cost" },
       purse: { limitUsd: CEILING, spentUsd: CEILING, leftUsd: 0, refusedParts: ["patch_ladder"], bound: "cost" }
     });
   });
 
   it("does not build again when the first build spent the purse, and records the retry it did not make", async () => {
-    const generate = vi.fn(async () => { throw outOfTurns(CEILING); });
+    const generate = vi.fn(async () => { throw rateLimited(CEILING); });
     const port = deps({ generate: generate as never });
     const result = await automationStudioRefutedResultRepairPort(port)(request);
 
@@ -215,7 +229,7 @@ describe("the repair's one purse", () => {
   it("caps the whole repair at a Flow's lower figure, re-author, retry and patch ladder together", async () => {
     const flowUsd = usd(CEILING * 0.4);
     const spent = [usd(CEILING * 0.28), usd(CEILING * 0.08)];
-    const generate = vi.fn(async () => { throw outOfTurns(spent.shift()!); });
+    const generate = vi.fn(async () => { throw rateLimited(spent.shift()!); });
     const annotate = ladderSpending(usd(CEILING * 0.04));
     const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never, annotate: annotate as never, maxCostUsd: () => flowUsd }))(request);
 
@@ -230,29 +244,31 @@ describe("the repair's one purse", () => {
   // charges a call what it actually cost. So a later part starts only when what
   // is left covers one more call at what the repair's calls have cost so far.
   it("starts no later part whose remainder would not cover one more call at the repair's average", async () => {
-    const generate = vi.fn(async () => {
-      throw new AutomationStudioFlowBootstrapGenerationError({
-        code: "flow_bootstrap.evidence_iteration_limit", stage: "provider_output_validation", retryable: true, providerInvocation: "attempted", providerResponse: "received",
-        accounting: { requestId: "request.loop", estimatedInputTokens: 10, estimatedCostUsd: usd(CEILING * 0.8) },
-        evidenceLoop: { iterationCount: 2, decisionCount: 2, toolCallCount: 2, evidenceBytes: 100 }
-      });
-    });
+    // Rate-limited on its third decision, having made two: a retry may pass.
+    const generate = vi.fn(async () => { throw rateLimited(usd(CEILING * 0.8), 2); });
     const port = deps({ generate: generate as never });
     const result = await automationStudioRefutedResultRepairPort(port)(request);
 
     // A fifth of the purse is left, and the build's two decisions cost two fifths each.
     expect(generate).toHaveBeenCalledTimes(1);
     expect(port.annotate).not.toHaveBeenCalled();
-    expect(marker(result).attempts[0]).toMatchObject({ code: "flow_bootstrap.evidence_iteration_limit", retryable: true });
+    expect(marker(result).attempts[0]).toMatchObject({ code: "flow_bootstrap.provider_rate_limited", retryable: true });
     expect(marker(result).purse).toMatchObject({ spentUsd: usd(CEILING * 0.8), leftUsd: usd(CEILING * 0.2), averagedCalls: 2, averagedUsd: usd(CEILING * 0.8), refusedParts: ["reauthor"], bound: "cost" });
     // The first build explored, so the ladder is not a later part at all here: its fix is the re-author's (run 38).
     expect(marker(result).ladderSkipped).toEqual({ reason: "structural_fix", afterCode: "llm_budget.run_cost_limit" });
   });
 
-  it("is never raised by a Flow set above the ceiling", async () => {
+  // t261: a Flow's own explicit limit is the user's policy, not only a way to
+  // narrow the default, so one set above the default is honoured -- up to the
+  // server maximum, and never past a test-scoped (Lab) ceiling.
+  it("is set by a Flow's own limit above the default, up to the server maximum", async () => {
     const generate = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
     await automationStudioRefutedResultRepairPort(deps({ generate: generate as never, maxCostUsd: () => 1 }))(request);
-    expect((generate.mock.calls as unknown[][])[0]![2]).toBe(CEILING);
+    expect((generate.mock.calls as unknown[][])[0]![2]).toBe(automationStudioLlmRunCostCeilingUsd(1));
+    const capped = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
+    await automationStudioRefutedResultRepairPort(deps({ generate: capped as never, maxCostUsd: () => 11 }))(request);
+    expect((capped.mock.calls as unknown[][])[0]![2]).toBe(automationStudioLlmRunCostCeilingUsd(11));
+    expect((capped.mock.calls as unknown[][])[0]![2]).toBeLessThanOrEqual(10);
   });
 
   it("opens where the run's earlier passes left it, so a re-run refuted again spends from the same total", async () => {

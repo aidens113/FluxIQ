@@ -378,25 +378,7 @@ export function AutomationStudioSession(props: {
     publishBlocked: publishGatewayBlocked,
     publishTransition: publishGatewayTransition
   });
-  useAutomationDeepLinkRuntime({
-    deepLink,
-    searchSignature,
-    activeProjectId,
-    loadedProjectId: loadedProjectHierarchyId,
-    activeViewId,
-    projectFlowSignature: projectFlowUrlScopeSignature,
-    projectFlows,
-    selection,
-    selectedFlow,
-    lastOpenFlowId: typeof automationWorkspaceViewStateForBase(workspacePrefs, automationStudioViewId.flowEditor)?.lastOpenFlowId === "string"
-      ? automationWorkspaceViewStateForBase(workspacePrefs, automationStudioViewId.flowEditor)?.lastOpenFlowId as string
-      : null,
-    flowById: projectEntityIndexes.flowById,
-    loadFlow: loadFlowDetails,
-    openSubflow: navigation.openSubflow,
-    selectFlow: navigation.selectAndFollow,
-    openView: navigation.openView
-  });  useEffect(() => {
+  useEffect(() => {
     if (!activeProjectId || !projectRecordings.length) return;
     setDeletedHierarchyIds((current) => {
       const cleaned = current.filter((id) => !id.startsWith("recordings-client-") && !id.startsWith("proposals-client-") && !id.startsWith("proposals-recording-"));
@@ -485,6 +467,26 @@ export function AutomationStudioSession(props: {
     openView,
     openProblems: openAutomationProblems,
     setSelection
+  });
+  useAutomationDeepLinkRuntime({
+    deepLink,
+    searchSignature,
+    activeProjectId,
+    loadedProjectId: loadedProjectHierarchyId,
+    activeViewId,
+    projectFlowSignature: projectFlowUrlScopeSignature,
+    projectFlows,
+    selection,
+    selectedFlow,
+    lastOpenFlowId: typeof automationWorkspaceViewStateForBase(workspacePrefs, automationStudioViewId.flowEditor)?.lastOpenFlowId === "string"
+      ? automationWorkspaceViewStateForBase(workspacePrefs, automationStudioViewId.flowEditor)?.lastOpenFlowId as string
+      : null,
+    flowById: projectEntityIndexes.flowById,
+    loadFlow: loadFlowDetails,
+    openSubflow: navigation.openSubflow,
+    selectFlow: navigation.selectAndFollow,
+    openView: navigation.openView,
+    openAdaptation: adaptationNavigation.openAdaptation
   });
   const conversationNavigation = useConversationWorkspaceNavigation({
     ...(selectedTaskGraph?.flowId ? { selectedFlowId: selectedTaskGraph.flowId } : {}),

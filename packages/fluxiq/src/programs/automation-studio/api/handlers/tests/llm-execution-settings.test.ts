@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../../model/index.ts";
 import { assertFlowLlmExecutionSettings } from "../index.ts";
 
 describe("Flow LLM execution settings API validation", () => {
@@ -35,6 +36,17 @@ describe("Flow LLM execution settings API validation", () => {
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxCalls: 65 } })).toThrow(/limit/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, retryCount: 1 } })).toThrow(/retries/);
     expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, timeoutMs: 25001 } })).toThrow(/limit/);
-    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxEstimatedCostUsd: 0.26 } })).toThrow(/cost/);
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxEstimatedCostUsd: 0 } })).toThrow(/cost/);
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD + 0.01 } })).toThrow(/cost/);
+  });
+
+  // Live run run-musq0b1m-0472cfa0 (2026-10-03): the Lab ran a build under a
+  // $0.30 ceiling, pinned that limit on the Flow, and this check refused it
+  // against a literal $0.25 left from before the ceiling became configurable,
+  // after the whole build had been paid for. A Flow may pin any limit the run
+  // cost ceiling itself may take.
+  it("accepts any cost limit the configurable run cost ceiling may take", () => {
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxEstimatedCostUsd: 0.3 } })).not.toThrow();
+    expect(() => assertFlowLlmExecutionSettings({ ...valid, llmExecutionSettings: { ...valid.llmExecutionSettings, maxEstimatedCostUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } })).not.toThrow();
   });
 });

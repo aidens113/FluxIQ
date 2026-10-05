@@ -186,6 +186,12 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
   // Entering the top-level harness proves neither that the provider was invoked
   // nor that it was not: request packing precedes the lower call seam, while
   // response work follows it. A raw escape therefore records unknown provenance.
+  //
+  // Since t262 a build that failed once its creation purse existed also carries
+  // `totalProviderCallCount`, the purse's own settled logical questions
+  // (`flow-bootstrap/generation-failure/generation-catch.ts`). The harness is
+  // stubbed here, so nothing was admitted through the purse and the count is a
+  // true zero -- distinct from absence, which means unknown.
   it.each([
     ["an Error one of Core's own guards threw", () => new Error("raw harness failure"), false, "flow_bootstrap.unexpected_error"],
     ["a defect in Core", () => new TypeError("raw harness failure"), false, "flow_bootstrap.internal_error"],
@@ -222,7 +228,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       stage: "provider_request",
       retryable: false,
       providerInvocation: "unknown",
-      providerResponse: "unknown"
+      providerResponse: "unknown",
+      totalProviderCallCount: 0
     });
     expect(JSON.stringify(diagnostic)).not.toContain("raw harness");
     expect(harness).toHaveBeenCalledTimes(1);
@@ -250,7 +257,8 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
       caller: caller()
     }));
 
-    expect(diagnostic).toEqual(expected);
+    // The harness's own diagnostic, unchanged, with the purse's settled count added (none: the harness is stubbed).
+    expect(diagnostic).toEqual({ ...expected, totalProviderCallCount: 0 });
     await expectNoTopology(instance, project.id, flow.flowId);
   });
 
@@ -284,7 +292,9 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
         estimatedCostUsd: 0.002
       },
       // Core's own refusal of the plan, thrown in the service and named by its line there.
-      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.service\.ts:\d+$/u)]
+      issueCodes: ["thrown.Error", expect.stringMatching(/^thrown\.at:runtime\.service\.ts:\d+$/u)],
+      // The purse's settled questions: the stubbed harness reported its accounting without passing through the purse.
+      totalProviderCallCount: 0
     });
     await expect((instance as any).bootstrapAdaptations.listFlowBootstrapAdaptations(project.id, flow.flowId)).resolves.toEqual([]);
     await expectNoTopology(instance, project.id, flow.flowId);
