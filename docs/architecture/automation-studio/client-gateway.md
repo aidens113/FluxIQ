@@ -432,6 +432,23 @@ uses lucide-react with the same kind/icon mapping. Internal bookkeeping reads
 stay out of the chat. The extension has Chat and Automations tabs, Settings and
 Open FluxIQ; the old Simple/Advanced split is removed.
 
+A decision Core declined before doing it is a card under that decision, never
+prose appended to the model's sentence (t193 round 1003). `activityActionRefusal`
+reads the loop's refusal codes (`llm_evidence_loop.repeat_refused`,
+`.draft_amendments_refused`, `.draft_amendment_undone`) into
+`ActivityAction.refused: { all, because }`: `because` is at most two reasons in
+Core's words (`ACTIVITY_ACTION_REFUSAL_WORDS`), never a code. A refused action
+is `failed` when nothing of it was done and `done` when part of an edit landed
+(the record's `Applied: <n>`). An edit to the draft gets a card whether it
+landed or not ("Editing the Flow -- done / partly done / not done",
+`runtime/activity/wording/draft-edit-card.ts`; the kind is named "Edit the
+Flow"), and a call refused as a repeat gets its own card once the loop answers
+it (`runtime/activity/decision-answer/refused-call.ts`). The model's sentence is
+only the decision's reason, said as what was tried. Inside a build, a split
+judge's card closes with the build's sentence ("the build cannot finish on this
+test") rather than the run's ("the run is not marked as failed for it",
+`runtime/result-verification/unsettled/unsettled-words.ts`, `check-activity.ts`).
+
 A wait opens an ask activity row and settles through another ask row with the
 same `ref` and `detail.resolution`. The closed resolutions are:
 

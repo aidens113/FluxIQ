@@ -4,8 +4,9 @@
 export { automationStudioActivityAction, type AutomationStudioActivityCallWords } from "./action.ts";
 export { automationStudioActivityCompletionRefusal } from "./completion-refusal.ts";
 export { automationStudioActivityDecision } from "./decision.ts";
-export { automationStudioActivityDraftEditRefused } from "./draft-edit-refused.ts";
+export { automationStudioActivityDraftEditCard } from "./draft-edit-card.ts";
 export { automationStudioActivityHumanLabel } from "./human-label.ts";
 export { automationStudioActivityReasonText } from "./reason-text.ts";
 export { automationStudioActivityRecoveryChoice } from "./recovery-choice.ts";
+export { automationStudioActivityRunEnding } from "./run-ending.ts";
 export { automationStudioActivityToolCall } from "./tool-call.ts";

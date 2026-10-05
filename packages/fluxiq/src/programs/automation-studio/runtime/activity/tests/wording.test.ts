@@ -96,7 +96,7 @@ describe("observed tool calls", () => {
   it("say a dry run step that did not repeat, as verifying", async () => {
     await inBuild(() => observed("core.replay.unreproducible").executeTool(call("dryrun.1.3", { replay: "step", node: CLICK, parameters: { element: QUOTE } })));
     expect(seen.map((event) => event.phase)).toEqual(["verifying", "verifying"]);
-    expect(seen[1]!.label).toBe("Trying the Flow from the start: clicking “Get a free quote” — didn't work the same way again");
+    expect(seen[1]!.label).toBe("Trying the Flow from the start: clicking “Get a free quote” — didn't work when tried again");
   });
 
   it("say a passed completion check without claiming the Flow works", async () => {

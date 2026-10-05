@@ -129,7 +129,7 @@ describe("activityActionOf: outcome and why", () => {
     ["failed with no code", tool("Clicking on the page", undefined, "failed"), "failed", null],
     ["a not_found code", tool("Clicking “Buy”", "Result: web.target.not_found · Node: web.output.dom-click"), "failed", "it wasn't on the page"],
     ["a timeout code", tool("Waiting for the page", "Result: web.wait.timeout · Node: web.output.wait"), "failed", "the page took too long"],
-    ["a replay that changed", tool("Clicking “Next”", "Result: core.replay.changed", "succeeded", RUN_NODE, "verifying"), "failed", "it didn't work the same way again"],
+    ["a replay that changed", tool("Clicking “Next”", "Result: core.replay.changed", "succeeded", RUN_NODE, "verifying"), "failed", "it did nothing this time, where it did something before"],
     ["a replay the site remembered (t193)", tool("Clicking “Set as my store”", "Result: core.replay.remembered · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying"), "done", null],
     ["a replay already in place", tool("Clicking “12 Double Rolls”", "Result: core.replay.present", "succeeded", RUN_NODE, "verifying"), "done", null],
     ["an unknown failing code", tool("Clicking on the page", "Result: web.action.failed"), "failed", null],
@@ -254,7 +254,7 @@ describe("activityActionOf: what each card says (t193 chat wording)", () => {
   // "Didn't work: it wasn't on the page". Nothing was looked up.
   it("lets a refusal's own reason say why it failed, before its code's words", () => {
     const refused = tool("Clicking “Add to cart”", "Result: web.action.rejected.target_unobserved · Reason: target_not_a_handle · Node: web.output.dom-click");
-    expect(outputsOf(activityActionOf(refused))).toEqual(["click", "Add to cart", "failed", "it didn't name a control from the page"]);
+    expect(outputsOf(activityActionOf(refused))).toEqual(["click", "Add to cart", "failed", "FluxIQ didn't send it, since it named no control from the page"]);
     // A reason with no words of its own leaves the code to say it.
     const unknown = tool("Clicking “Add to cart”", "Result: web.target.not_found · Reason: vendor_specific_thing · Node: web.output.dom-click");
     expect(activityActionOf(unknown)?.why).toBe("it wasn't on the page");
@@ -265,6 +265,13 @@ describe("activityActionOf: what each card says (t193 chat wording)", () => {
     expect(outputsOf(activityActionOf(tool("Opening “/ip/valueridge-napkins”", "Node: web.output.browser-navigate", "started")))).toEqual(["navigate", "/ip/valueridge-napkins", "working", ""]);
     expect(activityActionOf(tool("Opening “/help/index.html”", "Node: web.output.browser-navigate"))?.target).toBe("/help/index.html");
     expect(activityActionOf(tool("Opening “Home page”", "Node: web.output.browser-navigate"))?.target).toBe("Home page");
+    // t174-w108/w116 D2: the navigate wording names a site ("Opening “amazon.com”") or the start page, unquoted.
+    expect(activityActionOf(tool("Opening “amazon.com”", "Node: web.output.browser-navigate"))?.target).toBe("amazon.com");
+    expect(activityActionOf(tool("Opening “shop.example.co.uk”", "Node: web.output.browser-navigate"))?.target).toBe("shop.example.co.uk");
+    expect(activityActionOf(tool("Opening the start page", "Node: web.output.browser-navigate"))?.target).toBe("the start page");
+    // A site name is a target only on a navigate, and a dotted id is still never one.
+    expect(activityActionOf(tool("Clicking “amazon.com”", "Node: web.output.dom-click"))?.target).toBeNull();
+    expect(activityActionOf(tool("Opening “web.output.browser-navigate”", "Node: web.output.browser-navigate"))?.target).toBeNull();
     // An address path is shown only on a navigate: a click's quoted id stays hidden.
     expect(activityActionOf(tool("Clicking “/web.output.dom-click”", "Node: web.output.dom-click"))?.target).toBeNull();
   });
@@ -348,7 +355,7 @@ describe("activityActionOf: what a test of the Flow did with each step (C10)", (
     expect(activityActionOf(dry("core.replay.unreproducible", " · Excused: withheld"))?.tested).toBe("Skipped: it needed a step the test only checked");
     expect(activityActionOf(dry("core.replay.failed", " · Excused: repeat"))?.tested).toBe("Skipped: it only runs sometimes");
     // Not excused, it is still a step that did not hold.
-    expect(activityActionOf(dry("core.replay.failed"))).toMatchObject({ outcome: "failed", why: "it didn't work the same way again" });
+    expect(activityActionOf(dry("core.replay.failed"))).toMatchObject({ outcome: "failed", why: "it couldn't run when the test tried it again" });
     expect(activityActionOf(dry("core.replay.failed"))).not.toHaveProperty("tested");
   });
 

@@ -19,7 +19,9 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
     emitAutomationStudioActivity({ phase: "building", label: "Building the Flow", detail: { kind: "step", title: "Build started", status: "started", ...(flowId ? { ref: flowId } : {}) } });
     try {
       const built = await fn();
-      emitAutomationStudioActivity({ phase: "done", label: "Build finished: a Flow is proposed", detail: { kind: "step", title: "Build finished", status: "succeeded" }, final: true });
+      // "Build finished: a Flow is proposed" said nothing to the person, and the
+      // Flow ran a second later (t174-w108 D9, `run-musp8nz1-dbd3905a`).
+      emitAutomationStudioActivity({ phase: "done", label: "Your Flow is ready", detail: { kind: "step", title: "Build finished", status: "succeeded" }, final: true });
       return built;
     } catch (error) {
       const ending = buildEndingOf(error);

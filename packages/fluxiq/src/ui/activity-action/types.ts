@@ -71,6 +71,17 @@ export type ActivityAction = {
    * its task read "Check result · Didn't pass" in red (t174-w85 D1).
    */
   unconfirmed?: true;
+  /**
+   * Present on a decision Core declined before doing it (`./refusal.ts`): a
+   * call refused as a repeat, or an edit to the draft Core refused. `all` is
+   * true when nothing of it was done -- `outcome` stays `failed`, fail-closed,
+   * and `why` is `because` for a client that does not read this -- and false
+   * for an edit done in part, `outcome` `done`. `because` is Core's plain
+   * reason. A client that reads it says "Not done", never "didn't work": a
+   * refused edit was a header and prose with no card, ending "so this was not
+   * done: <the model's own summary>" (t193 1003, C13/C14).
+   */
+  refused?: { all: boolean; because: string };
 };
 
 /**

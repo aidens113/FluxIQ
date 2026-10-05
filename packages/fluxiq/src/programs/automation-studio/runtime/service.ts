@@ -88,7 +88,7 @@ import {
 export type { AutomationStudioLlmProviderResolution, AutomationStudioLlmProviderResolverInput } from "./llm/index.ts";
 import { adaptationConfidence, adaptationValidationCounts, annotateAutomationStudioRunDetailWithRuntimeLlm, automationStudioRecoveryConversationTurns, automationStudioUnresolvedFailedAttempt, evaluateFlowAdaptationPromotionGates, type AutomationStudioRuntimeRecoveryAnnotationInput } from "./recovery/index.ts";
 import { AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, assertAutomationStudioFlowBootstrapPlanHandlesResolved, automationStudioFlowBootstrapDraftStepIsWritable, automationStudioFlowBootstrapDraftActs, automationStudioFlowDraftDryRunGate, automationStudioFlowDraftReplayClearedCode, automationStudioHarnessInputWithDeniedEvidenceKeys, automationStudioHarnessOptionRegistry, automationStudioLlmNodeDescriptions, automationStudioLlmUnusableDecisionError, checkAutomationStudioFlowBootstrapCompletion, resolveAutomationStudioFlowBootstrapPlanParameters, runAutomationStudioLlmEvidenceLoop, type AutomationStudioFlowBootstrapCompletionVerdict, type AutomationStudioLlmEvidenceLoopResult, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool, type AutomationStudioLlmEvidenceToolExecutionResult } from "./llm/index.ts";
-import { automationStudioFlowDraftPlanNodeIds, automationStudioLlmEvidenceRuntimeBindingChecked, automationStudioLlmResolutionWithinFlowSettings, automationStudioLlmResolverWithDomainInstructions, automationStudioLlmStepLogTool, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm, automationStudioLlmRunCostCeilingUsd } from "./llm/index.ts";
+import { automationStudioFlowDraftPlanNodeIds, automationStudioLlmBuildTrace, automationStudioLlmEvidenceRuntimeBindingChecked, automationStudioLlmResolutionWithinFlowSettings, automationStudioLlmResolverWithDomainInstructions, automationStudioLlmStepLogTool, automationStudioRuntimeAdaptationContextForLlmRun, type AutomationStudioRuntimeSessionLlm, automationStudioLlmRunCostCeilingUsd } from "./llm/index.ts";
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
 import { automationStudioActivityDecisionReason, bindAutomationStudioActivityRun, emitAutomationStudioActivity, emitAutomationStudioBuildRequest, observeAutomationStudioEvidenceLoop, withAutomationStudioBuildActivity, withAutomationStudioRunActivity } from "./activity/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions, type AutomationStudioFlowGraphJudgement } from "./flow-version/index.ts";
@@ -1468,7 +1468,7 @@ export class AutomationStudioService {
     return await runAutomationStudioLlmHarness(automationStudioHarnessInputWithDeniedEvidenceKeys(input, this.llmEvidenceRuntime));
   }
 
-  async generateFlowBootstrapAdaptation(input: AutomationStudioGenerateFlowBootstrapAdaptationInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult> { return await withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => withAutomationStudioBuildActivity(input, () => this.generateFlowBootstrapAdaptationInternal(input))); }
+  async generateFlowBootstrapAdaptation(input: AutomationStudioGenerateFlowBootstrapAdaptationInput): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult> { return await withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => withAutomationStudioBuildActivity(input, () => automationStudioLlmBuildTrace.timed("build", () => this.generateFlowBootstrapAdaptationInternal(input), (built) => `status=${built.status}`))); } // A build is a `[FluxIQ build-trace]` start and end line, as its apply is (t174-w116).
   private readonly generateFlowBootstrapAdaptationInternal = async (input: AutomationStudioGenerateFlowBootstrapAdaptationInput, repairBrief?: AutomationStudioFlowInstruction, repairCostLeftUsd?: number, repairStartPages?: Readonly<Record<string, JsonObject>>): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult> => {
     const unsafeInput = input as unknown as Record<string, unknown>;
     let failureStage: AutomationStudioFlowBootstrapFailureStage = "pre_provider_validation";
@@ -1818,7 +1818,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
         if (adaptation.status !== "proposed" && adaptation.status !== "validated") throw new Error("Only a proposed or validated Flow Bootstrap adaptation can be rejected.");
         return await this.transitionFlowBootstrapAdaptation(adaptation, "rejected", "rejected", input.actorId ?? null);
       }
-      if (input.action === "apply") return await this.applyFlowBootstrapAdaptation(adaptation, input.actorId ?? "runtime");
+      if (input.action === "apply") return await automationStudioLlmBuildTrace.timed("apply", () => this.applyFlowBootstrapAdaptation(adaptation, input.actorId ?? "runtime"), (applied) => `status=${applied.status}`);
       return await this.revertFlowBootstrapAdaptation(adaptation, input.actorId ?? "runtime");
     });
   }
@@ -2746,7 +2746,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
     } finally {
       if (input.projectId && session) { this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`); this.runControl.close(input.projectId, session.runId); }
     }
-  })); }
+  }, { readRecord: async (ended) => (input.projectId ? (await this.getFlowRunDetail(input.projectId, ended.runId))?.metadata : undefined) /* A failed run's last row says what came back and why, from its record (`activity/run.ts`, t194 U3). */ })); }
 
   async cancelRuntimeSession(projectId: string, runId: string, reason = "Cancelled by user."): Promise<AutomationStudioRuntimeSession | null> {
     return await this.parkedRunExpiry.cancel(projectId, runId, reason, () => this.runtimeAbortControllers.get(`${projectId}:${runId}`)?.abort(reason));

@@ -20,12 +20,18 @@
 // refusals and 13 amendments, and the log could say neither which act nor what
 // any amendment tried.
 //
+// A completion the check passed and the test of the Flow then refused prints
+// `completion refused by=test` with the test's codes and the steps it named,
+// after the check's `ok=true` (t194-w80): run `run-musp39u8-9ac026ab` printed
+// only "ok=true" for three completions refused `full_run_required` (R3c).
+//
 // The same wrapper feeds the full decision dump (`./decision-dump.ts`) when
 // `FLUXIQ_BUILD_DECISION_DUMP` is set, and the step log (`../step-log/`) when
 // `FLUXIQ_LLM_STEP_LOG_DIR` is: each tool call the loop makes, an in-loop dry
 // run's replays included, becomes a step folder. Any one switch turns the
 // wrapper on.
 import { automationStudioLlmStepLogDirectory, automationStudioLlmStepLogTool } from "../step-log/index.ts";
+import { automationStudioLlmBuildTrace } from "./build-trace.ts";
 import { automationStudioLlmEvidenceDecisionDump } from "./decision-dump.ts";
 
 // Method signatures, so any loop input whose own requests carry more fields fits.
@@ -37,11 +43,11 @@ type Traceable = {
 
 /** The loop's input, with its two waits timed when the trace, the dump or the step log is switched on; the same object when none is. */
 export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable>(input: T, env: Readonly<Record<string, string | undefined>> = process.env, write: (line: string) => void = (line) => console.log(line)): T {
-  const tracing = env.FLUXIQ_BUILD_PROGRESS_TRACE === "1";
+  const tracing = automationStudioLlmBuildTrace.on(env);
   const dump = automationStudioLlmEvidenceDecisionDump(env);
   if (!tracing && !dump && !automationStudioLlmStepLogDirectory(env)) return input;
   const execute = automationStudioLlmStepLogTool((request: Parameters<T["executeTool"]>[0]) => input.executeTool(request), env);
-  const log = (line: string) => { if (tracing) write(`[FluxIQ build-trace] ${new Date().toISOString()} ${line}`); };
+  const log = (line: string) => automationStudioLlmBuildTrace.line(line, env, write);
   log("loop start");
   const decide = async (request: Parameters<T["decide"]>[0]) => {
     const started = Date.now();
@@ -70,13 +76,24 @@ export function automationStudioLlmEvidenceLoopProgressTrace<T extends Traceable
     }
   };
   const check = input.checkCompletion;
-  const checkCompletion = check === undefined ? undefined : async (...args: Parameters<NonNullable<T["checkCompletion"]>>) => {
+  const checkCompletion = check === undefined ? undefined : Object.assign(async (...args: Parameters<NonNullable<T["checkCompletion"]>>) => {
     const verdict = await (check as (...inner: typeof args) => unknown).apply(input, args) as { ok?: unknown; issueCodes?: unknown; feedback?: unknown } | undefined;
     const issues = Array.isArray(verdict?.issueCodes) ? verdict.issueCodes.map(codeOf).join(",") || "-" : "-";
     log(`completion check ok=${verdict?.ok === true} issues=${issues}${missingActs(verdict?.feedback)}`);
     dump?.check({ verdict });
     return verdict;
-  };
+  }, {
+    // A completion the check passed and the test then refused
+    // (`../evidence-loop/completion-attempt.ts`): its own line, since the
+    // check's says ok=true, and passed on to the check it wraps.
+    testRefused: (refusal: { issueCodes?: unknown; steps?: unknown }) => {
+      const codes = Array.isArray(refusal?.issueCodes) ? refusal.issueCodes.slice(0, MAX_LISTED).map(codeOf).join(",") || "-" : "-";
+      const steps = Array.isArray(refusal?.steps) ? refusal.steps.slice(0, MAX_LISTED).map(numberOf).join(",") || "-" : "-";
+      log(`completion refused by=test issues=${codes} steps=${steps}`);
+      const inner = (check as { testRefused?: unknown }).testRefused;
+      if (typeof inner === "function") inner.call(check, refusal);
+    }
+  });
   return { ...input, decide, executeTool, ...(checkCompletion ? { checkCompletion } : {}) } as T;
 }
 

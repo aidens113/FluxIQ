@@ -21,7 +21,7 @@ describe("automationStudioActivityAction", () => {
   it("names a node by the verb in its id, with the element name it already carries", () => {
     expect(automationStudioActivityAction({ id: CLICK, parameters: { element: QUOTE } })).toBe("Clicking “Get a free quote”");
     expect(automationStudioActivityAction({ id: CLICK, parameters: { target: { handle: "target.4" } } })).toBe("Clicking on the page");
-    expect(automationStudioActivityAction({ id: NAVIGATE, parameters: { url: "https://shop.example/services" } })).toBe("Opening “/services”");
+    expect(automationStudioActivityAction({ id: NAVIGATE, parameters: { url: "https://shop.example/services" } })).toBe("Opening “shop.example”");
     expect(automationStudioActivityAction({ id: SNAPSHOT })).toBe("Looking over the whole page");
     expect(automationStudioActivityAction({ id: "web.output.dom-extract_list" })).toBe("Reading the list");
     expect(automationStudioActivityAction({ id: "web.output.dom-type", parameters: { text: "secret", element: { accessibleName: "Search" } } })).toBe("Typing into “Search”");
@@ -46,19 +46,30 @@ describe("automationStudioActivityAction", () => {
   });
 
   // t193 (`run-muqiojz4-04a7a8fc`, screenshots 00019 and 00020): the navigate
-  // card read "Open page" with no page named.
-  it("names the page a navigate opens by its address path, or as the home page, never its query", () => {
+  // card read "Open page" with no page named. t174-w108 D2 (`run-musp8nz1-dbd3905a`,
+  // screenshots 00008, 00012, overlay moment 7): naming it by its address path
+  // put "/scenarios/crossborder-m…" in the chat and the overlay. A page is named
+  // by its site, in plain words, never by a path or an address.
+  it("names the page a navigate opens by its site, never its path, query or address", () => {
     const opening = (url: unknown) => automationStudioActivityAction({ id: NAVIGATE, parameters: { url } });
-    expect(opening("http://127.0.0.1:63414/scenarios/bigbox-retail/ip/valueridge-everyday-dinner-napkins/418831402?variant=5530102"))
-      .toBe("Opening “…/ip/valueridge-everyday-dinner-napkins/418831402”");
-    expect(opening("https://shop.example/")).toBe("Opening “Home page”");
-    expect(opening("~/")).toBe("Opening “Home page”");
-    expect(opening("~/ip/napkins")).toBe("Opening “/ip/napkins”");
-    expect(opening("/cart?token=abc#x")).toBe("Opening “/cart”");
-    expect(opening("https://shop.example/reset/Zx9aQ2kLm4Np7Rt1Vw3Yb6Cd/done")).toBe("Opening “/reset/…/done”");
-    expect(opening("https://shop.example/caf%C3%A9")).toBe("Opening “/café”");
+    expect(opening("https://www.amazon.com/s?k=usb+hub#top")).toBe("Opening “amazon.com”");
+    expect(opening("https://shop.example/reset/Zx9aQ2kLm4Np7Rt1Vw3Yb6Cd/done")).toBe("Opening “shop.example”");
+    expect(opening("https://SHOP.Example./")).toBe("Opening “shop.example”");
+    // A page this machine serves, or one at an IP address, has no name a person knows.
+    expect(opening("http://127.0.0.1:58504/scenarios/crossborder-marketplace/")).toBe("Opening the start page");
+    expect(opening("http://localhost:3000/cart")).toBe("Opening the start page");
+    expect(opening("http://[::1]:8080/x")).toBe("Opening the start page");
+    expect(opening("~/")).toBe("Opening the start page");
+    expect(opening("~")).toBe("Opening the start page");
+    // A path with no site, or no web address at all: the verb alone.
+    expect(opening("~/ip/napkins")).toBe("Opening a page");
+    expect(opening("/cart?token=abc#x")).toBe("Opening a page");
+    expect(opening("file:///C:/secret.txt")).toBe("Opening a page");
     expect(opening(undefined)).toBe("Opening a page");
     expect(opening("not a url at all")).toBe("Opening a page");
+    for (const url of ["http://127.0.0.1:58504/scenarios/crossborder-marketplace/", "https://shop.example/ip/napkins", "~/ip/napkins"]) {
+      expect(opening(url)).not.toMatch(/\/|https?:|127\.0/u);
+    }
   });
 
   // F36 (`run-muqiho5c-e830ce01`): a control with no accessible name read "Click · the page" in the playback.
@@ -81,6 +92,18 @@ describe("automationStudioActivityAction", () => {
     expect(automationStudioActivityAction({ id: SNAPSHOT })).not.toBe("Looking at the page");
   });
 
+  // t174-w108 D5 (`run-musp8nz1-dbd3905a`, screenshots 00010, 00014): the
+  // quantity field's step carried `element.label: "Quantity"` and its card read
+  // "Type · Done", naming no field. A field's own label names it first: the
+  // search box's accessible name was its placeholder, "Autumn Mega Sale…".
+  it("names the field a typing step types into by its label, then its accessible name", () => {
+    const quantity = { tagName: "input", selector: "main > div > input", label: "Quantity" };
+    expect(automationStudioActivityAction({ id: "web.output.dom-type", parameters: { text: "3", submit: false, element: quantity } })).toBe("Typing into “Quantity”");
+    expect(automationStudioActivityAction({ id: "web.output.dom-type", parameters: { text: "3", element: quantity }, words: { text: "3" } })).toBe('Typing "3" into “Quantity”');
+    expect(automationStudioActivityAction({ id: "web.output.dom-type", parameters: { element: { label: "Search", accessibleName: "Autumn Mega Sale: up to 70% off" } } })).toBe("Typing into “Search”");
+    expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { label: "a.b", accessibleName: "Add to cart" } } })).toBe("Clicking “Add to cart”");
+  });
+
   it("never names an element with an id, and never reads a typed value", () => {
     expect(automationStudioActivityAction({ id: CLICK, parameters: { element: { accessibleName: "a.b" } } })).toBe("Clicking on the page");
     expect(automationStudioActivityAction({ id: "web.output.dom-type", parameters: { text: "hunter2" } })).toBe("Typing into the page");
@@ -97,11 +120,11 @@ describe("automationStudioActivityToolCall", () => {
 
   it("marks Core's opening call as a note, and names every other call by what it does", () => {
     expect(automationStudioActivityToolCall(call("initial.core.run_node", { node: SNAPSHOT, parameters: {}, consequences: [] }))).toMatchObject({ kind: "note", phase: "exploring", title: "Looking over the page the Flow starts on" });
-    expect(automationStudioActivityToolCall(call("nav.start", { node: NAVIGATE, parameters: { url: "https://x.example" } }))).toMatchObject({ kind: "tool", phase: "exploring", title: "Opening “Home page”" });
+    expect(automationStudioActivityToolCall(call("nav.start", { node: NAVIGATE, parameters: { url: "https://x.example" } }))).toMatchObject({ kind: "tool", phase: "exploring", title: "Opening “x.example”" });
     expect(automationStudioActivityToolCall(call("x", { node: "vendor.frobnicate" }))).toMatchObject({ title: "Running the “Frobnicate” step" });
     expect(automationStudioActivityToolCall(call("x", {}))).toMatchObject({ title: "Running a step" });
     expect(automationStudioActivityToolCall(call("x", {}, "vendor.recall_notes"))).toMatchObject({ title: "Using “Recall notes”" });
-    expect(automationStudioActivityToolCall(call("x", {}, "core.flow_draft"))).toMatchObject({ phase: "building", title: "Updating the draft Flow" });
+    expect(automationStudioActivityToolCall(call("x", {}, "core.flow_draft"))).toMatchObject({ phase: "building", title: "Changing the Flow" });
   });
 
   it("says what Core's own look-ups read (t193: they read Working on the page)", () => {

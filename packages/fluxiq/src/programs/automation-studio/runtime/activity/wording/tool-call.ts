@@ -67,7 +67,7 @@ export function automationStudioActivityToolCall(call: { callId: string; toolId:
   node?: string;
 } {
   if (call.toolId === AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID) {
-    return { phase: "building", kind: "tool", title: "Updating the draft Flow", label: "Updating the draft Flow", dryRun: false };
+    return { phase: "building", kind: "tool", title: "Changing the Flow", label: "Changing the Flow", dryRun: false };
   }
   const own = automationStudioActivityCoreTool(call);
   if (own) return { phase: "exploring", kind: "tool", title: own, label: own, dryRun: false };

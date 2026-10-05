@@ -85,8 +85,25 @@ import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE, type Autom
  * `undefined` is the only way past it: either the draft replayed clean, or it
  * is not a draft this gate applies to. The other two each end or interrupt
  * the completion the loop was about to accept.
+ *
+ * A refusal also carries `steps`, the positions it names, beside its codes
+ * and not among them (not enumerable), so the build trace and the chat can say
+ * which steps stood in the way (`../evidence-loop/completion-attempt.ts`) while
+ * a caller comparing refusals by their codes reads them as before. Live run
+ * `run-musp39u8-9ac026ab` (R3c) was refused `full_run_required` three times and
+ * neither core.log nor the chat said so.
  */
-export type AutomationStudioFlowDraftDryRunRefusal = "cancelled" | { issueCodes: readonly string[] };
+export type AutomationStudioFlowDraftDryRunRefusal = "cancelled" | { issueCodes: readonly string[]; readonly steps?: readonly number[] };
+
+/** A refusal of `issueCodes`, naming `steps` beside them (see the type). */
+function refusal(issueCodes: readonly string[], steps: readonly number[]): { issueCodes: readonly string[]; readonly steps?: readonly number[] } {
+  return Object.defineProperty({ issueCodes }, "steps", { value: Object.freeze([...new Set(steps)]), enumerable: false });
+}
+
+/** The steps a refused replay names: those that did not replay. */
+function refusedSteps(verdict: AutomationStudioFlowDraftDryRun): number[] {
+  return verdict.outcomes.filter((outcome) => outcome.status !== "replayed").map((outcome) => outcome.step);
+}
 
 /** What one step's replay answered: its evidence, as the domain gave it; a pass of a repeat says which, of how many. */
 export type AutomationStudioFlowDraftTestObservation = AutomationStudioFlowDraftReplayObservation;
@@ -265,7 +282,7 @@ export function automationStudioFlowDraftDryRunGate(
     const feedback = automationStudioFlowDraftFullRunRequiredFeedback(steps);
     input.accountEvidence(feedback);
     input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.unrun.${unrunRefusals}`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
-    return { issueCodes: [AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE] };
+    return refusal([AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE], steps.map((step) => step.position));
   };
   return async () => {
     if (!input.enabled) return undefined;
@@ -308,7 +325,7 @@ export function automationStudioFlowDraftDryRunGate(
       const feedback = { ...automationStudioFlowDraftDryRunFeedback(refused.verdict, asked, input.steps), unchanged: unchangedLine(input.steps, refused.verdict, "not_replayed") };
       input.accountEvidence(feedback);
       input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}.again`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
-      return { issueCodes: automationStudioFlowDraftDryRunIssueCodes(refused.verdict) };
+      return refusal(automationStudioFlowDraftDryRunIssueCodes(refused.verdict), refusedSteps(refused.verdict));
     }
     attempts += 1;
     const lastingIds = await lastingActs();
@@ -372,7 +389,7 @@ export function automationStudioFlowDraftDryRunGate(
     }
     input.accountEvidence(feedback);
     input.showEvidence({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}`, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, value: feedback });
-    return { issueCodes: automationStudioFlowDraftDryRunIssueCodes(replay.verdict) };
+    return refusal(automationStudioFlowDraftDryRunIssueCodes(replay.verdict), refusedSteps(replay.verdict));
   };
 }
 

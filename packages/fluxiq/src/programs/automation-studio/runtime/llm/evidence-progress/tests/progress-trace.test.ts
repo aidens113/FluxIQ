@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioLlmEvidenceLoopProgressTrace } from "../index.ts";
 import { AutomationStudioLlmUnusableDecisionError } from "../../unusable-decision.ts";
+import { automationStudioLlmEvidenceCompletionAttempt } from "../../evidence-loop/index.ts";
 
 const SECRET_PAGE_TEXT = "Kettle 1.7L stainless, basket total 42.99";
 
@@ -102,5 +103,26 @@ describe("the evidence loop's progress trace", () => {
     expect(shown).toContain("decide end iteration=5 ms=N kind=complete acts=a1>d7,->7");
     expect(shown.at(-1)).toBe("completion check ok=false issues=bootstrap.instructed_act_missing missing=a1:act_needs_repeat");
     expect(lines.join(" ")).not.toContain("Kettle");
+  });
+
+  // R3c, live run `run-musp39u8-9ac026ab`: steps 0279, 0290 and 0291 were
+  // refused `llm_evidence_loop.full_run_required` by the test after the check
+  // passed, and core.log printed "completion check ok=true" for each and
+  // nothing for the refusal. The refusal is its own line, and is passed on.
+  it("says a completion the test refused after the check passed, by its codes and steps, and passes it on", async () => {
+    const lines: string[] = [];
+    const heard: unknown[] = [];
+    const checkCompletion = Object.assign(async (_result: unknown, _context: unknown) => ({ ok: true }), { testRefused: (refused: unknown) => { heard.push(refused); } });
+    const traced = automationStudioLlmEvidenceLoopProgressTrace({ ...loopInput(), checkCompletion }, { FLUXIQ_BUILD_PROGRESS_TRACE: "1" }, (line) => lines.push(line));
+    await automationStudioLlmEvidenceCompletionAttempt({
+      result: {}, steps: [], checkCompletion: traced.checkCompletion as never,
+      dryRun: async () => Object.defineProperty({ issueCodes: ["llm_evidence_loop.full_run_required"] }, "steps", { value: [1, 7], enumerable: false })
+    });
+    const shown = lines.map((line) => line.replace(/^\[FluxIQ build-trace\] \S+ /u, ""));
+    expect(shown.slice(-2)).toEqual([
+      "completion check ok=true issues=-",
+      "completion refused by=test issues=llm_evidence_loop.full_run_required steps=1,7"
+    ]);
+    expect(heard).toEqual([{ issueCodes: ["llm_evidence_loop.full_run_required"], steps: [1, 7] }]);
   });
 });

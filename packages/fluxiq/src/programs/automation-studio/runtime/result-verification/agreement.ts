@@ -60,6 +60,7 @@
 // Pure: no call is made here, and nothing is read but the two verdicts.
 
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
+import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./verdict.ts";
 
 /** What one call that judged `does_not_answer` said. */
@@ -101,7 +102,7 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
   if (first.verdict === "answers") {
     // Only a `no` contradicts a confirmed `yes`; a second call that said nothing leaves it standing.
     if (second.verdict !== "does_not_answer") return { ...first, verdicts, calls: 2 };
-    return unsettled(first, second, "model_disagreed", codes.disagree, "This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. Neither answer counts for more than the other, so the result is not confirmed, and the run is not marked as failed for it.", verdicts);
+    return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts);
   }
   if (first.verdict === "does_not_answer" && second.verdict === "does_not_answer") {
     // The first call's `repair` stands, and the second call's is not merged in.
@@ -122,9 +123,9 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
     };
   }
   if (second.verdict === "answers") {
-    return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. Neither answer counts for more than the other, so the result is not confirmed, and the run is not marked as failed for it.`, verdicts);
+    return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was ${said(first)}, the second that it does. ${UNSETTLED.model_disagreed.run}`, verdicts);
   }
-  return unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence, and neither answer was that it does what was asked, nor were both that it does not: the first was ${said(first)}, the second ${said(second)} (${second.code}). That does not show the run went wrong, so the result is not confirmed, and the run is not marked as failed for it.`, verdicts);
+  return unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence, and neither answer was that it does what was asked, nor were both that it does not: the first was ${said(first)}, the second ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts);
 }
 
 /** An answer in Core's own words, as it finishes "the first was ...". */
