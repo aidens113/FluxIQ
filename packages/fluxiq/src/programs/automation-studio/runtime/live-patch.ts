@@ -48,10 +48,19 @@ export type AutomationStudioRuntimePatchPreflight = {
  *   nothing, or no comparison at all. Success is never inferred from the
  *   absence of contradicting evidence, and no validation is recorded.
  * - `not_executed`: why the trial did not run the change.
+ *
+ * `awaitsJudgedRun` (t267) marks the one `unverifiable` case whose evidence is
+ * the judged whole run instead: a target override whose trial's verdict is
+ * `no_evidence` -- its changed node succeeded, no check failed or was unknown,
+ * the trial named where to carry on, and the Flow declared nothing that could
+ * prove it, as a Flow built from an instruction declares nothing. The trial
+ * still proved nothing, so nothing is recorded for it here; the run carries on
+ * through the change, and the judgement of that whole run is what promotes it
+ * or not (`service/runtime-adaptation/judged-promotion.ts`).
  */
 export type AutomationStudioRuntimePatchVerification =
   | { status: "verified"; basis: AutomationStudioChangeVerdictEvidenceKind }
-  | { status: "unverifiable"; reason: "no_expectation_declared" | "expectation_empty" | "evidence_unevaluated" | "changed_node_incomplete" }
+  | { status: "unverifiable"; reason: "no_expectation_declared" | "expectation_empty" | "evidence_unevaluated" | "changed_node_incomplete"; awaitsJudgedRun?: true }
   | { status: "contradicted"; reason: string }
   | { status: "not_executed"; reason: string };
 
@@ -71,6 +80,7 @@ export type AutomationStudioRuntimePatchExecutionResult = {
   executedTrace?: AutomationStudioGraphExecutionTrace;
   /** True only when `verification.status` is `verified`. */
   restoredExpectedState: boolean;
+  /** Whether the run takes the repaired action again: on a `verified` trial, or one that awaits its judged run; never for inserted steps. */
   retryOriginalAction: boolean;
   adaptation?: AutomationStudioFlowAdaptation;
   changeProposal?: AutomationStudioFlowChangeProposal;
@@ -274,9 +284,9 @@ export async function executeAutomationStudioRuntimePatch(requested: AutomationS
     ...(input.expectedComparison ? { expectedComparison: input.expectedComparison } : {}),
     ...(input.verifiesState ? { verifiesState: input.verifiesState } : {})
   });
-  const verification = runtimePatchVerification(trial, input.expectedComparison ?? input.failedAttempt.transitionComparison);
+  const verification = runtimePatchVerification(trial, input.expectedComparison ?? input.failedAttempt.transitionComparison, input.patch);
   const restoredExpectedState = verification.status === "verified";
-  const retryOriginalAction = restoredExpectedState && input.patch.kind !== "temporary_action_sequence";
+  const retryOriginalAction = runtimePatchRetriesOriginalAction(verification, input.patch);
   const adaptation = adaptationFromRuntimePatch(input, trial.savedTrace, verification, trial);
   const changeProposal = restoredExpectedState && requiresChangeProposalForRuntimePatch(input.patch)
     ? changeProposalFromRuntimePatch(input, adaptation)
@@ -313,8 +323,18 @@ function trialOptions(input: AutomationStudioRuntimePatchExecutionInput): Automa
   return Number.isFinite(remaining) && remaining >= 1 ? { ...options, maxSteps: remaining } : undefined;
 }
 
+/**
+ * Whether the run takes the repaired action again: after a trial that proved
+ * the change, or one whose proof is the judged whole run it carries on into.
+ * Never after inserted steps, which ran in the trial and are not taken twice.
+ */
+function runtimePatchRetriesOriginalAction(verification: AutomationStudioRuntimePatchVerification, patch: AutomationStudioRuntimePatch): boolean {
+  const proved = verification.status === "verified" || (verification.status === "unverifiable" && verification.awaitsJudgedRun === true);
+  return proved && patch.kind !== "temporary_action_sequence";
+}
+
 /** The receipt's reading of the verdict. The verdict decided; this only names why. */
-function runtimePatchVerification(trial: AutomationStudioFlowChangeTrialReport, comparison: AutomationStudioTransitionComparison | undefined): AutomationStudioRuntimePatchVerification {
+function runtimePatchVerification(trial: AutomationStudioFlowChangeTrialReport, comparison: AutomationStudioTransitionComparison | undefined, patch: AutomationStudioRuntimePatch): AutomationStudioRuntimePatchVerification {
   const { verdict } = trial;
   const [basis] = verdict.basis;
   if (verdict.outcome === "verified" && basis) return { status: "verified", basis };
@@ -326,7 +346,12 @@ function runtimePatchVerification(trial: AutomationStudioFlowChangeTrialReport, 
   if (verdict.checks.some((check) => check.kind === "changed_node_succeeded" && check.status !== "passed")) return { status: "unverifiable", reason: "changed_node_incomplete" };
   const evidenceKinds: readonly string[] = AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS;
   if (verdict.checks.some((check) => check.status === "unknown" && evidenceKinds.includes(check.kind))) return { status: "unverifiable", reason: "evidence_unevaluated" };
-  return { status: "unverifiable", reason: comparison ? "expectation_empty" : "no_expectation_declared" };
+  // The verdict's `no_evidence` already means everything the marker needs: no
+  // check failed or was unknown, a resume point was named, and the changed node
+  // succeeded. Only a target override takes it (t267): its trial ran the same
+  // action on a new target, which the judged whole run can vouch for.
+  const awaitsJudgedRun = patch.kind === "temporary_target_override" && verdict.outcome === "unverifiable" && verdict.notResumableCode === "no_evidence";
+  return { status: "unverifiable", reason: comparison ? "expectation_empty" : "no_expectation_declared", ...(awaitsJudgedRun ? { awaitsJudgedRun: true as const } : {}) };
 }
 
 /**
@@ -344,7 +369,6 @@ export function adaptationFromRuntimePatch(
 ): AutomationStudioFlowAdaptation {
   const now = input.now?.() ?? Date.now();
   const patch = changePatchFromRuntimePatch(input.patch, input.runId);
-  const restoredExpectedState = verification.status === "verified";
   const validationResult = trial
     ? automationStudioChangeValidationResult({ verdict: trial.verdict, runId: input.runId, checkedAt: now, kind: "trial" })
     : validationResultForVerification(input.runId, now, verification, trace);
@@ -382,7 +406,7 @@ export function adaptationFromRuntimePatch(
       ...(trial ? { verdict: structuredClone(trial.verdict) } : {}),
       ...(origin ? { origin: { ...origin } } : {}),
       failureSignature: runtimePatchFailureSignature(input),
-      retryOriginalAction: restoredExpectedState && input.patch.kind !== "temporary_action_sequence"
+      retryOriginalAction: runtimePatchRetriesOriginalAction(verification, input.patch)
     }
   };
 }

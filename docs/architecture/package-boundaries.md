@@ -108,6 +108,44 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): a target override that proved nothing is kept on its judged whole run (`fluxiq`)
+
+A Flow built from an instruction declares nothing a trial can check, so a
+runtime target override whose changed step succeeded there used to end its
+trial `unverifiable` with `notResumableCode: "no_evidence"`, and stop: the run
+did not carry on, and the promotion and apply gates refused an unproved change.
+The judged whole run is now that change's evidence. Nothing changes for a
+change whose trial proved or contradicted it, for any other patch kind, or for
+a trial with a failed or unknown check. Read this entry if you read runtime
+patch receipts or call the promotion gate yourself.
+
+**Added.**
+- `awaitsJudgedRun?: true` on the `unverifiable` member of
+  `AutomationStudioRuntimePatchVerification`. It is set only for a
+  `temporary_target_override` whose trial verdict is `unverifiable` with
+  `notResumableCode: "no_evidence"`. The trial still records no validation
+  result, `restoredExpectedState` stays false and the adaptation stays in
+  `testing`.
+- `awaitsJudgedRun?: boolean` on `AutomationStudioAdaptationPromotionGateInput`.
+  When it is true and the confidence is `unverified` with no `lastFailure`,
+  `decideAutomationStudioAdaptationPromotionGate` skips its trial-evidence
+  refusal; a person's settings (manual mode, the first manual review, `mixed`
+  for a high-risk change) still refuse. `decideAutomationStudioBootstrapApplyGate`
+  is unchanged.
+
+**Changed.**
+- `retryOriginalAction` (on the execution result, its receipt and the
+  adaptation's metadata) is now true for a verification that awaits its judged
+  run, as it is for a `verified` one; never for `temporary_action_sequence`.
+- The run resumes at the trial's resume point for such a receipt, under every
+  other resume-point rule. The promotion decision records
+  `evidence: "judged_whole_run"` when it allows one unattended.
+- When that run ends `succeeded` and is judged to answer, the settle records
+  `{ runId, status: "succeeded", kind: "trial", basis: ["judged_whole_run"] }`
+  in the adaptation's `validationResults` before the apply, so the apply's
+  evidence gate passes. A refuted, unjudged, failed or cancelled run records
+  nothing and leaves the change unapplied as before.
+
 ### Next minor (unreleased): a domain adds its own system instructions (`fluxiq`)
 
 A domain bound through `llmEvidenceRuntime` can now register instructions that
