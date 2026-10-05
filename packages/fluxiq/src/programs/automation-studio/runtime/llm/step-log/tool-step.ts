@@ -6,7 +6,7 @@ import { automationStudioLlmStepLogFolderRefused, automationStudioLlmStepLogOpen
 import { automationStudioLlmStepLogListStep } from "./listing.ts";
 import { automationStudioLlmStepLogNaming } from "./naming.ts";
 import { automationStudioLlmStepLogPageText } from "./page-text.ts";
-import { automationStudioLlmStepLogScope } from "./scope.ts";
+import { automationStudioLlmStepLogScope, type AutomationStudioLlmStepLogPass } from "./scope.ts";
 import { automationStudioLlmStepLogSummary } from "./summary.ts";
 
 /** A tool request as the evidence loop and the Flow test make it: `value` is the input the model wrote. */
@@ -25,7 +25,10 @@ const DRY_RUN_CALL = /^dryrun\./u;
  * a replay's row (`item`) and output values (`outputs`) by field names only,
  * and `meta.json`, last, the timing, the result code and `loopVerdict`: whether
  * Core read the value or refused it, so a refused one is no longer visible only
- * in the next request. `run` itself, untouched, when the step log is off.
+ * in the next request. A call made inside a pass scope also writes `pass`, `of`
+ * and `row` (the pass's row label, never its values) to `meta.json`: live run
+ * `run-musp474o-e0ed7432` left no record of which row a never-judged test's
+ * pass checked. `run` itself, untouched, when the step log is off.
  */
 export function automationStudioLlmStepLogTool<R extends ToolRequest, O>(run: (request: R) => Promise<O>, env: Readonly<Record<string, string | undefined>> = process.env): (request: R) => Promise<O> {
   const directory = automationStudioLlmStepLogDirectory(env);
@@ -88,13 +91,21 @@ function toolStep(directory: string, request: ToolRequest): ((result: unknown, e
         loopVerdict: error !== undefined ? "llm_evidence_loop.tool_failed" : unread ?? "read",
         summary,
         // A replayed read's rows, as each output port's field names only.
-        ...(outputs ? { outputs } : {})
+        ...(outputs ? { outputs } : {}),
+        // A repeat's pass: which, of how many, and its row's screened label (`./scope.ts`).
+        ...passFields(scope?.pass)
       });
       automationStudioLlmStepLogListStep(directory, { step: folder.step, kind, tool: toolId, summary, costUsd: undefined });
     } catch {
       /* best-effort: a step that cannot be finished never fails the tool call */
     }
   };
+}
+
+/** A pass's fields for `meta.json`: none outside a pass, `of` and `row` only where known. */
+function passFields(pass: AutomationStudioLlmStepLogPass | undefined): { pass?: number; of?: number; row?: string } {
+  if (!pass) return {};
+  return { pass: pass.pass, ...(pass.of !== undefined ? { of: pass.of } : {}), ...(pass.row !== undefined ? { row: pass.row } : {}) };
 }
 
 /** The loop's execution result, when the tool answered with one (`../evidence-loop/tool-execution.ts`). */

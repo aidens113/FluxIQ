@@ -14,8 +14,18 @@ export type AutomationStudioLlmStepLogPhase = "explore" | "repair" | "test" | "r
  */
 export type AutomationStudioLlmStepLogPart = "creation" | "reauthor";
 
-/** The part, round and phase every step made inside a scope is written with. */
-export type AutomationStudioLlmStepLogContext = { round?: number; phase?: AutomationStudioLlmStepLogPhase; part?: AutomationStudioLlmStepLogPart };
+/**
+ * Which pass of a repeat a test's call is (t195 w43): its number, the pass
+ * count where the walker knows it before the pass (a list's rows; a repeat
+ * while a check holds does not), and the label of the pass's row where the
+ * list read named its rows, already screened as the judge's are. Never a row's
+ * values. Live run `run-musp474o-e0ed7432` ran a repeated Confirm once per row
+ * and no pass folder said which row it was on.
+ */
+export type AutomationStudioLlmStepLogPass = { pass: number; of?: number; row?: string };
+
+/** The part, round and phase every step made inside a scope is written with, and the pass a test's call is on. */
+export type AutomationStudioLlmStepLogContext = { round?: number; phase?: AutomationStudioLlmStepLogPhase; part?: AutomationStudioLlmStepLogPart; pass?: AutomationStudioLlmStepLogPass };
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -38,7 +48,9 @@ function merged(patch: AutomationStudioLlmStepLogContext): AutomationStudioLlmSt
  * rounds and phases live in `flow-bootstrap/unfinished-build/phases.ts`, which
  * sets a scope around each round and each test; the build's caller sets the
  * part around the whole build with `within`. Both merge into the scope already
- * current. With the step log off, each just calls `fn`.
+ * current. The test's walker sets `pass` around each call of a repeat's pass,
+ * so the tool step writes which pass and row it was. With the step log off,
+ * each just calls `fn`.
  */
 export const automationStudioLlmStepLogScope = {
   /** `fn` under this round and phase, keeping the current part. */
@@ -50,6 +62,11 @@ export const automationStudioLlmStepLogScope = {
   within<T>(patch: { part?: AutomationStudioLlmStepLogPart; phase?: AutomationStudioLlmStepLogPhase }, fn: () => T, env: Env = process.env): T {
     if (!automationStudioLlmStepLogDirectory(env)) return fn();
     return storage.run(merged({ ...(patch.part !== undefined ? { part: patch.part } : {}), ...(patch.phase !== undefined ? { phase: patch.phase } : {}) }), fn);
+  },
+  /** `fn` as one pass of a repeat (`../node-tools/replay-span.ts`): only the calls made inside it carry the pass. */
+  pass<T>(pass: AutomationStudioLlmStepLogPass, fn: () => T, env: Env = process.env): T {
+    if (!automationStudioLlmStepLogDirectory(env)) return fn();
+    return storage.run({ ...merged({}), pass: { ...pass } }, fn);
   },
   current(): AutomationStudioLlmStepLogContext | undefined {
     return storage.getStore();
