@@ -2,7 +2,7 @@
 // check found the accepted Flow cannot do, and each observation without the
 // domain's view. The completion check is the real one; the provider is scripted
 // and only captures what it would have been sent.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
 import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
@@ -269,3 +269,25 @@ function passed(signature: string): AutomationStudioFlowDraftTestReport {
     signature
   };
 }
+
+// t174-w116 (debug `run-musq0b1m-0472cfa0` R3): the judges were in no `[FluxIQ build-trace]` line.
+describe("a build's judge, traced", () => {
+  it("writes a build-trace line as each judgement starts and ends, with its verdict and calls", async () => {
+    const { provider } = scripted();
+    const judge = automationStudioFlowBootstrapBuildJudge({ provider, instructions: [instruction], projectId: "project.1", flowId: "flow.1", instructionText: ASKS_FOR_A_TABLE, plan: () => undefined });
+    const saved = process.env.FLUXIQ_BUILD_PROGRESS_TRACE;
+    const lines: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((line: unknown) => { lines.push(String(line)); });
+    process.env.FLUXIQ_BUILD_PROGRESS_TRACE = "1";
+    try {
+      judge.roundStarted();
+      await judge.judge({ round: 1, loop: { ok: true, result: { summary: "Read the price" }, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
+    } finally {
+      log.mockRestore();
+      if (saved === undefined) delete process.env.FLUXIQ_BUILD_PROGRESS_TRACE;
+      else process.env.FLUXIQ_BUILD_PROGRESS_TRACE = saved;
+    }
+    const traced = lines.filter((line) => line.startsWith("[FluxIQ build-trace]")).map((line) => line.replace(/^\[FluxIQ build-trace\] \S+ /u, ""));
+    expect(traced).toEqual(["judge start", expect.stringMatching(/^judge end ms=\d+ verdict=\w+ calls=\d+ tested=0$/u)]);
+  });
+});

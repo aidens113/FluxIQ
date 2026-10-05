@@ -343,7 +343,7 @@ export class AutomationStudioConversations {
     const { costUsd, ...reading } = interpretation;
     const cost = costUsd === undefined ? {} : { interpretationCostUsd: costUsd };
     try {
-      const written = await respondToAutomationStudioConversationTurn({ host: this, projectId: input.projectId, conversationId: input.conversationId, interpretation, flows: input.flows });
+      const written = await respondToAutomationStudioConversationTurn({ host: this, projectId: input.projectId, conversationId: input.conversationId, interpretation, flows: input.flows, pageUrl: onScreen.pageUrl ?? null });
       return { turn, response: { ...reading, ...written }, problem: null, ...cost };
     } catch (error) {
       // The person's turn is stored and the decision was made; only writing

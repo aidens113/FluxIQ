@@ -66,9 +66,9 @@ import { automationStudioFlowBootstrapStepsNotRunInThisBuild } from "./not-run.t
 /**
  * What the caller's test answers: the loop's dry-run gate, over the steps it is
  * given. `judged` is set for a test the build's judge will read next -- the Flow
- * a round left when the judging reserve stopped it (`./reserve-judging.ts`) --
- * so the caller hands what the test observed to its judge; absent, it is the
- * checklist's test alone.
+ * a round left when the judging reserve stopped it, or when it stopped short of
+ * a completion (`./reserve-judging.ts`) -- so the caller hands what the test
+ * observed to its judge; absent, it is the checklist's test alone.
  */
 export type AutomationStudioFlowBootstrapUnfinishedTest = (steps: AutomationStudioFlowDraftStep[], options?: { judged: true }) => Promise<"cancelled" | "evidence_limit" | { issueCodes: readonly string[] } | undefined>;
 
@@ -198,9 +198,10 @@ export function automationStudioFlowBootstrapYesNotAboutThisFlow(verdict: Extrac
 
 /**
  * A tested judgement with the judge's account of that test added: what a round
- * the judging reserve stopped ends with when its Flow was judged and not found
- * to do what was asked (`./reserve-judging.ts`). Everything else -- what
- * stopped it, what the test found -- stays the test's.
+ * the judging reserve stopped, or one that stopped short of a completion, is
+ * left with when its Flow was judged and not found to do what was asked
+ * (`./reserve-judging.ts`). Everything else -- what stopped it, what the test
+ * found -- stays the test's.
  */
 export function automationStudioFlowBootstrapWithJudgeAccount(judgement: AutomationStudioFlowBootstrapJudgement, verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>): AutomationStudioFlowBootstrapJudgement {
   return { ...judgement, judge: judgedWrong(verdict) };
@@ -214,7 +215,9 @@ function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, 
       verdict: verdict.verdict,
       findings: verdict.why ? [verdict.why] : [],
       ...(verdict.untestedCarried?.length ? { untestedCarried: [...verdict.untestedCarried] } : {}),
-      ...(reading ? { unconfirmedReading: reading } : {})
+      ...(reading ? { unconfirmedReading: reading } : {}),
+      // Which pair it was -- one call said yes -- never its words: what a repair after a `no` is measured by (`./progress.ts`).
+      ...(verdict.verdict === "unknown" && verdict.oneCallSaidYes === true ? { oneCallSaidYes: true as const } : {})
     };
   }
   return {

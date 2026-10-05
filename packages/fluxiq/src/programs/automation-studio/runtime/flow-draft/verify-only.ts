@@ -50,12 +50,17 @@
 // `run-murwcaj0-40e56557` R3 and `run-murwd8le-79e735a8` Cause 3). The step
 // that confirmed a friend request, act a1, declared `consequences: []`, so
 // every test pressed Confirm again on the person's real requests; an Add to
-// cart did the same to a cart. The second witness is the instruction's own
-// read: a changing step claiming an act it reads as lasting is checked
-// (`lastingActs`, t174-w83, below). Lane D first checked every step carrying
-// any act; merged with t174-w83 (2026-10-03) it keeps the read's narrower set,
-// because a choice (`a1.colour`) or an act that lasts nothing ("open saved
-// items") is what the steps after it stand on and must run again.
+// cart did the same to a cart. The second witness is the instruction itself:
+// a changing step claiming an act it asks to last is checked (`lastingActs`,
+// t174-w83, below). An add, save, claim, move or submit lasts by its kind; a
+// setting or an open lasts when the instruction's read quotes it, or when the
+// read answered that act with a class or gave it no answer
+// (`run-musp4h2f-72e8ed99`, where two split adds the read quoted as one
+// sentence were pressed again until the cart held 12 items; t174-w107). Lane D
+// first checked every step carrying any act; merged with t174-w83 (2026-10-03)
+// it keeps this narrower set, because a choice (`a1.colour`) or an act that
+// lasts nothing ("open saved items") is what the steps after it stand on and
+// must run again.
 //
 // **A rerun of a done act is a check too** (the same run, R7). The repair round
 // reran that step with Tom's Confirm, a request the instruction said to leave
@@ -148,8 +153,12 @@ const NONE = "none";
  * kept an Add to cart that declared `consequences: []`, and both of the
  * build's tests pressed it again on the person's cart (Cause 3). So a caller
  * that has read the person's instruction passes `lastingActs`: the ids of the
- * instruction's acts (`a1`, `a2` ...) that the read says ask for something
- * lasting (`../flow-bootstrap/action-permissions.ts`, `instructedLastingActs`).
+ * instruction's acts (`a1`, `a2` ...) that ask for something lasting -- an
+ * add, save, claim, move or submit by its kind; any act the read quotes, or
+ * answers with a class; and any act the read gave no answer for, lasting until
+ * shown otherwise (t174-w107, run `run-musp8nz1-dbd3905a` Cause 5, whose read
+ * named the cart and not the coupon)
+ * (`../flow-bootstrap/action-permissions.ts`, `instructedLastingActs`).
  * A changing step that claims one of them is checked whatever it declared.
  * Only an act's own id counts. A choice of it (`a1.colour`, `a1.quantity`) is
  * a selection the act's own step stands on, and verifying it would leave that
@@ -159,7 +168,7 @@ const NONE = "none";
 export function automationStudioFlowDraftStepReplayMode(step: AutomationStudioFlowDraftStep, lastingActs?: ReadonlySet<string>): AutomationStudioFlowDraftReplayMode {
   if (step.effect !== "mutate") return "replay";
   const declared = step.ranWith && "consequences" in step.ranWith ? step.ranWith.consequences : step.input.consequences;
-  if (declaresLasting(declared)) return "verify";
+  if (automationStudioFlowDraftDeclaresLasting(declared)) return "verify";
   return lastingActs?.size && step.acts?.some((act) => lastingActs.has(act)) ? "verify" : "replay";
 }
 
@@ -182,9 +191,11 @@ export function automationStudioFlowDraftStepActDone(step: AutomationStudioFlowD
  * Absent is no declaration, and is not lasting: that is an older caller. A
  * list or a comma string is lasting when one word in it is not none. Any other
  * shape is not a statement of "nothing", so it is read as lasting: a dry run
- * that cannot tell whether a step lasts does not repeat it.
+ * that cannot tell whether a step lasts does not repeat it. The build's gate
+ * reads a call's declaration the same way to decide whether the instruction's
+ * read must be made before the call runs (`../flow-bootstrap/action-permissions.ts`).
  */
-function declaresLasting(declared: JsonValue | undefined): boolean {
+export function automationStudioFlowDraftDeclaresLasting(declared: JsonValue | undefined): boolean {
   if (declared === undefined) return false;
   const words = Array.isArray(declared) ? declared : typeof declared === "string" ? declared.split(",") : undefined;
   if (!words) return true;

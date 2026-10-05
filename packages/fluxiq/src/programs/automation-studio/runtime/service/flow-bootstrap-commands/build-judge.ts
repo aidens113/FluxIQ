@@ -42,7 +42,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioFlowBootstrapBuildPhasesInput, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
-import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftTestReport, AutomationStudioLlmProvider } from "../../llm/index.ts";
+import { automationStudioLlmBuildTrace, type AutomationStudioFlowDraftDryRunGateInput, type AutomationStudioFlowDraftTestReport, type AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioBuildTestJudge, automationStudioBuildTestResultSummary, type AutomationStudioBuildTestNote } from "../../result-verification/index.ts";
 import { automationStudioEndViewLook, type AutomationStudioEndViewLook } from "../end-view/index.ts";
 
@@ -126,7 +126,8 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
     judge: async ({ loop, budget }) => {
       // The test this verdict is about, read once: the round's own, never an earlier round's.
       const judgedTest = lastTest;
-      const verdict = counted(await ask({
+      // Each judgement is a `[FluxIQ build-trace]` start and end (or throw) line (t174-w116, debug `run-musq0b1m-0472cfa0` R3).
+      const verdict = counted(await automationStudioLlmBuildTrace.timed("judge", () => ask({
         summary: automationStudioBuildTestResultSummary({
           steps: loop.steps, report: judgedTest, nodes: planNodes(input.plan()), instructionText: input.instructionText,
           result: loop.result, startLocation: input.startLocation, arrival: input.arrival, deniedEvidenceKeys: input.deniedEvidenceKeys,
@@ -135,7 +136,7 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
           ...(judgedTest?.endView ? { endView: judgedTest.endView } : {})
         }),
         budget
-      }));
+      }), (judged) => `verdict=${judged.verdict} calls=${judged.spent.calls} tested=${judgedTest ? 1 : 0}`));
       return judgedTest ? { ...verdict, flowSignature: judgedTest.signature } : verdict;
     },
     calls: () => calls

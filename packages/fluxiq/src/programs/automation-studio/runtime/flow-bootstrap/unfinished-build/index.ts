@@ -6,6 +6,8 @@
 // said as exactly that (user, 2026-09-30; audit A3, cause 1; t211; t195-w37).
 export * from "./budget-exhausted.ts";
 export * from "./contracts.ts";
+export * from "./ending-fit.ts";
+export * from "./finishing-verdict.ts";
 export * from "./judgement.ts";
 export * from "./kept-said.ts";
 export * from "./not-doable.ts";

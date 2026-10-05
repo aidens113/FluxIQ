@@ -28,6 +28,21 @@
 // `judged_after_unjudged`. Its verdict can only be `no` here; a yes about the
 // Flow as it stands finishes the build.
 //
+// **A judge that stopped refuting the Flow progressed (t193 round 1003).** A
+// `no` is two judge calls agreeing the test does not do what was asked
+// (`../../result-verification/agreement.ts`). A repair whose pair then split
+// -- one call said it does (`model_disagreed`, so `unknown` with
+// `oneCallSaidYes`) -- got further: `judge_no_longer_refutes`. Live run
+// `run-musp4h2f-72e8ed99` ended not finished on such a repair, a Flow the
+// second call accepted, because no measure covered it. It is measured, not
+// claimed: the pair is what the judge's two calls returned, kept as one flag,
+// never their words. A `no` then a call that said nothing
+// (`model_unconfirmed`) is not it: no call said the Flow is right. A judge
+// alternating no, split, no, split reads as progress each round (the split
+// after a `no` by this measure, the `no` after a split by
+// `judged_after_unjudged`); what bounds that is the purse every round must be
+// funded from, and the live-round backstop (`./phases.ts`), never this file.
+//
 // **A round that could not be measured (t194-w70).** A Flow holding steps
 // carried from an earlier Flow that never ran in this build is not run from its
 // start (`./judgement.ts`, `notRunInThisBuild`), so none of the measures above
@@ -49,6 +64,7 @@ export function automationStudioFlowBootstrapJudgementProgress(before: Automatio
   if (!before.judge && !after.judge && workingSteps(after) > workingSteps(before)) moved.push("more_working_steps");
   if (!before.judge && after.judge) moved.push("finished_and_judged");
   if (before.judge && after.judge && before.judge.verdict !== "no" && after.judge.verdict === "no") moved.push("judged_after_unjudged");
+  if (before.judge?.verdict === "no" && after.judge?.verdict === "unknown" && after.judge.oneCallSaidYes === true) moved.push("judge_no_longer_refutes");
   if (before.judge?.verdict === "no" && after.judge?.verdict === "no") {
     const now = new Set(after.judge.findings);
     if (before.judge.findings.some((finding) => !now.has(finding))) moved.push("judge_findings_resolved");

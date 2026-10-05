@@ -3,10 +3,11 @@ import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../../../flow-draft/index.
 import {
   automationStudioActivityCompletionRefusal,
   automationStudioActivityDecision,
-  automationStudioActivityDraftEditRefused,
+  automationStudioActivityDraftEditCard,
   automationStudioActivityReasonText,
   automationStudioActivityRecoveryChoice
 } from "../index.ts";
+import { activityActionOf } from "../../../../../../ui/index.ts";
 
 const QUOTE = { tagName: "button", role: "button", accessibleName: "Get a free quote" };
 
@@ -23,6 +24,18 @@ describe("automationStudioActivityReasonText", () => {
     expect(automationStudioActivityReasonText("word ".repeat(100), 20)!.length).toBeLessThanOrEqual(20);
   });
 
+  // U4, live run `run-musp39u8-9ac026ab` (moments 6, 33, 35): the person's chat
+  // read "extraction.4", "extract_list" and "(step 7)" from the model's summary.
+  it("screens handles, internal node ids and draft step references, and keeps the rest of the words", () => {
+    expect(automationStudioActivityReasonText("Reading page 3's results with the detected list `extraction.4` (t2134), so the draft's extract_list pages to the end."))
+      .toBe("Reading page 3's results with the detected list, so the draft's extract list pages to the end.");
+    expect(automationStudioActivityReasonText("Rerunning the search step (step 7) with web.output.dom-extract, then press t12."))
+      .toBe("Rerunning the search step with dom extract, then press.");
+    // An address keeps its own words, and so does a sentence with no internal names.
+    expect(automationStudioActivityReasonText("Open https://shop.example/search_results?q=a_b to compare 1.7L kettles in e2e order."))
+      .toBe("Open https://shop.example/search_results?q=a_b to compare 1.7L kettles in e2e order.");
+  });
+
   it("says nothing for an empty or non-string reason", () => {
     expect(automationStudioActivityReasonText("   ")).toBeUndefined();
     expect(automationStudioActivityReasonText(undefined)).toBeUndefined();
@@ -37,9 +50,9 @@ describe("automationStudioActivityDecision", () => {
   });
 
   it("names a draft edit building and a completion verifying", () => {
-    expect(automationStudioActivityDecision({ kind: "amend_draft", amendments: [] })).toEqual({ phase: "building", title: "Updating the draft Flow" });
-    expect(automationStudioActivityDecision({ kind: "tool_call", callId: "c2", toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, input: {} })).toEqual({ phase: "building", title: "Updating the draft Flow" });
-    expect(automationStudioActivityDecision({ kind: "complete", result: {} })).toEqual({ phase: "verifying", title: "Checking the Flow is finished" });
+    expect(automationStudioActivityDecision({ kind: "amend_draft", amendments: [] })).toEqual({ phase: "building", title: "Changing the Flow" });
+    expect(automationStudioActivityDecision({ kind: "tool_call", callId: "c2", toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, input: {} })).toEqual({ phase: "building", title: "Changing the Flow" });
+    expect(automationStudioActivityDecision({ kind: "complete", result: {} })).toEqual({ phase: "verifying", title: "Checking whether the Flow is finished" });
   });
 
   it("names nothing it cannot read", () => {
@@ -59,6 +72,17 @@ describe("automationStudioActivityCompletionRefusal", () => {
     expect(text).not.toMatch(/[a-z]+\.[a-z_]+/u);
   });
 
+  // R3c, live run `run-musp39u8-9ac026ab`: a completion the test refused after
+  // the check passed read as finishing. It is said as sent back, and why.
+  it("says a completion the test refused as sent back, with how many steps, never a code", () => {
+    expect(automationStudioActivityCompletionRefusal({ issueCodes: ["llm_evidence_loop.full_run_required"], steps: [1, 3, 7] }))
+      .toBe("Sent back because some of its steps haven't run in this build, so the whole Flow can't be tested from its start yet. 3 steps need fixing.");
+    expect(automationStudioActivityCompletionRefusal({ issueCodes: ["llm_evidence_loop.full_run_required"], steps: [2] }))
+      .toBe("Sent back because some of its steps haven't run in this build, so the whole Flow can't be tested from its start yet. One step needs fixing.");
+    expect(automationStudioActivityCompletionRefusal({ issueCodes: ["llm_evidence_loop.dry_run_refused", "core.replay.failed"], steps: [4] }))
+      .toBe("Sent back because its test run from the start didn't go through. One step needs fixing.");
+  });
+
   it("falls back to plain words when the codes name no known reason", () => {
     expect(automationStudioActivityCompletionRefusal({ issueCodes: ["core.plan.empty"], feedback: {} })).toBe("It needs changes before it can be used, and it goes back to be fixed. One thing needs fixing.");
   });
@@ -76,11 +100,21 @@ describe("automationStudioActivityRecoveryChoice", () => {
 });
 
 // t252: a rerun refused because the step holds a binding says why in a person's words.
-describe("automationStudioActivityDraftEditRefused for a bound step", () => {
-  it("says the step varies and runs only in the Flow, never the code", () => {
-    const card = automationStudioActivityDraftEditRefused({ reasons: ["rerun_holds_binding"] }, undefined);
-    expect(card.title).toBe("Didn't run the step again");
-    expect(card.text).not.toContain("rerun_holds_binding");
-    expect(card.text).toMatch(/only when the Flow runs/u);
+// t193 1003 (C13): it is a card, "Edit the Flow · run the step again", saying it was not done.
+describe("automationStudioActivityDraftEditCard for a bound step", () => {
+  it("says the step varies and runs only in the Flow, on a card, never the code", () => {
+    const row = automationStudioActivityDraftEditCard({ kind: "refused", reasons: ["rerun_holds_binding"], applied: 0 });
+    expect(row).toMatchObject({ phase: "building", label: "Running the step again — not done", detail: { kind: "tool", title: "Running the step again", status: "failed", ref: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } });
+    const action = activityActionOf(row);
+    expect(action).toMatchObject({ kind: "draft", target: "run the step again", outcome: "failed" });
+    expect(action?.refused?.because).toMatch(/only when the Flow runs/u);
+    expect(action?.refused?.because).not.toContain("rerun_holds_binding");
+  });
+
+  it("carries only codes and a count on its record, and leaves out a reason it has no words for", () => {
+    expect(automationStudioActivityDraftEditCard({ kind: "refused", reasons: ["already_in_flow", "already_in_flow", "invented"], applied: 0 }).detail?.text)
+      .toBe("Result: llm_evidence_loop.draft_amendments_refused · Reason: already_in_flow");
+    expect(automationStudioActivityDraftEditCard({ kind: "repeated", outcome: "a sentence, not a code" }).detail?.text).toBe("Result: llm_evidence_loop.repeat_refused");
+    expect(automationStudioActivityDraftEditCard({ kind: "landed" }).detail).not.toHaveProperty("text");
   });
 });

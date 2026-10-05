@@ -12,7 +12,7 @@ import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
 import { buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
-import { automationStudioConversationPageShown } from "./page.ts";
+import { automationStudioConversationSiteName } from "../site-name.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
 
 const TITLE = "Build the Flow by exploring the site";
@@ -33,6 +33,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
     consequences: ["modify_existing"],
     reauthorizes: false
   },
+  announce: ({ flowName, place }) => `I'll work out ${flowName ? `the steps for "${flowName}"` : "the Flow's steps"} by trying them on ${place}, and say here when they are in.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const flowId = automationStudioConversationCommandText(args, "flowId");
@@ -49,12 +50,13 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "create" });
     if (!built.ok) return progress.failed(built.cause, { ending: built.ending });
     progress.carry({ adaptationId: built.adaptationId });
-    const where = automationStudioConversationPageShown(context.startLocation) ?? "the site";
-    progress.landed(`explored ${where} and worked out the steps`);
+    const where = automationStudioConversationSiteName(context.startLocation);
+    progress.landed(`tried the steps on ${where} and worked out which ones work`);
     if (built.awaitingPermission) return progress.failed("the build finished still waiting for your permission for one of its steps, so its steps were not put into the Flow");
 
     const applied = await applyAutomationStudioConversationAdaptation(context, { flowId, adaptationId: built.adaptationId });
     if (!applied.ok) return progress.failed(applied.cause);
-    return progress.succeeded(`Explored ${where} and put the steps that worked into the Flow. Say "run it" to try it.`);
+    // Says what is so, never "say run it": a run may already be under way (UI D9).
+    return progress.succeeded(`The Flow's steps are in: I tried them on ${where} and kept the ones that worked.`);
   }
 };

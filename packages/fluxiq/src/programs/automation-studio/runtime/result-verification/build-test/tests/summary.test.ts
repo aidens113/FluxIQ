@@ -10,6 +10,7 @@ import {
   ACCEPT_FRIENDS, FRIENDS, PICKUP_CART, RUN_36_READ, RUN_36_STEPS, RUN_40_CLAIMS, RUN_40_STEPS,
   run36, run36Report, run40, run41Steps
 } from "./live-run-drafts.ts";
+import type { JsonValue } from "../../../../../../core/index.ts";
 import { DENIED, ROW_CONTEXT, SITE, present, replayed, report, verified, web } from "./draft-steps.ts";
 
 const run40Summary = () => automationStudioBuildTestResultSummary({
@@ -181,6 +182,51 @@ describe("screening what the test observed and each step's words", () => {
     const located = { ...summary, buildTest: { ...summary.buildTest!, steps: [steps[0]!, { ...steps[1]!, target: ["[data-testid=\"go\"]"] }] } };
     expect(automationStudioLlmRequestEvidenceRefusal(verificationRequest(deniedKey))).toBe("llm.provider_result_summary_invalid");
     expect(automationStudioLlmRequestEvidenceRefusal(verificationRequest(located))).toBe("llm.provider_result_summary_invalid");
+  });
+});
+
+// Live run `run-musp4h2f-72e8ed99`, lane B: the towels' "+" was replayed and the
+// web domain answered what it changed, but the judge saw step 9 with no
+// observation and answered no for want of one (t193 1003, w3).
+describe("the run-musp4h2f shape: a replayed press that says what it changed", () => {
+  const plus = web(9, "web.output.dom-click", { selector: "#qty-plus", accessibleName: "+" }, SITE);
+  const read = { ...web(3, "web.output.dom-read", { selector: "#list", accessibleName: "Results" }, SITE), effect: "observe" as const, proposes: true };
+  const save = web(10, "web.output.dom-click", { selector: "#save", accessibleName: "Save" }, SITE);
+  const said = { ok: true, code: "core.replay.replayed", said: "the step ran again" };
+  const changedAnswer = { ...said, changed: ["t932 \"2\" was \"1\""] };
+  const stepsOf = (plusEvidence: JsonValue) => automationStudioBuildTestResultSummary({
+    steps: [read, plus, save],
+    report: report(
+      [replayed(read), { ...replayed(plus), resultCode: "core.replay.replayed" }, verified(save)],
+      [[read, { rows: [{ name: "Towels" }] }], [plus, plusEvidence], [save, { answer: "verified" }]]
+    ),
+    nodes: [], instructionText: PICKUP_CART, startLocation: SITE, deniedEvidenceKeys: DENIED
+  }).buildTest!.steps;
+
+  it("carries what the press changed, without the words that only restate its outcome", () => {
+    expect(stepsOf(changedAnswer)[1]?.observed).toEqual({ changed: ["t932 \"2\" was \"1\""] });
+  });
+
+  it("carries what the page answered", () => {
+    expect(stepsOf({ ...said, notice: "Quantity updated" })[1]?.observed).toEqual({ notice: "Quantity updated" });
+  });
+
+  it("sends nothing when the answer only restates its outcome", () => {
+    expect(stepsOf(said)[1]?.observed).toBeUndefined();
+  });
+
+  it("keeps a code the outcome did not give", () => {
+    expect(stepsOf({ ...changedAnswer, code: "web.replay.retargeted" })[1]?.observed).toEqual({ code: "web.replay.retargeted", changed: ["t932 \"2\" was \"1\""] });
+  });
+
+  it("sends nothing of an answer that says neither what changed nor what the page answered", () => {
+    expect(stepsOf({ ...said, status: "succeeded", control: "+" })[1]?.observed).toBeUndefined();
+  });
+
+  it("leaves a read and a checked step as they were", () => {
+    const steps = stepsOf(changedAnswer);
+    expect(steps[0]?.observed).toEqual({ rows: [{ name: "Towels" }] });
+    expect(steps[2]).toMatchObject({ withheld: true, observed: { answer: "verified" } });
   });
 });
 

@@ -11,6 +11,7 @@ export type { AutomationStudioActivityEmission, AutomationStudioActivityFrame, A
 export { automationStudioActivityHub } from "./default-hub.ts";
 export { emitAutomationStudioActivity } from "./emit.ts";
 export { AutomationStudioActivityHub } from "./hub.ts";
+export { automationStudioActivityInBuild } from "./in-build.ts";
 export { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "./limits.ts";
 export { observeAutomationStudioEvidenceLoop } from "./observer.ts";
 export { withAutomationStudioRunActivity } from "./run.ts";
@@ -21,7 +22,7 @@ export {
   automationStudioActivityAction,
   automationStudioActivityCompletionRefusal,
   automationStudioActivityDecision,
-  automationStudioActivityDraftEditRefused,
+  automationStudioActivityDraftEditCard,
   automationStudioActivityHumanLabel,
   automationStudioActivityReasonText,
   automationStudioActivityRecoveryChoice,

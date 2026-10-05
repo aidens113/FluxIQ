@@ -1,0 +1,87 @@
+// What a failed run's last row says after "Run failed": what came back, why
+// that failed the run, and how the repair that followed ended, in a person's
+// words (U3 of `run-musp39u8-9ac026ab`: the run returned 13 rows, its check
+// judged they did not answer the request, a four-minute repair could not
+// finish, and the person read a bare "Run failed").
+//
+// Read from the run's own record, never from a model's prose: the result
+// check's recorded outcome (`resultVerification`: its verdict, and the
+// observation whose first words are Core's own count, "13 records stored"),
+// the repair's marker (`resultRepair`: the rows each refuted answer had and how
+// the repair ended) and the re-author's code (`resultReauthor`). A run that did
+// not fail at its result check gets no sentence here, and its row still says
+// "Run failed".
+//
+// One sentence, short enough to follow "Run failed: " within a status line's
+// 160 characters, and with no id in it.
+
+type Fields = Readonly<Record<string, unknown>>;
+
+/** The sentence, or undefined when the record says the run did not fail at its result check. */
+export function automationStudioActivityRunEnding(record: Fields | null | undefined): string | undefined {
+  const verification = fields(record?.resultVerification);
+  if (!verification || verification.performed !== true || verification.verdict === "answers" || verification.status === "confirmed") return undefined;
+  const repair = fields(record?.resultRepair);
+  const rows = rowCount(repair, verification);
+  const refuted = verification.verdict === "does_not_answer";
+  const repaired = repairEnding(repair, fields(record?.resultReauthor));
+  return `${judged(rows, refuted)}${repaired ? `, and ${repaired}` : ""}.`;
+}
+
+/** What came back and what the check made of it. */
+function judged(rows: number | undefined, refuted: boolean): string {
+  if (rows === undefined) return refuted ? "The check found its result doesn't answer what you asked" : "The check couldn't confirm its result answers what you asked";
+  if (rows === 0) return "It returned no rows, so it doesn't answer what you asked";
+  const one = rows === 1;
+  const returned = `It returned ${rows} ${one ? "row" : "rows"}`;
+  if (refuted) return `${returned}, but the check found ${one ? "it doesn't" : "they don't"} answer what you asked`;
+  return `${returned}, but the check couldn't confirm ${one ? "it answers" : "they answer"} what you asked`;
+}
+
+/** How a repair of the refuted answer ended; undefined when none was started. */
+function repairEnding(repair: Fields | undefined, reauthor: Fields | undefined): string | undefined {
+  if (!repair || repair.attempted !== true) return undefined;
+  if (repair.phase === "settled") {
+    if (repair.outcome === "rerun_failed") return "the fixed Flow didn't run to the end";
+    if (repair.outcome === "unverified") return "the fixed Flow's answer couldn't be checked";
+    if (repair.outcome === "stopped") {
+      if (repair.stopped === "result_repair.not_converging") return "fixing it kept giving the same answer";
+      const tries = typeof repair.attempts === "number" && Number.isSafeInteger(repair.attempts) && repair.attempts > 1 ? repair.attempts : undefined;
+      return tries ? `${tries} tries at fixing it didn't help` : "fixing it didn't help";
+    }
+  }
+  // Not re-run, or never settled: the re-author did not get as far as a Flow to run again.
+  // Its last build's recorded ending says which limit stopped it, and whether a change was ever tested.
+  const ending = fields(fields(lastOf(reauthor?.attempts))?.ending);
+  const tried = fields(ending?.tried);
+  const before = tried?.tested === "not_tested" ? "before it could test a change" : "before it finished";
+  if (ending?.kind === "budget_exhausted") {
+    if (ending.bound === "rounds") return `the fix used all its rounds ${before}`;
+    if (ending.bound === "cost") return `the fix spent all a repair may spend ${before}`;
+    if (ending.bound === "duration") return `the fix ran out of time ${before}`;
+    return `the fix reached its limit ${before}`;
+  }
+  const code = typeof reauthor?.code === "string" ? reauthor.code : "";
+  if (/deadline|timed_out|timeout/u.test(code)) return `the fix ran out of time ${before}`;
+  if (/cost|spend/u.test(code)) return `the fix spent all a repair may spend ${before}`;
+  if (/budget_exhausted|evidence_budget/u.test(code)) return `the fix reached its limit ${before}`;
+  return "the fix didn't finish";
+}
+
+/** The last entry of a recorded list, or nothing. */
+function lastOf(value: unknown): unknown {
+  return Array.isArray(value) ? value.at(-1) : undefined;
+}
+
+/** The rows the refuted answer had: the repair's own count, else the count the check's observation opens with. */
+function rowCount(repair: Fields | undefined, verification: Fields): number | undefined {
+  const history = Array.isArray(repair?.history) ? repair.history : [];
+  const counted = fields(history.at(-1))?.totalRecordCount;
+  if (typeof counted === "number" && Number.isSafeInteger(counted) && counted >= 0) return counted;
+  const observed = typeof verification.observation === "string" ? /^(\d+) records? stored\b/u.exec(verification.observation)?.[1] : undefined;
+  return observed === undefined ? undefined : Number(observed);
+}
+
+function fields(value: unknown): Fields | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Fields : undefined;
+}

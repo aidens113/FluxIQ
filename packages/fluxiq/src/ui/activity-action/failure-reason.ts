@@ -41,9 +41,18 @@ const REASONS: readonly { words: RegExp; why: string }[] = [
  * read "it wasn't on the page" from its code (`target_unobserved`), when
  * nothing had been looked up at all (t193, `run-muqiojz4-04a7a8fc`, `S/0090`).
  * Generic words of a reason, as `REASONS` holds generic words of a code.
+ *
+ * Such a call was never sent to the page: FluxIQ refused it for what it named.
+ * "Didn't work: it didn't name a control from the page" read as the page
+ * failing the step (U7, live run `run-musp39u8-9ac026ab`, moment 26), so the
+ * words say FluxIQ did not send it, and why.
  */
 const REFUSAL_REASONS: readonly { words: RegExp; why: string }[] = [
-  { words: /_(not_a_handle|malformed_handle|handle_in_wrong_parameter)_/u, why: "it didn't name a control from the page" },
+  // A handle from a page view older than the one the call was checked against:
+  // the control was in plain sight, and "it wasn't on the page" said it was
+  // missing (t174-w111 D17, `run-musq0b1m-0472cfa0`, steps 0063 and 0067).
+  { words: /_(handle_not_in_packet|handle_from_older_view|stale_handle)_/u, why: "FluxIQ was looking at an older view of the page" },
+  { words: /_(not_a_handle|malformed_handle|handle_in_wrong_parameter)_/u, why: "FluxIQ didn't send it, since it named no control from the page" },
   { words: /_(no_longer_on_page)_/u, why: "it was no longer on the page" },
   // What the call was written with, never the page: a press refused for
   // leaving out `consequences` read "it wasn't on the page", from the word
@@ -55,6 +64,22 @@ const REFUSAL_REASONS: readonly { words: RegExp; why: string }[] = [
   // Before `REASONS`, whose `changed` would say the opposite of "nothing changed".
   { words: /_(nothing_changed|unchanged)_/u, why: "nothing on the page changed" }
 ];
+
+/**
+ * Why a step a test of the Flow ran did not hold, by its replay code
+ * (`programs/automation-studio/runtime/llm/node-tools/replay.ts`). It read "it
+ * didn't work the same way again" for all of them, so a card said "Didn't
+ * work: it didn't work the same way again" -- the result twice and no reason
+ * (t174-w111 D21, `run-musq0b1m-0472cfa0`).
+ */
+const REPLAY_REASONS: ReadonlyMap<string, string> = new Map([
+  ["core.replay.failed", "it couldn't run when the test tried it again"],
+  ["core.replay.changed", "it did nothing this time, where it did something before"],
+  ["core.replay.unreproducible", "the page wasn't in the same state when the test got there"],
+  ["core.replay.reset_failed", "the page couldn't be put back to where the Flow starts"]
+]);
+/** Any other replay code that did not hold. */
+const REPLAY_OTHER = "it didn't do the same when the test tried it again";
 
 /** Core's own namespace: its tools read what Core holds, never the page. */
 const CORE_NAMESPACE = "core.";
@@ -100,7 +125,7 @@ export function activityActionFailureReason(resultCode: string, reason?: string)
     const why = reasonFor(REFUSAL_REASONS, `_${said}_`) ?? reasonFor(reasons, `_${said}_`);
     if (why) return why;
   }
-  if (activityActionReplayFailing(code)) return "it didn't work the same way again";
+  if (activityActionReplayFailing(code)) return REPLAY_REASONS.get(code) ?? REPLAY_OTHER;
   const own = CORE_REASONS.get(code);
   if (own) return own;
   const segments = code.split(".").map((segment) => `_${segment.replace(/[\s-]+/gu, "_")}_`);

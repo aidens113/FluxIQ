@@ -26,9 +26,12 @@ describe("activityActionFailureReason", () => {
     ["web.action.throttled", "the page was busy"],
     ["bootstrap.invalid_parameter_value", "the step wasn't accepted"],
     ["llm_evidence_loop.rejected.repeat_without_progress", "it made no progress"],
-    ["core.replay.changed", "it didn't work the same way again"],
-    ["core.replay.unreproducible", "it didn't work the same way again"],
-    ["core.replay.reset_failed", "it didn't work the same way again"]
+    // t174-w111 D21 (run-musq0b1m): "Didn't work: it didn't work the same way again" said the result twice and no reason.
+    ["core.replay.failed", "it couldn't run when the test tried it again"],
+    ["core.replay.changed", "it did nothing this time, where it did something before"],
+    ["core.replay.unreproducible", "the page wasn't in the same state when the test got there"],
+    ["core.replay.reset_failed", "the page couldn't be put back to where the Flow starts"],
+    ["core.replay.something_new", "it didn't do the same when the test tried it again"]
   ])("says %s as %s", (code, why) => {
     expect(activityActionFailureReason(code)).toBe(why);
   });
@@ -52,11 +55,14 @@ describe("activityActionFailureReason", () => {
   });
 });
 
+// U7, live run `run-musp39u8-9ac026ab` (moment 26): "Type · Search Brightaisle
+// -- Didn't work: it didn't name a control from the page" read as the page
+// failing. FluxIQ never sent the call: it named no control from the page.
 describe("activityActionFailureReason: a refusal's own reason (t193)", () => {
   it.each([
-    ["target_not_a_handle", "it didn't name a control from the page"],
-    ["malformed_handle", "it didn't name a control from the page"],
-    ["handle_in_wrong_parameter", "it didn't name a control from the page"],
+    ["target_not_a_handle", "FluxIQ didn't send it, since it named no control from the page"],
+    ["malformed_handle", "FluxIQ didn't send it, since it named no control from the page"],
+    ["handle_in_wrong_parameter", "FluxIQ didn't send it, since it named no control from the page"],
     ["handle_no_longer_on_page", "it was no longer on the page"],
     ["covered_by_layer", "a popup or banner on the page was covering it"],
     ["nothing_changed_while_waiting", "nothing on the page changed"],
@@ -106,5 +112,13 @@ describe("activityActionFailureReason: Core's own codes are no page miss (t194)"
     expect(activityActionFailureReason("core.other.not_found")).toBeNull();
     expect(activityActionFailureReason("core.recall.not_found", "vendor_specific_thing")).toBe("no earlier result goes by that name");
     expect(activityActionFailureReason("web.target.not_found")).toBe("it wasn't on the page");
+  });
+
+  // t174-w111 D17 (run-musq0b1m, steps 0063 and 0067): the model reused handles from an
+  // older page view (`handle_not_in_packet`), and the card said "it wasn't on the page"
+  // beside a 7-in-1 button in plain sight.
+  it("says a handle from an older view of the page as that, not as a thing missing from the page", () => {
+    expect(activityActionFailureReason("web.action.rejected.target_unobserved", "handle_not_in_packet")).toBe("FluxIQ was looking at an older view of the page");
+    expect(activityActionFailureReason("web.action.rejected.target_unobserved")).toBe("it wasn't on the page");
   });
 });

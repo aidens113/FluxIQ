@@ -12,6 +12,7 @@ import {
   type AutomationStudioLlmEvidenceLoopDraftChange,
   type AutomationStudioLlmEvidenceLoopTrace
 } from "../evidence-loop/index.ts";
+import { automationStudioLlmStepLogAnswer } from "../step-log/index.ts";
 import { automationStudioLlmEvidenceRepeatStop } from "./refused-repeat.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext, AutomationStudioLlmEvidenceRerunHeld } from "./types.ts";
 import { automationStudioRerunArgumentNote, type AutomationStudioRerunArgumentMetadata, type AutomationStudioRerunAttempt } from "../rerun-arguments/index.ts";
@@ -132,7 +133,10 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // held to; whenever anything was refused, because an edit that half landed
   // is one the model must still be told about. Where amendments wait for the
   // rerun, the whole decision is told once they are settled, below.
-  if ((refused.length || sameDraftAs !== undefined) && !split.held.length) tell(context, iteration, refusals, amended.applied, sameDraftAs);
+  // `applied` counts a rerun the decision asked for, as the row's draft change
+  // and the history do: step 0061 of `run-musq0b1m-0472cfa0` was told 0 beside
+  // an `appliedCount` of 1 (t174-w116).
+  if ((refused.length || sameDraftAs !== undefined) && !split.held.length) tell(context, iteration, refusals, amended.applied + (rerun.request ? 1 : 0), sameDraftAs);
   if (rerun.retainedRefusals?.length) {
     automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");
     for (const refusal of rerun.retainedRefusals) tellRetained(context, iteration, refusal.retained, { kind: "refused", reason: refusal.reason });
@@ -177,6 +181,11 @@ function tellRetained(context: AutomationStudioLlmEvidenceDecisionHandlerContext
 /**
  * The model is told which of its amendments changed nothing and why, as
  * evidence, before it is asked again; a newer telling replaces the older.
+ * What it is told joins the decision's answer step as `told`
+ * (`../step-log/answer-step.ts`): it is built after the decision's row was
+ * recorded, because it carries the guard's count of that row, so the answer
+ * step written as the row entered the record could hold only the codes
+ * (t174-w108 and t174-w116 R3, `run-musq0b1m-0472cfa0` step 0061).
  */
 function tell(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
@@ -194,4 +203,6 @@ function tell(
   context.accountEvidence(amendmentFeedback);
   automationStudioLlmDecisionContextSupersede(context.evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID);
   context.evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, value: amendmentFeedback });
+  const row = [...context.trace].reverse().find((candidate) => candidate.iteration === iteration && candidate.decision === "amend_draft");
+  if (row) automationStudioLlmStepLogAnswer(row, process.env, amendmentFeedback);
 }

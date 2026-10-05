@@ -3,15 +3,21 @@ import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } from "../../flow-draft/index.ts"
 import type { AutomationStudioActivityCallWords } from "./action.ts";
 import { automationStudioActivityToolCall } from "./tool-call.ts";
 
-const COMPLETE = "Checking the Flow is finished";
+const COMPLETE = "Checking whether the Flow is finished";
 
 /**
  * What a decision the model returned will do, said as the action a person
  * reads, from the decision's own shape: a tool call is the call's action
  * ("Clicking “Get a free quote”", `exploring`), a draft edit is "Updating the
- * draft Flow" (`building`), and a completion is "Checking the Flow is
+ * draft Flow" (`building`), and a completion is "Checking whether the Flow is
  * finished" (`verifying`). Nothing for anything else, so an unreadable
  * decision is not narrated.
+ *
+ * Each says what FluxIQ is about to try, never a result: the model's reason
+ * shown beside it is its own claim, and what came of it is said after, from
+ * Core's answer. A completion read "Checking the Flow is finished -- The
+ * napkin act a3 is already done by step 27", a step written and never run
+ * (t193 1003, C14).
  */
 export function automationStudioActivityDecision(
   decision: unknown,

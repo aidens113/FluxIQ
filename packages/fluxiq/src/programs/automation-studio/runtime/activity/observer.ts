@@ -10,7 +10,9 @@
 // already carries; and, once per decision, the model's own stated reason for
 // it -- the `summary` every decision must carry, kept beside the decision by
 // the caller (`./decision-reason.ts`) and shown whitespace-collapsed, with
-// token-shaped runs hidden, within 240 characters (`./wording/reason-text.ts`).
+// token-shaped runs hidden, within 240 characters, and without the sentences
+// that name an act id or the draft's mechanics, or a line that is only codes
+// (`./wording/reason-text.ts`, t174-w116 D3 and D15).
 // What it never shows: the decision's input values, the draft's amendments,
 // the evidence a tool gathered, or an issue code in a sentence. Ids and result
 // codes go to `detail.ref` and `detail.text` of the tool rows only.
@@ -20,10 +22,10 @@ import { activityActionReplayFailing, activityActionTested, activityActionVerb }
 import type { AutomationStudioLlmEvidenceLoopInput } from "../llm/index.ts";
 import { emitAutomationStudioActivityWaitedOut } from "./ask/index.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
-import { automationStudioActivityDraftEdit } from "./draft-edit.ts";
+import { automationStudioActivityDraftEdit, automationStudioActivityRefusedCall } from "./decision-answer/index.ts";
 import { emitAutomationStudioActivity } from "./emit.ts";
 import { emitAutomationStudioActivityThought } from "./thought.ts";
-import { automationStudioActivityCompletionRefusal, automationStudioActivityDecision, automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "./wording/index.ts";
+import { automationStudioActivityCompletionRefusal, automationStudioActivityDecision, automationStudioActivityReasonText, automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "./wording/index.ts";
 
 type ToolCall = Parameters<AutomationStudioLlmEvidenceLoopInput["executeTool"]>[0];
 
@@ -49,7 +51,9 @@ const REPLAY_PREFIX = "core.replay.";
  * (`activityActionTested`): a step the site remembered, or whose effect was
  * already there, read "didn't work the same way again" (t193), and then a
  * step only checked, or one the Flow passes over, read "done" or "didn't
- * work" (t193 1002-M, C10). `excused` is set only for a replayed step that did
+ * work" (t193 1002-M, C10). A step that did not hold reads "didn't work when
+ * tried again": it said "didn't work the same way again", a result said with
+ * no reason (t174-w111 D21); the card gives the reason. `excused` is set only for a replayed step that did
  * not hold and that the test passes over; `title` is the call's own words,
  * whose opening verb says whether a checked step was pressed or typed.
  */
@@ -59,7 +63,7 @@ function outcomeOf(status: "succeeded" | "failed", resultCode: string | undefine
   if (resultCode.startsWith(REPLAY_PREFIX)) {
     const tested = activityActionTested(resultCode, { excused, kind: activityActionVerb(title.split(" ")[0] ?? "", "gerund")?.kind });
     if (tested) return `${tested.charAt(0).toLowerCase()}${tested.slice(1)}`;
-    return activityActionReplayFailing(resultCode) ? "didn't work the same way again" : "done";
+    return activityActionReplayFailing(resultCode) ? "didn't work when tried again" : "done";
   }
   return /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved/u.test(resultCode) ? "didn't work" : "done";
 }
@@ -103,6 +107,13 @@ function decisionFailed(error: unknown): void {
     : { phase: "thinking", label: `${title} — didn't work`, detail: { kind: "thought", title, status: "failed" } });
 }
 
+/** The call a `tool_call` decision makes, read by shape; nothing for any other decision. */
+function decidedCall(decision: unknown): { callId: string; toolId: string; value?: unknown } | undefined {
+  const record = decision && typeof decision === "object" && !Array.isArray(decision) ? decision as { kind?: unknown; callId?: unknown; toolId?: unknown; input?: unknown } : undefined;
+  if (record?.kind !== "tool_call" || typeof record.toolId !== "string") return undefined;
+  return { callId: typeof record.callId === "string" ? record.callId : "", toolId: record.toolId, value: record.input };
+}
+
 /**
  * One row of a tool call. Its raw record (`detail.text`) is "Result: <code> ·
  * Reason: <reason> · Node: <node>", each part when there is one: the reason is
@@ -131,13 +142,27 @@ function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed"
 }
 
 /**
+ * The completion check's closing note: passed (no refusal), or sent back with
+ * why in words (`./wording/completion-refusal.ts`), whether the check refused
+ * the completion or the test of the Flow did after the check passed it.
+ */
+function sentBack(refusal: Parameters<typeof automationStudioActivityCompletionRefusal>[0] | undefined): Parameters<typeof emitAutomationStudioActivity>[0] {
+  return {
+    phase: "verifying",
+    label: refusal ? "The proposed Flow was sent back to be fixed" : "The proposed Flow’s plan checks out; it still has to run cleanly",
+    detail: { kind: "note", title: "Completion check", status: refusal ? "failed" : "succeeded", ...(refusal ? { text: automationStudioActivityCompletionRefusal(refusal) } : {}) }
+  };
+}
+
+/**
  * The loop input with `decide`, `executeTool` and `checkCompletion` observed:
  * `thinking` as a decision is asked for; when it returns, one `thought` row
  * naming what the model chose to do (`exploring` for a tool call, `building`
  * for a draft edit, `verifying` for a completion) with its stated reason as
  * `detail.text`, and nothing when it gave none -- a draft edit's said only
- * once the loop has answered it, as one that changed nothing when Core
- * refused it (`./draft-edit.ts`); `building` for the draft tool,
+ * once the loop has answered it, with a card under it saying what Core did
+ * with it (`./decision-answer/draft-edit.ts`), and a call Core refused as a repeat before it
+ * ran given a card saying so (`./decision-answer/refused-call.ts`); `building` for the draft tool,
  * `verifying` for a dry run's calls, `exploring` for every other tool (its
  * action as `detail.title`, its id as `detail.ref`, its result code and the
  * caller's reason for it in `detail.text` when it ends; Core's bookkeeping calls as `note` rows), and
@@ -146,18 +171,22 @@ function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed"
  * the page and cleared by itself (`clearedWait`) is told as a wait on the
  * person that was waited out, before the call's own end (`./ask/waited-out.ts`).
  * A check that passes says only
- * that: the dry run that follows it can still refuse the result. Every
+ * that: the dry run that follows it can still refuse the result, and when it
+ * does, the result is said as sent back too (`testRefused`). Every
  * other field is passed through, and each wrapped call returns or throws
  * exactly what the original did.
  */
 export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEvidenceLoopInput): AutomationStudioLlmEvidenceLoopInput {
   const { decide, executeTool, checkCompletion, unusableDecisions } = input;
-  // An edit to the draft is said once the loop has answered it (`./draft-edit.ts`).
+  // An edit to the draft is said once the loop has answered it (`./decision-answer/draft-edit.ts`).
   const edit = automationStudioActivityDraftEdit();
+  // A call refused as a repeat before it ran is said once the loop has answered it (`./decision-answer/refused-call.ts`).
+  const calls = automationStudioActivityRefusedCall();
   return {
     ...input,
     decide: async (request) => {
       edit.decided(request.evidence);
+      calls.decided(request.evidence);
       emitAutomationStudioActivity({ phase: "thinking", label: "Deciding the next step", detail: { kind: "thought", title: "Deciding the next step", status: "started" } });
       let decision: unknown;
       try {
@@ -167,13 +196,16 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         throw error;
       }
       const chose = automationStudioActivityDecision(decision, input.describeCall && ((call) => describeSafely(input.describeCall, call)));
-      const reason = automationStudioActivityDecisionReason.of(decision);
+      const reason = automationStudioActivityReasonText(automationStudioActivityDecisionReason.of(decision), undefined, { decision: true });
       if (chose && (decision as { kind?: unknown }).kind === "amend_draft") edit.hold({ iteration: request.iteration, phase: "building", title: chose.title, text: reason });
       else if (chose) emitAutomationStudioActivityThought({ phase: chose.phase, title: chose.title, text: reason });
+      const call = decidedCall(decision);
+      if (call) calls.hold({ iteration: request.iteration, call, described: describeSafely(input.describeCall, call) });
       return decision;
     },
     executeTool: async (sent): Promise<JsonValue | Awaited<ReturnType<AutomationStudioLlmEvidenceLoopInput["executeTool"]>>> => {
       edit.ran();
+      calls.ran();
       const { call, excusable } = excusableOf(sent);
       const described = describeSafely(input.describeCall, call);
       toolActivity(call, "started", { code: undefined }, described);
@@ -188,18 +220,28 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
       }
     },
     ...(unusableDecisions ? {
-      unusableDecisions: { ...unusableDecisions, stalled: (stall) => { edit.stalled(stall); return unusableDecisions.stalled(stall); } }
+      unusableDecisions: { ...unusableDecisions, stalled: (stall) => { edit.stalled(stall); calls.stalled(stall); return unusableDecisions.stalled(stall); } }
     } satisfies Pick<AutomationStudioLlmEvidenceLoopInput, "unusableDecisions"> : {}),
     ...(checkCompletion ? {
-      checkCompletion: async (result, context) => {
+      checkCompletion: Object.assign(async (result: Parameters<typeof checkCompletion>[0], context: Parameters<typeof checkCompletion>[1]) => {
         // A note, not a check row: it reads the plan and runs nothing, and a
         // check row was a "Test run · Passed" card before any step was tested
         // (D4). With no words it is the live line only; refused, a message.
         emitAutomationStudioActivity({ phase: "verifying", label: "Checking the proposed Flow", detail: { kind: "note", title: "Completion check", status: "started" } });
         const check = await checkCompletion.call(input, result, context);
-        emitAutomationStudioActivity({ phase: "verifying", label: check.ok ? "The proposed Flow’s plan checks out; it still has to run cleanly" : "The proposed Flow was sent back to be fixed", detail: { kind: "note", title: "Completion check", status: check.ok ? "succeeded" : "failed", ...(check.ok ? {} : { text: automationStudioActivityCompletionRefusal(check) }) } });
+        emitAutomationStudioActivity(sentBack(check.ok ? undefined : check));
         return check;
-      }
+      }, {
+        // A completion the check passed and the test of the Flow then refused
+        // (`../llm/evidence-loop/completion-attempt.ts`) is sent back too, and
+        // said so: live run `run-musp39u8-9ac026ab` (R3c) showed three such
+        // completions as "Checking the Flow is finished" and nothing after.
+        testRefused: (refusal: { issueCodes: readonly string[]; steps?: readonly number[] }) => {
+          emitAutomationStudioActivity(sentBack(refusal));
+          const inner = (checkCompletion as { testRefused?: unknown }).testRefused;
+          if (typeof inner === "function") inner.call(checkCompletion, refusal);
+        }
+      })
     } satisfies Pick<AutomationStudioLlmEvidenceLoopInput, "checkCompletion"> : {})
   };
 }

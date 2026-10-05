@@ -236,6 +236,10 @@ describe("creating a Flow through an exploration, with no grant", () => {
     expect(run.adaptationCount).toBe(1);
     expect(run.stored?.buildPlan.plan.subflows.flatMap((subflow) => subflow.nodes).map((node) => node.definitionId)).toContain("web.output.dom-extract_list");
     expect(run.stored?.auditEvents[0]?.detail).toMatchObject({ providerCallCount: 12, decisionCount: 12, additionalProviderCallCount: 4, totalProviderCallCount: 16 });
+    // The yes the build finished on is on its proposal's record, about the Flow it finished with (run-musp8nz1, cause R2): no longer provable only from log order.
+    const buildJudged = (run.stored?.auditEvents[0]?.detail as { buildJudged?: { flowSignature?: unknown; standingFlowSignature?: unknown } } | undefined)?.buildJudged;
+    expect(buildJudged).toMatchObject({ verdict: "yes", round: 1, judgedAt: "finished_round", matchesStandingFlow: true, standingFlowSignature: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u) });
+    expect(buildJudged?.flowSignature).toBe(buildJudged?.standingFlowSignature);
     // Both completions are in the record, numbered across the build; neither was refused.
     expect(run.stored?.evidenceTrace).toEqual(expect.arrayContaining([
       expect.objectContaining({ iteration: 10, decision: "complete" }),

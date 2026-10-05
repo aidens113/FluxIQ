@@ -19,7 +19,7 @@
 // sixty lines of the coordinator's loop body until that file passed Core's
 // 800-line limit (t226).
 
-import type { AutomationStudioFlowDraftAmendmentRefusal } from "../../flow-draft/index.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID, type AutomationStudioFlowDraftAmendmentRefusal } from "../../flow-draft/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRowTransition } from "../decision-handlers/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "../harness.ts";
@@ -27,8 +27,13 @@ import type { AutomationStudioLlmEvidenceLoopAnswerability } from "./answerabili
 import type { AutomationStudioLlmEvidenceRestoredStep } from "./completion-check.ts";
 import type { AutomationStudioLlmEvidenceLoopDraftChange } from "./draft-change.ts";
 import type { AutomationStudioLlmEvidenceLoopDraftShown } from "./draft-shown.ts";
-import type { AutomationStudioLlmEvidenceLoopProgress } from "../evidence-progress/index.ts";
-import { automationStudioLlmStepLogAnswer } from "../step-log/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID, type AutomationStudioLlmEvidenceLoopProgress } from "../evidence-progress/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID } from "../draft-amendment-feedback.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID } from "../repeat-guard/index.ts";
+import { automationStudioLlmStepLogAnswer, type AutomationStudioLlmStepLogAnswerStep, type AutomationStudioLlmStepLogCoreEntry } from "../step-log/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID } from "../unusable-decision.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID } from "./answered-request.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID } from "./completion-check.ts";
 
 export type AutomationStudioLlmEvidenceLoopTrace = {
   iteration: number;
@@ -163,6 +168,14 @@ export type AutomationStudioLlmEvidenceLoopTraceRecorder = {
    * before the first decision, which were shown no draft.
    */
   draftShown: AutomationStudioLlmEvidenceLoopDraftShown | undefined;
+  /**
+   * A new decision is about to be asked: clears `draftShown`, and completes the
+   * answer steps the last decision left with what Core showed the model about
+   * them since (`../step-log/answer-step.ts`) -- an unusable decision's check
+   * and a redirect are shown after its row is recorded, and before the next
+   * decision is the moment everything said about it has been said.
+   */
+  decisionStarts(): void;
   /** The draft's revision: one more for every recorded row whose transition changed the draft. */
   readonly draftRevision: number;
   /** The capability facts the latest row that observed any carried, which the next such row is compared against. */
@@ -188,16 +201,53 @@ export type AutomationStudioLlmEvidenceLoopTraceRecorder = {
 };
 
 /**
+ * The evidence entries in which Core answers a decision itself, as opposed to a
+ * tool's result, a page, the budget or the draft: what an answer step carries
+ * as the feedback the model was shown.
+ */
+const CORE_ANSWER_TOOL_IDS: ReadonlySet<string> = new Set([
+  AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID,
+  AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID,
+  AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID
+]);
+
+/**
  * The recorder that writes a loop's rows into `trace`, which the loop hands on
  * as its record. A row Core answered without running a tool -- an amendment, a
- * call refused as a repeat -- is also written to the step log as Core's
- * answer (`../step-log/answer-step.ts`) when `env` turns the step log on.
+ * call refused as a repeat or answered from memory, a decision refused as
+ * unusable -- is also written to the step log as Core's answer
+ * (`../step-log/answer-step.ts`) when `env` turns the step log on, carrying
+ * the entries of Core's own (`CORE_ANSWER_TOOL_IDS`) that `evidence` gained
+ * since its decision was asked. The feedback is read from the evidence rather
+ * than carried on the row, so the record a build stores and publishes is
+ * unchanged, and so is the order in which the loop tells the model things.
  */
-export function automationStudioLlmEvidenceLoopTraceRecorder(trace: AutomationStudioLlmEvidenceLoopTrace[], env: Readonly<Record<string, string | undefined>> = process.env): AutomationStudioLlmEvidenceLoopTraceRecorder {
+export function automationStudioLlmEvidenceLoopTraceRecorder(
+  trace: AutomationStudioLlmEvidenceLoopTrace[],
+  env: Readonly<Record<string, string | undefined>> = process.env,
+  evidence: () => ReadonlyArray<AutomationStudioLlmStepLogCoreEntry> = () => []
+): AutomationStudioLlmEvidenceLoopTraceRecorder {
   let draftRevision = 0;
   let previousAnswerability: AutomationStudioLlmEvidenceLoopAnswerability | undefined;
+  // The call ids the evidence held when the current decision was asked, and the answers it has had so far.
+  let heldBefore: ReadonlySet<string> = new Set();
+  let answers: AutomationStudioLlmStepLogAnswerStep[] = [];
+  const coreAnswers = (): AutomationStudioLlmStepLogCoreEntry[] => evidence().filter((entry) => CORE_ANSWER_TOOL_IDS.has(entry.toolId) && !heldBefore.has(entry.callId));
   const recorder: AutomationStudioLlmEvidenceLoopTraceRecorder = {
     draftShown: undefined,
+    decisionStarts: () => {
+      recorder.draftShown = undefined;
+      if (answers.length) {
+        const shown = coreAnswers();
+        for (const answer of answers) answer.shown(shown);
+        answers = [];
+      }
+      heldBefore = new Set(evidence().map((entry) => entry.callId));
+    },
     get draftRevision() { return draftRevision; },
     get answerability() { return previousAnswerability; },
     // A closure over `recorder` rather than `this`, so the loop may hand it on detached.
@@ -226,7 +276,8 @@ export function automationStudioLlmEvidenceLoopTraceRecorder(trace: AutomationSt
         ...(transition.answerability ? { answerability: transition.answerability } : {}),
         at: Date.now()
       });
-      automationStudioLlmStepLogAnswer(trace[trace.length - 1]!, env);
+      const answer = automationStudioLlmStepLogAnswer(trace[trace.length - 1]!, env, undefined, coreAnswers);
+      if (answer) answers.push(answer);
     }
   };
   return recorder;

@@ -12,10 +12,12 @@ import {
   automationStudioFlowBootstrapBlockedSaid,
   automationStudioFlowBootstrapNotDone,
   automationStudioFlowBootstrapNotDoneSaid,
+  automationStudioFlowBootstrapProgressAndTestSaid,
   automationStudioFlowBootstrapProgressSaid,
   automationStudioFlowBootstrapRepairingJudgedSaid,
   automationStudioFlowBootstrapStopSaid,
-  automationStudioFlowBootstrapTestSaid
+  automationStudioFlowBootstrapTestSaid,
+  automationStudioFlowBootstrapUnsettledForBuild
 } from "../not-done.ts";
 
 const CONFIRM = "Go through my friend requests and confirm everyone I have at least five mutual friends with, and leave every other request as it is.";
@@ -80,26 +82,26 @@ describe("what the person is told the last test found", () => {
 describe("what the person is told stopped the build", () => {
   it("claims no attempt to finish for a run of unusable decisions", () => {
     const said = automationStudioFlowBootstrapStopSaid("unusable_decisions");
-    expect(said).toBe("too many of its decisions in a row could not be used");
+    expect(said).toBe("too many attempts in a row went nowhere");
     expect(said).not.toContain("finish");
   });
 
   it("says which kind of decision it was when the issues are known", () => {
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.draft_amendments_refused"]))
-      .toBe("too many of its decisions in a row could not be used, because the model kept asking for changes to the Flow that changed nothing");
+      .toBe("too many attempts in a row went nowhere, because it kept trying changes to the Flow that changed nothing");
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.repeat_refused"]))
-      .toBe("too many of its decisions in a row could not be used, because the model kept trying again what had already failed or changed nothing");
+      .toBe("too many attempts in a row went nowhere, because it kept retrying things that had already failed or done nothing");
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["bootstrap.instructed_act_missing"]))
-      .toBe("too many of its decisions in a row could not be used, because the Flow did not yet do what you asked");
+      .toBe("too many attempts in a row went nowhere, because the Flow did not yet do what you asked");
     // An issue with no words of its own adds nothing, and other stops are said as before.
-    expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["something.else"])).toBe("too many of its decisions in a row could not be used");
-    expect(automationStudioFlowBootstrapStopSaid("iterations", ["llm_evidence_loop.draft_amendments_refused"])).toBe("it used every decision it had without the Flow being finished");
+    expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["something.else"])).toBe("too many attempts in a row went nowhere");
+    expect(automationStudioFlowBootstrapStopSaid("iterations", ["llm_evidence_loop.draft_amendments_refused"])).toBe("it used all the tries it had before the Flow was finished");
     expect(automationStudioFlowBootstrapStopSaid("budget")).toBe("a budget ran out");
   });
 
   it("puts refused amendments into words as what held a build up", () => {
-    expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.draft_amendments_refused"])).toBe("the model kept asking for changes to the Flow that changed nothing");
-    expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.draft_amendment_undone"])).toBe("the model kept asking for changes to the Flow that changed nothing");
+    expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.draft_amendments_refused"])).toBe("it kept trying changes to the Flow that changed nothing");
+    expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.draft_amendment_undone"])).toBe("it kept trying changes to the Flow that changed nothing");
   });
 });
 
@@ -193,5 +195,66 @@ describe("the repair's heading after a judge that did not confirm the Flow", () 
 
   it("still says a refuted Flow was judged not to do it", () => {
     expect(automationStudioFlowBootstrapRepairingJudgedSaid({ verdict: "no", observed: "the cart holds one", findings: [] })).toBe("The Flow was tested from its start and judged not to do what you asked: the cart holds one. Repairing it live.");
+  });
+});
+
+// Live run `run-musp4h2f-72e8ed99` (t193 round 1003): "6 of the 6 things you
+// asked have a step that ran, or could run, ..., but the Flow was not judged to
+// do what you asked. The Flow (16 steps) ran from its start, but what it did was
+// not judged to be what you asked." The same point, said twice.
+describe("how much was done and the last test, said together", () => {
+  const six = Array.from({ length: 6 }, (_, index) => ({ id: `a${index + 1}`, verb: "add", quote: `thing ${index + 1}`, done: index + 1 }));
+
+  it("says the step count inside the progress sentence and the judged clause once", () => {
+    for (const verdict of ["unknown", "no"] as const) {
+      const said = automationStudioFlowBootstrapProgressAndTestSaid(six, judgement({ stepsInFlow: 16, done: 6, proven: 6, todo: [], judge: { verdict, findings: [] } }));
+      expect(said).toContain("6 of the 6 things you asked have a step that ran, or could run, when the Flow (16 steps) was run from its start, but the Flow was");
+      expect(said.match(/judged/gu)).toHaveLength(1);
+      expect(said).not.toContain("ran from its start, but what it did");
+    }
+  });
+
+  it("keeps both sentences when the test says something the progress does not", () => {
+    const carried = judgement({ stepsInFlow: 16, done: 6, proven: 6, todo: [], judge: { verdict: "unknown", findings: [], untestedCarried: [3] } });
+    expect(automationStudioFlowBootstrapProgressAndTestSaid(six, carried)).toBe(`${automationStudioFlowBootstrapProgressSaid(six, carried)} ${automationStudioFlowBootstrapTestSaid(carried)}`);
+    const unjudged = judgement({ stepsInFlow: 16, done: 6, proven: 6, todo: [] });
+    expect(automationStudioFlowBootstrapProgressAndTestSaid(six, unjudged)).toBe(`${automationStudioFlowBootstrapProgressSaid(six, unjudged)} ${automationStudioFlowBootstrapTestSaid(unjudged)}`);
+    expect(automationStudioFlowBootstrapProgressAndTestSaid([], unjudged)).toBe(automationStudioFlowBootstrapTestSaid(unjudged));
+  });
+});
+
+// t193 round 1003 (w6 D10 note): a split judge's closing sentence is the run's
+// ("the run is not marked as failed for it"); a build says what it means there.
+describe("a split judge's reason, as a build says it", () => {
+  it("swaps each run sentence for the build's and leaves any other reason as it was", () => {
+    const disagreed = "The answers differed. Neither answer counts for more than the other, so the result is not confirmed, and the run is not marked as failed for it.";
+    const unconfirmed = "One said no. That does not show the run went wrong, so the result is not confirmed, and the run is not marked as failed for it.";
+    expect(automationStudioFlowBootstrapUnsettledForBuild(disagreed)).toBe("The answers differed. Since they disagree, the build cannot finish on this test.");
+    expect(automationStudioFlowBootstrapUnsettledForBuild(unconfirmed)).toBe("One said no. Since neither confirmed it, the build cannot finish on this test.");
+    expect(automationStudioFlowBootstrapUnsettledForBuild("the cart holds one pack")).toBe("the cart holds one pack");
+  });
+
+  it("is what the repair heading says of a short split reason", () => {
+    const said = automationStudioFlowBootstrapRepairingJudgedSaid({ verdict: "unknown", findings: ["The answers differed. Neither answer counts for more than the other, so the result is not confirmed, and the run is not marked as failed for it."] });
+    expect(said).not.toContain("not marked as failed");
+  });
+});
+
+// t195-w48: the chat's "The build stopped before the Flow was finished: ..." read
+// "too many of its decisions in a row could not be used, because the model kept
+// asking for changes to the Flow that changed nothing" (run-musr9pv3-f4bf6256).
+describe("the stop as a person reads it", () => {
+  const internal = /decision|\bmodel\b|\bround\b|measurable/iu;
+  it("names no internals for either live run's stop", () => {
+    expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.draft_amendments_refused"]))
+      .toBe("too many attempts in a row went nowhere, because it kept trying changes to the Flow that changed nothing");
+    expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.repeat_refused"]))
+      .toBe("too many attempts in a row went nowhere, because it kept retrying things that had already failed or done nothing");
+    for (const stop of ["iterations", "tool_calls", "unusable_decisions", "repeat_without_progress", "judged_wrong"] as const) {
+      expect(automationStudioFlowBootstrapStopSaid(stop)).not.toMatch(internal);
+    }
+    for (const code of ["llm_output.bad", "llm_evidence_loop.already_answered", "llm_evidence_loop.draft_amendment_undone", "llm_evidence_loop.repeat_refused"]) {
+      expect(automationStudioFlowBootstrapBlockedSaid([code])).not.toMatch(internal);
+    }
   });
 });

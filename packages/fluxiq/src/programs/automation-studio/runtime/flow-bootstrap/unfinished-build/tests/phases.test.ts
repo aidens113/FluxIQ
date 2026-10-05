@@ -152,13 +152,13 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     });
     expect(outcome.ending.notDone[1]!.quote).toContain("Brightline kettle");
     // A message the person reads, in their own words, with no code in it.
-    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet: the last repair made no measurable progress on the round before it: it handed back the same Flow; no more of the 3 things you asked had a step \(1, as before\); no more of its steps worked when it was run from its start\./u);
+    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: the Flow came out exactly the same, 1 of the 3 things you asked has a step, no more than before, and no more of its steps worked when it was run from the start\./u);
     expect(outcome.ending.message).not.toContain("found no way");
     expect(outcome.ending.message).toContain("\"save the Brightline kettle to my saved items\": nothing I tried did it");
     // Two of three things asked are not done, so the clean run is not said to be without failing.
     expect(outcome.ending.message).toContain("ran from its start, but it does not yet do all you asked");
     expect(outcome.ending.message).not.toContain("without failing");
-    expect(outcome.ending.message).toContain("I tried 2 times live -- exploring, then one repair after testing what I had -- over 76 decisions.");
+    expect(outcome.ending.message).toContain("I worked on it live twice: first exploring the page, then fixing it once after testing what I had.");
     expect(outcome.ending.message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it.");
     expect(outcome.ending.message).not.toMatch(/[a-z]+_[a-z]+|bootstrap\./u);
     expect(outcome.ending.message.length).toBeLessThanOrEqual(1_000);

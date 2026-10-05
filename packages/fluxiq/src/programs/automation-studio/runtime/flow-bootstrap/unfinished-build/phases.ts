@@ -84,7 +84,11 @@
 // doable" still needs a judge's word that it can no longer be had. A build given no `judge`
 // is unchanged: a Flow the loop accepts is its result, unjudged. The judge's
 // calls are held against the build's purse like every other call, and it is
-// asked within what the purse has left.
+// asked within what the purse has left. The yes a build finishes on is kept on
+// the finished outcome as a record (`./finishing-verdict.ts`, cause R2), with
+// any advice the judge gave beside it as unconfirmed: the build decides from the
+// verdict and its `flowSignature` alone, and a yes's advice is never a repair
+// directive (cause 10, `run-murwd8le-79e735a8`).
 //
 // **A round that could not be measured never ends the build "not doable"
 // (t194-w70).** A re-author or extend build seeds its draft from a stored Flow,
@@ -152,6 +156,18 @@
 // reserve was not spent because the Flow was unchanged since, and the Flow kept
 // as a draft; never "not doable", whatever that judge said of it.
 //
+// **A round that stopped short is judged before the build ends (t195-w42).**
+// Live run `run-musp474o-e0ed7432`: round 1 was judged no with the fix named;
+// round 2 applied it, stopped on refused repeats without `complete`, and its
+// different Flow ran clean from its start -- but was judged from the checklist
+// alone, found no further than round 1's judged judgement, and the build ended
+// not finished with about $0.05 of its $0.10 unspent and that Flow never judged.
+// Now a round that stopped short (not a budget stop) whose Flow ran clean, can
+// be built as it stands, and is not the Flow a judge last said no to, is put to
+// the judge with the reserve kept for it (`./reserve-judging.ts`). A yes about
+// that Flow finishes the build; any other verdict is the round's judgement, and
+// phase 3's rules apply to it unchanged.
+//
 // Everything that decides a round belongs to the caller (`round`, `test`):
 // this module never calls a provider or runs a tool itself, and every ending
 // the caller's loop raises that is not a stall -- a permission ask, a person
@@ -184,6 +200,7 @@ import {
   automationStudioFlowBootstrapYesNotAboutThisFlow,
   type AutomationStudioFlowBootstrapUnfinishedTest
 } from "./judgement.ts";
+import { automationStudioFlowBootstrapFinishingVerdict, type AutomationStudioFlowBootstrapFinishingVerdict } from "./finishing-verdict.ts";
 import { automationStudioFlowBootstrapNotDoable } from "./not-doable.ts";
 import { automationStudioFlowBootstrapNotFinished } from "./not-finished.ts";
 import { automationStudioFlowBootstrapJudgementProgress, automationStudioFlowBootstrapJudgementUnmeasured } from "./progress.ts";
@@ -261,9 +278,9 @@ export type AutomationStudioFlowBootstrapBuildPhasesInput = {
    */
   judge?(input: { round: number; loop: Extract<AutomationStudioLlmEvidenceLoopResult, { ok: true }>; budget: AutomationStudioLlmEvidenceLoopBudget }): Promise<AutomationStudioFlowBootstrapTestVerdict>;
   /**
-   * Whether the Flow a round left when the judging reserve stopped it can be
-   * built as it stands -- the completion check a finished round's Flow passes --
-   * and, where it can, make it the plan the caller builds should the build
+   * Whether the Flow a round left when it stopped -- on the judging reserve, or
+   * short of a completion -- can be built as it stands -- the completion check a
+   * finished round's Flow passes -- and, where it can, make it the plan the caller builds should the build
    * finish with it (`./reserve-judging.ts`). Asked before that Flow is judged:
    * a yes about a Flow that cannot be built would finish nothing. Absent: it can.
    */
@@ -299,6 +316,13 @@ export type AutomationStudioFlowBootstrapBuildPhasesOutcome =
     trace: AutomationStudioLlmEvidenceLoopTrace[];
     /** The judge's verdict, where a judge was given: always `yes`, about a test of this very Flow (its `flowSignature`). */
     judged?: Extract<AutomationStudioFlowBootstrapTestVerdict, { verdict: "yes" }>;
+    /**
+     * That verdict as the proposal records it (`./finishing-verdict.ts`): the
+     * round, the judged and the standing Flow's signature digests and whether
+     * they match, the judge's confidence, and any advice beside the yes as
+     * unconfirmed. Present exactly when `judged` is (cause R2, run-musp8nz1).
+     */
+    finishing?: AutomationStudioFlowBootstrapFinishingVerdict;
   }
   /**
    * An ending this lifecycle does not reach past, as the round's loop reported
@@ -346,10 +370,11 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
   /** Why each round that reached phase 2 stopped, in order: what the ending records, so a debug can tell which bound ended which round (live run muqk713g). */
   const stops: NonNullable<AutomationStudioFlowBootstrapBuildEnding["tried"]["stops"]> = [];
   /**
-   * The last `no` a judge of this build gave a finished round: the Flow
-   * signature of the test it judged -- the verdict's own, else the round's Flow,
-   * which a `no` is always about -- and its account. A round the judging reserve
-   * stopped on that very Flow is not judged again.
+   * The last `no` a judge of this build gave a round's Flow -- a finished
+   * round's, or a stopped round's put to the judge: the Flow signature of the
+   * test it judged -- the verdict's own, else the round's Flow, which a `no` is
+   * always about -- and its account. A round that stops on that very Flow is not
+   * judged again.
    */
   let judgedNo: { flowSignature: string; judge: AutomationStudioFlowBootstrapJudgedWrong } | undefined;
   for (let round = 0; ; round += 1) {
@@ -387,7 +412,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       // Only a yes about a test of the Flow as it now stands finishes the build (user, 2026-10-02).
       const standing = automationStudioFlowDraftFlowSignature(ending.loop.steps);
       if (verdict.verdict === "yes" && verdict.flowSignature === standing) {
-        return { kind: "finished", loop: ending.loop, accounting: spent, rounds, trace: [...record], judged: verdict };
+        return { kind: "finished", loop: ending.loop, accounting: spent, rounds, trace: [...record], judged: verdict, finishing: automationStudioFlowBootstrapFinishingVerdict({ verdict, round, judgedAt: "finished_round", steps: ending.loop.steps }) };
       }
       const judged = automationStudioFlowBootstrapJudgeFinished({ round, steps: ending.loop.steps, verdict: verdict.verdict === "yes" ? automationStudioFlowBootstrapYesNotAboutThisFlow(verdict) : verdict, checklist: input.checklist });
       const completionAttempts = ending.loop.trace.filter((row) => row.decision === "complete").length;
@@ -401,9 +426,12 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       const judge = input.judge;
       const stoppedAtReserve = ending.kind === "budget" && (ending.bound === "cost" || ending.bound === "calls") && input.purse !== undefined && judge !== undefined && ((ending.progress.exhaustion?.costRefusal?.keptBackUsd ?? 0) > 0 || (ending.progress.exhaustion?.callRefusal?.keptBackCalls ?? 0) > 0);
       const toTest = automationStudioFlowBootstrapRepairSeed(ending.steps);
-      // The Flow a judge last said no to, unchanged (t254 stage 3): testing and judging it again would buy the same answer, so the reserve is not spent on it.
-      unchangedAtStop = stoppedAtReserve && judgedNo !== undefined && toTest.length > 0 && automationStudioFlowDraftFlowSignature(toTest) === judgedNo.flowSignature;
+      // The Flow a judge last said no to, unchanged (t254 stage 3): testing and judging it again would buy the same answer, so nothing is spent judging it.
+      const unchangedSinceNo = judgedNo !== undefined && toTest.length > 0 && automationStudioFlowDraftFlowSignature(toTest) === judgedNo.flowSignature;
+      unchangedAtStop = stoppedAtReserve && unchangedSinceNo;
       const atReserve = stoppedAtReserve && !unchangedAtStop;
+      // A round that stopped short of a completion is judged too, once its test runs clean, unless its Flow is that one (t195-w42, run-musp474o-e0ed7432).
+      const shortJudged = ending.kind === "unfinished" && judge !== undefined && !unchangedSinceNo;
       if (unchangedAtStop) {
         input.announce?.({ phase: "verifying", label: "Flow unchanged since judged", text: `The build reached its ${ending.kind === "budget" && ending.bound === "calls" ? "model call allowance" : "spending limit"} before the Flow was finished. The Flow is unchanged since the judge said it does not do what was asked, so what was kept back for judging is not spent judging it again.` });
       }
@@ -417,7 +445,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       const judged = await automationStudioFlowBootstrapJudgeUnfinished({
         round, stopped, steps: ending.steps, lastIssueCodes: ending.lastIssueCodes,
         // The test's steps are logged as this round's test (`../../llm/step-log/`); a test the judge reads next says so.
-        ...(ending.kind === "unfinished" || atReserve ? { test: (steps: AutomationStudioFlowDraftStep[]) => automationStudioLlmStepLogScope.run({ round, phase: "test" }, () => (atReserve ? input.test(steps, { judged: true }) : input.test(steps))) } : {}),
+        ...(ending.kind === "unfinished" || atReserve ? { test: (steps: AutomationStudioFlowDraftStep[]) => automationStudioLlmStepLogScope.run({ round, phase: "test" }, () => (atReserve || shortJudged ? input.test(steps, { judged: true }) : input.test(steps))) } : {}),
         replayable: input.replayable, checklist: input.checklist
       });
       const cancelled = (): AutomationStudioFlowBootstrapBuildPhasesOutcome => ({ kind: "ended", loop: { ok: false, code: "llm_evidence_loop.cancelled", trace: [...ending.progress.trace], steps: ending.steps, accounting: { ...ending.progress.accounting } }, accounting: spent, rounds, trace: [...record] });
@@ -425,16 +453,21 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       phase2 = { stopped, judgement: judged.judgement, seed: judged.seed, lastIssueCodes: ending.lastIssueCodes, completionAttempts: ending.completionAttempts, progress: ending.progress };
       // The ending says what that judge found of this same Flow.
       if (unchangedAtStop && judgedNo) phase2 = { ...phase2, judgement: { ...judged.judgement, judge: judgedNo.judge } };
-      if (atReserve && judge) {
-        const reserve = await automationStudioFlowBootstrapJudgeAtReserve({
-          bound: ending.kind === "budget" && ending.bound === "calls" ? "calls" : "cost", judgement: judged.judgement, seed: judged.seed, progress: ending.progress, accept: input.acceptStopped,
-          judge: (loop) => judgeAccounted(input, judge, { round, loop }, spent, clock() - startedAt)
+      if ((atReserve || shortJudged) && judge) {
+        const stoppedJudging = await automationStudioFlowBootstrapJudgeAtReserve({
+          stopped: !atReserve ? "short" : ending.kind === "budget" && ending.bound === "calls" ? "calls" : "cost", judgement: judged.judgement, seed: judged.seed, progress: ending.progress, accept: input.acceptStopped,
+          judge: (loop) => {
+            if (!atReserve) input.announce?.({ phase: "verifying", label: "Judging the Flow", text: "The Flow so far ran clean from its start. Judging what the test did against what you asked." });
+            return judgeAccounted(input, judge, { round, loop }, spent, clock() - startedAt);
+          }
         });
-        if (reserve.kind === "cancelled") return cancelled();
-        if (reserve.kind === "finished") return { kind: "finished", loop: reserve.loop, accounting: spent, rounds, trace: [...record], judged: reserve.verdict };
-        if (reserve.kind === "judged") {
-          phase2 = { ...phase2, judgement: reserve.judgement };
-          judgedAtStopUsd = reserve.judgingUsd;
+        if (stoppedJudging.kind === "cancelled") return cancelled();
+        if (stoppedJudging.kind === "finished") return { kind: "finished", loop: stoppedJudging.loop, accounting: spent, rounds, trace: [...record], judged: stoppedJudging.verdict, finishing: automationStudioFlowBootstrapFinishingVerdict({ verdict: stoppedJudging.verdict, round, judgedAt: atReserve ? "judging_reserve" : "stopped_short", steps: stoppedJudging.loop.steps }) };
+        if (stoppedJudging.kind === "judged") {
+          // A short round's judgement goes on to phase 3's rules as it stands; a reserve-stopped round's ends the build at its budget.
+          phase2 = { ...phase2, judgement: stoppedJudging.judgement };
+          if (atReserve) judgedAtStopUsd = stoppedJudging.judgingUsd;
+          if (stoppedJudging.verdict.verdict === "no" && stoppedJudging.judgement.judge) judgedNo = { flowSignature: stoppedJudging.verdict.flowSignature ?? automationStudioFlowDraftFlowSignature(judged.seed), judge: stoppedJudging.judgement.judge };
         }
       }
     }

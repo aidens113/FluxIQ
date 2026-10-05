@@ -5,9 +5,13 @@
 // message. The turn says what was understood:
 //
 // - a reply or a question, in the model's words;
-// - "Doing <capability>", naming the Flow, saying which capability a misspelt
-//   or paraphrased request was taken as, and saying when Core had to match the
-//   words itself because the model could not be used;
+// - for a capability Core runs itself, what it will do, written for the person
+//   by the command (`announce`): no command title and no address, only the
+//   Flow's name and the site's (UI D9, live run `run-musp8nz1-dbd3905a` read
+//   `Doing "Create an automation here".`); for one the client runs, "On it:"
+//   and its title. Either way it says which capability a misspelt or
+//   paraphrased request was taken as, and when Core had to match the words
+//   itself because the model could not be used;
 // - for the capabilities that delete something or move money, and only those,
 //   a confirmation the person answers in the thread with their PIN. The
 //   invocation it would run travels on the turn as a `panel-capability`
@@ -21,6 +25,8 @@
 
 import { randomUUID } from "node:crypto";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, isAutomationStudioActionConsequence, type AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_COMMANDS } from "../commands/index.ts";
+import { automationStudioConversationSiteName } from "../site-name.ts";
 import type { AutomationStudioConversationTurn } from "../turn.ts";
 import type { AutomationStudioConversationAutomationTurnRequest } from "../writer.ts";
 import type {
@@ -41,6 +47,8 @@ export type AutomationStudioConversationResponseWrite = {
   conversationId: string;
   interpretation: AutomationStudioConversationInterpretation;
   flows: readonly AutomationStudioConversationFlowReference[] | null;
+  /** The page the person has open, where a build Core runs starts. Only its site's name is ever said. */
+  pageUrl?: string | null;
 };
 
 export type AutomationStudioConversationResponseWritten = {
@@ -62,7 +70,7 @@ export async function respondToAutomationStudioConversationTurn(input: Automatio
   const target = flowPhrase(invocation, input.flows);
   const lead = decision.say ? `${decision.say} ` : "";
   if (!invocation.asksFirst) {
-    const text = `${lead}Doing "${invocation.title}"${target}.${readingNotes(invocation)}`;
+    const text = `${lead}${announcement(invocation, input.flows, input.pageUrl ?? null) ?? `On it: ${invocation.title}${target}.`}${readingNotes(invocation)}`;
     const turn = await input.host.appendAutomationTurn({ ...base, text: withProblem(text, input.interpretation), ask: null });
     return { turnId: turn.turnId, askId: null, runNow: true };
   }
@@ -113,6 +121,15 @@ export function automationStudioPanelInvocationRef(invocation: Pick<AutomationSt
   const { projectId: _derived, ...args } = invocation.arguments;
   const ref = Buffer.from(JSON.stringify({ capabilityId: invocation.capabilityId, arguments: args }), "utf8").toString("base64url");
   return ref.length <= ATTACHMENT_REF_MAX ? ref : null;
+}
+
+/** What a command Core runs says it will do; null for a capability the client runs itself. */
+function announcement(invocation: AutomationStudioConversationInvocation, flows: readonly AutomationStudioConversationFlowReference[] | null, pageUrl: string | null): string | null {
+  const announce = AUTOMATION_STUDIO_CONVERSATION_COMMANDS.get(invocation.capabilityId)?.announce;
+  if (!announce) return null;
+  const flowId = invocation.arguments.flowId;
+  const flowName = typeof flowId === "string" ? flows?.find((entry) => entry.flowId === flowId)?.name ?? null : null;
+  return announce({ args: invocation.arguments, flowName, place: automationStudioConversationSiteName(pageUrl) });
 }
 
 function flowPhrase(invocation: AutomationStudioConversationInvocation, flows: readonly AutomationStudioConversationFlowReference[] | null): string {

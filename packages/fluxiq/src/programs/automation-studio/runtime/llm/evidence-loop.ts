@@ -181,7 +181,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // The one door every row enters the record through: it stamps each with the
   // draft its decision was shown, its progress and its moment, and remembers the
   // draft's revision and the last answerability between rows (`./evidence-loop/trace.ts`).
-  const rows = automationStudioLlmEvidenceLoopTraceRecorder(trace);
+  const rows = automationStudioLlmEvidenceLoopTraceRecorder(trace, process.env, () => evidence); // `evidence` is declared below; read only once rows are recorded.
   const recordRow = rows.record;
   // The draft (`runtime/flow-draft/`): every action appended as it happens, so
   // a result is written from what the loop did rather than from what is still
@@ -605,7 +605,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   for (let iteration = 1; iteration <= limits.maxIterations; iteration += 1) {
     if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
     accounting.iterations = iteration;
-    rows.draftShown = undefined;
+    rows.decisionStarts(); // Clears what the last decision was shown, and completes Core's answers to it in the step log.
     let decision: AutomationStudioLlmEvidenceLoopDecision | undefined;
     let canAmend = false;
     // Whether this iteration's call is a step the model asked to run again, which

@@ -155,9 +155,11 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "not_finished", notDone: [], tried: { rounds: 3, decisions: 6, stepsInFlow: 3, tested: "replayed_clean" } });
-    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet: the last 2 repairs made no measurable progress, each on the round before it: it handed back the same Flow; no more of the 3 things you asked had a step \(3, as before\); the judge found the same as before\./u);
+    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet\. My last 2 attempts to fix it each got no further than the one before: the Flow came out exactly the same, 3 of the 3 things you asked have a step, no more than before, and the judge found the same as before\./u);
     expect(outcome.ending.message).toContain("What the judge says is left to change: \"press Add on the towels' own card\".");
-    expect(outcome.ending.message).toContain("ran from its start, but what it did was judged not to be what you asked");
+    // Said once, with the step count (t193 round 1003, `run-musp4h2f-72e8ed99`).
+    expect(outcome.ending.message).toContain("when the Flow (3 steps) was run from its start");
+    expect(outcome.ending.message.match(/judged not to (?:do|be) what you asked/gu)).toHaveLength(1);
     expect(outcome.ending.message).not.toContain("without failing");
     expect(outcome.ending.message).not.toContain("found no way");
     expect(kept[0]![0]).toBe("judged_wrong");
@@ -272,7 +274,7 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(requests).toHaveLength(2);
     expect(outcome).toMatchObject({ kind: "finished", rounds: 2, judged: { verdict: "yes" } });
     expect(requests[1]!.repair!.resume.judgement).toMatchObject({ test: "not_tested", judge: { verdict: "unknown", untestedCarried: [5, 6, 7, 8, 9] } });
-    expect(announced[1]).toBe("repairing: Repairing the Flow: The Flow was not judged to do what you asked: steps 5, 6, 7, 8, 9 came from the earlier Flow and were not run when it was tested. Repairing the Flow live, running them again.");
+    expect(announced[1]).toBe("repairing: Repairing the Flow: The Flow was not judged to do what you asked: steps 5, 6, 7, 8, 9 came from the earlier Flow and were not run when it was tested. Repairing it live, running them again.");
   });
 
   it("still repairs a re-authored Flow the judge found wrong, carried steps or not", async () => {

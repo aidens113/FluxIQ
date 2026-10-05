@@ -399,6 +399,20 @@ same capabilities. The ids are:
 - **The page is the start.** `onScreen.pageUrl` (http or https, at most 2048
   characters, no whitespace or control characters) becomes the build's
   `startLocation`. The chat model is shown only its origin and path.
+- **The first reply says what will happen, in plain words** (UI D9, live run
+  `run-musp8nz1-dbd3905a`, which read `Doing "Create an automation here".`).
+  A command Core runs gives its own first reply (`announce` on
+  `AutomationStudioConversationCommand`, written by `instructions/respond.ts`):
+  create-here "I'll make you a new automation for this, working out its steps
+  by trying them on <place>. I'll say here when it is ready.", and explore,
+  improve and run likewise. A capability the client runs reads `On it:
+  <title>`. The thread never shows a command's title or an address: a page is
+  named by its site's name, lower case without `www.`, a page served from this
+  machine or an IP address is "the page you had open", and no page is "the
+  website" (`conversations/site-name.ts`). The success lines say what is so --
+  `Your automation "<name>" is ready: I tried its steps on <place> and put the
+  ones that worked into it.` -- and never `Say "run it"`, since a run may
+  already be under way when they are read.
 - **A Flow's thread means that Flow.** With no `onScreen.flowId`, a thread whose
   subject is a Flow supplies it. So "run it" in an automation's own chat runs
   that automation.
@@ -431,6 +445,23 @@ repair and other; the extension draws shared lucide paths and the Core panel
 uses lucide-react with the same kind/icon mapping. Internal bookkeeping reads
 stay out of the chat. The extension has Chat and Automations tabs, Settings and
 Open FluxIQ; the old Simple/Advanced split is removed.
+
+A decision Core declined before doing it is a card under that decision, never
+prose appended to the model's sentence (t193 round 1003). `activityActionRefusal`
+reads the loop's refusal codes (`llm_evidence_loop.repeat_refused`,
+`.draft_amendments_refused`, `.draft_amendment_undone`) into
+`ActivityAction.refused: { all, because }`: `because` is at most two reasons in
+Core's words (`ACTIVITY_ACTION_REFUSAL_WORDS`), never a code. A refused action
+is `failed` when nothing of it was done and `done` when part of an edit landed
+(the record's `Applied: <n>`). An edit to the draft gets a card whether it
+landed or not ("Editing the Flow -- done / partly done / not done",
+`runtime/activity/wording/draft-edit-card.ts`; the kind is named "Edit the
+Flow"), and a call refused as a repeat gets its own card once the loop answers
+it (`runtime/activity/decision-answer/refused-call.ts`). The model's sentence is
+only the decision's reason, said as what was tried. Inside a build, a split
+judge's card closes with the build's sentence ("the build cannot finish on this
+test") rather than the run's ("the run is not marked as failed for it",
+`runtime/result-verification/unsettled/unsettled-words.ts`, `check-activity.ts`).
 
 A wait opens an ask activity row and settles through another ask row with the
 same `ref` and `detail.resolution`. The closed resolutions are:

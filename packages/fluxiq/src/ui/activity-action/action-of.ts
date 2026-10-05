@@ -1,5 +1,6 @@
 import { activityActionFailureReason } from "./failure-reason.ts";
 import { activityActionRecordOf } from "./record.ts";
+import { activityActionRefusal } from "./refusal.ts";
 import { activityActionReplayFailing } from "./replay-failing.ts";
 import { activityActionTested } from "./tested.ts";
 import { ACTIVITY_RESULT_CHECK_LABELS } from "./result-check-labels.ts";
@@ -74,6 +75,14 @@ const BARE_PAGE = /^the page$/iu;
  * "…/ip/napkins" cut at the front): a dot in it ("/help/index.html") is not an id.
  */
 const ADDRESS_PATH = /^…?\/\S*$/u;
+/**
+ * A site's name as the navigate wording names it ("amazon.com",
+ * "shop.example.co.uk"): dotted labels ending in a top-level domain of
+ * letters. A dotted id ("web.output.browser-navigate") does not end so.
+ */
+const SITE_NAME = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,24}$/iu;
+/** The navigate wording's name for an address it does not show (`programs/automation-studio/runtime/activity/wording/action.ts`). */
+const START_PAGE = /^Opening (the start page)$/u;
 /** Something shaped like a dotted id ("web.output.dom-click"), which a card never shows. */
 const ID_SHAPED = /[A-Za-z_][\w-]*\.[A-Za-z_][\w-]*/u;
 /** How a wait on the person ended, as the ask row that settles it says (`ClientGatewayActivity.detail.resolution`). */
@@ -203,7 +212,7 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
   let name: string | undefined;
   for (const candidate of [QUOTED.exec(detail.title)?.[1], event.step?.label]) {
     const words = candidate?.replace(/\s+/gu, " ").trim();
-    if (words && (!ID_SHAPED.test(words) || (kind === "navigate" && ADDRESS_PATH.test(words)))) {
+    if (words && (!ID_SHAPED.test(words) || (kind === "navigate" && (ADDRESS_PATH.test(words) || SITE_NAME.test(words))))) {
       name = words;
       break;
     }
@@ -218,6 +227,8 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
   if (said && kind === "type") return name ? `"${said}" into ${name}` : `"${said}"`;
   if (name) return name;
   if (said) return `"${said}"`;
+  // A navigate to the start page names it unquoted, so it is not read as a control (t174-w116 D2).
+  if (kind === "navigate") return START_PAGE.exec(detail.title.trim())?.[1] ?? null;
   // A look that names neither a control nor words is named by what its title
   // says it looked over ("the whole page"): "Look · Done" said nothing (D5).
   const looked = kind === "look" ? plain(LOOKED_AT.exec(detail.title.trim())?.[1]) : undefined;
@@ -262,6 +273,12 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * resolution in words ("you pressed Stop", "nobody answered in time"), or
  * else the refusal's own reason or the result code's last words
  * (`./failure-reason.ts`), and never is the code or the reason.
+ *
+ * A decision Core declined before doing it -- a call refused as a repeat, an
+ * edit to the draft refused in whole or in part -- is `refused`, read from its
+ * record's code (`./refusal.ts`): failed when nothing of it was done, with
+ * Core's plain reason as `why`, and done when part of an edit was. An edit
+ * that asked for a step to run again is named that ("run the step again").
  */
 export function activityActionOf(event: ActivityActionEvent): ActivityAction | null {
   const detail = event.detail;
@@ -269,22 +286,25 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const record = activityActionRecordOf(detail.text);
   const kind = kindOf(event, detail, record.resultCode, record.node);
   if (!kind) return null;
-  const outcome = outcomeOf(event, detail, record.resultCode, record.excused);
+  const refusal = detail.kind === "tool" ? activityActionRefusal(record) : null;
+  const outcome = refusal ? (refusal.all ? "failed" : "done") : outcomeOf(event, detail, record.resultCode, record.excused);
   const why = outcome !== "failed" ? null
-    : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
-      : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason) : null;
+    : refusal ? refusal.because
+      : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
+        : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason) : null;
   const testing = kind !== "test" && testStep(event, detail, detail.ref ? CORE_TOOL_KINDS.get(detail.ref) : undefined);
   const unconfirmed = kind === "result_check" && outcome === "failed" && event.label !== undefined && NOT_CONFIRMED.has(event.label.trim());
   // What a test did with the step, when it did not simply do it again: a test
   // step is named by its action (`testing`), and one that names none by the verb of its title.
-  const tested = outcome === "done" && record.resultCode ? activityActionTested(record.resultCode, { excused: record.excused, kind: kind === "test" ? kindOfTitle(detail.title) : kind }) : null;
+  const tested = outcome === "done" && record.resultCode && !refusal ? activityActionTested(record.resultCode, { excused: record.excused, kind: kind === "test" ? kindOfTitle(detail.title) : kind }) : null;
   return {
     kind,
-    target: targetOf(event, detail, kind, testing),
+    target: kind === "draft" && refusal?.rerun ? "run the step again" : targetOf(event, detail, kind, testing),
     outcome,
     why,
     ...(testing ? { testing: true as const } : {}),
     ...(unconfirmed ? { unconfirmed: true as const } : {}),
-    ...(tested ? { tested } : {})
+    ...(tested ? { tested } : {}),
+    ...(refusal ? { refused: { all: refusal.all, because: refusal.because } } : {})
   };
 }
