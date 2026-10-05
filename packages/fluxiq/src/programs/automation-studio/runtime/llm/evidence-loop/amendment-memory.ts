@@ -63,12 +63,21 @@ export function automationStudioLlmEvidenceAmendmentMemory(): AutomationStudioLl
   };
 }
 
-/** The Flow a draft describes, and nothing about how it came to: what an amendment can change. */
+/**
+ * The Flow a draft describes, and nothing about how it came to: what an
+ * amendment can change. That includes the acts a step does and what it runs
+ * with (`ranWith`, where a `bind` writes): live run `run-musp4h2f-72e8ed99`
+ * moved act a3 to another step at decision 0086 and was told the edit undid
+ * itself, because the signature left acts out, and a `bind` (t252) would have
+ * been told the same.
+ */
 function draftSignature(steps: readonly AutomationStudioFlowDraftStep[]): string {
   return JSON.stringify(steps.map((step): JsonObject => ({
     id: step.id ?? `p${step.position}`,
     disposition: step.disposition,
     ...(step.routing ? { routing: step.routing as unknown as JsonObject } : {}),
-    ...(step.settings ? { settings: step.settings } : {})
+    ...(step.settings ? { settings: step.settings } : {}),
+    ...(step.acts?.length ? { acts: [...step.acts].sort() } : {}),
+    ...(step.ranWith ? { ranWith: step.ranWith } : {})
   })));
 }

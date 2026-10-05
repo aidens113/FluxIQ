@@ -35,6 +35,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../evidence-loop.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { automationStudioLlmEvidenceAmendmentMemory } from "../amendment-memory.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID } from "../../draft-amendment-feedback.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, AutomationStudioLlmUnusableDecisionError } from "../../unusable-decision.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID } from "../index.ts";
@@ -197,5 +199,32 @@ describe("replaying the recorded amendment stall", () => {
     expect(result.ok).toBe(true);
     expect(result.trace.find((row) => row.decision === "amend_draft")).toMatchObject({ resultCode: "llm_evidence_loop.draft_amended", amended: 1 });
     expect(result.steps.filter((step) => step.disposition === "kept" && step.effectApplied).map((step) => step.position)).toEqual([3]);
+  });
+});
+
+// Live run run-musp4h2f-72e8ed99 (t193 round 1003), step 0087: an amendment that only moved act a3 to another step
+// was answered `draft_amendment_undone` to its own decision, because the draft signature left acts out. An edit
+// that changes only what a step does (its act) or what it runs with (a `bind`) changes the Flow.
+describe("the draft signature an undone edit is told by", () => {
+  const step = (position: number, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+    position, id: `d${position}`, iteration: position, actionId: "web.output.dom-click", input: { parameters: { target: `t${position}` } },
+    ranWith: { parameters: { target: `t${position}` } }, effect: "mutate", disposition: "kept", ...over
+  });
+
+  it("is new after an edit that only moves an act, or only binds a parameter", () => {
+    const memory = automationStudioLlmEvidenceAmendmentMemory();
+    const before = [step(1, { acts: ["a3"] }), step(2)];
+    memory.before(4, before);
+    expect(memory.after(4, [step(1), step(2, { acts: ["a3"] })])).toBeUndefined();
+    memory.before(5, [step(1), step(2, { acts: ["a3"] })]);
+    expect(memory.after(5, [step(1), step(2, { acts: ["a3"], ranWith: { parameters: { target: "t2", text: { $input: "item" } } } })])).toBeUndefined();
+  });
+
+  it("still knows an edit that puts the acts back as an earlier draft had them", () => {
+    const memory = automationStudioLlmEvidenceAmendmentMemory();
+    memory.before(4, [step(1, { acts: ["a3"] }), step(2)]);
+    memory.after(4, [step(1), step(2, { acts: ["a3"] })]);
+    memory.before(5, [step(1), step(2, { acts: ["a3"] })]);
+    expect(memory.after(5, [step(1, { acts: ["a3"] }), step(2)])).toBe(4);
   });
 });

@@ -41,6 +41,18 @@
 // (`../../flow-draft/dry-run.ts`). One that did not pass after a lasting act
 // was only checked is excused for that, and says so (`excused: "withheld"`,
 // `../../flow-draft/excused.ts`).
+//
+// **Each pass's call says which pass and row it is (t195 w43).** Live run
+// `run-musp474o-e0ed7432` ran a repeated Confirm once per kept row, and no
+// step folder said which row a pass was on: `call.json` writes the row by
+// field names only (`../step-log/field-names.ts`), and only a judged test's
+// judge request named the rows (`../../result-verification/build-test/span-rows.ts`).
+// Two of its three tests were never judged. So every call of a pass is sent
+// inside a step-log pass scope (`../step-log/scope.ts`): its number, the pass
+// count of a list, and the label of its row where the list read answered
+// `readRows.rows` in this test -- pass n is row n, as the judge reads it --
+// screened by the check the judge's are (`screenAutomationStudioLlmEvidence`), so
+// a label it withholds is written withheld. Never a row's values.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
@@ -53,7 +65,10 @@ import {
   type AutomationStudioFlowDraftReplayPass,
   type AutomationStudioFlowDraftStep
 } from "../../flow-draft/index.ts";
+import type { AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY } from "../../result-verification/index.ts";
 import type { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
+import { screenAutomationStudioLlmEvidence } from "../harness/index.ts";
+import { automationStudioLlmStepLogScope } from "../step-log/index.ts";
 import {
   AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY,
   automationStudioNodeReplayStatus,
@@ -68,6 +83,20 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_LOOP_BOUND_CODE = "core.replay.
 
 /** A step whose state binding had nothing to take its value from: nothing was sent. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE = "core.replay.unresolved_binding";
+
+/**
+ * The member of a replayed read's answer that names its rows: the judge's key
+ * (`../../result-verification/build-test/read-rows.ts`), held to it by type.
+ * Imported as a type only: any value import out of `result-verification`
+ * here (that module, or `read-account/alone-rows.ts`) closes a cycle back into
+ * the llm barrel, and with it the service's build tests
+ * (`../../tests/service-authoring/tests/confirm-requests-build.test.ts`)
+ * failed `flow_bootstrap.pre_provider_validation_failed`.
+ */
+const READ_ROWS_KEY: typeof AUTOMATION_STUDIO_BUILD_TEST_READ_ROWS_KEY = "readRows";
+
+/** What a row label the screen refuses is written as: the judge's word (`../../result-verification/read-account/alone-rows.ts`). */
+const WITHHELD_LABEL = "(withheld)";
 
 /** The For Each node the assembler builds a list loop from, whose bound the test applies. */
 const FOR_EACH_NODE_ID = "builtin.control.for-each";
@@ -97,9 +126,13 @@ export type AutomationStudioFlowDraftReplayAnswer =
  */
 export type AutomationStudioFlowDraftReplayObservation = { step: number; stepId?: string; resultCode?: string; evidence: JsonValue; pass?: number; of?: number };
 
-/** A repeat the test runs as the Flow would: over the list's rows, or while its check holds. */
+/**
+ * A repeat the test runs as the Flow would: over the list's rows, or while its
+ * check holds. A list's `labels` are its read's screened `readRows.rows`, when
+ * it answered them: label n names row n.
+ */
 export type AutomationStudioFlowDraftReplaySpanPlan =
-  | { kind: "list"; members: AutomationStudioFlowDraftStep[]; over: AutomationStudioFlowDraftStep; rows: JsonObject[] }
+  | { kind: "list"; members: AutomationStudioFlowDraftStep[]; over: AutomationStudioFlowDraftStep; rows: JsonObject[]; labels?: readonly string[] }
   | { kind: "while"; members: AutomationStudioFlowDraftStep[]; over: AutomationStudioFlowDraftStep };
 
 /** How many passes one span may take: the bound the executor's For Each applies when the assembler sets none. */
@@ -135,7 +168,30 @@ export function automationStudioFlowDraftReplaySpanPlan(input: {
   if (automationStudioNodeReplayStatus(asked.answer.result.resultCode, "replay") !== "replayed") return undefined;
   const rows = asked.answer.result.outputs?.[port];
   if (!Array.isArray(rows) || !rows.every(isRecord)) return undefined;
-  return { kind: "list", members, over, rows };
+  const labels = rowLabels(asked.answer.result.evidence);
+  return { kind: "list", members, over, rows, ...(labels ? { labels } : {}) };
+}
+
+/**
+ * The labels of the rows a list read answered, one per row in its order, each
+ * screened by the check the build-test judge's `readRows.rows` labels pass
+ * (`screenAutomationStudioLlmEvidence` on `{ column: label }`, in
+ * `../../result-verification/read-account/alone-rows.ts`), no denied column
+ * known here: a credential-shaped label is written `(withheld)`. Only the
+ * label cell; a row's other cells are never read. Nothing when it named none.
+ */
+function rowLabels(evidence: JsonValue): readonly string[] | undefined {
+  const named = isRecord(evidence) ? evidence[READ_ROWS_KEY] : undefined;
+  const rows = isRecord(named) ? named.rows : undefined;
+  if (!Array.isArray(rows) || rows.length === 0) return undefined;
+  const labels: string[] = [];
+  for (const row of rows) {
+    const cell = isRecord(row) ? Object.entries(row)[0] : undefined;
+    if (cell === undefined || typeof cell[1] !== "string") continue;
+    const found = screenAutomationStudioLlmEvidence({ [cell[0]]: cell[1] }, []);
+    labels.push(found.deniedKey || found.secretShaped ? WITHHELD_LABEL : cell[1]);
+  }
+  return labels.length ? labels : undefined;
 }
 
 /**
@@ -229,6 +285,12 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     observations.push({ step: step.position, stepId: automationStudioFlowDraftStepId(step), ...(answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}), evidence: answer.result.evidence, pass });
     if (status !== "replayed" && !evidence) evidence = { callId, toolId: automationStudioNodeReplayToolId(step), value: answer.result.evidence };
   };
+  // A call of pass `pass`, sent inside its step-log pass scope (see the header).
+  const sendPass = (pass: number, callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject): Promise<AutomationStudioFlowDraftReplayAnswer> => {
+    const label = plan.kind === "list" ? plan.labels?.[pass - 1] : undefined;
+    const of = plan.kind === "list" ? plan.rows.length : undefined;
+    return automationStudioLlmStepLogScope.pass({ pass, ...(of !== undefined ? { of } : {}), ...(label !== undefined ? { row: label } : {}) }, () => input.send(callId, step, value));
+  };
   // One pass of every member, on `row` for a list. True when the walk stops.
   const runPass = async (pass: number, row?: JsonObject): Promise<boolean> => {
     for (const member of plan.members) {
@@ -238,7 +300,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
       if (built && "unresolved" in built) answered = { pass, status: "failed", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE };
       else {
         const callId = `${input.callIdOf(member)}.pass.${pass}`;
-        const answer: AutomationStudioFlowDraftReplayAnswer = built ? await input.send(callId, member, built.value) : { readable: false };
+        const answer: AutomationStudioFlowDraftReplayAnswer = built ? await sendPass(pass, callId, member, built.value) : { readable: false };
         const status = answer.readable ? automationStudioNodeReplayStatus(answer.result.resultCode, mode) : "failed";
         answered = { pass, status, ...(answer.readable && answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}) };
         observe(member, callId, answer, status, pass);
@@ -268,7 +330,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
       const built = automationStudioFlowDraftReplayPassCall(plan.over, checkMode);
       if (!built || "unresolved" in built) break;
       const callId = `${input.callIdOf(plan.over)}.pass.${count + 1}`;
-      const answer = await input.send(callId, plan.over, built.value);
+      const answer = await sendPass(count + 1, callId, plan.over, built.value);
       holds = answer.readable && automationStudioNodeReplayStatus(answer.result.resultCode, checkMode) === "replayed";
       // The answer that ends the loop is the loop ending, not a step failing.
       observe(plan.over, callId, answer, "replayed", count + 1);

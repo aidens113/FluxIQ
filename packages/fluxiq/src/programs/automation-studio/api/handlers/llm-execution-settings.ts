@@ -1,6 +1,7 @@
 // Flow metadata may pin live LLM execution. Reject anything but the supported
 // provider and model, and hold every limit inside its bound.
 
+import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD } from "../../model/index.ts";
 import { AUTOMATION_STUDIO_LLM_ABSOLUTE_MAX_TOTAL_TOKENS_PER_REQUEST, automationStudioDeepSeekModelRefusal, isAutomationStudioDeepSeekModel } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 
@@ -30,6 +31,11 @@ export function assertFlowLlmExecutionSettings(metadata: Record<string, unknown>
   if (maxInputTokens + maxOutputTokens > maxTotalTokens) throw new Error("LLM input and output limits exceed the total-token limit.");
   boundedWholeNumber(value.maxCalls, 1, FLOW_LLM_EXECUTION_MAX_CALLS);
   boundedWholeNumber(value.timeoutMs, 1, 25_000);
-  if (typeof value.maxEstimatedCostUsd !== "number" || !Number.isFinite(value.maxEstimatedCostUsd) || value.maxEstimatedCostUsd <= 0 || value.maxEstimatedCostUsd > 0.25) throw new Error("LLM estimated-cost limit is invalid.");
+  // The bound is the largest run cost ceiling Core may be configured with
+  // (`AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD`), the same bound the Lab
+  // plans against. It was a literal $0.25 from before the ceiling became
+  // configurable, which refused a Flow built under a $0.30 ceiling only after
+  // the build had been paid for (run-musq0b1m-0472cfa0).
+  if (typeof value.maxEstimatedCostUsd !== "number" || !Number.isFinite(value.maxEstimatedCostUsd) || value.maxEstimatedCostUsd <= 0 || value.maxEstimatedCostUsd > AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_MAX_USD) throw new Error("LLM estimated-cost limit is invalid.");
   if (value.retryCount !== 0) throw new Error("Flow LLM execution does not permit provider retries.");
 }

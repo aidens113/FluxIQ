@@ -124,6 +124,23 @@ describe("a tool step", () => {
     }
   });
 
+  // Live run `run-musp474o-e0ed7432`: a repeated Confirm's passes said nothing of which row each
+  // was on, and two of its three tests were never judged, so no record named them. A pass scope
+  // writes the pass, the pass count and its row's screened label into `meta.json`.
+  it("writes a pass's number, count and row label into meta.json, and none of them outside a pass", async () => {
+    const run = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string }) => execution({ ok: true }), env());
+    await automationStudioLlmStepLogScope.pass({ pass: 1, of: 2, row: "Amara Osei" }, () => run({ callId: "dryrun.1.2.pass.1", toolId: "core.run_node" }), env());
+    await automationStudioLlmStepLogScope.pass({ pass: 2, of: 2 }, () => run({ callId: "dryrun.1.2.pass.2", toolId: "core.run_node" }), env());
+    await run({ callId: "dryrun.1.3", toolId: "core.run_node" });
+
+    expect(json(path.join(directory, "0001-test-core.run_node", "meta.json"))).toMatchObject({ pass: 1, of: 2, row: "Amara Osei" });
+    const second = json(path.join(directory, "0002-test-core.run_node", "meta.json"));
+    expect(second).toMatchObject({ pass: 2, of: 2 });
+    expect(second).not.toHaveProperty("row");
+    for (const key of ["pass", "of", "row"]) expect(json(path.join(directory, "0003-test-core.run_node", "meta.json"))).not.toHaveProperty(key);
+    expect(automationStudioLlmStepLogScope.current()).toBeUndefined();
+  });
+
   it("writes a call without a row, and a result without output values, as before", async () => {
     const run = automationStudioLlmStepLogTool(async (_request: { callId: string; toolId: string; value: unknown }) => execution({ ok: true }), env());
     await run({ callId: "c1", toolId: "web.look", value: { nodeId: "web.look" } });
