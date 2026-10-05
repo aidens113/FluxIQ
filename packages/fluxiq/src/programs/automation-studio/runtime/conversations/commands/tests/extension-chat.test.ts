@@ -111,6 +111,7 @@ async function createWorld(options: { unlocked: string | null }) {
   const buildRequests: AutomationStudioLlmTaskRequest[] = [];
   const judgeAppliedCounts: number[] = [];
   let buildDecisions: Array<Record<string, unknown>> = [];
+  let judgeAnswers: Array<"yes" | "no"> = [];
   // The test of the whole Flow runs its steps again through this, answered without reaching the page.
   const binding: AutomationStudioLlmEvidenceRuntimeBinding = automationStudioReplayingBinding({
     domainId: "example",
@@ -137,11 +138,13 @@ async function createWorld(options: { unlocked: string | null }) {
             buildRequests.push(request);
             // The real provider releases the key to the caller's session per call (`session-key-provider.ts`).
             if (input.caller?.actorSessionId !== options.unlocked) throw new Error("Secret key session unlock is unavailable");
-            // The judge of a build's test of the whole Flow: it says the Flow does what was asked.
+            // The judge of a build's test of the whole Flow: it says the Flow does what was asked, unless scripted otherwise.
             if (request.taskKind === "loop_verification") {
               const summaries = await service.listFlowAdaptationSummaries({ projectId: project.id, flowId: input.flowId!, limit: 50 }) as unknown as { adaptations?: Array<{ status: string }> };
               judgeAppliedCounts.push((summaries.adaptations ?? []).filter((entry) => entry.status === "applied").length);
-              return { response: { kind: "diagnosis", summary: "The Flow's test does what was asked.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.0005 } };
+              const answersRequest = judgeAnswers.shift() ?? "yes";
+              const diagnosis = answersRequest === "yes" ? { answersRequest } : { answersRequest, observed: "The catalog was searched, but no kettle was read.", expected: "The kettles in the catalog." };
+              return { response: { kind: "diagnosis", summary: "The Flow's test, judged.", diagnosis }, usage: { inputTokens: 40, outputTokens: 10, totalTokens: 50, estimatedCostUsd: 0.0005 } };
             }
             const decision = buildDecisions.shift() ?? { kind: "complete", result: { summary: "Search the catalog." } };
             return { response: { kind: "evidence_tool_decision", summary: "Working it out.", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
@@ -188,6 +191,10 @@ async function createWorld(options: { unlocked: string | null }) {
     /** What the build's model will decide, in order; after them it completes. */
     scriptBuild(decisions: Array<Record<string, unknown>>) {
       buildDecisions = [...decisions];
+    },
+    /** What the judge answers to its next calls, in order; after them it says yes. */
+    scriptJudge(answers: Array<"yes" | "no">) {
+      judgeAnswers = [...answers];
     },
     /** One message from the extension's chat, read by the scripted chat model as `answer`. */
     async say(text: string, answer: unknown, onScreen: Record<string, string> = { pageUrl: PAGE }, conversation = conversationId) {
@@ -252,7 +259,12 @@ describe("the extension's chat, end to end in Core", () => {
     expect(world.resolutions.map((entry) => entry.caller?.actorSessionId)).toEqual(world.resolutions.map(() => UNLOCKED_SESSION));
     const thread = await world.thread();
     const [result] = resultTurns(thread.turns, "flow.createHere");
-    expect(result?.text).toMatch(/Created the Flow/u);
+    expect(result?.text).toMatch(/is ready/u);
+    expect(result?.text).not.toMatch(/Say "run it"/u);
+    // The first reply says what will happen, for the person, and names the site, never the address (UI D9).
+    const announced = thread.turns.find((turn) => turn.author === "automation" && turn.text.includes("I'll make you a new automation"))?.text ?? "";
+    expect(announced).toContain("trying them on shop.example.test");
+    expect(thread.turns.filter((turn) => turn.author === "automation").map((turn) => turn.text).join(" ")).not.toContain(PAGE);
     // What the build did was shown in this chat.
     const built = world.activity.filter((event) => event.subject.kind === "build");
     expect(built.length).toBeGreaterThan(0);
@@ -277,7 +289,8 @@ describe("the extension's chat, end to end in Core", () => {
     const bodies = await Promise.all(page.instructions.map(async (entry) => (await world!.service.getFlowInstruction(world!.project.id, entry.instructionId))?.body));
     expect(bodies).toEqual([message]);
     const [result] = resultTurns((await world.thread()).turns, "flow.createHere");
-    expect(result?.text).toMatch(/Created the Flow/u);
+    expect(result?.text).toMatch(/is ready/u);
+    expect(result?.text).not.toMatch(/Say "run it"/u);
   }, 60_000);
 
   it("says what an automation should do", async () => {
@@ -309,6 +322,8 @@ describe("the extension's chat, end to end in Core", () => {
       SEARCH_THEN_COMPLETE[0]!,
       ...Array.from({ length: 8 }, (_, index) => ({ kind: "tool_call", callId: `look.${index}`, toolId: "example.inspect", input: {} }))
     ]);
+    // A round that stopped short is judged (t195 C2); judged no, the creation stays unfinished with its draft kept.
+    world.scriptJudge(["no", "no"]);
     await world.say("Find the kettles here", { do: "flow.createHere", with: { instruction: "Search the catalog for kettles." } });
     await automationStudioConversationCommandWork.idle();
     const flow = await onlyFlow(world.service, world.project.id);
@@ -447,7 +462,7 @@ describe("the extension's chat, end to end in Core", () => {
     const [result] = resultTurns((await world.thread()).turns, "flow.createHere");
     expect(result?.text).toMatch(/stopped because/u);
     // How far it got: the Flow it made, empty, never "created" as work done after a failed build.
-    expect(result?.text).toMatch(/What is left: the Flow "[^"]+", empty/u);
+    expect(result?.text).toMatch(/The Flow "[^"]+" has no steps yet, but it keeps your instruction, so you can build it again\./u);
     expect(result?.text).not.toMatch(/Before that I created the Flow/u);
     expect(result?.text).toMatch(/model key is locked/u);
   }, 60_000);

@@ -639,7 +639,25 @@ the judge of the build's test as `buildTest.notes`
 also carries `readRows`: the labels of the rows it returned and, per condition,
 the rows that condition alone left out, screened by the same function as the
 runtime judge's `leftOutOnlyByThis` (`build-test/read-rows.ts`), so the judge
-can see an asked row was dropped (live run `run-muqk713g`, cause C3). A judge
+can see an asked row was dropped (live run `run-muqk713g`, cause C3). A
+changing step the test ran again carries `observed` too when its answer says
+what it changed or what the page answered (`changed`, `notice`), without the
+answer's `ok`, `said` and any code the outcome already gives; an answer with
+neither is not sent (`build-test/observation.ts`, `build-test/summary.ts`), so
+the judge reads what a replayed press did (t193 round 1003: run
+`run-musp4h2f-72e8ed99`'s judge never saw the quantity its "+" set). Its
+`changed` lines are bounded before the screen: at most three, each cut to 160
+characters, the lines quoting the step's own words first, then a text that now
+reads otherwise (where a quantity or a total is said), then the rest, with
+`changedNotShown` counting the others and the domain's own `and N more
+changes`; a credential-shaped line is dropped as withheld
+(`build-test/change-lines.ts`, t174-w106: run `run-musp8nz1-dbd3905a`'s judges
+saw a press that un-chose Space Grey and the one that chose it again as two
+`replayed`). The judge is also told that the test started from a page that kept
+what exploration did, so a count, a cart item or a collected coupon may predate
+the test, and a withheld step's visible effect is exploration's doing, not proof
+the Flow does it (`runtime/llm/diagnosis-instructions.ts`; the same run's judge
+cited exploration's "3 Cart" as the Flow's result). A judge
 reply that leaves a diagnosis text empty (`changed: ""` beside a yes) has that
 field read as omitted, not refused (`runtime/llm/harness/provider-result.ts`,
 cause C2). A diagnosis text (`expected`, `observed`, `changed`) past its
@@ -947,7 +965,11 @@ round opens only when both hold:
   and was judged where the one before stopped short; a Flow judged where the
   one before was not judged either way (`judged_after_unjudged`: the judge was
   unsure, did not run, said yes about another version of the Flow or about no
-  test, or carried steps never ran); or a judge finding no longer reported. It also counts what the judged test
+  test, or carried steps never ran); a judge whose two calls now split where the
+  round before was refuted (`judge_no_longer_refutes`: one call said yes, so the
+  `no` no longer stands; the build-test verdict carries `oneCallSaidYes` for that
+  pair only, and a `no` followed by an unconfirmed pair with no yes is not
+  progress); or a judge finding no longer reported. It also counts what the judged test
   stored: the build-test judge returns its summary's stored, refused and
   missing-required row counts on a `no`. Progress there means rows stored where
   none were, or fewer refused or incomplete rows while no fewer are stored. A
@@ -955,10 +977,67 @@ round opens only when both hold:
   progress: the earbuds build `run-muqiho7e-13be6c03` handed back three
   different Flows, and the judge reported the same thing each time.
 
-A round that did not progress ends the build `not_doable`, saying what stood
-still. So does a round that ended on refused repeats
-(`repeat_without_progress`) and handed back the Flow it started from: a second
-round would only repeat it (run 38, cause C8). For an extend build's first
+A round that did not progress ends the build `not_finished`, saying what stood
+still; one more round is allowed after a judge who said no, still achievable or
+unsure, and named the fix, and two in a row end it. So does a round that ended
+on refused repeats (`repeat_without_progress`) and handed back the Flow it
+started from: a second round would only repeat it (run 38, cause C8). Only the
+judge's word that what was asked can no longer be had ends a build `not_doable`
+(t195-w37).
+
+The words of every unfinished ending have one owner (t264 S3, merging t193
+round 1003 and t195-w48), and read as a chat answer, never a debug log:
+
+- **No internal words** (t195-w48). The person never reads "decision",
+  "model", "round", "no measurable progress", "(1, as before)" or "handed back".
+  The not-finished ending opens "I have not finished this Flow yet." and then
+  "My last attempt to fix it got no further than the one before: ..." (or "My
+  last N attempts ... each ..."), listing what stood still in plain clauses
+  ("the Flow came out exactly the same", "3 of the 3 things you asked have a
+  step, no more than before"). What was tried is "I worked on it live twice:
+  first exploring the page, then fixing it once after testing what I had"
+  (`automationStudioFlowBootstrapWorkedLiveSaid`, `unfinished-build/not-done.ts`),
+  shared with the not-doable ending; the counts a debug needs stay in the
+  ending's `tried`. The stop clauses (`STOP_WORDS`, `BLOCKED_WORDS`) name "it",
+  never "the model". The budget and unreadable-replies endings still say "over N
+  decisions" and "the model's replies": tests outside the wording owner pin them.
+- **Each judge pair said as what it was** (t193 round 1003). After a `no`, a
+  split with one yes is "the judge no longer agreed it was wrong, as one of its
+  two checks said it does what you asked"; an unconfirmed pair is "the judge
+  could not tell this time whether it does what you asked, though it had found
+  the attempt before wrong"; "the judge still could not tell" only when it could
+  not tell the time before either; an unsure judge before a `no` is "the judge
+  now found it does not do what you asked".
+- **The judge's doubt named.** An unsure judge's `unconfirmedReading` is said
+  where a `no`'s advice is, as a doubt one check did not confirm ("What the
+  judge doubted, in one check the other did not confirm: ..."), never as a
+  finding.
+- **Said once.** How much of what was asked has a step and what the last test
+  found are one sentence (`automationStudioFlowBootstrapProgressAndTestSaid`,
+  used by the `not_finished`, `budget_exhausted` and `replies_unreadable`
+  endings): the test's step count goes into the progress sentence rather than a
+  second "not judged" sentence. The not-doable ending leaves out the test's
+  sentence where the judge's account already says the Flow was tested and not
+  judged to do it, and the budget ending does not say a judged-wrong stop again
+  as "what held it up".
+- **Never cut inside a sentence.** Each ending is fitted to the ending's limit
+  (`unfinished-build/ending-fit.ts`): the still-to-do list, its quotes and the
+  judge's words are said with less room until the message fits, and the closing
+  sentences (what was tried, what was kept) are always whole.
+- **A split judge in a build's words.** Where an ending or a repair heading
+  quotes a split judge's reason, the run's closing sentence ("the run is not
+  marked as failed for it") is replaced by the build's ("the build cannot finish
+  on this test", `automationStudioFlowBootstrapUnsettledForBuild`,
+  `AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS.<basis>.build`).
+- **The chat line under the ending** (`runtime/conversations/commands/create-here.ts`)
+  is one plain sentence: `The Flow "<name>" has no steps yet, but it keeps your
+  instruction, so you can build it again.` when nothing was kept; `The Flow
+  "<name>" keeps your instruction.` under an ending that already said the draft
+  was kept and that building again carries on from it; and, with no ending,
+  `The Flow "<name>" keeps your instruction, and the steps found so far were kept
+  as a draft, so building it again carries on from them.`
+
+For an extend build's first
 round, `runtime/service.ts` passes the replay signature of the Flow that
 round starts from as `seedSignature`: the extended Flow's seed, or the kept
 draft a continuation carries on. Six live rounds stay the backstop, since the published
@@ -1047,13 +1126,14 @@ number; they answered `no` and then `yes`, and that single `yes` finished the
 build on rows the playback judge refused. The runtime result check does not set
 the option, and a first `yes` there still stands on one call.
 
-The three explicit endings carry `diagnostic.ending.message`, the outstanding
+The explicit endings carry `diagnostic.ending.message`, the outstanding
 acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).
 `runtime/activity/build.ts` and conversation progress use that message:
 
 | Code | Trigger | Message begins |
 | --- | --- | --- |
-| `flow_bootstrap.not_doable` | A round of a tested, non-empty Flow made no measurable progress on the previous judgement, or ended on refused repeats with the Flow it started from unchanged | "I could not build this Flow, and I found no way to:" followed by what could not be done, the test and what was tried |
+| `flow_bootstrap.not_doable` | The judge of a tested, non-empty Flow said what was asked can no longer be had (`stillAchievable: "no"`) | "I could not build this Flow, and I found no way to:" followed by what the judge found, what could not be done and what was tried |
+| `flow_bootstrap.build_not_finished` | A repair made no progress on the round before it, or a round ended on refused repeats with the Flow it started from unchanged | "I have not finished this Flow yet." followed by what stood still, the judge's advice or doubt, how much was done, what was tried and what was kept |
 | `flow_bootstrap.evidence_budget_exhausted` | The purse refused a call or could not fund another round (the only cost endings), time, token or declared calls ran out, or the live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
 | `flow_bootstrap.model_replies_unreadable` | Six consecutive unreadable replies, each asked again with a corrective note | "The build stopped because the model's replies could not be read:" followed by the count, cause, paid attempts, progress and kept-Flow status |
 
@@ -1285,6 +1365,24 @@ instruction, every decision, the test and the judge are all held against it.
   refused its first decision beside $0.0068 kept back, its Flow was still the
   seed round 0's judge said no to, so it ends at cost with round 0's findings
   and makes no judge call.
+- **A round that stopped short is judged too** (t195-w42,
+  `runtime/flow-bootstrap/unfinished-build/phases.ts`, `reserve-judging.ts`
+  with `stopped: "short"`). A round that ended without a completion and not on
+  a budget -- refused repeats, unusable decisions, a stall -- has its Flow tested
+  from its start as before; where that test ran clean, the completion check
+  accepts the Flow as it stands, and the Flow is not the one a judge of this
+  build last said no to, the test goes to the build's judge, whose calls draw on
+  the judging reserve -- its money and, under a call allowance, its calls
+  (t262). A yes about that very Flow finishes the build with it. Any other
+  verdict becomes the round's judgement with the judge's account, and the
+  repair rules below apply to it unchanged (a judged "can no longer be had" is
+  not doable; progress is measured against the judgement before it; one more
+  round when this judge named the fix). A `no` here is remembered as the last
+  judged-no Flow, so the same Flow is not judged twice. Before this, such a
+  round was judged from the checklist alone: in live run
+  `run-musp474o-e0ed7432` round 2 applied the fix the judge had named, its
+  changed Flow ran clean, and the build ended "not finished" with half its
+  purse unspent and that Flow never judged.
 
 ## Generation readiness capability
 
@@ -1766,6 +1864,20 @@ iteration-zero initial observation. `traceStepCount` reports all trace entries.
 The older bounded `iterationCount` remains the total trace length for compatible
 readers and must not be used as provider-call accounting. `toolCallCount`
 continues to count actual tool executions, including an initial observation.
+
+A build that finished on a judged yes also records that yes on the proposal's
+`created` audit event, as `detail.buildJudged` beside those counts
+(`runtime/flow-bootstrap/unfinished-build/finishing-verdict.ts`, t174-w118,
+live run `run-musp8nz1-dbd3905a` cause R2, where it was provable only from log
+order): `verdict` (`yes`), `round`, `judgedAt` (`finished_round`,
+`judging_reserve` or `stopped_short`), `flowSignature` and
+`standingFlowSignature` as `sha256:` digests of the judged and the finished
+Flow's signatures -- never the signatures, which hold every step's input and
+target -- and `matchesStandingFlow`. A judge's `confidence` and the advice and
+`patchNeeded` given beside a yes (`unconfirmed`, advice capped at 500
+characters) are kept when the verdict carries them, for the record only: the
+build decides from the verdict and its `flowSignature` alone, and a yes's
+advice is never a repair directive (run `run-murwd8le-79e735a8`, cause 10).
 
 Runtime diagnosis and patching may use an optional domain-owned failure-evidence
 capture callback. Core invokes it at most once after an action fails, passing

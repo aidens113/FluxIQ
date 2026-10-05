@@ -80,6 +80,13 @@ export type AutomationStudioBuildTestVerdict =
      * reading the other call did not confirm -- never a `no`.
      */
     unconfirmedReading?: { expected?: string; observed?: string; advice?: string };
+    /**
+     * Only on an `unknown` whose two calls disagreed because one said the test
+     * does what was asked (`model_disagreed`): the pair, never its words. What a
+     * build measures a repair after a `no` by (`judge_no_longer_refutes`,
+     * `flow-bootstrap/unfinished-build/progress.ts`; live run run-musp4h2f-72e8ed99).
+     */
+    oneCallSaidYes?: true;
     spent: AutomationStudioBuildTestJudgeSpend;
   }
   | { verdict: "no"; expected?: string; observed?: string; advice?: string; stillAchievable?: "yes" | "no" | "unknown"; findings: string[]; records: AutomationStudioBuildTestRecordCounts; spent: AutomationStudioBuildTestJudgeSpend };
@@ -179,7 +186,7 @@ export function automationStudioBuildTestJudge(deps: {
     }
     // An unsettled check keeps the reading of the call that judged no (live run murwcmx2: the repair was told only "unverified").
     const reading = outcome.unconfirmedReading;
-    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), spent };
+    return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), spent };
   };
 }
 

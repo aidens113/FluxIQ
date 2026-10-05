@@ -9,6 +9,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../../../../storage/index.ts";
 import { parseAutomationStudioPanelCapabilities } from "../../../panel-capabilities/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE } from "../../commands/index.ts";
 import { AutomationStudioConversations } from "../../conversations.ts";
 import { AUTOMATION_STUDIO_PANEL_CAPABILITY_ATTACHMENT, type AutomationStudioConversationModel } from "../index.ts";
 
@@ -51,7 +52,7 @@ function scripted(...answers: unknown[]): AutomationStudioConversationModel {
   };
 }
 
-async function thread(model: AutomationStudioConversationModel | null) {
+async function thread(model: AutomationStudioConversationModel | null, setting: { onScreen?: { pageUrl?: string }; capabilities?: typeof CAPABILITIES } = {}) {
   pool = new AutomationStudioProjectDatabasePool({ rootDir });
   const conversations = new AutomationStudioConversations(pool).bindModel(model);
   const opened = await conversations.openConversation({ projectId: PROJECT, subject: { kind: "project", id: PROJECT }, title: null });
@@ -60,9 +61,9 @@ async function thread(model: AutomationStudioConversationModel | null) {
     conversationId: opened.conversationId,
     text,
     actorId: "user.aiden",
-    capabilities: CAPABILITIES,
+    capabilities: setting.capabilities ?? CAPABILITIES,
     flows: FLOWS,
-    onScreen: {},
+    onScreen: setting.onScreen ?? {},
     limits: QUICK
   });
   const turns = async () => (await conversations.getConversation({ projectId: PROJECT, conversationId: opened.conversationId }))?.turns ?? [];
@@ -92,9 +93,46 @@ describe("a person's turn, answered in the thread", () => {
     const [person, automation] = await turns();
     expect(person).toMatchObject({ author: "person", text: "run my kettle flow", actorId: "user.aiden" });
     expect(automation?.author).toBe("automation");
-    expect(automation?.text).toContain('Doing "Run a Flow" for the Flow "Kettle price checker".');
+    // Said for the person, in plain words: what will happen and that the result follows here, never the command's title.
+    expect(automation?.text).toContain('Running "Kettle price checker" now.');
+    expect(automation?.text).not.toContain('Doing "');
+    expect(automation?.text).not.toContain("Run a Flow");
     expect(automation?.text).toContain("I read flow as flowId.");
     expect(automation?.ask).toBeNull();
+  });
+
+  // UI D9, live run `run-musp8nz1-dbd3905a`: the first reply read `Doing "Create an automation here".`
+  // and the summary then named the full Lab address.
+  it("says what a build will do, where, without the command's title or the page's address", async () => {
+    // Core's own descriptor, as the append-turn handler puts it in place of the client's (`commands/vocabulary.ts`).
+    const capabilities = [AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability];
+    const { say, turns } = await thread(scripted('{"do": "flow.createHere", "with": {"instruction": "Find towels under 10 dollars."}}'), { capabilities, onScreen: { pageUrl: "http://127.0.0.1:4100/scenarios/towels" } });
+    const answer = await say("make me an automation that finds cheap towels");
+
+    expect(answer.response).toMatchObject({ runNow: true, decision: { kind: "invoke", invocation: { capabilityId: "flow.createHere" } } });
+    const text = (await turns())[1]?.text ?? "";
+    expect(text).toContain("I'll make you a new automation");
+    expect(text).toContain("the page you had open");
+    expect(text).not.toContain("Create an automation here");
+    expect(text).not.toMatch(/127\.0\.0\.1|https?:\/\//u);
+  });
+
+  it("names a public site by its name in a build's first reply", async () => {
+    const capabilities = [AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability];
+    const { say, turns } = await thread(scripted('{"do": "flow.createHere", "with": {"instruction": "Find towels."}}'), { capabilities, onScreen: { pageUrl: "https://www.towels.example.com/catalog?session=abc" } });
+    await say("automate this");
+    const text = (await turns())[1]?.text ?? "";
+    expect(text).toContain("towels.example.com");
+    expect(text).not.toMatch(/www\.|https?:\/\/|session=/u);
+  });
+
+  it("says plainly what it is on for a capability the client runs itself", async () => {
+    const capabilities = parseAutomationStudioPanelCapabilities([{ id: "flow.open", title: "Open a Flow", summary: "Open the Flow.", arguments: [{ name: "flowId", required: true }] }]);
+    const { say, turns } = await thread(scripted('{"do": "flow.open", "with": {"flowId": "flow.kettle-1"}}'), { capabilities });
+    await say("open the kettle one");
+    const text = (await turns())[1]?.text ?? "";
+    expect(text).toContain('On it: Open a Flow for the Flow "Kettle price checker".');
+    expect(text).not.toContain('Doing "');
   });
 
   it("asks in the thread before a delete, carrying exactly what it would run", async () => {

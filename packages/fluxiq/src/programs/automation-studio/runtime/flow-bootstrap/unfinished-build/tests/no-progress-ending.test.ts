@@ -104,7 +104,7 @@ describe("a round without measured progress, after a judge who named the fix", (
     const message = outcome.ending.message;
     expect(message).not.toContain("found no way");
     expect(message).not.toContain("not doable");
-    expect(message).toMatch(/^I have not finished this Flow yet: the last 2 repairs made no measurable progress/u);
+    expect(message).toMatch(/^I have not finished this Flow yet\. My last 2 attempts to fix it each got no further than the one before/u);
     // The judge found something else this time: said as what it found, never "the same as before".
     expect(message).toContain("this time the judge found: \"the accepted read kept none\"");
     expect(message).not.toContain("the judge found the same as before");
@@ -163,7 +163,7 @@ describe("a round without measured progress where the judge named no fix", () =>
 
     expect(requests).toHaveLength(2);
     expect(outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 2, noRoute: { kind: "no_progress" } } });
-    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet: the last repair made no measurable progress on the round before it: no more of the 3 things you asked had a step \(3, as before\); the judge found the same as before\./u);
+    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: 3 of the 3 things you asked have a step, no more than before, and the judge found the same as before\./u);
     expect(outcome.ending.message).not.toContain("found no way");
   });
 
@@ -175,7 +175,7 @@ describe("a round without measured progress where the judge named no fix", () =>
 
     expect(requests).toHaveLength(1);
     expect(outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 1, noRoute: { kind: "repeated_unchanged" } } });
-    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet: the last attempt ended on refused repeats of the same calls and handed back the Flow it started from, unchanged/u);
+    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet\. My first attempt kept retrying the same things, which had already failed or done nothing, and left the Flow just as it started/u);
     expect(outcome.ending.message).not.toContain("found no way");
   });
 });

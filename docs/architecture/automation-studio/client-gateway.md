@@ -399,6 +399,20 @@ same capabilities. The ids are:
 - **The page is the start.** `onScreen.pageUrl` (http or https, at most 2048
   characters, no whitespace or control characters) becomes the build's
   `startLocation`. The chat model is shown only its origin and path.
+- **The first reply says what will happen, in plain words** (UI D9, live run
+  `run-musp8nz1-dbd3905a`, which read `Doing "Create an automation here".`).
+  A command Core runs gives its own first reply (`announce` on
+  `AutomationStudioConversationCommand`, written by `instructions/respond.ts`):
+  create-here "I'll make you a new automation for this, working out its steps
+  by trying them on <place>. I'll say here when it is ready.", and explore,
+  improve and run likewise. A capability the client runs reads `On it:
+  <title>`. The thread never shows a command's title or an address: a page is
+  named by its site's name, lower case without `www.`, a page served from this
+  machine or an IP address is "the page you had open", and no page is "the
+  website" (`conversations/site-name.ts`). The success lines say what is so --
+  `Your automation "<name>" is ready: I tried its steps on <place> and put the
+  ones that worked into it.` -- and never `Say "run it"`, since a run may
+  already be under way when they are read.
 - **A Flow's thread means that Flow.** With no `onScreen.flowId`, a thread whose
   subject is a Flow supplies it. So "run it" in an automation's own chat runs
   that automation.

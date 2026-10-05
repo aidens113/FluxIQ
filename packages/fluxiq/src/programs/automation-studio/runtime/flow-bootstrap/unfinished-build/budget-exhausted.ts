@@ -12,8 +12,9 @@
 // them and what of the Flow's ceiling building again has left. What was kept
 // is said as a draft not put into the Flow (`./kept-said.ts`; t195-w37, live
 // run `run-murz83zy-5030820f`, whose chat also said the Flow was left empty).
+// The message is fitted, never cut inside a sentence (`./ending-fit.ts`; t193
+// round 1003): what was tried and what was kept close it, always whole.
 import {
-  AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE,
   type AutomationStudioFlowBootstrapBudgetBound,
   type AutomationStudioFlowBootstrapBuildEnding
 } from "../generation-failure/index.ts";
@@ -22,10 +23,11 @@ import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
 import {
   automationStudioFlowBootstrapBlockedSaid,
   automationStudioFlowBootstrapNotDone,
-  automationStudioFlowBootstrapProgressSaid,
+  automationStudioFlowBootstrapProgressAndTestSaid,
   automationStudioFlowBootstrapStopSaid,
-  automationStudioFlowBootstrapTestSaid
+  automationStudioFlowBootstrapUnsettledForBuild
 } from "./not-done.ts";
+import { automationStudioFlowBootstrapEndingFitted } from "./ending-fit.ts";
 import { automationStudioFlowBootstrapKeptSaid } from "./kept-said.ts";
 import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
@@ -111,21 +113,29 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   spending?: AutomationStudioFlowBootstrapCostSpending | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const notDone = automationStudioFlowBootstrapNotDone(input.checklist);
-  const said = automationStudioFlowBootstrapProgressSaid(input.checklist, input.judgement);
-  const progress = said ? ` ${said}` : "";
   const flowLeft = input.bound === "cost" && input.spending ? flowLeftSaid(input.spending) : "";
   const kept = automationStudioFlowBootstrapKeptSaid(input.kept, flowLeft);
+  // A Flow the judge did not pass is already said so with how far it got (`./not-done.ts`), so its stop is not said
+  // again as what held it up: "... not judged to do what you asked ... what held it up was that the Flow it thought
+  // was ready was not judged to do what you asked" (t264 S3, one owner of the ending's words).
+  const saidJudged = input.judgement.stopped === "judged_wrong" && input.judgement.judge !== undefined;
   const blocked = automationStudioFlowBootstrapBlockedSaid(input.judgement.lastIssueCodes)
-    || (input.judgement.stopped === "budget" ? "" : automationStudioFlowBootstrapStopSaid(input.judgement.stopped));
+    || (input.judgement.stopped === "budget" || saidJudged ? "" : automationStudioFlowBootstrapStopSaid(input.judgement.stopped));
   const tried = `I explored live ${input.rounds === 1 ? "once" : `${input.rounds} times`} over ${input.decisions} decisions${blocked ? `, and what held it up was that ${blocked}` : ""}.`;
   const spending = input.bound === "cost" && input.spending ? spendingSaid(input.spending, input.sizes.maxCostUsd) : "";
-  const found = input.bound === "cost" && (input.spending?.judgedUsd !== undefined || input.spending?.unchangedSinceJudgedNo) ? judgeFoundSaid(input.judgement.judge) : "";
-  const message = [`The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished${spending}.${progress}`, automationStudioFlowBootstrapTestSaid(input.judgement), found, tried, kept]
-    .filter(Boolean)
-    .join(" ");
+  const judged = input.bound === "cost" && (input.spending?.judgedUsd !== undefined || input.spending?.unchangedSinceJudgedNo);
+  const message = automationStudioFlowBootstrapEndingFitted((room) => ({
+    body: [
+      `The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished${spending}.`,
+      // How far it got and what its test found, said once: never "not judged" twice (`./not-done.ts`).
+      automationStudioFlowBootstrapProgressAndTestSaid(input.checklist, input.judgement, room),
+      judged ? judgeFoundSaid(input.judgement.judge, room.judge) : ""
+    ],
+    close: [tried, kept]
+  }));
   return {
     kind: "budget_exhausted",
-    message: message.slice(0, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE),
+    message,
     bound: input.bound,
     notDone,
     tried: automationStudioFlowBootstrapTried(input)
@@ -174,18 +184,18 @@ function spendingSaid(spending: AutomationStudioFlowBootstrapCostSpending, ceili
  * left to change; or why it could not confirm the Flow. Empty when it said
  * nothing.
  */
-function judgeFoundSaid(judge: AutomationStudioFlowBootstrapJudgement["judge"]): string {
+function judgeFoundSaid(judge: AutomationStudioFlowBootstrapJudgement["judge"], most: number): string {
   if (!judge) return "";
-  const finding = bounded(judge.observed ?? judge.findings[0] ?? "");
+  const finding = bounded(automationStudioFlowBootstrapUnsettledForBuild(judge.observed ?? judge.findings[0] ?? ""), most);
   if (judge.verdict !== "no") return finding ? `The judge could not confirm it: ${finding}.` : "";
-  const advice = judge.advice ? ` What the judge says is left to change: "${bounded(judge.advice)}".` : "";
+  const advice = judge.advice ? ` What the judge says is left to change: "${bounded(judge.advice, most)}".` : "";
   return `${finding ? `The judge found: ${finding}.` : ""}${advice}`.trim();
 }
 
-/** A judge's words, one line, at most 200 characters, without the full stop the sentence adds. */
-function bounded(text: string): string {
+/** A judge's words, one line, at most `most` characters, without the full stop the sentence adds. */
+function bounded(text: string, most: number): string {
   const line = text.replace(/\s+/gu, " ").trim().replace(/\.$/u, "");
-  return line.length <= 200 ? line : `${line.slice(0, 197).trimEnd()}...`;
+  return line.length <= most ? line : `${line.slice(0, most - 3).trimEnd()}...`;
 }
 
 /** What another round needed at least, as the person is told it. */

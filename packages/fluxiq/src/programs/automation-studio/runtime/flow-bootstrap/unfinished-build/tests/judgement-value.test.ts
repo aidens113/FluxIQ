@@ -45,6 +45,19 @@ describe("an unknown verdict's unconfirmed reading", () => {
     expect(value.judge).toEqual({ verdict: "unknown", findings: ["Asked twice, the model never judged it twice."], unconfirmedReading: reading });
   });
 
+  it("keeps that one call of the pair said yes, as a flag and nothing of its words, and only where the verdict said so", () => {
+    const disputed = automationStudioFlowBootstrapJudgeFinished({
+      round: 0, steps: [], checklist: () => undefined,
+      verdict: { verdict: "unknown", why: "checked twice, the answers differed", unconfirmedReading: reading, oneCallSaidYes: true, spent: SPEND }
+    });
+    expect(disputed.judgement.judge).toEqual({ verdict: "unknown", findings: ["checked twice, the answers differed"], unconfirmedReading: reading, oneCallSaidYes: true });
+    const unconfirmed = automationStudioFlowBootstrapJudgeFinished({
+      round: 0, steps: [], checklist: () => undefined,
+      verdict: { verdict: "unknown", why: "checked twice, neither said yes", spent: SPEND }
+    });
+    expect(unconfirmed.judgement.judge).not.toHaveProperty("oneCallSaidYes");
+  });
+
   it("is absent where the verdict carried none, or carried an empty one", () => {
     for (const unconfirmedReading of [undefined, {}]) {
       const { judgement } = automationStudioFlowBootstrapJudgeFinished({

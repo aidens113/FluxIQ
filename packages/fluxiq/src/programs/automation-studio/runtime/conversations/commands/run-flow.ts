@@ -28,6 +28,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
     consequences: ["create_new"],
     reauthorizes: false
   },
+  announce: ({ flowName }) => `Running ${flowName ? `"${flowName}"` : "the Flow"} now. I'll say here how it went.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const flowId = automationStudioConversationCommandText(args, "flowId");

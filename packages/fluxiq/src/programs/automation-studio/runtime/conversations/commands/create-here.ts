@@ -10,7 +10,7 @@ import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
 import { buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
-import { automationStudioConversationPageShown } from "./page.ts";
+import { automationStudioConversationSiteName } from "../site-name.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
 
 const TITLE = "Create an automation here";
@@ -32,6 +32,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     consequences: ["create_new"],
     reauthorizes: false
   },
+  announce: ({ place }) => `I'll make you a new automation for this, working out its steps by trying them on ${place}. I'll say here when it is ready.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const instruction = automationStudioConversationCommandText(args, "instruction");
@@ -56,13 +57,16 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     // `run-murdouox-c5294247`, UI review).
     if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: automationStudioConversationCreateHereLeft(name, built) });
     progress.carry({ adaptationId: built.adaptationId });
-    const where = automationStudioConversationPageShown(context.startLocation) ?? "the site";
-    progress.landed(`explored ${where} and worked out the steps`);
+    const where = automationStudioConversationSiteName(context.startLocation);
+    progress.landed(`tried the steps on ${where} and worked out which ones work`);
     if (built.awaitingPermission) return progress.failed("the build finished still waiting for your permission for one of its steps, so its steps were not put into the Flow");
 
     const applied = await applyAutomationStudioConversationAdaptation(context, { flowId, adaptationId: built.adaptationId });
     if (!applied.ok) return progress.failed(applied.cause);
-    return progress.succeeded(`Created the Flow "${name}", explored ${where}, and put the steps it worked out into the Flow. Say "run it" to try it.`);
+    // True whether or not a run follows, and one may already be under way when
+    // this is read (the Lab starts one as soon as it is written), so it says
+    // what is so rather than telling the person to start one (UI D9).
+    return progress.succeeded(`Your automation "${name}" is ready: I tried its steps on ${where} and put the ones that worked into it.`);
   }
 };
 
@@ -74,16 +78,25 @@ function automationStudioConversationFlowName(instruction: string): string {
 }
 
 /**
- * What a failed build left, said once and true (t193 R2-C3, live run
- * `run-murzln6g-11debe1d`): the ending said "The Flow so far was kept, and
- * building again carries on from it", and this sentence then called the Flow
- * empty. The Flow holds no step either way; what differs is whether the build
- * kept the steps it found as a draft to carry on from. When it did and its own
- * ending already said so, this names only the Flow; when it gave no ending, this
- * says what was kept. When nothing was kept, the Flow is empty.
+ * What a failed build left, said once, true, and as one plain sentence.
+ *
+ * t193 R2-C3 (live run `run-murzln6g-11debe1d`): the ending said "The Flow so
+ * far was kept, and building again carries on from it", and this sentence then
+ * called the Flow empty. The Flow holds no step either way; what differs is
+ * whether the build kept the steps it found as a draft to carry on from. When
+ * it did and its own ending already said so, this names only the Flow and the
+ * instruction it keeps: the ending's kept sentence is the one place that says
+ * what was kept and that building again carries on from it (t193 round 1003,
+ * `run-musp4h2f-72e8ed99`: "What is left: the Flow ..." under that sentence
+ * named the Flow, not what was left). When it gave no ending, this says what
+ * was kept. When nothing was kept, the Flow has no steps.
+ *
+ * t195 `run-musp474o-e0ed7432` (12-failure-panel): "What is left: the Flow
+ * "...", with what you asked saved on it" read as a label rather than something
+ * a person is told, so each variant is a sentence of its own.
  */
 function automationStudioConversationCreateHereLeft(name: string, built: { ending?: string | undefined; kept: boolean }): string {
-  if (!built.kept) return `What is left: the Flow "${name}", empty, with what you asked saved on it, so it can be built again.`;
-  if (built.ending) return `What is left: the Flow "${name}", with what you asked saved on it.`;
-  return `What is left: the Flow "${name}", with what you asked saved on it and the steps found so far kept, so building again carries on from them.`;
+  if (!built.kept) return `The Flow "${name}" has no steps yet, but it keeps your instruction, so you can build it again.`;
+  if (built.ending) return `The Flow "${name}" keeps your instruction.`;
+  return `The Flow "${name}" keeps your instruction, and the steps found so far were kept as a draft, so building it again carries on from them.`;
 }

@@ -33,6 +33,17 @@
 // its counts, its conditions, a check's answer, the status, the control -- is
 // kept as the domain wrote it.
 //
+// **A changing step run again** (t193 1003, w3) is read with its outcome's
+// codes and its own words (`changing`). Only an answer that says what the step
+// changed or what the page answered (`changed`, `notice`) is sent -- what the
+// judge of run `run-musp4h2f-72e8ed99` needed for its "+" and never saw -- and
+// without its top-level `ok`, `said`, and a `code` the outcome already gave,
+// which only restate that it ran. Any other answer, a bare "ran again" or a
+// whole tool result (run 36's clicks), is not sent: it says nothing the
+// outcome does not. Its `changed` lines are bounded first, the lines about its
+// own control and a value it set ahead of the rest (`./change-lines.ts`,
+// t174-w106); the whole answer is then screened like any other observation.
+//
 // A replayed list read's `readRows` (t194 w55) are made labels before any of
 // that, by the screen the runtime judge's rows pass (`./read-rows.ts`): a
 // withheld label is said as withheld rather than costing the observation.
@@ -47,12 +58,19 @@ import {
   automationStudioWithoutLocators,
   screenAutomationStudioLlmEvidence
 } from "../../llm/index.ts";
+import { AUTOMATION_STUDIO_BUILD_TEST_CHANGE_LINES_KEY, automationStudioBuildTestChangeLines } from "./change-lines.ts";
 import { automationStudioBuildTestReadRows } from "./read-rows.ts";
 
 /** One step's observations made sendable: `withheld` when screening took anything out. */
 export type AutomationStudioBuildTestObservationReader = (
   step: { position: number; actionId: string },
-  evidence: readonly JsonValue[]
+  evidence: readonly JsonValue[],
+  /**
+   * Given for a changing step run again: the outcome's result codes, which its
+   * answer's `code` only restates, and the step's own words, whose change
+   * lines lead.
+   */
+  changing?: { restating: ReadonlySet<string>; words: readonly string[] }
 ) => { value?: JsonValue; withheld: boolean };
 
 /** Shortest text worth replacing with the step that already sent it. */
@@ -73,15 +91,22 @@ export function automationStudioBuildTestObservationReader(input: {
   const denied = new Set(input.deniedEvidenceKeys.map(automationStudioEvidenceKey));
   const viewKeys = new Set(input.observedStateKeys ?? []);
   const sent = new Map<string, number>();
-  return (step, evidence) => {
-    if (!evidence.length) return { withheld: false };
+  return (step, evidence, changing) => {
+    let linesWithheld = false;
+    const answers = evidence.map((item) => withoutView(item, viewKeys)).flatMap((item) => {
+      if (!changing) return [item];
+      const answer = changeAnswer(item, changing);
+      if (answer.withheld) linesWithheld = true;
+      return answer.value === undefined ? [] : [answer.value];
+    });
+    if (!answers.length) return { withheld: linesWithheld };
     // A replayed read's rows are made screened labels first (`./read-rows.ts`), so one label costs that label, not the observation.
-    const rows = evidence.map((item) => withoutView(item, viewKeys)).map((item) => automationStudioBuildTestReadRows(item, input.deniedEvidenceKeys));
+    const rows = answers.map((item) => automationStudioBuildTestReadRows(item, input.deniedEvidenceKeys));
     const lean = rows.map((item) => withoutBookkeeping(item.value, step.actionId));
     const value = lean.length === 1 ? lean[0]! : lean;
     const kept = automationStudioWithoutLocators(withoutKeys(value, denied));
     if (screenAutomationStudioLlmEvidence(kept, []).secretShaped) return { withheld: true };
-    const withheld = rows.some((item) => item.withheld) || JSON.stringify(kept) !== JSON.stringify(value);
+    const withheld = linesWithheld || rows.some((item) => item.withheld) || JSON.stringify(kept) !== JSON.stringify(value);
     return { value: namingRepeats(kept, step.position, sent), withheld };
   };
 }
@@ -90,6 +115,26 @@ export function automationStudioBuildTestObservationReader(input: {
 function withoutView(value: JsonValue, viewKeys: ReadonlySet<string>): JsonValue {
   if (!viewKeys.size || !isObject(value)) return value;
   return Object.fromEntries(Object.entries(value).filter(([key]) => !viewKeys.has(key)));
+}
+
+/**
+ * A changing step's answer that says what it changed or what the page
+ * answered, its change lines bounded (`./change-lines.ts`) and without the
+ * top-level keys that only restate its outcome; else nothing.
+ */
+function changeAnswer(value: JsonValue, changing: { restating: ReadonlySet<string>; words: readonly string[] }): { value?: JsonValue; withheld: boolean } {
+  const key = AUTOMATION_STUDIO_BUILD_TEST_CHANGE_LINES_KEY;
+  if (!isObject(value) || (value[key] === undefined && value.notice === undefined)) return { withheld: false };
+  const lines = value[key] === undefined ? undefined : automationStudioBuildTestChangeLines(value[key], changing.words);
+  const withheld = lines?.withheld ?? false;
+  // An answer whose only news was change lines, none of them sendable, says nothing the outcome does not.
+  if (lines && !lines.value && value.notice === undefined) return { withheld };
+  const left = Object.entries(value).flatMap(([name, item]): Array<[string, JsonValue]> => {
+    if (name === "ok" || name === "said" || (name === "code" && typeof item === "string" && changing.restating.has(item))) return [];
+    if (name !== key) return [[name, item as JsonValue]];
+    return lines?.value ? Object.entries(lines.value) : [];
+  });
+  return left.length ? { value: Object.fromEntries(left), withheld } : { withheld };
 }
 
 /** Core's bookkeeping and the step's own action, outside any list. */

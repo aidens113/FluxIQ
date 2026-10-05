@@ -87,12 +87,28 @@ export type AutomationStudioConversationCommandOutcome = {
   confirm?: AutomationStudioConversationCommandConfirmation;
 };
 
+/** What a command's first reply is written from: what was asked, and names the person would use. */
+export type AutomationStudioConversationCommandAnnouncementView = {
+  args: Record<string, unknown>;
+  /** The name of the Flow the call is about, when it names one the thread was told of. */
+  flowName: string | null;
+  /** Where the work is tried, as a person names it (`../site-name.ts`): never an address. */
+  place: string;
+};
+
 /** A capability Core runs itself. */
 export type AutomationStudioConversationCommand = {
   /** What the model is shown. It replaces whatever a client sent under the same id. */
   capability: AutomationStudioPanelCapability;
   /** True for work that takes minutes: it runs after the request has answered, and its result arrives as a turn. */
   background: boolean;
+  /**
+   * The thread's first reply when the chat chooses this command: what will be
+   * done, for the person, in plain words and without the command's title
+   * (UI D9: the chat read `Doing "Create an automation here".`). Absent, the
+   * reply says only what it is on (`../instructions/respond.ts`).
+   */
+  announce?(view: AutomationStudioConversationCommandAnnouncementView): string;
   run(context: AutomationStudioConversationCommandContext, args: Record<string, unknown>): Promise<AutomationStudioConversationCommandOutcome>;
 };
 
