@@ -1636,7 +1636,7 @@ const bootstrapInstructionText = resolvedInstructions.instructions
           if (!accepted.verdict) throw flowBootstrapEvidenceCompletionFailure(loop, accounting, "flow_bootstrap.evidence_completion_plan_invalid");
           generatedSummary = accepted.verdict.summary;
           buildPlan = accepted.verdict.buildPlan;
-          if (extend) existingIds = { ...extend.existing, nodeIdByKey: automationStudioFlowDraftPlanNodeIds({ steps: loop.steps, nodeIdByStepId: extend.seed.nodeIdByStepId }) };
+          if (extend) existingIds = { ...extend.existing, nodeIdByKey: automationStudioFlowDraftPlanNodeIds({ steps: loop.steps, nodeIdByStepId: extend.seed.nodeIdByStepId, plan: buildPlan.plan }) };
         } else {
           const result = await runHarness({
             taskKind: "flow_bootstrap", projectId, flowId, ...promptInstructions,
