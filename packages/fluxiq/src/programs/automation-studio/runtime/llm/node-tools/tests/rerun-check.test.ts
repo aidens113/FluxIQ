@@ -236,15 +236,48 @@ describe("a checked rerun that takes the new argument", () => {
     expect(executeTool.mock.calls[0]![0].value.replay).toBe("verify");
   });
 
-  it("does not infer action identity from an arbitrary node argument when the caller declares none", async () => {
-    const step = performedLibraryStep();
-    await automationStudioNodeRerunAnswer({
-      place: undefined, replaces: step, call: { callId: "generic-check", toolId: "press", value: { node: "arbitrary.claim", parameters: { target: "candidate" } } },
-      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, resultCode: "core.replay.verified", effectApplied: false }),
-      lastingActs: new Set(["a1"])
+  // Live run `run-mux74k5q-1c3c2127` (lane A round 3, C2): reruns of the Spain press (a done lasting act) to type 3
+  // into the quantity field came back `core.replay.present` with no declaration and "took": step 8 ended as
+  // `actionId: web.output.dom-click` holding `input.node: web.output.dom-type`, `text: 3`, `submit: false`, and
+  // completion compiled it as a click and refused `text`/`submit` twice. A check whose value names another node,
+  // with no declared action, does not take: the identity is never inferred from value.node, and the check ran nothing.
+  it.each(["core.replay.verified", "core.replay.present"])("does not take a value naming another node when the check declares no action (%s)", async (code) => {
+    const step: AutomationStudioFlowDraftStep = {
+      position: 8, id: "d8", iteration: 2, callId: "pick.spain", actionId: "web.output.dom-click", toolId: "core.run_node",
+      input: { node: "web.output.dom-click", parameters: { target: { handle: "t930" } } }, ranWith: { parameters: { target: { selector: "#spain" } } },
+      effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", acts: ["a1"]
+    };
+    const original = structuredClone(step);
+    const executeTool = vi.fn(async (_request: { callId: string; toolId: string; value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, found: "missing" }, resultCode: code, effectApplied: false }));
+    const { ran, took } = await automationStudioNodeRerunAnswer({
+      place: undefined, replaces: step,
+      call: { callId: "rerun.12.6", toolId: "core.run_node", value: { node: "web.output.dom-type", parameters: { target: { handle: "t964" }, text: "3", submit: false } } },
+      executeTool, lastingActs: new Set(["a1"])
     });
-    expect(step).toMatchObject({ actionId: "library.press", toolId: "press", input: { node: "arbitrary.claim" }, effectApplied: false });
-    expect(step.priorExecution?.actionId).toBe("library.press");
+    expect(took).toBe(false);
+    expect(step).toEqual(original);
+    expect(executeTool.mock.calls[0]![0].value.replay).toBe("verify");
+    const note = (ran as { evidence: JsonObject }).evidence.rerunCheck as JsonObject;
+    expect(note).toMatchObject({ checked: true, doneAgain: false, took: false, answer: code });
+    const detail = String(note.detail);
+    expect(detail).toContain("ran nothing");
+    expect(detail).toContain("web.output.dom-type");
+    expect(detail).toContain("keeps web.output.dom-click");
+    expect(detail).toContain("add true");
+  });
+
+  it("still takes a value naming the step's own node, or none, when the check declares no action", async () => {
+    for (const value of [{ node: "library.press", parameters: { target: "candidate" } }, { parameters: { target: "candidate" } }]) {
+      const step = performedLibraryStep();
+      const { took } = await automationStudioNodeRerunAnswer({
+        place: undefined, replaces: step, call: { callId: "same-node", toolId: "press", value },
+        executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, resultCode: "core.replay.verified", effectApplied: false }),
+        lastingActs: new Set(["a1"])
+      });
+      expect(took).toBe(true);
+      expect(step).toMatchObject({ actionId: "library.press", toolId: "press", input: value, effectApplied: false });
+      expect(step.priorExecution?.actionId).toBe("library.press");
+    }
   });
 
   it("keeps same-action metadata and removes a redundant tool identity when the declared action is the tool", async () => {

@@ -181,17 +181,20 @@ describe("observeAutomationStudioEvidenceLoop", () => {
   // step" open for six minutes. A decision that never came now closes its row,
   // and a provider that gave no answer is said in words.
   it("closes the decision row when no decision came, and says a provider that did not answer in words", async () => {
-    for (const [thrown, said] of [
-      [new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"]), true],
-      [new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"]), false],
-      [new Error("anything else"), false]
+    // R3-U-7 of live-C-r3-ui-review (run-mux6naez-6c20f26e, step 0041): a reply that came back
+    // unreadable read "Deciding the next step — didn't work", a failed step; it is said as a reply
+    // that could not be used and is asked again, and nothing else reads "didn't work" either.
+    for (const [thrown, label, said] of [
+      [new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"]), "The AI model provider did not answer", true],
+      [new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"]), "The AI model's reply couldn't be used", true],
+      [new Error("anything else"), "Deciding the next step — stopped", false]
     ] as const) {
       seen = [];
       const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => { throw thrown; } }));
       await expect(inScope(() => observed.decide(decideRequest))).rejects.toBe(thrown);
       const rows = seen.filter((event) => event.detail?.title === "Deciding the next step");
       expect(rows.map((event) => event.detail?.status)).toEqual(["started", "failed"]);
-      expect(rows[1]!.label).toBe(said ? "The AI model provider did not answer" : "Deciding the next step — didn't work");
+      expect(rows[1]!.label).toBe(label);
       expect(rows[1]!.detail?.text !== undefined).toBe(said);
     }
   });

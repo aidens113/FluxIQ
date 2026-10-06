@@ -16,6 +16,7 @@ import {
   automationStudioFlowDraftTakeOffBrokenRepeats,
   type AutomationStudioFlowDraftWrittenRepeat
 } from "./repeat-revalidation.ts";
+import { automationStudioFlowDraftSettingsRewriteRun } from "./settings-rewrite-run.ts";
 import { automationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
 import { automationStudioFlowDraftReach } from "./reach.ts";
 import { automationStudioFlowDraftStrandCheck, type AutomationStudioFlowDraftWithdrawal } from "./strand-check.ts";
@@ -134,6 +135,15 @@ export function applyAutomationStudioFlowDraftAmendments(
       refused.push({ step: amendment.step, reason: NOT_A_FLOW_STEP });
       continue;
     }
+    // Settings that give a parameter the step ran with another value make it a
+    // step nobody ran: refused whole, before anything about it changes, so no
+    // disposition, act, move, routing or bind of the amendment is applied
+    // either. Live run `run-mux74k5q-1c3c2127` (C1, 0025) added a press of Spain
+    // with `settings.target` the quantity field (`./settings-rewrite-run.ts`).
+    if (automationStudioFlowDraftSettingsRewriteRun(step, amendment.settings)) {
+      refused.push({ step: amendment.step, reason: "settings_rewrite_run" });
+      continue;
+    }
     // An act is something done: a step that only reads -- a listing a Flow may
     // hold, as much as the look above -- does none, whatever the model calls it.
     // Live run 36 (`run-muq3uozx-3153564b`, E11) sent `10 add act a1` about a
@@ -209,7 +219,8 @@ export function applyAutomationStudioFlowDraftAmendments(
       if (!actOnRead) refused.push({ step: amendment.step, reason, ...(reason === "act_already_named" ? { act: amendment.act! } : {}) });
       continue;
     }
-    if (disposition !== "kept" && step.disposition === "kept") withdrawn.push({ step, named: amendment.step, disposition: step.disposition, settings: step.settings });
+    const leavesFlow = disposition !== "kept" && step.disposition === "kept";
+    if (leavesFlow) withdrawn.push({ step, named: amendment.step, disposition: step.disposition, settings: step.settings });
     step.disposition = disposition;
     // A step in the Flow brings the press that opened its page (`../opener.ts`).
     if (disposition === "kept") automationStudioFlowDraftKeepOpeners(steps, step);
@@ -220,8 +231,10 @@ export function applyAutomationStudioFlowDraftAmendments(
     if (changesPlaces) automationStudioFlowDraftSetRoutePlaces(step, routePlace!);
     if (moves && automationStudioFlowDraftAmendmentMove(steps, step, place, undefined)) movedStep = true;
     // A press a later press of the same control undid leaves the Flow with it, once the
-    // step, its openers, its act and its place are settled (`../reversal.ts`).
-    if (disposition === "kept") automationStudioFlowDraftDropReversals(steps);
+    // step, its openers, its act and its place are settled (`../reversal.ts`). A drop,
+    // or a mark as exploratory, of a kept step as well: a kept half whose partner just
+    // left the Flow would flip the control the wrong way (live run `run-mux6n7m4-8273e7a0`, rule b).
+    if (disposition === "kept" || leavesFlow) automationStudioFlowDraftDropReversals(steps);
     if (amendment.settings) step.settings = { ...(step.settings ?? {}), ...amendment.settings };
     applied += 1;
   }
