@@ -57,6 +57,22 @@ describe("buildAutomationStudioRuntimeRecoveryContext", () => {
     });
   });
 
+  it("carries Core's checked row lines beside the judgement, so advice the result contradicts is weighed as such", () => {
+    const failedAttempt = traceAttempt();
+    const checked = ["Row 3 is in the result, though the judgement calls it left out."];
+    failedAttempt.inputs = {
+      resultRepair: {
+        schemaVersion: "automation-studio.result-repair-directive.v1",
+        findings: [{ code: "result.rows_left_out", detail: "Two rows were left out." }],
+        fix: ["Keep every row that matches the request."],
+        judgement: { advice: "Drop row 3." },
+        checked
+      }
+    };
+    const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt });
+    expect(context.sections.failure).toMatchObject({ failure: { repair: { checked } } });
+  });
+
   it("carries expected and actual transitions as ids and types, never as resolved values", () => {
     const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt() });
     expect(context.sections.expected_transition).toMatchObject({ expectedRoute: "success", expectedOutputIds: ["orderId"], expectedState: { conditions: [{ kind: "url_contains" }] } });

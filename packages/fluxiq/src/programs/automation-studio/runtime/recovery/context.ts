@@ -395,6 +395,7 @@ function resultRepairSection(value: JsonValue | undefined): JsonObject | undefin
     findings: Array.isArray(value.findings) ? value.findings : undefined,
     fix: Array.isArray(value.fix) ? value.fix : undefined,
     judgement: isJsonRecordValue(value.judgement) ? value.judgement : undefined,
+    checked: boundedStringList(value.checked),
     withheld: value.withheld === true ? true : undefined
   });
 }
