@@ -37,6 +37,7 @@ export * from "./read-account/index.ts";
 export * from "./repair-directive.ts";
 export * from "./result-summary.ts";
 export * from "./run-outcome.ts";
+export * from "./step-changes.ts";
 export * from "./unsettled/index.ts";
 export * from "./verdict.ts";
 export * from "./verification-status.ts";

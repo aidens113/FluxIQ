@@ -130,6 +130,16 @@ export type AutomationStudioResultFlowStepSummary = {
   parameters?: JsonObject;
   /** The dotted paths whose authored value is not in `parameters` as the Flow wrote it. Never the values. */
   parametersWithheld?: string[];
+  /**
+   * What this run saw the step change where it stayed, one entry per time it
+   * ran, in run order: the domain's own view lines that appeared (`added`) and
+   * left (`removed`), screened (`./step-changes.ts`). Never for a run of the
+   * step that moved to another location; absent when no run of it reported a
+   * change, or when none was sendable (which sets the summary's `withheld`).
+   * Run `run-muw5zv4m-52d83027`: judges shown only status rows and the end
+   * read one "+" press as a quantity of 1.
+   */
+  changed?: Array<{ added?: string; removed?: string }>;
 };
 
 /**

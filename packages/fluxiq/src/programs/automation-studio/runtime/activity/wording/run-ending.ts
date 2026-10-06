@@ -73,12 +73,21 @@ function lastOf(value: unknown): unknown {
   return Array.isArray(value) ? value.at(-1) : undefined;
 }
 
-/** The rows the refuted answer had: the repair's own count, else the count the check's observation opens with. */
+/**
+ * The rows the refuted answer had: the repair's own count, else the count the
+ * check's observation opens with. A result that declared no record set has no
+ * rows to count: a cart Flow that only adds items read "It returned no rows"
+ * (`run-muw5zv4m-52d83027`), so its count is undefined, from the repair's
+ * `recordSetCount` or the observation's "across 0 record sets".
+ */
 function rowCount(repair: Fields | undefined, verification: Fields): number | undefined {
   const history = Array.isArray(repair?.history) ? repair.history : [];
-  const counted = fields(history.at(-1))?.totalRecordCount;
+  const last = fields(history.at(-1));
+  const observation = typeof verification.observation === "string" ? verification.observation : "";
+  if (last?.recordSetCount === 0 || /^\d+ records? stored\b[^;]*, across 0 record sets?\b/u.test(observation)) return undefined;
+  const counted = last?.totalRecordCount;
   if (typeof counted === "number" && Number.isSafeInteger(counted) && counted >= 0) return counted;
-  const observed = typeof verification.observation === "string" ? /^(\d+) records? stored\b/u.exec(verification.observation)?.[1] : undefined;
+  const observed = /^(\d+) records? stored\b/u.exec(observation)?.[1];
   return observed === undefined ? undefined : Number(observed);
 }
 

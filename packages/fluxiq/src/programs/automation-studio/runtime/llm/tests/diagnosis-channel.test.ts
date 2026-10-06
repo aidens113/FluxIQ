@@ -181,6 +181,14 @@ describe("the post-run check is told it judges a finished run, and only a build'
       expect(prompt).toContain("resultSummary.endView");
     }
   });
+
+  // Run `run-muw5zv4m-52d83027`: both judges read a playback's "+" press as a
+  // quantity of 1 from status rows and a stale end, never shown what each step changed.
+  it("tells the post-run check what each step's own change is, and to read it before the end view", () => {
+    const finished = automationStudioDiagnosisPromptInstruction("loop_verification");
+    expect(finished).toContain("resultSummary.flowShape[].changed, where present, is what this run saw that step change on the page it stayed on");
+    expect(finished).toContain("read each act's own change before endView, which shows only the end");
+  });
 });
 
 // t252 D4, D6: a repeated step now runs once per row in the build's test, and

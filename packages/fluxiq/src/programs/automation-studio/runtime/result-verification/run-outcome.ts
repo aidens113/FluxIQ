@@ -510,6 +510,8 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(input.flow ? { flowNodes: input.flow.nodes, flowEdges: input.flow.edges } : {}),
     ...ended,
     ...(runDetail?.actionAttempts ? { actionAttempts: attemptsOfThisSession(runDetail.actionAttempts, session) } : {}),
+    // What each step changed, from this session's trace in memory (run-muw5zv4m-52d83027).
+    ...(session.trace ? { sessionAttempts: session.trace.attempts } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
   });
   const datasetId = recordSets[0]?.summary.datasetId;
