@@ -23,7 +23,7 @@ import {
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE,
   automationStudioLlmEvidenceAnswerCheck,
-  automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct,
+  automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct, automationStudioLlmEvidenceSecondCopyRefused,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest,
   automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
@@ -207,8 +207,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // A step that ran is `taken` -- evidence, not a step of the Flow -- unless
     // the model added it as it ran it and it worked (`../flow-draft/step.ts`).
     const appended: AutomationStudioFlowDraftStep = { ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: authoring ? "taken" : "kept" };
-    if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended)) appended.disposition = "kept";
-    draftSteps.push(appended);
+    draftSteps.push(appended); // Before the add: a copy of a kept step stays taken, and the model is told which step does it (`./decision-handlers/second-copy.ts`).
+    if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended) && !automationStudioLlmEvidenceSecondCopyRefused(handling, appended)) appended.disposition = "kept";
     if (authoring && appended.disposition === "kept" && authored?.act !== undefined && appended.effect === "mutate") automationStudioLlmEvidenceClaimWrittenAct(handling, appended, authored.act); // A read does no act (`../flow-draft/amendment/apply.ts`, `act_on_a_read`); one act, one step, and a step it leaves is told (`./decision-handlers/amendment.ts`).
     if (authoring && appended.disposition === "kept" && authored?.place !== undefined) automationStudioFlowDraftSetRoutePlaces(appended, authored.place); // The places on the named route it is on; a read may be on one too (`../flow-draft/route-places/set.ts`).
     if (authoring && appended.disposition === "kept") { automationStudioFlowDraftKeepOpeners(draftSteps, appended); automationStudioFlowDraftDropReversals(draftSteps); } // The press that opened its page joins it (`../flow-draft/opener.ts`); a pair of presses on one control that changed nothing leaves (`../flow-draft/reversal.ts`).
