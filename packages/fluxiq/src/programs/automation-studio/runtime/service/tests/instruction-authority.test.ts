@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionDeclaration } from "../../action-permissions/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioInstructedActs } from "../../flow-bootstrap/index.ts";
+import { automationStudioFlowBootstrapCreationPurse } from "../flow-bootstrap-commands/index.ts";
 import { automationStudioFlowBootstrapInstructionAuthority } from "../instruction-authority.ts";
 
 const INSTRUCTION = {
@@ -123,7 +124,7 @@ describe("an act the read gave no answer for is not repeated by the build's test
 
   it("names the coupon lasting when the read answered the cart alone, and says so in the thread", async () => {
     const said: string[] = [];
-    const { permissions } = gate({ acts: { a1: ["create_new"] }, instructed: [{ consequence: "create_new", quote: CART }] }, said);
+    const { permissions } = gate({ acts: { [CART_ACT().id]: ["create_new"] }, instructed: [{ consequence: "create_new", quote: CART }] }, said);
 
     expect([...await permissions.instructedLastingActs(UNKINDED)].sort()).toEqual(["a1", "a2"]);
     expect(said).toHaveLength(1);
@@ -173,5 +174,151 @@ describe("the read is made at a defined point, never inside a press", () => {
 
     expect(log).toEqual(["domain choose.colour", "pressed choose.colour"]);
     expect(sent).toHaveLength(0);
+  });
+});
+
+// D phase 1: the same one read also answers the route the person names, and
+// its consequence and route answers share it (`d-shared-reader-preflight.md`).
+// The user's rule: a named route must be followed; a Flow may start where the
+// work begins unless the person names the route. So a read that failed, or a
+// route Core cannot ground, is "unavailable" -- never "open".
+const ROUTED = {
+  instructionId: "instruction.route",
+  title: "Flash deal hubs",
+  body: "On Farbazaar, go to the home page, open Offers, then Flash deals, and put two Voltbay USB-C hubs in my cart."
+};
+const ACCEPT = "put two Voltbay USB-C hubs in my cart";
+const NAMED = { kind: "named", instructionId: ROUTED.instructionId, quote: "go to the home page, open Offers, then Flash deals", waypoints: ["the home page", "Offers", "Flash deals"] };
+const ROUTED_ACTS = automationStudioInstructedActs(`${ROUTED.title}
+${ROUTED.body}`);
+const CART_ACT = () => ROUTED_ACTS.find((act) => act.quote.includes(ACCEPT))!;
+const answered = (result: JsonObject) => ({ ok: true, request: { estimatedInputTokens: 10 }, response: { kind: "evidence_tool_decision", summary: "Read.", decision: { kind: "complete", result } }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 } });
+type Run = (request: Sent) => Promise<unknown>;
+
+/** The authority over a provider whose every answer `answer` gives, the gate reading through it, and every request sent. */
+function routed(answer: () => Promise<unknown>, wrap: (inner: Run) => Run = (inner) => inner) {
+  const sent: Sent[] = [];
+  const reader = automationStudioFlowBootstrapInstructionAuthority({
+    run: wrap(async (request) => { sent.push(request); return await answer(); }) as never,
+    projectId: "project.demo",
+    flowId: "flow.demo",
+    instructions: { instructions: [], instructionIds: [], diagnostics: [], tokenBudget: 1000, estimatedTokens: 0 } as never,
+    active: [ROUTED],
+    provider: { provider: {} as never }
+  });
+  const permissions = automationStudioFlowBootstrapActionPermissions({ permittedConsequences: [], instructionIds: [ROUTED.instructionId], deriveInstructed: reader.derive, executeTool: (async () => ({ kind: "llm_evidence_tool_execution", evidence: {} })) as never });
+  return { reader, sent, permissions };
+}
+
+describe("the read also answers the route the person names", () => {
+  it("asks for the route in the same question as the consequences, required", async () => {
+    const { reader, sent } = routed(async () => answered({ acts: { [CART_ACT().id]: ["create_new"] }, instructed: [], route: NAMED }));
+    await reader.derive();
+
+    expect(CART_ACT()).toBeDefined();
+    const completion = sent[0]!.evidenceLoop.completionSchema as { required?: string[]; properties?: Record<string, unknown> };
+    expect(completion.required).toEqual(["acts", "instructed", "route"]);
+    expect(completion.properties?.route).toBeDefined();
+    const decision = sent[0]!.evidenceLoop.decisionSchema as { description?: string };
+    expect(decision.description).toMatch(/route/iu);
+  });
+
+  it("is not read for a route nobody asked about", () => {
+    const { reader, sent } = routed(async () => answered({ instructed: [], route: NAMED }));
+
+    expect(reader.route.peek()).toEqual({ state: "unread" });
+    expect(sent).toHaveLength(0);
+  });
+
+  it("answers the route and the gate's consequences from one call, asked at once, and counts it once", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const { reader, sent, permissions } = routed(async () => { await held; return answered({ acts: { [CART_ACT().id]: ["create_new"] }, instructed: [{ consequence: "create_new", quote: ACCEPT }], route: NAMED }); });
+
+    const route = reader.route.read();
+    const lasting = permissions.instructedLastingActs([CART_ACT()]);
+    const derived = reader.derive();
+    const again = reader.route.read();
+    expect(reader.route.peek()).toEqual({ state: "unread" });
+    release();
+
+    expect((await route).state).toBe("named");
+    expect(await again).toBe(await route);
+    expect([...await lasting]).toEqual([CART_ACT().id]);
+    expect((await derived).map((entry) => entry.consequence)).toEqual(["create_new"]);
+    expect(permissions.instructed()?.map((entry) => entry.consequence)).toEqual(["create_new"]);
+    expect(reader.route.peek()).toBe(await route);
+    expect(sent).toHaveLength(1);
+    expect(reader.usage).toMatchObject({ calls: 1, inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 });
+  });
+
+  it("answers an explicit open route as open", async () => {
+    const { reader } = routed(async () => answered({ acts: { [CART_ACT().id]: ["create_new"] }, instructed: [], route: { kind: "open" } }));
+
+    expect(await reader.route.read()).toMatchObject({ state: "open" });
+  });
+
+  it("keeps the consequences the person's words give when the route cannot be grounded, and never calls that route open", async () => {
+    const { reader, permissions } = routed(async () => answered({ acts: { [CART_ACT().id]: ["create_new"] }, instructed: [{ consequence: "create_new", quote: ACCEPT }], route: { ...NAMED, quote: "go straight to Friend requests" } }));
+
+    expect(await reader.route.read()).toEqual({ state: "unavailable", reason: "ungrounded" });
+    await permissions.instructedLastingActs([CART_ACT()]);
+    expect(permissions.instructed()?.map((entry) => [entry.consequence, entry.quote])).toEqual([["create_new", ACCEPT]]);
+  });
+
+  it("keeps the consequences and calls the route unavailable when the answer has no route", async () => {
+    const { reader } = routed(async () => answered({ acts: { [CART_ACT().id]: ["create_new"] }, instructed: [{ consequence: "create_new", quote: ACCEPT }] }));
+
+    expect(await reader.route.read()).toEqual({ state: "unavailable", reason: "malformed" });
+    expect((await reader.derive()).map((entry) => entry.consequence)).toEqual(["create_new"]);
+  });
+
+  it("calls the route unavailable, not open, when the answer did not complete, and does not ask again", async () => {
+    const { reader, sent } = routed(async () => ({ ok: false, request: { estimatedInputTokens: 10 } }));
+
+    expect(await reader.route.read()).toEqual({ state: "unavailable", reason: "non_complete" });
+    // The consequences read as a failed read always has: every act unanswered.
+    const read = await reader.derive();
+    expect([...read]).toEqual([]);
+    expect(read.acts?.map((act) => act.consequences)).toEqual(ROUTED_ACTS.map(() => null));
+    expect(await reader.route.read()).toEqual({ state: "unavailable", reason: "non_complete" });
+    expect(sent).toHaveLength(1);
+    expect(reader.usage.calls).toBe(1);
+  });
+
+  it("calls the route unavailable when the answer was a step rather than a completion", async () => {
+    const { reader } = routed(async () => ({ ok: true, request: { estimatedInputTokens: 10 }, response: { kind: "evidence_tool_decision", summary: "Look.", decision: { kind: "tool_call", callId: "c1", toolId: "t", input: {} } } }));
+
+    expect(await reader.route.read()).toEqual({ state: "unavailable", reason: "non_complete" });
+  });
+
+  it("calls the route unavailable when the call itself failed, leaves the gate's answer unknown, and does not call again", async () => {
+    const { reader, sent, permissions } = routed(async () => { throw new Error("socket hang up: private detail"); });
+
+    const route = await reader.route.read();
+    expect(route).toEqual({ state: "unavailable", reason: "transport" });
+    expect(JSON.stringify(route)).not.toContain("socket");
+    await expect(reader.derive()).rejects.toThrow("socket hang up");
+    // The gate remembers the failure as a failure: nothing is held as though nothing were asked for, and the cart still lasts.
+    expect([...await permissions.instructedLastingActs([CART_ACT()])]).toEqual([CART_ACT().id]);
+    expect(permissions.instructed()).toBeUndefined();
+    expect(reader.route.peek()).toEqual({ state: "unavailable", reason: "transport" });
+    expect(sent).toHaveLength(1);
+    // Nothing came back, so nothing was counted -- which is not a measured zero.
+    expect(reader.usage.calls).toBe(0);
+  });
+
+  it("shares the read through the build purse's own reading wrapper, which is called once", async () => {
+    const creation = await automationStudioFlowBootstrapCreationPurse({ store: { get: async () => undefined, save: async () => undefined, delete: async () => undefined } as never, projectId: "project.demo", flowId: "flow.demo", repair: true, ceilingUsd: 1 });
+    let wrapped = 0;
+    const { reader, sent } = routed(async () => answered({ acts: { [CART_ACT().id]: ["create_new"] }, instructed: [], route: NAMED }), (inner) => {
+      const reading = creation.reading(inner as never);
+      return async (request) => { wrapped += 1; return await reading(request as never); };
+    });
+
+    await Promise.all([reader.derive(), reader.route.read(), reader.derive()]);
+    expect(wrapped).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(creation.readingRefused).toBeUndefined();
   });
 });
