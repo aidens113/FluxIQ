@@ -7,6 +7,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID } from "../../evidence-loop.ts";
 
 const tools = [
   { toolId: "read", description: "Read the list in view.", inputSchema: { type: "object" }, effect: "observe" as const },
@@ -204,5 +205,195 @@ describe("an identical call on an unchanged draft and page (run-musr9pv3-f4bf625
     const pressing = requests(true);
     await expect(partLoop(pressed, pressing)).rejects.toBe(stalledError);
     expect(replays(pressing)).toHaveLength(6);
+  });
+});
+
+// A rerun that changes nothing, sent again and again (`../../repeat-guard/outcomes.ts`,
+// `../../decision-handlers/amendment.ts`, `../../decision-handlers/refused-repeat.ts`).
+//
+// Live run `run-muwaobm2-882cadd9` (lane A, round 0), iterations 17-24: step 14
+// was rerun as the quantity field, then as the Spain press
+// `{node: dom-click, parameters: {target: {handle: t958}}}` beside `add` or
+// `keep` act a1.origin -- the same two decisions, A and B, alternating
+// A A B B A B. Every rerun reset the page and replayed six clicks before the
+// press; the merged argument was identical each time, the act part was refused
+// `act_already_named` (repeated), and the Flow's signature never changed. The
+// history showed each as "applied: 1, rerun: 14" with no refused part, an
+// applied rerun counted as progress, and the build ran into its purse.
+//
+// Nothing page-keyed caught it: every reset reloads the page, and the web
+// domain's state digest moved with each reload (the rerun answers differ only in
+// `[frame 10]`, `[frame 11]`, `[frame 12]`), so no rerun ever started on a page
+// the guard had seen. The executor here gives every call a fresh digest, as that
+// run's did.
+const historyRows = (evidence: ReadonlyArray<{ toolId: string; value: JsonObject }>): unknown[][] => (evidence.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID)!.value as { rows: unknown[][] }).rows;
+/** The history's amendment row made at `iteration`, whether alone or grouped with others. */
+const amendmentRow = (rows: unknown[][], iteration: number): unknown[] | undefined => rows.find((row) => row[1] === "amendment" && (Array.isArray(row[0]) ? row[0].includes(iteration) : row[0] === iteration));
+
+const nodeTools = [
+  { toolId: "core.run_node", description: "Run one node.", inputSchema: { type: "object" }, effect: "mutate" as const, perCallEffect: true },
+  { toolId: "look", description: "Look at the page.", inputSchema: { type: "object" }, effect: "observe" as const }
+];
+const quantity = { node: "web.output.dom-type", parameters: { target: { handle: "t964" }, text: "3", submit: false }, consequences: [] };
+const spain = { node: "web.output.dom-click", parameters: { target: { handle: "t958" } }, consequences: [] };
+// Decision A (0052, 0060, 0084) and decision B (0068, 0076, 0092).
+const decisionA = { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: spain }, { step: 1, change: "add", act: "a1.origin" }] };
+const decisionB = { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: spain }, { step: 1, change: "keep", act: "a1.origin" }] };
+
+/** The item page: every call finds and leaves a page digested afresh, as a reload moved the live run's digest. */
+function itemPage() {
+  let capture = 0;
+  return vi.fn(async ({ toolId, value }: { toolId: string; value: JsonObject }) => {
+    const before = `page.${(capture += 1)}`;
+    const after = `page.${(capture += 1)}`;
+    if (toolId === "look") return { kind: "llm_evidence_tool_execution", stateDigests: { before, after }, evidence: { ok: true, controls: 12 }, effectApplied: false, resultCode: "web.inspect.succeeded", draft: { actionId: "web.look", effect: "observe", proposes: false } };
+    const node = String(value.node);
+    const pressed = node === "web.output.dom-click";
+    // A press on a control the page does not have: refused, the page as it was.
+    if (pressed && (value.parameters as { target?: { handle?: string } } | undefined)?.target?.handle === "gone") {
+      return { kind: "llm_evidence_tool_execution", stateDigests: { before, after: before }, evidence: { ok: false, node, code: "target_unobserved" }, effectApplied: false, resultCode: "web.action.rejected.target_unobserved", draft: { actionId: node, effect: "mutate", proposes: true } };
+    }
+    return {
+      kind: "llm_evidence_tool_execution",
+      stateDigests: { before, after },
+      evidence: { ok: true, node, status: "succeeded", pageChanged: true, ...(pressed ? { choice: "This press chose \"Spain\"" } : { control: "Quantity" }) },
+      effectApplied: true,
+      resultCode: "web.action.succeeded",
+      draft: { actionId: node, effect: "mutate", proposes: true }
+    };
+  });
+}
+
+const rerunLoop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof itemPage>, stalled = true) => runAutomationStudioLlmEvidenceLoop({
+  tools: nodeTools, decide, executeTool, maxIterations: 30, maxToolCalls: 60, dryRun: false, propagateDecisionErrors: stalled,
+  ...(stalled ? { unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError } } : {})
+});
+
+/** Iteration 1 is the quantity typed and added (as step 14 stood at 17); then the live run's A A B B A B, then completing. */
+const liveShape = () => vi.fn()
+  .mockResolvedValueOnce({ kind: "tool_call", callId: "type-quantity", toolId: "core.run_node", input: quantity, add: true, act: "a1.quantity" })
+  .mockResolvedValueOnce(decisionA)
+  .mockResolvedValueOnce(decisionA)
+  .mockResolvedValueOnce(decisionB)
+  .mockResolvedValueOnce(decisionB)
+  .mockResolvedValueOnce(decisionA)
+  .mockResolvedValueOnce(decisionB)
+  .mockResolvedValue({ kind: "complete", result: { done: true } });
+
+const clicks = (executeTool: ReturnType<typeof itemPage>): number => executeTool.mock.calls.filter(([call]) => call.value.node === "web.output.dom-click").length;
+
+describe("a rerun that changed nothing, sent again", () => {
+  it("records each amendment's refused parts, held ones included, and marks the reruns that changed nothing", async () => {
+    const decide = liveShape();
+    const executeTool = itemPage();
+
+    await rerunLoop(decide, executeTool).catch(() => undefined);
+
+    // Decision 4 (B, first sent) was shown the history of 1-3.
+    const rows = historyRows(shownAt(decide, 3));
+    // 2 (as 18): the rerun took the quantity step's place with the press, so the Flow changed.
+    const first = amendmentRow(rows, 2)!;
+    expect(first[6]).toBe("yes");
+    expect(JSON.stringify(first[7])).toContain("\"rerun\":1");
+    // 3 (as 19): the same decision again. The press replaced an identical press with the same result, and its held
+    // `add act a1.origin` was refused: the row says so and reads as no change, not "applied".
+    const second = amendmentRow(rows, 3)!;
+    expect(second[5]).toBe("act_already_named");
+    expect(second[6]).toBe("no");
+    expect(second[7]).toMatchObject({ applied: 0, refused: [[1, "act_already_named", expect.any(Boolean)]], rerun: 1 });
+    expect(second[8]).toBe(2);
+  });
+
+  it("refuses the identical decision unrun once it changed nothing, and stalls the round at the third no-change decision in a row", async () => {
+    const decide = liveShape();
+    const executeTool = itemPage();
+
+    await expect(rerunLoop(decide, executeTool)).rejects.toBe(stalledError);
+
+    // A ran twice and B once, each a press; B sent again (as 21) was refused before its rerun ran, so no reset, no replay
+    // and no press -- and A (as 22) and B (as 23) were never asked for.
+    expect(clicks(executeTool)).toBe(3);
+    expect(decide).toHaveBeenCalledTimes(5);
+    const rows = historyRows(shownAt(decide, 4));
+    expect(amendmentRow(rows, 4)?.[6]).toBe("no");
+  });
+
+  it("tells the model the refused decision was not run, and why", async () => {
+    // A, A, then A again: the third A is refused unrun, and the model is told so before it is asked again.
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "type-quantity", toolId: "core.run_node", input: quantity, add: true, act: "a1.quantity" })
+      .mockResolvedValueOnce(decisionA)
+      .mockResolvedValueOnce(decisionA)
+      .mockResolvedValueOnce(decisionA)
+      .mockResolvedValue({ kind: "complete", result: { done: true } });
+    const executeTool = itemPage();
+
+    await expect(rerunLoop(decide, executeTool)).resolves.toMatchObject({ ok: true });
+
+    expect(clicks(executeTool)).toBe(2);
+    const note = shownAt(decide, 4).find((entry) => entry.toolId === "core.repeat_check")?.value;
+    expect(note).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_refused", then: { outcome: "same_amendment" }, refusedInARow: 2 });
+    expect(String(note?.instruction)).toContain("none of it was run: no reset, no replay, no press");
+    const refused = amendmentRow(historyRows(shownAt(decide, 4)), 4)!;
+    expect(refused[5]).toBe("llm_evidence_loop.repeat_refused");
+    expect(refused[6]).toBe("no");
+    expect(refused[8]).toBe(2);
+  });
+
+  it("ends the round as repeat_without_progress where no stall is configured", async () => {
+    const decide = liveShape();
+    const executeTool = itemPage();
+
+    const result = await rerunLoop(decide, executeTool, false);
+
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    expect(clicks(executeTool)).toBe(3);
+  });
+
+  it("never loops: the live run's two decisions, sent without end (the purse ended it live), stop at the limit after three presses", async () => {
+    const decide = vi.fn().mockResolvedValueOnce({ kind: "tool_call", callId: "type-quantity", toolId: "core.run_node", input: quantity, add: true, act: "a1.quantity" });
+    decide.mockImplementation(async () => (decide.mock.calls.length % 2 === 0 ? decisionA : decisionB));
+    const executeTool = itemPage();
+
+    const result = await rerunLoop(decide, executeTool, false);
+
+    expect(result).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
+    expect(clicks(executeTool)).toBeLessThanOrEqual(3);
+    expect(decide.mock.calls.length).toBeLessThanOrEqual(6);
+  });
+
+  it("refuses unrun the identical decision whose rerun did not work on this same draft, even after a look moved the page, and says so", async () => {
+    // Sent straight again, it is refused `changes_nothing` on the page it left (`../rerun-request.ts`); after a look, only the draft key catches it.
+    const gone = { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { node: "web.output.dom-click", parameters: { target: { handle: "gone" } } } }] };
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "type-quantity", toolId: "core.run_node", input: quantity, add: true, act: "a1.quantity" })
+      .mockResolvedValueOnce(gone)
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "look-1", toolId: "look", input: {} })
+      .mockResolvedValueOnce(gone)
+      .mockResolvedValue({ kind: "complete", result: { done: true } });
+    const executeTool = itemPage();
+
+    await expect(rerunLoop(decide, executeTool)).resolves.toMatchObject({ ok: true });
+
+    // The failed press ran once; the same decision on the same draft was refused before its reset, replay and press.
+    expect(clicks(executeTool)).toBe(1);
+    const note = shownAt(decide, 4).find((entry) => entry.toolId === "core.repeat_check")?.value;
+    expect(note).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_refused", then: { outcome: "same_amendment", resultCode: "web.action.rejected.target_unobserved", rerunFailed: true } });
+    expect(String(note?.instruction)).toContain("its rerun did not work");
+  });
+
+  it("still runs the same rerun once the draft has changed since it changed nothing", async () => {
+    // A, A (no change), then a new step typed and added, then A again: the draft is no longer the one A left, so A runs.
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "type-quantity", toolId: "core.run_node", input: quantity, add: true, act: "a1.quantity" })
+      .mockResolvedValueOnce(decisionA)
+      .mockResolvedValueOnce(decisionA)
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "type-note", toolId: "core.run_node", input: { ...quantity, parameters: { target: { handle: "t970" }, text: "gift" } }, add: true })
+      .mockResolvedValueOnce(decisionA)
+      .mockResolvedValue({ kind: "complete", result: { done: true } });
+    const executeTool = itemPage();
+
+    await expect(rerunLoop(decide, executeTool)).resolves.toMatchObject({ ok: true });
+    expect(clicks(executeTool)).toBe(3);
   });
 });

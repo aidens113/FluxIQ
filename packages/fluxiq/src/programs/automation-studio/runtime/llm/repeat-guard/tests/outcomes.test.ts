@@ -169,4 +169,23 @@ describe("what a call did on the page it found", () => {
     const guard = automationStudioLlmEvidenceRepeatGuard();
     expect([guard.refusedAgain(4), guard.refusedAgain(5), guard.refusedAgain(7), guard.refusedAgain(8), guard.refusedAgain(9)]).toEqual([1, 2, 1, 2, 3]);
   });
+
+  // Live run `run-muwaobm2-882cadd9`: one amend_draft's rerun put an identical press back with the same result, on an unchanged draft.
+  it("blocks an amend_draft decision whose rerun changed nothing on this same draft, and only there", () => {
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.amended({ signature: "A", draft: "d1", changed: true, callId: "rerun.14.3" });
+    expect(guard.amendmentBlocks("A", "d1")).toBeUndefined();
+    guard.amended({ signature: "A", draft: "d1", changed: false, callId: "rerun.14.4", resultCode: "web.action.succeeded" });
+    expect(guard.amendmentBlocks("A", "d1")).toEqual({ callId: "rerun.14.4", outcome: "same_amendment", resultCode: "web.action.succeeded" });
+    // Another decision, or the same one on a draft that has changed since, is new.
+    expect(guard.amendmentBlocks("B", "d1")).toBeUndefined();
+    expect(guard.amendmentBlocks("A", "d2")).toBeUndefined();
+    // Nor is it a call: no call key is an amendment's.
+    expect(guard.blocks("A", {}, "d1")).toBeUndefined();
+    // Changing something lifts it, as an outcome that says to try again later never sets it.
+    guard.amended({ signature: "A", draft: "d1", changed: true, callId: "rerun.14.5" });
+    expect(guard.amendmentBlocks("A", "d1")).toBeUndefined();
+    guard.amended({ signature: "A", draft: "d1", changed: false, callId: "rerun.14.6", resultCode: "web.action.rejected.rate_limited" });
+    expect(guard.amendmentBlocks("A", "d1")).toBeUndefined();
+  });
 });

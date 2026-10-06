@@ -82,6 +82,32 @@
 // handle was never shown and which call shows it (`./feedback.ts`). Any other
 // failure stays refused while the page is unchanged, looks or not.
 //
+// **A rerun that changed nothing is keyed on the decision and the draft, not
+// the page.** Live run `run-muwaobm2-882cadd9` (lane A, iterations 17-24) sent
+// one `amend_draft` -- step 14 `rerun` as the Spain press beside `add` or
+// `keep` act a1.origin -- six times. Each rerun reset the page and replayed six
+// clicks before its press, put an identical step back with the same result,
+// and left the Flow's signature (`./draft-key.ts`) as it was; the act part was
+// refused `act_already_named` each time. Nothing here refused one, for three
+// reasons: the first identical call from a page always runs and only the third
+// is refused (`same_result` needs the second to end where the first did);
+// every reset reloads the page, and the web domain's state digest moved with
+// each reload (the rerun answers differ only in `[frame 10]`, `[frame 11]`,
+// `[frame 12]`: the digest includes each element's frame id), so no rerun ever
+// started on a page already keyed; and the loop's own check of the rerun's
+// call looked at the page the last press left, not at the rerun's place. So
+// once a decision that ran a rerun has settled, what it came to is recorded
+// here by the decision's signature and the draft it left (`amended`): a rerun
+// that took its step's place and changed neither the Flow nor what the step
+// observed changed nothing, and one that ran and did not work left the Flow as
+// it was: the same reset and replay on the same draft fails the same way, as
+// an identical failed call on the same page does. The identical decision sent
+// on that same draft is refused before anything of it runs -- no reset, no
+// replay, no press
+// (`amendmentBlocks`, `same_amendment`) -- and counted in the same run of
+// refusals as any repeat (`../decision-handlers/amendment.ts`). Once the draft
+// changes it is a new decision and runs, as a call does once its page changes.
+//
 // **What still runs.**
 //
 // - Anything after the page changed: the key holds the page.
@@ -121,12 +147,17 @@ export type AutomationStudioLlmEvidenceRepeatedOutcome = {
    * look that answered on this page exactly as the identical look before it.
    * `same_draft`: a call that runs the draft ran on this same draft and page
    * and changed nothing (`core.run_flow`, run-musr9pv3-f4bf6256).
+   * `same_amendment`: the same `amend_draft` decision ran its rerun on this same
+   * draft and changed nothing (`run-muwaobm2-882cadd9`), or its rerun did not
+   * work (`rerunFailed`); `callId` is that rerun's call.
    */
-  outcome: "failed" | "changed_nothing" | "same_result" | "same_answer" | "same_draft";
+  outcome: "failed" | "changed_nothing" | "same_result" | "same_answer" | "same_draft" | "same_amendment";
   resultCode?: string;
   resultReason?: string;
   /** It failed only because a handle it names was never shown on this page; a later call that shows handles lifts it. */
   handleUnshown?: true;
+  /** `same_amendment` only: the decision's rerun ran and did not work, rather than putting back an identical step. */
+  rerunFailed?: true;
 };
 
 /** One call as it ran, for the record. */
@@ -163,6 +194,16 @@ export type AutomationStudioLlmEvidenceRepeatGuard = AutomationStudioLlmEvidence
   blocks(toolId: string, input: JsonObject, at?: string): AutomationStudioLlmEvidenceRepeatedOutcome | undefined;
   /** Decision `iteration` was refused as a repeat; returns how many decisions in a row have been, this one included. */
   refusedAgain(iteration: number): number;
+  /**
+   * An `amend_draft` decision whose rerun ran has settled: `signature` is the
+   * decision's (`../decision-context/signature.ts`), `draft` the draft's key
+   * after it (`./draft-key.ts`), `changed` whether it changed the Flow or what
+   * the step observed, `failed` whether the rerun did not work (and so left the
+   * Flow as it was), and `callId` the rerun's call.
+   */
+  amended(outcome: { signature: string; draft: string; changed: boolean; failed?: boolean | undefined; callId: string; resultCode?: string | undefined; resultReason?: string | undefined }): void;
+  /** The earlier outcome that makes this `amend_draft` decision, on the draft whose key is `draft`, a repeat to refuse before any of it runs. */
+  amendmentBlocks(signature: string, draft: string): AutomationStudioLlmEvidenceRepeatedOutcome | undefined;
 };
 
 /**
@@ -189,6 +230,8 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
   let refusedInARow = 0;
   let lastRefused = Number.NEGATIVE_INFINITY;
   const key = (toolId: string, input: JsonObject, state: string): string => `${toolId}\u0000${state}\u0000${options.draftOf?.(toolId) ?? ""}\u0000${automationStudioLlmEvidenceCanonicalJson(input)}`;
+  // A decision is keyed on the draft it was sent on, which a call key never starts with (a call's starts with its tool id, never empty).
+  const amendmentKey = (signature: string, draft: string): string => `\u0000amend_draft\u0000${draft}\u0000${signature}`;
   return {
     ...searching,
     seen(state) {
@@ -246,6 +289,24 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
     blocks(toolId, input, at) {
       const state = at ?? latest;
       return state === undefined ? undefined : outcomes.get(key(toolId, input, state));
+    },
+    amended(outcome) {
+      const at = amendmentKey(outcome.signature, outcome.draft);
+      // As for a call: one that changed something, or whose outcome says to wait and try again, is not a repeat to refuse.
+      if (outcome.changed || RETRY_LATER.test(`${outcome.resultCode ?? ""} ${outcome.resultReason ?? ""}`)) {
+        outcomes.delete(at);
+        return;
+      }
+      outcomes.set(at, {
+        callId: outcome.callId,
+        outcome: "same_amendment",
+        ...(outcome.resultCode ? { resultCode: outcome.resultCode } : {}),
+        ...(outcome.resultReason ? { resultReason: outcome.resultReason } : {}),
+        ...(outcome.failed ? { rerunFailed: true as const } : {})
+      });
+    },
+    amendmentBlocks(signature, draft) {
+      return outcomes.get(amendmentKey(signature, draft));
     },
     refusedAgain(iteration) {
       // In a row means one decision after another: anything else decided between breaks the run.

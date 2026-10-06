@@ -95,10 +95,14 @@ function shapeOf(record: AutomationStudioLlmDecisionContextRecord): Shape | unde
         ...(decision.undoneTo !== undefined ? { undoneTo: decision.undoneTo } : {}),
         ...(decision.rerun !== undefined ? { rerun: decision.rerun } : {})
       };
+      // A decision refused unrun reads as that refusal; one that ran and changed nothing reads as that, never as "applied",
+      // and keeps its row like a refusal does (`./decision.ts`, `changed`).
+      const notRun = decision.notRunAs === undefined ? undefined : closed(decision.notRunAs) ?? "refused";
+      const unchanged = decision.changed === "no";
       return {
         kind: "amendment",
-        role: refused.length ? "refusal" : "other",
-        cells: cells({ code: codes(refused.map((item) => item.reason), refused.length ? "refused" : "applied") }),
+        role: refused.length || notRun !== undefined || unchanged ? "refusal" : "other",
+        cells: cells({ code: notRun ?? codes(refused.map((item) => item.reason), refused.length ? "refused" : unchanged ? "unchanged" : "applied"), changed: decision.changed }),
         detail: {
           full: { applied: decision.applied, ...(refused.length ? { refused: refused.map((item) => [item.step, closed(item.reason), item.repeated]) } : {}), ...rest },
           codes: { applied: decision.applied, ...(refused.length ? { refused: refused.map((item) => item.step) } : {}), ...rest }
