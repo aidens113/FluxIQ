@@ -58,7 +58,7 @@ async function chat(conversations: AutomationStudioConversations): Promise<strin
 }
 
 function contextFor(conversations: AutomationStudioConversations, conversationId: string, port: AutomationStudioConversationCommandContext["port"], extra: Partial<AutomationStudioConversationCommandContext> = {}): AutomationStudioConversationCommandContext {
-  return { port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", keyLocked: false, startLocation: PAGE, ...extra };
+  return { port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", keyLocked: false, paired: false, startLocation: PAGE, ...extra };
 }
 
 async function turnsOf(conversations: AutomationStudioConversations, conversationId: string) {
@@ -431,7 +431,7 @@ describe("conversation commands", () => {
     const execution = await executeAutomationStudioConversationCommand({ command: command("run.execute"), context: contextFor(conversations, conversationId, port), arguments: { flowId: "flow.kettle" } });
     expect(execution.status).toBe("started");
     await automationStudioConversationCommandWork.idle();
-    expect(calls).toEqual([{ endpoint: "run-runtime-session", payload: { projectId: PROJECT, flowId: "flow.kettle" } }]);
+    expect(calls).toEqual([{ endpoint: "run-runtime-session", payload: { projectId: PROJECT, flowId: "flow.kettle", runIntent: "explore_and_adapt" } }]);
     const [result] = await turnsOf(conversations, conversationId);
     expect(result?.text).toBe("The run run.7 ended failed: The price element never appeared.");
     expect(result?.attachment?.ref).toBe("run.execute");

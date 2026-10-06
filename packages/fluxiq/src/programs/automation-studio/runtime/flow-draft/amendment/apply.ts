@@ -139,7 +139,7 @@ export function applyAutomationStudioFlowDraftAmendments(
     const actOnRead = amendment.act !== undefined && step.effect !== "mutate";
     if (actOnRead) refused.push({ step: amendment.step, reason: "act_on_a_read" });
     if (amendment.change === "bind") {
-      const bound = automationStudioFlowDraftAmendmentBind(steps, step, amendment);
+      const bound = automationStudioFlowDraftAmendmentBind(steps, step, amendment, shown);
       if (bound.ok) applied += 1;
       else refused.push({ step: amendment.step, reason: bound.reason, ...(bound.parameter === undefined ? {} : { parameter: bound.parameter }), ...(bound.control ? { control: true as const } : {}), ...(bound.bindable ? { bindable: bound.bindable } : {}) });
       continue;

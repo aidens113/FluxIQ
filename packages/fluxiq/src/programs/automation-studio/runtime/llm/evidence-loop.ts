@@ -658,10 +658,10 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const shown = decisionContext.shown;
       noProgress.shown(shown.map((entry) => entry.callId));
       const raw = await purse.run(() => input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
-      unreadable.readable();
-      unanswered.answered();
-      decision = automationStudioLlmEvidenceParseDecision(raw);
-      refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend }) : undefined;
+      unreadable.readable(); unanswered.answered();
+      const binding = drafting ? { steps: draftSteps, nodeOf: input.nodeOf } : undefined; // A written call's `$step` reads the draft it joins after its last step (P5, t270).
+      decision = automationStudioLlmEvidenceParseDecision(raw, binding);
+      refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend }, binding) : undefined;
     } catch (thrown) { const costRefusal = purse.refused(thrown); if (costRefusal) { accounting.iterations = iteration - 1; return exhausted("budget", costRefusal); } // Not sent: the purse could not pay for it at worst, the only cost ending.
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;

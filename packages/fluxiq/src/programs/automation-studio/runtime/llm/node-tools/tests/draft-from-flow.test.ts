@@ -384,3 +384,51 @@ describe("a Flow's row loop read back as the repeat it was written from", () => 
     expect(plain(drawn())).toEqual({ each: false, repeats: true });
   });
 });
+
+// P5 (t270, t273): a saved Flow names an earlier node's output by the plan key
+// that node was assembled under, `$node.<key>.<output>`. Re-seeded, that key
+// names no node of the next plan, so it is read back as the seeded step the
+// node became, `$step.<seed id>.<output>`, and assembly names it again.
+describe("a saved Flow's earlier-output reference read back as a step binding", () => {
+  const TYPE = "web.output.dom-type";
+  const EXTRACT = "web.output.dom-extract_list";
+  const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+  const registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, ...webDomainNodeDefinitionsFixture()]);
+  const extractList = { item: "li.row", fields: { name: ".name" } };
+  const reference = (path: string) => ({ $state: { path } });
+
+  /** list (saved as key s1) -> type its rows' names (s2), as an earlier build stored it. */
+  function stored(path: string): { nodes: AutomationStudioFlowNode[]; edges: AutomationStudioFlowEdge[] } {
+    return {
+      nodes: [
+        { id: "node.list", definitionId: EXTRACT, parameterValues: { extractList }, metadata: { bootstrapSymbolicKey: "s1" } },
+        { id: "node.type", definitionId: TYPE, parameterValues: { selector: "#copy", text: reference(path) }, metadata: { bootstrapSymbolicKey: "s2" } }
+      ],
+      edges: [{ id: "e1", sourceNodeId: "node.list", targetNodeId: "node.type", sourcePortId: "success", targetPortId: "in" }]
+    };
+  }
+
+  function assemble(steps: readonly AutomationStudioFlowDraftStep[]) {
+    return assembleAutomationStudioFlowDraftPlan({ steps: steps.filter(automationStudioFlowDraftStepIsProposed), write: automationStudioFlowBootstrapDraftNodeStep, registry, resolution, summary: "Copy the names" });
+  }
+
+  it("seeds the reference as the step its node became, and assembles back to the same node reference", () => {
+    const seed = automationStudioFlowDraftSeedFromFlow(stored("$node.s1.records.name"));
+    expect(seed.steps[1]!.input.parameters).toEqual({ selector: "#copy", text: reference("$step.f1.records.name") });
+    const assembled = assemble(seed.steps);
+    expect(assembled.issues.filter((item) => item.severity === "error")).toEqual([]);
+    expect(assembled.plan!.subflows[0]!.nodes[1]!.parameters).toMatchObject({ text: reference("$node.s1.records.name") });
+  });
+
+  it("leaves a key no node carries as written, so assembly refuses it rather than guessing", () => {
+    const seed = automationStudioFlowDraftSeedFromFlow(stored("$node.s9.records"));
+    expect(seed.steps[1]!.input.parameters).toEqual({ selector: "#copy", text: reference("$node.s9.records") });
+    expect(assemble(seed.steps).issues.map((item) => item.code)).toContain("flow_draft.step_binding_source_missing");
+  });
+
+  it("leaves a key two nodes carry as written", () => {
+    const flow = stored("$node.s1.records");
+    flow.nodes[1]!.metadata = { bootstrapSymbolicKey: "s1" };
+    expect(automationStudioFlowDraftSeedFromFlow(flow).steps[1]!.input.parameters).toEqual({ selector: "#copy", text: reference("$node.s1.records") });
+  });
+});

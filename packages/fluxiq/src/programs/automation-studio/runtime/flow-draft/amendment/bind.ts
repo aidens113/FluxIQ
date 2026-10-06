@@ -8,6 +8,7 @@ import {
 import { automationStudioFlowDraftBindablePaths } from "../bindable/index.ts";
 import { automationStudioFlowDraftStepId } from "../routing.ts";
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../step.ts";
+import type { AutomationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal } from "./types.ts";
 
 /** The key a node call's argument holds its parameters under. */
@@ -25,7 +26,9 @@ type BindLeaf = { path: string[]; form: JsonObject; replaced: JsonValue };
  * Everything is checked before anything is written, so a refused bind leaves
  * the step exactly as it was. Generalizing lifts an argument the step already
  * has: every leaf the patch sets must be a binding form, and must replace a
- * value the step ran with. The bindings are written into both what the step
+ * value the step ran with. An earlier step's output (`$step`) names a step
+ * before this one in the draft as it stands, and is stored under that step's
+ * id (P5, t270). The bindings are written into both what the step
  * runs with and what it shows -- the draft renders them back as forms
  * (`../binding-render.ts`) -- and the first concrete argument is kept as the
  * step's `instance`. A row field needs the step inside a repeat span; whether
@@ -41,7 +44,9 @@ type BindLeaf = { path: string[]; form: JsonObject; replaced: JsonValue };
 export function automationStudioFlowDraftAmendmentBind(
   steps: readonly AutomationStudioFlowDraftStep[],
   step: AutomationStudioFlowDraftStep,
-  amendment: AutomationStudioFlowDraftAmendment
+  amendment: AutomationStudioFlowDraftAmendment,
+  /** The draft as the model was shown it, which a `$step` number is read against; absent, the steps' own positions. */
+  numbering?: AutomationStudioFlowDraftShownNumbering
 ): { ok: true } | BindRefusal {
   if (!automationStudioFlowDraftStepIsProposed(step)) return { ok: false, reason: "not_a_kept_step" };
   const argument = step.ranWith ?? step.input;
@@ -63,7 +68,10 @@ export function automationStudioFlowDraftAmendmentBind(
       if (test === undefined) return { ok: false, reason: "bind_malformed", parameter };
       form = { ...form, test };
     }
-    const translated = automationStudioFlowDraftTranslateBindings({ value: form });
+    // An earlier step's output is read against the draft as it stands, and
+    // only a step before this one answers (`../binding-forms.ts`). A `step_*`
+    // refusal is told as `bind_malformed`, whose text says what n may be.
+    const translated = automationStudioFlowDraftTranslateBindings({ value: form }, numbering ? { steps, at: numbering.number(step), stepAt: (position) => numbering.step(position) } : { steps, at: step.position });
     const binding = translated.parameters.value;
     if (translated.refused.length || !isObject(binding)) return { ok: false, reason: "bind_malformed", parameter };
     if (automationStudioFlowDraftStoredBindingKind(binding)?.kind === "row" && !insideRepeat(steps, step)) return { ok: false, reason: "bind_row_outside_loop", parameter };

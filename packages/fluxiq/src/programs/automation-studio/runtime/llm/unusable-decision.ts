@@ -112,7 +112,7 @@ const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
   "run_node.binding_needs_write": "A binding runs only in the Flow; write the step (write true), or run it with the value and bind it after (amend_draft bind).",
   // `./evidence-loop-decision.ts` (t252, D3): a written node call with a binding that cannot be read.
   "run_node.binding_refused": "A binding in the written step could not be read; each run_node.binding_refused.<reason>:<path> code names where and why. "
-    + "Write {\"$input\": \"<name>\", \"test\": <the value to test with>} with a name of letters and digits that starts lower case, or {\"$row\": \"<field>\"}, and nothing else in that object; {\"$step\": ...} is not available yet."
+    + "Write {\"$input\": \"<name>\", \"test\": <the value to test with>} with a name of letters and digits that starts lower case, or {\"$row\": \"<field>\"}, and nothing else in that object; {\"$step\": <n>, \"output\": \"<output id>\"} for the output of the earlier step n, as that step's node declares it, with \"path\": \"<field>\" for one field of a record output; n must be a step before this one that worked and is in the draft."
 };
 
 /**

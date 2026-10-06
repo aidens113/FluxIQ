@@ -105,6 +105,7 @@ describe("the run-node tool's declaration", () => {
     const parameters = (tool()!.inputSchema.properties as { parameters: { description: string } }).parameters.description;
     expect(parameters).toContain("{\"$input\": \"<name>\", \"test\": <the value to test with>}");
     expect(parameters).toContain("{\"$row\": \"<field>\"}");
+    expect(parameters).toContain("{\"$step\": <n>, \"output\": \"<output id>\"} for an output of the earlier step n");
     expect(parameters).toContain("write true");
     expect(parameters).toContain("concrete values only");
   });

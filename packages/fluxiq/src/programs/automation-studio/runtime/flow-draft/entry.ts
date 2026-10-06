@@ -183,8 +183,9 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
   return {
     step: step.position,
     actionId: step.actionId,
-    // A stored binding is shown as the form the model writes (`./binding-render.ts`).
-    input: automationStudioFlowDraftRenderBindings(step.input),
+    // A stored binding is shown as the form the model writes (`./binding-render.ts`):
+    // an earlier step's output at the position that step holds now, or null once it is gone.
+    input: automationStudioFlowDraftRenderBindings(step.input, all),
     // Written, not run: checked and frozen by the domain, nothing performed (`./step.ts`).
     ...(step.written ? { written: true } : {}),
     ...(step.checkedCandidate ? { checkedCandidate: { ...step.checkedCandidate, performed: false }, actEvidence: "intended" } : {}),

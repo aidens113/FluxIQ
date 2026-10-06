@@ -228,6 +228,25 @@ describe("a rerun of a step with bindings", () => {
     expect(resolved.refused).toEqual([{ step: 3, reason: "bind_malformed" }]);
   });
 
+  // P5 (t270, t273): a written step's rerun reads an output of a step before it, and only before it.
+  const listed: AutomationStudioFlowDraftStep = { ...step(1, "demo.list", "core.run_node"), effect: "observe", effectApplied: true, proposes: true };
+
+  it("of a written step translates a $step to an earlier step's own id", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(3, { note: { $step: 1, output: "records" } })], [listed, nodeStep(true, { note: "old" })], runNode);
+
+    expect(resolved.refused).toEqual([]);
+    expect(resolved.request?.input).toEqual({ node: "demo.press", parameters: { note: { $state: { path: "$step.d1.records" } } }, consequences: [], write: true });
+  });
+
+  it("of a written step refuses a $step on itself or a step after it, unrun", () => {
+    for (const position of [3, 4]) {
+      const resolved = automationStudioLlmEvidenceRerunRequest([rerun(3, { note: { $step: position, output: "records" } })], [listed, nodeStep(true, { note: "old" }), { ...listed, position: 4, id: "d4" }], runNode);
+
+      expect(resolved.request, String(position)).toBeUndefined();
+      expect(resolved.refused, String(position)).toEqual([{ step: 3, reason: "bind_malformed" }]);
+    }
+  });
+
   it("of a recorded step whose parameters stay bound is refused, unrun", () => {
     const resolved = automationStudioLlmEvidenceRerunRequest([rerun(3, { note: "new" })], [nodeStep(false, { query: { $state: { path: "query", fallback: "towels" } }, note: "old" })], runNode);
 

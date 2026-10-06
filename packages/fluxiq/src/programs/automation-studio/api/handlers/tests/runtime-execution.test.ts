@@ -75,6 +75,35 @@ describe("the run endpoint and a run's model intent", () => {
     expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.unlocked", intent: "explore_and_adapt" }, resultCheckCallerPays: "repair_checks" });
   });
 
+  // The chat's "Run it" calls as the person's unlocked session, so the handler
+  // cannot see that a paired client asked; the command says so itself. A
+  // caller may only choose to pay for less, so `repair_checks` is the one value.
+  it("lets a person's own session ask to pay only for repair checks", async () => {
+    const runRuntimeSession = vi.fn(async () => ({ runId: "run.one", status: "succeeded" }));
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn(async () => ({ adaptationIds: [], summary: { runId: "run.one", interventionCount: 0 } })), conversations: conversationsWith("session.unlocked") } as any);
+
+    const response = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" } });
+
+    expect(response).toMatchObject({ ok: true });
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" }, resultCheckCallerPays: "repair_checks" });
+  });
+
+  it("refuses any other choice of which result checks the caller pays for, and runs nothing", async () => {
+    for (const value of ["every_run", "none", true]) {
+      const { response, runRuntimeSession } = await pairedRun("session.unlocked", { runIntent: "explore_and_adapt", resultCheckCallerPays: value });
+      expect(response, String(value)).toEqual({ ok: false, error: "A run can only ask to pay for the result checks that judge a repair." });
+      expect(runRuntimeSession).not.toHaveBeenCalled();
+    }
+  });
+
+  it("asks nothing of the result checks of a run the model takes no part in", async () => {
+    const { response, runRuntimeSession } = await pairedRun("session.unlocked", { resultCheckCallerPays: "repair_checks" });
+
+    expect(response).toMatchObject({ ok: true });
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one" });
+  });
+
   it("runs a paired client's Flow deterministically, without a model, when the person has no unlocked session", async () => {
     const { response, runRuntimeSession } = await pairedRun(null, { runIntent: "explore_and_adapt" });
 
@@ -126,6 +155,17 @@ describe("the run endpoint's answer", () => {
         durableBehaviorChanged: true
       }
     });
+  });
+
+  // A re-authored Flow is kept only once a whole re-run is judged to answer
+  // (t267 S4), and is a Flow Bootstrap adaptation, not one of `adaptationIds`:
+  // the answer says, in a closed word, how the run's re-author settled.
+  it("says whether a re-authored Flow was kept, from the re-author's own marker, in a closed word", async () => {
+    const answered = async (resultReauthor: Record<string, unknown>) => (await runWith(async () => ({ adaptationIds: [], summary: { runId: "run.one", interventionCount: 0 }, metadata: { resultReauthor } }))).response as { payload: Record<string, unknown> };
+    expect((await answered({ routed: true, adaptationId: "bootstrap.1", held: true, applied: true })).payload.reauthored).toBe("applied");
+    expect((await answered({ routed: true, adaptationId: "bootstrap.1", held: true, notAppliedReason: "not_answered" })).payload.reauthored).toBe("not_applied");
+    expect((await answered({ routed: true, adaptationId: "bootstrap.1", held: true })).payload).not.toHaveProperty("reauthored");
+    expect((await answered({ routed: false, refusal: "not_a_wrong_answer" })).payload).not.toHaveProperty("reauthored");
   });
 
   it("fails, naming the ended run, when the run's detail cannot be read, instead of reporting no change", async () => {

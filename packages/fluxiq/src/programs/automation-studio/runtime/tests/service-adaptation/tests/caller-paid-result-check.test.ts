@@ -19,7 +19,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
+import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../../_shared/api.ts";
+import { registerAutomationStudioApi } from "../../../../api/handlers/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW, automationStudioConversationCommandPort } from "../../../conversations/commands/index.ts";
 import type { AutomationStudioRuntimeSessionLlm } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AUTOMATION_STUDIO_RESULT_CHECK_CODES } from "../../../result-check-schedule/index.ts";
@@ -221,6 +224,44 @@ describe("a run whose caller pays only for the checks that judge a repair", () =
     expect(found.standingCalls).toEqual([]);
     expect(run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
     expect(run.metadata?.resultCheck).toMatchObject({ checked: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRepair, status: "confirmed" });
+  });
+});
+
+// The chat's "Run it" for a paired extension: the command's calls reach the
+// run endpoint as the person's unlocked session (`api/handlers/conversations.ts`
+// `commandContext`), so the endpoint sees no paired client, and the command
+// asks for `repair_checks` itself. Real registry, real handlers, real service.
+describe("the chat's Run it, asked from a paired extension", () => {
+  /** What a paired token's actor becomes for a command: the person, under their unlocked session. */
+  const asPerson: ProgramApiActor = { sessionId: "session.live", userId: "user.aiden", roleId: "operator", permissions: ["programs.read", "programs.write", "runtime.control", "flows.write"] };
+
+  async function runFromChat(found: Harness) {
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, found.service);
+    const host = { async appendAutomationTurn(): Promise<never> { throw new Error("Run it writes no turn of its own"); }, async pendingAsks() { return []; }, async getAsk() { return null; } };
+    return await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run({
+      port: automationStudioConversationCommandPort({ registry, actor: asPerson, scope: { domainId: "example" } }),
+      host, projectId: found.projectId, conversationId: "conversation.chat", sessionId: asPerson.sessionId, keyLocked: false, paired: true, startLocation: null
+    }, { flowId: found.flowId });
+  }
+
+  it("makes no routine result-check call on the person's key", { timeout: 180_000 }, async () => {
+    const found = await harness({ clean: true, schedule: EVERY_RUN });
+    const outcome = await runFromChat(found);
+
+    expect(outcome.status, outcome.summary).toBe("done");
+    expect(verifications(found)).toEqual([]);
+    expect(found.standingCalls).toEqual([]);
+  });
+
+  it("lets the model repair a broken step, and judges that repair with the person's key", { timeout: 180_000 }, async () => {
+    const found = await harness({ standing: true });
+    const outcome = await runFromChat(found);
+
+    expect(outcome.status, outcome.summary).toBe("done");
+    expect(found.callerCalls.some((call) => call.taskKind === "runtime_patch" && call.hasCaller)).toBe(true);
+    expect(verifications(found)).toEqual([{ taskKind: "loop_verification", hasCaller: true }]);
+    expect(found.standingCalls).toEqual([]);
   });
 });
 

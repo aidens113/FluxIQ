@@ -3,7 +3,7 @@
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, type InspectStateDiffRequest, type ValidateRecordingDomainEventRequest } from "../contracts.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, automationStudioRunChangedDurableBehavior, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioRuntimeSessionLlm } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, automationStudioRunChangedDurableBehavior, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioRuntimeSessionLlm } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudioApiDependencies): void {
@@ -46,9 +46,12 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     permission: "runtime.control",
     classification: "authoring",
     handler: async (request) => {
-      const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true } : {};
+      const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true; resultCheckCallerPays?: unknown } : {};
       if ((raw as Record<string, unknown>).useReusableContext !== undefined && raw.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
-      const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, ...payload } = raw;
+      const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, resultCheckCallerPays: requestedCallerPays, ...payload } = raw;
+      // A caller may ask to pay for fewer of its run's result checks, never more: the chat's "Run it" for a
+      // paired client calls as the person's unlocked session, so it says itself what the paired rule below says.
+      if (requestedCallerPays !== undefined && requestedCallerPays !== "repair_checks") return { ok: false, error: "A run can only ask to pay for the result checks that judge a repair." };
       // Every intent a runtime session runs under, named in one place, so
       // `explore_and_adapt` is reachable from a failed run rather than being a
       // capability nothing could ask for. The intent says what the run is for;
@@ -84,8 +87,9 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       // The paired person's key pays only for the result checks that judge a
       // repair; an Automations Run's routine checks are sampled under the
       // Flow's standing authorization, or not at all (MVP item 23). A person's
-      // own session pays for every check its run makes, as it always has.
-      const resultCheckCallerPays = llmExecution && pairedCaller ? { resultCheckCallerPays: "repair_checks" as const } : {};
+      // own session pays for every check its run makes, as it always has, unless
+      // it asked for the paired rule itself (the chat's "Run it").
+      const resultCheckCallerPays = llmExecution && (pairedCaller || requestedCallerPays === "repair_checks") ? { resultCheckCallerPays: "repair_checks" as const } : {};
       const runtimeSession = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays });
       const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
       const runDetailLink = { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, runId: runtimeSession.runId };
@@ -109,7 +113,8 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
           createdAdaptationIds: runDetail?.adaptationIds ?? [],
           interventionCount: runDetail?.summary.interventionCount ?? 0,
           terminalReason: runtimeSession.trace?.message ?? runtimeSession.status,
-          durableBehaviorChanged
+          durableBehaviorChanged,
+          ...reauthoredOf(runDetail)
         }
       };
     }
@@ -167,4 +172,21 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
         : { ok: false, error: result.issues.map((issue) => issue.message).join(" ") || "Recording event was rejected.", payload: result };
     }
   });
+}
+
+/**
+ * How the run's re-author settled, in a closed word: `applied` once a whole
+ * re-run with the re-authored Flow was judged to answer and the edit was kept,
+ * `not_applied` once it was settled otherwise (t267 S4,
+ * `runtime/service/runtime-adaptation/judged-reauthor.ts`). A re-author is a
+ * Flow Bootstrap adaptation, so it is not among `createdAdaptationIds`; the
+ * chat's "run it" says it apart (`runtime/conversations/commands/run-flow.ts`).
+ * Read from the marker's own settled fields, never its codes or attempts;
+ * nothing when the run re-authored nothing or its re-author is not settled.
+ */
+function reauthoredOf(detail: AutomationStudioFlowRunDetail | null): { reauthored?: "applied" | "not_applied" } {
+  const marker = detail?.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY];
+  if (!marker || typeof marker !== "object" || Array.isArray(marker) || typeof marker.adaptationId !== "string") return {};
+  if (marker.applied === true) return { reauthored: "applied" };
+  return typeof marker.notAppliedReason === "string" ? { reauthored: "not_applied" } : {};
 }

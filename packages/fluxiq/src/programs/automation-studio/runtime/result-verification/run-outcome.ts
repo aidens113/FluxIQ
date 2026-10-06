@@ -192,7 +192,7 @@ export type AutomationStudioResultVerificationPorts = {
    * Absent leaves the older behaviour: the edit lands and the run reports the
    * answer it originally gave.
    */
-  rerunRepairedFlow?: ((input: { detail: AutomationStudioFlowRunDetail; subflowId?: string | undefined }) => Promise<{ session: AutomationStudioRuntimeSession; flow?: AutomationStudioFlowDocument | undefined } | undefined>) | undefined;
+  rerunRepairedFlow?: ((input: { detail: AutomationStudioFlowRunDetail; subflowId?: string | undefined }) => Promise<{ session: AutomationStudioRuntimeSession; flow?: AutomationStudioFlowDocument | undefined; /** The check re-decided for the re-run, a repair's; absent keeps the run's own. */ resultCheck?: AutomationStudioRuntimeSessionVerificationInput["resultCheck"] } | undefined>) | undefined;
   /**
    * Binds this verdict to the graph versions the run executed.
    *
@@ -362,7 +362,7 @@ export async function verifyAutomationStudioRuntimeSessionResult(
       if (rerun?.session.status === "succeeded") {
         return await verifyAutomationStudioRuntimeSessionResult({
           ...input,
-          session: rerun.session,
+          session: rerun.session, resultCheck: rerun.resultCheck ?? input.resultCheck, // Judged as the repair it is (t273).
           ...(rerun.flow ? { flow: rerun.flow } : {}),
           repairHistory: [...(input.repairHistory ?? []), repaired.entry]
         });
@@ -426,7 +426,7 @@ async function repairFailedStep(input: AutomationStudioRuntimeSessionVerificatio
   if (!repaired.reauthored || !input.ports.rerunRepairedFlow) return input.session;
   const rerun = await input.ports.rerunRepairedFlow({ detail: repaired.detail, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   if (!rerun) return input.session;
-  return await verifyAutomationStudioRuntimeSessionResult({ ...input, session: rerun.session, ...(rerun.flow ? { flow: rerun.flow } : {}) });
+  return await verifyAutomationStudioRuntimeSessionResult({ ...input, session: rerun.session, resultCheck: rerun.resultCheck ?? input.resultCheck, ...(rerun.flow ? { flow: rerun.flow } : {}) });
 }
 
 /** How a repair ends when the answer its re-run gave is not repaired again. */

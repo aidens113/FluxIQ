@@ -65,11 +65,23 @@
 // only frame it are left for the assembler to derive again. The body keeps
 // its parameters byte for byte: a `$state item.*` binding already names the
 // pass's row, and the fresh test resolves it against the row it reads.
+//
+// **An earlier node's output is read back as the step that node became (P5,
+// t270).** A saved Flow names it by the plan key its node was assembled under,
+// `$node.<key>.<output>`, kept on the node as `metadata.bootstrapSymbolicKey`
+// (`../../executor/node-inputs.ts`). That key names no node of the plan the
+// re-seeded draft is assembled into, so it is rewritten to the seeded step's
+// own id, `$step.<seed id>.<output>`, which assembly names again by the key
+// that step's node then takes. A key no node carries, two nodes carry, or
+// whose node seeds no step is left as written, and assembly refuses it
+// (`flow_draft.step_binding_source_missing`) rather than read whatever node
+// now holds that key.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../model/index.ts";
+import { automationNodeOutputReference, rewriteAutomationNodeStatePaths } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT, automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftScheduleCandidate } from "../../flow-draft/scheduled-candidate/index.ts";
 // A type only, so nothing is imported back out of the directory this one is read by.
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
@@ -154,6 +166,7 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
   const ordered = orderedNodes(authored, input.edges).filter((node) => !framing.has(node.id));
   const optional = optionalNodeIds(authored, input.edges);
   const stepIdOf = new Map(ordered.map((node, index) => [node.id, `${SEED_STEP_ID_PREFIX}${index + 1}`]));
+  const stepOutputPath = stepOutputPaths(input.nodes, stepIdOf);
   const repeats = new Map(loops.map((loop) => [loop.body[0]!, {
     kind: "repeat" as const, through: stepIdOf.get(loop.body.at(-1)!)!, over: stepIdOf.get(loop.over)!
   }]));
@@ -163,7 +176,7 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
   for (const node of ordered) {
     const id = stepIdOf.get(node.id)!;
     const repeat = repeats.get(node.id);
-    const parameters: JsonObject = node.parameterValues ? structuredClone(node.parameterValues) : {};
+    const parameters: JsonObject = node.parameterValues ? rewriteAutomationNodeStatePaths(structuredClone(node.parameterValues), stepOutputPath) : {};
     steps.push({
       position: steps.length + 1,
       id,
@@ -252,6 +265,29 @@ function planKeys(
     at += 1;
   }
   return keys;
+}
+
+/** Where a node a build wrote keeps the plan key it was assembled under (`flow-bootstrap/adaptation.ts`). */
+const SYMBOLIC_KEY_METADATA = "bootstrapSymbolicKey";
+
+/**
+ * The rewrite of a saved `$node.<key>.<rest>` reference to the seeded step its
+ * node became, `$step.<seed id>.<rest>` (header). The key is matched against
+ * every node of the Flow, as the executor matches it; nothing answers for a
+ * key no node or several nodes carry, or whose node seeds no step.
+ */
+function stepOutputPaths(nodes: readonly AutomationStudioFlowNode[], stepIdOf: ReadonlyMap<string, string>): (path: string) => string | undefined {
+  const nodeIdByKey = new Map<string, string | null>();
+  for (const node of nodes) {
+    const key = node.metadata?.[SYMBOLIC_KEY_METADATA];
+    if (typeof key === "string" && key) nodeIdByKey.set(key, nodeIdByKey.has(key) ? null : node.id);
+  }
+  return (path) => {
+    const reference = automationNodeOutputReference(path);
+    const nodeId = reference ? nodeIdByKey.get(reference.key) : undefined;
+    const stepId = nodeId ? stepIdOf.get(nodeId) : undefined;
+    return reference && stepId ? `${AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT}.${stepId}.${reference.rest}` : undefined;
+  };
 }
 
 /** Where a node keeps what state routing recorded on it (`route-state/`, t243). */

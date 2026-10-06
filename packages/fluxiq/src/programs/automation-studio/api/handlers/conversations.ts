@@ -277,6 +277,8 @@ function commandContext(
     conversationId: target.conversationId,
     sessionId: caller.sessionId,
     keyLocked: caller.keyLocked,
+    // The calls above run as the unlocked session, so a run the command starts says itself that a paired client asked (`commands/run-flow.ts`).
+    paired: caller.paired,
     startLocation: target.startLocation,
     // What reading the turn cost, carried into the purse of a Flow the command builds (`commands/build.ts`).
     ...(target.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: target.interpretationCostUsd })

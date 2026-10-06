@@ -621,10 +621,39 @@ describe("the decision parse of a node call", () => {
   it("refuses a written call whose binding cannot be read, naming each path and reason", () => {
     const input = { node: "web.output.dom-fill", parameters: { text: { $input: "query" }, rows: [{ $step: 2, output: "records" }] }, consequences: [], write: true };
     expect(automationStudioLlmEvidenceParseDecision(nodeCall(input))).toBeUndefined();
+    // Given no draft, a $step names nothing it could read (`../../../flow-draft/binding-forms.ts`).
     expect(automationStudioLlmEvidenceDecisionIssueCodes(nodeCall(input))).toEqual([
       AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE,
       `${AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE}.malformed:parameters.text`,
       `${AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE}.step_binding_not_yet:parameters.rows.0`
+    ]);
+  });
+
+  // P5 (t270, t273): given the draft, a written call reads an earlier step's output.
+  const listed: AutomationStudioFlowDraftStep = {
+    position: 1, id: "d4", iteration: 1, actionId: "web.output.dom-extract_list", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID,
+    input: { node: "web.output.dom-extract_list", parameters: {}, consequences: [] }, effect: "observe", effectApplied: true, disposition: "kept", proposes: true
+  };
+  const dropped: AutomationStudioFlowDraftStep = { ...listed, position: 2, id: "d5", disposition: "dropped" };
+  const binding = { steps: [listed, dropped], nodeOf: (id: string) => (id === listed.actionId ? { outputs: [{ id: "records" }] } : undefined) };
+
+  it("translates a $step to the earlier step's own id when it is given the draft", () => {
+    const input = { node: "web.output.dom-fill", parameters: { rows: { $step: 1, output: "records", path: "name" } }, consequences: [], write: true };
+    expect(automationStudioLlmEvidenceParseDecision(nodeCall(input), binding)).toEqual({
+      kind: "tool_call", callId: "c1", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, add: true,
+      input: { ...input, parameters: { rows: { $state: { path: "$step.d4.records.name" } } } }
+    });
+    expect(automationStudioLlmEvidenceDecisionIssueCodes(nodeCall(input), binding)).toBeUndefined();
+  });
+
+  it("refuses a $step the draft cannot answer, with the step reason and its path", () => {
+    const input = { node: "web.output.dom-fill", parameters: { later: { $step: 3, output: "records" }, gone: { $step: 2, output: "records" }, port: { $step: 1, output: "rows" } }, consequences: [], write: true };
+    expect(automationStudioLlmEvidenceParseDecision(nodeCall(input), binding)).toBeUndefined();
+    expect(automationStudioLlmEvidenceDecisionIssueCodes(nodeCall(input), binding)).toEqual([
+      AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE,
+      `${AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE}.step_missing:parameters.later`,
+      `${AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE}.step_not_usable:parameters.gone`,
+      `${AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE}.step_output_unknown:parameters.port`
     ]);
   });
 

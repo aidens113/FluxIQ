@@ -252,6 +252,19 @@ describe("written steps, bindings and inputs in the draft entry", () => {
     expect(value([nodeStep(1, { query: "x" })])).not.toHaveProperty("inputs");
   });
 
+  // P5 (t270, t273): an earlier step's output is stored under that step's id
+  // and shown at the position the step holds now, or null once it is gone.
+  it("shows an earlier step's output at the position its step holds now, and null once it is gone", () => {
+    const read = { $state: { path: "$step.d1.records.name" } };
+    const source = nodeStep(1, {}, { id: "d1" });
+    const reader = nodeStep(2, { text: read }, { id: "d2" });
+    const shown = (position: number | null) => ({ node: "node.act", parameters: { text: { $step: position, output: "records", path: "name" } } });
+    expect(value([source, reader]).steps[1]?.input).toEqual(shown(1));
+    // After a reorder that put the source third.
+    expect(value([nodeStep(1, {}, { id: "d0" }), { ...reader, position: 2 }, { ...source, position: 3 }]).steps[1]?.input).toEqual(shown(3));
+    expect(value([{ ...reader, position: 1 }]).steps[0]?.input).toEqual(shown(null));
+  });
+
   it("shows passes beside a replayed step when its replay carries them", () => {
     const replayed = { step: 1, actionId: "node.act", status: "replayed" as const };
     const lines = value([nodeStep(1, {}, { replayed: { ...replayed, passes: 3 } as never }), nodeStep(2, {}, { replayed })]).steps as Array<Record<string, unknown>>;

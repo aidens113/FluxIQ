@@ -262,9 +262,41 @@ describe("binding a step's arguments", () => {
     expect(refusedFor({ page: { $input: "page", test: 2 } })).toEqual([{ step: 2, reason: "bind_new_key", parameter: "page", bindable: ["query", "options", "options.limit"] }]);
     expect(refusedFor({ options: { sort: { $input: "sort", test: "asc" } } })).toEqual([{ step: 2, reason: "bind_new_key", parameter: "options.sort", bindable: ["query", "options", "options.limit"] }]);
     expect(refusedFor({ query: { $input: "Query" } })).toEqual([{ step: 2, reason: "bind_malformed", parameter: "query" }]);
-    expect(refusedFor({ query: { $step: 1, output: "records" } })).toEqual([{ step: 2, reason: "bind_malformed", parameter: "query" }]);
+    expect(refusedFor({ query: { $step: 1, output: "records", extra: true } })).toEqual([{ step: 2, reason: "bind_malformed", parameter: "query" }]);
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind" }]).refused).toEqual([{ step: 2, reason: "bind_not_a_binding" }]);
     expect(draft).toEqual(before);
+  });
+
+  // P5 (t270, t273): `{"$step": n, "output": o}` is read against the draft as
+  // it stands, stored under the step's own id, and refused `bind_malformed`
+  // with its parameter when n is not a usable step before this one.
+  it("binds an earlier step's output under that step's id, keeping the run that worked as instance", () => {
+    const draft = loopDraft();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { query: { $step: 1, output: "records", path: "name" } } }])).toEqual({ applied: 1, refused: [] });
+    const bound = { $state: { path: "$step.d1.records.name" } };
+    expect(draft[1]?.ranWith?.parameters).toEqual({ query: bound, options: { limit: 5 } });
+    expect(draft[1]?.input.parameters).toEqual({ query: bound, options: { limit: 5 } });
+    expect(draft[1]?.instance?.parameters).toMatchObject({ query: "blue towels" });
+  });
+
+  // Every number in one decision is the draft as shown (`../shown-numbering.ts`):
+  // a `$step` beside a reorder names the step shown at n, never the one a move
+  // put there, which could be another earlier step with the same output.
+  it("reads an earlier-output bind's step number as the draft was shown, after a move in the same decision", () => {
+    const draft = loopDraft();
+    const result = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "reorder", to: 1 }, { step: 3, change: "bind", input: { note: { $step: 1, output: "records" } } }]);
+    expect(result.refused).toEqual([]);
+    expect(draft.find((step) => step.id === "d3")?.ranWith?.parameters).toMatchObject({ note: { $state: { path: "$step.d1.records" } } });
+  });
+
+  it("refuses an earlier-output bind on the step itself, a later step, a missing or a withdrawn step, changing nothing", () => {
+    for (const [position, withdraw] of [[2, false], [3, false], [9, false], [1, true]] as const) {
+      const draft = loopDraft();
+      if (withdraw) draft[0]!.disposition = "dropped";
+      const before = structuredClone(draft);
+      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { query: { $step: position, output: "records" } } }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "bind_malformed", parameter: "query" }] });
+      expect(draft).toEqual(before);
+    }
   });
 
   // Live run `run-musp4h2f-72e8ed99` (cause 5): the draft showed step 9, the

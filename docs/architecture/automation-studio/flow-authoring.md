@@ -213,15 +213,27 @@ wrong type, or a missing or `null` test is refused as `malformed` where it
 sits and is never carried as a literal. Search depth is 16, as in the
 executor's resolver.
 
-**An earlier step's output (P5, t270).** `n` is a draft position, and a
-position is renumbered by every reorder and withdrawal, so the form is read
-against the draft as it stands when it is written
+**An earlier step's output (P5, t270; wired end to end in t273 S3).** `n` is a
+draft position, and a position is renumbered by every reorder and withdrawal,
+so the form is read against the draft as it stands when it is written
 (`AutomationStudioFlowDraftBindingContext`: the steps, the position of the step
-being written -- absent for one about to be appended -- and the node lookup)
-and stored under the step's own id. `path` is optional, one or more field
+being written -- absent for one about to be appended -- the node lookup, and
+`stepAt` where the numbers are not the steps' own positions) and stored under
+the step's own id. Every path that writes a step passes the draft: a written
+`core.run_node` call's parameters (`runtime/llm/evidence-loop-decision.ts`, with
+the loop's draft and node lookup), a rerun's (`rerun-request.ts`, at the rerun
+step's position) and `amend_draft bind` (`amendment/bind.ts`, against the draft
+as shown before the decision moved anything, so a `$step` beside a reorder
+names the step shown at `n`). A bind's `step_*` refusal is `bind_malformed`
+with its parameter; a call's is `run_node.binding_refused.step_*`. A step that
+was run and not added (`taken`) is not refused when written: assembly refuses a
+source that is not a node of the Flow. Re-seeding a saved Flow translates its
+`$node.<key>` references back to `$step.<seed id>`
+(`runtime/llm/node-tools/draft-from-flow.ts`), so a repair's draft carries them;
+an unmapped key is left as written and assembly refuses it. `path` is optional, one or more field
 names of a record output; a list index is refused, since the resolver walks no
-list. Refusals: `step_binding_not_yet` when the caller passed no draft (every
-caller before P5's wiring), `step_missing` (no step at `n`), `step_not_earlier`
+list. Refusals: `step_binding_not_yet` when the caller passed no draft (no
+caller that writes a step any longer), `step_missing` (no step at `n`), `step_not_earlier`
 (`n` is the step itself or after it), `step_not_usable` (withdrawn, a look, or
 failed), `step_output_unknown` (the node is known and declares no such output),
 `malformed`. Shown back to the model as `{"$step": <its position now>, ...}`

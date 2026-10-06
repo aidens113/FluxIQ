@@ -251,7 +251,9 @@ describe("the feedback an amendment refusal is shown as", () => {
     expect(reasons.bind_row_outside_loop).toMatch(/repeat/u);
     const malformed = built([{ step: 2, reason: "bind_malformed" }]).reasons as Record<string, string>;
     expect(malformed.bind_malformed).toContain("$input");
-    expect(malformed.bind_malformed).toContain("$step");
+    expect(malformed.bind_malformed).toContain("{\"$step\": <n>, \"output\": <output id>}");
+    expect(malformed.bind_malformed).toContain("n is a step before this one that worked and is not withdrawn");
+    expect(malformed.bind_malformed).not.toContain("cannot be bound yet");
     const notOne = built([{ step: 2, reason: "bind_not_a_binding" }]).reasons as Record<string, string>;
     expect(notOne.bind_not_a_binding).toMatch(/rerun/u);
   });

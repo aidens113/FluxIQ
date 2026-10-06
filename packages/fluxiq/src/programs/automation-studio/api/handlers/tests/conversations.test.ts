@@ -367,10 +367,39 @@ describe("Automation Studio conversation API", () => {
       expect(response.payload?.response.execution.status).toBe("started");
       await automationStudioConversationCommandWork.idle();
 
-      expect(runs).toEqual([{ projectId: "project.one", flowId: "flow.kettle" }]);
+      expect(runs).toEqual([{ projectId: "project.one", flowId: "flow.kettle", runIntent: "explore_and_adapt" }]);
       const turns = (await conversations.getConversation({ projectId: "project.one", conversationId: thread.conversationId }))?.turns ?? [];
       expect(turns.map((turn) => turn.author)).toEqual(["person", "automation", "automation"]);
       expect(turns[2]).toMatchObject({ text: "The run run.1 ended completed.", attachment: { kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "run.execute" } });
+    } finally {
+      await pool.closeAll();
+      await rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  // The command's calls run as the person's unlocked session, so the run
+  // endpoint cannot tell a paired client asked; the command context says so,
+  // and the run pays only for the checks that judge a repair (MVP item 23).
+  it("runs a paired client's Flow from its thread paying only for the result checks that judge a repair", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-conversation-paired-run-test-"));
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    try {
+      const conversations = new AutomationStudioConversations(pool);
+      conversations.bindUnlockedSessionResolver((userId) => (userId === "user.writer" ? "session.unlocked" : null));
+      const thread = await conversations.openConversation({ projectId: "project.one", subject: { kind: "flow", id: "flow.kettle" }, title: null });
+      const registry = new GlobalProgramApiRegistry();
+      registerAutomationStudioConversationEndpoints({
+        registry,
+        service: { assertProjectDomainAccess: vi.fn().mockResolvedValue(undefined), listProjects: vi.fn().mockResolvedValue({ projects: [] }), listFlows: vi.fn().mockResolvedValue([{ flow: { flowId: "flow.kettle", name: "Kettle price checker" } }]), conversations }
+      });
+      const runs: Array<{ sessionId: string | undefined; payload: unknown }> = [];
+      registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, permission: "runtime.control", classification: "authoring", handler: (request) => { runs.push({ sessionId: request.actor?.sessionId, payload: request.payload }); return { ok: true, payload: { runtimeSession: { runId: "run.1", status: "completed" }, terminalReason: "completed" } }; } });
+      const paired = { ...writeActor, sessionId: "client-gateway:gateway.7", permissions: ["programs.read" as const, "programs.write" as const, "runtime.control" as const] };
+
+      await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.appendConversationTurn, scope: { domainId: null }, actor: paired, payload: { projectId: "project.one", conversationId: thread.conversationId, text: "run it", capabilities: [{ id: "run.execute" }] } });
+      await automationStudioConversationCommandWork.idle();
+
+      expect(runs).toEqual([{ sessionId: "session.unlocked", payload: { projectId: "project.one", flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" } }]);
     } finally {
       await pool.closeAll();
       await rm(rootDir, { recursive: true, force: true });

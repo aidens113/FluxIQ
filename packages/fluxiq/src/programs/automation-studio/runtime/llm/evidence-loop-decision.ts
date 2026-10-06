@@ -25,7 +25,8 @@ import {
   automationStudioFlowDraftControlWords,
   automationStudioFlowDraftHoldsBinding,
   automationStudioFlowDraftTranslateBindings,
-  type AutomationStudioFlowDraftAmendmentChange
+  type AutomationStudioFlowDraftAmendmentChange,
+  type AutomationStudioFlowDraftBindingContext
 } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import { automationStudioLlmEvidenceDiagnostic } from "./evidence-diagnostic/index.ts";
@@ -406,7 +407,12 @@ function decisionSummary(summary: unknown, decision: Record<string, unknown>, ma
   return `${kind}${toolId}`.slice(0, maxLength);
 }
 
-export function automationStudioLlmEvidenceParseDecision(value: unknown): AutomationStudioLlmEvidenceLoopDecision | undefined {
+/**
+ * A reply as the decision it is, or nothing. `binding` is the draft as it
+ * stands, so a written node call's `$step` names an earlier step
+ * (`../flow-draft/binding-forms.ts`); without it a `$step` is refused.
+ */
+export function automationStudioLlmEvidenceParseDecision(value: unknown, binding?: AutomationStudioFlowDraftBindingContext): AutomationStudioLlmEvidenceLoopDecision | undefined {
   if (!isRecord(value)) return undefined;
   if (value.kind === "complete" && exactKeys(value, ["kind", "result", "usage"]) && isJsonObject(value.result) && validUsage(value.usage)) {
     return { kind: "complete", result: value.result, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
@@ -414,7 +420,7 @@ export function automationStudioLlmEvidenceParseDecision(value: unknown): Automa
   if (isToolCall(value)) {
     // A node call that writes its step, or one that may not carry a binding
     // because it runs now: read here, refused by the codes below.
-    const call = readNodeCall(value.toolId, value.input);
+    const call = readNodeCall(value.toolId, value.input, binding);
     if ("refused" in call) return undefined;
     // `act` says the step does an act, and `place` that it is on the route the
     // person named, which only a step in the Flow can: each adds. `write` puts
@@ -459,13 +465,13 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE = "llm_eviden
  * (`./evidence-loop/decision-refusal.ts`). Answered by the same readers as the
  * parse above, so the two never disagree.
  */
-export function automationStudioLlmEvidenceDecisionIssueCodes(value: unknown): string[] | undefined {
+export function automationStudioLlmEvidenceDecisionIssueCodes(value: unknown, binding?: AutomationStudioFlowDraftBindingContext): string[] | undefined {
   if (isRecord(value) && value.kind === "amend_draft" && exactKeys(value, ["kind", "amendments", "usage"]) && validUsage(value.usage)) {
     if (readAmendments(value.amendments) || !Array.isArray(value.amendments) || value.amendments.length > MAX_AMENDMENTS_PER_DECISION) return undefined;
     return value.amendments.some((item) => readAmendment(item) === "rerun_needs_input") ? [AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE] : undefined;
   }
   if (!isToolCall(value)) return undefined;
-  const call = readNodeCall(value.toolId, value.input);
+  const call = readNodeCall(value.toolId, value.input, binding);
   return "refused" in call ? call.refused : undefined;
 }
 
@@ -498,9 +504,11 @@ function validPlace(value: unknown): boolean {
  * see one shape; a form that cannot be translated refuses the decision rather
  * than reaching a node as an object it was never meant to receive. **Run now**:
  * a binding anywhere in its parameters refuses it, because a binding resolves
- * only in the Flow and a live call carries concrete values only.
+ * only in the Flow and a live call carries concrete values only. A `$step`
+ * is read against `binding`, the draft the written step joins after its last
+ * step (P5, t270).
  */
-function readNodeCall(toolId: string, input: JsonObject): { input: JsonObject; written: boolean } | { refused: string[] } {
+function readNodeCall(toolId: string, input: JsonObject, binding?: AutomationStudioFlowDraftBindingContext): { input: JsonObject; written: boolean } | { refused: string[] } {
   if (toolId !== RUN_NODE_TOOL_ID) return { input, written: false };
   const parameters = input.parameters;
   if (input[WRITE_KEY] !== true) {
@@ -508,7 +516,7 @@ function readNodeCall(toolId: string, input: JsonObject): { input: JsonObject; w
   }
   // Parameters that are not an object are the host's to refuse, as for any call.
   if (!isJsonObject(parameters)) return { input, written: true };
-  const translated = automationStudioFlowDraftTranslateBindings(parameters);
+  const translated = automationStudioFlowDraftTranslateBindings(parameters, binding);
   if (translated.refused.length) {
     return { refused: [AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE, ...translated.refused.map(({ path, reason }) => bindingRefusedCode(path, reason))] };
   }
