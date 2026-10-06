@@ -315,6 +315,15 @@ export type AutomationStudioBuildTestStep = {
   /** The position of the checked step before this one whose withheld effect this step may have needed. */
   withheldBy?: number;
   /**
+   * On a step that changes nothing (a read) that ran after checked steps whose
+   * act the test left undone -- `verified` on the step or on any pass, not
+   * `present`, which was already in place -- their positions, in order. The
+   * read saw a page without what those acts make (a status they set, a row they
+   * add), so rows missing for that reason are the test's, not the Flow's (run
+   * `run-muw6144a-e56f945d`, C1).
+   */
+  afterWithheld?: number[];
+  /**
    * Set on a step that did not hold in this test and that the Flow passes
    * over as written, saying why in Core's words ("optional: ...; in this test
    * it did not run, which does not stop the Flow"). Not a defect: it is why the
