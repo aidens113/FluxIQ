@@ -22,9 +22,9 @@
 // **The names are the whole library.** The enumerated names here are every
 // available node, as is the catalog the model is shown beside its evidence.
 // Since 2026-10-01 an evidence decision is shown that catalog by name only, and
-// the full definitions of just the nodes this build asked about
+// the full definitions of just the nodes this build asked about or ran
 // (`./describe-nodes.ts`, `./node-descriptions.ts`), so the description below
-// teaches the model to read a node's definition before first running it.
+// tells the model where a node's definition is shown.
 //
 // **What the tool does not decide.** Whether a call looked or changed, what it
 // should be recorded as, and whether it belongs in the result are properties of
@@ -59,10 +59,13 @@ const PUBLISHING: (typeof AUTOMATION_STUDIO_ACTION_CONSEQUENCES)[number] = "send
 // enum, and `add`/`act`, which the decision schema describes beside the call
 // (`../evidence-loop-decision.ts`). What came in is the two-step pattern: the
 // model picks a name from the catalog and reads that node's definition before
-// first using it.
+// first using it. Since t280 (2026-10-06) running a node describes it
+// (`./describing-failures.ts`), because the model rarely asked first, so the
+// sentence says the definition arrives with the first run and asking is for a
+// node whose parameters it does not know yet.
 const DESCRIPTION = [
   "Run one node from the library against the live target, now, and get back what it really did: the same node, with the same parameters, that the finished Flow runs.",
-  "flowBootstrap.nodeCatalog names every node; pick from those names. Before a node's first use, read its definition with core.describe_nodes -- once, for all the nodes you are about to use -- unless it is already in flowBootstrap.describedNodes. Then give exactly the parameters that definition declares.",
+  "flowBootstrap.nodeCatalog names every node; pick from those names. A node you run is described for you, in flowBootstrap.describedNodes from then on. Give exactly the parameters its definition declares; for a node whose parameters you do not know yet, read it first with core.describe_nodes, several at once.",
   "Where a node acts on something you observed, name it under `target` as {\"handle\": \"<the handle the evidence printed, copied exactly>\"} and nothing else. Never write a locator, a description or a guess of your own: a step that names something you did not observe is refused.",
   "A node that reads a repeating list names it the same way, by the handle the detection tool issued, with the fields you want beside it: detect the list first, then read the rows it really returned.",
   // A check is not a failure to try again. "Run again. A failure ends nothing"
