@@ -285,3 +285,62 @@ describe("a rerun of the attempt a rerun replaced", () => {
     expect(resolved).toEqual({ request: undefined, refused: [{ step: 8, reason: "not_a_kept_step", replacedBy: 6 }] });
   });
 });
+
+// Live run `run-mustvzvg-99695308` (C3): the read's rerun wrote `maxPages: 10`
+// beside `paginate` and the domain refused it, naming that key; the refused call
+// is step 8. Every later rerun targeted step 8 and moved the bound under
+// `paginate`, and each merged back the stray key and was refused again (0063,
+// 0070, 0073). The draft step keeps only the domain's code
+// (`web.action.rejected.target_unobserved`), never the keys its refusal named,
+// so what fixes it is reading what the patch restated (`../rerun-input.ts`).
+describe("a rerun of a step the domain refused", () => {
+  const columns = { name: "kName", price: "kPrice", ad: "data-ad-id" };
+  const where = [{ field: "ad", is: "absent" }];
+  const refusedRead = (): AutomationStudioFlowDraftStep => ({
+    ...step(8, "web.output.dom-extract_list", "core.run_node"), id: "d16", effect: "observe", effectApplied: false, proposes: false,
+    resultCode: "web.action.rejected.target_unobserved",
+    input: { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.3", fields: columns, where, paginate: { next: "a[rel=next]" }, minItems: 0, maxPages: 10 } }, consequences: [] }
+  });
+  const extractListOf = (input: JsonObject | undefined): JsonObject => ((input?.parameters as JsonObject).extractList as JsonObject);
+
+  it("runs without the key the model left out of the object it restated", () => {
+    const patch = { extractList: { handle: "extraction.3", fields: columns, where, paginate: { mode: "next", next: "a[rel=next]", maxPages: 10 }, minItems: 0 } };
+
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(8, patch)], [refusedRead()], offered, () => false, ["selector"]);
+
+    // Before: the call carried `extractList.maxPages: 10` beside `paginate.maxPages: 10`.
+    expect(extractListOf(resolved.request?.input)).toEqual(patch.extractList);
+    // Nothing was kept that the model did not write, so there is nothing to tell.
+    expect(resolved.request?.retained).toBeUndefined();
+    expect(resolved.refused).toEqual([]);
+  });
+
+  it("still names the key it kept when the patch changed only what it named", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(8, { extractList: { paginate: { mode: "next", maxPages: 10 } } })], [refusedRead()], offered, () => false, ["selector"]);
+
+    expect(extractListOf(resolved.request?.input)).toMatchObject({ maxPages: 10, paginate: { next: "a[rel=next]", mode: "next", maxPages: 10 } });
+    // What the loop tells the model with the rerun's answer (`../../rerun-arguments/note.ts`).
+    expect(resolved.request?.retained).toEqual({ step: 8, parameters: true, paths: [["extractList", "handle"], ["extractList", "fields"], ["extractList", "where"], ["extractList", "paginate", "next"], ["extractList", "minItems"], ["extractList", "maxPages"]] });
+  });
+});
+
+// Live run `run-murdouox-c5294247` (R3): 0051 restated the listing's columns
+// without `confirm`, and the merge kept it.
+describe("a rerun that restates a column map", () => {
+  const listing = (): AutomationStudioFlowDraftStep => ({
+    ...step(7, "web.output.dom-extract_list", "core.run_node"), effect: "observe",
+    input: { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.5", fields: { name: "kA", mutual: "kB", confirm: "kC" } } }, consequences: [] }
+  });
+  const fieldsOf = (input: JsonObject | undefined): JsonObject => (((input?.parameters as JsonObject).extractList as JsonObject).fields as JsonObject);
+  const patch = { extractList: { fields: { name: "kA", mutualFriends: "kB" } } };
+
+  it("runs with the columns it wrote, given the domain's denied keys", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(7, patch)], [listing()], offered, () => false, ["selector"]);
+    expect(fieldsOf(resolved.request?.input)).toEqual({ name: "kA", mutualFriends: "kB" });
+  });
+
+  it("keeps the column without them, as before", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(7, patch)], [listing()], offered);
+    expect(fieldsOf(resolved.request?.input)).toEqual({ name: "kA", mutualFriends: "kB", confirm: "kC" });
+  });
+});
