@@ -269,3 +269,21 @@ describe("fitting an ending", () => {
     });
   });
 }
+
+// R2-U-3 (`run-muwansvz-a2b4a987`, judge 0026): the judge's sentence was cut
+// inside "(e.g." and the next sentence glued on ("(e.g. Repairing it live.").
+describe("the judge's words are cut only at whole sentences", () => {
+  const judged = "Stored rows include sponsored items (e.g. Sponsored earbuds, Ivory 3.6). Add filter conditions for rating and price.";
+
+  it("never ends inside an aside or after an abbreviation", () => {
+    for (const most of [60, 120, 200, 400]) {
+      const said = automationStudioFlowBootstrapJudgeWordsSaid(judged, most);
+      expect(said).not.toMatch(/\(e\.g\.?$/u);
+      expect((said.match(/\(/gu) ?? []).length).toBe((said.match(/\)/gu) ?? []).length);
+    }
+  });
+
+  it("keeps the aside whole when it fits", () => {
+    expect(automationStudioFlowBootstrapJudgeWordsSaid(judged, 400)).toContain("(e.g. Sponsored earbuds, Ivory 3.6).");
+  });
+});
