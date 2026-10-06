@@ -64,10 +64,10 @@ describe("automationStudioActivityRunEnding", () => {
       resultVerification: cart,
       resultRepair: { attempted: true, attempts: 1, history: [{ attempt: 1, totalRecordCount: 0, recordSetCount: 0 }], phase: "reauthoring" },
       resultReauthor: { code: "flow_bootstrap.evidence_budget_exhausted", attempts: [{ attempt: 1, ending: { kind: "budget_exhausted", bound: "tokens", tried: { tested: "not_tested" } } }] }
-    })).toBe("The check found its result doesn't answer what you asked, and the fix reached its limit before it could test a change.");
-    expect(automationStudioActivityRunEnding({ resultVerification: cart })).toBe("The check found its result doesn't answer what you asked.");
-    // A declared record set that stored nothing still returned no rows.
-    expect(automationStudioActivityRunEnding({ resultVerification: { ...cart, observation: "0 records stored, across 1 record set" }, resultRepair: { attempted: true, history: [{ attempt: 1, totalRecordCount: 0, recordSetCount: 1 }] } })).toBe("It returned no rows, so it doesn't answer what you asked, and the fix didn't finish.");
+    })).toBe("the check found its result doesn't answer what you asked, and the fix reached its limit before it could test a change.");
+    expect(automationStudioActivityRunEnding({ resultVerification: cart })).toBe("the check found its result doesn't answer what you asked.");
+    // A declared record set that stored nothing still saved no rows.
+    expect(automationStudioActivityRunEnding({ resultVerification: { ...cart, observation: "0 records stored, across 1 record set" }, resultRepair: { attempted: true, history: [{ attempt: 1, totalRecordCount: 0, recordSetCount: 1 }] } })).toBe("it saved no rows, so it doesn't answer what you asked, and the fix didn't finish.");
   });
 
   it("says the refutation even when nothing counts the rows", () => {
