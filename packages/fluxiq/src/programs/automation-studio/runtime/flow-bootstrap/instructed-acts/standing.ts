@@ -33,9 +33,28 @@
 // done, and carries that act step as `afterAct`: the act ran before its choice,
 // and the check and the checklist say so as information (`./choice-order.ts`).
 //
+// **An act claimed on the step that only opened the page of its choices (live
+// run `run-mux6pndp-16feb842`, lane B round 3, cause 1).** The model put a2,
+// "add the towels to my cart", on the product link; the size and the "+" were
+// then made on the product page it opened. The checklist said `a2 done`, so
+// every list of what was still to do, the answer to naming a2 again ("nothing
+// is left to do for it") and the stall note hid the Add to cart, which was
+// never pressed, and the build ended telling the person every act had a step.
+// The claim was already doubted as advice (`./claim-doubt.ts`: the control does
+// not name the act) and the choice was already said to come after it at a
+// different place (`./choice-order.ts`). Together they are what a preparing
+// step looks like -- the press that does an act commits the choices made before
+// it -- so such a step does not do the act: `step_only_opens_its_choices`, and
+// the next step named for the act is tried. A press whose words name the act
+// (an Add to cart that leads to the cart, a quantity changed there) and a
+// doubted claim whose choices were made on its own page still count as before.
+// Nothing is refused (t195); the claim stays on the step until the model names
+// the act on the press that does it (one act, one step).
+//
 // Nothing here calls a provider or reads a page; it is the draft and the claims.
-import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftStepMovedTarget, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioInstructedChoiceSetBy } from "./choice-evidence.ts";
+import { automationStudioInstructedActClaimDoubt } from "./claim-doubt.ts";
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedActMissingReason } from "./contracts.ts";
 import { automationStudioInstructedActStepActsOn } from "./object-binding.ts";
 import { automationStudioInstructedQuantityStanding } from "./quantity-fault.ts";
@@ -108,10 +127,19 @@ export function automationStudioInstructedActsStanding(input: {
     const other = act ? automationStudioInstructedActStepActsOn(act, input.acts, step, input.steps) : undefined;
     return other ? { fault: "step_acts_on_another_object", actsOn: other.id } : undefined;
   };
+  // A step whose control does not name the act, after which a step named for
+  // one of the act's own choices acted at a different place: it only opened
+  // the page of those choices (see the header, `run-mux6pndp-16feb842`).
+  const opensItsChoices = (act: AutomationStudioInstructedAct, step: Step): boolean => {
+    if (!act.requires?.length || automationStudioInstructedActClaimDoubt(act, step, input.steps) === undefined) return false;
+    return act.requires.some((choice) => (named.get(choice.id) ?? []).some((made) =>
+      made.disposition === "kept" && made.position > step.position && automationStudioFlowDraftStepMovedTarget(step, made)));
+  };
   for (const act of input.acts) {
     const done = settle(act.id, (step) => {
       const fault = automationStudioInstructedActStepFault(act, step, input.steps, input.onlyArrives, claimed);
       if (fault) return { fault };
+      if (opensItsChoices(act, step)) return { fault: "step_only_opens_its_choices" };
       return another(act, step) ?? (used.has(step) ? { fault: "step_claimed_twice" } : undefined);
     });
     if (done) actSteps.set(act.id, done);

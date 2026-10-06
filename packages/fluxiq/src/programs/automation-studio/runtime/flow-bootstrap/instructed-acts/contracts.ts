@@ -148,6 +148,13 @@ export type AutomationStudioInstructedActMissingReason =
    */
   | "step_only_arrives"
   /**
+   * The step named only opened the page where the act's own choices are then
+   * made: its control does not name the act, and a later step named for one of
+   * those choices acted at a different place than it did. It prepared the act;
+   * the press after the choices does it (`run-mux6pndp-16feb842`, `./standing.ts`).
+   */
+  | "step_only_opens_its_choices"
+  /**
    * The step named is marked optional, so the Flow carries on when it fails
    * and the act may never be done (`run-munnop9n-5475d593`, `./check.ts`).
    */

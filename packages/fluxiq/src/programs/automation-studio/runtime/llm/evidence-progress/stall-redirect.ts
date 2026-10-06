@@ -189,10 +189,14 @@ function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, steps
     // "Run it" only when no step names the act. Where one does, the checklist
     // says why it is not done, and running another step for the act is what
     // live run 36 did on this note: it confirmed a request its listing had left
-    // out (E36).
-    const next = named
-      ? ` Step ${named.step} already names ${id}, and the checklist says it is not done because ${named.todo}: correct step ${named.step} for that reason. Do not run another step for ${id}, and never act yourself on an item your listing left out.`
-      : ` Your next step is the one that does ${id}: run it and add it with act ${id}.`;
+    // out (E36). Except where the step named only opened the page of the act's
+    // choices (run `run-mux6pndp-16feb842`): no correction of it does the act,
+    // and the press after the choices is exactly another step for it.
+    const next = named?.todo === "step_only_opens_its_choices"
+      ? ` Step ${named.step} only opened the page where ${id}'s choices are made and does not do ${id}: on that page, after its choices, run the step that does ${id} and add it with act ${id}.`
+      : named
+        ? ` Step ${named.step} already names ${id}, and the checklist says it is not done because ${named.todo}: correct step ${named.step} for that reason. Do not run another step for ${id}, and never act yourself on an item your listing left out.`
+        : ` Your next step is the one that does ${id}: run it and add it with act ${id}.`;
     said.push(`The acts checklist still has ${owed.join(", ")} not done by any step in your Flow (actsMissing). Going back to a page you have already been on, or pressing what you already pressed, does not do them.`
       + `${next} Complete only once no act is missing.`);
   }
