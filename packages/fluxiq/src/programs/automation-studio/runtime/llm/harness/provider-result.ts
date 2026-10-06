@@ -207,8 +207,8 @@ function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: Automa
     return;
   }
   if (value.kind === "tool_call") {
-    // `add` and `act` author the draft as the step is taken (`../evidence-loop-decision.ts`); the loop reads them strictly.
-    rejectUnexpectedFields(value, ["kind", "callId", "toolId", "input", "add", "act"], path, diagnostics);
+    // `add`, `act` and `place` author the draft as the step is taken (`../evidence-loop-decision.ts`); the loop reads them strictly.
+    rejectUnexpectedFields(value, ["kind", "callId", "toolId", "input", "add", "act", "place"], path, diagnostics);
     if (!validRequestIdentity(value.callId as string) || !validRequestIdentity(value.toolId as string) || !isJsonObject(value.input)) {
       diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_tool_call", message: "Evidence tool call fields are invalid.", path });
     }

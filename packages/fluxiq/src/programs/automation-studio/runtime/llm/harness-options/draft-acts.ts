@@ -50,6 +50,7 @@ import {
   type AutomationStudioInstructedActChecklistItem
 } from "../../flow-bootstrap/index.ts";
 import { automationStudioRepeatSuggestion } from "./repeat-suggestion.ts";
+import { automationStudioFlowBootstrapDraftRoute } from "./draft-route.ts";
 import { automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
 
 /** The loop's two act callbacks for one build's instruction and start location. */
@@ -60,10 +61,13 @@ export function automationStudioFlowBootstrapDraftActs(input: {
   /** The node library, so an act that needs a repeat is shown the amendment that gives it one. Absent, none is shown. */
   registry?: AutomationStudioNodeRegistry | undefined;
   resolution?: AutomationStudioNodeRegistryResolution | undefined;
+  /** The build's route and the instructions active now, so the draft shows the route and completion holds the Flow to it (`./draft-route.ts`). Absent, neither. */
+  route?: Parameters<typeof automationStudioFlowBootstrapDraftRoute>[0]["route"];
+  activeInstructions?: Parameters<typeof automationStudioFlowBootstrapDraftRoute>[0]["activeInstructions"];
 }): {
   acts(steps: readonly AutomationStudioFlowDraftStep[]): JsonValue | undefined;
   actsMissing(steps: readonly AutomationStudioFlowDraftStep[]): readonly string[];
-} {
+} & ReturnType<typeof automationStudioFlowBootstrapDraftRoute> {
   const checklist = (steps: readonly AutomationStudioFlowDraftStep[]) =>
     automationStudioInstructedActsChecklist({ instructionText: input.instructionText, draftSteps: steps, startLocation: input.startLocation, arrival: input.arrival });
   return {
@@ -72,7 +76,8 @@ export function automationStudioFlowBootstrapDraftActs(input: {
       const notes = unreadColumnNotes(input.instructionText, steps);
       return notes.length ? [...(value ?? []), ...notes] : value;
     },
-    actsMissing: (steps) => automationStudioInstructedActsNotDone(checklist(steps))
+    actsMissing: (steps) => automationStudioInstructedActsNotDone(checklist(steps)),
+    ...automationStudioFlowBootstrapDraftRoute({ route: input.route, activeInstructions: input.activeInstructions, startLocation: input.startLocation, arrival: input.arrival })
   };
 }
 

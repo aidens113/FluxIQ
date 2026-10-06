@@ -12,8 +12,9 @@
 // **Where the model authors its draft, the rerun takes the replaced step's
 // place** (audit A1, cause 5a). A rerun is the same step corrected, so it goes
 // where that step stood, is in the Flow exactly when that step was, does the
-// acts that step did when it changes something, runs the way that step ran, and every statement that
-// named that step names it instead. Appended at the end with the old step
+// acts that step did when it changes something, is on the places on the named
+// route that step said it was on, runs the way that step ran, and every
+// statement that named that step names it instead. Appended at the end with the old step
 // merely dropped, a rerun under an authored draft would fall out of the Flow
 // (it was never added), land after the steps that need it, and orphan any
 // `repeat` naming the old step: `run-muog33va-96469cb2` was refused
@@ -61,6 +62,14 @@ export function automationStudioLlmEvidenceRerunReplaced(
   if (replaced.acts) {
     if (rerun.effect === "mutate") rerun.acts = [...replaced.acts];
     delete replaced.acts;
+  }
+  // The places on the route the person named (D phase 2,
+  // `../../flow-draft/route-places/`) are where the step is, not what it
+  // changes, so a rerun of a read keeps them as well as a press's; the
+  // withdrawn attempt keeps none, so it never counts as on the route.
+  if (replaced.places) {
+    rerun.places = [...replaced.places];
+    delete replaced.places;
   }
   if (replaced.routing) {
     rerun.routing = replaced.routing;

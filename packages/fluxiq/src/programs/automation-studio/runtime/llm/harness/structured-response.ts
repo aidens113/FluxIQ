@@ -8,7 +8,7 @@ import type { AutomationStudioFlowDraftAmendment } from "../../flow-draft/index.
 
 export type AutomationStudioLlmStructuredResponse =
   | { kind: "flow_bootstrap"; summary: string; plan: AutomationStudioFlowBootstrapPlan; metadata?: JsonObject }
-  | { kind: "evidence_tool_decision"; summary: string; decision: { kind: "tool_call"; callId: string; toolId: string; input: JsonObject; add?: true; act?: string } | { kind: "complete"; result: JsonObject } | { kind: "amend_draft"; amendments: AutomationStudioFlowDraftAmendment[] }; metadata?: JsonObject }
+  | { kind: "evidence_tool_decision"; summary: string; decision: { kind: "tool_call"; callId: string; toolId: string; input: JsonObject; add?: true; act?: string; place?: string } | { kind: "complete"; result: JsonObject } | { kind: "amend_draft"; amendments: AutomationStudioFlowDraftAmendment[] }; metadata?: JsonObject }
   | { kind: "diagnosis"; summary: string; confidence?: number; diagnosis?: AutomationStudioLlmDiagnosisFields; metadata?: JsonObject }
   | { kind: "runtime_patch"; summary: string; patches: AutomationStudioRuntimePatch[]; riskLevel: "low" | "medium" | "high" | "destructive"; metadata?: JsonObject }
   | { kind: "no_repair"; summary: string; reason: AutomationStudioNoRepairReason; metadata?: JsonObject }

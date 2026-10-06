@@ -373,3 +373,46 @@ describe("what a kept step offers bind, run B7", () => {
     expect(JSON.stringify(shown)).not.toContain("private-");
   });
 });
+
+// D phase 2 (t273 S2): the route the person named, shown once the build's read
+// of it has settled, and the places each step says it is on.
+describe("the route the person named", () => {
+  const steps = (): AutomationStudioFlowDraftStep[] => [
+    step(1, "go", { url: "https://social.test/" }, { places: ["r1"] }),
+    step(2, "press", { target: "friends" }, { acts: ["a1"], places: ["r1", "r2"] }),
+    step(3, "press", { target: "remove" })
+  ];
+  const shown = (route?: Parameters<typeof automationStudioFlowDraftEntry>[0]["route"]): Entry & { route?: unknown } =>
+    automationStudioFlowDraftEntry({ steps: steps(), authored: true, ...(route ? { route } : {}) })!.value as Entry & { route?: unknown };
+
+  it("shows a named route in the person's words, each place by id, and how to say which steps are on each", () => {
+    const value = shown({ state: "named", quote: "go to my profile, then Friends", places: ["my profile", "Friends"] });
+    expect(value.route).toEqual({ named: "go to my profile, then Friends", places: { r1: "my profile", r2: "Friends" } });
+    expect(value.instruction).toMatch(/goes through every place[^.]*in order/u);
+    expect(value.instruction).toMatch(/first step never goes deeper than r1/u);
+    expect(value.instruction).toContain("\"r1,r2\"");
+    expect(value.instruction).toMatch(/none/u);
+    expect(value.instruction).toMatch(/[Cc]ompletion is refused while a place has no step in the Flow[^.]*out of order/u);
+    expect(value.instruction).not.toMatch(/named no route/u);
+  });
+
+  it("shows an open route as open, and that the first step may go straight to where the work begins", () => {
+    const value = shown({ state: "open" });
+    expect(value.route).toBe("open");
+    expect(value.instruction).toMatch(/named no route[^.]*first step may go straight to where the work begins/u);
+    expect(value.instruction).not.toMatch(/goes through every place/u);
+  });
+
+  it("shows each step's places after its act", () => {
+    const value = shown({ state: "named", quote: "q", places: ["a", "b"] });
+    expect(value.steps.map((line) => (line as { place?: string }).place)).toEqual(["r1", "r1,r2", undefined]);
+    const keys = Object.keys(value.steps[1]!);
+    expect(keys.indexOf("place")).toBe(keys.indexOf("act") + 1);
+  });
+
+  it("adds nothing when no route has been read", () => {
+    const value = shown();
+    expect(value).not.toHaveProperty("route");
+    expect(value.instruction).toBe((automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry).instruction);
+  });
+});

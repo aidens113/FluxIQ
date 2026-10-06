@@ -41,6 +41,16 @@ export type AutomationStudioFlowDraftAmendment = {
    * (`act_on_a_read`).
    */
   act?: string;
+  /**
+   * `add` or `keep` only: the places on the route the person named this step
+   * is on (`r1`, `"r1,r2"`, or `none`; `../route-places/place-value.ts`),
+   * replacing the step's own and never another step's (`../step.ts`,
+   * `places`). D phase 2. Taken on a read too, since a listing may be on the
+   * way; ignored outside that grammar, as a bad `act` id is; and, saying only
+   * what the step already says, refused `already_so`. A `keep` carrying it
+   * clears no condition, as one carrying `act` does not.
+   */
+  place?: string;
 };
 
 /**

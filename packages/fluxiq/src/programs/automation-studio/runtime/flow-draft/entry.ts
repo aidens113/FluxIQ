@@ -57,6 +57,7 @@ import { automationStudioFlowDraftInputs } from "./flow-inputs.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed } from "./step.ts";
 import type { AutomationStudioFlowDraftStepRouting } from "./routing.ts";
+import type { AutomationStudioFlowDraftRoute } from "./route-places/index.ts";
 import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepId } from "./routing.ts";
 import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 
@@ -90,6 +91,17 @@ const AUTHORED_INSTRUCTION = "The Flow you are authoring. Every step you run is 
 /** Said only where a step in the Flow lists what it offers bind (`shownBindable`). */
 const BINDABLE_INSTRUCTION = " bindable, beside a step, lists the only values of its input it ran with as shown, the only ones bind can lift on it; a step without bindable ran with all of them.";
 
+/**
+ * Said only where the draft shows a route the person named (`shownRoute`), in
+ * the grammar the model sends: `place` beside `add` on the call, or on an
+ * amend_draft `add` or `keep` (`./amendment/schema.ts`). The completion holds
+ * the Flow to it (`./route-places/coverage.ts`).
+ */
+const NAMED_ROUTE_INSTRUCTION = " route is the way the person named to go, in their words, and its places give each place on it an id, r1 first: the Flow goes through every place on it in order, and its first step never goes deeper than r1. Say which steps are on each with place, beside add on the call that adds a step or on amend_draft add or keep: \"r1\", \"r1,r2\" for a step on two, none to clear it. Completion is refused while a place has no step in the Flow on it, or while the places are reached out of order.";
+
+/** Said only where the draft shows that the person named no route (`shownRoute`). */
+const OPEN_ROUTE_INSTRUCTION = " route \"open\": the person named no route to follow, so the Flow's first step may go straight to where the work begins.";
+
 /** Said only where the draft lists the attempt a rerun replaced (header). */
 const REPLACED_INSTRUCTION = " A step showing replacedBy is the attempt a rerun replaced, listed only as the record of it: nothing changes it, so amend or rerun the step replacedBy names.";
 
@@ -104,6 +116,8 @@ export function automationStudioFlowDraftEntry(input: {
   authored?: boolean | undefined;
   /** The acts checklist, carried whole on every entry. */
   acts?: JsonValue | undefined;
+  /** The route the person named, or that they named none, once the build's read of it has settled (`./route-places/route.ts`). */
+  route?: AutomationStudioFlowDraftRoute | undefined;
 }): { callId: string; toolId: string; value: JsonValue } | undefined {
   // Every step, whether or not it is in the result: an extraction changes
   // nothing on the page and is the whole point of a scraping Flow, so "did it
@@ -119,18 +133,33 @@ export function automationStudioFlowDraftEntry(input: {
   // to show: nothing in them is an edit the model could make.
   if (!listed.some(automationStudioFlowDraftStepIsAction) && acts === undefined) return undefined;
   const steps = listed.map((step) => stepLine(step, listed));
+  const route = input.route;
   const value: JsonObject = {
     code: DRAFT_CODE,
     ...(acts === undefined ? {} : { acts }),
+    // Nothing until the build's read of the route has settled, so a build
+    // whose read never ran pays nothing for it (D phase 2).
+    ...(route ? { route: shownRoute(route) } : {}),
     steps,
     // The Flow's inputs, declared by the bindings its steps carry (`./flow-inputs.ts`).
     ...(inputs.length ? { inputs: inputs.map((entry) => ({ name: entry.name, test: entry.test, steps: entry.steps })) } : {}),
     instruction: (input.authored ? AUTHORED_INSTRUCTION : DRAFT_INSTRUCTION)
       + (steps.some((line) => Object.hasOwn(line, "bindable")) ? BINDABLE_INSTRUCTION : "")
+      + (route === undefined ? "" : route.state === "named" ? NAMED_ROUTE_INSTRUCTION : OPEN_ROUTE_INSTRUCTION)
       + (listed.some((step) => automationStudioFlowDraftReplacingStep(listed, step) !== undefined) ? REPLACED_INSTRUCTION : "")
       + (listed.some((step) => step.checkedCandidate) ? " A checkedCandidate is an exception to the recorded runs: its current configuration was checked, not performed; its act claims are intentions. priorExecution identifies the original configuration that performed the earlier effect, not this candidate. A verified/present test of a candidate establishes the check's result, never execution of its effect." : "")
   };
   return { callId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, value };
+}
+
+/**
+ * The route as the draft shows it: the person's words for it, each place on it
+ * under the id `place` names it by (`r1` is `places[0]`), or `open` where they
+ * named none (`./route-places/route.ts`).
+ */
+function shownRoute(route: AutomationStudioFlowDraftRoute): JsonValue {
+  if (route.state === "open") return "open";
+  return { named: route.quote, places: Object.fromEntries(route.places.map((words, index) => [`r${index + 1}`, words])) };
 }
 
 /**
@@ -183,6 +212,10 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
     // shown until live run 36, whose model could not see that its listing on
     // step 11 named a1 and spent 24 decisions naming a1 on the Confirm.
     ...(step.acts?.length ? { act: step.acts.join(", ") } : {}),
+    // The places on the named route the step says it is on, in the form
+    // `place` took them (`./route-places/set.ts`), so a claim the model made
+    // is one it can see and correct.
+    ...(step.places?.length ? { place: step.places.join(",") } : {}),
     // How it answered the last time the draft was run as a Flow. It sits on
     // the step rather than only in the refusal that reported it, because a
     // refusal is one entry a newer refusal supersedes and the draft is the one

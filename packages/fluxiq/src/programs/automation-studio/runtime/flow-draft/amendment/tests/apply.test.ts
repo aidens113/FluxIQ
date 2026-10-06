@@ -583,3 +583,68 @@ describe("a stray repeat on a listing, run musr9pv3", () => {
     expect(properties.to!.description).toContain("the place the step shown at that number holds");
   });
 });
+
+// D phase 2 (t273 S2): the model says which places on the route the person
+// named a step is on, with `place` wherever it may say `act`
+// (`../../route-places/`). A place is not one step's: a claim never moves off
+// another step, and the newest claim for a step replaces its own.
+describe("places on the named route", () => {
+  function listingAndPresses(): AutomationStudioFlowDraftStep[] {
+    return [
+      { position: 1, id: "d1", iteration: 1, actionId: "list", input: {}, effect: "observe", proposes: true, effectApplied: true, disposition: "taken" },
+      { position: 2, id: "d2", iteration: 2, actionId: "press", input: { target: "menu" }, effect: "mutate", effectApplied: true, disposition: "taken" },
+      { position: 3, id: "d3", iteration: 3, actionId: "press", input: { target: "friends" }, effect: "mutate", effectApplied: true, disposition: "kept", places: ["r1"], routing: { kind: "optional" } }
+    ];
+  }
+
+  it("records the places an add names, in route order and once each", () => {
+    const draft = listingAndPresses();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "add", place: "r2,r1,r2" }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[1]).toMatchObject({ disposition: "kept", places: ["r1", "r2"] });
+    // A claim never moves off another step: step 3 is still on r1.
+    expect(draft[2]?.places).toEqual(["r1"]);
+  });
+
+  it("replaces a step's own places with keep, and clears them with none, as applied edits", () => {
+    const draft = listingAndPresses();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "keep", place: "r2" }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[2]?.places).toEqual(["r2"]);
+    // A keep carrying place is about the place: it clears no condition.
+    expect(draft[2]?.routing).toEqual({ kind: "optional" });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "keep", place: "none" }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[2]).not.toHaveProperty("places");
+    expect(draft[2]?.routing).toEqual({ kind: "optional" });
+  });
+
+  it("refuses a place the step already says, with nothing else changed, as already_so", () => {
+    const draft = listingAndPresses();
+    const before = structuredClone(draft);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "keep", place: "r1" }])).toEqual({ applied: 0, refused: [{ step: 3, reason: "already_so" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "keep", place: "none" }]).refused).toEqual([]);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "keep", place: "none" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "already_so" }] });
+    expect(draft[2]).toEqual(before[2]);
+  });
+
+  it("takes a place on a read step, which does no act but may be on the way", () => {
+    const draft = listingAndPresses();
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "add", place: "r1" }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[0]).toMatchObject({ disposition: "kept", places: ["r1"] });
+    expect(draft[0]?.acts).toBeUndefined();
+  });
+
+  it("applies a place beside an act already named, and ignores a value outside the grammar", () => {
+    const draft = listingAndPresses();
+    draft[2]!.acts = ["a1"];
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "keep", act: "a1", place: "r1,r2" }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[2]).toMatchObject({ acts: ["a1"], places: ["r1", "r2"] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "keep", place: "friends" }])).toEqual({ applied: 0, refused: [{ step: 3, reason: "already_in_flow" }] });
+    expect(draft[2]?.places).toEqual(["r1", "r2"]);
+  });
+
+  it("is a field the schema offers, held to the place grammar", () => {
+    const place = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { pattern?: string; description?: string }>).place;
+    expect(place?.pattern).toBe("^(none|r[1-9][0-9]?(,r[1-9][0-9]?){0,19})$");
+    expect(place?.description).toMatch(/r1,r2/u);
+    expect(place?.description).toMatch(/none/u);
+  });
+});

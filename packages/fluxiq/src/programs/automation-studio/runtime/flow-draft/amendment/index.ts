@@ -89,6 +89,11 @@
 // typed, or a read's condition: a press's control or option is never bound
 // (`bind_new_key`, `control`).
 //
+// `place`, beside `add` or `keep`, says which places on the route the person
+// named the step is on (`../route-places/`, D phase 2). It is a statement about
+// the plan, never proof; it replaces only that step's own places, and one that
+// changes nothing is `already_so`.
+//
 // `rerun` is the one amendment this directory does not carry out. It has to
 // *execute* something, and executing is the loop's job rather than the draft's:
 // the loop runs the step's action again with the new argument, appends what came

@@ -14,7 +14,7 @@
 // so a run's record says what the model was shown of its own draft.
 
 import type { JsonValue } from "../../../../../core/index.ts";
-import { automationStudioFlowDraftEntry, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftEntry, type AutomationStudioFlowDraftRoute, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceContextWindow, type AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
 import { automationStudioLlmEvidenceLoopDraftShown, type AutomationStudioLlmEvidenceLoopDraftShown } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmDecisionContextRecord } from "./decision.ts";
@@ -28,13 +28,13 @@ import { automationStudioLlmDecisionContextEntry } from "./entry.ts";
 export function automationStudioLlmDecisionContextShown(input: {
   evidence: readonly AutomationStudioLlmEvidenceEntry[];
   records: readonly AutomationStudioLlmDecisionContextRecord[];
-  draft?: { steps: readonly AutomationStudioFlowDraftStep[]; authored?: boolean | undefined; acts?: JsonValue | undefined } | undefined;
+  draft?: { steps: readonly AutomationStudioFlowDraftStep[]; authored?: boolean | undefined; acts?: JsonValue | undefined; route?: AutomationStudioFlowDraftRoute | undefined } | undefined;
   budgetEntry?: AutomationStudioLlmEvidenceEntry | undefined;
   /** The keys of a result that are a view of the target, as the domain declared them (`../context-window.ts`). */
   observedStateKeys?: readonly string[] | undefined;
 }): { shown: AutomationStudioLlmEvidenceEntry[]; draftShown?: AutomationStudioLlmEvidenceLoopDraftShown } {
   const historyEntry = automationStudioLlmDecisionContextEntry({ records: input.records });
-  const draftEntry = input.draft ? automationStudioFlowDraftEntry({ steps: input.draft.steps, authored: input.draft.authored, acts: input.draft.acts }) : undefined;
+  const draftEntry = input.draft ? automationStudioFlowDraftEntry({ steps: input.draft.steps, authored: input.draft.authored, acts: input.draft.acts, route: input.draft.route }) : undefined;
   const draftShown = draftEntry ? automationStudioLlmEvidenceLoopDraftShown({ value: draftEntry.value }) : undefined;
   const beside = [historyEntry, draftEntry, input.budgetEntry].filter((entry) => entry !== undefined);
   return { shown: [...automationStudioLlmEvidenceContextWindow(input.evidence, input.observedStateKeys), ...beside], ...(draftShown ? { draftShown } : {}) };

@@ -482,6 +482,19 @@ A refused nonexistent-step amendment explains that add includes an existing draf
 
 Restoration and instructed-act evidence classify arrival using the runtime binding's existing runsNodes.arrival opaque node identity and declared parameter. Only that action and parameter can match the start location, with resolved arguments taking precedence. A nonarrival action carrying stale location arguments cannot be refused as merely arriving; absent a declaration, arbitrary strings do not confer arrival. The same declaration reaches completion restoration, model/stopped checklists and build-test judge summaries. Other plan location comparisons remain unchanged; this classification does not invent performed evidence or alter permission, replay or host effect semantics.
 
+### The route the person named
+
+A step may say which places on the route the person named it is on (`place`,
+stored as `places`; `runtime/flow-draft/route-places/`), once the draft shows
+that route (`route` in the draft entry). Many steps may be on one place, one
+step may be on two, and a claim replaces only that step's own; `none` clears
+it. An amend_draft `place` that changes nothing is refused `already_so`; no
+refusal reason of its own exists. A rerun carries the step's places to its
+replacement, and a stopped build's stored draft keeps them. Completion holds a
+named route to these claims (`runtime/flow-draft/route-places/coverage.ts`,
+`runtime/llm/harness-options/draft-route.ts`), as
+`docs/architecture/automation-studio/llm-flow-bootstrap.md` describes.
+
 ### Continuing unfinished creation
 
 The existing flow.explore chat capability builds or continues eligible creation in the same Flow. Continuing the saved goal omits instruction; a genuinely changed goal can make old draft evidence incompatible. flow.improve remains for a Flow with applied steps and retains its apply confirmation. Service target validation and exact incomplete-draft dependency digest/instruction-ID compatibility remain authoritative, and a catalog name alone does not establish successful work. Saving an identical canonical active generation goal returns the existing document without changing its timestamp or digest; changed or disabled goals retain the normal write path. No new capability or automatic fallback is introduced.

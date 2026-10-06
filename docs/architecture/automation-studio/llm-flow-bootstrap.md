@@ -179,10 +179,35 @@ first sends it, nothing sends it again, after an answer or a failure -- and
 `route.peek()`, which never sends. A call that threw stays a rejection for
 `derive`, so the gate still holds its answer as unknown and asks; `route` says
 `transport`. A route is the reader's interpretation of the person's words, not
-proof any step went anywhere, and nothing acts on it yet: the waypoint-to-step
-relation, route-aware draft edits and the model's route notes are later phases
+proof any step went anywhere
 (`docs/working/mvp-live-continuation-2026-10-03/reports/d-grounded-waypoint-contract.md`
 downstream).
+
+**A named route is held at completion (D phase 2, t273 S2).** The build hands
+the loop the authority's route (`runtime/llm/harness-options/draft-route.ts`,
+through `automationStudioFlowBootstrapDraftActs`). Once the read has settled
+and still matches the active instructions, the draft shows it
+(`runtime/flow-draft/entry.ts`, `route`): the route in the person's words with
+each place under an id, `r1` first, or `"open"` where they named none. The
+model says which steps are on each place with `place` (`"r2"`, `"r1,r2"`,
+`none`) beside `add` on a call or on an amend_draft `add` or `keep`, stored as
+`places` on the step (`runtime/flow-draft/route-places/`). Unlike an act, many
+steps may be on one place, and a claim replaces only that step's own. The
+completion is refused (`flow_bootstrap.route_not_followed`) while a named
+route has a place no step in the Flow is on, places reached out of order, or a
+first step that goes straight to an address deeper than the start location --
+unless that step says it is on `r1`. A deeper first step is refused too when
+the reading is not `open`. The read stays lazy: the route check sends it only
+for such a first step, only while nothing has read it, and at most once; a
+route still unread is no route, so nothing is shown or refused for it. The
+check is composed into the build's `checkCompletion` before the activity
+observer wraps it (`automationStudioLlmEvidenceLoopRouteChecked`), so a route
+refusal reaches the chat as any refused completion does; the loop never
+composes it itself. A `place` is the model's claim, not proof: the whole-Flow
+judge is told that a Flow starting deeper than the route's first place, or
+skipping a place on it, does not do what was asked
+(`runtime/llm/diagnosis-instructions.ts`). Not yet carried: route intent on a
+saved Flow, and route-aware feedback at edit time (contract phases 3 and 5).
 
 The build's tests check, rather than do again, a step claiming an act that is
 lasting (`flow-bootstrap/action-permissions.ts`, `instructedLastingActs`;
@@ -1924,11 +1949,14 @@ open with the look as before. Every validator of the tool list accepts
 carries it.
 
 **The Flow may start where the work does (t195-w47).** The start-location note
-also says that, unless the person's instruction says how to get there (pages,
-menus or links to go through: then that route is followed and its steps kept),
-the Flow's first step may instead go straight to the address where the
-work begins, deeper on the same site. The clause is wording only: Core does not
-detect a named route. Once that address is seen to be stable
+also says that, unless the person's instruction names a route to follow (pages,
+menus or links to go through: then it is followed in order, a step kept on each
+place, and each step's places said with `place` once the draft shows the
+route), the Flow's first step may instead go straight to the address where the
+work begins, deeper on the same site, and that the completion accepts that only
+once Core has read that the person named no route. Core holds both halves at
+completion (D phase 2, above), and never by reading addresses or page words for
+a route. Once that address is seen to be stable
 (nothing in it like a session, a token or a one-time value), the build reruns
 step 1 with it and drops the steps that only travelled there, keeping every
 optional dismissal (`runtime/llm/deepseek/request-body.ts`). Live run

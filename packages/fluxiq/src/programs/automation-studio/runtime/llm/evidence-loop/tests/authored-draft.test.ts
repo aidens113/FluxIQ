@@ -24,7 +24,7 @@ import {
   automationStudioLlmRunNodeTool
 } from "../../node-tools/index.ts";
 import { automationStudioLlmEvidenceAuthoredProgress } from "../../evidence-progress/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../../evidence-loop.ts";
 
 const go = { toolId: "go", description: "Go or press.", inputSchema: { type: "object" }, effect: "mutate" as const };
@@ -109,6 +109,53 @@ describe("the grammar a call authors with", () => {
     expect(automationStudioLlmEvidenceParseDecision({ kind: "tool_call", callId: "c1", toolId: "go", input: {}, act: "save the kettle" })).toBeUndefined();
     const amendment = automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "add", to: 1, act: "a1" }] });
     expect(amendment).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "add", to: 1, act: "a1" }] });
+  });
+});
+
+// `place` in the grammar (t273 S2, D phase 2): the places on the route the
+// person named that a step is on, by the draft's ids for them
+// (`../../../flow-draft/route-places/place-value.ts`), read exactly as `act`
+// is: on a call it implies add, because only a step in the Flow is on the
+// route; a value that is not one of the ids refuses the call as a mistyped act
+// id does; and an amendment carrying one is left out while the rest stands.
+describe("the grammar of place", () => {
+  const placed = (extra: JsonObject) => ({ kind: "tool_call", callId: "c1", toolId: "go", input: {}, ...extra });
+
+  it.each(["r1", "r1,r2", "r2,r1", "none", "r20"])("reads place %s on a call, and it implies add", (place) => {
+    expect(automationStudioLlmEvidenceParseDecision(placed({ place }))).toEqual({ kind: "tool_call", callId: "c1", toolId: "go", input: {}, add: true, place });
+  });
+
+  it("reads place beside act", () => {
+    expect(automationStudioLlmEvidenceParseDecision(placed({ act: "a2", place: "r3" }))).toEqual({ kind: "tool_call", callId: "c1", toolId: "go", input: {}, add: true, act: "a2", place: "r3" });
+  });
+
+  it.each([["r0"], ["r1, r2"], ["R1"], ["a1"], [""], ["none,r1"], [1], [["r1"]]] as JsonValue[][])("refuses the call for place %j, as for an act that is not an id", (place) => {
+    expect(automationStudioLlmEvidenceParseDecision(placed({ place }))).toBeUndefined();
+  });
+
+  it("reads place on an amendment beside the change and its act", () => {
+    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", place: "r1,r2" }, { step: 3, change: "add", act: "a1", place: "none" }] }))
+      .toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", place: "r1,r2" }, { step: 3, change: "add", act: "a1", place: "none" }] });
+  });
+
+  it("leaves out an amendment whose place is not one of the ids, and keeps the rest", () => {
+    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", place: "Friends" }, { step: 3, change: "keep", place: "r2" }] }))
+      .toEqual({ kind: "amend_draft", amendments: [{ step: 3, change: "keep", place: "r2" }] });
+    expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "keep", place: "r1 r2" }] })).toBeUndefined();
+  });
+
+  it("is explained, with the ids' pattern, on the first call that can act, offered bare on every other, and not offered outside authoring", () => {
+    const look: AutomationStudioLlmEvidenceTool = { toolId: "web.find_on_page", description: "Finds.", effect: "observe", inputSchema: { type: "object" } };
+    const places = (authoring: boolean): Array<JsonObject | undefined> =>
+      ((buildAutomationStudioLlmEvidenceLoopDecisionSchema([look, go], { type: "object" }, false, false, authoring).oneOf) as JsonObject[])
+        .map((variant) => (variant.properties as JsonObject).place as JsonObject | undefined);
+    const [onLook, onGo] = places(true);
+    expect(onLook).toEqual({ type: "string" });
+    expect(onGo).toMatchObject({ type: "string", pattern: AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE.source });
+    expect(onGo?.description).toMatch(/r1,r2/u);
+    expect(onGo?.description).toMatch(/Implies add/u);
+    expect(new RegExp(onGo!.pattern as string, "u").test("r1,r2")).toBe(true);
+    expect(places(false)).toEqual([undefined, undefined]);
   });
 });
 
@@ -235,8 +282,11 @@ describe("authoring properties in the decision schema", () => {
     const tools = [look("web.detect_repeating_structure"), look("web.find_on_page"), look("web.describe_element"), library, look("core.describe_nodes")];
     const authored = JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, { type: "object" }, false, false, true)).length;
     const plain = JSON.stringify(buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, { type: "object" }, false, false, false)).length;
-    // One explained pair plus four bare pairs over the schema with none.
-    expect(authored - plain).toBeLessThan(468 + 4 * 120);
+    // One explained triple plus four bare triples over the schema with none:
+    // `place` (t273 S2, D phase 2) adds its explanation once, about 230
+    // characters, and an unexplained `{"type":"string"}` -- 26 -- to each other
+    // tool; measured 1,235 in all, against 907 for the pair before it.
+    expect(authored - plain).toBeLessThan(468 + 280 + 4 * (120 + 30));
   });
 });
 
