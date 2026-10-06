@@ -51,6 +51,17 @@ advertised child choice for its setting, or retain necessary preparation without
 an act claim when no child is listed. It does not invent a child ID or remap
 claims; the whole original requirement remains in the checklist.
 
+A claim on preparation does not count as the act. When the control of the step
+claimed for an act does not name it (the advisory doubt of
+`instructed-acts/claim-doubt.ts`) and a later step claimed for one of that act's
+own choices acted at a different place, the step only opened the page of those
+choices: the checklist shows the act `todo: step_only_opens_its_choices` on that
+step, and the next step claimed for the act is tried. The claim itself stays on
+the step until the model names the act on the press that does it; nothing is
+refused. Live run `run-mux6pndp-16feb842` showed why: a2 ("add the towels to my
+cart") claimed on the product link read as done, so the Add to cart after the
+size and quantity was never pressed.
+
 ### Recorded And Written Steps
 
 A step enters the draft one of two ways, and both become the same kind of Flow

@@ -123,7 +123,8 @@ export function automationStudioDeepSeekMessages(request: AutomationStudioLlmTas
  * The catalog an evidence decision is shown is every node by name and what it
  * does (`nodeCatalog`, from the packet's `catalogNames`), the note that says
  * how to read the rest, and the full definitions of only the nodes the build
- * asked `core.describe_nodes` about (`describedNodes`) -- user, 2026-10-01. All
+ * asked `core.describe_nodes` about or ran (`describedNodes`) -- user,
+ * 2026-10-01; a run describes its node since t280. All
  * three sit in the constant head. The names and the note never change during
  * a build; `describedNodes` only ever gains an entry at its end, so it is the
  * last thing in the head before the tools: a describe keeps the prefix through
@@ -250,7 +251,7 @@ function providerEvidenceFlowBootstrap(context: NonNullable<AutomationStudioLlmT
  * `./tests/request-body.test.ts`.
  */
 const AUTOMATION_STUDIO_DEEPSEEK_NODE_CATALOG_NOTE =
-  "nodeCatalog lists every node by id and what it does, by category. Before first running a node, ask core.describe_nodes for it (several ids at once); its inputs, outputs and parameters then stay in describedNodes for the rest of this build, so never ask for one already there.";
+  "nodeCatalog lists every node by id and what it does, by category. Each node you run joins describedNodes, with its inputs, outputs and parameters, for the rest of this build. To read one before its first run, ask core.describe_nodes (several ids at once); never ask for one already there.";
 
 /**
  * What `startLocation` means, said once.

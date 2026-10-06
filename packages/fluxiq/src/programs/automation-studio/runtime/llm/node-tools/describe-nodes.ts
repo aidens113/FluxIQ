@@ -25,7 +25,7 @@ const MAX_IDS = 64;
 
 const DESCRIPTION = [
   "Show the full definitions of library nodes: what each does and every parameter it takes.",
-  "Ask once, before running them, for all the nodes you are about to use, several ids per call.",
+  "A node you run is shown too; ask before its first run only to learn its parameters, several ids per call.",
   "A described node stays in flowBootstrap.describedNodes for the rest of the build, so never ask for it again.",
   "Returns a receipt; the definitions are shown there. Observes only; never a step of the Flow."
 ].join(" ");

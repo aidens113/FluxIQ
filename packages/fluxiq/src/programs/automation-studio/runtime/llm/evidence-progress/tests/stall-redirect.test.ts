@@ -66,6 +66,26 @@ describe("the stall note about an act still owed", () => {
     expect(said).not.toContain("the one that does a2:");
   });
 
+  // Live run `run-mux6pndp-16feb842` (lane B round 3): a2 was claimed on the
+  // product link (step 10) and its choices made on the page it opened. The
+  // checklist now says `step_only_opens_its_choices`; "correct step 10 … do not
+  // run another step for a2" would forbid the very press that does a2.
+  it("sends the model to the press after the choices when the step named only opened their page", () => {
+    const said = String(automationStudioLlmEvidenceStallRedirect({
+      stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [], proposableSteps: 8, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
+      actsMissing: ["a2", "a3", "a3.size"],
+      acts: [
+        { id: "a2", verb: "add", quote: "add two packs", todo: "step_only_opens_its_choices", step: 10, choices: [
+          { id: "a2.quantity", choice: "quantity", value: "two", quote: "two packs", done: 12 },
+          { id: "a2.size", choice: "variant", value: "12 Double Rolls", quote: "12 Double Rolls", done: 11 }
+        ] }
+      ]
+    }).instruction);
+    expect(said).toContain("Step 10 only opened the page where a2's choices are made and does not do a2");
+    expect(said).toContain("run the step that does a2 and add it with act a2");
+    expect(said).not.toContain("Do not run another step for a2");
+  });
+
   it("sends the act once none of its choices is owed", () => {
     const said = String(automationStudioLlmEvidenceStallRedirect({
       stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [], proposableSteps: 8, completionAttempts: 0, lastIssueCodes: [], canComplete: true,

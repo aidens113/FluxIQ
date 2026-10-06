@@ -6,10 +6,11 @@
 // build would ever run that node or not. The model is now shown each node by
 // name only, asks for the full definitions of the nodes it is about to use
 // (`./describe-nodes.ts`), and a node it was shown stays shown for the rest of
-// the build, under `flowBootstrap.describedNodes`. A call that fails naming a
-// node it never asked about describes that node too
-// (`../harness-options/binding.ts`), so a model that skipped the step is not
-// left guessing at parameters twice.
+// the build, under `flowBootstrap.describedNodes`. Every library call the
+// model makes describes its node too (`./describing-failures.ts`, wired in
+// `../harness-options/binding.ts`), succeeded or refused, because the model
+// seldom asked first (t280: in 2 of 23 live runs), so a node it has run once is
+// never run again without its definition in view.
 //
 // **What it holds.** Only ids, in the order they were first described, each
 // once: the harness input carries them (`flowBootstrap.describedNodeIds`) and

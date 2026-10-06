@@ -34,13 +34,13 @@ describe("the run-node tool's declaration", () => {
     expect(built!.description.length).toBeLessThanOrEqual(1_500);
   });
 
-  it("teaches the two steps: pick a name from the catalog, read its definition before first using it", () => {
+  it("teaches the two steps: pick a name from the catalog, and where its definition is shown", () => {
     // The catalog is names only (user, 2026-10-01); a node's parameters are
-    // shown once the model has asked for them.
+    // shown once the model has asked for them or run it (t280).
     const built = tool()!;
     expect(built.description).toContain("flowBootstrap.nodeCatalog names every node");
     expect(built.description).toContain("core.describe_nodes");
-    expect(built.description).toContain("unless it is already in flowBootstrap.describedNodes");
+    expect(built.description).toContain("A node you run is described for you, in flowBootstrap.describedNodes from then on.");
     const properties = built.inputSchema.properties as { parameters: { description: string } };
     expect(properties.parameters.description).toContain("flowBootstrap.describedNodes");
   });
