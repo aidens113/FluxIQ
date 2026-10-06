@@ -101,6 +101,27 @@ describe("automationStudioRefutedResultAttempt", () => {
 
     expect(automationStudioRefutedResultAttempt({ runId: "run.1", detail, outcome: refuted(), now: NOW })?.record.nodeId).toBe(AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID);
   });
+
+  // Live lane C (`run-muw60j7c-bb7c9a62`, t274-c25b): Core's check of the rows
+  // the judgement named reached the re-author's brief but not the ladder's
+  // structured repair input, so a node repair weighed advice the result
+  // contradicted without the lines that said so.
+  it("carries Core's checked row lines into the attempt's repair input", () => {
+    const checked = ["Row 3 (Sponsored earbuds) is in the result, though the judgement calls it left out."];
+    const outcome = {
+      ...refuted(),
+      repair: {
+        schemaVersion: "automation-studio.result-repair-directive.v1" as const,
+        findings: [{ code: "result.rows_left_out", detail: "Two rows matching the request were left out." }],
+        fix: ["Keep every row that matches the request."],
+        checked
+      }
+    };
+
+    const attempt = automationStudioRefutedResultAttempt({ runId: "run.1", detail: cleanRun(), outcome, now: NOW })!;
+
+    expect(attempt.trace.inputs).toMatchObject({ resultRepair: { checked } });
+  });
 });
 
 function refuted(): AutomationStudioResultVerificationOutcome {

@@ -247,3 +247,27 @@ describe("a column a rerun writes under a new name", () => {
     expect(extractList(input)).toMatchObject({ unique: true, dedupe: true });
   });
 });
+
+// Live run `run-muwaobm2-882cadd9`, draft step 14: a quantity typing rerun as a
+// click on the Spain row (decision 0052). The merge kept dom-type's `text` and
+// `submit`, so every clean click the model wrote (0052, 0060-0092) ran as a
+// click carrying `text: "3"`, and Core counted the quantity as set by it.
+describe("a rerun that changes the step's node", () => {
+  const typed = (): JsonObject => ({ node: "web.output.dom-type", parameters: { target: { handle: "t964" }, text: "3", submit: false }, consequences: [] });
+
+  it("runs with the parameters the patch wrote, none of the old node's", () => {
+    const patch = { node: "web.output.dom-click", parameters: { target: { handle: "t958" } }, consequences: [] };
+    // Before: parameters { target: { handle: "t958" }, text: "3", submit: false }.
+    expect(automationStudioLlmEvidenceRerunInput(typed(), patch)).toEqual(patch);
+  });
+
+  it("carries no old parameters when the patch writes none, and merges every other key as before", () => {
+    expect(automationStudioLlmEvidenceRerunInput(typed(), { node: "web.output.dom-click" }))
+      .toEqual({ node: "web.output.dom-click", consequences: [] });
+  });
+
+  it("merges as before when the node is the same", () => {
+    expect(automationStudioLlmEvidenceRerunInput(typed(), { node: "web.output.dom-type", parameters: { text: "4" } }))
+      .toEqual({ node: "web.output.dom-type", parameters: { target: { handle: "t964" }, text: "4", submit: false }, consequences: [] });
+  });
+});

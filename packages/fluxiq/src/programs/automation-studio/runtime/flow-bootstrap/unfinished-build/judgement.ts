@@ -157,13 +157,14 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
       stopped: input.stopped,
       tested,
       testIssueCodes,
-      failedSteps: seed.filter((step) => step.replayed !== undefined && step.replayed.status !== "replayed").map((step) => step.position),
+      failedSteps: failedPositions(seed),
       stepsInFlow: seed.length,
       done,
       ...(tested === "not_tested" ? {} : { proven }),
       todo,
       lastIssueCodes: [...new Set(input.lastIssueCodes)],
       ...(notRun.length ? { notRunInThisBuild: notRun } : {}),
+      ...withFixSteps(tested === "replay_failed" ? failedPositions(seed) : []),
       flowSignature: automationStudioFlowDraftReplaySignature(seed)
     }
   };
@@ -208,6 +209,8 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
       lastIssueCodes: [],
       ...(notRun.length ? { notRunInThisBuild: notRun } : {}),
       judge,
+      // A `no` is always about the loop's own test, which left the page where its last step did.
+      ...withFixSteps(judge.verdict === "no" ? seed.filter((step) => step.effect === "observe").map((step) => step.position) : []),
       flowSignature: automationStudioFlowDraftReplaySignature(seed)
     }
   };
@@ -295,8 +298,41 @@ export function automationStudioFlowBootstrapJudgementValue(judgement: Automatio
     actsTodo: [...judgement.todo],
     ...(judgement.lastIssueCodes.length ? { lastRefusedFor: [...judgement.lastIssueCodes] } : {}),
     ...(judgement.notRunInThisBuild?.length ? { notRunInThisBuild: [...judgement.notRunInThisBuild] } : {}),
-    ...(judgement.judge ? { judge: judgeValue(judgement.judge) } : {})
+    ...(judgement.judge ? { judge: judgeValue(judgement.judge) } : {}),
+    ...(judgement.fixSteps?.length ? { whereToFix: judgement.fixSteps.map(whereStepStarts) } : {})
   };
+}
+
+/** The positions of the steps the test ran that did not work. */
+function failedPositions(seed: readonly AutomationStudioFlowDraftStep[]): number[] {
+  return seed.filter((step) => step.replayed !== undefined && step.replayed.status !== "replayed").map((step) => step.position);
+}
+
+/** `fixSteps` when there are any; nothing otherwise. */
+function withFixSteps(positions: readonly number[]): { fixSteps?: number[] } {
+  return positions.length ? { fixSteps: [...positions] } : {};
+}
+
+/**
+ * Core's words for where one step to fix starts, in the Flow's own step
+ * numbers and nothing of the page.
+ *
+ * **Why (run `run-muwansvz-a2b4a987`, R2-4).** A repair opens on the page the
+ * test left, and is told to look first. The test of a Flow whose step 5 read
+ * every results page left it on page 5, the last; the repair looked and
+ * detected there, and the handle it minted had no pagination, because the last
+ * page draws Next disabled. Every paging rerun on it was refused until the
+ * purse ran out, though a rerun of step 5 runs from where step 5 starts. So
+ * the repair is told, for each step it is to fix, which page that is -- the
+ * one the step before it leaves -- and to look and detect there. Getting there
+ * is the model's, the shortest way, as the resume's own instruction already
+ * says for a page that is not where the draft leaves off
+ * (`../../llm/evidence-loop/resume.ts`).
+ */
+function whereStepStarts(position: number): string {
+  const start = position <= 1 ? "starts where the Flow starts" : `starts on the page step ${position - 1} leaves`;
+  return `Step ${position} ${start}, which need not be the page the test left: a look or a detect made anywhere else describes that page, not the one step ${position} runs on. `
+    + `Before you change step ${position}, get to where it starts the shortest way (mark any step you take only to get there exploratory), then look and detect there.`;
 }
 
 /**

@@ -71,6 +71,13 @@ export type AutomationStudioLlmDecisionContextDecision =
    * An amend_draft decision: how many amendments applied, which were refused,
    * the positions of withdrawn steps that had changed the page, and, where the
    * amendment did so, the iteration it undid back to and the step it reran.
+   * `refusals` includes the amendments held for the rerun and refused once it
+   * had run (`../decision-handlers/amendment.ts`), and `changed` says whether
+   * the decision changed the draft at all: a rerun that put an identical step
+   * back with the same result changed nothing, whatever "applied" (live run
+   * `run-muwaobm2-882cadd9`, iterations 19-24, each shown "applied: 1").
+   * `notRunAs` is the code a decision refused before any of it ran is refused
+   * under (`../repeat-guard/outcomes.ts`, `same_amendment`).
    */
   | {
       kind: "amendment";
@@ -80,6 +87,8 @@ export type AutomationStudioLlmDecisionContextDecision =
       withdrewChanged: readonly number[];
       undoneTo?: number;
       rerun?: number;
+      changed?: AutomationStudioLlmDecisionContextChange;
+      notRunAs?: string;
     }
   /**
    * A complete decision. It is the same attempt as an earlier one when it met
