@@ -56,17 +56,33 @@
 // answers `core.run_node.written`. A list read's rows come back beside the
 // evidence under `outputs`, never shown to the model. These names are Core's,
 // exported here so a host mirrors them rather than restating them.
+//
+// **A read sends the record output its Flow node will (read-list S1).**
+// Assembly gives every extraction that ran with no record output one of its
+// own (`../../flow-bootstrap/authoring/assembled-record-output.ts`), so the
+// stored Flow's read saves under that dataset. A step that ran with none sends
+// that same output when the caller hands over the step's node definition, or
+// the test would save its rows where the run never does. It is the one
+// derivation assembly uses, with the step id and the words assembly names the
+// step by (`./draft-step.ts`). A record output the step ran with is sent as
+// assembly reads it (a label-only one gains the step's id there, so sending it
+// raw would save the test's rows elsewhere). A call made without a definition
+// is sent unchanged.
 
-import type { JsonObject } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import type { AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
+import { automationStudioFlowBootstrapAssembledRecordOutput } from "../../flow-bootstrap/authoring/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE,
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_REMEMBERED_CODE,
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE,
   type AutomationStudioFlowDraftReplayMode,
+  automationStudioFlowDraftStepId,
   type AutomationStudioFlowDraftReplayStatus,
   type AutomationStudioFlowDraftStep
 } from "../../flow-draft/index.ts";
+import { automationStudioFlowBootstrapDraftNodeStep } from "./draft-step.ts";
 
 /** The key a replay call carries, which no ordinary call of any tool may use. */
 export const AUTOMATION_STUDIO_NODE_REPLAY_KEY = "replay";
@@ -147,14 +163,21 @@ export function automationStudioNodeReplayResetCall(from: JsonObject): JsonObjec
  * can judge. `from` is handed back for the same reason: only the caller can
  * say whether the target it stands on now is where this step found it.
  * `pass`, on a step a test repeats, is the row and the resolved parameters.
+ * `definition`, the definition of the node the step ran, gives a read that ran
+ * with no record output the one its Flow node holds (see the header).
  */
-export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDraftStep, pass: AutomationStudioNodeReplayPass = {}): JsonObject | undefined {
+export function automationStudioNodeReplayStepCall(
+  step: AutomationStudioFlowDraftStep,
+  pass: AutomationStudioNodeReplayPass = {},
+  definition?: AutomationStudioNodeDefinition
+): JsonObject | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   const ranWith = step.scheduledCandidate !== undefined ? scheduled?.input : step.ranWith;
   if (!ranWith || AUTOMATION_STUDIO_NODE_REPLAY_KEY in ranWith) return undefined;
   return {
     ...ranWith,
     ...passed(pass),
+    ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "step",
     ...(scheduled ? { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from }),
     ...(scheduled || step.replay?.produced === undefined ? {} : { produced: step.replay.produced })
@@ -168,15 +191,20 @@ export function automationStudioNodeReplayStepCall(step: AutomationStudioFlowDra
  * target the Flow would act on; where the step found the target, so the host
  * can tell an effect already in place from a page the steps before it no
  * longer reach; and no `produced`: nothing is run, so there is nothing to
- * compare. `pass` as for the step call.
+ * compare. `pass` and `definition` as for the step call.
  */
-export function automationStudioNodeReplayVerifyCall(step: AutomationStudioFlowDraftStep, pass: AutomationStudioNodeReplayPass = {}): JsonObject | undefined {
+export function automationStudioNodeReplayVerifyCall(
+  step: AutomationStudioFlowDraftStep,
+  pass: AutomationStudioNodeReplayPass = {},
+  definition?: AutomationStudioNodeDefinition
+): JsonObject | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   const ranWith = step.scheduledCandidate !== undefined ? scheduled?.input : step.ranWith;
   if (!ranWith || AUTOMATION_STUDIO_NODE_REPLAY_KEY in ranWith) return undefined;
   return {
     ...ranWith,
     ...passed(pass),
+    ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "verify",
     ...(scheduled ? { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from })
   };
@@ -191,6 +219,42 @@ function passed(pass: AutomationStudioNodeReplayPass): JsonObject {
     ...(pass.parameters === undefined ? {} : { parameters: pass.parameters }),
     ...(pass.item === undefined ? {} : { [AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY]: pass.item })
   };
+}
+
+/**
+ * The parameters a call sends with the record output assembly writes on the
+ * step's node (see the header), or nothing when they need none: no definition,
+ * a call to another node, no parameters, or a record output assembly leaves as it is.
+ * Never the step's own object: the call is a copy, and the draft keeps what ran.
+ */
+function assembledRecordOutput(step: AutomationStudioFlowDraftStep, call: JsonObject, definition: AutomationStudioNodeDefinition | undefined): JsonObject {
+  const parameters = call.parameters;
+  if (!definition || !isObject(parameters)) return {};
+  const node = typeof call.node === "string" ? call.node : step.actionId;
+  const written = automationStudioFlowBootstrapDraftNodeStep(step);
+  if (node !== definition.id || !written) return {};
+  const sent: JsonObject = { ...parameters };
+  let added = false;
+  for (const parameter of definition.parameters) {
+    if (parameter.ui?.control !== "record-output") continue;
+    const assembled = automationStudioFlowBootstrapAssembledRecordOutput({
+      definition,
+      parameterId: parameter.id,
+      parameters: sent,
+      // What assembly names this step by (`../../flow-bootstrap/authoring/assemble.ts`).
+      fallbackName: written.description || definition.label,
+      stepId: automationStudioFlowDraftStepId(step),
+      path: `replay.parameters.${parameter.id}`
+    });
+    if (!isObject(assembled.value) || JSON.stringify(assembled.value) === JSON.stringify(sent[parameter.id])) continue;
+    sent[parameter.id] = assembled.value;
+    added = true;
+  }
+  return added ? { parameters: sent } : {};
+}
+
+function isObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** Which tool a step's replay is sent to: the one that ran it. */

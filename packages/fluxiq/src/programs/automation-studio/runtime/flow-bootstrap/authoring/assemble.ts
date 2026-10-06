@@ -115,6 +115,7 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
       steps: block.steps,
       definitions,
       blockIndex,
+      subflowKey: subflowKeys[blockIndex]!,
       stepLabels,
       path: `plan.subflows.${subflows.length}`,
       namedColumns: input.namedColumns
@@ -236,6 +237,8 @@ function buildSubflow(input: {
   steps: readonly AutomationStudioFlowScriptStep[];
   definitions: readonly AutomationStudioNodeDefinition[];
   blockIndex: number;
+  /** The key this block's Subflow is given, which every step id in it is prefixed with. */
+  subflowKey: string;
   stepLabels: ReadonlyMap<string, number>;
   path: string;
   namedColumns: readonly string[] | undefined;
@@ -255,7 +258,7 @@ function buildSubflow(input: {
       continue;
     }
     const key = `s${index + 1}`;
-    const node = buildNode({ step, definition: found.definition, key, path: nodePath, namedColumns: input.namedColumns });
+    const node = buildNode({ step, definition: found.definition, key, subflowKey: input.subflowKey, path: nodePath, namedColumns: input.namedColumns });
     issues.push(...node.issues);
     nodes.push(node.node);
     definitionByKey.set(key, found.definition);
@@ -272,6 +275,7 @@ function buildNode(input: {
   step: AutomationStudioFlowScriptStep;
   definition: AutomationStudioNodeDefinition;
   key: string;
+  subflowKey: string;
   path: string;
   namedColumns: readonly string[] | undefined;
 }): { node: AutomationStudioFlowBootstrapNode; issues: AutomationStudioFlowBootstrapIssue[] } {
@@ -342,6 +346,10 @@ function buildNode(input: {
     written,
     path: input.path,
     fallbackName: input.step.description || input.definition.label,
+    // The draft step's own id where it was written from one, which survives
+    // routing adding joins around it; otherwise its Subflow and node key, which
+    // the same script assembles to every time.
+    stepId: input.step.draftStepId ?? `${input.subflowKey}-${input.key}`,
     namedColumns: input.namedColumns
   });
   issues.push(...normalised.issues);

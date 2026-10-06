@@ -95,6 +95,15 @@ describe("capturing the rows a record output declares", () => {
     expect(batch).toMatchObject({ label: "Products", rows: [{ name: EXTRACTED, price: 3 }], invalidCount: 0, truncated: true });
   });
 
+  it("carries the record output's process declaration on the batch, as parsed", () => {
+    const process: JsonObject = { dedupe: { by: ["name"] }, sort: [{ field: "price", order: "desc", as: "number" }], limit: 5 };
+    const { batch } = capture(effect({ ...recordOutput, process }), answer(extractedPayload()));
+
+    expect(batch?.process).toEqual(process);
+    // Absent stays absent: the default processing is no declaration at all.
+    expect(capture(effect(recordOutput), answer(extractedPayload())).batch).not.toHaveProperty("process");
+  });
+
   it.each([
     { case: "a string at the path", result: { page: { items: "synthetic-not-a-list" } } as JsonValue },
     { case: "nothing at the path", result: { page: {} } as JsonValue },
@@ -231,6 +240,14 @@ describe("capturing the rows a records.write effect carries", () => {
       expect(held).not.toContain(EXCLUDED);
       expect(held).not.toContain(UNKNOWN);
     }
+  });
+
+  it("carries the record output's process declaration on the batch, as a dispatched batch does", () => {
+    const process: JsonObject = { dedupe: false, limit: 2 };
+    const { batch } = write(writeEffect({ recordOutput: { ...recordOutput, process }, records: writtenRows() }));
+
+    expect(batch?.process).toEqual(process);
+    expect(write(writeEffect({ recordOutput, records: writtenRows() })).batch).not.toHaveProperty("process");
   });
 
   it.each([

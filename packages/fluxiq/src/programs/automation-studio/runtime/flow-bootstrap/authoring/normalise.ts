@@ -5,9 +5,9 @@
 // it names, however the model spelled it. A value is read as the declared type
 // wants it -- one item where a list belongs, a name where an object belongs,
 // `no` where a boolean belongs -- and a record output is filled in from what
-// the node already knows (`./record-output.ts`) -- for an extraction whose
-// author declared no columns, the columns the instruction names
-// (`./instruction-record-columns.ts`). Then every parameter the
+// the node already knows (`./assembled-record-output.ts`) -- for an extraction
+// whose author declared no columns, the columns the instruction names, and for
+// an extraction whose author declared no record output at all, one of its own. Then every parameter the
 // model left out that declares a default is written in explicitly, so the Flow
 // a person opens shows the value the step will actually use rather than a blank.
 //
@@ -17,17 +17,12 @@
 // cannot be guessed; the refusal is fed back with the node's parameter ids.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { isAutomationNodeParameterStateBinding, type AutomationNodeParameter, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
-import {
-  automationStudioFlowBootstrapDeclaredRecordsPath,
-  automationStudioMatchWrittenParameterName,
-  type AutomationStudioFlowBootstrapIssue
-} from "../plan/index.ts";
+import { automationStudioMatchWrittenParameterName, type AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
+import { automationStudioFlowBootstrapAssembledRecordOutput } from "./assembled-record-output.ts";
 import { isAuthoringConsequenceKey, readAuthoringConsequences } from "./consequences.ts";
-import { authoringInstructionRecordColumns } from "./instruction-record-columns.ts";
-import { authoringError, authoringWarning } from "./issue.ts";
+import { authoringError } from "./issue.ts";
 import { authoringKey } from "./keys.ts";
 import { matchAuthoringParameter, matchAuthoringParameterContaining } from "./matching.ts";
-import { normaliseAuthoringRecordOutput } from "./record-output.ts";
 import { AUTOMATION_STUDIO_AUTHORING_HANDLE_KEY, isAuthoringHandleToken, isJsonObject } from "./values.ts";
 
 /** The parameters one node runs with, from the keys and values the model wrote. */
@@ -39,6 +34,12 @@ export function normaliseAuthoringNodeParameters(input: {
   path: string;
   /** What a derived name falls back to: the step's own words. */
   fallbackName: string;
+  /**
+   * The id this step keeps every time the same plan is assembled, appended to
+   * a dataset id derived here so two reads never share a dataset by accident
+   * (`./record-output.ts`). Absent, a derived id is the name alone.
+   */
+  stepId?: string | undefined;
   /**
    * The columns the instruction names (`../answerability/instruction-columns.ts`),
    * declared as the schema of an extraction whose author declared none. Absent
@@ -101,31 +102,19 @@ export function normaliseAuthoringNodeParameters(input: {
   }
   for (const parameter of input.definition.parameters) {
     if (parameter.ui?.control !== "record-output") continue;
-    const path = `${input.path}.parameters.${parameter.id}`;
-    const fieldKeys = columnNames(parameters);
-    const asked = instructionColumns(input.definition, input.namedColumns, fieldKeys);
-    const written = parameters[parameter.id];
-    const undeclared = written === undefined || written === null;
-    // An extraction left without a record output stores every field it reads,
-    // helpers and all; one the instruction names columns for declares them.
-    const read = normaliseAuthoringRecordOutput({
-      value: undeclared && asked?.columns.length ? {} : written,
+    // The same derivation the build's test sends for a step that ran with none
+    // (`./assembled-record-output.ts`), so the test and the Flow write one dataset.
+    const read = automationStudioFlowBootstrapAssembledRecordOutput({
       definition: input.definition,
-      columns: asked?.columns.length ? asked.columns : fieldKeys,
+      parameterId: parameter.id,
+      parameters,
       fallbackName: input.fallbackName,
-      path
+      stepId: input.stepId,
+      namedColumns: input.namedColumns,
+      path: `${input.path}.parameters.${parameter.id}`
     });
     if (read.value !== undefined) parameters[parameter.id] = read.value;
     issues.push(...read.issues);
-    if (asked?.unmatched.length && (undeclared || read.schemaDerived)) {
-      issues.push(authoringWarning(
-        "record_output.named_column_unmatched",
-        `The instruction names ${asked.unmatched.map((name) => `"${name}"`).join(", ")} as columns, and no field this extraction reads is called that, so ${asked.columns.length
-          ? `it stores only the named columns it does read: ${asked.columns.map((column) => column.id).join(", ")}`
-          : "it stores every field it reads"}. Read a field under each name the instruction gives if it asked for that column.`,
-        path
-      ));
-    }
   }
   materialiseDefaults(input.definition, parameters);
   return { parameters, issues, ...(consequences ? { consequences } : {}) };
@@ -172,30 +161,4 @@ function coerce(value: JsonValue, parameter: AutomationNodeParameter): JsonValue
   if ((type === "string" || type === "expression") && (typeof value === "number" || typeof value === "boolean")) return String(value);
   if (Array.isArray(value) && value.length === 1 && type !== "array" && type !== "json") return value[0] as JsonValue;
   return value;
-}
-
-/**
- * The instruction's columns matched to an extraction's fields, or `undefined`
- * for a node that is not an extraction -- one whose own result keeps no rows --
- * or that reads no named field, or an instruction that names no column.
- */
-function instructionColumns(
-  definition: AutomationStudioNodeDefinition,
-  named: readonly string[] | undefined,
-  fieldKeys: readonly string[]
-): ReturnType<typeof authoringInstructionRecordColumns> | undefined {
-  if (!named?.length || !fieldKeys.length) return undefined;
-  if (automationStudioFlowBootstrapDeclaredRecordsPath(definition) === undefined) return undefined;
-  return authoringInstructionRecordColumns({ named, fieldKeys });
-}
-
-/** The column names a node already asks for, used when a record output names none. */
-function columnNames(parameters: JsonObject): string[] {
-  for (const value of Object.values(parameters)) {
-    if (!isJsonObject(value)) continue;
-    const fields = value.fields ?? value.columns;
-    if (isJsonObject(fields)) return Object.keys(fields);
-    if (Array.isArray(fields)) return fields.filter((item): item is string => typeof item === "string");
-  }
-  return [];
 }

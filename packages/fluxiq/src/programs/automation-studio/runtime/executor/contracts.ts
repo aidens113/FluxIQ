@@ -1,5 +1,6 @@
 import type {
   AutomationStudioFailureRecord,
+  AutomationStudioRecordProcessing,
   AutomationStudioRecordSchema,
   AutomationStudioRecordWriteMode,
   AutomationStudioRunDatasetSummary
@@ -383,6 +384,12 @@ export type AutomationStudioRecordBatch = {
   invalidCount: number;
   /** True when the output returned more rows than the record output keeps. */
   truncated: boolean;
+  /**
+   * The record output's `process` declaration, copied as parsed: how the run's
+   * collected rows become the dataset's answer when the run ends. Absent is the
+   * default processing.
+   */
+  process?: AutomationStudioRecordProcessing;
 };
 
 export type AutomationStudioGraphExecutionOptions = {
