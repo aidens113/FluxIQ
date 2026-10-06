@@ -14,10 +14,17 @@
 //
 // One sentence, short enough to follow "Run failed: " within a status line's
 // 160 characters, and with no id in it.
+//
+// **Said as what follows the dash, of rows saved (t276, U-10).** Live run
+// `run-muw60j7c-bb7c9a62` showed "Run failed — It returned 30 rows, but the
+// check found ...": a capital after the dash the chat puts between the title
+// and this sentence, and "returned" of rows the run saved. The sentence now
+// opens in lower case, as the rest of the line it finishes, and says the rows
+// were saved.
 
 type Fields = Readonly<Record<string, unknown>>;
 
-/** The sentence, or undefined when the record says the run did not fail at its result check. */
+/** The sentence, in lower case after the "Run failed" it finishes, or undefined when the record says the run did not fail at its result check. */
 export function automationStudioActivityRunEnding(record: Fields | null | undefined): string | undefined {
   const verification = fields(record?.resultVerification);
   if (!verification || verification.performed !== true || verification.verdict === "answers" || verification.status === "confirmed") return undefined;
@@ -28,14 +35,14 @@ export function automationStudioActivityRunEnding(record: Fields | null | undefi
   return `${judged(rows, refuted)}${repaired ? `, and ${repaired}` : ""}.`;
 }
 
-/** What came back and what the check made of it. */
+/** What the run saved and what the check made of it. */
 function judged(rows: number | undefined, refuted: boolean): string {
-  if (rows === undefined) return refuted ? "The check found its result doesn't answer what you asked" : "The check couldn't confirm its result answers what you asked";
-  if (rows === 0) return "It returned no rows, so it doesn't answer what you asked";
+  if (rows === undefined) return refuted ? "the check found its result doesn't answer what you asked" : "the check couldn't confirm its result answers what you asked";
+  if (rows === 0) return "it saved no rows, so it doesn't answer what you asked";
   const one = rows === 1;
-  const returned = `It returned ${rows} ${one ? "row" : "rows"}`;
-  if (refuted) return `${returned}, but the check found ${one ? "it doesn't" : "they don't"} answer what you asked`;
-  return `${returned}, but the check couldn't confirm ${one ? "it answers" : "they answer"} what you asked`;
+  const saved = `it saved ${rows} ${one ? "row" : "rows"}`;
+  if (refuted) return `${saved}, but the check found ${one ? "it doesn't" : "they don't"} answer what you asked`;
+  return `${saved}, but the check couldn't confirm ${one ? "it answers" : "they answer"} what you asked`;
 }
 
 /** How a repair of the refuted answer ended; undefined when none was started. */

@@ -59,10 +59,11 @@ describe("a call the bound domain describes", () => {
     expect(card(title)).toMatchObject({ kind: "look", target: '"Colour"' });
   });
 
-  it("names the control whose details are read, on the card too", () => {
+  // U-2 (`run-muw60j7c-bb7c9a62`): the card names what was looked at in words, never the page's label alone.
+  it("names the control whose details are read, on the card as that label", () => {
     const title = automationStudioActivityAction({ id: "web.describe_element", words: { target: "Colour" } })!;
     expect(title).toBe("Reading the details of “Colour”");
-    expect(activityActionOf({ phase: "exploring", detail: { kind: "tool", title, status: "started", ref: "web.describe_element" } })).toMatchObject({ kind: "look", target: "Colour" });
+    expect(activityActionOf({ phase: "exploring", detail: { kind: "tool", title, status: "started", ref: "web.describe_element" } })).toMatchObject({ kind: "look", target: 'the "Colour" label' });
   });
 
   it("says which control a press is on", () => {

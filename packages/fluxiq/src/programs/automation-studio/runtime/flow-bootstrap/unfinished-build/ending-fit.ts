@@ -11,7 +11,8 @@
 // the whole message fits. The closing sentences (what was kept, what was
 // tried) are always said whole. Only if the tightest room still does not fit
 // are whole sentences of the body left out from its end, and the first part is
-// cut at a sentence end as the very last resort, never inside a sentence.
+// cut at a sentence end as the very last resort, never inside a sentence. And
+// no sentence is said twice (t276).
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_BUILD_ENDING_MAX_MESSAGE } from "../generation-failure/index.ts";
 
 /**
@@ -57,8 +58,20 @@ export function automationStudioFlowBootstrapEndingFitted(
   return joined([sentencesWithin(body[0] ?? "", room), close]);
 }
 
+/**
+ * The parts as one message, each sentence said once: a sentence that repeats
+ * one already said, in other case or spacing, is left out (t276, live run
+ * `run-muw60unq-591e23bd` said one point twice), so no two parts of an ending
+ * can come to say the same thing twice.
+ */
 function joined(parts: readonly string[]): string {
-  return parts.filter(Boolean).join(" ");
+  const said = new Set<string>();
+  return parts.filter(Boolean).join(" ").split(/(?<=[.!?]["')”]*)\s+/u).filter((sentence) => {
+    const key = sentence.toLowerCase().replace(/\s+/gu, " ").trim();
+    if (said.has(key)) return false;
+    said.add(key);
+    return true;
+  }).join(" ");
 }
 
 /** The whole sentences that open `text` and fit in `room`; empty when not even the first does. */

@@ -22,13 +22,15 @@ const COMPLETE = "Checking whether the Flow is finished";
 export function automationStudioActivityDecision(
   decision: unknown,
   /** The bound domain's words for a call (`AutomationStudioLlmEvidenceLoopInput.describeCall`), when it has them. */
-  describe?: (call: { toolId: string; value?: unknown }) => AutomationStudioActivityCallWords | undefined
+  describe?: (call: { toolId: string; value?: unknown }) => AutomationStudioActivityCallWords | undefined,
+  /** The address the work starts at, where the caller knows it: only a page there is "the start page" (`./page-name.ts`). */
+  start?: string | undefined
 ): { phase: ClientGatewayActivityPhase; title: string } | undefined {
   if (!decision || typeof decision !== "object" || Array.isArray(decision)) return undefined;
   const record = decision as { kind?: unknown; callId?: unknown; toolId?: unknown; input?: unknown };
   if (record.kind === "tool_call" && typeof record.toolId === "string") {
     const call = { callId: typeof record.callId === "string" ? record.callId : "", toolId: record.toolId, value: record.input };
-    const words = automationStudioActivityToolCall(call, describe?.(call));
+    const words = automationStudioActivityToolCall(call, describe?.(call), { start });
     return { phase: words.phase, title: words.title };
   }
   if (record.kind === "amend_draft") {

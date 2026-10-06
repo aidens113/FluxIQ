@@ -104,7 +104,11 @@ describe("automationStudioActivityRecoveryChoice", () => {
 describe("automationStudioActivityDraftEditCard for a bound step", () => {
   it("says the step varies and runs only in the Flow, on a card, never the code", () => {
     const row = automationStudioActivityDraftEditCard({ kind: "refused", reasons: ["rerun_holds_binding"], applied: 0 });
-    expect(row).toMatchObject({ phase: "building", label: "Running the step again — not done", detail: { kind: "tool", title: "Running the step again", status: "failed", ref: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID } });
+    expect(row).toMatchObject({
+      phase: "building",
+      label: "Not done: running the step again — that step takes a value that varies, which is known only when the Flow runs",
+      detail: { kind: "tool", title: "Running the step again", status: "failed", ref: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID }
+    });
     const action = activityActionOf(row);
     expect(action).toMatchObject({ kind: "draft", target: "run the step again", outcome: "failed" });
     expect(action?.refused?.because).toMatch(/only when the Flow runs/u);
@@ -116,5 +120,20 @@ describe("automationStudioActivityDraftEditCard for a bound step", () => {
       .toBe("Result: llm_evidence_loop.draft_amendments_refused · Reason: already_in_flow");
     expect(automationStudioActivityDraftEditCard({ kind: "repeated", outcome: "a sentence, not a code" }).detail?.text).toBe("Result: llm_evidence_loop.repeat_refused");
     expect(automationStudioActivityDraftEditCard({ kind: "landed" }).detail).not.toHaveProperty("text");
+  });
+
+  // U2 (`run-muw60unq-591e23bd`): "Edit the Flow · Done" said nothing of an edit that dropped Add to cart.
+  it("carries what an edit changed last on its record, in words, and the card shows it as its result", () => {
+    const landed = automationStudioActivityDraftEditCard({ kind: "landed" }, "removed step 9, Add to cart");
+    expect(landed).toMatchObject({ label: "Editing the Flow — done: removed step 9, Add to cart", detail: { status: "succeeded", text: "Changed: removed step 9, Add to cart" } });
+    expect(activityActionOf(landed)).toMatchObject({ kind: "draft", outcome: "done", result: "removed step 9, Add to cart" });
+    const partly = automationStudioActivityDraftEditCard({ kind: "refused", reasons: ["already_so"], applied: 1 }, "added step 11, Spain");
+    expect(partly.detail?.text).toBe("Result: llm_evidence_loop.draft_amendments_refused · Reason: already_so · Applied: 1 · Changed: added step 11, Spain");
+    expect(activityActionOf(partly)).toMatchObject({ outcome: "done", result: "added step 11, Spain", refused: { all: false } });
+    // An edit that changed nothing says no change, whatever it is handed.
+    const refused = automationStudioActivityDraftEditCard({ kind: "refused", reasons: ["already_out"], applied: 0 }, "removed step 9, Add to cart");
+    expect(refused.detail?.text).not.toContain("Changed");
+    expect(refused.label).toBe("Not done: editing the Flow — that step is already out of the Flow");
+    expect(activityActionOf(refused)).not.toHaveProperty("result");
   });
 });

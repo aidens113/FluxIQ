@@ -23,7 +23,7 @@ describe("the not-finished ending's count of what was asked", () => {
   it("says thing for one thing asked", () => {
     const one = [act("a1", "confirm everyone I have at least five mutual friends with")];
     const same = ending(one, judgement({ round: 0 })).message;
-    expect(same).toContain("the one thing you asked has a step as it did before");
+    expect(same).toContain("no more of what you asked has a step than before");
     expect(same).not.toMatch(/\b1 things\b/u);
     const fewer = ending(one, judgement({ round: 0, done: 2 })).message;
     expect(fewer).toContain("the one thing you asked no longer has a step");
@@ -31,7 +31,7 @@ describe("the not-finished ending's count of what was asked", () => {
 
   it("says things for more than one", () => {
     const two = [act("a1", "confirm Amara"), act("a2", "confirm Lin")];
-    expect(ending(two, judgement({ round: 0, done: 2 })).message).toContain("2 of the 2 things you asked have a step, no more than before");
+    expect(ending(two, judgement({ round: 0, done: 2 })).message).toContain("no more of what you asked has a step than before");
   });
 });
 
@@ -44,15 +44,15 @@ describe("the not-finished ending's account of the judge", () => {
     const before = judged({ observed: "no step reads the list after the confirms", advice: "add a read after the confirm loop" });
     const after = judged({ observed: "the confirm acts on Tom Becker", advice: "confirm each row of the read" });
     const message = ending(one, before, after).message;
-    expect(message).toContain("this time the judge found: \"the confirm acts on Tom Becker\"");
+    expect(message).toContain("the judge's finding changed. What the judge found this time: the confirm acts on Tom Becker.");
     expect(message).not.toContain("the judge found the same as before");
-    expect(message).toContain("What the judge says is left to change: \"confirm each row of the read\".");
+    expect(message).toContain("What the judge says is left to change: confirm each row of the read.");
   });
 
   it("says what the judge found this time when its finding codes changed, though its advice did not", () => {
     const before = judged({ observed: "no read", advice: "read the list" });
     const after = judged({ observed: "the read kept none", advice: "read the list", findings: ["result.no_records_stored"] });
-    expect(ending(one, before, after).message).toContain("this time the judge found: \"the read kept none\"");
+    expect(ending(one, before, after).message).toContain("What the judge found this time: the read kept none.");
   });
 
   it("says the same as before only when both its finding codes and its advice are unchanged", () => {
@@ -128,11 +128,12 @@ describe("the not-finished ending of run-musp4h2f-72e8ed99", () => {
 
   it("says the judge's doubt, bounded, as one check the other did not confirm", () => {
     const message = said();
-    expect(message).toContain(`What the judge doubted, in one check the other did not confirm: "${doubt}".`);
+    expect(message).toContain(`What the judge doubted, in one check the other did not confirm: ${doubt}.`);
     const long = round({ verdict: "unknown", findings: ["unsure"], unconfirmedReading: { observed: "x ".repeat(400) } }, 3);
-    expect(said(long)).toMatch(/doubted, in one check the other did not confirm: "(?:x ){90,}x?\.\.\."\./u);
+    // No whole sentence of it fits: it is left unsaid, never cut short (t276).
+    expect(said(long)).not.toContain("doubted");
     const adviceOnly = round({ verdict: "unknown", findings: ["unsure"], unconfirmedReading: { advice: "observe the quantity" } }, 3);
-    expect(said(adviceOnly)).toContain('What one check of the judge says is left to change, which the other did not confirm: "observe the quantity".');
+    expect(said(adviceOnly)).toContain('What one check of the judge says is left to change, which the other did not confirm: observe the quantity.');
     const none = round({ verdict: "unknown", findings: ["unsure"] }, 3);
     expect(said(none)).not.toContain("did not confirm:");
   });
@@ -142,7 +143,7 @@ describe("the not-finished ending of run-musp4h2f-72e8ed99", () => {
   it("keeps every fact it carried in plain words: what stood still, the attempts, and the draft kept once", () => {
     const ended = automationStudioFlowBootstrapNotFinished({ judgement: after, checklist: items, rounds: 4, decisions: 60, stoodStill: { kind: "no_progress", before, rounds: 2 }, kept: true });
     const message = ended.message;
-    expect(message).toMatch(/^I have not finished this Flow yet\. My last 2 attempts to fix it each got no further than the one before: 6 of the 6 things you asked have a step, no more than before, and the judge no longer agreed it was wrong, as one of its two checks said it does what you asked\. What the judge doubted, in one check the other did not confirm: "/u);
+    expect(message).toMatch(/^I have not finished this Flow yet\. My last 2 attempts to fix it each got no further than the one before: no more of what you asked has a step than before, and the judge no longer agreed it was wrong, as one of its two checks said it does what you asked\. What the judge doubted, in one check the other did not confirm: step 9 /u);
     expect(message).toContain("I worked on it live 4 times: first exploring the page, then fixing it 3 times after testing what I had.");
     expect(message).not.toMatch(/decision|\bmodel\b|\bround\b|measurable|as before\)|handed back/iu);
     expect(ended.tried).toMatchObject({ rounds: 4, decisions: 60 });
@@ -165,7 +166,7 @@ describe("the not-finished ending as a person reads it", () => {
     const after = judgement({ ...clean });
     const said = automationStudioFlowBootstrapNotFinished({ judgement: after, checklist: one, rounds: 2, decisions: 73, stoodStill: { kind: "no_progress", before, rounds: 1 }, kept: true });
     expect(said.message).not.toMatch(internal);
-    expect(said.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: the Flow came out exactly the same, the one thing you asked has a step as it did before, and no more of its steps worked when it was run from the start\. /u);
+    expect(said.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: the Flow came out exactly the same, no more of what you asked has a step than before, and no more of its steps worked when it was run from the start\. /u);
     expect(said.message).toContain("I worked on it live twice: first exploring the page, then fixing it once after testing what I had.");
     expect(said.message).toContain("building again carries on from them");
     expect(said.tried).toMatchObject({ rounds: 2, decisions: 73 });
@@ -176,7 +177,7 @@ describe("the not-finished ending as a person reads it", () => {
     const after = judgement({ round: 2, ...clean });
     const said = automationStudioFlowBootstrapNotFinished({ judgement: after, checklist: one, rounds: 3, decisions: 39, stoodStill: { kind: "no_progress", before, rounds: 1 }, kept: true });
     expect(said.message).not.toMatch(internal);
-    expect(said.message).toContain("My last attempt to fix it got no further than the one before: the one thing you asked has a step as it did before, and it stopped before the Flow was ready, though the attempt before it had got that far.");
+    expect(said.message).toContain("My last attempt to fix it got no further than the one before: no more of what you asked has a step than before, and it stopped before the Flow was ready, though the attempt before it had got that far.");
     expect(said.message).toContain("I worked on it live 3 times: first exploring the page, then fixing it twice after testing what I had.");
     expect(said.tried).toMatchObject({ rounds: 3, decisions: 39 });
   });

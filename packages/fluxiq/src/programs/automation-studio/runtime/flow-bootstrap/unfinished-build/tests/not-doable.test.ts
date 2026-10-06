@@ -27,7 +27,7 @@ describe("the not-doable ending", () => {
 
   it("says the one thing asked as one thing, never \"1 of the 1 things\"", () => {
     const message = ending([act("a1", "confirm everyone I have at least five mutual friends with")]).message;
-    expect(message).toContain("the one thing you asked could not be done: \"confirm everyone I have at least five mutual friends with\"");
+    expect(message).toContain("The one thing you asked could not be done: \"confirm everyone I have at least five mutual friends with\"");
     expect(message).not.toMatch(/\b1 things\b/u);
   });
 

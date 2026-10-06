@@ -152,7 +152,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     });
     expect(outcome.ending.notDone[1]!.quote).toContain("Brightline kettle");
     // A message the person reads, in their own words, with no code in it.
-    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: the Flow came out exactly the same, 1 of the 3 things you asked has a step, no more than before, and no more of its steps worked when it was run from the start\./u);
+    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: the Flow came out exactly the same, no more of what you asked has a step than before, and no more of its steps worked when it was run from the start\./u);
     expect(outcome.ending.message).not.toContain("found no way");
     expect(outcome.ending.message).toContain("\"save the Brightline kettle to my saved items\": nothing I tried did it");
     // Two of three things asked are not done, so the clean run is not said to be without failing.

@@ -21,7 +21,7 @@ describe("automationStudioActivityRunEnding", () => {
       resultRepair: repairEnded({ outcome: "not_rerun" }),
       resultReauthor: { code: "flow_bootstrap.evidence_budget_exhausted", attempts: [{ attempt: 1, ending: { kind: "budget_exhausted", bound: "rounds", tried: { rounds: 6, decisions: 37, stepsInFlow: 7, tested: "not_tested" } } }] }
     });
-    expect(said).toBe("It returned 13 rows, but the check found they don't answer what you asked, and the fix used all its rounds before it could test a change.");
+    expect(said).toBe("it saved 13 rows, but the check found they don't answer what you asked, and the fix used all its rounds before it could test a change.");
   });
 
   it("names the limit the re-author's last build stopped at, and whether it tested anything", () => {
@@ -38,7 +38,7 @@ describe("automationStudioActivityRunEnding", () => {
   });
 
   it("reads the count from the check's own observation when no repair recorded one", () => {
-    expect(automationStudioActivityRunEnding(refuted)).toBe("It returned 13 rows, but the check found they don't answer what you asked.");
+    expect(automationStudioActivityRunEnding(refuted)).toBe("it saved 13 rows, but the check found they don't answer what you asked.");
   });
 
   it("says each way a repair can end", () => {
@@ -53,9 +53,9 @@ describe("automationStudioActivityRunEnding", () => {
   });
 
   it("says one row and no rows as such, and a check that could not decide as unconfirmed", () => {
-    expect(automationStudioActivityRunEnding({ resultVerification: { ...refuted.resultVerification, observation: "1 record stored" } })).toBe("It returned 1 row, but the check found it doesn't answer what you asked.");
-    expect(automationStudioActivityRunEnding({ resultVerification: { ...refuted.resultVerification, observation: "0 records stored" } })).toBe("It returned no rows, so it doesn't answer what you asked.");
-    expect(automationStudioActivityRunEnding({ resultVerification: { ...refuted.resultVerification, verdict: "unsure", observation: "4 records stored" } })).toBe("It returned 4 rows, but the check couldn't confirm they answer what you asked.");
+    expect(automationStudioActivityRunEnding({ resultVerification: { ...refuted.resultVerification, observation: "1 record stored" } })).toBe("it saved 1 row, but the check found it doesn't answer what you asked.");
+    expect(automationStudioActivityRunEnding({ resultVerification: { ...refuted.resultVerification, observation: "0 records stored" } })).toBe("it saved no rows, so it doesn't answer what you asked.");
+    expect(automationStudioActivityRunEnding({ resultVerification: { ...refuted.resultVerification, verdict: "unsure", observation: "4 records stored" } })).toBe("it saved 4 rows, but the check couldn't confirm they answer what you asked.");
   });
 
   it("gives no row count for a run whose result declared no record set (cart Flow, run-muw5zv4m-52d83027)", () => {
@@ -64,14 +64,14 @@ describe("automationStudioActivityRunEnding", () => {
       resultVerification: cart,
       resultRepair: { attempted: true, attempts: 1, history: [{ attempt: 1, totalRecordCount: 0, recordSetCount: 0 }], phase: "reauthoring" },
       resultReauthor: { code: "flow_bootstrap.evidence_budget_exhausted", attempts: [{ attempt: 1, ending: { kind: "budget_exhausted", bound: "tokens", tried: { tested: "not_tested" } } }] }
-    })).toBe("The check found its result doesn't answer what you asked, and the fix reached its limit before it could test a change.");
-    expect(automationStudioActivityRunEnding({ resultVerification: cart })).toBe("The check found its result doesn't answer what you asked.");
-    // A declared record set that stored nothing still returned no rows.
-    expect(automationStudioActivityRunEnding({ resultVerification: { ...cart, observation: "0 records stored, across 1 record set" }, resultRepair: { attempted: true, history: [{ attempt: 1, totalRecordCount: 0, recordSetCount: 1 }] } })).toBe("It returned no rows, so it doesn't answer what you asked, and the fix didn't finish.");
+    })).toBe("the check found its result doesn't answer what you asked, and the fix reached its limit before it could test a change.");
+    expect(automationStudioActivityRunEnding({ resultVerification: cart })).toBe("the check found its result doesn't answer what you asked.");
+    // A declared record set that stored nothing still saved no rows.
+    expect(automationStudioActivityRunEnding({ resultVerification: { ...cart, observation: "0 records stored, across 1 record set" }, resultRepair: { attempted: true, history: [{ attempt: 1, totalRecordCount: 0, recordSetCount: 1 }] } })).toBe("it saved no rows, so it doesn't answer what you asked, and the fix didn't finish.");
   });
 
   it("says the refutation even when nothing counts the rows", () => {
-    expect(automationStudioActivityRunEnding({ resultVerification: { ...refuted.resultVerification, observation: "the list was empty" } })).toBe("The check found its result doesn't answer what you asked.");
+    expect(automationStudioActivityRunEnding({ resultVerification: { ...refuted.resultVerification, observation: "the list was empty" } })).toBe("the check found its result doesn't answer what you asked.");
   });
 
   it("says nothing for a run that did not fail at its result check", () => {
@@ -85,5 +85,17 @@ describe("automationStudioActivityRunEnding", () => {
     const said = automationStudioActivityRunEnding({ ...refuted, resultRepair: repairEnded({ outcome: "stopped", stopped: "result_repair.attempts_exhausted", attempts: 3 }) })!;
     expect(`Run failed: ${said}`.length).toBeLessThanOrEqual(AUTOMATION_STUDIO_ACTIVITY_LIMITS.label);
     expect(said).not.toMatch(/\b[a-z]+\.[a-z_]+/iu);
+  });
+
+  // t276, U-10 of `run-muw60j7c-bb7c9a62` (picture 16): "Run failed — It returned 30 rows, but the check found
+  // they don't answer what you asked, and the fix used all its rounds before it could test a change."
+  it("says the rows were saved, in lower case after the dash the chat puts before it (U-10)", () => {
+    const said = automationStudioActivityRunEnding({
+      resultVerification: { ...refuted.resultVerification, observation: "30 records stored, across 1 record set" },
+      resultRepair: { ...repairEnded({ outcome: "not_rerun" }), history: [{ attempt: 1, totalRecordCount: 30 }] },
+      resultReauthor: { code: "flow_bootstrap.evidence_budget_exhausted", attempts: [{ attempt: 1, ending: { kind: "budget_exhausted", bound: "rounds", tried: { tested: "not_tested" } } }] }
+    })!;
+    expect(said).toBe("it saved 30 rows, but the check found they don't answer what you asked, and the fix used all its rounds before it could test a change.");
+    expect(said).not.toMatch(/^[A-Z]|returned/u);
   });
 });

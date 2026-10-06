@@ -46,7 +46,13 @@ describe("a call refused as a repeat", () => {
       await observed.decide({ ...decideRequest, iteration: 8, evidence: [repeatCheck(7)] });
     });
     expect(toolRows()).toHaveLength(1);
-    expect(toolRows()[0]).toMatchObject({ phase: "exploring", label: "Clicking “Add to cart” — not done", detail: { title: "Clicking “Add to cart”", status: "failed", ref: "core.run_node" } });
+    // U-8 (`run-muw60j7c-bb7c9a62`): the status line opens with "Not done" and Core's reason, never
+    // with the work as if under way ("Clicking “Add to cart” — not done", "Trying again: typing ...").
+    expect(toolRows()[0]).toMatchObject({
+      phase: "exploring",
+      label: "Not done: clicking “Add to cart” — it was already tried exactly this way and changed nothing",
+      detail: { title: "Clicking “Add to cart”", status: "failed", ref: "core.run_node" }
+    });
     expect(toolRows()[0]!.detail?.text).toBe("Result: llm_evidence_loop.repeat_refused · Reason: changed_nothing · Node: web.output.dom-click");
     expect(activityActionOf(toolRows()[0]!)).toMatchObject({ kind: "click", target: "Add to cart", outcome: "failed", refused: { all: true, because: "it was already tried exactly this way and changed nothing" } });
     const order = seen.map((event) => event.detail?.kind === "tool" ? "card" : event.detail?.status === "started" ? "deciding" : "decision");

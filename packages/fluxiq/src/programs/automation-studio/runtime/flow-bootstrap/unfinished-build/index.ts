@@ -8,6 +8,7 @@ export * from "./budget-exhausted.ts";
 export * from "./contracts.ts";
 export * from "./ending-fit.ts";
 export * from "./finishing-verdict.ts";
+export * from "./judge-words.ts";
 export * from "./judgement.ts";
 export * from "./kept-said.ts";
 export * from "./not-doable.ts";

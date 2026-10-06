@@ -102,3 +102,13 @@ describe("activityActionOf: a call refused as a repeat is its own card", () => {
     expect(action).toMatchObject({ kind: "click", target: "Add to cart", outcome: "failed", why: "it was already tried exactly this way and did not work", refused: { all: true } });
   });
 });
+
+// U-11 (`run-muw60j7c-bb7c9a62`, moment 05): "Only partly done: a repeat goes on
+// what is done to each item, after the list it repeats over" was no sentence.
+describe("the refusal of a repeat placed before its list", () => {
+  it("is said in one plain, grammatical sentence", () => {
+    const because = activityActionRefusal({ resultCode: "llm_evidence_loop.draft_amendments_refused", reason: "over_not_before", applied: 1 })?.because;
+    expect(because).toBe("a repeat must start on a step that comes after the list it repeats over");
+    expect(ACTIVITY_ACTION_REFUSAL_WORDS.amendment.over_not_before).not.toContain("goes on what is done");
+  });
+});

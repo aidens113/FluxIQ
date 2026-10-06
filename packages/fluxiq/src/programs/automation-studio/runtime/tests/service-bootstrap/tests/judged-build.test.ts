@@ -454,7 +454,8 @@ describe("a build the judging reserve stopped, through the service (t254 stage 2
     expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
     expect(diagnostic.ending?.message).toContain("went on testing and judging the Flow as it stood");
     expect(diagnostic.ending?.message).toContain(`The judge found: ${RESERVE_SAID.observed.replace(/\.$/u, "")}.`);
-    expect(diagnostic.ending?.message).toContain(`What the judge says is left to change: "${RESERVE_SAID.changed.replace(/\.$/u, "")}".`);
+    // The judge's words are said plain and whole, never inside quotation marks (t276).
+    expect(diagnostic.ending?.message).toContain(`What the judge says is left to change: ${RESERVE_SAID.changed.replace(/\.$/u, "")}.`);
     expect(diagnostic.ending?.message).toContain("The steps I found so far were kept as a draft");
   }, 60_000);
 });

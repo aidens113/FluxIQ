@@ -107,7 +107,8 @@ export function automationStudioConversationModelProblem(error: unknown): string
   if (/secret_unavailable/u.test(code)) return "your model key is locked for this session, so unlock your keys to let the model read your messages";
   if (/auth|secret/u.test(code)) return "the model's credentials were not accepted";
   if (/network|http|redirect/u.test(code)) return "the model could not be reached";
-  return code ? `the model call failed (${code})` : "the model call failed";
+  // Never the code itself: the thread keeps these words, and shows them again (t276).
+  return "the model call failed";
 }
 
 function fallback(input: AutomationStudioConversationInterpretInput, problem: string, attempts: number): AutomationStudioConversationInterpretation {

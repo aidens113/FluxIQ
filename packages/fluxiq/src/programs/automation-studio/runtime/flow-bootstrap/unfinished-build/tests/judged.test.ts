@@ -155,8 +155,8 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "not_finished", notDone: [], tried: { rounds: 3, decisions: 6, stepsInFlow: 3, tested: "replayed_clean" } });
-    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet\. My last 2 attempts to fix it each got no further than the one before: the Flow came out exactly the same, 3 of the 3 things you asked have a step, no more than before, and the judge found the same as before\./u);
-    expect(outcome.ending.message).toContain("What the judge says is left to change: \"press Add on the towels' own card\".");
+    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet\. My last 2 attempts to fix it each got no further than the one before: the Flow came out exactly the same, no more of what you asked has a step than before, and the judge found the same as before\./u);
+    expect(outcome.ending.message).toContain("What the judge says is left to change: press Add on the towels' own card.");
     // Said once, with the step count (t193 round 1003, `run-musp4h2f-72e8ed99`).
     expect(outcome.ending.message).toContain("when the Flow (3 steps) was run from its start");
     expect(outcome.ending.message.match(/judged not to (?:do|be) what you asked/gu)).toHaveLength(1);

@@ -156,7 +156,7 @@ describe("a repair round opens only after a round that measurably progressed", (
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 2 } });
     expect(outcome.ending.message).toContain(
-      "My last attempt to fix it got no further than the one before: 3 of the 3 things you asked have a step, no more than before, and the judge found the same as before."
+      "My last attempt to fix it got no further than the one before: no more of what you asked has a step than before, and the judge found the same as before."
     );
   });
 

@@ -1,5 +1,6 @@
 import { activityActionVerb, type ActivityActionVerb } from "../../../../../ui/index.ts";
 import { automationStudioActivityHumanLabel } from "./human-label.ts";
+import { automationStudioActivityPageName } from "./page-name.ts";
 
 type Phrase = {
   verb: ActivityActionVerb;
@@ -38,8 +39,11 @@ const MAX_SAID = 60;
 const PHRASES: readonly Phrase[] = [
   // "Opening a page" named no page: its card read "Open page" alone (t193,
   // `run-muqiojz4-04a7a8fc`). Its address path then put "/scenarios/crossb…"
-  // in the chat and the overlay (t174-w108 D2): a page is named by its site.
-  { verb: "navigate", plain: "Opening a page", named: (name) => name === START_PAGE ? `Opening ${START_PAGE}` : `Opening ${quoted(name)}` },
+  // in the chat and the overlay (t174-w108 D2): a page is named by its site,
+  // and one served from this machine by being the start or by its path's
+  // words (`./page-name.ts`). "The start page" and "the home page" are said
+  // unquoted, so a card does not read them as a control.
+  { verb: "navigate", plain: "Opening a page", named: (name) => OWN_PAGE.test(name) ? `Opening ${name}` : `Opening ${quoted(name)}` },
   { verb: "back", plain: "Going back a page" },
   { verb: "click", plain: "Clicking on the page", named: (name) => `Clicking ${quoted(name)}` },
   { verb: "type", plain: "Typing into the page", named: (name) => `Typing into ${quoted(name)}`, said: (text, name) => `Typing ${said(text)}${name ? ` into ${quoted(name)}` : ""}` },
@@ -94,37 +98,8 @@ function elementName(parameters: unknown): string | undefined {
     ?? automationStudioActivityHumanLabel(identity.visibleText, 60);
 }
 
-/** What a page served from this machine or an IP address is called: it has no name a person would know. */
-const START_PAGE = "the start page";
-/** The page-start shorthand a page view writes an address in ("~/ip/napkins"); bare, it is the start page itself. */
-const START_ITSELF = /^~\/?$/u;
-/** A host a person would not recognise: this machine, or an IPv4 or bracketed IPv6 address. */
-const UNNAMED_HOST = /^(localhost|.+\.localhost|\d{1,3}(\.\d{1,3}){3}|\[.*\])$/u;
-
-/**
- * The page a navigate opens, in plain words: its site, which is the host
- * without a leading `www.` ("amazon.com"), or "the start page" for one served
- * from this machine or an IP address, or the page-start shorthand alone.
- * Never a path, a query or an address. Nothing for a path with no site, or a
- * value that is no web address, so the sentence says the verb alone.
- */
-function pageName(parameters: unknown): string | undefined {
-  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return undefined;
-  const url = (parameters as { url?: unknown }).url;
-  if (typeof url !== "string") return undefined;
-  const address = url.trim();
-  if (START_ITSELF.test(address)) return START_PAGE;
-  if (!/^https?:\/\//iu.test(address) || /\s/u.test(address)) return undefined;
-  let host: string;
-  try {
-    host = new URL(address).hostname.toLowerCase().replace(/\.$/u, "");
-  } catch (error) {
-    if (error instanceof TypeError) return undefined;
-    throw error;
-  }
-  if (!host) return undefined;
-  return UNNAMED_HOST.test(host) ? START_PAGE : host.replace(/^www\./u, "");
-}
+/** The pages `./page-name.ts` names in words of its own, said unquoted. */
+const OWN_PAGE = /^the (?:start|home) page$/u;
 
 /** Words a call types or looks for, collapsed and bounded; nothing for an empty one. */
 function saidText(text: string | undefined): string | undefined {
@@ -153,12 +128,14 @@ function notShownSentence(input: { parameters?: unknown; label?: string | undefi
  * step carries one ("Clicking “Get a free quote”"), or for a navigate the
  * page's site ("Opening “amazon.com”", "Opening the start page"), else the verb alone
  * ("Opening a page"). Nothing when the id names no known verb, so the caller
- * says something plain of its own rather than the id.
+ * says something plain of its own rather than the id. `start` is the address
+ * the Flow or the build starts at, where the caller knows it: only a page at
+ * that address is "the start page" (`./page-name.ts`).
  *
  * With `notShown`, what a run says instead when it skipped the step because
  * what it acts on was not on the page; always a sentence, never nothing.
  */
-export function automationStudioActivityAction(input: { id?: string | undefined; parameters?: unknown; label?: string | undefined; words?: AutomationStudioActivityCallWords | undefined; notShown?: boolean | undefined }): string | undefined {
+export function automationStudioActivityAction(input: { id?: string | undefined; parameters?: unknown; label?: string | undefined; words?: AutomationStudioActivityCallWords | undefined; notShown?: boolean | undefined; start?: string | undefined }): string | undefined {
   if (input.notShown === true) return notShownSentence(input);
   const label = automationStudioActivityHumanLabel(input.label, 120);
   if (label) return label.charAt(0).toUpperCase() + label.slice(1);
@@ -171,7 +148,7 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
     // The domain's own reading of the call first (the control a handle names,
     // the words it types), then the element a resolved node carries.
     const name = automationStudioActivityHumanLabel(input.words?.target, 60)
-      ?? (verb.verb === "navigate" ? pageName(input.parameters) : verb.named || (verb.also?.named && !verb.also.byWords) ? elementName(input.parameters) : undefined);
+      ?? (verb.verb === "navigate" ? automationStudioActivityPageName(input.parameters, input.start) : verb.named || (verb.also?.named && !verb.also.byWords) ? elementName(input.parameters) : undefined);
     if (verb.also && words.slice(index + 1).some((rest) => verb.also!.word.test(rest))) return name && verb.also.named ? verb.also.named(name) : verb.also.plain;
     const text = saidText(input.words?.text);
     if (text !== undefined && verb.said) return verb.said(text, name);

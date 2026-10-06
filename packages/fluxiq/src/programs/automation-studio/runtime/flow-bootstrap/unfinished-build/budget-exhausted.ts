@@ -32,6 +32,7 @@ import {
   automationStudioFlowBootstrapWorkedLiveSaid
 } from "./not-done.ts";
 import { automationStudioFlowBootstrapEndingFitted } from "./ending-fit.ts";
+import { automationStudioFlowBootstrapJudgeWordsSaid } from "./judge-words.ts";
 import { automationStudioFlowBootstrapKeptSaid } from "./kept-said.ts";
 import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
@@ -186,20 +187,15 @@ function spendingSaid(spending: AutomationStudioFlowBootstrapCostSpending, ceili
  * spent judging it, or where a judge had said no to it unchanged: what it
  * observed or its first finding, and what it says is
  * left to change; or why it could not confirm the Flow. Empty when it said
- * nothing.
+ * nothing. Its words are screened plain and said in whole sentences
+ * (`./judge-words.ts`, t276), never a quote cut short.
  */
 function judgeFoundSaid(judge: AutomationStudioFlowBootstrapJudgement["judge"], most: number): string {
   if (!judge) return "";
-  const finding = bounded(automationStudioFlowBootstrapUnsettledForBuild(judge.observed ?? judge.findings[0] ?? ""), most);
-  if (judge.verdict !== "no") return finding ? `The judge could not confirm it: ${finding}.` : "";
-  const advice = judge.advice ? ` What the judge says is left to change: "${bounded(judge.advice, most)}".` : "";
-  return `${finding ? `The judge found: ${finding}.` : ""}${advice}`.trim();
-}
-
-/** A judge's words, one line, at most `most` characters, without the full stop the sentence adds. */
-function bounded(text: string, most: number): string {
-  const line = text.replace(/\s+/gu, " ").trim().replace(/\.$/u, "");
-  return line.length <= most ? line : `${line.slice(0, most - 3).trimEnd()}...`;
+  const finding = automationStudioFlowBootstrapJudgeWordsSaid(automationStudioFlowBootstrapUnsettledForBuild(judge.observed ?? judge.findings[0] ?? ""), most);
+  if (judge.verdict !== "no") return finding ? `The judge could not confirm it: ${finding}` : "";
+  const advice = automationStudioFlowBootstrapJudgeWordsSaid(judge.advice ?? "", most);
+  return [finding ? `The judge found: ${finding}` : "", advice ? `What the judge says is left to change: ${advice}` : ""].filter(Boolean).join(" ");
 }
 
 /** What another round needed at least, as the person is told it. */

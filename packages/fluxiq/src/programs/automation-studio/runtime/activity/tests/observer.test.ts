@@ -238,8 +238,9 @@ describe("an edit to the draft", () => {
     });
     expect(thoughts()).toEqual([["Changing the Flow", ADDING, "succeeded"]]);
     expect(cards()).toHaveLength(1);
-    expect(cards()[0]).toMatchObject({ phase: "building", label: "Editing the Flow — not done", detail: { title: "Editing the Flow", status: "failed", text: "Result: llm_evidence_loop.draft_amendments_refused · Reason: already_so" } });
+    expect(cards()[0]).toMatchObject({ phase: "building", label: "Not done: editing the Flow — the Flow already does that", detail: { title: "Editing the Flow", status: "failed", text: "Result: llm_evidence_loop.draft_amendments_refused · Reason: already_so" } });
     expect(activityActionOf(cards()[0]!)).toMatchObject({ kind: "draft", outcome: "failed", refused: { all: true, because: "the Flow already does that" } });
+    expect(activityActionOf(cards()[0]!)).not.toHaveProperty("result");
     // The card comes right after the decision it answers, before the next decision's own row.
     const order = seen.map((event) => event.detail?.title);
     expect(order.indexOf("Editing the Flow")).toBe(order.indexOf("Changing the Flow") + 1);
@@ -277,7 +278,9 @@ describe("an edit to the draft", () => {
       // (t174-w116 D3), so the decision says nothing of its own and the card alone answers it.
       expect(thoughts()).toEqual([]);
       expect(cards()).toHaveLength(1);
-      expect(cards()[0]).toMatchObject({ label: "Running the step again — not done", detail: { title: "Running the step again", status: "failed" } });
+      expect(cards()[0]).toMatchObject({ detail: { title: "Running the step again", status: "failed" } });
+      // U-8: said as not done, with Core's reason, never as the work under way.
+      expect(cards()[0]!.label).toMatch(/^Not done: running the step again — .*already tried exactly this way/u);
       expect(activityActionOf(cards()[0]!)).toMatchObject({ kind: "draft", target: "run the step again", outcome: "failed", refused: { all: true } });
       expect(activityActionOf(cards()[0]!)?.refused?.because).toMatch(/already tried exactly this way/u);
     }
@@ -320,7 +323,7 @@ describe("an edit to the draft", () => {
     expect(activityActionOf(cards()[0]!)).toMatchObject({ outcome: "failed", refused: { all: true } });
   });
 
-  it("says an edit that landed as before, with a card saying it was done, before a step it runs again", async () => {
+  it("says an edit that landed as before, with a card saying it was done and what it changed", async () => {
     let next = amend();
     const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => next }));
     await inScope(async () => {
@@ -334,21 +337,61 @@ describe("an edit to the draft", () => {
     });
     expect(thoughts()).toEqual([["Changing the Flow", ADDING, "succeeded"]]);
     expect(cards()).toHaveLength(1);
-    expect(cards()[0]).toMatchObject({ label: "Editing the Flow — done", detail: { title: "Editing the Flow", status: "succeeded" } });
-    expect(cards()[0]!.detail?.text).toBeUndefined();
-    expect(activityActionOf(cards()[0]!)).toMatchObject({ kind: "draft", outcome: "done", why: null });
+    expect(cards()[0]).toMatchObject({ label: "Editing the Flow — done: made step 14 repeat over step 12", detail: { title: "Editing the Flow", status: "succeeded", text: "Changed: made step 14 repeat over step 12" } });
+    expect(activityActionOf(cards()[0]!)).toMatchObject({ kind: "draft", outcome: "done", why: null, result: "made step 14 repeat over step 12" });
     // It comes before the next decision's own row.
     expect(seen.findIndex((event) => event.detail?.title === "Editing the Flow")).toBeLessThan(seen.map((event) => event.detail?.title).lastIndexOf("Deciding the next step"));
+  });
 
-    seen = [];
+  // U-8 (`run-muw60j7c-bb7c9a62`, moments 11-15): an edit that only asked for a
+  // step to run again read "Edit the Flow · Done" before the rerun ran, and the
+  // rerun was then not sent. The step's own rows are its card.
+  it("says no card for an edit that landed and only asks a step to run again", async () => {
     const rerun = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => amend([{ step: 12, change: "rerun", input: {} }]) }));
     await inScope(async () => {
       await rerun.decide(request(5));
       await rerun.executeTool({ callId: "rerun.12", toolId: "core.run_node", value: { node: "web.output.dom-extract" } });
     });
-    expect(seen.map((event) => event.detail?.kind)).toEqual(["thought", "thought", "tool", "tool", "tool"]);
+    expect(seen.map((event) => event.detail?.kind)).toEqual(["thought", "thought", "tool", "tool"]);
     expect(seen[1]!.detail?.title).toBe("Changing the Flow");
-    expect(seen[2]!.detail).toMatchObject({ title: "Editing the Flow", ref: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, status: "succeeded" });
+    expect(cards()).toEqual([]);
+    expect(seen.filter((event) => event.detail?.kind === "tool").map((event) => event.detail?.ref)).toEqual(["core.run_node", "core.run_node"]);
+    expect(JSON.stringify(seen)).not.toContain("Editing the Flow — done");
+  });
+
+  // U2, live run `run-muw60unq-591e23bd` (steps 0059-0060): the build dropped
+  // step 9, Add to cart, and the card read only "Edit the Flow · Done".
+  it("names each change Core applied, by the step the model was shown, never the model's summary", async () => {
+    const draft = {
+      callId: "core.flow_draft",
+      toolId: "core.flow_draft",
+      value: {
+        steps: [
+          { step: 8, actionId: "web.output.dom-type", does: { target: "Quantity", text: "3" }, inResult: true },
+          { step: 9, actionId: "web.output.dom-click", does: { target: "Add to cart" }, inResult: true },
+          { step: 10, actionId: "web.output.dom-click", does: { target: "Get coupon" }, inResult: false },
+          { step: 11, actionId: "web.output.dom-click", does: { target: "Spain" }, inResult: true }
+        ]
+      } as never
+    };
+    const summary = "Dropping the now-empty step 9 (Add to cart) since the Spain selection moved to step 11, then re-adding the cart press after it.";
+    let next = automationStudioActivityDecisionReason.attach({ kind: "amend_draft", amendments: [{ step: 9, change: "drop" }] }, summary);
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ decide: async () => next }));
+    await inScope(async () => {
+      await observed.decide(request(2, [draft]));
+      next = automationStudioActivityDecisionReason.attach({ kind: "amend_draft", amendments: [{ step: 10, change: "add" }, { step: 11, change: "reorder", to: 8 }, { step: 8, change: "keep" }] }, "Adding the coupon step.");
+      await observed.decide(request(3, [draft]));
+      next = { kind: "complete", result: {} } as never;
+      // Of the second edit, the move was refused: only the add landed.
+      await observed.decide(request(4, [draft, { callId: "core.amendment_check.3", toolId: "core.amendment_check", value: { ok: false, refused: [{ step: 11, reason: "no_such_position" }], applied: 1 } as never }]));
+    });
+    expect(cards().map((card) => activityActionOf(card)?.result)).toEqual(["removed \"Add to cart\"", "added \"Get coupon\""]);
+    expect(cards()[0]!.label).toBe("Editing the Flow — done: removed \"Add to cart\"");
+    // A step is named, never numbered: the draft's numbers are not what the person sees (U-3).
+    expect(JSON.stringify(cards())).not.toMatch(/step \d/u);
+    // The keep of a step already in the Flow changed nothing, and is not said.
+    expect(JSON.stringify(cards())).not.toContain("Quantity");
+    expect(JSON.stringify(cards())).not.toContain("re-adding");
   });
 
   it("says the edit the round stalled on from the stalled round's record, and passes the stall through", async () => {

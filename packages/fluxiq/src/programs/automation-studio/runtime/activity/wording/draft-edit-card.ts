@@ -9,7 +9,7 @@
 // reason, said as what was tried (`../decision-answer/draft-edit.ts`); this card under it is
 // Core's answer: done, partly done, or not done, and why, in Core's words.
 
-import { ACTIVITY_ACTION_REFUSAL_WORDS } from "../../../../../ui/index.ts";
+import { ACTIVITY_ACTION_REFUSAL_WORDS, activityActionOf } from "../../../../../ui/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, type AutomationStudioFlowDraftAmendmentRefusal } from "../../flow-draft/index.ts";
 import type { AutomationStudioActivityEmission } from "../contracts.ts";
 
@@ -51,21 +51,30 @@ const hasWords = (reason: string): boolean => Object.prototype.hasOwnProperty.ca
  * client draws it as the "Edit the Flow" card, under the decision it answers.
  * Its title says what was asked -- "Editing the Flow", or "Running the step
  * again" for a step asked to run again that was not -- and its status line
- * adds "done", "partly done" or "not done". Its record is codes and a count
- * only: the loop's code, each refusal reason the card reading has words for,
- * and how many changes landed when some did (`activityActionOf`, `fluxiq/ui`,
- * reads them into "Not done: that step is already in the Flow"). An edit done
- * in part is `succeeded`; one that changed nothing is `failed`.
+ * adds "done" or "partly done", with what changed when `changed` says it
+ * (`../decision-answer/edit-words.ts`: 'removed "Add to cart"'). An edit
+ * that changed nothing opens its status line "Not done:" with Core's reason,
+ * never with the work asked for: "Running the step again — not done" read as
+ * work under way (U-8, `run-muw60j7c-bb7c9a62`). Its record is codes and a
+ * count, and the changed words last: the loop's code, each refusal reason the
+ * card reading has words for, how many changes landed when some did, and
+ * `Changed: <words>` (`activityActionOf`, `fluxiq/ui`, reads them into "Not
+ * done: that step is already in the Flow", and the words into the card's
+ * `result`). An edit done in part is `succeeded`; one that changed nothing is
+ * `failed`.
  */
-export function automationStudioActivityDraftEditCard(answer: Answer): AutomationStudioActivityEmission {
+export function automationStudioActivityDraftEditCard(answer: Answer, changed?: string | undefined): AutomationStudioActivityEmission {
   const rerun = answer.kind === "repeated" || (answer.kind === "refused" && answer.reasons.length > 0 && answer.reasons.every((reason) => RERUN_REASONS.has(reason)));
   const title = rerun ? "Running the step again" : "Editing the Flow";
   const outcome = answer.kind === "landed" ? "done" : answer.kind === "refused" && answer.applied > 0 ? "partly done" : "not done";
-  const text = recordOf(answer);
+  const words = outcome !== "not done" && changed?.trim() ? changed.replace(/\s+/gu, " ").trim() : undefined;
+  const text = [recordOf(answer), words ? `Changed: ${words}` : ""].filter(Boolean).join(" · ");
+  const detail = { kind: "tool" as const, title, status: outcome === "not done" ? "failed" as const : "succeeded" as const, ref: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, ...(text ? { text } : {}) };
+  const because = outcome === "not done" ? activityActionOf({ phase: "building", detail })?.refused?.because : undefined;
   return {
     phase: "building",
-    label: `${title} — ${outcome}`,
-    detail: { kind: "tool", title, status: outcome === "not done" ? "failed" : "succeeded", ref: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, ...(text ? { text } : {}) }
+    label: outcome === "not done" ? `Not done: ${title.charAt(0).toLowerCase()}${title.slice(1)}${because ? ` — ${because}` : ""}` : `${title} — ${outcome}${words ? `: ${words}` : ""}`,
+    detail
   };
 }
 

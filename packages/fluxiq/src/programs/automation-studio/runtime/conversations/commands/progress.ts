@@ -37,18 +37,24 @@ export function automationStudioConversationCommandProgress(title: string, keyLo
     carry: (next) => { Object.assign(ids, Object.fromEntries(Object.entries(next).filter(([, value]) => typeof value === "string" && value))); },
     succeeded: (summary) => ({ status: "done", summary, ...ids }),
     failed: (cause, account = {}) => {
-      const opening = account.ending ? `${account.ending.replace(/\.$/u, "")}.` : `"${title}" stopped because ${cause}.`;
+      // What is stored is what an old thread shows again, so it is said plain however the cause was worded (t276).
+      const plainCause = automationStudioConversationPlainCause(cause) || "something went wrong inside FluxIQ";
+      const opening = account.ending ? `${account.ending.replace(/\.$/u, "")}.` : `"${title}" stopped because ${plainCause}.`;
       const distance = account.left ?? (steps.length ? `Before that I ${joined(steps)}.` : "Nothing was changed.");
       const locked = keyLocked ? " Your model key is locked for this browser: unlock your keys in FluxIQ, then ask again." : "";
-      return { status: "failed", summary: `${opening} ${distance}${locked}`, error: cause, ...ids };
+      return { status: "failed", summary: `${opening} ${distance}${locked}`, error: plainCause, ...ids };
     }
   };
 }
 
 /**
- * Why a registry call failed, in a clause that finishes "because ...". A build
- * that failed carries Core's own diagnostic, whose stage and code say more
- * than the sentence around them.
+ * Why a registry call failed, in a clause that finishes "because ...", in
+ * plain words. A build that failed carries Core's own diagnostic: its message
+ * for the person when it wrote one, else what its code means, else what its
+ * stage means -- never the code itself. Live run `run-muw60unq-591e23bd` (U1)
+ * opened on an earlier thread that read "the build failed: Flow Bootstrap
+ * generation failed (flow_bootstrap.blank_target_required)
+ * (pre_provider_validation: flow_bootstrap.blank_target_required)" (t276).
  */
 export function automationStudioConversationCallCause(what: string, response: AutomationStudioConversationCommandCallResult): string {
   const diagnostic = (response.payload as { diagnostic?: { code?: unknown; stage?: unknown; ending?: { message?: unknown } } } | undefined)?.diagnostic;
@@ -57,11 +63,62 @@ export function automationStudioConversationCallCause(what: string, response: Au
   // code, so it is what they read (`flow-bootstrap/generation-failure/build-ending.ts`).
   const ending = diagnostic?.ending?.message;
   if (typeof ending === "string" && ending.trim()) return `${what} could not finish. ${ending.trim().replace(/\.$/u, "")}`;
-  const detail = diagnostic && typeof diagnostic.code === "string"
-    ? ` (${typeof diagnostic.stage === "string" ? `${diagnostic.stage}: ` : ""}${diagnostic.code})`
-    : "";
-  const error = (response.error ?? "no reason was given").replace(/\.$/u, "");
-  return `${what} failed: ${error}${detail}`;
+  const code = typeof diagnostic?.code === "string" ? diagnostic.code : codesIn(response.error ?? "")[0];
+  const meant = (code ? CODE_WORDS.find(([pattern]) => pattern.test(code))?.[1] : undefined)
+    ?? (typeof diagnostic?.stage === "string" && Object.hasOwn(STAGE_WORDS, diagnostic.stage) ? STAGE_WORDS[diagnostic.stage] : undefined);
+  const said = meant ?? (automationStudioConversationPlainCause(response.error ?? "") || (code ? "something went wrong inside FluxIQ" : "no reason was given"));
+  return `${what} failed: ${said}`;
+}
+
+/** A dotted name: a code Core names a failure by (`flow_bootstrap.blank_target_required`, `llm.provider_timeout`) where it holds an underscore. */
+const DOTTED = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\.[a-z0-9]+(?:_[a-z0-9]+)*)+\b/gu;
+
+/** The codes in `text`, in order: dotted names holding an underscore, so an address such as "example.com" is not one. */
+function codesIn(text: string): string[] {
+  return [...text.matchAll(DOTTED)].map((found) => found[0]).filter((name) => name.includes("_"));
+}
+
+/** What a failure code means, in words that finish "failed: ...". First match wins. */
+const CODE_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/blank_target_required$/u, "FluxIQ could not tell which part of this Flow to build on, as it builds on a Flow with one main part"],
+  [/pending_adaptation_exists$/u, "a suggested change to this Flow is already waiting for you to accept or set aside"],
+  [/generation_lock_failed$/u, "another build of this Flow was already under way"],
+  [/active_instructions_required$/u, "the Flow has no instruction saying what it should do"],
+  [/secret_unavailable/u, "your model key is locked"],
+  [/provider_refused|request_refused/u, "the request to the model was refused"],
+  [/auth_failed/u, "the model's credentials were not accepted"],
+  [/rate_limited/u, "the model was too busy to answer"],
+  [/timeout|timed_out|aborted|deadline/u, "it ran out of time"],
+  [/network_error|http_error|redirect_rejected|provider_request_failed/u, "the model could not be reached"],
+  [/provider_resolution|provider_resolver/u, "no model was set up to build it"],
+  [/cost_exhausted|cost_limit|spend/u, "it reached its spending limit"],
+  [/run_budget_\w+_exhausted|evidence_budget_exhausted/u, "it reached the limit on how much it may do"]
+];
+
+/** What each stage of a build means when it is where the build failed, for a code with no words of its own. */
+const STAGE_WORDS: Readonly<Record<string, string>> = Object.freeze({
+  pre_provider_validation: "FluxIQ could not set the build up",
+  provider_resolution: "no model was set up to build it",
+  provider_request: "the model could not be reached, or did not answer",
+  provider_output_validation: "the model's answer could not be used",
+  post_provider_validation: "what the model wrote could not be used",
+  persistence: "what it made could not be saved"
+});
+
+/**
+ * A failure's words with no code in them: a code in parentheses, with or
+ * without its stage, is left out, as is the API's own "Flow Bootstrap
+ * generation failed" heading; and words that still hold a code are not plain
+ * at all, so nothing is left. No closing full stop.
+ */
+export function automationStudioConversationPlainCause(text: string): string {
+  const said = text
+    .replace(/\s*\((?:[a-z_]+:\s*)?[a-z][a-z0-9_]*(?:\.[a-z0-9_-]+)+\)/gu, "")
+    .replace(/\bFlow Bootstrap generation failed\b\.?/giu, "")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .replace(/[\s:.]+$/u, "");
+  return codesIn(said).length ? "" : said;
 }
 
 function joined(steps: readonly string[]): string {
