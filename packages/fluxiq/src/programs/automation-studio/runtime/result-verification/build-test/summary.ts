@@ -36,6 +36,12 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 //     the one that chose it again as two `replayed`.
 //   - `explored`, what a checked step did while the build explored it, since
 //     the test did not do it again.
+//   - `afterWithheld`, on a step that changes nothing (a read) the test ran
+//     after checked steps whose act it left undone (`verified` on the step or
+//     any pass; `present` was already in place): their positions. Such a read
+//     saw a page without what those acts make. Run `run-muw6144a-e56f945d`
+//     (C1): round 1's read of accepted requests kept only the row exploration
+//     had confirmed, and the judge refused the right Flow for the other three.
 //   - `claims`, `checklist` and `missingActs`: the model's claims and the
 //     build's own check. Information, never proof. An act whose only step is
 //     optional carries `said` in `missingActs`: that step passing this test
@@ -195,6 +201,8 @@ export function automationStudioBuildTestResultSummary(input: {
   const rowsOf = (step: AutomationStudioFlowDraftStep): readonly string[] | undefined =>
     automationStudioBuildTestSpanRows(input.steps, (id) => shown.get(id)).get(automationStudioFlowDraftStepId(step));
   const reasons = automationStudioFlowDraftConditionalStepReasons(input.steps);
+  // The checked steps so far whose act this test left undone: `verified` on the step or a pass (`present` was already in place).
+  const undone: number[] = [];
   const steps = proposed.map((step): AutomationStudioBuildTestStep => {
     const outcome = input.report ? outcomeOf(step, input.report.verdict.outcomes) : undefined;
     const excused = outcome ? excusedWords(outcome, reasons.get(automationStudioFlowDraftStepId(step))) : undefined;
@@ -218,6 +226,8 @@ export function automationStudioBuildTestResultSummary(input: {
     const observed = observing ? observing(step, lines.unpassed, changing) : undefined;
     if (observed?.withheld || lines.withheld) withheld = true;
     if (observed?.value !== undefined) shown.set(automationStudioFlowDraftStepId(step), observed.value);
+    const afterWithheld = step.effect !== "mutate" && outcome && undone.length ? [...undone] : undefined;
+    if (outcome && checked && [outcomeWord(outcome), ...(lines.passes ?? []).map((pass) => pass.outcome)].includes("verified")) undone.push(step.position);
     return {
       step: step.position,
       action: step.actionId,
@@ -226,6 +236,7 @@ export function automationStudioBuildTestResultSummary(input: {
       outcome: outcome ? outcomeWord(outcome) : "not_run",
       ...(checked ? { withheld: true as const } : {}),
       ...(outcome?.withheldBy !== undefined ? { withheldBy: outcome.withheldBy } : {}),
+      ...(afterWithheld ? { afterWithheld } : {}),
       ...(excused ? { excused } : {}),
       ...(runs ? { runs } : {}),
       ...(carriedStep(step) ? { carried: true as const } : {}),
