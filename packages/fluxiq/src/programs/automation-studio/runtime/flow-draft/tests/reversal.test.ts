@@ -132,4 +132,20 @@ describe("a press that undoes another on the same control", () => {
     expect(steps[0]!.cancels).toBeUndefined();
     expect(steps[0]!.disposition).toBe("dropped");
   });
+
+  it("run mux6n7m4: a re-press that undoes a step the model dropped leaves even with kept steps between", () => {
+    // Draft steps 9 (Space Grey off, dropped by the model), 11 (7-in-1), 12 (Spain), 16 (quantity 3), 17 (Space Grey on, a1.colour).
+    const steps = draft([
+      { from: "s0", to: "s1", disposition: "dropped", toggle: off(), acts: [] },
+      { from: "s1", to: "s2", disposition: "kept" }, // 7-in-1
+      { from: "s2", to: "s3", disposition: "kept" }, // Spain
+      { from: "s3", to: "s4", disposition: "kept" }, // quantity 3
+      { from: "s4", to: "s5", disposition: "kept", toggle: on(), acts: ["a1.colour"] }
+    ]);
+    expect(automationStudioFlowDraftDropReversals(steps).map((step) => step.position)).toEqual([5]);
+    expect(steps[4]!.cancels).toBe("d1");
+    expect(inFlow(steps)).toEqual([2, 3, 4]);
+    // Its act claim goes with it, so the checklist shows the act still to do.
+    expect(steps[4]!.acts).toBeUndefined();
+  });
 });

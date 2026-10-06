@@ -108,13 +108,20 @@ function describeSafely(describe: AutomationStudioLlmEvidenceLoopInput["describe
  * chat said only that it was thinking.
  */
 function decisionFailed(error: unknown): void {
-  // Read by shape (`AutomationStudioLlmUnusableDecisionError.providerUnanswered`):
-  // a value import of the llm barrel from here closes an import cycle.
-  const unanswered = (error as { providerUnanswered?: unknown } | null)?.providerUnanswered === true;
+  // Read by shape (`AutomationStudioLlmUnusableDecisionError.providerUnanswered`
+  // and `issueCodes`): a value import of the llm barrel from here closes an import cycle.
+  const shape = error as { providerUnanswered?: unknown; issueCodes?: unknown } | null;
+  const unanswered = shape?.providerUnanswered === true;
+  // A reply that came back and could not be used is no failed step: it is asked
+  // again. It read "Deciding the next step — didn't work" (R3-U-7 of the live-C
+  // round-3 UI review, run-mux6naez-6c20f26e step 0041, `llm.provider_malformed_response`).
+  const unusable = !unanswered && Array.isArray(shape?.issueCodes);
   const title = "Deciding the next step";
   emitAutomationStudioActivity(unanswered
     ? { phase: "thinking", label: "The AI model provider did not answer", detail: { kind: "thought", title, status: "failed", text: "The AI model provider did not answer this request. Asking it again; the build stops if it keeps not answering." } }
-    : { phase: "thinking", label: `${title} — didn't work`, detail: { kind: "thought", title, status: "failed" } });
+    : unusable
+      ? { phase: "thinking", label: "The AI model's reply couldn't be used", detail: { kind: "thought", title, status: "failed", text: "The AI model's reply couldn't be read or used. Asking it again; the build stops if its replies keep being unusable." } }
+      : { phase: "thinking", label: `${title} — stopped`, detail: { kind: "thought", title, status: "failed" } });
 }
 
 /** The call a `tool_call` decision makes, read by shape; nothing for any other decision. */

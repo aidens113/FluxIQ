@@ -59,7 +59,10 @@ describe("the argument a rerun runs with", () => {
     expect(input.description).toContain("JSON merge patch over the argument the step ran with");
     expect(input.description).toContain("Only the keys that change");
     expect(input.description).toContain("null removes a key");
-    // What 0051 of `run-murdouox-c5294247` did not know: leaving a column out of a restated map keeps it.
+    // The schema's own words (`flow-draft/amendment/schema.ts`, not this lane's):
+    // they still say a left-out key is kept, which now holds only outside an
+    // object the model writes out again (`../rerun-input.ts`); the schema owner
+    // changes this sentence and this assertion together.
     expect(input.description).toContain("a key left out is kept, and a new key given a left-out key's value renames it");
     // Either shape the re-author wrote is one the merge reads (t194-w39).
     expect(input.description).toContain("a node's parameters may be written without parameters around them");
@@ -213,8 +216,9 @@ describe("a column a rerun writes under a new name", () => {
     const patch = { extractList: { handle: "extraction.5", fields: { name: "kA", mutualFriends: "kB", confirm: "kC" }, where: [{ field: "kB", matches: "x" }] } };
     expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), patch))).toEqual({ name: "kA", mutualFriends: "kB", confirm: "kC" });
     expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { parameters: patch }))).toEqual({ name: "kA", mutualFriends: "kB", confirm: "kC" });
-    // 0051's map, which also left `confirm` out: the rename still holds, and a
-    // column left out is kept, as a merge patch keeps it; null removes it.
+    // 0051's map, which also left `confirm` out: the rename still holds, and,
+    // with no denied keys declared, a column left out is kept; null removes it
+    // (with them, a restated map drops it: "an object a rerun writes out again").
     expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { extractList: { fields: { name: "kA", mutualFriends: "kB" } } })))
       .toEqual({ name: "kA", mutualFriends: "kB", confirm: "kC" });
     expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { extractList: { fields: { mutualFriends: "kB", confirm: null } } })))
@@ -269,5 +273,84 @@ describe("a rerun that changes the step's node", () => {
   it("merges as before when the node is the same", () => {
     expect(automationStudioLlmEvidenceRerunInput(typed(), { node: "web.output.dom-type", parameters: { text: "4" } }))
       .toEqual({ node: "web.output.dom-type", parameters: { target: { handle: "t964" }, text: "4", submit: false }, consequences: [] });
+  });
+});
+
+// A map the model writes out again is what it says the map now holds. Live run
+// `run-murdouox-c5294247` (R3): 0051 restated the columns as `{name,
+// mutualFriends}`, leaving `confirm` out, and the merge kept it, so the call was
+// the failed one again. Live run `run-mustvzvg-99695308` (C3): 0061 restated the
+// refused read's `extractList` with its bound moved under `paginate`, and the
+// merge kept the stray `extractList.maxPages: 10` the domain had refused, in
+// every rerun after it (0063, 0070, 0073).
+describe("an object a rerun writes out again", () => {
+  const listing = (): JsonObject => ({
+    node: "web.output.dom-extract_list",
+    parameters: { extractList: { handle: "extraction.5", fields: { name: "kA", mutual: "kB", confirm: "kC" }, where: [{ field: "kB", matches: "x" }] } },
+    consequences: []
+  });
+  const fieldsOf = (input: JsonObject): JsonObject => extractList(input).fields as JsonObject;
+  const denied = ["selector"];
+
+  it("drops a key the model was shown and left out of a map it restated", () => {
+    // 0051's map: name repeated, mutual renamed, confirm left out.
+    expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { extractList: { fields: { name: "kA", mutualFriends: "kB" } } }, denied)))
+      .toEqual({ name: "kA", mutualFriends: "kB" });
+    // The same map, by the whole argument: the same columns.
+    expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { extractList: { handle: "extraction.5", fields: { name: "kA", mutualFriends: "kB" }, where: [{ field: "kB", matches: "x" }] } }, [])))
+      .toEqual({ name: "kA", mutualFriends: "kB" });
+  });
+
+  it("keeps a key the screen withheld: the model could not have written it", () => {
+    // The re-author's columns as the model read them, `ad` left out: every
+    // column it wrote keeps its selector, and `ad`, which it saw, leaves.
+    const fields = extractList(storedRead()).fields as JsonObject;
+    const written = Object.fromEntries(["name", "price", "rating", "plus"].map((key) => [key, shown(fields[key] as JsonObject)]));
+    const input = automationStudioLlmEvidenceRerunInput(storedRead(), { extractList: { fields: written } }, denied);
+    expect(extractList(input).fields).toEqual({ name: text("h2 span"), price: text(".price"), rating: text(".stars"), plus: mark("aria-label", ".plus") });
+    // A withheld key left out of a restated object is never dropped.
+    const paged = { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.1", selector: "ul > li", minItems: 0, paginate: { maxPages: 2 } } } };
+    expect(extractList(automationStudioLlmEvidenceRerunInput(paged, { extractList: { handle: "extraction.1", minItems: 0, paginate: { maxPages: 4 } } }, denied)))
+      .toEqual({ handle: "extraction.1", selector: "ul > li", minItems: 0, paginate: { maxPages: 4 } });
+  });
+
+  it("drops the bound C3's rerun moved under paginate, from the refused attempt it restated", () => {
+    const columns = { name: "kName", price: "kPrice", plus: "brightaisle_plus", ad: "data-ad-id" };
+    const where = [{ field: "ad", is: "absent" }, { field: "name", contains: ["ear tips", "eartips"], not: true }];
+    // Step 8 as stored: 0057's merged call, `maxPages` beside `paginate`.
+    const refused = { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.3", fields: columns, where, paginate: { next: "a[rel=next]" }, minItems: 0, maxPages: 10 } }, consequences: [] };
+    // 0061's patch, exactly as written.
+    const patch = { extractList: { handle: "extraction.3", fields: columns, where, paginate: { mode: "next", next: "a[rel=next]", maxPages: 10 }, minItems: 0 } };
+
+    const input = automationStudioLlmEvidenceRerunInput(refused, patch, denied);
+
+    // Before: `extractList.maxPages: 10` stayed, and the domain refused the call again naming it.
+    expect(extractList(input)).toEqual(patch.extractList);
+    expect(input.consequences).toEqual([]);
+  });
+
+  it("is still a patch when it says less of the object than it leaves out, or changes what it names", () => {
+    // A handle repeated beside one new key: the columns and conditions are kept.
+    expect(extractList(automationStudioLlmEvidenceRerunInput(listing(), { extractList: { handle: "extraction.5", dedupe: "url" } }, denied)))
+      .toEqual({ ...extractList(listing()), dedupe: "url" });
+    // One column repeated, one left out: as much said as left out, so nothing leaves.
+    const two = { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.2", fields: { a: "kA", b: "kB" } } } };
+    expect(fieldsOf(automationStudioLlmEvidenceRerunInput(two, { extractList: { fields: { a: "kA" } } }, denied))).toEqual({ a: "kA", b: "kB" });
+    // A changed entry is not a repeat: a patch that changes two keys beside a repeated handle keeps what it leaves out.
+    const stored = { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.3", fields: { a: "kA" }, where: [], paginate: { maxPages: 1 }, minItems: 0 } } };
+    expect(extractList(automationStudioLlmEvidenceRerunInput(stored, { extractList: { handle: "extraction.3", where: [{ field: "a", is: "present" }], paginate: { maxPages: 3 } } }, denied)))
+      .toEqual({ handle: "extraction.3", fields: { a: "kA" }, where: [{ field: "a", is: "present" }], paginate: { maxPages: 3 }, minItems: 0 });
+  });
+
+  it("never reads the patch itself, or a node's parameters, as a restatement: those are the patch", () => {
+    const typed = { node: "web.output.dom-type", parameters: { target: { handle: "t9" }, text: "3", submit: false, delay: 5 }, consequences: [] };
+    expect(automationStudioLlmEvidenceRerunInput(typed, { target: { handle: "t9" }, text: "3", submit: true }, denied).parameters)
+      .toEqual({ target: { handle: "t9" }, text: "3", submit: true, delay: 5 });
+    expect(automationStudioLlmEvidenceRerunInput({ a: 1, b: 2, c: 3, d: 4 }, { a: 1, b: 2, c: 5 }, denied)).toEqual({ a: 1, b: 2, c: 5, d: 4 });
+  });
+
+  it("keeps every left-out key when the domain declared no denied keys: Core cannot tell what was withheld", () => {
+    expect(fieldsOf(automationStudioLlmEvidenceRerunInput(listing(), { extractList: { fields: { name: "kA", mutualFriends: "kB" } } })))
+      .toEqual({ name: "kA", mutualFriends: "kB", confirm: "kC" });
   });
 });

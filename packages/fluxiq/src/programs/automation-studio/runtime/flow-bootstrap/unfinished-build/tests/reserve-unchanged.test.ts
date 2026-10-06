@@ -3,6 +3,10 @@
 // the build ends at cost with that judge's findings, saying the reserve was not
 // spent because the Flow was unchanged. A changed Flow is tested and judged with
 // the reserve as in stage 2 (`../reserve-judging.ts`).
+//
+// Nor is a Flow judged, or a round opened, where the judging pair no longer fits
+// the purse (live run `run-mux6nxst-c9bca37c`, D3-5): a round opened with 47 of
+// 48 calls spent, and its reserve judgement's one call said yes unconfirmed.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { AutomationStudioLlmBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../../llm/build-purse/index.ts";
@@ -143,5 +147,81 @@ describe("a round the judging reserve stopped on the Flow a judge last said no t
     expect(tests).toEqual([{ steps: 3, judged: true }]);
     expect(judged.map((each) => each.round)).toEqual([0, 1]);
     expect(outcome).toMatchObject({ kind: "finished", rounds: 2 });
+  });
+});
+
+/**
+ * Round 0 finishes (one decision) and is judged no about another Flow, with the
+ * judge's calls held as judge calls; any later round is stopped by the reserve
+ * on `stop`. `judgeCalls` is how many calls each judgement holds.
+ */
+async function squeezed(options: { purse: AutomationStudioLlmBuildPurse; stop: "cost" | "calls"; judgeCalls: number }) {
+  const { purse } = options;
+  const rounds: number[] = [];
+  const judged: number[] = [];
+  const tests: Array<{ steps: number; judged: boolean }> = [];
+  const announced: string[] = [];
+  const outcome = await runAutomationStudioFlowBootstrapBuildPhases({
+    round: async (request): Promise<AutomationStudioLlmEvidenceLoopResult> => {
+      rounds.push(request.round);
+      if (request.round === 0) {
+        const charged = purse.hold({ projectedCostUsd: 0.01, estimatedInputTokens: 1, maxOutputTokens: 1 });
+        if (charged.ok) charged.hold.settle({ estimatedCostUsd: 0.01 });
+        return { ok: true, result: { summary: "Adds and saves." }, trace: [], steps: draft(), accounting: accounting(1, 0.01) };
+      }
+      const steps = request.repair!.seed;
+      const stopped = options.stop === "cost"
+        ? { budgetBound: "cost" as const, costRefusal: { ...refusal } }
+        : { budgetBound: "calls" as const, callRefusal: { code: "llm_budget.run_call_limit" as const, maxCalls: 4, spentCalls: purse.spentCalls(), pendingCalls: 0, keptBackCalls: 2 } };
+      return {
+        ok: false, code: "llm_evidence_loop.iteration_limit", trace: [], steps, accounting: accounting(0, 0),
+        exhaustion: { bound: "budget", ...stopped, maxIterations: 64, iterations: 0, draftSteps: steps.length, proposableSteps: steps.length, completionAttempts: 0, lastIssueCodes: [], outstandingIssueCodes: [] }
+      };
+    },
+    judge: async ({ round, loop }) => {
+      judged.push(round);
+      for (let call = 0; call < options.judgeCalls; call += 1) {
+        const held = purse.hold({ projectedCostUsd: 0.004, estimatedInputTokens: 1, maxOutputTokens: 1, judge: true });
+        if (held.ok) held.hold.settle({ estimatedCostUsd: 0.004 });
+      }
+      return round === 0 ? { ...ROUND_0_NO, flowSignature: "another Flow" } : { verdict: "yes", spent: SPENT, flowSignature: automationStudioFlowDraftFlowSignature(loop.steps) };
+    },
+    test: async (steps, testOptions) => {
+      tests.push({ steps: steps.length, judged: testOptions?.judged === true });
+      return undefined;
+    },
+    announce: ({ text }) => announced.push(text),
+    replayable: (steps) => steps.length > 0,
+    checklist: (steps) => automationStudioInstructedActsChecklist({ instructionText: INSTRUCTION, draftSteps: steps }),
+    budget: { maxCostUsd: 0.1, maxDurationMs: 540_000 },
+    purse,
+    maxIterations: 64,
+    keep: async (...args) => ({ revision: 1, steps: (args[2] as unknown[]).length }),
+    now: () => 0
+  });
+  return { outcome, rounds, judged, tests, announced };
+}
+
+describe("run mux6nxst: the judging pair no longer fits the purse (D3-5)", () => {
+  it("opens no round whose judging pair and first decision the call allowance cannot hold, and ends at the allowance", async () => {
+    // Four calls: round 0's decision and its judging pair leave one, too few for a pair and a decision.
+    const { outcome, rounds, judged, announced } = await squeezed({ purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, maxCalls: 4 }), stop: "calls", judgeCalls: 2 });
+
+    expect(rounds).toEqual([0]);
+    expect(judged).toEqual([0]);
+    expect(announced.some((text) => text.startsWith("Repairing the Flow"))).toBe(false);
+    expect(outcome).toMatchObject({ kind: "unfinished", rounds: 1, ending: { kind: "budget_exhausted", bound: "calls" } });
+  });
+
+  it("at a reserve stop where the pair no longer fits, neither says it judges with what was kept back nor tests or judges, and says why", async () => {
+    // $0.085 carried, round 0's $0.01 decision and one $0.004 judge call: $0.099 spent, and the pair is held at $0.008.
+    const { outcome, rounds, judged, tests, announced } = await squeezed({ purse: new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.085 }), stop: "cost", judgeCalls: 1 });
+
+    expect(rounds).toEqual([0, 1]);
+    expect(judged).toEqual([0]);
+    expect(tests).toEqual([]);
+    expect(announced.some((text) => text.includes("judging it with what was kept back"))).toBe(false);
+    expect(announced).toContain("The build reached its spending limit before the Flow was finished, with too little left to judge the Flow whole, so it is not tested or judged again.");
+    expect(outcome).toMatchObject({ kind: "unfinished", rounds: 2, ending: { kind: "budget_exhausted", bound: "cost" } });
   });
 });
