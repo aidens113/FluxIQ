@@ -14,10 +14,15 @@ import { automationStudioActivityAction, automationStudioActivityHumanLabel } fr
  * step N of M" and nothing more: the node id goes to `detail.ref`, and the
  * definition id to `detail.text` as `Node: <id>`, the record a tool row
  * carries, so a card reads what kind of step it is.
+ *
+ * The Flow's first step opens where it starts, so a page it opens is "the
+ * start page"; a later step's page served from this machine is named by its
+ * path (`../wording/page-name.ts`).
  */
 export function emitAutomationStudioActivityStep(input: { index: number; count: number; nodeId: string; label?: string | undefined; definitionId?: string | undefined; parameters?: unknown }): void {
   const label = automationStudioActivityHumanLabel(input.label, 160);
-  const action = automationStudioActivityAction({ id: input.definitionId, parameters: input.parameters, label });
+  const start = input.index === 1 ? (input.parameters as { url?: unknown } | undefined)?.url : undefined;
+  const action = automationStudioActivityAction({ id: input.definitionId, parameters: input.parameters, label, start: typeof start === "string" ? start : undefined });
   const definition = typeof input.definitionId === "string" && /^[A-Za-z][\w.-]*$/u.test(input.definitionId) ? input.definitionId : undefined;
   const counted = input.index <= input.count ? `step ${input.index} of ${input.count}` : `step ${input.index}`;
   emitAutomationStudioActivity({

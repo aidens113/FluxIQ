@@ -57,8 +57,15 @@ function unnamed(toolId: string, node: string | undefined): string {
  * - `phase` is `verifying` for a dry run's calls and the steps a part run
  *   sends, `building` for the draft tool and `exploring` for everything else;
  * - `node` is the node id a run-node call names, for the raw record.
+ *
+ * `context` is what the caller knows beyond the call: the address the Flow or
+ * the build starts at (`start`), so only a page there is "the start page"; and,
+ * for a pass of a repeated test step, the plain name of the row it is on
+ * (`row`), said last ("Clicking “Confirm” for “Jonas Weber”"): a test's three
+ * passes over a list read as three identical "Click · Confirm" cards (U1,
+ * `run-muw6144a-e56f945d`).
  */
-export function automationStudioActivityToolCall(call: { callId: string; toolId: string; value?: unknown }, words?: AutomationStudioActivityCallWords): {
+export function automationStudioActivityToolCall(call: { callId: string; toolId: string; value?: unknown }, words?: AutomationStudioActivityCallWords, context: { start?: string | undefined; row?: string | undefined } = {}): {
   phase: ClientGatewayActivityPhase;
   kind: "tool" | "note";
   title: string;
@@ -73,13 +80,14 @@ export function automationStudioActivityToolCall(call: { callId: string; toolId:
   if (own) return { phase: "exploring", kind: "tool", title: own, label: own, dryRun: false };
   const value = call.value && typeof call.value === "object" && !Array.isArray(call.value) ? call.value as Record<string, unknown> : {};
   const node = call.toolId === RUN_NODE_TOOL_ID && typeof value.node === "string" && value.node ? value.node : undefined;
-  const action = automationStudioActivityAction({ id: node ?? call.toolId, parameters: value.parameters, words });
+  const action = automationStudioActivityAction({ id: node ?? call.toolId, parameters: value.parameters, words, start: context.start });
+  const row = context.row !== undefined ? ` for “${context.row}”` : "";
   const named = node ? { node } : {};
   if (call.callId.startsWith(DRY_RUN_PREFIX)) {
     if (value[REPLAY_KEY] === "reset") {
       return { phase: "verifying", kind: "note", title: "Putting the page back to where the Flow starts", label: FROM_THE_START, dryRun: true };
     }
-    const title = action ?? unnamed(call.toolId, node);
+    const title = `${action ?? unnamed(call.toolId, node)}${row}`;
     return { phase: "verifying", kind: "tool", title, label: `${FROM_THE_START}: ${lowerFirst(title)}`, dryRun: true, ...named };
   }
   if (call.callId.startsWith(OPENING_PREFIX)) {
@@ -100,7 +108,7 @@ export function automationStudioActivityToolCall(call: { callId: string; toolId:
   // too -- its reset and the earlier steps it does again first (t193) -- and are
   // answered below.
   if (!rerun && (value[REPLAY_KEY] === "step" || value[REPLAY_KEY] === "verify")) {
-    const title = action ?? unnamed(call.toolId, node);
+    const title = `${action ?? unnamed(call.toolId, node)}${row}`;
     return { phase: "verifying", kind: "tool", title, label: `${PART_OF_THE_FLOW}: ${lowerFirst(title)}`, dryRun: true, ...named };
   }
   // A rerun's words name no step number: the person never sees the draft's

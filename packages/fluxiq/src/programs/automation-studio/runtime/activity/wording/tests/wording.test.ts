@@ -15,6 +15,15 @@ describe("automationStudioActivityHumanLabel", () => {
     expect(automationStudioActivityHumanLabel(7)).toBeUndefined();
     expect(automationStudioActivityHumanLabel("a".repeat(200), 10)).toHaveLength(10);
   });
+
+  // U-2 (`run-muw60j7c-bb7c9a62`, moment 04): a cut inside a word put "Earbuds, Hybr…" on a card.
+  it("cuts a long label at the end of a word, never inside one", () => {
+    const tile = "Sponsored ⓘ Pulsebud Neo ANC Wireless Earbuds, Hybrid Active Noise Cancelling Bluetooth 5.4";
+    const cut = automationStudioActivityHumanLabel(tile, 60)!;
+    expect(cut).toBe("Sponsored ⓘ Pulsebud Neo ANC Wireless Earbuds, Hybrid…");
+    expect(cut.length).toBeLessThanOrEqual(60);
+    expect(automationStudioActivityHumanLabel("Sponsored ⓘ Pulsebud Neo ANC Wireless Earbuds, Hybrid", 50)).toBe("Sponsored ⓘ Pulsebud Neo ANC Wireless Earbuds…");
+  });
 });
 
 describe("automationStudioActivityAction", () => {
@@ -55,10 +64,15 @@ describe("automationStudioActivityAction", () => {
     expect(opening("https://www.amazon.com/s?k=usb+hub#top")).toBe("Opening “amazon.com”");
     expect(opening("https://shop.example/reset/Zx9aQ2kLm4Np7Rt1Vw3Yb6Cd/done")).toBe("Opening “shop.example”");
     expect(opening("https://SHOP.Example./")).toBe("Opening “shop.example”");
-    // A page this machine serves, or one at an IP address, has no name a person knows.
-    expect(opening("http://127.0.0.1:58504/scenarios/crossborder-marketplace/")).toBe("Opening the start page");
-    expect(opening("http://localhost:3000/cart")).toBe("Opening the start page");
-    expect(opening("http://[::1]:8080/x")).toBe("Opening the start page");
+    // A page this machine serves, or one at an IP address, has no site a person
+    // knows: it is the start page at the address the work starts at, and is
+    // named by its path's words anywhere else (U10, below).
+    const start = "http://127.0.0.1:58504/scenarios/crossborder-marketplace/";
+    expect(automationStudioActivityAction({ id: NAVIGATE, parameters: { url: start }, start })).toBe("Opening the start page");
+    expect(opening("http://127.0.0.1:58504/scenarios/crossborder-marketplace/")).toBe("Opening “crossborder marketplace”");
+    expect(opening("http://localhost:3000/cart")).toBe("Opening “cart”");
+    expect(opening("http://localhost:3000/")).toBe("Opening the home page");
+    expect(opening("http://[::1]:8080/x")).toBe("Opening a page");
     expect(opening("~/")).toBe("Opening the start page");
     expect(opening("~")).toBe("Opening the start page");
     // A path with no site, or no web address at all: the verb alone.
@@ -70,6 +84,26 @@ describe("automationStudioActivityAction", () => {
     for (const url of ["http://127.0.0.1:58504/scenarios/crossborder-marketplace/", "https://shop.example/ip/napkins", "~/ip/napkins"]) {
       expect(opening(url)).not.toMatch(/\/|https?:|127\.0/u);
     }
+  });
+
+  // U10 (`run-muw6144a-e56f945d`): the build's navigate to `/friends/` read
+  // "Opening the start page" / "Open page · the start page", because any page
+  // this machine serves read so whatever its path.
+  it("names a page this machine serves as the start page only at the start address", () => {
+    const start = "http://127.0.0.1:60766/scenarios/social-network-feed/";
+    const opening = (url: string) => automationStudioActivityAction({ id: NAVIGATE, parameters: { url }, start });
+    expect(opening("http://127.0.0.1:60766/friends/")).toBe("Opening “friends”");
+    expect(opening("http://127.0.0.1:60766/scenarios/social-network-feed/friends/requests/")).toBe("Opening “requests”");
+    // The start address, with or without its closing slash or a query, is the start page.
+    expect(opening(start)).toBe("Opening the start page");
+    expect(opening("http://127.0.0.1:60766/scenarios/social-network-feed?x=1")).toBe("Opening the start page");
+    // Another port of this machine is another site.
+    expect(opening("http://127.0.0.1:9999/scenarios/social-network-feed/")).toBe("Opening “social network feed”");
+    // An id in the path is no name: the words before it are.
+    expect(opening("http://127.0.0.1:60766/Pulsebud-Neo/dp/B0DPN4ANC7")).toBe("Opening “Pulsebud Neo”");
+    // The tool call says it the same way, from the start the caller knows.
+    const tool = automationStudioActivityToolCall(call("nav-friends-1", { node: NAVIGATE, parameters: { url: "http://127.0.0.1:60766/friends/" } }), undefined, { start });
+    expect(tool.title).toBe("Opening “friends”");
   });
 
   // F36 (`run-muqiho5c-e830ce01`): a control with no accessible name read "Click · the page" in the playback.

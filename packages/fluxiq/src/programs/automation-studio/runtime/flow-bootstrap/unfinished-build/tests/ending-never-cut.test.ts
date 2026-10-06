@@ -68,7 +68,7 @@ describe("the not-finished ending of run-mustzxhi-2e2cda87", () => {
   });
 
   it("keeps what stood still and every fact: the count asked, the count still to do, the test", () => {
-    expect(ending.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: the Flow came out exactly the same, 2 of the 6 things you asked have a step, no more than before, and no more of its steps worked when it was run from the start\./u);
+    expect(ending.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: the Flow came out exactly the same, no more of what you asked has a step than before, and no more of its steps worked when it was run from the start\./u);
     expect(ending.message).toContain("2 of the 6 things you asked have a step that ran, or could run, when the Flow was run from its start; still to do: ");
     expect(ending.message).toMatch(/; and \d more\./u);
     expect(ending.message).toContain("The Flow as far as it got (9 steps) ran from its start, but it does not yet do all you asked.");
@@ -83,7 +83,7 @@ describe("the not-finished ending of run-mustzxhi-2e2cda87", () => {
     }).message;
     expect(said.length).toBeLessThanOrEqual(MAX);
     expect(said.endsWith(KEPT)).toBe(true);
-    expect(said).toContain("What the judge says is left to change: \"");
+    expect(said).toContain("What the judge says is left to change: ");
   });
 });
 

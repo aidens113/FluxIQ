@@ -33,7 +33,7 @@ type AutomationStudioRunActivityOptions<T> = {
  * is bound (an idempotent repeat returning the session it already started).
  *
  * A failed run's last row says what came back and why the run failed, when
- * its result check is what failed it ("Run failed: It returned 13 rows, but
+ * its result check is what failed it ("Run failed: it saved 13 rows, but
  * the check found they don't answer what you asked, and the fix ran out of
  * room before it finished.", `./wording/run-ending.ts`): a bare "Run failed"
  * after a four-minute repair told the person nothing (U3,

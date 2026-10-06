@@ -39,11 +39,20 @@
 // 0265-0267, 0179-0183) showed such replies as "Updating the draft Flow --
 // Rerunning the search step ...". The loop's answer is its
 // `core.decision_check.<n>` entry, or the stalled round's `unusable` row.
+//
+// **What the card says was changed** comes from the amendments Core applied,
+// read against the draft the model was shown (`./edit-words.ts`): "Edit the
+// Flow · Done" said nothing of an edit that dropped the Add to cart step (U2,
+// `run-muw60unq-591e23bd`). An edit that only asked for a step to run again
+// has no card when it lands: the step's own rows say how that went, and "Edit
+// the Flow · Done" stood before a rerun FluxIQ then did not send (U-8,
+// `run-muw60j7c-bb7c9a62`, moments 11-15).
 
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
 import { emitAutomationStudioActivity } from "../emit.ts";
 import { emitAutomationStudioActivityThought } from "../thought.ts";
 import { automationStudioActivityDraftEditCard } from "../wording/index.ts";
+import { automationStudioActivityDraftEditWords } from "./edit-words.ts";
 
 type Evidence = Parameters<AutomationStudioLlmEvidenceLoopInput["decide"]>[0]["evidence"];
 type Stalled = Parameters<NonNullable<AutomationStudioLlmEvidenceLoopInput["unusableDecisions"]>["stalled"]>[0];
@@ -61,8 +70,11 @@ const DECIDING = "Deciding the next step";
 
 /** What the loop answered the edit with, or that it could not use the reply as a decision at all. */
 type Answered = Answer | { kind: "unusable" };
+/** The loop's answer, and the amendments it refused by step and reason, where it named them. */
+type Heard = { answer: Answered; refusals?: ReadonlyArray<{ step: number; reason: string }> };
 
-type Held = { iteration: number; title: string; phase: "building"; text: string | undefined };
+/** The edit as `decide` returned it: its decision's words, its amendments, and the evidence the model decided on, whose draft numbers their steps. */
+type Held = { iteration: number; title: string; phase: "building"; text: string | undefined; amendments?: unknown; shown?: Evidence };
 
 const record = (value: unknown): Record<string, unknown> | undefined => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined);
 const count = (value: unknown): number => (typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : 0);
@@ -72,44 +84,54 @@ function reasonsOf(refused: unknown): string[] {
   return Array.isArray(refused) ? refused.flatMap((item) => { const reason = record(item)?.reason; return typeof reason === "string" ? [reason] : []; }) : [];
 }
 
+/** Each refused amendment's step and reason, where the entry or row names both. */
+function refusalsOf(refused: unknown): Array<{ step: number; reason: string }> {
+  return Array.isArray(refused) ? refused.flatMap((item) => {
+    const entry = record(item);
+    return typeof entry?.step === "number" && typeof entry.reason === "string" ? [{ step: entry.step, reason: entry.reason }] : [];
+  }) : [];
+}
+
 /** What the loop's entry for `iteration` says of the edit, when it refused any of it; undefined when it all landed. */
-function answeredIn(evidence: Evidence, iteration: number): Answered | undefined {
+function answeredIn(evidence: Evidence, iteration: number): Heard | undefined {
   for (const entry of evidence) {
     const value = record(entry.value);
     if (!value) continue;
-    if (entry.callId === `${DECISION_CHECK}.${iteration}`) return { kind: "unusable" };
+    if (entry.callId === `${DECISION_CHECK}.${iteration}`) return { answer: { kind: "unusable" } };
     if (entry.callId === `${REPEAT_CHECK}.${iteration}`) {
       const outcome = record(value.then)?.outcome;
-      return { kind: "repeated", outcome: typeof outcome === "string" ? outcome : "" };
+      return { answer: { kind: "repeated", outcome: typeof outcome === "string" ? outcome : "" } };
     }
     if (entry.callId !== `${AMENDMENT_CHECK}.${iteration}`) continue;
     const reasons = reasonsOf(value.refused);
     // Edits that put the draft back exactly as it stood: the Flow is as it was.
-    if (reasons.length === 0 && typeof value.sameDraftAsIteration === "number") return { kind: "undone" };
+    if (reasons.length === 0 && typeof value.sameDraftAsIteration === "number") return { answer: { kind: "undone" } };
     const applied = count(value.applied);
-    if (applied === 0 || reasons.length > 0) return { kind: "refused", reasons, applied };
+    if (applied === 0 || reasons.length > 0) return { answer: { kind: "refused", reasons, applied }, refusals: refusalsOf(value.refused) };
   }
   return undefined;
 }
 
 /** What the stalled round's trace says of the decision at `iteration`; undefined when it all landed. */
-function answeredInTrace(trace: Stalled["trace"], iteration: number): Answered | undefined {
+function answeredInTrace(trace: Stalled["trace"], iteration: number): Heard | undefined {
   const row = [...trace].reverse().find((candidate) => candidate.iteration === iteration);
   if (!row) return undefined;
-  if (row.decision === "unusable" && row.resultCode !== REPEAT_REFUSED) return { kind: "unusable" };
-  if (row.resultCode === REPEAT_REFUSED) return { kind: "repeated", outcome: row.resultReason ?? "" };
+  if (row.decision === "unusable" && row.resultCode !== REPEAT_REFUSED) return { answer: { kind: "unusable" } };
+  if (row.resultCode === REPEAT_REFUSED) return { answer: { kind: "repeated", outcome: row.resultReason ?? "" } };
   if (row.decision !== "amend_draft" || row.resultCode === "llm_evidence_loop.draft_rerun") return undefined;
   const reasons = reasonsOf(row.amendmentsRefused);
   const applied = count(row.amended);
-  return applied === 0 || reasons.length > 0 ? { kind: "refused", reasons, applied } : undefined;
+  return applied === 0 || reasons.length > 0 ? { answer: { kind: "refused", reasons, applied }, refusals: refusalsOf(row.amendmentsRefused) } : undefined;
 }
 
 /**
  * One round's edit waiting for the loop's answer: `hold` it as `decide`
  * returns, then `decided` (the next decision's evidence), `ran` (a tool call)
  * or `stalled` (the stalled round's trace) says it, once: the decision with
- * the model's reason, then the card with Core's answer -- or, for a reply the
- * loop could not use as a decision, only that deciding didn't work.
+ * the model's reason, then the card with Core's answer and, where it changed
+ * the Flow, what it changed -- or, for a reply the loop could not use as a
+ * decision, only that deciding didn't work. An edit that landed and only asked
+ * for a step to run again has no card (see the header).
  */
 export function automationStudioActivityDraftEdit(): {
   hold(edit: Held): void;
@@ -118,18 +140,23 @@ export function automationStudioActivityDraftEdit(): {
   stalled(input: Stalled): void;
 } {
   let held: Held | undefined;
-  const landed: Answer = { kind: "landed" };
-  const say = (answer: Answered): void => {
+  const landed: Heard = { answer: { kind: "landed" } };
+  const say = (heard: Heard): void => {
     const edit = held;
     held = undefined;
     if (!edit) return;
+    const { answer } = heard;
     if (answer.kind === "unusable") {
       // Nothing was done: said as the decision that didn't work, as one that never came is (`../observer.ts`).
       emitAutomationStudioActivity({ phase: "thinking", label: `${DECIDING} — didn't work`, detail: { kind: "thought", title: DECIDING, status: "failed" } });
       return;
     }
+    const changed = answer.kind === "landed" || (answer.kind === "refused" && answer.applied > 0)
+      ? automationStudioActivityDraftEditWords({ amendments: edit.amendments, shown: edit.shown ?? [], refused: heard.refusals })
+      : { rerun: false };
     emitAutomationStudioActivityThought({ phase: edit.phase, title: edit.title, text: edit.text });
-    emitAutomationStudioActivity(automationStudioActivityDraftEditCard(answer));
+    if (answer.kind === "landed" && changed.rerun && changed.words === undefined) return;
+    emitAutomationStudioActivity(automationStudioActivityDraftEditCard(answer, changed.words));
   };
   return {
     hold: (edit) => { say(landed); held = edit; },

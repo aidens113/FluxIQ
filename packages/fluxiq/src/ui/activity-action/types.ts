@@ -82,6 +82,18 @@ export type ActivityAction = {
    * done: <the model's own summary>" (t193 1003, C13/C14).
    */
   refused?: { all: boolean; because: string };
+  /**
+   * What a finished action came to, in a few plain words, present only when
+   * Core knows it: how many rows a list read kept ("8 rows", "13 rows from 5
+   * pages"), how many records a run saved ("20 records saved"), and what an
+   * edit to the Flow changed ('removed "Add to cart"'). A client shows it
+   * after "Done: ". Read from the row's record (`./record.ts`) or, for saved
+   * records, Core's status sentence; never the model's own summary. Read cards
+   * said a bare "Done" while the chat claimed "all search result pages" were
+   * read (U-1, `run-muw60j7c-bb7c9a62`), and an edit that dropped the Add to
+   * cart step read "Edit the Flow · Done" (U2, `run-muw60unq-591e23bd`).
+   */
+  result?: string;
 };
 
 /**

@@ -106,9 +106,9 @@ describe("a round without measured progress, after a judge who named the fix", (
     expect(message).not.toContain("not doable");
     expect(message).toMatch(/^I have not finished this Flow yet\. My last 2 attempts to fix it each got no further than the one before/u);
     // The judge found something else this time: said as what it found, never "the same as before".
-    expect(message).toContain("this time the judge found: \"the accepted read kept none\"");
+    expect(message).toContain("the judge's finding changed. What the judge found this time: the accepted read kept none.");
     expect(message).not.toContain("the judge found the same as before");
-    expect(message).toContain("What the judge says is left to change: \"match the accepted text the list shows\".");
+    expect(message).toContain("What the judge says is left to change: match the accepted text the list shows.");
     expect(message).toContain("The steps I found so far were kept as a draft, so building again carries on from them.");
     expect(outcome.kept).toEqual({ revision: 1, steps: 4 });
     expect(kept[0]![0]).toBe("judged_wrong");
@@ -163,7 +163,7 @@ describe("a round without measured progress where the judge named no fix", () =>
 
     expect(requests).toHaveLength(2);
     expect(outcome.ending).toMatchObject({ kind: "not_finished", tried: { rounds: 2, noRoute: { kind: "no_progress" } } });
-    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: 3 of the 3 things you asked have a step, no more than before, and the judge found the same as before\./u);
+    expect(outcome.ending.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: no more of what you asked has a step than before, and the judge found the same as before\./u);
     expect(outcome.ending.message).not.toContain("found no way");
   });
 

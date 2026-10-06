@@ -13,14 +13,23 @@
 // token-shaped runs hidden, within 240 characters, and without the sentences
 // that name an act id or the draft's mechanics, or a line that is only codes
 // (`./wording/reason-text.ts`, t174-w116 D3 and D15).
-// What it never shows: the decision's input values, the draft's amendments,
-// the evidence a tool gathered, or an issue code in a sentence. Ids and result
-// codes go to `detail.ref` and `detail.text` of the tool rows only.
+// Beside those, three things Core reads off what the loop already showed it
+// (`./call-context.ts`): which page the work starts on, so only that page is
+// "the start page"; the plain name of the row a test's pass of a repeated step
+// is on ("Clicking “Confirm” for “Jonas Weber”"); and how many rows a list read
+// kept (`Rows: <n>` on its record). An edit to the draft is said with what it
+// changed, in Core's words from the amendments Core applied
+// (`./decision-answer/edit-words.ts`).
+// What it never shows: the decision's input values, the draft's amendments as
+// the model wrote them, the evidence a tool gathered beyond a row's name and a
+// count, or an issue code in a sentence. Ids and result codes go to
+// `detail.ref` and `detail.text` of the tool rows only.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { activityActionReplayFailing, activityActionTested, activityActionVerb } from "../../../../ui/index.ts";
 import type { AutomationStudioLlmEvidenceLoopInput } from "../llm/index.ts";
 import { emitAutomationStudioActivityWaitedOut } from "./ask/index.ts";
+import { automationStudioActivityCallContext } from "./call-context.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 import { automationStudioActivityDraftEdit, automationStudioActivityRefusedCall } from "./decision-answer/index.ts";
 import { emitAutomationStudioActivity } from "./emit.ts";
@@ -127,13 +136,29 @@ function decidedCall(decision: unknown): { callId: string; toolId: string; value
  * a press of "No thanks" read "Clicking on the page" and its card "Click · the
  * page" (t193, `run-muqiojz4-04a7a8fc`). A replayed step that did not hold
  * and that the test passes over (`excusable`) carries "Excused: <why>" after
- * the reason, so its card says it was skipped rather than that it failed.
+ * the reason, so its card says it was skipped rather than that it failed. A
+ * call whose answer kept rows carries "Rows: <n>" (`./call-context.ts`), so a
+ * read's card says how many. `context` is the start address and the pass's
+ * row the call's words need (`./wording/tool-call.ts`).
  */
-function toolActivity(call: ToolCall, status: "started" | "succeeded" | "failed", result: { code: string | undefined; reason?: string | undefined }, described: AutomationStudioActivityCallWords | undefined, excusable?: string): void {
-  const words = automationStudioActivityToolCall(call, described);
+function toolActivity(
+  call: ToolCall,
+  status: "started" | "succeeded" | "failed",
+  result: { code: string | undefined; reason?: string | undefined; rows?: number | undefined },
+  described: AutomationStudioActivityCallWords | undefined,
+  context: { start?: string; row?: string },
+  excusable?: string
+): void {
+  const words = automationStudioActivityToolCall(call, described, context);
   const resultCode = result.code;
   const excused = excusable && resultCode?.startsWith(REPLAY_PREFIX) && activityActionReplayFailing(resultCode) ? excusable : undefined;
-  const record = [resultCode ? `Result: ${resultCode}` : "", result.reason ? `Reason: ${result.reason}` : "", excused ? `Excused: ${excused}` : "", words.node ? `Node: ${words.node}` : ""].filter(Boolean).join(" · ");
+  const record = [
+    resultCode ? `Result: ${resultCode}` : "",
+    result.reason ? `Reason: ${result.reason}` : "",
+    excused ? `Excused: ${excused}` : "",
+    result.rows !== undefined ? `Rows: ${result.rows}` : "",
+    words.node ? `Node: ${words.node}` : ""
+  ].filter(Boolean).join(" · ");
   emitAutomationStudioActivity({
     phase: words.phase,
     label: status === "started" ? words.label : `${words.label} — ${outcomeOf(status, resultCode, excused, words.title)}`,
@@ -182,9 +207,12 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
   const edit = automationStudioActivityDraftEdit();
   // A call refused as a repeat before it ran is said once the loop has answered it (`./decision-answer/refused-call.ts`).
   const calls = automationStudioActivityRefusedCall();
+  // Where the work starts, a pass's row and a read's rows (`./call-context.ts`).
+  const context = automationStudioActivityCallContext();
   return {
     ...input,
     decide: async (request) => {
+      context.decided(request.evidence);
       edit.decided(request.evidence);
       calls.decided(request.evidence);
       emitAutomationStudioActivity({ phase: "thinking", label: "Deciding the next step", detail: { kind: "thought", title: "Deciding the next step", status: "started" } });
@@ -195,12 +223,13 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         decisionFailed(error);
         throw error;
       }
-      const chose = automationStudioActivityDecision(decision, input.describeCall && ((call) => describeSafely(input.describeCall, call)));
+      const chose = automationStudioActivityDecision(decision, input.describeCall && ((call) => describeSafely(input.describeCall, call)), context.start());
       const reason = automationStudioActivityReasonText(automationStudioActivityDecisionReason.of(decision), undefined, { decision: true });
-      if (chose && (decision as { kind?: unknown }).kind === "amend_draft") edit.hold({ iteration: request.iteration, phase: "building", title: chose.title, text: reason });
-      else if (chose) emitAutomationStudioActivityThought({ phase: chose.phase, title: chose.title, text: reason });
+      if (chose && (decision as { kind?: unknown }).kind === "amend_draft") {
+        edit.hold({ iteration: request.iteration, phase: "building", title: chose.title, text: reason, amendments: (decision as { amendments?: unknown }).amendments, shown: request.evidence });
+      } else if (chose) emitAutomationStudioActivityThought({ phase: chose.phase, title: chose.title, text: reason });
       const call = decidedCall(decision);
-      if (call) calls.hold({ iteration: request.iteration, call, described: describeSafely(input.describeCall, call) });
+      if (call) calls.hold({ iteration: request.iteration, call, described: describeSafely(input.describeCall, call), start: context.start() });
       return decision;
     },
     executeTool: async (sent): Promise<JsonValue | Awaited<ReturnType<AutomationStudioLlmEvidenceLoopInput["executeTool"]>>> => {
@@ -208,14 +237,15 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
       calls.ran();
       const { call, excusable } = excusableOf(sent);
       const described = describeSafely(input.describeCall, call);
-      toolActivity(call, "started", { code: undefined }, described);
+      const said = context.sent(call);
+      toolActivity(call, "started", { code: undefined }, described, said);
       try {
         const result = await executeTool.call(input, call);
         emitAutomationStudioActivityWaitedOut(call.callId, result, automationStudioActivityToolCall(call).phase);
-        toolActivity(call, "succeeded", resultOf(result), described, excusable);
+        toolActivity(call, "succeeded", { ...resultOf(result), ...context.answered(call, result) }, described, said, excusable);
         return result;
       } catch (error) {
-        toolActivity(call, "failed", { code: undefined }, described);
+        toolActivity(call, "failed", { code: undefined }, described, said);
         throw error;
       }
     },

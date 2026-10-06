@@ -23,7 +23,9 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     no_such_position: "the Flow has no such place to move it to",
     not_a_kept_step: "the step it named is not in the Flow",
     did_not_work: "that step did not work, so it is not in the Flow",
-    over_not_before: "a repeat goes on what is done to each item, after the list it repeats over",
+    // "a repeat goes on what is done to each item, after the list it repeats
+    // over" was no sentence a person could read (U-11, `run-muw60j7c-bb7c9a62`).
+    over_not_before: "a repeat must start on a step that comes after the list it repeats over",
     no_step_before_it: "there is no step before it",
     run_by_the_loop: "that step could not be tried again this way",
     act_on_a_read: "that step only reads the page, so it cannot do the action",

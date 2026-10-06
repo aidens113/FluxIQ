@@ -70,11 +70,20 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
   }
 };
 
-/** A new Flow's name, from the opening words of what it should do. */
+/**
+ * A new Flow's name, from the opening words of what it should do: cut after
+ * its last whole word that fits, never inside one (t276, `run-muw6144a-e56f945d`
+ * ended "The Flow "Go through my friend requests and confirm everyone I have
+ * at least five mutua..." keeps your instruction").
+ */
 function automationStudioConversationFlowName(instruction: string): string {
   const firstLine = instruction.split(/\r?\n/u)[0] ?? instruction;
   const sentence = (firstLine.split(/(?<=[.!?])\s/u)[0] ?? firstLine).trim();
-  return sentence.length > NAME_MAX ? `${sentence.slice(0, NAME_MAX - 3).trimEnd()}...` : sentence;
+  if (sentence.length <= NAME_MAX) return sentence;
+  const room = sentence.slice(0, NAME_MAX - 2);
+  const space = room.lastIndexOf(" ");
+  const cut = space > NAME_MAX / 2 ? room.slice(0, space) : sentence.slice(0, NAME_MAX - 3);
+  return `${cut.replace(/[\s,;:.-]+$/u, "")}...`;
 }
 
 /**

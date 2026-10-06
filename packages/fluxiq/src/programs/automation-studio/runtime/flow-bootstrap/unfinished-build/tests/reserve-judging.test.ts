@@ -108,7 +108,7 @@ describe("a round the judging reserve stopped (t254 stage 2)", () => {
     // The test is said once, inside how much was done (t193 round 1003): its step count there, never "judged not" twice.
     expect(message).toContain("when the Flow (3 steps) was run from its start, and 3 more have a step that did not work in that run, but the Flow was judged not to do what you asked.");
     expect(message).not.toContain("what it did was judged not to be what you asked");
-    expect(message).toContain('The judge found: one pack was added. What the judge says is left to change: "set the quantity to 2 before adding".');
+    expect(message).toContain("The judge found: one pack was added. What the judge says is left to change: set the quantity to 2 before adding.");
     expect(message).toContain("The steps I found so far were kept as a draft");
     expect(message).not.toContain("kept back for judging the Flow, and its next call");
   });

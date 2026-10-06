@@ -10,6 +10,7 @@ import type { AutomationStudioInstructedActChecklistItem, AutomationStudioInstru
 import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
 import type { AutomationStudioFlowBootstrapEndingRoom } from "./ending-fit.ts";
+import { automationStudioFlowBootstrapJudgeWordsSaid } from "./judge-words.ts";
 
 /** How many acts still to do are quoted, and how long each quote is (`./ending-fit.ts`). */
 type QuoteRoom = Pick<AutomationStudioFlowBootstrapEndingRoom, "most" | "quote">;
@@ -180,13 +181,13 @@ function positionsSaid(positions: readonly number[]): string {
  * A judge that did not settle it is said as the card above it says it: the
  * Flow is not confirmed, never that it "was not judged" -- run
  * `run-murwd8le-79e735a8` showed "not judged to do what you asked" under a card
- * that said the result was unverified (UI review D3). A long reason is cut at
- * the end of a sentence where one ends inside the bound.
+ * that said the result was unverified (UI review D3). A long reason is said in
+ * its whole sentences that fit, screened plain (t276).
  */
 export function automationStudioFlowBootstrapRepairingJudgedSaid(judge: NonNullable<AutomationStudioFlowBootstrapJudgement["judge"]>): string {
   const carried = judge.untestedCarried ?? [];
   if (carried.length) return `The Flow was not judged to do what you asked: steps ${carried.join(", ")} came from the earlier Flow and were not run when it was tested. Repairing it live, running them again.`;
-  const said = boundedReason(automationStudioFlowBootstrapUnsettledForBuild((judge.observed ?? judge.findings[0] ?? "").replace(/\s+/gu, " ").trim()));
+  const said = boundedReason(automationStudioFlowBootstrapUnsettledForBuild(judge.observed ?? judge.findings[0] ?? ""));
   if (judge.verdict !== "no") return `The Flow is not yet confirmed to do what you asked${said ? `: ${said}` : ""}. Repairing it live, to test it from its start and check it again.`;
   return `The Flow was tested from its start and judged not to do what you asked${said ? `: ${said}` : ""}. Repairing it live.`;
 }
@@ -204,11 +205,14 @@ export function automationStudioFlowBootstrapUnsettledForBuild(reason: string): 
   return said;
 }
 
-/** A reason of at most 160 characters, cut after its last whole sentence that fits, else mid-way; never ending in a full stop the heading adds. */
+/**
+ * A reason of at most 160 characters, screened plain and in whole sentences
+ * (`./judge-words.ts`; t276: it was cut mid-way, and said the draft's ids, when
+ * no sentence ended inside the bound); never ending in a full stop the heading
+ * adds. Empty when no whole sentence of it is plain and fits.
+ */
 function boundedReason(reason: string): string {
-  if (reason.length <= MAX_REASON) return reason.replace(/\.$/u, "");
-  const sentence = /^.*[.!?](?=\s)/u.exec(reason.slice(0, MAX_REASON + 1))?.[0];
-  return sentence ? sentence.replace(/\.$/u, "") : `${reason.slice(0, MAX_REASON - 3).trimEnd()}...`;
+  return automationStudioFlowBootstrapJudgeWordsSaid(reason, MAX_REASON).replace(/\.$/u, "");
 }
 
 /**

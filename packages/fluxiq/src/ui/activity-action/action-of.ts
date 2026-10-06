@@ -82,12 +82,41 @@ const ADDRESS_PATH = /^…?\/\S*$/u;
  */
 const SITE_NAME = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,24}$/iu;
 /** The navigate wording's name for an address it does not show (`programs/automation-studio/runtime/activity/wording/action.ts`). */
-const START_PAGE = /^Opening (the start page)$/u;
+const START_PAGE = /^Opening (the (?:start|home) page)$/u;
 /** Something shaped like a dotted id ("web.output.dom-click"), which a card never shows. */
 const ID_SHAPED = /[A-Za-z_][\w-]*\.[A-Za-z_][\w-]*/u;
 /** How a wait on the person ended, as the ask row that settles it says (`ClientGatewayActivity.detail.resolution`). */
 const RESOLVED_DONE: ReadonlySet<string> = new Set(["answered", "allowed", "waited_out"]);
 const RESOLVED_FAILED: ReadonlySet<string> = new Set(["declined", "timed_out", "cancelled"]);
+/** The row a pass of a repeated test step was on, which Core names last in its title (`runtime/activity/wording/tool-call.ts`). */
+const FOR_ROW = /\sfor “([^”]+)”$/u;
+/** A look at one element's details, as the wording says it (`runtime/activity/wording/action.ts`). */
+const DETAILS_OF = /^Reading the details of “([^”]+)”$/u;
+/** A look for the repeating list around one element. */
+const LIST_AROUND = /^Looking for the repeating list around “([^”]+)”$/u;
+/** The most of a page's own name a look's card shows. */
+const MAX_SHORT_WORDS = 4;
+const MAX_SHORT_CHARS = 32;
+/** The status sentence of a run's saved records (`runtime/executor/node-execution.ts`): "Saved 20 records". */
+const SAVED_RECORDS = /^Saved (\d{1,9}) records?$/u;
+const RECORDS_SAVED_TITLE = "Records saved";
+
+const counted = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+/**
+ * What a finished action came to (`ActivityAction.result`), when its row says:
+ * an edit's `Changed` words, a list read's rows and pages, or the records a run
+ * saved. Undefined for anything else, and for anything not finished.
+ */
+function resultOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActionKind, outcome: ActivityActionOutcome, record: ReturnType<typeof activityActionRecordOf>): string | undefined {
+  if (outcome !== "done") return undefined;
+  if (kind === "draft") return record.changed;
+  if (kind === "read" && record.rows !== undefined) {
+    return record.pages !== undefined ? `${counted(record.rows, "row")} from ${counted(record.pages, "page")}` : counted(record.rows, "row");
+  }
+  const saved = detail.title === RECORDS_SAVED_TITLE ? SAVED_RECORDS.exec(event.label?.trim() ?? "")?.[1] : undefined;
+  return saved === undefined ? undefined : `${counted(Number(saved), "record")} saved`;
+}
 
 function wordsOf(text: string): string[] {
   return text.toLowerCase().split(/[^a-z0-9]+/u).filter(Boolean);
@@ -208,7 +237,66 @@ function plain(text: string | undefined): string | undefined {
   return words && !ID_SHAPED.test(words) ? words : undefined;
 }
 
+/**
+ * A name a page gave, shortened for a card: whole when it is short, else its
+ * first words up to `MAX_SHORT_WORDS` and `MAX_SHORT_CHARS`, never cut inside
+ * a word, with "…" after. A name Core already cut ("…Earbuds, Hybr…") loses its
+ * cut last word. Words with no letter or digit ("ⓘ") are left out. Undefined
+ * when nothing is left.
+ */
+function shortName(text: string): { words: string; whole: boolean } | undefined {
+  const cut = text.endsWith("…");
+  const words = (cut ? text.slice(0, -1) : text).split(/\s+/u).filter((word) => /[\p{L}\p{N}]/u.test(word));
+  if (cut) words.pop();
+  const kept: string[] = [];
+  for (const word of words) {
+    if (kept.length >= MAX_SHORT_WORDS || [...kept, word].join(" ").length > MAX_SHORT_CHARS) break;
+    kept.push(word);
+  }
+  if (!kept.length) return undefined;
+  const whole = !cut && kept.length === words.length;
+  const said = kept.join(" ").replace(/[,;:.]+$/u, "");
+  return { words: whole ? said : `${said}…`, whole };
+}
+
+/**
+ * What a look at one thing on the page looked for, in plain words, or
+ * undefined for any other look. A look's card named the page's own label as
+ * its target, cut mid-word -- "Look · Sponsored ⓘ ... Earbuds, Hybr...",
+ * "Look · Brightaisle Plus" (U-2, `run-muw60j7c-bb7c9a62`):
+ *
+ * - an element's details (`Reading the details of “Brightaisle Plus”`) are the
+ *   details of that label: `the "Brightaisle Plus" label`, short;
+ * - the repeating list around an element (`Looking for the repeating list
+ *   around “Sponsored”`) is that list: `the list around "Sponsored"` when the
+ *   element's name is short and whole, else the repeating list on the page.
+ */
+function lookedFor(title: string): string | undefined {
+  const details = DETAILS_OF.exec(title)?.[1];
+  if (details !== undefined) {
+    const name = shortName(details);
+    return name ? `the "${name.words}" label` : "a control's details";
+  }
+  const around = LIST_AROUND.exec(title)?.[1];
+  if (around === undefined) return undefined;
+  const anchor = shortName(around);
+  return anchor?.whole ? `the list around "${anchor.words}"` : "the repeating list on the page";
+}
+
 function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActionKind, testing: boolean): string | null {
+  // A repeated test step's row, which Core names after the step's own words
+  // ("Clicking “Confirm” for “Jonas Weber”"): three passes read as three
+  // identical "Click · Confirm" cards (U1, `run-muw6144a-e56f945d`).
+  const row = testing ? FOR_ROW.exec(detail.title) : null;
+  if (row) {
+    const step = targetOf(event, { ...detail, title: detail.title.slice(0, row.index) }, kind, testing);
+    const name = plain(row[1]);
+    if (name) return step ? `${step} · ${name}` : name;
+  }
+  if (kind === "look") {
+    const looked = lookedFor(detail.title.trim());
+    if (looked) return looked;
+  }
   let name: string | undefined;
   for (const candidate of [QUOTED.exec(detail.title)?.[1], event.step?.label]) {
     const words = candidate?.replace(/\s+/gu, " ").trim();
@@ -263,7 +351,10 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * test run's typing step puts the words it typed first, in straight quotes ('"3" into
  * Quantity'); a look that names no control is named by the words it looked
  * for, in straight quotes, else by what its title says it looked over ("the
- * whole page", never the bare page); else null. Never an id, though a
+ * whole page", never the bare page); a look at one element is named by what it
+ * looked for, short (`the "Brightaisle Plus" label`, `the list around
+ * "Sponsored"`), never by the page's label alone; a pass of a repeated test
+ * step adds the row it was on (`Confirm · Jonas Weber`); else null. Never an id, though a
  * navigate's address path ("/help/index.html") is not one. A result check
  * that could not confirm the result, or could not check it, is `unconfirmed`,
  * read from Core's status sentence (`./result-check-labels.ts`). A replay code that says the step held (`./replay-failing.ts`: replayed,
@@ -279,6 +370,10 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * record's code (`./refusal.ts`): failed when nothing of it was done, with
  * Core's plain reason as `why`, and done when part of an edit was. An edit
  * that asked for a step to run again is named that ("run the step again").
+ *
+ * `result` says what a finished action came to, where its row says it: an
+ * edit's changes in Core's words, a list read's rows and pages, a run's saved
+ * records (`./types.ts`).
  */
 export function activityActionOf(event: ActivityActionEvent): ActivityAction | null {
   const detail = event.detail;
@@ -297,6 +392,7 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   // What a test did with the step, when it did not simply do it again: a test
   // step is named by its action (`testing`), and one that names none by the verb of its title.
   const tested = outcome === "done" && record.resultCode && !refusal ? activityActionTested(record.resultCode, { excused: record.excused, kind: kind === "test" ? kindOfTitle(detail.title) : kind }) : null;
+  const result = resultOf(event, detail, kind, outcome, record);
   return {
     kind,
     target: kind === "draft" && refusal?.rerun ? "run the step again" : targetOf(event, detail, kind, testing),
@@ -305,6 +401,7 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
     ...(testing ? { testing: true as const } : {}),
     ...(unconfirmed ? { unconfirmed: true as const } : {}),
     ...(tested ? { tested } : {}),
-    ...(refusal ? { refused: { all: refusal.all, because: refusal.because } } : {})
+    ...(refusal ? { refused: { all: refusal.all, because: refusal.because } } : {}),
+    ...(result ? { result } : {})
   };
 }

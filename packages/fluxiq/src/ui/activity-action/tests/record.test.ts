@@ -21,3 +21,15 @@ describe("activityActionRecordOf: a refusal's reason", () => {
     expect(activityActionRecordOf("Result: web.target.not_found").reason).toBeUndefined();
   });
 });
+
+describe("activityActionRecordOf: what an action came to (U-1, U2)", () => {
+  it("reads a read's rows and pages, and an edit's changed words, which come last", () => {
+    expect(activityActionRecordOf("Result: core.replay.replayed · Rows: 13 · Pages: 5 · Node: web.output.dom-extract_list"))
+      .toEqual({ resultCode: "core.replay.replayed", rows: 13, pages: 5, node: "web.output.dom-extract_list" });
+    expect(activityActionRecordOf("Result: llm_evidence_loop.draft_amendments_refused · Reason: already_so · Applied: 1 · Changed: removed step 9, Add to cart · Node: x"))
+      .toEqual({ resultCode: "llm_evidence_loop.draft_amendments_refused", reason: "already_so", applied: 1, changed: "removed step 9, Add to cart · Node: x", node: undefined });
+    expect(activityActionRecordOf("Changed: added step 11, Spain")).toEqual({ resultCode: undefined, changed: "added step 11, Spain", node: undefined });
+    // Words in the changed part are never read as codes.
+    expect(activityActionRecordOf("Changed: removed step 2, Result: web.x · Rows: 9")).toEqual({ resultCode: undefined, changed: "removed step 2, Result: web.x · Rows: 9", node: undefined });
+  });
+});

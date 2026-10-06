@@ -229,8 +229,29 @@ describe("activityActionOf: looks name what they look at (t193)", () => {
     expect(activityActionOf(tool('Looking for "web.output.x" on the page', undefined, "started", "web.find_on_page"))?.target).toBeNull();
   });
 
-  it("reads an element's details as a look at that element", () => {
-    expect(outputsOf(activityActionOf(tool("Reading the details of “Add to cart”", undefined, "started", "web.describe_element")))).toEqual(["look", "Add to cart", "working", ""]);
+  it("reads an element's details as a look at that element's label", () => {
+    expect(outputsOf(activityActionOf(tool("Reading the details of “Add to cart”", undefined, "started", "web.describe_element")))).toEqual(["look", 'the "Add to cart" label', "working", ""]);
+  });
+});
+
+// U-2 (`run-muw60j7c-bb7c9a62`, moments 04, 10, 11): a look's card named the
+// page's own label, cut mid-word -- "Look · Sponsored ⓘ ... Earbuds, Hybr...",
+// "Look · Brightaisle Plus".
+describe("activityActionOf: a look at one element names what it looked for (U-2)", () => {
+  it("names a detect around a short label as the list around it, and around a long one as the list", () => {
+    const around = (name: string) => activityActionOf(tool(`Looking for the repeating list around “${name}”`, "Result: web.inspect.succeeded", "succeeded", "web.detect_repeating_structure"));
+    expect(around("Sponsored")?.target).toBe('the list around "Sponsored"');
+    expect(around("Sponsored ⓘ Pulsebud Neo ANC Wireless Earbuds, Hybr…")?.target).toBe("the repeating list on the page");
+  });
+
+  it("names an element's details by its label, short, and never cut inside a word", () => {
+    const details = (name: string) => activityActionOf(tool(`Reading the details of “${name}”`, "Result: web.inspect.succeeded", "succeeded", "web.describe_element"))?.target;
+    expect(details("Brightaisle Plus")).toBe('the "Brightaisle Plus" label');
+    expect(details("Sponsored ⓘ Pulsebud Neo ANC Wireless Earbuds, Hybr…")).toBe('the "Sponsored Pulsebud Neo ANC…" label');
+    expect(details("Pulsebud Neo ANC Wireless Earbuds Hybrid Active Noise")).toBe('the "Pulsebud Neo ANC Wireless…" label');
+    for (const name of ["Sponsored ⓘ Pulsebud Neo ANC Wireless Earbuds, Hybr…", "Pulsebud Neo ANC Wireless Earbuds Hybrid Active Noise"]) {
+      expect(details(name)).not.toMatch(/Hybr…|Hybr"|ⓘ/u);
+    }
   });
 });
 
@@ -254,7 +275,7 @@ describe("activityActionOf: what each card says (t193 chat wording)", () => {
   // "Didn't work: it wasn't on the page". Nothing was looked up.
   it("lets a refusal's own reason say why it failed, before its code's words", () => {
     const refused = tool("Clicking “Add to cart”", "Result: web.action.rejected.target_unobserved · Reason: target_not_a_handle · Node: web.output.dom-click");
-    expect(outputsOf(activityActionOf(refused))).toEqual(["click", "Add to cart", "failed", "FluxIQ didn't send it, since it named no control from the page"]);
+    expect(outputsOf(activityActionOf(refused))).toEqual(["click", "Add to cart", "failed", "FluxIQ didn't send it, as the step didn't say which control on the page to use"]);
     // A reason with no words of its own leaves the code to say it.
     const unknown = tool("Clicking “Add to cart”", "Result: web.target.not_found · Reason: vendor_specific_thing · Node: web.output.dom-click");
     expect(activityActionOf(unknown)?.why).toBe("it wasn't on the page");
@@ -362,5 +383,46 @@ describe("activityActionOf: what a test of the Flow did with each step (C10)", (
   it("gives a test step it cannot name its words by the verb of its title, and the completion check none", () => {
     expect(activityActionOf(tool("Typing “towels”", "Result: core.replay.verified", "succeeded", RUN_NODE, "verifying"))).toMatchObject({ outcome: "done", tested: "Checked, not typed" });
     expect(activityActionOf({ phase: "verifying", detail: { kind: "note", title: "Completion check", status: "succeeded" } })).not.toHaveProperty("tested");
+  });
+});
+
+// U-1 (`run-muw60j7c-bb7c9a62`, moments 04-12): every read card said a bare
+// "Done", and a run's "Records saved" line no count, while the overlay said
+// "Saved 20 records". U2 (`run-muw60unq-591e23bd`): "Edit the Flow · Done".
+describe("activityActionOf: what a finished action came to (result)", () => {
+  it("says how many rows a list read kept, and from how many pages when its record says", () => {
+    const read = (text: string, status: "started" | "succeeded" = "succeeded") => activityActionOf(tool("Reading the list of “name, price and rating”", text, status, RUN_NODE, "verifying"));
+    expect(read("Result: core.replay.replayed · Rows: 13 · Pages: 5 · Node: web.output.dom-extract_list")?.result).toBe("13 rows from 5 pages");
+    expect(read("Result: core.replay.replayed · Rows: 1 · Node: web.output.dom-extract_list")?.result).toBe("1 row");
+    expect(read("Result: core.replay.replayed · Node: web.output.dom-extract_list")).not.toHaveProperty("result");
+    expect(read("Rows: 13 · Node: web.output.dom-extract_list", "started")).not.toHaveProperty("result");
+    // A count on a row that is no read is not its result.
+    expect(activityActionOf(tool("Clicking “Confirm”", "Result: web.action.succeeded · Rows: 3 · Node: web.output.dom-click"))).not.toHaveProperty("result");
+  });
+
+  it("says how many records a run saved, from Core's status sentence", () => {
+    const saved = activityActionOf({ phase: "extracting", label: "Saved 20 records", detail: { kind: "step", title: "Records saved", status: "succeeded", ref: "node-7" } });
+    expect(saved?.result).toBe("20 records saved");
+    expect(activityActionOf({ phase: "extracting", label: "Saved 1 record", detail: { kind: "step", title: "Records saved", status: "succeeded", ref: "node-7" } })?.result).toBe("1 record saved");
+    expect(activityActionOf({ phase: "extracting", label: "Saved some", detail: { kind: "step", title: "Records saved", status: "succeeded", ref: "node-7" } })).not.toHaveProperty("result");
+  });
+
+  it("says what an edit changed, from its record's words, only when it changed something", () => {
+    const edit = (text: string, status: "succeeded" | "failed" = "succeeded") => activityActionOf(tool("Editing the Flow", text, status, "core.flow_draft", "building"));
+    expect(edit("Changed: removed step 9, Add to cart")).toMatchObject({ kind: "draft", outcome: "done", result: "removed step 9, Add to cart" });
+    expect(edit("Result: llm_evidence_loop.draft_amendments_refused · Reason: already_out", "failed")).not.toHaveProperty("result");
+  });
+});
+
+// U1 (`run-muw6144a-e56f945d`): "Testing: Click · Confirm — Checked, not pressed" three times, identical.
+describe("activityActionOf: a pass of a repeated test step names its row", () => {
+  it("puts the row Core names after the step's own target", () => {
+    const pass = activityActionOf(tool("Clicking “Confirm” for “Jonas Weber”", "Result: core.replay.verified · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying"));
+    expect(pass).toMatchObject({ kind: "click", target: "Confirm · Jonas Weber", outcome: "done", tested: "Checked, not pressed", testing: true });
+    const typed = activityActionOf(tool('Typing "hi" into “Message” for “Lin Zhao”', "Result: core.replay.replayed · Node: web.output.dom-type", "succeeded", RUN_NODE, "verifying"));
+    expect(typed?.target).toBe('"hi" into Message · Lin Zhao');
+    expect(activityActionOf(tool("Clicking on the page for “Lin Zhao”", "Node: web.output.dom-click", "started", RUN_NODE, "verifying"))?.target).toBe("Lin Zhao");
+    // Only a test's step: a build's own title is read as it stands.
+    expect(activityActionOf(tool("Clicking “Confirm” for “Jonas Weber”", "Node: web.output.dom-click"))?.target).toBe("Confirm");
   });
 });

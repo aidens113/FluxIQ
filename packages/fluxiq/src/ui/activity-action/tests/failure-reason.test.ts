@@ -58,11 +58,14 @@ describe("activityActionFailureReason", () => {
 // U7, live run `run-musp39u8-9ac026ab` (moment 26): "Type · Search Brightaisle
 // -- Didn't work: it didn't name a control from the page" read as the page
 // failing. FluxIQ never sent the call: it named no control from the page.
+// U-12 (`run-muw60j7c-bb7c9a62`, moment 14): "since it named no control from
+// the page" was FluxIQ's own term; the words say what the step left out.
 describe("activityActionFailureReason: a refusal's own reason (t193)", () => {
+  const UNNAMED = "FluxIQ didn't send it, as the step didn't say which control on the page to use";
   it.each([
-    ["target_not_a_handle", "FluxIQ didn't send it, since it named no control from the page"],
-    ["malformed_handle", "FluxIQ didn't send it, since it named no control from the page"],
-    ["handle_in_wrong_parameter", "FluxIQ didn't send it, since it named no control from the page"],
+    ["target_not_a_handle", UNNAMED],
+    ["malformed_handle", UNNAMED],
+    ["handle_in_wrong_parameter", UNNAMED],
     ["handle_no_longer_on_page", "it was no longer on the page"],
     ["covered_by_layer", "a popup or banner on the page was covering it"],
     ["nothing_changed_while_waiting", "nothing on the page changed"],

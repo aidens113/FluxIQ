@@ -52,7 +52,10 @@ const REFUSAL_REASONS: readonly { words: RegExp; why: string }[] = [
   // the control was in plain sight, and "it wasn't on the page" said it was
   // missing (t174-w111 D17, `run-musq0b1m-0472cfa0`, steps 0063 and 0067).
   { words: /_(handle_not_in_packet|handle_from_older_view|stale_handle)_/u, why: "FluxIQ was looking at an older view of the page" },
-  { words: /_(not_a_handle|malformed_handle|handle_in_wrong_parameter)_/u, why: "FluxIQ didn't send it, since it named no control from the page" },
+  // "since it named no control from the page" was FluxIQ's own term for a
+  // handle, and read beside "it wasn't on the page" for the same step as two
+  // stories (U-12, `run-muw60j7c-bb7c9a62`, moment 14).
+  { words: /_(not_a_handle|malformed_handle|handle_in_wrong_parameter)_/u, why: "FluxIQ didn't send it, as the step didn't say which control on the page to use" },
   { words: /_(no_longer_on_page)_/u, why: "it was no longer on the page" },
   // What the call was written with, never the page: a press refused for
   // leaving out `consequences` read "it wasn't on the page", from the word

@@ -99,7 +99,7 @@ describe("a round the judging reserve stopped on the Flow a judge last said no t
     const message = outcome.kind === "unfinished" ? outcome.ending.message : "";
     expect(message).toContain("its next call could have cost up to $0.010, more than was left beside the $0.008 kept back for judging the Flow, and that was not spent, because the Flow was unchanged since the judge said it does not do what was asked, and it had spent $0.084 ($0.070 of it by earlier builds of this Flow) in all.");
     expect(message).toContain("The Flow (3 steps) ran from its start, but what it did was judged not to be what you asked.");
-    expect(message).toContain('The judge found: one pack was added. What the judge says is left to change: "set the quantity to 2 before adding".');
+    expect(message).toContain("The judge found: one pack was added. What the judge says is left to change: set the quantity to 2 before adding.");
     expect(message).toContain("The steps I found so far were kept as a draft");
     expect(message).not.toContain("went on testing and judging");
     // Round 0's decision and judging only; the reserve was left.

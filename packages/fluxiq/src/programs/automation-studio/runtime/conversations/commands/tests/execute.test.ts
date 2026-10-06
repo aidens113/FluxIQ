@@ -215,7 +215,9 @@ describe("conversation commands", () => {
 
     expect(calls.map((call) => call.endpoint)).not.toContain("review-flow-adaptation");
     const [result] = await turnsOf(conversations, conversationId);
-    expect(result?.text).toContain('"Create an automation here" stopped because the build failed: Flow Bootstrap generation failed (flow_bootstrap.provider_refused) (provider: flow_bootstrap.provider_refused)');
+    // Said in plain words, never the code with its stage (t276).
+    expect(result?.text).toContain('"Create an automation here" stopped because the build failed: the request to the model was refused.');
+    expect(result?.text).not.toMatch(/flow_bootstrap|Flow Bootstrap/u);
     // What is left, said plainly and never as work done after a build that failed (t195,
     // `run-murdouox-c5294247`: "I could not build this Flow ... Before that I created the Flow").
     expect(result?.text).not.toContain("Before that I");
@@ -433,7 +435,8 @@ describe("conversation commands", () => {
     await automationStudioConversationCommandWork.idle();
     expect(calls).toEqual([{ endpoint: "run-runtime-session", payload: { projectId: PROJECT, flowId: "flow.kettle", runIntent: "explore_and_adapt" } }]);
     const [result] = await turnsOf(conversations, conversationId);
-    expect(result?.text).toBe("The run run.7 ended failed: The price element never appeared.");
+    // No run id and no code in what the thread keeps (t276).
+    expect(result?.text).toBe("The run failed: The price element never appeared.");
     expect(result?.attachment?.ref).toBe("run.execute");
   });
 

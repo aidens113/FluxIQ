@@ -36,6 +36,7 @@
 import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import type { AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapNoRouteLeft } from "./contracts.ts";
+import { automationStudioFlowBootstrapJudgeWordsSaid } from "./judge-words.ts";
 import {
   automationStudioFlowBootstrapNotDone,
   automationStudioFlowBootstrapNotDoneSaid,
@@ -67,8 +68,9 @@ export function automationStudioFlowBootstrapNotDoable(input: {
   const judge = input.judgement.judge;
   const what = (room: AutomationStudioFlowBootstrapEndingRoom): string => {
     const checklistSaid = notDone.length ? `${share} could not be done: ${automationStudioFlowBootstrapNotDoneSaid(notDone, room)}.` : "";
+    // After the judge's sentences, the checklist's opens a sentence of its own.
     return judge
-      ? [judgedSaid(judge, room.judge), checklistSaid].filter(Boolean).join(" ")
+      ? [judgedSaid(judge, room.judge), checklistSaid.replace(/^[a-z]/u, (letter) => letter.toUpperCase())].filter(Boolean).join(" ")
       : checklistSaid || `the Flow could not be finished: ${automationStudioFlowBootstrapStopSaid(input.judgement.stopped, input.judgement.lastIssueCodes)}.`;
   };
   const repairs = input.rounds - 1;
@@ -98,26 +100,28 @@ function noRouteSaid(noRoute: AutomationStudioFlowBootstrapNoRouteLeft): string 
   }
 }
 
-/** What the judge found, in the person's terms: what they asked, and what the test did. Its words are the judge's own, already screened. */
+/**
+ * What the judge found, in the person's terms: what they asked, and what the
+ * test did. Its words are the judge's own, screened plain and in whole
+ * sentences (`./judge-words.ts`, t276), each said as a sentence of its own,
+ * never a quote cut short after a dash.
+ */
 function judgedSaid(judge: AutomationStudioFlowBootstrapJudgedWrong, most: number): string {
   // Not judged to do it, for any reason (t244): an unsure judge, one that could
   // not answer, or a yes about another version or no test. Steps carried from
   // an earlier Flow and never run are one such reason, named when they are it.
   if (judge.verdict !== "no") {
     if (judge.untestedCarried?.length) return "the steps it carried from the earlier Flow were never run in this build, so it could not be judged to do what you asked.";
-    const why = automationStudioFlowBootstrapUnsettledForBuild(judge.findings[0] ?? "");
-    return `it was never judged to do what you asked${why ? ` -- "${bounded(why, most)}"` : ""}.`;
+    const why = automationStudioFlowBootstrapJudgeWordsSaid(automationStudioFlowBootstrapUnsettledForBuild(judge.findings[0] ?? ""), most);
+    return `it was never judged to do what you asked.${why ? ` The judge said: ${why}` : ""}`;
   }
+  const expected = automationStudioFlowBootstrapJudgeWordsSaid(judge.expected ?? "", most);
+  const observed = automationStudioFlowBootstrapJudgeWordsSaid(judge.observed ?? "", most);
+  const finding = !expected && !observed ? automationStudioFlowBootstrapJudgeWordsSaid(judge.findings[0] ?? "", most) : "";
   const told = [
-    judge.expected ? `what you asked: "${bounded(judge.expected, most)}"` : "",
-    judge.observed ? `what its test did: "${bounded(judge.observed, most)}"` : "",
-    !judge.expected && !judge.observed && judge.findings[0] ? `"${bounded(judge.findings[0], most)}"` : ""
+    expected ? `What you asked, as the judge read it: ${expected}` : "",
+    observed ? `What its test did: ${observed}` : "",
+    finding ? `The judge said: ${finding}` : ""
   ].filter(Boolean);
-  return `it was tested from its start and judged not to do what you asked${told.length ? ` -- ${told.join("; ")}` : ""}.`;
-}
-
-/** The judge's words, folded to one line, at most `most` characters. */
-function bounded(text: string, most: number): string {
-  const folded = text.replace(/[\u0000-\u001f\u007f]+/gu, " ").replace(/\s+/gu, " ").trim();
-  return folded.length > most ? `${folded.slice(0, most - 3).trimEnd()}...` : folded;
+  return ["it was tested from its start and judged not to do what you asked.", ...told].join(" ");
 }

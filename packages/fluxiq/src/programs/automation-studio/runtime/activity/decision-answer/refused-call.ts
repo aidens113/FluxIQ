@@ -14,12 +14,14 @@
 
 import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
 import { emitAutomationStudioActivity } from "../emit.ts";
+import { activityActionOf } from "../../../../../ui/index.ts";
 import { automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "../wording/index.ts";
 
 type Evidence = Parameters<AutomationStudioLlmEvidenceLoopInput["decide"]>[0]["evidence"];
 type Stalled = Parameters<NonNullable<AutomationStudioLlmEvidenceLoopInput["unusableDecisions"]>["stalled"]>[0];
 type Call = { callId: string; toolId: string; value?: unknown };
-type Held = { iteration: number; call: Call; described: AutomationStudioActivityCallWords | undefined };
+/** A decided call, the domain's words for it, and the address the work starts at, where the observer knows it (`../call-context.ts`). */
+type Held = { iteration: number; call: Call; described: AutomationStudioActivityCallWords | undefined; start?: string | undefined };
 
 /** The refusal entry's tool id and the loop's code (`../../llm/repeat-guard/feedback.ts`), read as plain strings so this module does not reach into the loop. */
 const REPEAT_CHECK = "core.repeat_check";
@@ -43,11 +45,19 @@ function refusedInTrace(trace: Stalled["trace"], iteration: number): string | un
   return row?.resultCode === REPEAT_REFUSED ? row.resultReason ?? "" : undefined;
 }
 
-/** The card of a call refused as a repeat: its own action and control, failed, with the loop's code and the earlier outcome on its record. */
+/**
+ * The card of a call refused as a repeat: its own action and control, failed,
+ * with the loop's code and the earlier outcome on its record. Its status line
+ * opens "Not done:" and gives Core's reason: "Trying again: typing ... — not
+ * done" read as a step under way (U-8, `run-muw60j7c-bb7c9a62`).
+ */
 function card(held: Held, outcome: string): void {
-  const words = automationStudioActivityToolCall(held.call, held.described);
+  const words = automationStudioActivityToolCall(held.call, held.described, { start: held.start });
   const text = [`Result: ${REPEAT_REFUSED}`, OUTCOME_SHAPED.test(outcome) ? `Reason: ${outcome}` : "", words.node ? `Node: ${words.node}` : ""].filter(Boolean).join(" · ");
-  emitAutomationStudioActivity({ phase: words.phase, label: `${words.label} — not done`, detail: { kind: words.kind, title: words.title, status: "failed", ref: held.call.toolId, text } });
+  const detail = { kind: words.kind, title: words.title, status: "failed" as const, ref: held.call.toolId, text };
+  const because = activityActionOf({ phase: words.phase, detail })?.refused?.because;
+  const action = `${words.title.charAt(0).toLowerCase()}${words.title.slice(1)}`;
+  emitAutomationStudioActivity({ phase: words.phase, label: `Not done: ${action}${because ? ` — ${because}` : ""}`, detail });
 }
 
 /**

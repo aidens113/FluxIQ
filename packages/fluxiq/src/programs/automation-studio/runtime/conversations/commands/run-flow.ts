@@ -17,7 +17,7 @@
 import type { AutomationStudioChangeProposalKind, AutomationStudioFlowAdaptation } from "../../../model/index.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
 import type { AutomationStudioConversationCommand, AutomationStudioConversationCommandPort } from "./command.ts";
-import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
+import { automationStudioConversationCallCause, automationStudioConversationCommandProgress, automationStudioConversationPlainCause } from "./progress.ts";
 
 const TITLE = "Run a Flow";
 
@@ -53,13 +53,18 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
     const runId = typeof answer.runtimeSession?.runId === "string" ? answer.runtimeSession.runId : undefined;
     if (runId) progress.carry({ runId });
     if (!response.ok) {
-      if (runId) progress.landed(`started run ${runId}`);
+      if (runId) progress.landed("started the run");
       return progress.failed(automationStudioConversationCallCause("the run", response));
     }
     const status = typeof answer.runtimeSession?.status === "string" ? answer.runtimeSession.status : "ended";
     const reason = typeof answer.terminalReason === "string" && answer.terminalReason && answer.terminalReason !== status ? `: ${answer.terminalReason.replace(/\.$/u, "")}` : "";
+    // A run that failed is said in plain words, with no run id and no code, as the thread keeps it (t276).
+    if (status === "failed" || status === "cancelled") {
+      const why = typeof answer.terminalReason === "string" && answer.terminalReason !== status ? automationStudioConversationPlainCause(answer.terminalReason) : "";
+      const ended = status === "failed" ? "failed" : "was cancelled";
+      return { ...progress.failed(`it ${ended}${why ? `: ${why}` : ""}`), summary: `The run ${ended}${why ? `: ${why}` : ""}.` };
+    }
     const summary = `The run${runId ? ` ${runId}` : ""} ended ${status}${reason}.`;
-    if (status === "failed" || status === "cancelled") return { ...progress.failed(`it ended ${status}${reason}`), summary };
     const adaptationIds = Array.isArray(answer.createdAdaptationIds) ? answer.createdAdaptationIds.filter((id): id is string => typeof id === "string" && id.length > 0) : [];
     const reauthored = answer.reauthored === "applied" || answer.reauthored === "not_applied" ? answer.reauthored : undefined;
     const learned = await runLearned({ port: context.port, projectId: context.projectId, flowId, adaptationIds, durableBehaviorChanged: answer.durableBehaviorChanged === true, reauthored });

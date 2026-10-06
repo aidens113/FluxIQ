@@ -149,7 +149,8 @@ describe("withAutomationStudioRunActivity", () => {
     await withAutomationStudioRunActivity({ projectId: "p1" }, async () => { bindAutomationStudioActivityRun("r4"); return { status: "failed", runId: "r4" }; }, {
       readRecord: async (session) => { read.push(session.runId); return record; }
     });
-    const sentence = "It returned 13 rows, but the check found they don't answer what you asked, and the fix used all its rounds before it could test a change.";
+    // U-10 (t276): the ending says the run saved its rows, after a lower-case opening (`./wording/run-ending.ts`).
+    const sentence = "it saved 13 rows, but the check found they don't answer what you asked, and the fix used all its rounds before it could test a change.";
     expect(read).toEqual(["r4"]);
     expect(seen.at(-1)).toMatchObject({ phase: "failed", final: true, label: `Run failed: ${sentence}`, detail: { kind: "step", title: "Run failed", status: "failed", text: sentence } });
   });
@@ -157,7 +158,7 @@ describe("withAutomationStudioRunActivity", () => {
   it("falls back to the session's own record, and to a bare \"Run failed\" when the record cannot be read", async () => {
     const metadata = { resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer", observation: "2 records stored" } };
     await withAutomationStudioRunActivity({ projectId: "p1" }, async () => { bindAutomationStudioActivityRun("r5"); return { status: "failed", metadata }; });
-    expect(seen.at(-1)).toMatchObject({ label: "Run failed: It returned 2 rows, but the check found they don't answer what you asked." });
+    expect(seen.at(-1)).toMatchObject({ label: "Run failed: it saved 2 rows, but the check found they don't answer what you asked." });
     await withAutomationStudioRunActivity({ projectId: "p1" }, async () => { bindAutomationStudioActivityRun("r6"); return { status: "failed" }; }, { readRecord: async () => { throw new Error("store closed"); } });
     expect(seen.at(-1)).toMatchObject({ label: "Run failed", detail: { title: "Run failed", status: "failed" } });
     expect(seen.at(-1)!.detail).not.toHaveProperty("text");
