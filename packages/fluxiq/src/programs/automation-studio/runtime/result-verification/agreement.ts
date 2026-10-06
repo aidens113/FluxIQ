@@ -57,9 +57,16 @@
 // earned" (run `run-murwd8le-79e735a8`, UI review D3). The codes beside them
 // are unchanged.
 //
+// **A yes Core did not take is a no here** (live run `run-muw60j7c-bb7c9a62`,
+// C-2). A yes that did not name each row a condition alone left out that names
+// the asked item reaches this file as `does_not_answer` (`verdict.ts`), so every
+// rule above reads it as a no: asked again, two of them refute, and beside a
+// yes that did name them the pair disagrees. Its words say what it was.
+//
 // Pure: no call is made here, and nothing is read but the two verdicts.
 
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
+import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "./repair-directive.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./verdict.ts";
 
@@ -132,9 +139,16 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
 function said(verification: AutomationStudioResultVerification): string {
   if (verification.basis === "model_unavailable") return "no answer, because the check did not come back usable";
   if (verification.basis === "model_silent") return "no answer, because the reply gave none";
+  if (verification.verdict === "does_not_answer" && passedOverRows(verification)) return "that it does what was asked, without saying why the rows a condition alone left out that name the item asked for are excluded";
   if (verification.verdict === "does_not_answer") return "that it does not do what was asked";
   if (verification.verdict === "answers") return "that it does what was asked";
   return "that it could not be told";
+}
+
+/** Whether a `does_not_answer` is a yes Core did not take (`verdict.ts`): it carries that finding and no reading of its own. */
+function passedOverRows(verification: AutomationStudioResultVerification): boolean {
+  return verification.repair?.judgement === undefined
+    && (verification.repair?.findings ?? []).some((finding) => finding.code === AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.leftOutNamingTheItem);
 }
 
 /**

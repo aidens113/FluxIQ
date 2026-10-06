@@ -4,12 +4,14 @@
 // asks the results verifier about it and reads the answer as a build's verdict
 // (`judge.ts`); what a replayed step changed (`change-lines.ts`); a repeated
 // step's passes (`pass-lines.ts`), the rows they are named by (`span-rows.ts`)
-// and the inputs the test ran on (`test-inputs.ts`).
+// and the inputs the test ran on (`test-inputs.ts`); what the Flow would store,
+// as the test's reads filled it (`stores.ts`).
 export * from "./change-lines.ts";
 export * from "./judge.ts";
 export * from "./observation.ts";
 export * from "./pass-lines.ts";
 export * from "./read-rows.ts";
 export * from "./span-rows.ts";
+export * from "./stores.ts";
 export * from "./summary.ts";
 export * from "./test-inputs.ts";

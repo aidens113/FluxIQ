@@ -28,12 +28,22 @@
 // **It says up front that the draft's steps have not run (t194-w70).** The
 // draft is seeded from the stored Flow (`../../llm/node-tools/draft-from-flow.ts`),
 // so none of its steps has run in this repair, and the Flow is tested -- and the
-// repair finished -- only by a run of the whole Flow from its start, which
-// needs each of them rerun live first (`../../flow-draft/full-run-required.ts`;
-// Core never runs a carried step itself). Live run murwcmx2's brief said none
+// repair finished -- only by a run of the whole Flow from its start
+// (`../../flow-draft/full-run-required.ts`). Live run murwcmx2's brief said none
 // of this, and its step 5 said to keep the steps that reach the page as they
 // are: the re-author reran only the read it fixed, both rounds stopped
 // untested, and the fix never ran from the Flow's start.
+//
+// **But it never orders a rerun of a step that is not changed (t274-c4).** An
+// unchanged carried step is run by the test as the Flow saved it, from its
+// scheduled candidate, and the Merge an optional step joins at is passed
+// through (`../../flow-draft/carried-step/`). Live run `run-muw60j7c-bb7c9a62`'s
+// brief said every step had to be rerun live and step 5 said "each is still
+// rerun live": the re-author reran the carried type step, which keeps its
+// stored element and no handle, and the domain refused every rerun of it
+// (`target_not_a_handle`) for five rounds until the budget ran out. So the
+// brief says the test runs unchanged steps as saved and a changed step with
+// its change, and that only a step the test names needs a live rerun.
 //
 // **Core's account of the read outranks the check's advice (t194-w78).** Live
 // run `run-musp39u8-9ac026ab` carried Core's account that the read had read
@@ -72,9 +82,9 @@ const ACTS_JUDGED_UNDONE: (typeof AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES)
 const READ_STEPS: readonly string[] = [
   "1. Read the request clause by clause. For every clause that narrows the answer -- which items to keep or drop (by a value, a range, a word or a pattern), how many pages or items to read, which order to put them in, or that an item may appear only once -- put it into the parameters of the step that reads the items, using the parameters that step's catalog entry lists (a condition list, a pagination setting, a limit). Leaving a clause out to be narrowed later is no longer right: this repair is the later.",
   "2. Where a column holds the wrong kind of value (an address where text was asked for, one field where another was meant), change that step's column mapping so the column holds what the request asked for.",
-  "3. Act on the check's findings and advice above. Where the advice names a fix, make it -- but where \"How the read went\" shows the step already pages, deduplicates or filters, change that setting or condition in place instead of adding a step for it. Where the check's advice contradicts \"How the read went\" (Core's account of what the step did) -- it asks for more pages of a read that already read every page there was, say, or a filter the step already applies -- Core's account stands and that part of the advice is not followed: changing that setting again reads the same items. A condition that rejected rows the request wanted is the one to correct.",
+  "3. Act on the check's findings and advice above. Where the advice names a fix, make it -- but where \"How the read went\" shows the step already pages, deduplicates or filters, change that setting or condition in place instead of adding a step for it. Where the check's advice contradicts \"How the read went\" (Core's account of what the step did) -- it asks for more pages of a read that already read every page there was, say, or a filter the step already applies -- Core's account stands and that part of the advice is not followed: changing that setting again reads the same items. A condition that rejected rows the request wanted is the one to correct. Where Core checked the rows the check names, the same holds: advice resting on a row Core lists as in the result although the check calls it left out is not followed -- that row was never left out -- while a condition Core lists as really leaving out a row the request wants is the one to correct.",
   "4. If the step has no parameter that can express a clause, keep the rest of the fix and say which clause in your completion summary rather than dropping it silently.",
-  "5. Change only what the findings require: the steps that reach the page keep their parameters unless the findings say they are wrong, but each is still rerun live (amend_draft rerun), in the Flow's order, so the whole Flow can be tested."
+  "5. Change only what the findings require: a step that reaches the page keeps its parameters unless the findings say they are wrong, and is left as it is -- the test runs it as the Flow saved it."
 ];
 
 /**
@@ -87,19 +97,22 @@ const ACT_STEPS: readonly string[] = [
   "2. Act on the check's findings and advice above: where an act is missing, add the step that does it; where a step did its act differently (another item, option, size or quantity, or once where twice was asked), correct that step's parameters.",
   "3. The Flow stores nothing and that is not what was judged wrong: do not add a step that reads or stores anything unless the request asks for something to be read back.",
   "4. If no step can do an act, keep the rest of the fix and say which act in your completion summary rather than dropping it silently.",
-  "5. Change only what the findings require: the steps that did their act keep their parameters, but each is still rerun live (amend_draft rerun), in the Flow's order, so the whole Flow can be tested."
+  "5. Change only what the findings require: a step that did its act keeps its parameters and is left as it is -- the test runs it as the Flow saved it."
 ];
 
 /**
- * Said before the findings: none of the draft's steps has run in this repair,
- * and how the Flow comes to be tested whole, in the words of the test's own
- * refusal (`../../flow-draft/full-run-required.ts`). A rerun of a carried step
- * is put back where its node started in the refuted run, where that run
- * recorded it (`../../llm/node-tools/step-place.ts`).
+ * Said before the findings: the draft is the Flow being repaired, how the Flow
+ * comes to be tested whole, and which steps -- only the ones the test names --
+ * need a live rerun first, in the words of the test's own refusal
+ * (`../../flow-draft/full-run-required.ts`). The brief is written before the
+ * draft is seeded, so it cannot name those steps by number; the test's refusal
+ * and the round's judgement do (`../../flow-bootstrap/unfinished-build/not-run.ts`).
+ * A rerun of a carried step is put back where its node started in the refuted
+ * run, where that run recorded it (`../../llm/node-tools/step-place.ts`).
  */
 const NOT_RUN_LINES: readonly string[] = [
-  "None of your draft's steps has run in this repair: they came from the Flow being repaired (not_run_in_this_build), and the Flow is tested -- and this repair finished -- only by a run of the whole Flow from its start.",
-  "So once your change is made, rerun each step of your draft live, in the Flow's order (amend_draft rerun), adding the consequences it would have to its input ([] when it leaves nothing lasting), so it takes its place as a step that ran; a rerun of a carried step is first put back where its node started in the run being repaired, where that run recorded it. A step you rerun with a change is run with that change.",
+  "Your draft is the Flow being repaired, as it was saved, and none of its steps has run in this repair. The Flow is tested -- and this repair finished -- only by a run of the whole Flow from its start: each step you leave unchanged is run as the Flow saved it, and each step you change is run with your change.",
+  "So change only the steps that need it, and make each change by running the step with it (amend_draft rerun, with the corrected argument); do not rerun a step you are not changing. If the test cannot run a step of the saved Flow as it stands, it names that step by number (not_run_in_this_build): rerun only those, adding the consequences each would have to its input ([] when it leaves nothing lasting); a rerun of a carried step is first put back where its node started in the run being repaired, where that run recorded it.",
   "Then complete: the whole Flow is tested from its start and judged."
 ];
 
@@ -163,6 +176,12 @@ function refutationLines(entry: AutomationStudioResultRepairHistoryEntry): strin
   // asked for a paging loop and a filter around a step that already had both.
   for (const read of entry.reads ?? []) lines.push(`- How the read went: ${automationStudioResultReadSentence(read, "full")}`);
   for (const line of entry.directive?.fix ?? []) lines.push(`- Core's fix: ${line}`);
+  // Core's check of the rows the check names, before the check's own reading it
+  // qualifies (`../../result-verification/request-rows/checked-rows.ts`). Live run
+  // `run-muw60j7c-bb7c9a62`: the check said the Plus condition alone left out
+  // B0J5MCMBAY and B07Z1RZGJG, both in the result; the re-author got that advice
+  // unmarked, followed it, and threw the answer away (t274-c25b).
+  for (const line of entry.directive?.checked ?? []) lines.push(`- Core checked the rows the check names: ${line}`);
   const judgement = entry.directive?.judgement;
   if (judgement?.expected) lines.push(`- The check read the request as asking for: ${judgement.expected}`);
   if (judgement?.observed) lines.push(`- The check saw instead: ${judgement.observed}`);

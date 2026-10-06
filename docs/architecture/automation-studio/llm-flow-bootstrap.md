@@ -698,7 +698,32 @@ the judge of the build's test as `buildTest.notes`
 also carries `readRows`: the labels of the rows it returned and, per condition,
 the rows that condition alone left out, screened by the same function as the
 runtime judge's `leftOutOnlyByThis` (`build-test/read-rows.ts`), so the judge
-can see an asked row was dropped (live run `run-muqk713g`, cause C3). A
+can see an asked row was dropped (live run `run-muqk713g`, cause C3). A test
+stores nothing itself, so `buildTest.stores` says what the Flow would store:
+each dataset its steps' record outputs write, in Flow order, with the write
+mode, the steps, the rows those steps' reads returned in the test, every label
+in storing order and the labels stored more than once (`build-test/stores.ts`);
+Core's observation of the test leads with that count ("30 records would be
+stored"), which is what the check's card says, and the judge is told to judge it
+as the result (t274, live run `run-muw60j7c-bb7c9a62`, C-3: told the test
+"stored nothing", both judges passed a Flow whose two reads appended 20
+unfiltered rows and 10 filtered ones to one dataset, 3 of them twice). Both
+kinds of judge are also shown `leftOutNamingTheItem`
+(`runtime/result-verification/request-rows/`): rows one condition alone left
+out, tested on the row's own label, whose label names first the request's phrase
+every kept row names first and another request phrase only after it -- by their
+own words the item asked for, sold with something the request leaves out. A
+`yes` that does not name each of them, by a distinguishing label prefix or an id,
+is not taken: Core reads it as `does_not_answer` with a finding
+(`result.left_out_naming_the_item`) and fix lines naming the condition and the
+rows (C-2: both judges said yes over three pairs "with Wireless Charging Case").
+Every `no` carries `repair.checked`, Core's lines on the rows the judgement
+names: a row it calls left out that is in the result, and the rows a condition
+it blames really left out alone. A build's judged-wrong round and the
+re-author's brief both carry those lines, and the brief's step 3 says advice
+resting on a row Core lists as in the result is not followed (C-5: the result
+judges said the Plus condition left out two rows that were stored, and the
+re-author followed that and discarded the exact answer it held). A
 changing step the test ran again carries `observed` too when its answer says
 what it changed or what the page answered (`changed`, `notice`), without the
 answer's `ok`, `said` and any code the outcome already gives; an answer with
@@ -1190,19 +1215,30 @@ actually run (causes C-F, UI-4).
 
 A round that could not be measured is never "not doable" (t194-w70). A
 re-author or extend build seeds its draft from a stored Flow. Each step it
-carries (`f<n>`) has nothing it ran with and nothing to put the target back with
-until it is rerun live, and Core never runs such a step itself, because the
-permission gate reads its missing consequence declaration as "none". A round
-whose Flow still holds one is therefore not tested at its end; its judgement
-names those steps (`notRunInThisBuild`), and neither `repeated_unchanged` nor
+carries (`f<n>`) has nothing it ran with. An unchanged carried step whose node
+declared its consequences and whose start page the repaired run captured holds a
+scheduled candidate, and the test runs it fresh as the Flow saved it; the Merge
+an optional step joins at is passed through (`runtime/flow-draft/carried-step/`,
+t274 C-4: live run `run-muw60j7c-bb7c9a62`'s re-author was told to rerun every
+carried step live, the domain refused each rerun of the stored type step,
+which names an element and no handle, as `target_not_a_handle`, and five
+rounds ended without a test). Any other carried step has nothing to put the
+target back with until it is rerun live, and Core never runs such a step
+itself, because the permission gate reads its missing consequence declaration
+as "none". A round whose Flow still holds one of those is not tested at its
+end; its judgement names those steps (`notRunInThisBuild`), and neither `repeated_unchanged` nor
 `no_progress` is concluded from it, since there is no measurement to compare.
 Live run `run-murwcmx2`'s re-author ended not doable with the advised fix in its
 draft, never run from the Flow's start. Such a round is repaired again under the
 same money and round bounds; its progress is fewer steps not run, or a changed
-Flow, and the announcement says which. The repair's resume names the steps and
-tells the model to rerun each live, in the Flow's order (`amend_draft rerun`),
-before completing, and the re-author's brief says the same up front (its step 5
-no longer says to keep steps as they are without running them). For a Flow that
+Flow, and the announcement says which. The repair's resume names those steps
+and tells the model to rerun only them live (`amend_draft rerun`) before
+completing. The re-author's brief says up front that the test runs each
+unchanged step as the Flow saved it and each changed step with its change, that
+a step is changed by rerunning it with the corrected argument, and that only a
+step the test names needs a live rerun; its step 5 says a step that needs no
+change is left as it is. A stall ending carries the candidates into the next
+round (`round-ending.ts`), so the same steps are not listed again. For a Flow that
 reads, the brief's step 3 also says that where the check's advice contradicts
 "How the read went" -- Core's own account of what the read did, such as more
 pages of a read that already read every page there was -- Core's account
@@ -1807,7 +1843,9 @@ stands; any edit after that run needs another. Three pieces hold it:
   completion is refused `llm_evidence_loop.full_run_required`
   (`runtime/flow-draft/full-run-required.ts`, `dry-run-gate.ts`), naming each
   step with its word, before any replay and before a judge is paid:
-  `not_run_in_this_build` (carried from an earlier Flow, always refused);
+  `not_run_in_this_build` (carried from an earlier Flow with no scheduled
+  candidate the test can run as saved, and not a carried Merge, which is passed
+  through: `runtime/flow-draft/carried-step/`);
   and, where the loop sets `fullRunRequired` (the build's every round,
   `runtime/llm/loop-configuration.ts`, set by `runtime/service.ts`),
   `cannot_run_again` (its run left nothing to run it again with, or the first
@@ -1815,15 +1853,18 @@ stands; any edit after that run needs another. Three pieces hold it:
   of whose steps ran in this build (refused naming no step), and
   `not_a_library_step` where the loop offers `core.run_node` (a step taken
   through another tool would send the Flow to the plan the reply wrote out,
-  which never ran). The way through is to rerun each step in the Flow's order
-  (`amend_draft` rerun, declaring its consequences) or run its library node in
-  its place. A loop that authors no Flow -- the recovery ladder's exploration --
+  which never ran). The way through is to rerun each step named, in the Flow's
+  order (`amend_draft` rerun, declaring its consequences), or run its library
+  node in its place. A loop that authors no Flow -- the recovery ladder's exploration --
   does not set `fullRunRequired` and still passes what it cannot run.
 
 **Re-authored and extended Flows.** A re-author or an improve is an extend
 build seeded from the stored Flow (`runtime/llm/node-tools/draft-from-flow.ts`):
-its carried steps `f<n>` have no `ranWith`, no `replay` and no consequence
-declaration, so each must be rerun live before the Flow can be tested whole.
+its carried steps `f<n>` have no `ranWith` and no `replay`. One whose node
+declared its consequences and whose start page the repaired run captured is
+run by the test as saved (its scheduled candidate) while unchanged; a carried
+Merge is passed through; any other must be rerun live before the Flow can be
+tested whole (t274 C-4).
 The rerun is a new step; it records `standsFor`, the id of the step whose place
 it took (`runtime/flow-draft/step.ts`,
 `runtime/llm/evidence-loop/rerun-replacement.ts`), so the written Flow keeps

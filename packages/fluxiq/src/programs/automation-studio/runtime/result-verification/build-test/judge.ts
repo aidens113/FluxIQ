@@ -20,6 +20,23 @@
 //   not performed (no model), or the deadline passed  -> not_judged
 //   a call the build's purse would not pay for        -> not_judged, saying the spending limit stopped it
 //
+// A yes the verdict did not take -- one that did not name each row a condition
+// alone left out that names the asked item (`../verdict.ts`, live run
+// `run-muw60j7c-bb7c9a62`) -- arrives as `does_not_answer` and is read like any
+// other: two of them are a no, carrying Core's finding code and, in `checked`,
+// Core's lines naming the rows; beside a yes that named them, unknown. The no
+// also carries, in `fix`, Core's fix lines for those rows -- the condition, the
+// item and each row -- because the build's repair round is told the rows only
+// through them and `checked` (`../../flow-bootstrap/unfinished-build/judgement.ts`;
+// until t274-c25b it kept the finding code alone). Core's other fix lines are a
+// finished run's: "add or fix the step that stores" answers a record set a test
+// never keeps, so they are not passed on, as their findings are not.
+//
+// A no's `records.stored` is what the Flow would store, as the test's reads
+// filled it (`summary.buildTest.stores`, `./stores.ts`), where the summary says:
+// a test stores nothing itself, so the run's own count was always 0 -- live run
+// `run-muw60j7c-bb7c9a62`'s Flow would have stored 30 rows (20 + 10, t274-c25b).
+//
 // and that the build pays: the calls' spend is returned, and a build with no
 // cost left is not asked at all. A build that runs under its purse
 // (`../../llm/build-purse/run.ts`, t234) has each judge call held there at its
@@ -36,7 +53,7 @@ import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowIntervention } from "../../../model/index.ts";
 import { automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmProvider } from "../../llm/index.ts";
-import { automationStudioResultVerificationFailsRun, type AutomationStudioRunResultSummary } from "../contracts.ts";
+import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRepairDirective, type AutomationStudioRunResultSummary } from "../contracts.ts";
 import { automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
 import {
@@ -89,7 +106,22 @@ export type AutomationStudioBuildTestVerdict =
     oneCallSaidYes?: true;
     spent: AutomationStudioBuildTestJudgeSpend;
   }
-  | { verdict: "no"; expected?: string; observed?: string; advice?: string; stillAchievable?: "yes" | "no" | "unknown"; findings: string[]; records: AutomationStudioBuildTestRecordCounts; spent: AutomationStudioBuildTestJudgeSpend };
+  | {
+    verdict: "no"; expected?: string; observed?: string; advice?: string; stillAchievable?: "yes" | "no" | "unknown"; findings: string[];
+    /**
+     * Core's fix lines for the rows a yes passed over, one per condition, naming
+     * the condition, the item and each row (`../repair-directive.ts`). Absent
+     * when there are none.
+     */
+    fix?: string[];
+    /**
+     * Core's lines on the rows the judgement names, or that a yes passed over
+     * (`AutomationStudioResultRepairDirective.checked`, `../request-rows/`):
+     * Core's words, never the judge's. Absent when there are none.
+     */
+    checked?: string[];
+    records: AutomationStudioBuildTestRecordCounts; spent: AutomationStudioBuildTestJudgeSpend;
+  };
 
 /** One question to the judge: the test's summary, and what the build has left to spend. */
 export type AutomationStudioBuildTestJudgeInput = {
@@ -179,8 +211,11 @@ export function automationStudioBuildTestJudge(deps: {
         // The build ends "not doable" only when the judge says this (t195-w37).
         ...(judgement?.stillAchievable ? { stillAchievable: judgement.stillAchievable } : {}),
         findings: (outcome.repair?.findings ?? []).map((finding) => finding.code).filter((code) => !NOT_A_FINDING_OF_A_TEST.has(code)),
+        // Which rows the judgement named are in the test's result or were left out, and which rows a yes passed over (live run `run-muw60j7c-bb7c9a62`).
+        ...(outcome.repair?.checked?.length ? { checked: [...outcome.repair.checked] } : {}),
+        ...rowFix(outcome.repair),
         // The counts the verdict was reached from, for the build to measure the next repair against (t240).
-        records: { stored: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired },
+        records: { stored: wouldStore(input.summary), refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired },
         spent
       };
     }
@@ -188,6 +223,22 @@ export function automationStudioBuildTestJudge(deps: {
     const reading = outcome.unconfirmedReading;
     return { verdict: "unknown", why: outcome.reason, ...carried, ...(reading ? { unconfirmedReading: { ...reading } } : {}), ...(outcome.basis === "model_disagreed" ? { oneCallSaidYes: true as const } : {}), spent };
   };
+}
+
+/**
+ * Core's fix lines for the rows a yes passed over: the directive puts one per
+ * `result.left_out_naming_the_item` finding first, in the findings' order
+ * (`automationStudioResultRepairDirective`). Nothing when there are none.
+ */
+function rowFix(repair: AutomationStudioResultRepairDirective | undefined): { fix?: string[] } {
+  const rows = (repair?.findings ?? []).filter((finding) => finding.code === AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.leftOutNamingTheItem).length;
+  return rows && repair ? { fix: repair.fix.slice(0, rows) } : {};
+}
+
+/** The rows the Flow would store, as the test's reads filled it; the summary's own count where it does not say. */
+function wouldStore(summary: AutomationStudioRunResultSummary): number {
+  const stores = summary.buildTest?.stores;
+  return stores ? stores.reduce((total, store) => total + store.rows, 0) : summary.totalRecordCount;
 }
 
 /** Why a judge the purse refused did not judge, in the purse's figures. */

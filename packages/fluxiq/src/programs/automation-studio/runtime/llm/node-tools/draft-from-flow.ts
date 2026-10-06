@@ -107,19 +107,14 @@ const MERGE_NODE_ID = "builtin.control.merge";
  */
 const ROUTING_NODES = new Set([MERGE_NODE_ID, "builtin.control.for-each"]);
 
-/** Where a seeded step's own name starts, kept clear of the `d<n>` the loop mints. */
-const SEED_STEP_ID_PREFIX = "f";
-const SEED_STEP_ID = new RegExp(`^${SEED_STEP_ID_PREFIX}[1-9][0-9]*$`, "u");
-
 /**
- * Whether a draft step was carried from an earlier Flow (seeded here as
- * `f<n>`) rather than run in this build: a re-authored Flow is judged on its
- * own test, never on what the earlier Flow's steps claimed
- * (`result-verification/build-test/`).
+ * Where a seeded step's own name starts, kept clear of the `d<n>` the loop
+ * mints. A step so named is read as carried by the draft's own test
+ * (`../../flow-draft/carried-step/`), the one every reader of a carried step
+ * asks (t274-c4); it is re-exported here for those that ask it of this module.
  */
-export function automationStudioFlowDraftStepCarried(step: { id?: string | undefined }): boolean {
-  return typeof step.id === "string" && SEED_STEP_ID.test(step.id);
-}
+const SEED_STEP_ID_PREFIX = "f";
+export { automationStudioFlowDraftStepCarried } from "../../flow-draft/carried-step/index.ts";
 
 /** Where a run-node call keeps the node it names and that node's own parameters. */
 const NODE_KEY = "node";
@@ -300,9 +295,9 @@ const ROUTE_SIGNATURES_KEY = "routeSignatures";
  * `metadata.routeSignatures`: the pages it ran between and what it did, as the
  * domain signed them, which is what lets a run route by state to that node. A
  * re-seed that dropped them left a re-authored or extended Flow routing by the
- * ladder alone. Since t244 every carried step runs again in the build, and the
- * step that runs it records fresh ones; these are what stands in where it could
- * not. Carried unread: only `route-state/` knows what a signature holds, and it
+ * ladder alone. A step rerun in the build records fresh ones; an unchanged
+ * carried step is run by the test as saved (t274-c4) and records none, so these
+ * are what stands in for it. Carried unread: only `route-state/` knows what a signature holds, and it
  * reads them where the Flow is written. Anything but a non-empty object is not
  * signatures, and nothing is carried.
  */
