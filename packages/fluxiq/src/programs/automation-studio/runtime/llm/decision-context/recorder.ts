@@ -13,6 +13,8 @@
 
 import { automationStudioLlmDecisionContextClosedDetail } from "./closed-detail.ts";
 import type {
+  AutomationStudioLlmDecisionContextAmendmentRefusal,
+  AutomationStudioLlmDecisionContextChange,
   AutomationStudioLlmDecisionContextDecision,
   AutomationStudioLlmDecisionContextRecord,
   AutomationStudioLlmDecisionContextRepeat
@@ -62,6 +64,31 @@ export class AutomationStudioLlmDecisionContextRecorder {
   repeats(signature: string): AutomationStudioLlmDecisionContextRepeat {
     const iterations = this.#seen.get(signature) ?? [];
     return { times: iterations.length, iterations: [...iterations] };
+  }
+
+  /**
+   * Completes the amendment row recorded at `iteration` once its rerun has run
+   * (`../decision-handlers/amendment.ts`): the amendments held for the rerun and
+   * refused after it join its refusals, and what the decision came to replaces
+   * the count and the change recorded before the rerun ran. The decision is the
+   * same decision, so its signature and its repeats are untouched. Nothing
+   * happens when no amendment row was recorded at that iteration.
+   */
+  settleAmendment(iteration: number, settled: {
+    refusals: readonly AutomationStudioLlmDecisionContextAmendmentRefusal[];
+    applied: number;
+    changed: AutomationStudioLlmDecisionContextChange;
+  }): void {
+    for (let index = this.#records.length - 1; index >= 0; index -= 1) {
+      const record = this.#records[index]!;
+      if (record.iteration < iteration) return;
+      if (record.iteration !== iteration || record.decision.kind !== "amendment") continue;
+      this.#records[index] = {
+        ...record,
+        decision: { ...record.decision, refusals: [...record.decision.refusals, ...settled.refusals], applied: settled.applied, changed: settled.changed }
+      };
+      return;
+    }
   }
 
   /** Every row, oldest first. */

@@ -9,7 +9,7 @@
 // endless loop, and never silent.
 
 import { automationStudioLlmDecisionContextSignature, automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
-import { automationStudioLlmEvidenceLoopFailure as failure, type AutomationStudioLlmEvidenceLoopDecision } from "../evidence-loop/index.ts";
+import { automationStudioLlmEvidenceLoopFailure as failure, type AutomationStudioLlmEvidenceLoopDecision, type AutomationStudioLlmEvidenceLoopResult } from "../evidence-loop/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW,
   AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID,
@@ -41,6 +41,29 @@ export function automationStudioLlmEvidenceHandleRefusedRepeat(
   automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID);
   evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, value: note });
   return { kind: "continue" };
+}
+
+/**
+ * A rerun that ran and changed nothing: it put back a step identical to the one
+ * it replaced, with the same result, so the Flow is as it was and its new step
+ * id is not the draft advancing (`./amendment.ts`, live run
+ * `run-muwaobm2-882cadd9`, where each such rerun read as progress). It is a step
+ * without progress and one more decision in a row that changed nothing, in the
+ * same run as the identical decision then refused unrun. Answers the loop's
+ * ending when the round stops here, or nothing while it goes on.
+ */
+export function automationStudioLlmEvidenceRerunChangedNothing(
+  context: AutomationStudioLlmEvidenceDecisionHandlerContext,
+  iteration: number
+): AutomationStudioLlmEvidenceLoopResult | undefined {
+  const stop = automationStudioLlmEvidenceRepeatStop(context, context.repeats.refusedAgain(iteration));
+  if (stop?.kind === "stalled") {
+    if (context.input.propagateDecisionErrors) throw stop.error;
+    return failure(context.draftSteps, "llm_evidence_loop.repeat_without_progress", context.trace, context.accounting);
+  }
+  if (stop) return stop.result;
+  context.noProgress.redirect(iteration);
+  return undefined;
 }
 
 /**

@@ -83,4 +83,22 @@ describe("decision history entry", () => {
       [30, "completion", null, null, null, "accepted", null, { dryRun: "clean" }]
     ]);
   });
+
+  // Live run `run-muwaobm2-882cadd9`, 18-21: the rerun's held act part refused after it ran, a rerun that changed nothing,
+  // and the same decision then refused unrun.
+  it("shows whether an amendment changed the draft, and one refused before it ran", () => {
+    const recorder = recorded([
+      [18, { kind: "amendment", signature: "A", applied: 1, refusals: [{ step: 14, reason: "act_already_named", repeated: false }], withdrewChanged: [], rerun: 14, changed: "yes" }],
+      [19, { kind: "amendment", signature: "A", applied: 0, refusals: [{ step: 14, reason: "act_already_named", repeated: true }], withdrewChanged: [], rerun: 14, changed: "no" }],
+      [20, { kind: "amendment", signature: "B", applied: 0, refusals: [], withdrewChanged: [], rerun: 14, changed: "no" }],
+      [21, { kind: "amendment", signature: "B", applied: 0, refusals: [], withdrewChanged: [], changed: "no", notRunAs: "llm_evidence_loop.repeat_refused" }]
+    ]);
+    const value = automationStudioLlmDecisionContextEntry({ records: recorder.records() })!.value as Record<string, unknown>;
+    expect(value.rows).toEqual([
+      [18, "amendment", null, null, null, "act_already_named", "yes", { applied: 1, refused: [[14, "act_already_named", false]], rerun: 14 }],
+      [19, "amendment", null, null, null, "act_already_named", "no", { applied: 0, refused: [[14, "act_already_named", true]], rerun: 14 }, 18],
+      [20, "amendment", null, null, null, "unchanged", "no", { applied: 0, rerun: 14 }],
+      [21, "amendment", null, null, null, "llm_evidence_loop.repeat_refused", "no", { applied: 0 }, 20]
+    ]);
+  });
 });
