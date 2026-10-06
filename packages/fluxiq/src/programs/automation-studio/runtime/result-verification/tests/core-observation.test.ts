@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioResultCoreObservation } from "../core-observation.ts";
+import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "../core-observation.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
 
 // The failures Core catches without a model, and the mutation each one is
@@ -139,5 +139,32 @@ describe("automationStudioResultCoreObservation", () => {
     }));
     const observation = automationStudioResultCoreObservation(summary({ totalRecordCount: 0, totalRefusedCount: 12, recordSetCount: 4, recordSets: wide, withheld: true }));
     expect((observation?.failure?.expected ?? "").length).toBeLessThanOrEqual(1_024);
+  });
+});
+
+// Live run `run-muw60j7c-bb7c9a62`, step 0039: the check advised fixing the Plus
+// condition for "excluding" B0J5MCMBAY, which is in the stored result. The
+// failure record is what the recovery ladder's repair reads (`../../recovery/context.ts`
+// sends its `expected`), so Core's check rides there too, ahead of the advice
+// it qualifies, and is cut last of the two when the record's bound bites
+// (t274-c25b).
+describe("the failure record of a refutation whose rows Core checked", () => {
+  const checked = "Aurelle Echo Wireless Earbuds (B0J5MCMBAY) is in the result, although the check calls it left out: the check misread which rows were left out; advice resting on that reading is not supported.";
+  const repair = {
+    schemaVersion: "automation-studio.result-repair-directive.v1" as const,
+    findings: [], fix: ["Compare the request's own terms against the stored columns."],
+    judgement: { advice: "Fix the plus condition, which alone excluded B0J5MCMBAY." },
+    checked: [checked]
+  };
+
+  it("says Core's check of the rows in expected, before the check's own advice", () => {
+    const expected = automationStudioResultFailureRecord({ verdict: "does_not_answer", code: "c", observation: "30 rows.", repair }).expected ?? "";
+    expect(expected).toContain(`Core checked the rows the check names: ${checked}`);
+    expect(expected.indexOf("Core checked the rows")).toBeLessThan(expected.indexOf("The check's own advice"));
+  });
+
+  it("says nothing of a check when there is none", () => {
+    const { checked: _none, ...unchecked } = repair;
+    expect(automationStudioResultFailureRecord({ verdict: "does_not_answer", code: "c", observation: "30 rows.", repair: unchecked }).expected).not.toContain("Core checked");
   });
 });

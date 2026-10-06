@@ -212,6 +212,23 @@ export type AutomationStudioResultReadAccount = {
 };
 
 /**
+ * One condition's left-out rows that name the asked item (`AutomationStudioRunResultSummary.leftOutNamingTheItem`).
+ *
+ * `step` is the build test's step number, `nodeId` a finished run's read node;
+ * `condition` the condition as the read names it; `item` the request's phrase
+ * every kept row names first; `also` the request's phrases each row names only
+ * after it; `rows` the rows, by label, as the read gave them.
+ */
+export type AutomationStudioResultLeftOutNamingTheItem = {
+  step?: number;
+  nodeId?: string;
+  condition: string;
+  item: string;
+  also: string[];
+  rows: string[];
+};
+
+/**
  * The bounded account of what a run produced, and of the shape of the Flow that
  * produced it.
  *
@@ -246,6 +263,15 @@ export type AutomationStudioRunResultSummary = {
    * judge is shown, and only when there are some. Information, never a verdict.
    */
   instructionColumnsUnread?: string;
+  /**
+   * Rows a read left out by one condition alone, tested on the row's own label,
+   * whose label names first the request's phrase every kept row names first and
+   * another of the request's phrases only after it (`request-rows/`): by their
+   * own words the item asked for, sold with or including something the request
+   * leaves out. Set only on the summary the judge is shown, and only when there
+   * are some. A `yes` that does not account for each is not a `yes` (`verdict.ts`).
+   */
+  leftOutNamingTheItem?: AutomationStudioResultLeftOutNamingTheItem[];
   /**
    * True when a step's parameters were left out for want of room rather than
    * because the step had none.
@@ -383,6 +409,39 @@ export type AutomationStudioBuildTestAccount = {
   notes?: AutomationStudioBuildTestNote[];
   /** The Flow's inputs at the values the test ran on, once for the whole test. */
   inputs?: AutomationStudioBuildTestInput[];
+  /**
+   * What the Flow would store, as this test's reads filled it: one entry per
+   * dataset it writes, in Flow order (`build-test/stores.ts`). The answer the
+   * Flow gives, though the test itself stored nothing. Empty when no step of
+   * the Flow stores; absent when the test did not run or the Flow's nodes were
+   * not known.
+   */
+  stores?: AutomationStudioBuildTestStore[];
+};
+
+/**
+ * One dataset the Flow a build proposes would write, as its test's reads
+ * filled it (t274-c3). Live run `run-muw60j7c-bb7c9a62` (C-3): two reads
+ * appended 20 unfiltered rows and then 10 filtered ones into one dataset, 3 of
+ * them twice, and both judges of the test, told it stored nothing, said yes.
+ */
+export type AutomationStudioBuildTestStore = {
+  /** The dataset's id, as the Flow's record output names it. */
+  dataset: string;
+  /**
+   * How its steps write it: `append` adds to what earlier steps stored,
+   * `replace` clears it first. One word when every step that writes it says
+   * the same, else each step's, in order ("append at step 6, replace at step 7").
+   */
+  writeMode: string;
+  /** The steps that write it, by their number in `steps`, in Flow order. */
+  steps: number[];
+  /** The rows it would hold: every row those steps' reads returned in this test, rows a read did not list included, less any a later `replace` clears. */
+  rows: number;
+  /** Those rows' labels, in the order they would be stored, screened as a read's `readRows` are; a row a read did not list has none. */
+  labels: string[];
+  /** The labels that occur more than once in `labels`, each once, in the order first seen. Absent when none does. */
+  repeated?: string[];
 };
 
 /**
@@ -468,6 +527,14 @@ export type AutomationStudioResultRepairDirective = {
    * the judgement was terse.
    */
   judgement?: { expected?: string; observed?: string; advice?: string; /** Whether what was asked can still be had: a build ends "not doable" only on `no` (t195-w37). */ stillAchievable?: "yes" | "no" | "unknown" };
+  /**
+   * Core's check of the rows the judgement names against what the run holds,
+   * one line each in Core's words (`request-rows/`): a row it calls left out
+   * that is in the result, a row it calls wrongly kept that is not, the rows a
+   * condition it blames really left out. What the repair weighs the advice by:
+   * advice resting on a row the result contradicts is not followed.
+   */
+  checked?: string[];
   /** True when something the judgement said was dropped by a screen rather than carried. */
   withheld?: boolean;
 };

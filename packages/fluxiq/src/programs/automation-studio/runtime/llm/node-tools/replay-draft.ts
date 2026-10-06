@@ -30,6 +30,15 @@
 // sees it). Live run `run-murzln6g-11debe1d` showed one such step to the judge
 // as `failed` and in the chat as "Didn't work".
 //
+// **A carried Merge is passed through (t274-c4).** A re-authored Flow's seed
+// keeps the Merge its optional step joins at as a step
+// (`./draft-from-flow.ts`), and that step acts on nothing, has no output to run
+// and no start page, so nothing can be sent for it. It used to fail here as "a
+// step with nothing to run it with", and live run `run-muw60j7c-bb7c9a62`'s
+// re-author was told to rerun it. It is skipped, with no call and no outcome:
+// the steps on either side of it are what the test runs
+// (`../../flow-draft/carried-step/`).
+//
 // **A step that comes back unreadable is a failed step**, never a skipped one.
 // A host that does not implement the replay answers something this cannot read,
 // and the honest reading of that is "this step was not demonstrably run again",
@@ -71,6 +80,7 @@ import {
   type AutomationStudioFlowDraftReplayOutcome,
   type AutomationStudioFlowDraftStep
 } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftStepCarriedJoin } from "../../flow-draft/carried-step/index.ts";
 import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import {
@@ -166,10 +176,12 @@ export function automationStudioFlowDraftReplayClearedCode(value: JsonObject): s
 /** Run the draft again, from the state its first step found. */
 export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlowDraftReplayInput): Promise<AutomationStudioFlowDraftReplayResult> {
   const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
-  const from = automationStudioFlowDraftReplayFrom(input.steps);
+  // A carried join is never sent (see the header), so the reset is the first step's that is.
+  const sent = proposed.filter((step) => !automationStudioFlowDraftStepCarriedJoin(step));
+  const from = automationStudioFlowDraftReplayFrom(sent);
   const outcomes: AutomationStudioFlowDraftReplayOutcome[] = [];
   const observations: AutomationStudioFlowDraftReplayResult["observations"] = [];
-  const first = proposed[0];
+  const first = sent[0];
   if (!from || !first) return { verdict: verdictOf(input, "failed", outcomes), observations };
   const resetCallId = `dryrun.${input.attempt}.reset`;
   const reset = await call(input, resetCallId, automationStudioNodeReplayToolId(first), automationStudioNodeReplayResetCall(from));
@@ -255,7 +267,9 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
   let stoppedAt: number | undefined;
   for (let index = 0; index < proposed.length && stoppedAt === undefined; index += 1) {
     const step = proposed[index]!;
-    const plan = input.nodeOf ? automationStudioFlowDraftReplaySpanPlan({ steps: input.steps, run: proposed, index, nodeOf: input.nodeOf, asked: (each) => asked.get(each) }) : undefined;
+    // A carried join is where two ways meet, not a step: nothing is sent and it has no outcome (see the header).
+    if (automationStudioFlowDraftStepCarriedJoin(step)) continue;
+    const plan =input.nodeOf ? automationStudioFlowDraftReplaySpanPlan({ steps: input.steps, run: proposed, index, nodeOf: input.nodeOf, asked: (each) => asked.get(each) }) : undefined;
     if (plan && input.nodeOf) {
       // A pass is never excused as a step the Flow does not always run: only a withheld effect excuses it.
       const passExcusable: AutomationStudioFlowDraftExcusedReason | undefined = withheldBy === undefined ? undefined : "withheld";
@@ -325,7 +339,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
         evidence: ran.result.evidence
       });
     }
-    if (withheldBy === undefined && automationStudioFlowDraftReplayOutcomeVerified(outcome) && automationStudioFlowDraftStepWithholdsLater(step, proposed[index + 1])) {
+    if (withheldBy === undefined && automationStudioFlowDraftReplayOutcomeVerified(outcome) && automationStudioFlowDraftStepWithholdsLater(step, proposed.slice(index + 1).find((next) => !automationStudioFlowDraftStepCarriedJoin(next)))) {
       withheldBy = step.position;
     }
     if (status === "replayed") continue;

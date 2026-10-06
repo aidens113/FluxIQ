@@ -64,6 +64,7 @@ import { automationStudioResultVerificationAgreement, automationStudioResultVeri
 import { automationStudioResultCheckActivity } from "./check-activity.ts";
 import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
+import { automationStudioResultSummaryWithLeftOutNamingTheItem } from "./request-rows/index.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 
@@ -185,6 +186,16 @@ async function askOnce(
   provider: AutomationStudioLlmProvider,
   check: 1 | 2
 ): Promise<{ verification: ReturnType<typeof automationStudioResultVerdict>; intervention: AutomationStudioFlowIntervention }> {
+  // With the instruction's named columns no stored column reads, said once
+  // (`read-account/unread-columns.ts`): information for the judge, not a verdict.
+  // And the rows a condition alone left out that name the asked item
+  // (`request-rows/`, live run `run-muw60j7c-bb7c9a62`, C-2), on both kinds of
+  // judge's copy: the verdict is read with the same rows, so a yes is held to
+  // the rows the judge was shown.
+  const judged = automationStudioResultSummaryWithLeftOutNamingTheItem(
+    automationStudioResultSummaryWithPagingWords(automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions)),
+    request.instructions
+  );
   const result = await runAutomationStudioLlmHarness({
     taskKind: "loop_verification",
     projectId: request.projectId,
@@ -193,9 +204,7 @@ async function askOnce(
     ...(request.subflowId ? { subflowId: request.subflowId } : {}),
     instructions: [...request.instructions],
     ...(request.runDetail ? { runDetail: request.runDetail } : {}),
-    // With the instruction's named columns no stored column reads, said once
-    // (`read-account/unread-columns.ts`): information for the judge, not a verdict.
-    resultSummary: automationStudioResultSummaryWithPagingWords(automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions)),
+    resultSummary: judged,
     ...(request.deniedEvidenceKeys ? { deniedEvidenceKeys: request.deniedEvidenceKeys } : {}),
     ...(request.policy ? { policy: request.policy } : {}),
     provider,
@@ -210,7 +219,9 @@ async function askOnce(
   });
   const response = result.ok && result.response?.kind === "diagnosis" ? result.response : undefined;
   const verification = automationStudioResultVerdict({
-    summary: request.summary,
+    // The run's own summary, with the flagged rows the judge was shown: the
+    // judge's paging words are not Core's observation.
+    summary: judged.leftOutNamingTheItem ? { ...request.summary, leftOutNamingTheItem: judged.leftOutNamingTheItem } : request.summary,
     ...(response?.diagnosis ? { diagnosis: response.diagnosis } : {}),
     // The reply's own prose, carried only as the judgement's advice where the
     // diagnosis channel's `changed` gave none. The verdict reader screens and

@@ -1,7 +1,8 @@
 // The words of the result check's card, before the chat's own screen bounds them.
 //
 // Built from what Core knows for certain -- how many rows came back, read off
-// Core's own observation, and Core's sentence for the verdict -- and, on a
+// Core's own observation (for a build's test, which stores nothing, how many
+// the Flow would store), and Core's sentence for the verdict -- and, on a
 // refusal, the check's reading of the request and of the result. The check is
 // a model, and in live run musp39u8 (t194-w81, U6) its reading was written in
 // the judge's vocabulary: "endView shows page 5 ...; reads.stop is
@@ -28,10 +29,18 @@ const INTERNAL = [DOTTED, CAMEL, SNAKE, HEX, CODE];
 
 /** Core's own count at the head of its observation: "13 records stored", "0 stored", "… of 13 stored". */
 const STORED = /(\d+)(?: records?)? stored/u;
+/**
+ * The same count for a build's test, which stores nothing: what the Flow would
+ * store, "30 records would be stored" (`build-test/stored-words.ts`). Live run
+ * `run-muw60j7c-bb7c9a62` (C-3): the card read "no rows came back" over a Flow
+ * that would store 30 rows, 3 of them twice.
+ */
+const WOULD_STORE = /(\d+)(?: records?)? would be stored/u;
 
 /**
- * The card's text for a performed check: the rows that came back (where Core's
- * observation counts them), Core's verdict sentence and, when the check
+ * The card's text for a performed check: the rows that came back, or for a
+ * build's test would be stored (where Core's observation counts them), Core's
+ * verdict sentence and, when the check
  * refused the result, what it looked for and what it found, in its sentences
  * that name nothing internal. Never its advice.
  */
@@ -48,6 +57,11 @@ export function automationStudioResultCheckWords(outcome: AutomationStudioResult
 }
 
 function rowsWords(observation: string): string[] {
+  const tested = WOULD_STORE.exec(observation);
+  if (tested) {
+    const count = Number(tested[1]);
+    return [count === 0 ? "No rows would be stored." : `${count} ${count === 1 ? "row" : "rows"} would be stored.`];
+  }
   const match = STORED.exec(observation);
   if (!match) return [];
   const count = Number(match[1]);

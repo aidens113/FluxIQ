@@ -87,6 +87,7 @@
 // whatever it declared (t174-w83).
 
 import type { JsonObject } from "../../../../core/index.ts";
+import { automationStudioFlowDraftStepCarriedJoin } from "./carried-step/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "./scheduled-candidate/index.ts";
 import { automationStudioFlowDraftExcusedWords, type AutomationStudioFlowDraftExcusedReason } from "./excused.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
@@ -209,17 +210,24 @@ export type AutomationStudioFlowDraftDryRun = {
  * is a caller that does not replay -- an older host, a domain whose actions are
  * not repeatable -- and the gate simply does not apply to it, rather than
  * refusing every build it makes.
+ *
+ * A carried routing join is never sent (`./carried-step/`), so it needs
+ * neither: asked here, once, rather than by each caller (t274-c4b). Live run
+ * `run-muw60j7c-bb7c9a62`'s re-author held a seeded Merge; the gate and the
+ * judgement filtered it before asking, but the build's "Testing the Flow so
+ * far" announcement (`../flow-bootstrap/unfinished-build/phases.ts`) asked with
+ * it in, was told no, and the test then ran unannounced.
  */
 export function automationStudioFlowDraftReplayable(steps: readonly AutomationStudioFlowDraftStep[]): boolean {
-  const proposed = steps.filter(automationStudioFlowDraftStepIsProposed);
+  const proposed = steps.filter((step) => automationStudioFlowDraftStepIsProposed(step) && !automationStudioFlowDraftStepCarriedJoin(step));
   if (!proposed.length) return false;
   if (!proposed.every((step) => step.scheduledCandidate !== undefined ? automationStudioFlowDraftScheduledCandidateCall(step) !== undefined : step.ranWith !== undefined && step.replay !== undefined)) return false;
   return automationStudioFlowDraftReplayFrom(steps) !== undefined;
 }
 
-/** Where a replay of this draft starts: what the first proposed step found. */
+/** Where a replay of this draft starts: what the first proposed step that is sent found (a carried join is not sent). */
 export function automationStudioFlowDraftReplayFrom(steps: readonly AutomationStudioFlowDraftStep[]): JsonObject | undefined {
-  const first = steps.find(automationStudioFlowDraftStepIsProposed);
+  const first = steps.find((step) => automationStudioFlowDraftStepIsProposed(step) && !automationStudioFlowDraftStepCarriedJoin(step));
   return first?.scheduledCandidate !== undefined ? automationStudioFlowDraftScheduledCandidateCall(first)?.from : first?.replay?.from;
 }
 

@@ -50,9 +50,20 @@
 // (`../../flow-draft/full-run-required.ts`), to rerun each live in the Flow's
 // order before completing.
 //
+// **Core's lines on the rows are said to outrank the judge's advice
+// (t274-c25b).** A `no` Core reached over rows a yes passed over carries Core's
+// fix lines naming them (`judge.fix`) and its check of the rows the judge named
+// against what the test read (`judge.checked`). Live run
+// `run-muw60j7c-bb7c9a62`: a judge's advice rested on rows it called left out
+// that were in the result, and a repair that got it unmarked followed it. So the
+// repair is told what the two are, and that advice resting on a row Core lists
+// as in the result is not followed.
+//
 // Codes, counts and Core's own words, plus the judge's words, which the judge
-// screened before they reached the judgement: nothing here is page content, so
-// the entry rides where every other Core entry does.
+// screened before they reached the judgement: nothing here is page content
+// beyond the row labels the test's reads already screened for the judge
+// (`../../result-verification/build-test/read-rows.ts`), so the entry rides
+// where every other Core entry does.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepIsProposable } from "../../flow-draft/index.ts";
@@ -158,6 +169,16 @@ const UNJUDGED_INSTRUCTION = "The Flow you said was ready was not judged to do w
 const UNCONFIRMED_READING = "judgement.judge.unconfirmedReading is one judge call's reading that the second check did not confirm: what it took the instruction to ask (expected), what it saw the test do (observed) and what it advised changing (advice). "
   + "It is not a verdict: check it against the rows and the test, act on its advice where the rows and the test bear it out, and leave alone what they do not.";
 
+// Said after a judged instruction when the judge's account carries Core's own
+// lines on the rows (`judge.fix`, `judge.checked`; t274-c25b).
+const CORE_ON_ROWS = "judgement.judge.fix is Core's own fix, naming the condition and each row it left out that the judge passed over, and judgement.judge.checked is Core's check of the rows the judge names against what the test read. "
+  + "Where the judge's advice rests on a row Core lists as in the result although the judge calls it left out, that advice is not followed; a condition Core lists as really leaving out a row the instruction wants is the one to correct.";
+
+/** Whether the judge's account carries Core's own lines on the rows. */
+function hasCoreOnRows(judge: JsonObject): boolean {
+  return [judge.fix, judge.checked].some((lines) => Array.isArray(lines) && lines.length > 0);
+}
+
 /** Whether the judge's account carries an unknown's unconfirmed reading. */
 function hasUnconfirmedReading(judge: JsonObject): boolean {
   const reading = judge.unconfirmedReading;
@@ -178,7 +199,8 @@ function judgedInstruction(judge: JsonObject, notRun: readonly number[]): string
   const named = positionsOf(judge.untestedCarried);
   // The judge's account names the carried steps its test did not run; where it names none, the judgement's own reading of the Flow does.
   const carried = named.length ? named : notRun;
-  const lead = judge.verdict === "no" ? JUDGED_INSTRUCTION : hasUnconfirmedReading(judge) ? `${UNJUDGED_INSTRUCTION} ${UNCONFIRMED_READING}` : UNJUDGED_INSTRUCTION;
+  const judged = hasCoreOnRows(judge) ? `${JUDGED_INSTRUCTION} ${CORE_ON_ROWS}` : JUDGED_INSTRUCTION;
+  const lead = judge.verdict === "no" ? judged : hasUnconfirmedReading(judge) ? `${UNJUDGED_INSTRUCTION} ${UNCONFIRMED_READING}` : UNJUDGED_INSTRUCTION;
   if (!carried.length) return lead;
   return `${lead} Steps ${carried.join(", ")} were carried from the earlier Flow and not run in this build: rerun them live (amend_draft rerun), so the test runs them.`;
 }
@@ -206,7 +228,8 @@ function instructionFor(resume: AutomationStudioLlmEvidenceLoopResume): string {
   // (t195-w29, `../../tests/deepseek-bootstrap/tests/answerability.test.ts`).
   if (nothingInFlow(resume)) {
     if (!judge) return EXPLORE_AGAIN_INSTRUCTION;
-    return hasUnconfirmedReading(judge) ? `${EXPLORE_AGAIN_INSTRUCTION} ${EXPLORE_AGAIN_JUDGED} ${UNCONFIRMED_READING}` : `${EXPLORE_AGAIN_INSTRUCTION} ${EXPLORE_AGAIN_JUDGED}`;
+    if (hasUnconfirmedReading(judge)) return `${EXPLORE_AGAIN_INSTRUCTION} ${EXPLORE_AGAIN_JUDGED} ${UNCONFIRMED_READING}`;
+    return hasCoreOnRows(judge) ? `${EXPLORE_AGAIN_INSTRUCTION} ${EXPLORE_AGAIN_JUDGED} ${CORE_ON_ROWS}` : `${EXPLORE_AGAIN_INSTRUCTION} ${EXPLORE_AGAIN_JUDGED}`;
   }
   const notRun = positionsOf(resume.judgement?.notRunInThisBuild);
   if (judge) return judgedInstruction(judge, notRun);
