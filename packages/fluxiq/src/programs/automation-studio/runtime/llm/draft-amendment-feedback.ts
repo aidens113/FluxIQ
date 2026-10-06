@@ -581,6 +581,7 @@ function fallback(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: rea
     bind_malformed: () => `Write ${key} on step ${n} again in one of the forms reasons.bind_malformed lists and send it again; to set a concrete value instead, rerun step ${n} with it: ${rerun}.`,
     rerun_holds_binding: () => `Step ${n} holds a binding, so it runs only in the Flow: rerun it with a concrete value for every bound parameter -- {"step": ${n}, "change": "rerun", "input": {<each bound key: a value>}} -- or write the step you need as a new call to core.run_node with write true.`,
     strands_a_step: () => `Step ${n} stays in the Flow: it brings the page to where a later step of the Flow acted. Leave step ${n} in, or drop that later step too if the Flow does not need it.`,
+    settings_rewrite_run: () => `Step ${n} keeps what it ran with. To act on another control or with another value, run that call as a new step with add true and its act; to correct step ${n}'s own argument, rerun it: ${rerun}.`,
     repeat_taken_off: () => `Step ${n}'s repeat was taken off after this decision's moves, so it now runs once. If it should still repeat, send {"step": ${n}, "change": "repeat", "over": <the listing>} with the listing before it, in the numbers the draft now shows.`
   };
   return ways[refusal.reason]();
