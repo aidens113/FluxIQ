@@ -285,3 +285,102 @@ describe("a re-authored Flow keeps the routing it inherited", () => {
       .toEqual({ s1: "node.s1", s2: "node.s2", s3: "node.s3", s4: "node.s4", s5: "node.s5" });
   });
 });
+
+// C4 (t269): a repair that left a row loop untouched was refused at completion
+// (`bootstrap.required_input_unconnected`) before any fresh test, because the
+// For Each came back as a plain step with nothing feeding its `items`; and once
+// it came back as a repeat, the loop's head Merge took the plan key the body's
+// node id was handed, so the untouched body was minted a new id.
+describe("a Flow's row loop read back as the repeat it was written from", () => {
+  const MERGE = "builtin.control.merge";
+  const EACH = "builtin.control.for-each";
+  const TYPE = "web.output.dom-type";
+  const EXTRACT = "web.output.dom-extract_list";
+  const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+  const registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, ...webDomainNodeDefinitionsFixture()]);
+  const rowText = { $state: { path: "item.desired" } };
+  const at = (id: string, definitionId: string, parameterValues: NonNullable<AutomationStudioFlowNode["parameterValues"]> = {}): AutomationStudioFlowNode => ({ id, definitionId, parameterValues });
+  const wire = (id: string, source: string, sourcePortId: string, target: string, targetPortId: string): AutomationStudioFlowEdge =>
+    ({ id, sourceNodeId: source, targetNodeId: target, sourcePortId, targetPortId });
+
+  /** start -> list -> For Each (body: row type, back into the For Each) -> done -> summary type -> end, drawn by hand. */
+  function drawn(): { nodes: AutomationStudioFlowNode[]; edges: AutomationStudioFlowEdge[] } {
+    return {
+      nodes: [
+        at("start", "builtin.control.start"),
+        at("list", EXTRACT, { extractList: { item: "li.row", fields: { name: ".name", desired: ".desired" } } }),
+        at("each", EACH),
+        at("row", TYPE, { selector: "#row-message", text: rowText }),
+        at("summary", TYPE, { selector: "#message", text: "right" }),
+        at("end", "builtin.control.end", { status: "success" })
+      ],
+      // The loop's exit listed before its body, so the walk has to put the body first.
+      edges: [
+        wire("e0", "each", "done", "summary", "in"), wire("e1", "start", "success", "list", "in"),
+        wire("e2", "list", "success", "each", "in"), wire("e3", "list", "records", "each", "items"),
+        wire("e4", "each", "body", "row", "in"), wire("e5", "each", "item", "row", "item"),
+        wire("e6", "row", "success", "each", "in"), wire("e7", "summary", "success", "end", "in")
+      ]
+    };
+  }
+
+  function assemble(steps: readonly AutomationStudioFlowDraftStep[]) {
+    return assembleAutomationStudioFlowDraftPlan({ steps: steps.filter(automationStudioFlowDraftStepIsProposed), write: automationStudioFlowBootstrapDraftNodeStep, registry, resolution, summary: "Write each row" });
+  }
+
+  /** A plan written back as the Flow it became, each node named after its plan key. */
+  function saved(plan: NonNullable<ReturnType<typeof assemble>["plan"]>): { nodes: AutomationStudioFlowNode[]; edges: AutomationStudioFlowEdge[] } {
+    const subflow = plan.subflows[0]!;
+    return {
+      nodes: subflow.nodes.map((item) => at(`node.${item.key}`, item.definitionId, item.parameters ?? {})),
+      edges: subflow.edges.map((item, index) => wire(`e${index}`, `node.${item.source.nodeKey}`, item.source.portId, `node.${item.target.nodeKey}`, item.target.portId))
+    };
+  }
+
+  it("seeds the list, then the body carrying the repeat, and leaves the For Each for the assembler", () => {
+    const seed = automationStudioFlowDraftSeedFromFlow(drawn());
+    expect(seed.steps.map((step) => seed.nodeIdByStepId[step.id!])).toEqual(["list", "row", "summary"]);
+    expect(seed.steps.map((step) => step.routing ?? null)).toEqual([null, { kind: "repeat", through: "f2", over: "f1" }, null]);
+    // The row binding is the Flow's own, byte for byte: no rewrite into `$row`.
+    expect(seed.steps[1]!.input.parameters).toEqual({ selector: "#row-message", text: rowText });
+  });
+
+  it("assembles back into one loop over the list's rows, and reads that loop back the same way", () => {
+    const first = assemble(automationStudioFlowDraftSeedFromFlow(drawn()).steps);
+    expect(first.issues.filter((item) => item.severity === "error")).toEqual([]);
+    expect(first.plan!.subflows[0]!.nodes.filter((item) => item.definitionId === EACH)).toHaveLength(1);
+    const again = automationStudioFlowDraftSeedFromFlow(saved(first.plan!));
+    expect(again.steps.map((step) => step.actionId)).toEqual([EXTRACT, TYPE, TYPE]);
+    expect(again.steps.map((step) => step.routing ?? null)).toEqual([null, { kind: "repeat", through: "f2", over: "f1" }, null]);
+    expect(assemble(again.steps).plan!.subflows[0]!.nodes.map((item) => item.definitionId)).toEqual(first.plan!.subflows[0]!.nodes.map((item) => item.definitionId));
+  });
+
+  it("keeps every step's node id against the plan, past the joins and the loop routing derived", () => {
+    const flow = saved(assemble(automationStudioFlowDraftSeedFromFlow(drawn()).steps).plan!);
+    const seed = automationStudioFlowDraftSeedFromFlow(flow);
+    const plan = assemble(seed.steps).plan!;
+    const nodeIdByKey = automationStudioFlowDraftPlanNodeIds({ steps: seed.steps, nodeIdByStepId: seed.nodeIdByStepId, plan });
+    const definitionOf = new Map(plan.subflows[0]!.nodes.map((item) => [item.key, item.definitionId]));
+    const wasDefinition = new Map(flow.nodes.map((item) => [item.id, item.definitionId]));
+    expect(Object.keys(nodeIdByKey)).toHaveLength(3);
+    for (const [key, nodeId] of Object.entries(nodeIdByKey)) expect(definitionOf.get(key)).toBe(wasDefinition.get(nodeId));
+    expect(Object.values(nodeIdByKey).sort()).toEqual(seed.steps.map((step) => seed.nodeIdByStepId[step.id!]).sort());
+  });
+
+  it("reads anything but the assembler's shape as before, a plain For Each step", () => {
+    const plain = (flow: { nodes: AutomationStudioFlowNode[]; edges: AutomationStudioFlowEdge[] }) => {
+      const seed = automationStudioFlowDraftSeedFromFlow(flow);
+      return { each: seed.steps.some((step) => step.actionId === EACH), repeats: seed.steps.some((step) => step.routing?.kind === "repeat") };
+    };
+    const settings = drawn();
+    settings.nodes = settings.nodes.map((item) => item.id === "each" ? { ...item, parameterValues: { maxIterations: 3 } } : item);
+    const branching = drawn();
+    branching.edges.push(wire("e8", "row", "failed", "summary", "in"));
+    const strayRow = drawn();
+    strayRow.edges.push(wire("e9", "each", "item", "summary", "item"));
+    const noRows = drawn();
+    noRows.edges = noRows.edges.filter((item) => item.id !== "e3");
+    for (const flow of [settings, branching, strayRow, noRows]) expect(plain(flow)).toEqual({ each: true, repeats: false });
+    expect(plain(drawn())).toEqual({ each: false, repeats: true });
+  });
+});
