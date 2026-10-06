@@ -342,6 +342,56 @@ describe("Automation Studio runtime target overrides", () => {
       expect(result.metadata).toEqual({ executed: false, targetOverrideRefusal: { status: "absent", reason: "failure_not_target_repairable" } });
       expect(host.nodes).toEqual([]);
     });
+
+    // A Flow built from an instruction declares no evidence, so a target override whose changed node
+    // succeeded proves nothing in its trial (`no_evidence`). The judged whole run it carries on into is
+    // its evidence (t267): it asks to carry on, while the trial still records nothing.
+    describe("whose trial proved nothing either way", () => {
+      const matched = { validateTargetOverrideEvidence: () => ({ status: "matched" as const }) };
+      it("awaits the judged whole run, and asks to carry on, when its changed node succeeded and nothing was unknown", async () => {
+        const result = await executeOverride(matched);
+        expect(result.verdict).toMatchObject({ outcome: "unverifiable", resumable: false, notResumableCode: "no_evidence", resumeFrom: { nodeId: "end", route: "success" } });
+        expect(result.verification).toEqual({ status: "unverifiable", reason: "no_expectation_declared", awaitsJudgedRun: true });
+        expect([result.retryOriginalAction, result.restoredExpectedState]).toEqual([true, false]);
+        expect(result).not.toHaveProperty("changeProposal");
+        expect(result.adaptation).toMatchObject({ status: "testing", metadata: { verification: { status: "unverifiable", awaitsJudgedRun: true }, retryOriginalAction: true } });
+        expect(result.adaptation).not.toHaveProperty("validationResults");
+      });
+
+      it("does not await it when a check the trial made could not be told", async () => {
+        // An expected state no host evaluator can judge: the check is `unknown`.
+        const declared = { ...flowFixture(), nodes: flowFixture().nodes.map((node) => node.id === "constant" ? { ...node, parameterValues: { ...node.parameterValues, expectedState: { title: "Ready" } } } : node) };
+        const result = await executeOverride({ ...matched, flow: declared });
+        expect(result.verdict).toMatchObject({ outcome: "unverifiable", resumable: false, notResumableCode: "check_unknown" });
+        expect(result.verification).toEqual({ status: "unverifiable", reason: "evidence_unevaluated" });
+        expect([result.retryOriginalAction, result.adaptation?.metadata?.retryOriginalAction]).toEqual([false, false]);
+      });
+
+      it("does not await it when the trial contradicted the change", async () => {
+        const host = recordingHost();
+        const recorded = dispatchFlowFixture({ parameterValues: { outputId: "example.output.press", parameters: { selector: "#save" } } });
+        const result = await executeOverride({
+          ...matched,
+          flow: { ...recorded, edges: [{ id: "press.constant", sourceNodeId: "press", sourcePortId: "success", targetNodeId: "constant", targetPortId: "in" }, ...recorded.edges] },
+          failedAttempt: { ...failedAttempt(), attemptId: "press.attempt.1", nodeId: "press", definitionId: "builtin.policy.action" },
+          patch: { kind: "temporary_target_override", targetNodeId: "press", target: { handles: { control: "candidate" } }, reason: "Use the renamed control." },
+          options: { hostRuntime: host.hostRuntime, effectDispatcher: () => ({ status: "failed", route: "failed", outputs: {} }) }
+        }, host);
+        expect(result.verdict).toMatchObject({ outcome: "contradicted", resumable: false });
+        expect(result.verification).toMatchObject({ status: "contradicted" });
+        expect(result.verification).not.toHaveProperty("awaitsJudgedRun");
+        expect(result.retryOriginalAction).toBe(false);
+      });
+
+      it("is a target override's alone: another kind whose trial proved nothing does not await it", async () => {
+        const host = recordingHost();
+        const waitHost = { hostRuntime: { ...host.hostRuntime, capabilities: ["action-dispatch", "state-snapshot", "wait-observe"] } };
+        const result = await executeOverride({ patch: { kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 2, timeoutMs: 100, reason: "Wait for the page to settle." }, options: waitHost }, host);
+        expect(result.verdict).toMatchObject({ outcome: "unverifiable", resumable: false, notResumableCode: "no_evidence" });
+        expect(result.verification).toEqual({ status: "unverifiable", reason: "no_expectation_declared" });
+        expect([result.retryOriginalAction, result.adaptation?.metadata?.retryOriginalAction]).toEqual([false, false]);
+      });
+    });
   });
 
   // A target override re-points what the failed action addressed, so it can

@@ -53,7 +53,6 @@ function deps(overrides: Partial<AutomationStudioRefutedResultRepairPortDependen
     annotate: vi.fn(async (refuted) => ({ ...refuted.detail, metadata: { ...(refuted.detail.metadata ?? {}), ladder: "annotated" } })),
     generate: async () => ({ adaptationId: "adaptation.one", accounting: {} }) as never,
     approve: async () => undefined,
-    apply: async () => undefined,
     now: () => 0,
     ...overrides
   } as AutomationStudioRefutedResultRepairPortDependencies & { annotate: ReturnType<typeof vi.fn> };
@@ -65,16 +64,17 @@ function marker(result: AutomationStudioFlowRunDetail | undefined): Record<strin
 
 describe("the caller a re-author builds for", () => {
   // The build pays with the run's own caller's key and carries the consequences
-  // the caller permitted; nothing else is asked of it. After it applies, the run
-  // just replays.
-  it("builds for the run's caller, applies, and leaves the run ready to replay", async () => {
+  // the caller permitted; nothing else is asked of it. The edit is approved and
+  // held (t267): the re-run runs it unapplied, and its judged end applies it.
+  it("builds for the run's caller, approves and holds the edit, and leaves the run ready to re-run", async () => {
     const generate = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
-    const apply = vi.fn(async () => undefined);
-    const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never, apply, permittedConsequences: ["create_new"] }))(request);
+    const approve = vi.fn(async () => undefined);
+    const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never, approve, permittedConsequences: ["create_new"] }))(request);
     expect(generate).toHaveBeenCalledTimes(1);
     expect((generate.mock.calls[0] as unknown[])[0]).toEqual({ projectId: "project.one", flowId: "flow.one", mode: "extend", evidenceGuided: true, caller, permittedConsequences: ["create_new"] });
-    expect(apply).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", adaptationId: "adaptation.one", actorId: "runtime.result_repair" });
-    expect(marker(result)).toMatchObject({ routed: true, applied: true });
+    expect(approve).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", adaptationId: "adaptation.one", actorId: "runtime.result_repair" });
+    expect(marker(result)).toMatchObject({ routed: true, held: true });
+    expect(marker(result).applied).toBeUndefined();
     expect(marker(result).replayReady).toBeUndefined();
     expect(marker(result).degraded).toBeUndefined();
   });
@@ -129,7 +129,7 @@ describe("a re-author whose build fails", () => {
     expect(marker(result)).toMatchObject({ code: "flow_bootstrap.provider_resolution_failed", stage: "provider_resolution", degraded: { to: "patch_ladder" } });
   });
 
-  it("builds again once after a failure that may pass, and applies what the second build made", async () => {
+  it("builds again once after a failure that may pass, and holds what the second build made", async () => {
     let calls = 0;
     const generate = vi.fn(async () => {
       calls += 1;
@@ -138,7 +138,7 @@ describe("a re-author whose build fails", () => {
     });
     const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))(request);
     expect(generate).toHaveBeenCalledTimes(2);
-    expect(marker(result)).toMatchObject({ routed: true, adaptationId: "adaptation.two", applied: true });
+    expect(marker(result)).toMatchObject({ routed: true, adaptationId: "adaptation.two", held: true });
     expect(marker(result).degraded).toBeUndefined();
     expect(marker(result).attempts).toHaveLength(2);
     expect(marker(result).attempts[0]).toMatchObject({ code: "flow_bootstrap.provider_timeout", retryable: true });
@@ -195,7 +195,7 @@ describe("the repair's one purse", () => {
 
     expect(generate).toHaveBeenCalledTimes(2);
     expect((generate.mock.calls as unknown[][]).map((call) => call[2])).toEqual([CEILING, usd(CEILING * 0.2)]);
-    expect(marker(result)).toMatchObject({ applied: true, purse: { limitUsd: CEILING, spentUsd: usd(CEILING * 0.96), leftUsd: usd(CEILING * 0.04) } });
+    expect(marker(result)).toMatchObject({ held: true, purse: { limitUsd: CEILING, spentUsd: usd(CEILING * 0.96), leftUsd: usd(CEILING * 0.04) } });
   });
 
   it("does not run the patch ladder once the re-authors have spent the purse, and names cost as why", async () => {

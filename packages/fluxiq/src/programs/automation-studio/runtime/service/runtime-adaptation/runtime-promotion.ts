@@ -16,7 +16,7 @@ import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowAdaptation } from "../../../model/index.ts";
 import { adaptationConfidence } from "../../recovery/index.ts";
 import { decideAutomationStudioAdaptationPromotionGate } from "../../training-modes.ts";
-import { automationStudioFlowPriorManualAdaptationReview, type AutomationStudioPriorManualReviewPorts } from "../adaptations/index.ts";
+import { automationStudioFlowPriorManualAdaptationReview, automationStudioVerificationAwaitsJudgedRun, type AutomationStudioPriorManualReviewPorts } from "../adaptations/index.ts";
 import { approvalDecisionHistory } from "../adaptation-projections/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { booleanSetting } from "../flow-settings/index.ts";
@@ -43,6 +43,9 @@ export async function promoteAutomationStudioRuntimeAdaptation(input: {
     ? await automationStudioFlowPriorManualAdaptationReview(input.ports, input.adaptation.projectId, input.adaptation.flowId, input.adaptation.adaptationId) === "reviewed"
     : true;
   const hasExternalSideEffects = input.adaptation.patch.some((patch) => isJsonRecord(patch.metadata) && patch.metadata.externalSideEffect === true);
+  // A trial that proved nothing either way, whose evidence is the judged whole
+  // run this decision already waits for (t267; `../../live-patch.ts`).
+  const awaitsJudgedRun = automationStudioVerificationAwaitsJudgedRun(input.adaptation.metadata?.verification);
   const decision = decideAutomationStudioAdaptationPromotionGate({
     approvalMode: input.context.policy.proposalMode,
     riskLevel: input.adaptation.riskLevel,
@@ -51,7 +54,8 @@ export async function promoteAutomationStudioRuntimeAdaptation(input: {
     promoteAdaptations: input.context.behavior.promoteAdaptations,
     requireFirstManualReview,
     priorManualReviewExists,
-    hasExternalSideEffects
+    hasExternalSideEffects,
+    awaitsJudgedRun
   });
   const decisionRecord = compactJsonObject({
     decisionId: `approval.${randomUUID()}`,
@@ -65,6 +69,8 @@ export async function promoteAutomationStudioRuntimeAdaptation(input: {
     autoApply: decision.autoApply,
     // Allowed unattended, and held until the run that ran it is judged.
     ...(decision.autoApply ? { applyAt: AUTOMATION_STUDIO_JUDGED_PROMOTION_APPLY_AT, applied: false, runId: input.adaptation.sourceRunId } : {}),
+    // What that allowance rests on, where it is not a trial: the judged run itself.
+    ...(decision.autoApply && awaitsJudgedRun ? { evidence: "judged_whole_run" } : {}),
     requiresManualApproval: decision.requiresManualApproval,
     firstManualReviewRequired: requireFirstManualReview,
     priorManualReviewExists,

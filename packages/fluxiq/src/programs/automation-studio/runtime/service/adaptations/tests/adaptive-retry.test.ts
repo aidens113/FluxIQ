@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioRunDetailWithDeclinedAdaptiveRetry, decideAutomationStudioAdaptiveRetry } from "../adaptive-retry.ts";
+import { automationStudioVerificationAwaitsJudgedRun } from "../verification-awaits-judged-run.ts";
 
 // One receipt exactly as `runtimePatchAttempts` records it for a repair that
 // was applied automatically and asked for the original action to be taken
@@ -75,6 +76,53 @@ describe("decideAutomationStudioAdaptiveRetry", () => {
       .toEqual({ declined: { notResumableCode: "check_failed" } });
     expect(decideAutomationStudioAdaptiveRetry({ runtimePatchAttempts: [receipt(), receipt({ resumeFrom: { nodeId: "other", route: "success" } })] }))
       .toEqual({ declined: { notResumableCode: "resume_points_disagree" } });
+  });
+
+  // t267: a target override on a Flow that declares no evidence proved nothing
+  // in its trial (`no_evidence`), and its evidence is the judged whole run. The
+  // run has to carry on through it to be judged at all.
+  describe("a repair whose evidence is the judged whole run", () => {
+    const awaiting = {
+      kind: "temporary_target_override",
+      resumable: false,
+      notResumableCode: "no_evidence",
+      verification: { status: "unverifiable", reason: "no_expectation_declared", awaitsJudgedRun: true }
+    };
+
+    it("carries on at the point its trial named", () => {
+      expect(decideAutomationStudioAdaptiveRetry({ runtimePatchAttempts: [receipt(awaiting)] })).toEqual({ resume: { nodeId: "end", route: "success" } });
+      expect(decideAutomationStudioAdaptiveRetry({ runtimePatchAttempts: [receipt(awaiting), receipt()] })).toEqual({ resume: { nodeId: "end", route: "success" } });
+    });
+
+    it("is held to every other rule a resume point is held to", () => {
+      const decide = (overrides: Record<string, unknown>, subflowId?: string) => decideAutomationStudioAdaptiveRetry({ runtimePatchAttempts: [receipt({ ...awaiting, ...overrides })], ...(subflowId ? { subflowId } : {}) });
+      expect(decide({ resumeFrom: undefined })).toEqual({ declined: { notResumableCode: "resume_point_missing" } });
+      expect(decide({ resumeFrom: { completed: true } })).toEqual({ declined: { notResumableCode: "resume_point_completed" } });
+      expect(decide({}, "subflow.primary")).toEqual({ declined: { notResumableCode: "resume_point_subflow_mismatch" } });
+      expect(decide({ resumeFrom: { nodeId: " ", route: "success" } })).toEqual({ declined: { notResumableCode: "resume_point_malformed" } });
+      expect(decideAutomationStudioAdaptiveRetry({ runtimePatchAttempts: [receipt(awaiting), receipt({ resumeFrom: { nodeId: "other", route: "success" } })] }))
+        .toEqual({ declined: { notResumableCode: "resume_points_disagree" } });
+    });
+
+    it("is refused as before when nothing awaits a judged run, or the trial's refusal was anything but no evidence", () => {
+      const decide = (overrides: Record<string, unknown>) => decideAutomationStudioAdaptiveRetry({ runtimePatchAttempts: [receipt({ ...awaiting, ...overrides })] });
+      expect(decide({ verification: { status: "unverifiable", reason: "no_expectation_declared" } })).toEqual({ declined: { notResumableCode: "no_evidence" } });
+      expect(decide({ verification: undefined })).toEqual({ declined: { notResumableCode: "no_evidence" } });
+      expect(decide({ verification: { status: "verified", awaitsJudgedRun: true } })).toEqual({ declined: { notResumableCode: "no_evidence" } });
+      expect(decide({ notResumableCode: "check_unknown" })).toEqual({ declined: { notResumableCode: "check_unknown" } });
+      expect(decide({ notResumableCode: undefined })).toEqual({ declined: { notResumableCode: "resume_decision_missing" } });
+    });
+  });
+});
+
+describe("automationStudioVerificationAwaitsJudgedRun", () => {
+  it("is true only for an unverifiable verification that awaits its judged run", () => {
+    expect(automationStudioVerificationAwaitsJudgedRun({ status: "unverifiable", reason: "no_expectation_declared", awaitsJudgedRun: true })).toBe(true);
+    expect(automationStudioVerificationAwaitsJudgedRun({ status: "unverifiable", reason: "no_expectation_declared" })).toBe(false);
+    expect(automationStudioVerificationAwaitsJudgedRun({ status: "unverifiable", awaitsJudgedRun: "true" })).toBe(false);
+    expect(automationStudioVerificationAwaitsJudgedRun({ status: "verified", awaitsJudgedRun: true })).toBe(false);
+    expect(automationStudioVerificationAwaitsJudgedRun(undefined)).toBe(false);
+    expect(automationStudioVerificationAwaitsJudgedRun([{ status: "unverifiable", awaitsJudgedRun: true }])).toBe(false);
   });
 });
 

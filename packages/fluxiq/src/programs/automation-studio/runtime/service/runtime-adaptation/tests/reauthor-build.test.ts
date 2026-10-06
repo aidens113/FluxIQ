@@ -49,18 +49,59 @@ function generated(): AutomationStudioGenerateFlowBootstrapAdaptationResult {
   return { projectId: "project.c5", flowId: "flow.c5", adaptationId: "adaptation.c5", status: "proposed", riskLevel: "low", sourceInstructionIds: [BRIEF.instructionId], baseDependencyDigest: "digest.c5", baseSettingsRevision: 1, accounting: ACCOUNTING };
 }
 
-async function run(generate: AutomationStudioReauthorBuildDependencies["generate"], options: { limit?: number; approve?: AutomationStudioReauthorBuildDependencies["approve"]; apply?: AutomationStudioReauthorBuildDependencies["apply"] } = {}) {
+async function run(generate: AutomationStudioReauthorBuildDependencies["generate"], options: { limit?: number; approve?: AutomationStudioReauthorBuildDependencies["approve"]; reject?: AutomationStudioReauthorBuildDependencies["reject"]; detail?: AutomationStudioFlowRunDetail } = {}) {
   const record = vi.fn((current: AutomationStudioFlowRunDetail, built: AutomationStudioReauthorBuilt) => automationStudioRefutedResultReauthored({
     detail: current, decision: { route: true, projectId: "project.c5", flowId: "flow.c5" }, ...built
   }));
   const approve = options.approve ?? vi.fn(async () => undefined);
-  const apply = options.apply ?? vi.fn(async () => undefined);
+  const reject = options.reject ?? vi.fn(async () => undefined);
   const result = await automationStudioReauthorBuild({
-    deps: { caller: { actorUserId: "user.c5", actorSessionId: "session.c5" }, generate, approve, apply },
-    projectId: "project.c5", flowId: "flow.c5", brief: BRIEF, purse: purse(options.limit), detail: detail(), record, now: () => 1
+    deps: { caller: { actorUserId: "user.c5", actorSessionId: "session.c5" }, generate, approve, reject },
+    projectId: "project.c5", flowId: "flow.c5", brief: BRIEF, purse: purse(options.limit), detail: options.detail ?? detail(), record, now: () => 1
   });
-  return { ...result, record, approve, apply };
+  return { ...result, record, approve, reject };
 }
+
+// t267: the build approves its edit and holds it. Nothing in the build can
+// apply it -- the dependencies carry no apply -- so the Flow on disk is the one
+// that ran until a whole run of the held edit is judged to answer.
+describe("a re-author build holds its edit", () => {
+  it("approves the adaptation as the repair actor and records it held, not applied", async () => {
+    const generate = vi.fn<AutomationStudioReauthorBuildDependencies["generate"]>().mockResolvedValue(generated());
+    const result = await run(generate);
+    expect(result.approve).toHaveBeenCalledWith({ projectId: "project.c5", flowId: "flow.c5", adaptationId: "adaptation.c5", actorId: "runtime.result_repair" });
+    expect(result.built).toMatchObject({ adaptationId: "adaptation.c5", held: true });
+    expect(result.built.applied).toBeUndefined();
+    expect(result.detail.metadata?.resultReauthor).toMatchObject({ routed: true, adaptationId: "adaptation.c5", held: true, attempts: [{ adaptationId: "adaptation.c5", held: true }] });
+    expect((result.detail.metadata?.resultReauthor as { applied?: unknown }).applied).toBeUndefined();
+    expect(result.reject).not.toHaveBeenCalled();
+  });
+
+  // A held edit an earlier attempt left waiting would refuse this build
+  // (`flow_bootstrap.pending_adaptation_exists`): it was run and not judged to
+  // answer, or this attempt would not be starting, so it is rejected and
+  // marked superseded first, and never applied.
+  it("rejects and supersedes an earlier attempt's held edit before building its replacement", async () => {
+    const order: string[] = [];
+    const earlier = automationStudioRefutedResultReauthored({ detail: detail(), decision: { route: true, projectId: "project.c5", flowId: "flow.c5" }, adaptationId: "adaptation.earlier", held: true, attempt: 1 });
+    const reject = vi.fn<AutomationStudioReauthorBuildDependencies["reject"]>(async () => { order.push("reject"); });
+    const generate = vi.fn<AutomationStudioReauthorBuildDependencies["generate"]>(async () => { order.push("generate"); return generated(); });
+    const result = await run(generate, { detail: earlier, reject });
+    expect(order).toEqual(["reject", "generate"]);
+    expect(reject).toHaveBeenCalledWith({ projectId: "project.c5", flowId: "flow.c5", adaptationId: "adaptation.earlier", actorId: "runtime.result_repair" });
+    const marker = result.detail.metadata?.resultReauthor as { adaptationId?: string; held?: boolean; attempts: Array<Record<string, unknown>> };
+    expect(marker).toMatchObject({ adaptationId: "adaptation.c5", held: true });
+    expect(marker.attempts.map((attempt) => [attempt.adaptationId, attempt.notAppliedReason])).toEqual([["adaptation.earlier", "superseded"], ["adaptation.c5", undefined]]);
+  });
+
+  it("says, in a code, that the rejection was refused, and still marks the earlier edit superseded", async () => {
+    const earlier = automationStudioRefutedResultReauthored({ detail: detail(), decision: { route: true, projectId: "project.c5", flowId: "flow.c5" }, adaptationId: "adaptation.earlier", held: true, attempt: 1 });
+    const result = await run(vi.fn<AutomationStudioReauthorBuildDependencies["generate"]>().mockResolvedValue(generated()), { detail: earlier, reject: async () => { throw new Error("Only a proposed or validated Flow Bootstrap adaptation can be rejected."); } });
+    const attempts = (result.detail.metadata?.resultReauthor as { attempts: Array<Record<string, unknown>> }).attempts;
+    expect(attempts[0]).toMatchObject({ adaptationId: "adaptation.earlier", notAppliedReason: "superseded", rejectRefused: "refused" });
+    expect(JSON.stringify(attempts[0])).not.toContain("Only a proposed");
+  });
+});
 
 describe("local automatic reauthor retry", () => {
   it.each([
@@ -102,7 +143,6 @@ describe("local automatic reauthor retry", () => {
     expect(result.purse.spentUsd).toBe(0.04);
     expect(result.detail.metadata?.resultReauthor).toMatchObject({ attempts: [{ code, accounting: { estimatedCostUsd: 0.02 } }, { code, accounting: { estimatedCostUsd: 0.02 } }] });
     expect(result.approve).not.toHaveBeenCalled();
-    expect(result.apply).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -132,10 +172,10 @@ describe("local automatic reauthor retry", () => {
     expect(result.built.failure?.code).toBe("llm_budget.run_cost_limit");
   });
 
-  it.each(["approve", "apply"] as const)("never rebuilds a generated adaptation when %s fails", async failedPart => {
+  it("never rebuilds a generated adaptation when its approval fails", async () => {
     const generate = vi.fn<AutomationStudioReauthorBuildDependencies["generate"]>().mockResolvedValue(generated());
     const reject = vi.fn(async () => { throw failure("flow_bootstrap.provider_timeout"); });
-    const result = await run(generate, { [failedPart]: reject });
+    const result = await run(generate, { approve: reject });
     expect(generate).toHaveBeenCalledTimes(1);
     expect(result.record).toHaveBeenCalledTimes(1);
     expect(result.built).toMatchObject({ adaptationId: "adaptation.c5", failure: { retryable: true } });
@@ -153,7 +193,7 @@ describe("local automatic reauthor retry", () => {
     expect(requests).toBe(2);
     expect(generate).toHaveBeenCalledTimes(1);
     expect(result.record).toHaveBeenCalledTimes(1);
-    expect(result.built.applied).toBe(true);
+    expect(result.built.held).toBe(true);
     expect(result.purse.spentUsd).toBe(0.02);
   });
 });

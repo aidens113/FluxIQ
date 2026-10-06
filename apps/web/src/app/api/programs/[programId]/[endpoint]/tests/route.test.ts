@@ -290,7 +290,7 @@ describe("a paired client's bearer token", () => {
 
     expect(response.status).toBe(403);
     const answer = await response.text();
-    expect(JSON.parse(answer)).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry runIntent." });
+    expect(JSON.parse(answer)).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may carry only the explore_and_adapt intent." });
     expect(answer).not.toContain("do-not-echo");
     expect(call).not.toHaveBeenCalled();
   });

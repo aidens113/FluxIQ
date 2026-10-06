@@ -8,6 +8,10 @@ import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_sha
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
 import { AutomationStudioActionPermissionGate, AutomationStudioFlowBootstrapGenerationError } from "../../../runtime/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
+import { automationStudioConversationEffectiveCaller } from "../../../runtime/conversations/commands/index.ts";
+
+/** The service's conversations, answering `callerFor` as Core does for a person's own session: unchanged. */
+const CONVERSATIONS = { callerFor: (who: { userId: string; sessionId: string }) => automationStudioConversationEffectiveCaller(who, () => null) };
 
 const ACTOR: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control", "flows.write"] };
 
@@ -84,7 +88,7 @@ describe("action permissions through the LLM build and run API", () => {
   it("carries a run's permitted consequences to the service beside its model intent", async () => {
     const runRuntimeSession = vi.fn().mockResolvedValue({ runId: "run.one", status: "succeeded" });
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn().mockResolvedValue(null) } as any);
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn().mockResolvedValue(null), conversations: CONVERSATIONS } as any);
 
     const response = await registry.call({
       programId: "automation-studio",

@@ -44,6 +44,7 @@ function failedDetail(gate: JsonObject = {}, extra: JsonObject = {}): Automation
 const GOAL_GONE = { patchSkippedCode: "llm.runtime_patch_goal_unachievable", patchSkippedRung: "exploration" };
 const OVERRIDE_REFUSED = { runtimePatchAttempts: [{ kind: "temporary_target_override", executed: false, preflightOk: false, targetOverrideRefusal: { status: "refused", reason: "target_unanchored" }, traceStatus: "not-run" }] };
 
+// `apply` is not a dependency any more (t267): it is kept here as a sentinel that nothing in the port applies the edit.
 type Spies = { generate: ReturnType<typeof vi.fn>; approve: ReturnType<typeof vi.fn>; apply: ReturnType<typeof vi.fn> };
 
 function deps(overrides: Partial<AutomationStudioStepFailureRepairPortDependencies> = {}): AutomationStudioStepFailureRepairPortDependencies & Spies {
@@ -71,15 +72,17 @@ function briefOf(port: Spies): AutomationStudioFlowInstruction {
 }
 
 describe("a failed step the ladder could not repair", () => {
-  it("is re-authored in extend mode when the model said the goal was gone, then approved and applied", async () => {
+  it("is re-authored in extend mode when the model said the goal was gone, then approved and held for its judged re-run", async () => {
     const port = deps({ permittedConsequences: ["create_new"] });
     const result = await repair(port, failedDetail(GOAL_GONE));
     expect(port.generate).toHaveBeenCalledTimes(1);
     expect((port.generate.mock.calls[0] as unknown[])[0]).toEqual({ projectId: "project.one", flowId: "flow.one", mode: "extend", evidenceGuided: true, caller, permittedConsequences: ["create_new"] });
     expect(port.approve).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", adaptationId: "adaptation.one", actorId: "runtime.result_repair" });
-    expect(port.apply).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", adaptationId: "adaptation.one", actorId: "runtime.result_repair" });
+    // Held, not applied: the re-run runs it unapplied and its judged end applies it (`../judged-reauthor.ts`).
+    expect(port.apply).not.toHaveBeenCalled();
     expect(result?.reauthored).toBe(true);
-    expect(marker(result?.detail)).toMatchObject({ routed: true, adaptationId: "adaptation.one", applied: true });
+    expect(marker(result?.detail)).toMatchObject({ routed: true, adaptationId: "adaptation.one", held: true });
+    expect(marker(result?.detail).applied).toBeUndefined();
     expect(marker(result?.detail).attempts[0].brief).toMatchObject({
       trigger: "failed_step", nodeId: "s4", failureCategory: "target_not_found", failureCode: "web.target.not_found",
       ladder: { skipCode: "llm.runtime_patch_goal_unachievable", skipRung: "exploration" }
@@ -99,7 +102,8 @@ describe("a failed step the ladder could not repair", () => {
     const port = deps();
     const result = await repair(port, failedDetail({}, OVERRIDE_REFUSED));
     expect(port.generate).toHaveBeenCalledTimes(1);
-    expect(port.apply).toHaveBeenCalledTimes(1);
+    expect(port.approve).toHaveBeenCalledTimes(1);
+    expect(port.apply).not.toHaveBeenCalled();
     expect(result?.reauthored).toBe(true);
     expect(marker(result?.detail).attempts[0].brief.ladder).toMatchObject({ targetRefusals: ["target_unanchored"], patchesRefused: 1 });
     expect(briefOf(port).body).toContain("target_unanchored");

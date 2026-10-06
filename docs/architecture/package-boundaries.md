@@ -108,6 +108,117 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): a paired client's run pays only for the checks that judge a repair (`fluxiq`)
+
+MVP item 23. A run a person asked the model into has its result judged with
+that person's key on every run. The extension's Automations Run is such a run,
+and its person never agreed to pay for routine sampling. Read this entry if you
+call `runRuntimeSession` or `run-runtime-session` from a paired client.
+
+**Added.**
+- `resultCheckCallerPays?: "every_run" | "repair_checks"` on
+  `runRuntimeSession`'s input. `repair_checks` keeps the caller's key to the
+  checks that judge a repair (`core.check.after_repair`,
+  `core.check.after_refutation`). Absent is `every_run`, as before.
+
+**Changed.**
+- `run-runtime-session` sets `resultCheckCallerPays: "repair_checks"` when the
+  actor is a paired client (`client-gateway:` session) mapped to an unlocked
+  session. Its routine checks then fall to the Flow's standing result-check
+  authorization, or are not made at all. A person's own session is unchanged.
+- A re-authored Flow's re-run (`rerunRepairedFlow`) is now judged under the
+  repaired-run decision, as the resumed retry already was, so the caller pays
+  for it under `repair_checks`. The recorded `resultCheck` code is still the
+  one taken when the run started.
+
+### Next minor (unreleased): a re-authored Flow is kept only after a judged whole run (`fluxiq`)
+
+t267, blocker 5. Both re-author routes -- a result the check refuted, and a
+step the patch ladder could not repair -- approved *and applied* their
+extend-mode Flow Bootstrap edit inside the build, then re-ran the stored Flow
+and judged it. A re-run that was refuted or failed left the unjudged edit on
+the Flow, and an extend cannot be reverted. Read this entry if you read a run's
+`resultReauthor` marker, or call the re-author or re-run helpers directly.
+
+**Changed.**
+- The edit is approved and *held*: validated, unapplied. `resultReauthor`
+  records `held: true` on the latest fields and the attempt, and
+  `applied: true` is written only once the run's final judged session ended
+  `succeeded` with a performed verdict of `answers` and its pass ran the held
+  edit. Otherwise the edit is rejected, never applied, and the marker says why
+  in `notAppliedReason` (the runtime-patch reasons, `run_errored` for a run
+  that threw, and `superseded`); a rejection that is itself refused is
+  `rejectRefused`. Left validated, it would stand pending and refuse every
+  later build of the Flow.
+- The re-run from the start runs the held graph as an unapplied candidate when
+  the held topology is exactly the selected Subflow, on the same graph Flow,
+  with every router rule targeting it. Any other shape is applied before the
+  re-run, as before, and the marker says why in `appliedBeforeJudged`. A pass
+  that ran a held edit names it in `heldReauthorAdaptationId` on the session and
+  on the detail's `repairedRerun`.
+- A later re-author attempt in the same run first rejects an earlier held edit
+  still waiting, and marks it `superseded`: a pending Flow Bootstrap adaptation
+  refuses every new build of the Flow (`flow_bootstrap.pending_adaptation_exists`).
+- Not gated on `behavior.promoteAdaptations`: the route is authorised by its
+  caller.
+
+**Added.**
+- `settleAutomationStudioRunJudgedReauthor`, `settleAutomationStudioJudgedReauthor`,
+  `AUTOMATION_STUDIO_HELD_REAUTHOR_RAN_KEY` and their types
+  (`service/runtime-adaptation/judged-reauthor.ts`).
+- `automationStudioRefutedResultHeldReauthor`,
+  `automationStudioRefutedResultWaitingReauthors` and
+  `automationStudioRefutedResultReauthorMarked` (`recovery/refuted-result/held-reauthor.ts`).
+- `automationStudioHeldReauthorCandidate` (`service/runtime-adaptation/held-candidate.ts`),
+  and two new re-run `declinedCode`s: `repair_rerun.held_reauthor_unreadable`
+  and `repair_rerun.held_reauthor_apply_failed`.
+- `hold: true` on `automationStudioReauthorRefutedResult`, and `held` on
+  `automationStudioRefutedResultReauthored`.
+
+**Changed signatures.**
+- `AutomationStudioReauthorBuildDependencies` (and the port dependencies built
+  on it) drops `apply` and requires `reject`.
+- `AutomationStudioRepairRerunPorts` requires `getFlowBootstrapAdaptation` and
+  `applyFlowBootstrapAdaptation`.
+
+### Next minor (unreleased): a target override that proved nothing is kept on its judged whole run (`fluxiq`)
+
+A Flow built from an instruction declares nothing a trial can check, so a
+runtime target override whose changed step succeeded there used to end its
+trial `unverifiable` with `notResumableCode: "no_evidence"`, and stop: the run
+did not carry on, and the promotion and apply gates refused an unproved change.
+The judged whole run is now that change's evidence. Nothing changes for a
+change whose trial proved or contradicted it, for any other patch kind, or for
+a trial with a failed or unknown check. Read this entry if you read runtime
+patch receipts or call the promotion gate yourself.
+
+**Added.**
+- `awaitsJudgedRun?: true` on the `unverifiable` member of
+  `AutomationStudioRuntimePatchVerification`. It is set only for a
+  `temporary_target_override` whose trial verdict is `unverifiable` with
+  `notResumableCode: "no_evidence"`. The trial still records no validation
+  result, `restoredExpectedState` stays false and the adaptation stays in
+  `testing`.
+- `awaitsJudgedRun?: boolean` on `AutomationStudioAdaptationPromotionGateInput`.
+  When it is true and the confidence is `unverified` with no `lastFailure`,
+  `decideAutomationStudioAdaptationPromotionGate` skips its trial-evidence
+  refusal; a person's settings (manual mode, the first manual review, `mixed`
+  for a high-risk change) still refuse. `decideAutomationStudioBootstrapApplyGate`
+  is unchanged.
+
+**Changed.**
+- `retryOriginalAction` (on the execution result, its receipt and the
+  adaptation's metadata) is now true for a verification that awaits its judged
+  run, as it is for a `verified` one; never for `temporary_action_sequence`.
+- The run resumes at the trial's resume point for such a receipt, under every
+  other resume-point rule. The promotion decision records
+  `evidence: "judged_whole_run"` when it allows one unattended.
+- When that run ends `succeeded` and is judged to answer, the settle records
+  `{ runId, status: "succeeded", kind: "trial", basis: ["judged_whole_run"] }`
+  in the adaptation's `validationResults` before the apply, so the apply's
+  evidence gate passes. A refuted, unjudged, failed or cancelled run records
+  nothing and leaves the change unapplied as before.
+
 ### Next minor (unreleased): a domain adds its own system instructions (`fluxiq`)
 
 A domain bound through `llmEvidenceRuntime` can now register instructions that

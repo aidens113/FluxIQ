@@ -39,11 +39,17 @@
 // itself refused. `store_unavailable`: the project store went away before the
 // settle could be read or written (t258); the session then says so. An unapplied adaptation keeps its trial evidence and stays
 // reviewable; a person can still apply it through review.
+//
+// **A patch whose trial proved nothing (t267).** A target override on a Flow
+// that declares no evidence has a trial that neither proves nor contradicts it
+// (`verification.awaitsJudgedRun`). Its evidence is this run: on `apply` the
+// judged run is recorded as its succeeded trial, before the apply, so the
+// apply's own evidence gate reads it. No other outcome records anything.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowArtifact, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import { automationStudioDecisionAwaitsJudgedRun, automationStudioRunCandidateAdaptationIds } from "../../durable-behavior/index.ts";
-import { automationStudioGraphFlowWithAdaptationPatch } from "../adaptations/index.ts";
+import { automationStudioGraphFlowWithAdaptationPatch, automationStudioVerificationAwaitsJudgedRun } from "../adaptations/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord } from "../json-values.ts";
 import { AutomationStudioProjectStoreUnavailableError } from "../../../storage/index.ts";
@@ -316,13 +322,13 @@ async function settleOne(
   // Recorded before the apply, which reads the stored adaptation and keeps its
   // metadata, so the applied record carries the decision that applied it.
   const recorded = compactJsonObject({ ...base, applied: true });
-  const saved = await input.ports.saveFlowAdaptation(withDecision(adaptation, recorded));
+  const saved = await input.ports.saveFlowAdaptation(withJudgedRunEvidence(withDecision(adaptation, recorded), input.session.runId));
   try {
     await input.ports.applyFlowAdaptation({
       projectId: input.projectId,
       flowId: input.flowId,
       adaptationId: adaptation.adaptationId,
-      reason: "A whole run from the Flow's start ran this change and its result was judged to answer the request."
+      reason: JUDGED_TO_ANSWER
     });
     return recorded;
   } catch (error) {
@@ -332,6 +338,21 @@ async function settleOne(
     await input.ports.saveFlowAdaptation(withDecision(saved, refused));
     return refused;
   }
+}
+
+const JUDGED_TO_ANSWER = "A whole run from the Flow's start ran this change and its result was judged to answer the request.";
+
+/**
+ * A change whose trial proved nothing either way has the judged whole run as
+ * its evidence (t267; `../../live-patch.ts`, `awaitsJudgedRun`). That run has
+ * now answered, so it is recorded as the change's succeeded trial before the
+ * apply, whose gate wants one (`recovery/adaptation-promotion.ts`). Any other
+ * change is returned as it is: its own trial is its evidence.
+ */
+function withJudgedRunEvidence(adaptation: AutomationStudioFlowAdaptation, runId: string): AutomationStudioFlowAdaptation {
+  if (!automationStudioVerificationAwaitsJudgedRun(adaptation.metadata?.verification)) return adaptation;
+  const judged = { runId, status: "succeeded" as const, checkedAt: Date.now(), kind: "trial" as const, basis: ["judged_whole_run"], detail: JUDGED_TO_ANSWER };
+  return { ...adaptation, validationResults: [...(adaptation.validationResults ?? []), judged] };
 }
 
 function withDecision(adaptation: AutomationStudioFlowAdaptation, approvalDecision: JsonObject): AutomationStudioFlowAdaptation {

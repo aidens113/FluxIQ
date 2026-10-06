@@ -142,10 +142,19 @@ type AutomationStudioPromotionGateSharedInput = {
   hasExternalSideEffects?: boolean;
 };
 
-/** `confidence` is the tier the change's saved trials and replays earn (`adaptationConfidence`). */
+/**
+ * `confidence` is the tier the change's saved trials and replays earn (`adaptationConfidence`).
+ *
+ * `awaitsJudgedRun` says the change's trial proved nothing either way and its
+ * evidence is the judged whole run instead (t267; the runtime patch's
+ * `verification.awaitsJudgedRun`). With no failure on record, the trial-evidence
+ * rule then gives way and nothing else does: the apply itself still waits for
+ * that run to be judged to answer.
+ */
 export type AutomationStudioAdaptationPromotionGateInput = AutomationStudioPromotionGateSharedInput & {
   patchKinds: AutomationStudioChangeProposalKind[];
   confidence: AutomationStudioChangeConfidenceDecision;
+  awaitsJudgedRun?: boolean;
 };
 
 /** `mode` is `create` for a blank Flow and `extend` for one that already runs; upgrade a record saved without one first. */
@@ -328,8 +337,13 @@ export function decideAutomationStudioProposalApprovalGate(input: AutomationStud
 
 export function decideAutomationStudioAdaptationPromotionGate(input: AutomationStudioAdaptationPromotionGateInput): AutomationStudioAdaptationPromotionGateDecision {
   if (!input.promoteAdaptations) return { autoApply: false, requiresManualApproval: false, reason: "Adaptation promotion is disabled by training mode or settings." };
-  const evidence = promotionEvidenceRefusal(input.confidence);
-  if (evidence) return manualReview(evidence);
+  // A change whose evidence is the judged whole run has no trial to show
+  // here, and that run is exactly what the apply waits for. Only an unproved
+  // tier with no failure on record gives way: a failure still refuses it, and
+  // so does a confidence decision nobody made.
+  const trialRefusal = promotionEvidenceRefusal(input.confidence);
+  const judgedRunIsEvidence = trialRefusal !== undefined && input.awaitsJudgedRun === true && input.confidence?.tier === "unverified" && !input.confidence.lastFailure;
+  if (trialRefusal && !judgedRunIsEvidence) return manualReview(trialRefusal);
   const shared = sharedPromotionRefusal(input);
   if (shared) return manualReview(shared);
   // No standing structural gate and no standing risk-rating gate. Re-authoring a
@@ -346,6 +360,9 @@ export function decideAutomationStudioAdaptationPromotionGate(input: AutomationS
     const structuralPatch = input.patchKinds.some((kind) => AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES[kind]?.structural !== false);
     if (structuralPatch) return manualReview("Mixed adaptation approval mode routes a structural adaptation to a person.");
     if (input.riskLevel === "high" || input.riskLevel === "destructive") return manualReview("Mixed adaptation approval mode routes a high-risk adaptation to a person.");
+  }
+  if (judgedRunIsEvidence) {
+    return { autoApply: true, requiresManualApproval: false, reason: "A change whose trial proved nothing either way is applied only once a whole run from the Flow's start, which ran it, is judged to answer: that judged run is its evidence." };
   }
   return { autoApply: true, requiresManualApproval: false, reason: "An adaptation whose trial succeeded is applied once a whole run from the Flow's start, which ran it, is judged to answer." };
 }

@@ -137,7 +137,7 @@ describe("a paired client on the program route", () => {
     expect(pairedClientDomainScope("http://localhost/x?domainId=web-automation", { sessionId: "g1" })).toBeUndefined();
   });
 
-  it("runs only a saved Flow by id, never with an LLM, inputs, an inline Flow or a side-effect authorization", () => {
+  it("runs only a saved Flow by id, never with inputs, an inline Flow or a side-effect authorization, and with no LLM unless it names the repair intent", () => {
     const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "run-runtime-session", payload);
     expect(narrow({ projectId: "p", flowId: "flow.one" })).toEqual({ ok: true, payload: { projectId: "p", flowId: "flow.one", adaptiveMode: "no_llm_intervention" } });
     expect(narrow({ projectId: "p", flowId: "flow.one", adaptiveMode: "deterministic" })).toEqual({ ok: true, payload: { projectId: "p", flowId: "flow.one", adaptiveMode: "deterministic" } });
@@ -145,13 +145,32 @@ describe("a paired client on the program route", () => {
     expect(narrow({ projectId: "p" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run must name a saved Flow by a string flowId." });
     expect(narrow({ projectId: "p", flowId: 7 })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
     expect(narrow(undefined)).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
-    for (const field of ["flow", "runIntent", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs"]) {
+    for (const field of ["flow", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs"]) {
       expect(narrow({ flowId: "flow.one", [field]: "secret-value" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's run may not carry ${field}.` });
     }
     expect(narrow({ flowId: "flow.one", authorizedExternalSideEffects: true })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry authorizedExternalSideEffects." });
     for (const adaptiveMode of ["fully_adaptive", "manual_approval", "default", "", 1]) {
       expect(narrow({ flowId: "flow.one", adaptiveMode })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry an adaptiveMode that lets it invoke an LLM." });
     }
+  });
+
+  // The extension's Automations Run (t267): a saved Flow the person runs may be
+  // repaired with their own key when its page changed. That one intent, under
+  // the Flow's own mode: no mode is pinned, and none may be named beside it.
+  it("lets a paired client's run carry the explore_and_adapt intent, alone, under the Flow's own mode", () => {
+    const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "run-runtime-session", payload);
+    expect(narrow({ projectId: "p", flowId: "flow.one", runIntent: "explore_and_adapt" })).toEqual({ ok: true, payload: { projectId: "p", flowId: "flow.one", runIntent: "explore_and_adapt" } });
+    expect(narrow({ projectId: "p", flowId: "flow.one", runIntent: "explore_and_adapt", authorizedExternalSideEffects: false })).toMatchObject({ ok: true });
+    for (const runIntent of ["diagnose_and_adapt", "diagnosis_only", "build_and_adapt", "verify_result", "", 1, null]) {
+      expect(narrow({ flowId: "flow.one", runIntent })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may carry only the explore_and_adapt intent." });
+    }
+    for (const adaptiveMode of ["no_llm_intervention", "deterministic", "fully_adaptive", "manual_approval"]) {
+      expect(narrow({ flowId: "flow.one", runIntent: "explore_and_adapt", adaptiveMode })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run that names an intent may not also carry adaptiveMode." });
+    }
+    for (const field of ["flow", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs"]) {
+      expect(narrow({ flowId: "flow.one", runIntent: "explore_and_adapt", [field]: "secret-value" })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: `A paired client's run may not carry ${field}.` });
+    }
+    expect(narrow({ flowId: "flow.one", runIntent: "explore_and_adapt", authorizedExternalSideEffects: true })).toMatchObject({ ok: false, errorCode: "authorization.forbidden" });
   });
 
   it("never names a refused field's value", () => {

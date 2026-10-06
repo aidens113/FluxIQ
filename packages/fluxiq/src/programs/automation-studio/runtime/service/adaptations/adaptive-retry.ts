@@ -17,6 +17,7 @@
 // submitted twice. A repair applied at node five continues at node six.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
+import { automationStudioVerificationAwaitsJudgedRun } from "./verification-awaits-judged-run.ts";
 
 /**
  * Either the node the run continues at, or the Core code naming why it may
@@ -77,7 +78,7 @@ export function automationStudioRunDetailWithDeclinedAdaptiveRetry<T extends { m
 function resumePointOfAttempt(attempt: JsonObject, subflowId: string | undefined): AutomationStudioAdaptiveRetryDecision {
   // A receipt with no `resumable` field was written by something that never
   // asked the question. Unknown is not a yes.
-  if (attempt.resumable !== true) return declined(typeof attempt.notResumableCode === "string" && attempt.notResumableCode ? attempt.notResumableCode : "resume_decision_missing");
+  if (attempt.resumable !== true && !awaitsJudgedRun(attempt)) return declined(typeof attempt.notResumableCode === "string" && attempt.notResumableCode ? attempt.notResumableCode : "resume_decision_missing");
   const point = isJsonRecord(attempt.resumeFrom) ? attempt.resumeFrom : undefined;
   if (!point) return declined("resume_point_missing");
   if (point.subflowId !== subflowId) return declined("resume_point_subflow_mismatch");
@@ -88,6 +89,17 @@ function resumePointOfAttempt(attempt: JsonObject, subflowId: string | undefined
   const route = typeof point.route === "string" ? point.route.trim() : "";
   if (!nodeId || !route) return declined("resume_point_malformed");
   return { resume: { nodeId, route } };
+}
+
+/**
+ * A repair whose trial proved nothing either way and whose evidence is the
+ * judged whole run (t267): the trial refused only for want of evidence
+ * (`no_evidence` -- nothing failed or was unknown, and a resume point was
+ * named), and the patch said it awaits that run. Not resuming would leave the
+ * run nothing to be judged by. Every resume-point rule below still applies.
+ */
+function awaitsJudgedRun(attempt: JsonObject): boolean {
+  return attempt.notResumableCode === "no_evidence" && automationStudioVerificationAwaitsJudgedRun(attempt.verification);
 }
 
 function declined(notResumableCode: string): AutomationStudioAdaptiveRetryDecision {
