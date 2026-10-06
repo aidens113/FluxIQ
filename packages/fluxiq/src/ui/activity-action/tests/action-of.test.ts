@@ -205,6 +205,8 @@ describe("activityActionOf: no output carries an id or a result code", () => {
 describe("activityActionOf: looks name what they look at (t193)", () => {
   it("reads Core's look-ups as looks, named by what they look up", () => {
     expect(outputsOf(activityActionOf(tool("Looking up how to use “Type”", undefined, "started", "core.describe_nodes")))).toEqual(["look", "Type", "working", ""]);
+    // R2-U-4 (`run-muwansvz-a2b4a987`, moment 04): "Look · Extract list" named a node; the look-up says what it looks up.
+    expect(outputsOf(activityActionOf(tool("Looking up how to read a list", undefined, "started", "core.describe_nodes")))).toEqual(["look", "how to read a list", "working", ""]);
     expect(outputsOf(activityActionOf(tool("Looking again at what “open store picker 1” found", "Result: core.recall.restored", "succeeded", "core.recall_result")))).toEqual(["recall", "open store picker 1", "done", ""]);
   });
 
@@ -374,7 +376,9 @@ describe("activityActionOf: what a test of the Flow did with each step (C10)", (
     expect(activityActionOf(dry("core.replay.failed", " · Excused: interruption"))).toMatchObject({ kind: "click", testing: true, outcome: "done", why: null, tested: "Skipped: not there, optional" });
     expect(activityActionOf(dry("core.replay.failed", " · Excused: optional"))?.tested).toBe("Skipped: not there, optional");
     expect(activityActionOf(dry("core.replay.unreproducible", " · Excused: withheld"))?.tested).toBe("Skipped: it needed a step the test only checked");
-    expect(activityActionOf(dry("core.replay.failed", " · Excused: repeat"))?.tested).toBe("Skipped: it only runs sometimes");
+    expect(activityActionOf(dry("core.replay.failed", " · Excused: repeat"))?.tested).toBe("Skipped: the test reached no rows for it to repeat over");
+    // A conditional or fallback step still only runs sometimes (U11 of `run-muwao5n4-44977b2a`: a repeat is not one).
+    expect(activityActionOf(dry("core.replay.failed", " · Excused: only_if"))?.tested).toBe("Skipped: it only runs sometimes");
     // Not excused, it is still a step that did not hold.
     expect(activityActionOf(dry("core.replay.failed"))).toMatchObject({ outcome: "failed", why: "it couldn't run when the test tried it again" });
     expect(activityActionOf(dry("core.replay.failed"))).not.toHaveProperty("tested");
@@ -411,6 +415,45 @@ describe("activityActionOf: what a finished action came to (result)", () => {
     const edit = (text: string, status: "succeeded" | "failed" = "succeeded") => activityActionOf(tool("Editing the Flow", text, status, "core.flow_draft", "building"));
     expect(edit("Changed: removed step 9, Add to cart")).toMatchObject({ kind: "draft", outcome: "done", result: "removed step 9, Add to cart" });
     expect(edit("Result: llm_evidence_loop.draft_amendments_refused · Reason: already_out", "failed")).not.toHaveProperty("result");
+  });
+});
+
+// Live run `run-muwansvz-a2b4a987` (UI review round 2): R2-U-1, the build
+// test's check card read "Check result / Didn't pass" with no count and no
+// reason while the read above it said "Done: 82 rows"; R2-U-6, a list read
+// Core never sent read "Didn't work: it wasn't on the page".
+describe("activityActionOf: a refuted check says how many rows and why (R2-U-1)", () => {
+  const check = (text: string, label: string = ACTIVITY_RESULT_CHECK_LABELS.refuted): ActivityActionEvent => ({ phase: "verifying", label, detail: { kind: "check", title: "Result check", status: "failed", text } });
+  const VERDICT = "The result was judged not to answer the request the Flow was built for, twice and with the same evidence.";
+
+  it("says the rows that would be stored, but why they did not pass, in one plain clause", () => {
+    const text = `82 rows would be stored. ${VERDICT} It looked for: Every pair rated 4 or more (e.g. the first ones). What it found: A step kept 82 rows from 5 pages with no filtering: it includes ads (e.g. Item One, Item Two), and repeats. Stored rows include accessories.`;
+    expect(activityActionOf(check(text))?.why).toBe("82 rows would be stored, but a step kept 82 rows from 5 pages with no filtering");
+    expect(activityActionOf(check(`13 rows came back. ${VERDICT} What it found: Only the first page was read.`))?.why).toBe("13 rows came back, but only the first page was read");
+    expect(activityActionOf(check(`1 row would be stored. ${VERDICT}`))?.why).toBe("1 row would be stored, but the check found it doesn't answer what you asked");
+  });
+
+  it("never cuts the clause inside an aside, nor glues on the next sentence", () => {
+    const cut = `82 rows would be stored. ${VERDICT} What it found: Stored rows include sponsored items (e.g. Item One, Item Two…`;
+    const why = activityActionOf(check(cut))?.why;
+    expect(why).toBe("82 rows would be stored, but stored rows include sponsored items");
+    expect(why).not.toMatch(/\(|e\.g\./u);
+  });
+
+  it("leaves a check with no count and no finding to Core's own sentence, and an unconfirmed one alone", () => {
+    expect(activityActionOf(check("Two checks disagreed."))?.why).toBeNull();
+    expect(activityActionOf(check(`82 rows would be stored. ${VERDICT}`, ACTIVITY_RESULT_CHECK_LABELS.unconfirmed))).toMatchObject({ why: null, unconfirmed: true });
+    expect(activityActionOf({ ...check(`82 rows would be stored. ${VERDICT}`, ACTIVITY_RESULT_CHECK_LABELS.answers), detail: { kind: "check", title: "Result check", status: "succeeded", text: "82 rows would be stored." } })?.why).toBeNull();
+  });
+});
+
+describe("activityActionOf: a list read Core never sent (R2-U-6)", () => {
+  const read = (reason: string) => activityActionOf(tool("Reading the list of “name, price and 4 more”", `Result: web.action.rejected.target_unobserved · Reason: ${reason} · Node: web.output.dom-extract_list`));
+
+  it("says it was not read, and why, never that the list wasn't on the page", () => {
+    expect(read("malformed_handle")).toMatchObject({ kind: "read", target: "name, price and 4 more", outcome: "failed", why: "FluxIQ didn't read it, as the step didn't say which list on the page to read" });
+    expect(read("answered_the_same_again")?.why).toBe("FluxIQ didn't read it, for the same reason as the time before");
+    expect(activityActionOf(tool("Reading the list", "Result: web.action.rejected.target_unobserved · Node: web.output.dom-extract_list"))?.why).not.toMatch(/wasn't on the page/u);
   });
 });
 

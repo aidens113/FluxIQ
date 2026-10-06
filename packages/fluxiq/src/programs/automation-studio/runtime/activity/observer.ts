@@ -33,6 +33,7 @@ import { automationStudioActivityCallContext } from "./call-context.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 import { automationStudioActivityDraftEdit, automationStudioActivityRefusedCall } from "./decision-answer/index.ts";
 import { emitAutomationStudioActivity } from "./emit.ts";
+import { automationStudioActivityRepeatedReason } from "./repeated-reason.ts";
 import { emitAutomationStudioActivityThought } from "./thought.ts";
 import { automationStudioActivityCompletionRefusal, automationStudioActivityDecision, automationStudioActivityReasonText, automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "./wording/index.ts";
 
@@ -134,7 +135,9 @@ function decidedCall(decision: unknown): { callId: string; toolId: string; value
  * before the call runs and kept for its end: asked again after a click, a
  * handle on the page the click left was no longer there, so the row that ended
  * a press of "No thanks" read "Clicking on the page" and its card "Click · the
- * page" (t193, `run-muqiojz4-04a7a8fc`). A replayed step that did not hold
+ * page" (t193, `run-muqiojz4-04a7a8fc`). A refusal the domain gives again
+ * in place of its cause (`answered_the_same_again`) carries the cause the same
+ * call last came to (`./repeated-reason.ts`, R2-U-6). A replayed step that did not hold
  * and that the test passes over (`excusable`) carries "Excused: <why>" after
  * the reason, so its card says it was skipped rather than that it failed. A
  * call whose answer kept rows carries "Rows: <n>" (`./call-context.ts`), so a
@@ -209,6 +212,8 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
   const calls = automationStudioActivityRefusedCall();
   // Where the work starts, a pass's row and a read's rows (`./call-context.ts`).
   const context = automationStudioActivityCallContext();
+  // A refusal's cause, carried onto the same refusal given again (`./repeated-reason.ts`).
+  const causes = automationStudioActivityRepeatedReason();
   return {
     ...input,
     decide: async (request) => {
@@ -242,7 +247,8 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
       try {
         const result = await executeTool.call(input, call);
         emitAutomationStudioActivityWaitedOut(call.callId, result, automationStudioActivityToolCall(call).phase);
-        toolActivity(call, "succeeded", { ...resultOf(result), ...context.answered(call, result) }, described, said, excusable);
+        const ended = resultOf(result);
+        toolActivity(call, "succeeded", { ...ended, reason: causes.of(call, ended), ...context.answered(call, result) }, described, said, excusable);
         return result;
       } catch (error) {
         toolActivity(call, "failed", { code: undefined }, described, said);

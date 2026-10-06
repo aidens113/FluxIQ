@@ -1,5 +1,5 @@
+import { activityActionVerb, type ActivityActionVerb } from "../../../../../ui/index.ts";
 import { automationStudioActivityHumanLabel } from "./human-label.ts";
-import { automationStudioActivityNodeName } from "./node-name.ts";
 
 /** `core.describe_nodes` (`../../llm/node-tools/describe-nodes.ts`), read as a plain string so this module does not reach into the loop. */
 const DESCRIBE_NODES = "core.describe_nodes";
@@ -7,35 +7,77 @@ const DESCRIBE_NODES = "core.describe_nodes";
 const RECALL_RESULT = "core.recall_result";
 /** `core.run_flow` (`../../llm/node-tools/run-flow.ts`). */
 const RUN_FLOW = "core.run_flow";
-/** The most step names a title lists before it says how many more. */
+/** The most kinds of step a look-up's title says before it says "and more". */
 const MAX_NAMED = 3;
 
-/** A control's or a step's name, in the curly quotes a card reads its target from (`ui/activity-action/action-of.ts`). */
+/**
+ * What a person learns to do by looking a kind of step up, by the verb its id
+ * names (`ui/activity-action/verb.ts`). A read whose id goes on to name a list
+ * is reading a list.
+ */
+const HOW_TO: ReadonlyMap<ActivityActionVerb, string> = new Map<ActivityActionVerb, string>([
+  ["navigate", "open a page"],
+  ["back", "go back a page"],
+  ["click", "click"],
+  ["type", "type"],
+  ["search", "search"],
+  ["clear", "clear a field"],
+  ["select", "choose an option"],
+  ["check", "tick a box"],
+  ["upload", "add a file"],
+  ["read", "read from the page"],
+  ["list", "read a list"],
+  ["describe", "read a control's details"],
+  ["detect", "find a repeating list"],
+  ["look", "look over the page"],
+  ["scroll", "scroll"],
+  ["wait", "wait for the page"],
+  ["assert", "check the page"],
+  ["download", "download a file"],
+  ["key", "press a key"],
+  ["dialog", "answer a dialog"],
+  ["tab", "switch tabs"]
+]);
+/** A name the call carries, in the curly quotes a card reads its target from (`ui/activity-action/action-of.ts`). */
 const quoted = (name: string): string => `“${name}”`;
+/** A word after a read's verb that says it reads a list. */
+const LIST_WORD = /^(list|rows|records|items)$/u;
 
-function listed(names: readonly string[]): string {
+/** What looking up the step `id` names teaches, in a person's words ("read a list"); nothing for an id that names no verb. */
+function howTo(id: string): string | undefined {
+  const words = (id.split(".").at(-1) ?? "").toLowerCase().split(/[-_\s]+/u).filter(Boolean);
+  const at = words.findIndex((word) => activityActionVerb(word) !== undefined);
+  const verb = at < 0 ? undefined : activityActionVerb(words[at]!)?.verb;
+  if (verb === undefined) return undefined;
+  return verb === "read" && words.slice(at + 1).some((word) => LIST_WORD.test(word)) ? "read a list" : HOW_TO.get(verb);
+}
+
+function listed(names: readonly string[], more: boolean): string {
   const shown = names.slice(0, MAX_NAMED);
-  const more = names.length - shown.length;
-  if (more > 0) return `${shown.join(", ")} and ${more} more`;
+  if (more || names.length > shown.length) return `${shown.join(", ")} and more`;
   return shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}` : shown[0] ?? "";
 }
 
 /**
  * What one of Core's own look-up tools does, said from its input: reading how
- * the steps it names are used (`Looking up how to use “Type and Click”`), and
- * reading an earlier call's result again (`Looking again at what “open store
- * picker 1” found`), and running part of the Flow again (`Running the rest of
- * the Flow`, t244). Nothing for any other tool. These named no verb, so they
- * read "Working on the page" (t193). A part run's words name no step number:
- * the person never sees the draft's numbering (t195); the cards of the steps it
- * sends say what each one does.
+ * the kinds of step it names are used, in a person's words and never by a
+ * node's name (`Looking up how to read a list`, `Looking up how to click and
+ * type`; one whose verb no word names is "and more", and none at all "how to
+ * use a step"), and reading an earlier call's result again (`Looking again at
+ * what “open store picker 1” found`), and running part of the Flow again
+ * (`Running the rest of the Flow`, t244). Nothing for any other tool. These
+ * named no verb, so they read "Working on the page" (t193); the look-up then
+ * named its node, "Look · Extract list" (R2-U-4, `run-muwansvz-a2b4a987`). A
+ * part run's words name no step number: the person never sees the draft's
+ * numbering (t195); the cards of the steps it sends say what each one does.
  */
 export function automationStudioActivityCoreTool(call: { toolId: string; value?: unknown }): string | undefined {
   const value = call.value && typeof call.value === "object" && !Array.isArray(call.value) ? call.value as Record<string, unknown> : {};
   if (call.toolId === DESCRIBE_NODES) {
     const ids = Array.isArray(value.ids) ? value.ids.filter((id): id is string => typeof id === "string") : [];
-    const names = [...new Set(ids.map(automationStudioActivityNodeName).filter((name): name is string => name !== undefined))];
-    return names.length > 0 ? `Looking up how to use ${quoted(listed(names))}` : "Looking up how to use a step";
+    const ways = ids.map(howTo);
+    const known = [...new Set(ways.filter((way): way is string => way !== undefined))];
+    return known.length > 0 ? `Looking up how to ${listed(known, ways.includes(undefined))}` : "Looking up how to use a step";
   }
   if (call.toolId === RECALL_RESULT) {
     // The call id the model gave the call it recalls ("open-store-picker-1"),

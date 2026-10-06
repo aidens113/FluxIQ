@@ -4,7 +4,8 @@ import { activityActionFailureReason } from "../failure-reason.ts";
 describe("activityActionFailureReason", () => {
   it.each([
     ["web.target.not_found", "it wasn't on the page"],
-    ["example.unobserved", "it wasn't on the page"],
+    // Not looked for at all: the call named something FluxIQ had not seen (R2-U-6).
+    ["example.unobserved", "FluxIQ didn't send it, as the step named something it hadn't seen on the page"],
     ["web.wait.timeout", "the page took too long"],
     ["web.wait.timed_out", "the page took too long"],
     ["web.target.ambiguous", "more than one thing on the page matched"],
@@ -75,7 +76,8 @@ describe("activityActionFailureReason: a refusal's own reason (t193)", () => {
   });
 
   it("falls back to the code when the reason names nothing it knows, and never says the reason", () => {
-    expect(activityActionFailureReason("web.action.rejected.target_unobserved", "vendor_specific_thing")).toBe("it wasn't on the page");
+    expect(activityActionFailureReason("web.action.rejected.target_unobserved", "vendor_specific_thing")).toBe("FluxIQ didn't send it, as the step named something it hadn't seen on the page");
+    expect(activityActionFailureReason("web.target.not_found", "vendor_specific_thing")).toBe("it wasn't on the page");
     expect(activityActionFailureReason("web.action.failed", "vendor_specific_thing")).toBeNull();
   });
 });
@@ -122,6 +124,33 @@ describe("activityActionFailureReason: Core's own codes are no page miss (t194)"
   // beside a 7-in-1 button in plain sight.
   it("says a handle from an older view of the page as that, not as a thing missing from the page", () => {
     expect(activityActionFailureReason("web.action.rejected.target_unobserved", "handle_not_in_packet")).toBe("FluxIQ was looking at an older view of the page");
-    expect(activityActionFailureReason("web.action.rejected.target_unobserved")).toBe("it wasn't on the page");
+    expect(activityActionFailureReason("web.action.rejected.target_unobserved")).not.toBe("it wasn't on the page");
+  });
+});
+
+// R2-U-6 (live run `run-muwansvz-a2b4a987`, moment 07, steps 0034, 0039 and
+// 0046): a list read the step gave no usable list for (`malformed_handle`),
+// then the same refusal given again (`answered_the_same_again`), read "Read
+// list · Didn't work: it wasn't on the page" beside the list in plain sight.
+// The call was never sent, and nothing was looked for on the page.
+describe("activityActionFailureReason: a call never sent is no page miss (R2-U-6)", () => {
+  const UNOBSERVED = "web.action.rejected.target_unobserved";
+
+  it("says a list read that named no list as not read, and why, in a list's words", () => {
+    expect(activityActionFailureReason(UNOBSERVED, "malformed_handle", "read")).toBe("FluxIQ didn't read it, as the step didn't say which list on the page to read");
+    expect(activityActionFailureReason(UNOBSERVED, "malformed_handle", "click")).toBe("FluxIQ didn't send it, as the step didn't say which control on the page to use");
+    expect(activityActionFailureReason(UNOBSERVED, undefined, "read")).toBe("FluxIQ didn't read it, as the step named a list it hadn't seen on the page");
+  });
+
+  it("says the same refusal given again as that, never as a page miss", () => {
+    expect(activityActionFailureReason(UNOBSERVED, "answered_the_same_again", "read")).toBe("FluxIQ didn't read it, for the same reason as the time before");
+    expect(activityActionFailureReason(UNOBSERVED, "answered_the_same_again")).toBe("FluxIQ didn't send it, for the same reason as the time before");
+  });
+
+  it("never reads target_unobserved or changes_nothing as a page miss", () => {
+    for (const reason of [undefined, "changes_nothing", "answered_the_same_again", "vendor_specific_thing"]) {
+      for (const kind of [undefined, "read", "click"] as const) expect(activityActionFailureReason(UNOBSERVED, reason, kind)).not.toMatch(/wasn't on the page/u);
+    }
+    expect(activityActionFailureReason(UNOBSERVED, "changes_nothing")).toBe("it was already tried exactly this way on this same page");
   });
 });

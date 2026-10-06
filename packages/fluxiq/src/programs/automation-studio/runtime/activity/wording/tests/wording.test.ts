@@ -42,10 +42,27 @@ describe("automationStudioActivityAction", () => {
   // test named its subject except the list read, a bare "Test run". The domain
   // names what a read reads (`describeCall`), and the sentence quotes it.
   it("names what a list read reads when the domain says it", () => {
-    expect(automationStudioActivityAction({ id: "web.output.dom-extract_list", words: { target: "name, price and rating" } })).toBe("Reading the list of “name, price and rating”");
+    expect(automationStudioActivityAction({ id: "web.output.dom-extract_list", words: { target: "name and url" } })).toBe("Reading the list of “name and url”");
     expect(automationStudioActivityAction({ id: "web.output.dom-extract_list", words: {} })).toBe("Reading the list");
     expect(automationStudioActivityAction({ id: "web.output.dom-extract_list", parameters: { element: QUOTE } })).toBe("Reading the list");
     expect(automationStudioActivityToolCall(call("dryrun.1.10", { replay: "step", node: "web.output.dom-extract_list", parameters: {}, consequences: [] }), { target: "name and price" }).title).toBe("Reading the list of “name and price”");
+  });
+
+  // R2-U-8 (`run-muwansvz-a2b4a987`, moments 04-07): one list read under three
+  // names -- the overlay's "name, price, rating and 3 more", the build card's
+  // "name, price and 4 more" and the test card's "name and 5 more". Core names
+  // a list of more than two fields by exactly two of them, for build reads and
+  // test reads alike, so the overlay and the card say the same.
+  it("names a list of more than two fields by two of them and how many more", () => {
+    const list = "web.output.dom-extract_list";
+    expect(automationStudioActivityAction({ id: list, words: { target: "name, price, rating and 3 more" } })).toBe("Reading the list of “name, price and 4 more”");
+    expect(automationStudioActivityAction({ id: list, words: { target: "name, price and rating" } })).toBe("Reading the list of “name, price and rating”");
+    expect(automationStudioActivityAction({ id: list, words: { target: "name and price" } })).toBe("Reading the list of “name and price”");
+    expect(automationStudioActivityAction({ id: list, words: { target: "title" } })).toBe("Reading the list of “title”");
+    const build = automationStudioActivityToolCall(call("rerun.5", { node: list, parameters: {} }), { target: "name, price, rating and 3 more" });
+    const test = automationStudioActivityToolCall(call("dryrun.1.8", { replay: "step", node: list, parameters: {}, consequences: [] }), { target: "name, price, rating and 3 more" });
+    expect(build.label).toBe("Trying again: reading the list of “name, price and 4 more”");
+    expect(test.title).toBe(build.title);
   });
 
   it("prefers an authored label, and names nothing it does not know", () => {
@@ -162,10 +179,15 @@ describe("automationStudioActivityToolCall", () => {
   });
 
   it("says what Core's own look-ups read (t193: they read Working on the page)", () => {
-    expect(automationStudioActivityToolCall(call("d1", { ids: ["web.output.dom-type"] }, "core.describe_nodes"))).toMatchObject({ kind: "tool", phase: "exploring", title: "Looking up how to use “Type”" });
+    // R2-U-4 (`run-muwansvz-a2b4a987`, moment 04): "Looking up how to use
+    // “Extract list”" put a node's name on the card ("Look · Extract list");
+    // a look-up says what it looks up, in a person's words, naming no node.
+    expect(automationStudioActivityToolCall(call("d1", { ids: ["web.output.dom-type"] }, "core.describe_nodes"))).toMatchObject({ kind: "tool", phase: "exploring", title: "Looking up how to type" });
+    expect(automationStudioActivityToolCall(call("d0", { ids: ["web.output.dom-extract_list"] }, "core.describe_nodes")).title).toBe("Looking up how to read a list");
     expect(automationStudioActivityToolCall(call("d2", { ids: ["web.output.dom-type", "web.output.dom-click", "web.output.dom-extract-list", "builtin.control.merge"] }, "core.describe_nodes")).title)
-      .toBe("Looking up how to use “Type, Click, Extract list and 1 more”");
-    expect(automationStudioActivityToolCall(call("d3", { ids: ["web.output.dom-click", "web.output.dom-type"] }, "core.describe_nodes")).title).toBe("Looking up how to use “Click and Type”");
+      .toBe("Looking up how to type, click, read a list and more");
+    expect(automationStudioActivityToolCall(call("d3", { ids: ["web.output.dom-click", "web.output.dom-type"] }, "core.describe_nodes")).title).toBe("Looking up how to click and type");
+    expect(automationStudioActivityToolCall(call("d5", { ids: ["builtin.control.merge"] }, "core.describe_nodes")).title).toBe("Looking up how to use a step");
     expect(automationStudioActivityToolCall(call("d4", {}, "core.describe_nodes")).title).toBe("Looking up how to use a step");
     expect(automationStudioActivityToolCall(call("r1", { callId: "open-store-picker-1" }, "core.recall_result")).title).toBe("Looking again at what “open store picker 1” found");
     expect(automationStudioActivityToolCall(call("r2", { callId: "initial.core.run_node" }, "core.recall_result")).title).toBe("Looking again at what an earlier step found");

@@ -28,7 +28,7 @@ describe("automationStudioActivityReasonText", () => {
   // read "extraction.4", "extract_list" and "(step 7)" from the model's summary.
   it("screens handles, internal node ids and draft step references, and keeps the rest of the words", () => {
     expect(automationStudioActivityReasonText("Reading page 3's results with the detected list `extraction.4` (t2134), so the draft's extract_list pages to the end."))
-      .toBe("Reading page 3's results with the detected list, so the draft's extract list pages to the end.");
+      .toBe("Reading page 3's results with the detected list, so the draft's list reader pages to the end.");
     expect(automationStudioActivityReasonText("Rerunning the search step (step 7) with web.output.dom-extract, then press t12."))
       .toBe("Rerunning the search step with dom extract, then press.");
     // An address keeps its own words, and so does a sentence with no internal names.
