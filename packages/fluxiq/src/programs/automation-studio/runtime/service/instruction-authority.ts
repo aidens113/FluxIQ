@@ -2,7 +2,7 @@
 //
 // One bounded provider call, made through the build's own provider and harness.
 // It is an evidence decision with no tools and a completion shaped by
-// `automationStudioInstructedConsequencesSchema`, so it needs no task kind a
+// `automationStudioInstructionReadingSchema`, so it needs no task kind a
 // build does not already have. The provider runs it at temperature 0, like
 // every DeepSeek call.
 //
@@ -34,12 +34,28 @@
 // claims nothing and answers no act, so each act is treated as lasting by the
 // build's tests (as is any act whose kind lasts, whatever the read said); the
 // gate still asks. What it spent is counted with the build.
+//
+// **The route, from the same call (D phase 1).** The user's rule: a route the
+// person names must be followed; a Flow may start where the work begins unless
+// the person names the route. The same question also asks whether the
+// instructions name one (`../action-permissions/instruction-reading/`), and
+// `route` answers it from the same one call: whichever of `derive` and
+// `route.read` comes first sends it, the other shares it, and nothing sends it
+// again -- not after an answer, not after a failure. `route.peek` never sends.
+// The two answers are read independently: a route Core cannot ground is
+// `unavailable` and leaves every grounded consequence standing, and a failed
+// or incomplete read is `unavailable`, never `open`. A call that threw stays a
+// rejection for `derive`, so the gate still holds its answer as unknown and
+// asks (`../action-permissions/gate.ts`); `route` says only `transport`. No
+// consumer acts on the route yet: this is the shared reading later phases use.
 
 import {
-  automationStudioInstructedConsequencesSchema,
   automationStudioInstructedReadUnanswered,
-  readAutomationStudioInstructedRead,
+  automationStudioInstructionReadingSchema,
+  readAutomationStudioInstructionReading,
   type AutomationStudioInstructedRead,
+  type AutomationStudioInstructionReading,
+  type AutomationStudioInstructionRouteReading,
   type AutomationStudioInstructionText
 } from "../action-permissions/index.ts";
 import { automationStudioInstructedActs } from "../flow-bootstrap/index.ts";
@@ -66,7 +82,21 @@ export type AutomationStudioInstructionAuthorityUsage = {
 };
 
 /** What this decision is, said where its answer is shaped: a read of the instruction, not a next step on a page. */
-const READ_DECISION = "This call reads the person's instructions alone: there is no page here and nothing to do next, so complete at once. Write summary as one plain sentence saying what the instructions ask for, act by act.";
+const READ_DECISION = "This call reads the person's instructions alone: there is no page here and nothing to do next, so complete at once. Write summary as one plain sentence saying what the instructions ask for, act by act, and whether they name a route to follow.";
+
+/** The build's route, from the same one read as its consequences. */
+export type AutomationStudioInstructionAuthorityRoute = {
+  /** The route as the one read answered it, sending that read if nothing has yet; a read that failed is `unavailable`, never `open`. */
+  read(): Promise<AutomationStudioInstructionRouteReading>;
+  /** What is known without sending anything: `unread` until the one read has settled. */
+  peek(): AutomationStudioInstructionRouteReading;
+};
+
+/** The one read's outcome, held whatever it was so nothing reads again: its answer, or what it threw. */
+type Outcome = { answer: AutomationStudioInstructionReading } | { failed: unknown };
+
+const TRANSPORT: AutomationStudioInstructionRouteReading = Object.freeze({ state: "unavailable", reason: "transport" });
+const NON_COMPLETE: AutomationStudioInstructionRouteReading = Object.freeze({ state: "unavailable", reason: "non_complete" });
 
 export function automationStudioFlowBootstrapInstructionAuthority(input: {
   run: (request: HarnessInput) => Promise<HarnessResult>;
@@ -78,13 +108,13 @@ export function automationStudioFlowBootstrapInstructionAuthority(input: {
   active: readonly AutomationStudioInstructionText[];
   provider: { provider: NonNullable<HarnessInput["provider"]>; tokenLimits?: HarnessInput["tokenLimits"]; timeoutMs?: number };
   maxEstimatedCostUsd?: number | undefined;
-}): { derive: () => Promise<AutomationStudioInstructedRead>; usage: AutomationStudioInstructionAuthorityUsage } {
+}): { derive: () => Promise<AutomationStudioInstructedRead>; route: AutomationStudioInstructionAuthorityRoute; usage: AutomationStudioInstructionAuthorityUsage } {
   const usage: AutomationStudioInstructionAuthorityUsage = { calls: 0, estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
   // The text the service reads the checklist from (`../service.ts`, `bootstrapInstructionText`), so an act's id here is its id there.
   const acts = automationStudioInstructedActs(input.active.map((instruction) => `${instruction.title}\n${instruction.body}`).join("\n")).map((act) => ({ id: act.id, quote: act.quote, ...(act.source ? { source: act.source } : {}) }));
-  const completionSchema = automationStudioInstructedConsequencesSchema(acts);
+  const completionSchema = automationStudioInstructionReadingSchema(acts);
   const decisionSchema: JsonObject = { description: READ_DECISION, ...buildAutomationStudioLlmEvidenceLoopDecisionSchema([], completionSchema, true) };
-  const derive = async (): Promise<AutomationStudioInstructedRead> => {
+  const ask = async (): Promise<AutomationStudioInstructionReading> => {
     const answer = await input.run({
       taskKind: "evidence_tool_decision",
       projectId: input.projectId,
@@ -105,8 +135,27 @@ export function automationStudioFlowBootstrapInstructionAuthority(input: {
     usage.totalTokens += answer.usage?.totalTokens ?? 0;
     usage.estimatedCostUsd += answer.usage?.estimatedCostUsd ?? 0;
     const decision = answer.ok && answer.response?.kind === "evidence_tool_decision" ? answer.response.decision : undefined;
-    if (decision?.kind !== "complete") return automationStudioInstructedReadUnanswered(acts);
-    return readAutomationStudioInstructedRead({ result: decision.result, instructions: input.active, acts });
+    if (decision?.kind !== "complete") return { instructed: automationStudioInstructedReadUnanswered(acts), route: NON_COMPLETE };
+    return readAutomationStudioInstructionReading({ result: decision.result, instructions: input.active, acts });
   };
-  return { derive, usage };
+  // Set before anything awaits it, so callers at once share the one call.
+  let reading: Promise<Outcome> | undefined;
+  let known: AutomationStudioInstructionRouteReading = { state: "unread" };
+  const read = (): Promise<Outcome> => reading ??= ask().then(
+    (answer): Outcome => { known = answer.route; return { answer }; },
+    (failed: unknown): Outcome => { known = TRANSPORT; return { failed }; }
+  );
+  const derive = async (): Promise<AutomationStudioInstructedRead> => {
+    const outcome = await read();
+    if ("failed" in outcome) throw outcome.failed;
+    return outcome.answer.instructed;
+  };
+  const route: AutomationStudioInstructionAuthorityRoute = {
+    read: async () => {
+      const outcome = await read();
+      return "failed" in outcome ? TRANSPORT : outcome.answer.route;
+    },
+    peek: () => known
+  };
+  return { derive, route, usage };
 }

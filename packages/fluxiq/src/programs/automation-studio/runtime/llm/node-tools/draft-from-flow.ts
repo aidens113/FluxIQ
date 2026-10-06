@@ -53,13 +53,28 @@
 // exactly as the build's own draft said it, and the Merge it joins at is kept
 // as the step after it, which `flow-bootstrap/authoring/draft-routing.ts`
 // joins at rather than adding a second.
+//
+// **A loop is read back as the repeat it was written from (C4, t269).** The
+// seed used to read a For Each back as one more plain step, with nothing
+// feeding its required `items` and no span to walk, so a repair that left a
+// row loop untouched was refused at completion
+// (`bootstrap.required_input_unconnected`) before any fresh test: it never
+// re-read the list or wrote a single row. A loop in the assembler's own shape
+// (`./seeded-loops.ts`) is now seeded as its list step, then its body with the
+// repeat statement on the first body step; the For Each and the Merges that
+// only frame it are left for the assembler to derive again. The body keeps
+// its parameters byte for byte: a `$state item.*` binding already names the
+// pass's row, and the fresh test resolves it against the row it reads.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftScheduleCandidate } from "../../flow-draft/scheduled-candidate/index.ts";
+// A type only, so nothing is imported back out of the directory this one is read by.
+import type { AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "./run-node.ts";
+import { automationStudioFlowDraftSeededLoops } from "./seeded-loops.ts";
 
 /**
  * The control nodes a build never authors and a seed never carries.
@@ -72,6 +87,13 @@ const DERIVED_CONTROL_NODES = new Set(["builtin.control.start", "builtin.control
 
 /** The join a Flow's optional step leads both of its ways into. */
 const MERGE_NODE_ID = "builtin.control.merge";
+
+/**
+ * The nodes routing derives around the steps it is given -- a join, a loop --
+ * which hold plan keys of their own between the steps' nodes (`flow-bootstrap/
+ * authoring/draft-routing.ts`).
+ */
+const ROUTING_NODES = new Set([MERGE_NODE_ID, "builtin.control.for-each"]);
 
 /** Where a seeded step's own name starts, kept clear of the `d<n>` the loop mints. */
 const SEED_STEP_ID_PREFIX = "f";
@@ -127,13 +149,20 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
   startPages?: Readonly<Record<string, JsonObject>> | undefined;
 }): AutomationStudioFlowDraftFlowSeed {
   const authored = input.nodes.filter((node) => !DERIVED_CONTROL_NODES.has(node.definitionId));
-  const ordered = orderedNodes(authored, input.edges);
+  const loops = automationStudioFlowDraftSeededLoops(authored, input.edges);
+  const framing = new Set(loops.flatMap((loop) => loop.framing));
+  const ordered = orderedNodes(authored, input.edges).filter((node) => !framing.has(node.id));
   const optional = optionalNodeIds(authored, input.edges);
+  const stepIdOf = new Map(ordered.map((node, index) => [node.id, `${SEED_STEP_ID_PREFIX}${index + 1}`]));
+  const repeats = new Map(loops.map((loop) => [loop.body[0]!, {
+    kind: "repeat" as const, through: stepIdOf.get(loop.body.at(-1)!)!, over: stepIdOf.get(loop.over)!
+  }]));
   const steps: AutomationStudioFlowDraftStep[] = [];
   const nodeIdByStepId: Record<string, string> = {};
   const startedOnByStepId: Record<string, JsonObject> = {};
   for (const node of ordered) {
-    const id = `${SEED_STEP_ID_PREFIX}${steps.length + 1}`;
+    const id = stepIdOf.get(node.id)!;
+    const repeat = repeats.get(node.id);
     const parameters: JsonObject = node.parameterValues ? structuredClone(node.parameterValues) : {};
     steps.push({
       position: steps.length + 1,
@@ -152,7 +181,7 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
       disposition: "kept",
       // What the Flow already says about when this node runs. Without it the
       // re-authored Flow would run it unconditionally.
-      ...(optional.has(node.id) ? { routing: { kind: "optional" as const } } : {}),
+      ...(repeat ? { routing: repeat } : optional.has(node.id) ? { routing: { kind: "optional" as const } } : {}),
       // What state routing recorded on the node, carried unread (see below).
       ...routeSignaturesOf(node)
     });
@@ -168,12 +197,17 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
  * Which existing node each node of an assembled plan is, for the steps that
  * came from one.
  *
- * The assembler names a plan's nodes `s1`, `s2`, ... in the order of the
- * proposed steps it was given (`authoring/assemble.ts`, `buildSubflow`), so the
- * correspondence is positional and is read back the same way. A key this
- * answers for names a node that already exists and must keep its id; a key it
- * does not answer for is a node the build added, and minting an id for that one
- * is right.
+ * The assembler names a plan's nodes `s1`, `s2`, ... in the order it emits
+ * them (`authoring/assemble.ts`, `buildSubflow`): each proposed step's node,
+ * in order, with the joins and loops routing derived between them
+ * (`authoring/draft-routing.ts`). Given the `plan`, the steps are read against
+ * its nodes in that order, a derived node skipped where it stands; without
+ * it, every key is taken to be a step's, which is only right for a draft that
+ * routes nothing. A repaired row loop showed why it matters: its head Merge
+ * took `s2`, so the untouched loop body's id went to the Merge and the body
+ * was minted a new one. A key this answers for names a node that already
+ * exists and must keep its id; a key it does not answer for is a node the
+ * build added, and minting an id for that one is right.
  *
  * A step the model dropped, reordered or replaced simply stops being at the
  * position it was: dropping is how the model says the Flow should no longer
@@ -182,15 +216,42 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
 export function automationStudioFlowDraftPlanNodeIds(input: {
   steps: readonly AutomationStudioFlowDraftStep[];
   nodeIdByStepId: Readonly<Record<string, string>>;
+  /** The plan these steps were assembled into, whose derived nodes hold keys too. */
+  plan?: AutomationStudioFlowBootstrapPlan | undefined;
 }): Record<string, string> {
   const nodeIdByKey: Record<string, string> = {};
   const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
+  const keys = planKeys(proposed, input.plan);
   for (const [index, step] of proposed.entries()) {
+    const key = keys[index];
     // A rerun that took a carried step's place stands for that step's node (t244).
     const nodeId = input.nodeIdByStepId[step.standsFor ?? automationStudioFlowDraftStepId(step)];
-    if (nodeId !== undefined) nodeIdByKey[`s${index + 1}`] = nodeId;
+    if (key !== undefined && nodeId !== undefined) nodeIdByKey[key] = nodeId;
   }
   return nodeIdByKey;
+}
+
+/**
+ * The plan key of each proposed step's node, in step order. A step whose node
+ * is not where the plan's order puts it ends the reading: it and every step
+ * after it answer nothing, and are minted ids rather than handed another
+ * node's.
+ */
+function planKeys(
+  proposed: readonly AutomationStudioFlowDraftStep[],
+  plan: AutomationStudioFlowBootstrapPlan | undefined
+): (string | undefined)[] {
+  if (!plan) return proposed.map((_, index) => `s${index + 1}`);
+  const nodes = plan.subflows[0]?.nodes ?? [];
+  const keys: string[] = [];
+  let at = 0;
+  for (const step of proposed) {
+    while (at < nodes.length && nodes[at]!.definitionId !== step.actionId && ROUTING_NODES.has(nodes[at]!.definitionId)) at += 1;
+    if (nodes[at]?.definitionId !== step.actionId) break;
+    keys.push(nodes[at]!.key);
+    at += 1;
+  }
+  return keys;
 }
 
 /** Where a node keeps what state routing recorded on it (`route-state/`, t243). */
@@ -250,7 +311,12 @@ function orderedNodes(
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const outgoing = new Map<string, string[]>();
   const entered = new Set<string>();
-  for (const edge of edges) {
+  // What runs once a loop is done comes after the loop's body, whichever edge
+  // the document lists first: a body walked after what follows the loop is not
+  // the order the Flow runs, and not a span a draft can repeat.
+  const done = (edge: AutomationStudioFlowEdge): number => Number(edge.sourcePortId === "done");
+  const doneLast = [...edges].sort((left, right) => done(left) - done(right));
+  for (const edge of doneLast) {
     if (!byId.has(edge.sourceNodeId) || !byId.has(edge.targetNodeId)) continue;
     outgoing.set(edge.sourceNodeId, [...(outgoing.get(edge.sourceNodeId) ?? []), edge.targetNodeId]);
     entered.add(edge.targetNodeId);
@@ -271,3 +337,4 @@ function orderedNodes(
   for (const node of nodes) walk(node.id);
   return ordered;
 }
+
