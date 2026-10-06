@@ -111,4 +111,5 @@ export * from "./apply.ts";
 export * from "./changes.ts";
 export * from "./replaced-attempt.ts";
 export * from "./schema.ts";
+export * from "./settings-rewrite-run.ts";
 export * from "./types.ts";
