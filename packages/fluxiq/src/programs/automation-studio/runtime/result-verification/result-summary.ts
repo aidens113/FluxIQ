@@ -40,6 +40,11 @@
 // (Cause 7). It is screened like a row: no view without a declaration of the
 // domain's denied keys, and none that holds a denied key or a credential-shaped
 // value; either sets `withheld`.
+//
+// **And each step says what it changed in this run** (`changed`, from the
+// session's own trace, `./step-changes.ts`), screened the same way: run
+// `run-muw5zv4m-52d83027`'s judges, shown status rows and a stale end, read one
+// "+" press as a quantity of 1 and a search as the item chosen after it.
 
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
@@ -53,6 +58,7 @@ import type {
   AutomationStudioRunResultSummary
 } from "./contracts.ts";
 import { automationStudioResultReadAccounts } from "./read-account/index.ts";
+import { automationStudioResultStepChanges } from "./step-changes.ts";
 
 /** Stands in, in a row, for a value shaped like a credential or carrying a denied key. */
 const WITHHELD_VALUE = "[withheld]";
@@ -94,6 +100,11 @@ export type AutomationStudioRunResultSummaryInput = {
    */
   actionAttempts?: readonly AutomationStudioFlowRunActionAttemptRecord[] | undefined;
   /**
+   * This session's traced attempts, in the order they ran, for what each step
+   * changed (`./step-changes.ts`). Absent, no step says what it changed.
+   */
+  sessionAttempts?: Parameters<typeof automationStudioResultStepChanges>[0];
+  /**
    * The bound domain's declared denied keys, exactly as declared. Absent means
    * no declaration was made, and no row is carried at all.
    */
@@ -118,7 +129,12 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     recordSets.push(summarized.summary);
   }
   const flowNodes = input.flowEdges ? inRunOrder(input.flowNodes ?? [], input.flowEdges) : input.flowNodes ?? [];
-  const flowShape = flowNodes.map((node) => step(node, input.deniedEvidenceKeys));
+  const changes = automationStudioResultStepChanges(input.sessionAttempts, input.deniedEvidenceKeys);
+  if (changes.withheld) withheld = true;
+  const flowShape = flowNodes.map((node) => {
+    const changed = changes.byNode.get(node.id);
+    return { ...step(node, input.deniedEvidenceKeys), ...(changed ? { changed } : {}) };
+  });
   const ended = input.endView ? automationStudioResultEndView(input.endView, input.deniedEvidenceKeys) : undefined;
   if (ended?.withheld || input.endViewUnreadable !== undefined) withheld = true;
   // How each list read went (`read-account/`): pages, why paging stopped, and
