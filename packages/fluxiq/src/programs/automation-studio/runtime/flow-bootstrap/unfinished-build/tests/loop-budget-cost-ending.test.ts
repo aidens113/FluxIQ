@@ -118,7 +118,8 @@ describe("a build whose purse refused its next call (run 13)", () => {
     expect(refusal?.spentUsd).toBeCloseTo(CARRIED + SPENT, 9);
     expect(refusal?.projectedCostUsd).toBeCloseTo(worstCase(72_677, DECISION_REPLY), 9);
     // Run 13 said "The build stopped at its spending limit of $0.10 before the Flow was finished." and no figure.
-    const carried = CARRIED > 0 ? ` (${usd(CARRIED)} of it by earlier builds of this Flow)` : "";
-    opens(outcome.ending.message, `The build stopped at its spending limit of $${CEILING.toFixed(2)} before the Flow was finished: it had spent ${usd(CARRIED + SPENT)}${carried}, and its next call could have cost up to ${usd(worstCase(72_677, DECISION_REPLY))}. `);
+    // Then it said the purse's arithmetic (R2-U-2); now one money sentence: what building this Flow has used, earlier builds included.
+    opens(outcome.ending.message, `The build used its budget for this Flow before the Flow was finished. Building this Flow has used $${(CARRIED + SPENT).toFixed(2)} of its spending limit of $${CEILING.toFixed(2)}, and what was left was too little to go on. `);
+    expect(outcome.ending.message).not.toContain("next call");
   });
 });

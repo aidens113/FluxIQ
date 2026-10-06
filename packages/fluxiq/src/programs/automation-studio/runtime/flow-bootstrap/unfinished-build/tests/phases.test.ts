@@ -182,7 +182,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1, tested: "not_tested" } });
-    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.250, which left nothing for its next call\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
+    expect(outcome.ending.message).toMatch(/^The build used its budget for this Flow before the Flow was finished\. It used all of its spending limit of \$0\.25\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
     expect(outcome.ending.message).toContain("The steps I found so far were kept as a draft, so building again carries on from them.");
     expect(outcome.ending.message).not.toContain("not doable");
   });
@@ -295,7 +295,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", notDone: [{ id: "a1" }, { id: "a1.quantity" }, { id: "a2" }], tried: { rounds: 1, decisions: 40, stepsInFlow: 0, tested: "not_tested" } });
-    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.250, which left nothing for its next call\. None of the 3 things you asked is done; still to do: /u);
+    expect(outcome.ending.message).toMatch(/^The build used its budget for this Flow before the Flow was finished\. It used all of its spending limit of \$0\.25\. None of the 3 things you asked is done; still to do: /u);
     expect(outcome.ending.message).toContain("No step I found belonged in the Flow. I worked on it live once, exploring the page. What held it up was that the Flow did not yet do what you asked. Nothing was kept to carry on from.");
   });
 

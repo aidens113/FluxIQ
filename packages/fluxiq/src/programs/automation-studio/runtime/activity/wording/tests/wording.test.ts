@@ -140,6 +140,8 @@ describe("automationStudioActivityAction", () => {
     expect(automationStudioActivityAction({ id: "web.describe_element", words: { target: "Add to cart" } })).toBe("Reading the details of “Add to cart”");
     expect(automationStudioActivityAction({ id: "web.recovery.describe_element" })).toBe("Reading the details of a control");
     expect(automationStudioActivityAction({ id: "web.detect_repeating_structure", words: { target: "Paper towels" } })).toBe("Looking for the repeating list around “Paper towels”");
+    // R2-U-9: a list the page names, once the detection found it, is said by that name.
+    expect(automationStudioActivityAction({ id: "web.detect_repeating_structure", words: { target: "Paper towels", list: "Search results" } })).toBe("Looking for the list “Search results”");
     expect(automationStudioActivityAction({ id: SNAPSHOT })).not.toBe("Looking at the page");
   });
 

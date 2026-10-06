@@ -329,7 +329,9 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
 
     expect(requests).toHaveLength(1);
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("which left $0.008, too little for another round: judging its Flow takes two judge calls held at up to $0.008, and its first decision at least $0.001 more.");
+    // What another round needed is the purse's record; the person reads what was used and that what was left was too little (R2-U-2).
+    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("Building this Flow has used $0.09 of its spending limit of $0.10, and what was left was too little to go on.");
+    expect(outcome.kind === "unfinished" && outcome.ending.message).not.toContain("judge calls");
     expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("The steps I found so far were kept as a draft");
     // The Flow it finished with is kept whole, for building again to carry on from.
     expect(kept).toHaveLength(1);

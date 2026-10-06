@@ -142,7 +142,10 @@ function decidedCall(decision: unknown): { callId: string; toolId: string; value
  * the reason, so its card says it was skipped rather than that it failed. A
  * call whose answer kept rows carries "Rows: <n>" (`./call-context.ts`), so a
  * read's card says how many. `context` is the start address and the pass's
- * row the call's words need (`./wording/tool-call.ts`).
+ * row the call's words need (`./wording/tool-call.ts`). For a call's end,
+ * `described` also carries the name a detection's answer gives its list
+ * (`./call-context.ts`), so the row ends "Looking for the list “Search
+ * results”" (R2-U-9).
  */
 function toolActivity(
   call: ToolCall,
@@ -248,7 +251,9 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         const result = await executeTool.call(input, call);
         emitAutomationStudioActivityWaitedOut(call.callId, result, automationStudioActivityToolCall(call).phase);
         const ended = resultOf(result);
-        toolActivity(call, "succeeded", { ...ended, reason: causes.of(call, ended), ...context.answered(call, result) }, described, said, excusable);
+        // A detection's answer names the list when the page does; its row ends named by it (R2-U-9).
+        const { list, ...answered } = context.answered(call, result);
+        toolActivity(call, "succeeded", { ...ended, reason: causes.of(call, ended), ...answered }, list === undefined ? described : { ...described, list }, said, excusable);
         return result;
       } catch (error) {
         toolActivity(call, "failed", { code: undefined }, described, said);

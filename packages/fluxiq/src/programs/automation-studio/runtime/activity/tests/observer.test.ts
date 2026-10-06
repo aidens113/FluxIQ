@@ -237,6 +237,23 @@ describe("a call the bound domain describes", () => {
     await inScope(() => observed.executeTool({ callId: "c1", toolId: "core.run_node", value: typing.input }));
     expect(seen[0]!.detail?.title).toBe("Typing into the page");
   });
+
+  // R2-U-9 (`run-muwansvz-a2b4a987`, moment 04): the detection's card read "Look · the repeating
+  // list on the page". The domain's answer names the list when the page does (`list`), and the row
+  // ends named by it; the card reads that name.
+  it("ends a detection named by the list its answer found, when the page names it", async () => {
+    const detect = { callId: "c1", toolId: "web.detect_repeating_structure", value: { target: "t12" } };
+    const answer = (list?: string) => async () => ({ kind: "llm_evidence_tool_execution", evidence: { extraction: "extraction.1", itemCount: 3, ...(list === undefined ? {} : { list }) }, effectApplied: false, resultCode: "web.structure.detected" });
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ describeCall: () => ({ target: "Pulse Buds" }), executeTool: answer("Search results") as never }));
+    await inScope(() => observed.executeTool(detect));
+    expect(seen.map((event) => event.detail?.title)).toEqual(["Looking for the repeating list around “Pulse Buds”", "Looking for the list “Search results”"]);
+    expect(activityActionOf(seen[1]!)?.target).toBe('the "Search results" list');
+
+    seen = [];
+    const unnamed = observeAutomationStudioEvidenceLoop(loopInput({ executeTool: answer() as never }));
+    await inScope(() => unnamed.executeTool(detect));
+    expect(seen.map((event) => event.detail?.title)).toEqual(["Looking for the repeating list on the page", "Looking for the repeating list on the page"]);
+  });
 });
 
 

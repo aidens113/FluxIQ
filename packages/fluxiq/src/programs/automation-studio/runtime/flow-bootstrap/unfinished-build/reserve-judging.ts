@@ -41,7 +41,20 @@
 // finish none of them, so nothing is spent on one. Those go on as before, with
 // what the test found. Which Flows are not judged again -- the one a judge of
 // this build last said no to, unchanged -- is the caller's (`./phases.ts`).
+//
+// **Nor where the judging can no longer be paid for whole.** A judgement is a
+// pair of calls, and a yes finishes the build only once the second confirms it
+// (`../../result-verification/agreement.ts`). The purse keeps that pair back only
+// from calls that are not a judge's, so a round can open with too little left
+// for the pair itself. Live run `run-mux6nxst-c9bca37c` (D3-5) opened its next
+// round with 47 of 48 calls spent; the reserve judgement got its first call,
+// which said yes, the purse refused the confirming one, and that one
+// unconfirmed yes finished the build. So where the build's purse cannot hold
+// the whole judging now (`judgingFits`), nothing is started: neither `accept`
+// nor the judge is asked, and a reserve-stopped round ends at its budget
+// unjudged (`./phases.ts`).
 import { automationStudioFlowDraftFlowSignature, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioLlmCurrentBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResult } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapRoundProgress, AutomationStudioFlowBootstrapTestVerdict } from "./contracts.ts";
 import { automationStudioFlowBootstrapWithJudgeAccount, automationStudioFlowBootstrapYesNotAboutThisFlow } from "./judgement.ts";
@@ -88,6 +101,9 @@ export async function automationStudioFlowBootstrapJudgeAtReserve(input: {
   judge(loop: FinishedLoop): Promise<AutomationStudioFlowBootstrapTestVerdict | "cancelled">;
 }): Promise<AutomationStudioFlowBootstrapReserveJudging> {
   if (!input.judgement.stepsInFlow || input.judgement.tested !== "replayed_clean") return { kind: "not_judged" };
+  // A judgement the purse cannot pay for whole is not started: one unconfirmed yes would finish the build (run-mux6nxst-c9bca37c).
+  const purse = automationStudioLlmCurrentBuildPurse();
+  if (purse && !purse.judgingFits()) return { kind: "not_judged" };
   // The round's own record, and the Flow as its test ran it: the judge's test report numbers steps as the seed does.
   const loop: FinishedLoop = { ok: true, result: { summary: JUDGED_SUMMARY[input.stopped] }, trace: [...input.progress.trace], steps: input.seed, accounting: { ...input.progress.accounting } };
   if (input.accept && !(await input.accept(loop))) return { kind: "not_judged" };

@@ -228,6 +228,36 @@ export class AutomationStudioLlmBuildPurse {
     return this.judgingHoldUsd() ?? 0;
   }
 
+  /**
+   * Whether the whole judging kept back can still be held now: its calls
+   * beside what is spent and in flight under `maxCalls`, and its hold
+   * (`judgingHoldUsd`, where it can be priced) beside what is spent and in
+   * flight under the ceiling. True when nothing is kept back.
+   *
+   * The reserve is held only against calls that are not a judge's, so nothing
+   * else says when the pair itself stopped fitting. In live run
+   * `run-mux6nxst-c9bca37c` (D3-5) a round opened with 47 of 48 calls spent;
+   * the reserve judgement's first call said yes, the confirming call was
+   * refused, and that one unconfirmed yes finished the build. A caller about to
+   * start judging asks this first (`../../flow-bootstrap/unfinished-build/reserve-judging.ts`).
+   */
+  judgingFits(): boolean {
+    if (!this.judging) return true;
+    if (!this.callAllowance.canHoldAll(this.judging.calls)) return false;
+    const holdUsd = this.judgingHoldUsd();
+    return holdUsd === undefined || this.spentUsd() + this.pendingUsd() + holdUsd <= this.ceilingUsd + EPSILON_USD;
+  }
+
+  /**
+   * Whether `calls` more calls can all still be held beside what is spent and
+   * in flight under `maxCalls`; always true without one. What a round needs of
+   * the allowance before it is opened: its first decision and, with a judge,
+   * the judging pair (`../../flow-bootstrap/unfinished-build/round-funding.ts`).
+   */
+  callsFit(calls: number): boolean {
+    return this.callAllowance.canHoldAll(calls);
+  }
+
   /** The provider's price, at the rate in force now, for a request of `inputTokens` and a reply of `outputTokens`, all uncached; `undefined` before any call brought a price, or where it prices nonsense. */
   priceUsd(inputTokens: number, outputTokens: number): number | undefined {
     let priced: number | undefined;

@@ -152,9 +152,11 @@ describe("run murzln6g: a repair round after a judged no with $0.0111 left (t254
     // Ended at cost with round 0's findings and the Flow kept as a draft; never "not doable".
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
     const message = outcome.kind === "unfinished" ? outcome.ending.message : "";
-    expect(message).toContain("its next call could have cost up to $0.007, more than was left beside the $0.007 kept back for judging the Flow, and that was not spent, because the Flow was unchanged since the judge said it does not do what was asked, and it had spent $0.089 ($0.081 of it by earlier builds of this Flow) in all.");
-    expect(message).toContain("The judge found: the 100 Count was added.");
-    expect(message).toContain("The steps I found so far were kept as a draft, so building again carries on from them, with $0.011 left of this Flow's $0.10.");
+    // One money sentence, earlier builds included; the purse's reserve and the refused call are its record, not the person's (R2-U-2).
+    expect(message).toContain("Building this Flow has used $0.09 of its spending limit of $0.10, and what was left was too little to go on.");
+    expect(message).not.toContain("kept back");
+    expect(message).toContain("Its last check found: the 100 Count was added.");
+    expect(message).toContain("The steps I found so far were kept as a draft, so building again carries on from them.");
     expect(message).not.toContain("went on testing and judging");
     expect(message).not.toContain("saved items list");
     // Only round 0's decision and judging were spent; the reserve was left.

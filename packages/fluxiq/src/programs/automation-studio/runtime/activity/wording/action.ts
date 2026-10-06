@@ -14,11 +14,16 @@ type Phrase = {
    * the domain's own words for the call, never from an element it carries: a
    * list read's subject is what it reads, not a control.
    */
-  also?: { word: RegExp; plain: string; named?: (name: string) => string; byWords?: true };
+  also?: { word: RegExp; plain: string; named?: (name: string) => string; byWords?: true; listed?: (list: string) => string };
 };
 
-/** What a call names, in words a person reads (`AutomationStudioLlmEvidenceCallWords`): the control, and the words it types or looks for. */
-export type AutomationStudioActivityCallWords = { target?: string | undefined; text?: string | undefined };
+/**
+ * What a call names, in words a person reads (`AutomationStudioLlmEvidenceCallWords`):
+ * the control, and the words it types or looks for. `list` is what the page
+ * calls the list a detection found, read off its answer once it has one
+ * (`../call-context.ts`, R2-U-9), never off the call.
+ */
+export type AutomationStudioActivityCallWords = { target?: string | undefined; text?: string | undefined; list?: string | undefined };
 
 /** A control's name, in the curly quotes a card reads its target from (`ui/activity-action/action-of.ts`). */
 const quoted = (name: string): string => `“${name}”`;
@@ -63,7 +68,15 @@ const PHRASES: readonly Phrase[] = [
   {
     verb: "detect",
     plain: "Looking for a pattern on the page",
-    also: { word: /^(repeating|list|structure)$/u, plain: "Looking for the repeating list on the page", named: (name) => `Looking for the repeating list around ${quoted(name)}` }
+    // A list the page names (a heading, an accessible name) is said by that
+    // name once the detection has found it: "Look · the repeating list on the
+    // page" said nothing of which list (R2-U-9, `run-muwansvz-a2b4a987`).
+    also: {
+      word: /^(repeating|list|structure)$/u,
+      plain: "Looking for the repeating list on the page",
+      named: (name) => `Looking for the repeating list around ${quoted(name)}`,
+      listed: (list) => `Looking for the list ${quoted(list)}`
+    }
   },
   // "Looking at the page" said nothing a person could tell apart: a capture of
   // the whole page, a search for words and a control's details all read the
@@ -152,7 +165,11 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
     // the words it types), then the element a resolved node carries.
     const name = automationStudioActivityHumanLabel(input.words?.target, 60)
       ?? (verb.verb === "navigate" ? automationStudioActivityPageName(input.parameters, input.start) : verb.named || (verb.also?.named && !verb.also.byWords) ? elementName(input.parameters) : undefined);
-    if (verb.also && words.slice(index + 1).some((rest) => verb.also!.word.test(rest))) return name && verb.also.named ? verb.also.named(name) : verb.also.plain;
+    if (verb.also && words.slice(index + 1).some((rest) => verb.also!.word.test(rest))) {
+      const list = verb.also.listed ? automationStudioActivityHumanLabel(input.words?.list, 60) : undefined;
+      if (list && verb.also.listed) return verb.also.listed(list);
+      return name && verb.also.named ? verb.also.named(name) : verb.also.plain;
+    }
     const text = saidText(input.words?.text);
     if (text !== undefined && verb.said) return verb.said(text, name);
     return name && verb.named ? verb.named(name) : verb.plain;

@@ -8,6 +8,8 @@ export class AutomationStudioLlmBuildCallAllowance {
   spentCalls(): number { return this.spent; }
   pendingCalls(): number { return this.pending; }
   canHold(keptBackCalls: number): boolean { return this.maxCalls === undefined || this.spent + this.pending + keptBackCalls < this.maxCalls; }
+  /** Whether `calls` more can all still be held beside what is spent and in flight. */
+  canHoldAll(calls: number): boolean { return this.maxCalls === undefined || this.spent + this.pending + calls <= this.maxCalls; }
   hold(): { settle(): void; release(): void } {
     this.pending += 1;
     let ended = false;

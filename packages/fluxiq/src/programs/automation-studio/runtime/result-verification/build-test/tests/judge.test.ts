@@ -331,12 +331,28 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     expect(unconfirmed).not.toHaveProperty("oneCallSaidYes");
   });
 
-  it("yes, then unknown or a call that did not come back, leaves the yes standing", async () => {
+  it("yes, then unknown or a reply without an answer, leaves the yes standing", async () => {
     for (const second of [{ answersRequest: "unknown" }, {}]) {
       const { provider } = answering({ answersRequest: "yes" }, second);
       const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
       expect(verdict).toMatchObject({ verdict: "yes", spent: { calls: 2 } });
     }
+  });
+
+  // Live run run-mux6nxst-c9bca37c (D3-5): a confirming call that did not come back usable confirms nothing (`../../agreement.ts`).
+  it("yes, then a confirming call that failed, is unknown -- the yes is not confirmed", async () => {
+    let call = 0;
+    const provider: AutomationStudioLlmProvider = {
+      metadata: { provider: "mock", model: "debug-model" },
+      runTask: async () => {
+        call += 1;
+        if (call === 1) return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "yes" } }, usage: USAGE };
+        throw new Error("provider timed out");
+      }
+    };
+    const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(call).toBe(2);
+    expect(verdict).toMatchObject({ verdict: "unknown", why: expect.stringContaining("This result was checked once") });
   });
 
   it("asks verify to confirm a yes; the runtime result check, called without it, asks once", async () => {
@@ -349,13 +365,15 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     expect(report.outcome).toMatchObject({ verdict: "answers", calls: 1 });
   });
 
-  it("a confirming call the purse refuses leaves the first yes standing, and its spend is returned", async () => {
+  // Live run run-mux6nxst-c9bca37c (D3-5): the purse refused the confirming call and the one unconfirmed yes finished the build.
+  it("a confirming call the purse refuses is not judged -- the first yes is not confirmed -- and its spend is returned", async () => {
+    // Mutation: let the first yes stand over the refused confirmation. One unconfirmed yes then finishes the build.
     const llm = answering({ answersRequest: "yes" }, NO);
     const provider: AutomationStudioLlmProvider = { ...llm.provider, estimateCostUsd: () => (llm.seen.length === 0 ? 0.05 * AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD : 0.5 * AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD) };
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, carriedUsd: 0.9 * AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD });
     const verdict = await automationStudioLlmBuildPurseScope(purse, () => judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: purse.leftUsd() } }));
     expect(llm.seen).toHaveLength(1);
-    expect(verdict).toMatchObject({ verdict: "yes", spent: { totalTokens: USAGE.totalTokens, calls: 2 } });
+    expect(verdict).toMatchObject({ verdict: "not_judged", why: expect.stringContaining("spending limit"), spent: { totalTokens: USAGE.totalTokens, estimatedCostUsd: USAGE.estimatedCostUsd, calls: 2 } });
   });
 });
 
@@ -374,11 +392,14 @@ it("reports a refused judge's call allowance without invented dollar spend", asy
 });
 
 
-it("keeps a scoped first yes and its paid usage when call admission refuses confirmation", async () => {
+// Live run run-mux6nxst-c9bca37c (D3-5): 47 of 48 calls spent, the first judge call said yes, and the call
+// allowance refused the confirming second. That yes is not confirmed, so the test is not judged.
+it("does not judge on a scoped first yes the call allowance refused to confirm, and still returns its paid usage", async () => {
+  // Mutation: keep the first yes. One unconfirmed yes then finishes the build.
   const { provider, seen } = scripted(["yes"]);
   const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 1 });
   const verdict = await automationStudioLlmBuildPurseScope(purse, () => judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 1 } }));
   expect(seen).toHaveLength(1);
-  expect(verdict).toMatchObject({ verdict: "yes", spent: { calls: 1, inputTokens: USAGE.inputTokens, outputTokens: USAGE.outputTokens, totalTokens: USAGE.totalTokens, estimatedCostUsd: USAGE.estimatedCostUsd } });
+  expect(verdict).toMatchObject({ verdict: "not_judged", why: expect.stringContaining("call allowance of 1"), spent: { calls: 1, inputTokens: USAGE.inputTokens, outputTokens: USAGE.outputTokens, totalTokens: USAGE.totalTokens, estimatedCostUsd: USAGE.estimatedCostUsd } });
   expect(purse.spentCalls()).toBe(1);
 });

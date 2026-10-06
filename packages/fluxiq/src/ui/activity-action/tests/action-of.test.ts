@@ -246,6 +246,13 @@ describe("activityActionOf: a look at one element names what it looked for (U-2)
     expect(around("Sponsored ⓘ Pulsebud Neo ANC Wireless Earbuds, Hybr…")?.target).toBe("the repeating list on the page");
   });
 
+  // R2-U-9 (`run-muwansvz-a2b4a987`, moment 04): a list the page names is the card's target.
+  it("names a detect that found a list the page names by that name, and a long one as the list", () => {
+    const found = (name: string) => activityActionOf(tool(`Looking for the list “${name}”`, "Result: web.structure.detected", "succeeded", "web.detect_repeating_structure"));
+    expect(found("Search results")?.target).toBe('the "Search results" list');
+    expect(found("Wireless earbuds under fifty dollars with free returns")?.target).toBe("the repeating list on the page");
+  });
+
   it("names an element's details by its label, short, and never cut inside a word", () => {
     const details = (name: string) => activityActionOf(tool(`Reading the details of “${name}”`, "Result: web.inspect.succeeded", "succeeded", "web.describe_element"))?.target;
     expect(details("Brightaisle Plus")).toBe('the "Brightaisle Plus" label');

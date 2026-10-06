@@ -95,6 +95,8 @@ const FOR_ROW = /\sfor “([^”]+)”$/u;
 const DETAILS_OF = /^Reading the details of “([^”]+)”$/u;
 /** A look for the repeating list around one element. */
 const LIST_AROUND = /^Looking for the repeating list around “([^”]+)”$/u;
+/** A look that found a list the page names (a heading, an accessible name): R2-U-9, `run-muwansvz-a2b4a987`. */
+const LIST_NAMED = /^Looking for the list “([^”]+)”$/u;
 /**
  * A look-up of how a kind of step is used, as the wording says it
  * (`runtime/activity/wording/core-tool.ts`): "Looking up how to read a list".
@@ -277,6 +279,9 @@ function shortName(text: string): { words: string; whole: boolean } | undefined 
  * - the repeating list around an element (`Looking for the repeating list
  *   around “Sponsored”`) is that list: `the list around "Sponsored"` when the
  *   element's name is short and whole, else the repeating list on the page;
+ * - a list the page names, once the detection found it (`Looking for the list
+ *   “Search results”`): `the "Search results" list` when the name is short and
+ *   whole, else the repeating list on the page (R2-U-9);
  * - a look-up of how a kind of step is used (`Looking up how to read a list`)
  *   is what it looks up: `how to read a list`.
  */
@@ -287,6 +292,11 @@ function lookedFor(title: string): string | undefined {
   if (details !== undefined) {
     const name = shortName(details);
     return name ? `the "${name.words}" label` : "a control's details";
+  }
+  const listed = LIST_NAMED.exec(title)?.[1];
+  if (listed !== undefined) {
+    const name = shortName(listed);
+    return name?.whole ? `the "${name.words}" list` : "the repeating list on the page";
   }
   const around = LIST_AROUND.exec(title)?.[1];
   if (around === undefined) return undefined;
