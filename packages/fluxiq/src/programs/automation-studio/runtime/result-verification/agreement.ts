@@ -27,15 +27,23 @@
 //   yes        yes                               the first, `calls: 2`
 //   yes        no                                `model_disagreed`, carrying
 //                                                the no's reading
-//   yes        unknown, silent or unavailable    the first, `calls: 2`
+//   yes        unknown or silent                 the first, `calls: 2`
+//   yes        unavailable                       `model_unconfirmed`
 //
 // Only the build-test judge sets it, because its `yes` finishes a build: in live
 // run murwcmx2 two build judges (steps 0032 and 0051) were sent the same request
 // but for one step number, answered `no` and then `yes`, and that one `yes`
 // finished the build on rows the playback judge refused. A second call that
-// says nothing contradicts nothing: on correct results a `yes` was measured to
-// flip to `unknown`, never to `no`, so only a `no` unsettles it. The runtime
-// result check keeps the rule above; its `yes` fails nothing either way.
+// answered and said nothing for or against contradicts nothing: on correct
+// results a `yes` was measured to flip to `unknown`, never to `no`, so of the
+// answers only a `no` unsettles it. A second call that never answered at all --
+// refused by the build's purse, never sent, or not back usable -- is another
+// matter: the yes was then checked once, not confirmed. In live run
+// `run-mux6nxst-c9bca37c` (D3-5) the reserve judgement's first call said yes,
+// the purse refused the confirming call, and that one unconfirmed yes finished
+// the build. So it is `model_unconfirmed`, and the build cannot finish on it.
+// The runtime result check keeps the rule above; its `yes` fails nothing either
+// way.
 //
 // Only two agreeing `no`s refute. Two answers that never said `yes` and never
 // agreed on `no` are not proof that the run failed, so they leave it unverified
@@ -107,7 +115,11 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
   const verdicts: AutomationStudioResultVerdict[] = [first.verdict, second.verdict];
   const codes = AUTOMATION_STUDIO_RESULT_VERDICT_CODES;
   if (first.verdict === "answers") {
-    // Only a `no` contradicts a confirmed `yes`; a second call that said nothing leaves it standing.
+    // A confirmation that never came back usable confirms nothing (run-mux6nxst-c9bca37c): the yes is unconfirmed.
+    if (second.basis === "model_unavailable") {
+      return unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked once: the first answer was that it does what was asked, and the second check, which confirms a yes, gave no answer, because it did not come back usable (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts);
+    }
+    // Only a `no` contradicts a confirmed `yes`; a second call that answered unknown, or replied without an answer, leaves it standing.
     if (second.verdict !== "does_not_answer") return { ...first, verdicts, calls: 2 };
     return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts);
   }
