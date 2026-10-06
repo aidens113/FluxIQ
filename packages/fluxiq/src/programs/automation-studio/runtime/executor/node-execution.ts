@@ -9,7 +9,7 @@ import { nodeAttemptFromResult, nodeAttemptWithAdaptationIds } from "./attempt-t
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioRecordBatch } from "./contracts.ts";
 import { automationStudioFaultFromThrownError, automationStudioNodeSideEffectClass, automationStudioThrownErrorText } from "./defensive/index.ts";
 import { captureHostState, enrichAttemptWithHostState } from "./host-state.ts";
-import { collectNodeInputs, collectWiredNodeInputs } from "./node-inputs.ts";
+import { automationStudioNodeOutputReferences, collectNodeInputs, collectWiredNodeInputs } from "./node-inputs.ts";
 import { captureAutomationStudioRecordBatch, captureAutomationStudioWrittenRecords } from "./record-capture.ts";
 import type { AutomationStudioRunState } from "./run-state.ts";
 import type { AutomationStudioTraceWithholding } from "./trace-withholding.ts";
@@ -103,7 +103,10 @@ async function executeNodeAttempt(
   const attemptId = `${node.id}.attempt.${attemptNumber}`;
   const definition = getAutomationNodeDefinition(node.definitionId);
   const inputs = collectNodeInputs(flow, node, values);
-  const resolvedParameters = resolveAutomationNodeParameterValues(node.parameterValues ?? {}, {
+  // A parameter reading another node's output names that node by its key in
+  // the graph; it is read under the id the run keeps its outputs at (`./node-inputs.ts`).
+  const authoredParameters = automationStudioNodeOutputReferences(flow, node.parameterValues ?? {});
+  const resolvedParameters = resolveAutomationNodeParameterValues(authoredParameters, {
     ...(options.inputs ?? {}),
     // The run's live variables, not the seed it started from: a variable written
     // during the run -- inside a For Each body, say -- is what a later node's
@@ -116,7 +119,7 @@ async function executeNodeAttempt(
   // Recorded before any branch below can return: what resolution supplied is
   // withheld from the trace whether or not this node goes on to execute, and
   // whether or not the rest of its bindings resolved.
-  withholding.record(node.parameterValues ?? {}, resolvedParameters.values);
+  withholding.record(authoredParameters, resolvedParameters.values);
   const executionNode = resolvedParameters.missingPaths.length
     ? node
     : { ...node, parameterValues: resolvedParameters.values };

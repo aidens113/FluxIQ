@@ -53,6 +53,11 @@
 // `readRows.rows` in this test -- pass n is row n, as the judge reads it --
 // screened by the check the judge's are (`screenAutomationStudioLlmEvidence`), so
 // a label it withholds is written withheld. Never a row's values.
+//
+// **An earlier step's output (P5, t270)** resolves against what the steps
+// before the span produced in this walk (`./replay-draft.ts`) and what the
+// members before it produced on this pass. Each pass starts with none of the
+// last pass's, so a stale value from an earlier row is never sent.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
@@ -60,6 +65,7 @@ import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } fro
 import {
   automationStudioFlowDraftHoldsBinding,
   automationStudioFlowDraftStepId,
+  automationStudioFlowDraftStepOutputsState,
   type AutomationStudioFlowDraftReplayMode,
   type AutomationStudioFlowDraftReplayOutcome,
   type AutomationStudioFlowDraftReplayPass,
@@ -71,6 +77,7 @@ import { screenAutomationStudioLlmEvidence } from "../harness/index.ts";
 import { automationStudioLlmStepLogScope } from "../step-log/index.ts";
 import {
   AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY,
+  AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES,
   automationStudioNodeReplayStatus,
   automationStudioNodeReplayStepCall,
   automationStudioNodeReplayToolId,
@@ -218,27 +225,34 @@ export function automationStudioFlowDraftReplayTakesRow(node: AutomationStudioFl
   return node?.inputs.some((input) => input.id === AUTOMATION_STUDIO_NODE_REPLAY_ITEM_KEY) === true;
 }
 
+/** A step's outputs in this test, only when it was asked to run and ran: a step checked, remembered or failed produced nothing. */
+export function automationStudioFlowDraftReplayProduced(answer: AutomationStudioFlowDraftReplayAnswer, mode: AutomationStudioFlowDraftReplayMode): JsonObject | undefined {
+  if (!answer.readable || mode !== "replay" || answer.result.resultCode !== AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.replayed) return undefined;
+  const outputs = answer.result.outputs;
+  return isRecord(outputs) ? outputs : undefined;
+}
+
 /**
  * The call one step is sent with: its bindings resolved against `{item: row}`
- * on a pass of a list, against nothing otherwise, so an input takes its test
- * value; the row under `item` when the node takes it, and then no `produced`,
- * which describes the explored row. `unresolved` names the paths nothing
- * answered; nothing is sent then. Nothing at all for a step with nothing to
- * run it with. A step holding no binding, outside a pass, is sent exactly as
- * before t252.
+ * on a pass of a list, so an input takes its test value, and against
+ * `earlier`, what earlier steps produced in this test; the row under `item`
+ * when the node takes it, and then no `produced`, which describes the
+ * explored row. `unresolved` names the paths nothing answered; nothing is
+ * sent then. Nothing at all for a step with nothing to run it with.
  */
 export function automationStudioFlowDraftReplayPassCall(
   step: AutomationStudioFlowDraftStep,
   mode: AutomationStudioFlowDraftReplayMode,
   row?: { item: JsonObject; takesRow: boolean },
-  node?: AutomationStudioFlowDraftReplayNode
+  node?: AutomationStudioFlowDraftReplayNode,
+  earlier?: Record<string, JsonValue>
 ): { value: JsonObject } | { unresolved: string[] } | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   if (step.scheduledCandidate !== undefined && (!scheduled || !node?.outputAction?.fixed)) return undefined;
   const parameters = (scheduled?.input ?? step.ranWith)?.parameters;
   const pass: AutomationStudioNodeReplayPass = {};
   if (isRecord(parameters) && automationStudioFlowDraftHoldsBinding(parameters)) {
-    const resolved = resolveAutomationNodeParameterValues(parameters, row ? { item: row.item } : {});
+    const resolved = resolveAutomationNodeParameterValues(parameters, { ...(earlier ?? {}), ...(row ? { item: row.item } : {}) });
     if (resolved.missingPaths.length) return { unresolved: resolved.missingPaths };
     pass.parameters = resolved.values;
   }
@@ -260,6 +274,8 @@ export type AutomationStudioFlowDraftReplaySpanRunInput = {
   stops?: ((step: AutomationStudioFlowDraftStep) => boolean) | undefined;
   /** The verified step before the span whose withheld effect a member may have needed (`../../flow-draft/verify-only.ts`). */
   withheldBy?: number | undefined;
+  /** What the steps before the span really produced in this test, as run state (see the header). */
+  earlier?: Record<string, JsonValue> | undefined;
 };
 
 /** What a span answered: an outcome per member that ran, what the calls showed, the first page that did not pass, and whether the walk stops. */
@@ -293,9 +309,12 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
   };
   // One pass of every member, on `row` for a list. True when the walk stops.
   const runPass = async (pass: number, row?: JsonObject): Promise<boolean> => {
+    // What the members before this one produced on this pass, and nothing of the pass before.
+    const produced = new Map<string, JsonObject>();
     for (const member of plan.members) {
       const mode = input.modeOf(member);
-      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(input.nodeOf(member.actionId)) } : undefined, input.nodeOf(member.actionId));
+      const earlier = { ...(input.earlier ?? {}), ...automationStudioFlowDraftStepOutputsState(produced) };
+      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(input.nodeOf(member.actionId)) } : undefined, input.nodeOf(member.actionId), earlier);
       let answered: AutomationStudioFlowDraftReplayPass;
       if (built && "unresolved" in built) answered = { pass, status: "failed", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE };
       else {
@@ -304,6 +323,8 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
         const status = answer.readable ? automationStudioNodeReplayStatus(answer.result.resultCode, mode) : "failed";
         answered = { pass, status, ...(answer.readable && answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}) };
         observe(member, callId, answer, status, pass);
+        const outputs = automationStudioFlowDraftReplayProduced(answer, mode);
+        if (outputs) produced.set(automationStudioFlowDraftStepId(member), outputs);
       }
       passes.get(member)!.push(answered);
       if (answered.status !== "replayed" && input.stops?.(member)) return true;
@@ -327,7 +348,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
       count += 1;
       if (await runPass(count)) { stopped = true; break; }
       if (once) break;
-      const built = automationStudioFlowDraftReplayPassCall(plan.over, checkMode);
+      const built = automationStudioFlowDraftReplayPassCall(plan.over, checkMode, undefined, undefined, input.earlier);
       if (!built || "unresolved" in built) break;
       const callId = `${input.callIdOf(plan.over)}.pass.${count + 1}`;
       const answer = await sendPass(count + 1, callId, plan.over, built.value);

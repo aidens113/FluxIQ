@@ -25,6 +25,58 @@ export function automationNodeStateBinding(path: string, fallback?: JsonValue): 
   return { $state: { path, ...(fallback !== undefined ? { fallback } : {}) } };
 }
 
+/**
+ * The first segment of a state path that names another node of the same graph
+ * by its key, rather than a key of run state: `$node.<key>.<output>[.<field>]`
+ * (P5, t270). A Flow assembled from a draft names its nodes `s1`, `s2`, ... by
+ * where they sit, and only the stored Flow knows the id each became, so the
+ * executor resolves the key to that id when the node runs
+ * (`../runtime/executor/node-inputs.ts`). No run state is ever keyed
+ * under it, so a reference nothing resolved is reported missing, never read.
+ */
+export const AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT = "$node";
+
+/** A node-output reference's key and the rest of its path, or nothing when the path is not one. */
+export function automationNodeOutputReference(path: string): { key: string; rest: string } | undefined {
+  const segments = path.split(".");
+  if (segments.length < 3 || segments[0] !== AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT || segments.some((segment) => !segment)) return undefined;
+  return { key: segments[1]!, rest: segments.slice(2).join(".") };
+}
+
+/**
+ * The value with the path of every state binding in it rewritten by `rewrite`,
+ * at any depth resolution reaches; a path it answers nothing for, and a
+ * binding's fallback, are kept. A value it changes nothing in comes back as
+ * it was, so a caller can tell by identity that nothing was rewritten.
+ */
+export function rewriteAutomationNodeStatePaths<Value extends JsonValue>(value: Value, rewrite: (path: string) => string | undefined): Value {
+  return rewritePaths(value, rewrite, 0) as Value;
+}
+
+function rewritePaths(value: JsonValue, rewrite: (path: string) => string | undefined, depth: number): JsonValue {
+  if (isAutomationNodeParameterStateBinding(value)) {
+    const path = rewrite(value.$state.path);
+    return path === undefined || path === value.$state.path ? value : { ...value, $state: { ...value.$state, path } } as JsonValue;
+  }
+  if (!value || typeof value !== "object" || depth >= MAXIMUM_PARAMETER_VALUE_DEPTH) return value;
+  let changed = false;
+  if (Array.isArray(value)) {
+    const items = value.map((item) => {
+      const next = rewritePaths(item, rewrite, depth + 1);
+      if (next !== item) changed = true;
+      return next;
+    });
+    return changed ? items : value;
+  }
+  const record: Record<string, JsonValue> = {};
+  for (const [key, item] of Object.entries(value)) {
+    const next = rewritePaths(item, rewrite, depth + 1);
+    if (next !== item) changed = true;
+    record[key] = next;
+  }
+  return changed ? record : value;
+}
+
 export function isAutomationNodeParameterStateBinding(value: unknown): value is AutomationNodeParameterStateBinding {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const state = (value as Record<string, unknown>).$state;
