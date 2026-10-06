@@ -51,6 +51,7 @@
 import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, isAutomationStudioActionConsequence, type AutomationStudioActionConsequence } from "./consequences.ts";
+import { automationStudioComparableInstructionText as comparable } from "./instruction-quote/index.ts";
 
 /** One class the person's instruction plainly asks for, and the words that ask. */
 export type AutomationStudioInstructedConsequence = {
@@ -316,11 +317,6 @@ function parseEntry(value: unknown): AutomationStudioInstructedConsequence | nul
     || typeof value.instructionDigest !== "string" || !DIGEST.test(value.instructionDigest)
     || typeof value.quote !== "string" || value.quote.length < MIN_QUOTE || value.quote.length > MAX_QUOTE) return null;
   return { consequence: value.consequence, instructionId: value.instructionId, instructionDigest: value.instructionDigest, quote: value.quote };
-}
-
-/** Case, spacing and typographic quotes do not decide whether words were copied. */
-function comparable(text: string): string {
-  return text.toLowerCase().replace(/[‘’]/gu, "'").replace(/[“”]/gu, "\"").replace(/\s+/gu, " ").trim().replace(/[.,;:!]+$/u, "");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
