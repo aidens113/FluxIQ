@@ -32,6 +32,13 @@
 // are resolved the same way (`./replay-span.ts`); one whose list step is not in
 // the range has no rows to walk and runs once, as a step the Flow does not
 // always run. A pass that does not pass stops the run as a step does.
+//
+// **Applied means a changing step acted (t195, `run-musr9pv3-f4bf6256`).** The
+// run's `effectApplied` is what its changing steps did, never a read's: a read
+// replayed answers applied, and that made a part run that read a list and only
+// checked its press count as changing the page, so the loop's repeat guard
+// never saw it change nothing, and one passing `{from: 15, to: 16}` ran about
+// twenty times over an unchanged draft (`../repeat-guard/outcomes.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
@@ -93,7 +100,7 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
     stopsAt: (step, excused) => !excused || unrunnable(step),
     answered: (step, answer) => {
       shown = { step: step.position, evidence: answer.evidence };
-      effectApplied ||= answer.effectApplied;
+      effectApplied ||= step.effect === "mutate" && answer.effectApplied; // A read replayed moved nothing (see the header).
       if (first) before = answer.stateDigests?.before;
       after = answer.stateDigests?.after;
       first = false;

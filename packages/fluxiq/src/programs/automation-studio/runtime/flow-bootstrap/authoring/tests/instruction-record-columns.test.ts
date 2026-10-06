@@ -205,12 +205,24 @@ describe("the sentence beside the draft for a named column no read gives", () =>
 // said with the unread-column note.
 describe("the sentence beside the draft when every read giving the columns runs before the last act", () => {
   const RUN = "Go through my pending friend requests and confirm everyone I have at least five mutual friends with, leaving the rest alone. Then give me a table of every request the list now shows as accepted, in list order, with columns name and mutualFriends.";
-  const BEFORE = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act; if the instruction asks for what the page shows after it, the draft needs a read after step 10.";
+  const BEFORE = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step 10 and add it; leave every read before step 10 where it is.";
+  const BEFORE_REPEATED = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step 10 and add it; the listing step 10 repeats over stays where it is, before step 10.";
 
   it("names the last act step, and no read, when every read giving every column runs before it", () => {
     const sentence = automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: RUN, reads: [{ step: 7, fieldKeys: ["name", "mutualFriends", "requestId"] }], lastActStep: 10 });
     expect(sentence).toBe(BEFORE);
     expect(sentence).not.toContain("step 7");
+  });
+
+  // R18 (run `run-musr9pv3-f4bf6256`, decisions 0037, 0044, 0056): "the draft
+  // needs a read after step N" was read as "move the read after step N", and
+  // the model moved the loop's own listing after the act it walks. The note now
+  // says to run a new read, and that the listing stays before the act.
+  it("says to run a new read, and that the listing the act repeats over stays before it", () => {
+    const sentence = automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText: RUN, reads: [{ step: 7, fieldKeys: ["name", "mutualFriends"] }], lastActStep: 10, lastActRepeats: true });
+    expect(sentence).toBe(BEFORE_REPEATED);
+    expect(sentence).not.toContain("step 7");
+    expect(sentence).not.toContain("needs a read after");
   });
 
   it("is silent when a read giving every column follows the last act", () => {

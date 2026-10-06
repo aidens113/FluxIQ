@@ -226,7 +226,7 @@ function repeat(input: {
   // once, before the loop. Demanding adjacency refused that shape at
   // completion, and the advice it gave ("say repeat with no over") made the
   // dismissal the loop's source: a while-loop on a press that passed every gate.
-  if (overAt >= input.index) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats over step ${over.step.position}, which does not come before it. The list step a span walks runs before the span: move step ${over.step.position} ahead of step ${entry.step.position} with an amend_draft reorder.` };
+  if (overAt >= input.index) return { code: "flow_draft.repeat_not_after_its_source", message: overAfterSpan(input, over) };
   const body = [...input.byId.values()].slice(input.index, throughAt + 1);
   if (body.some((candidate, offset) => offset > 0 && candidate.step.routing !== undefined)) {
     return { code: "flow_draft.repeat_body_is_routed", message: `Step ${entry.step.position} repeats a span in which another step also says when it runs. Say it once, on the first step of the span.` };
@@ -237,6 +237,12 @@ function repeat(input: {
   const sourceLabel = input.label(routing.over);
   const source = input.consumed.has(routing.over) ? undefined : emitted.find((candidate) => candidate.label === sourceLabel);
   const head = emitted[emitted.length - 1];
+  // The listing was never written onto the line because its own repeat was
+  // refused (a repeat that stood would have consumed it). Blaming a branch or
+  // loop sent run 0072 looking for one; the fix is the listing's, not this step's.
+  if (!source && !input.consumed.has(routing.over) && over.step.routing?.kind === "repeat") {
+    return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats over step ${over.step.position}, and step ${over.step.position} also says it repeats, which was refused, so the Flow has no listing on its own line for step ${entry.step.position} to walk. ${takeRepeatOff(over.step.position)}; step ${entry.step.position}'s repeat over step ${over.step.position} then stands as it is.` };
+  }
   if (!source || !head) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats over step ${over.step.position}, which another step already runs inside its own branch or loop, so the Flow does not reach it on its own line. Name a list step the Flow runs on its own line before step ${entry.step.position}.` };
   const loop = input.nextDerived("loop");
   const exit = input.nextDerived("exit");
@@ -287,6 +293,53 @@ function repeat(input: {
   }
   emitted.push(mergeStep(exit, "the Flow carries on from here when the loop is done"));
   return undefined;
+}
+
+/**
+ * Why a span cannot repeat over a step written after it, and the one amendment
+ * that fixes this draft.
+ *
+ * The fix depends on which step is out of place, which the draft says. A
+ * listing carrying a repeat is the stray: in run `run-musr9pv3-f4bf6256`
+ * (decision 0072) the listing at step 15 repeated over the Confirm at 16, which
+ * repeated over 15, and the one sentence there told step 15 to move step 16
+ * ahead of it -- the act before its own listing -- and the model looped fifteen
+ * turns. So a listing, or a step another span repeats over, is told to take the
+ * repeat off (`unrepeat`); an act whose listing merely comes after it is told to
+ * move the listing ahead; a step over a later check, which may be either, is
+ * told both. Each amendment is written out with the numbers it takes.
+ */
+function overAfterSpan(
+  input: {
+    entry: AutomationStudioFlowDraftRoutedStep;
+    byId: ReadonlyMap<string, AutomationStudioFlowDraftRoutedStep>;
+    registry: AutomationStudioNodeRegistry;
+    resolution: AutomationStudioNodeRegistryResolution;
+  },
+  over: AutomationStudioFlowDraftRoutedStep
+): string {
+  const at = input.entry.step.position;
+  const to = over.step.position;
+  const said = `Step ${at} repeats over step ${to}, which comes after it`;
+  const id = automationStudioFlowDraftStepId(input.entry.step);
+  const walkedBy = [...input.byId.values()].find((other) => other !== input.entry && other.step.routing?.kind === "repeat" && other.step.routing.over === id);
+  const once = "A listing runs once, before the act that walks its rows; it never repeats.";
+  if (walkedBy) {
+    const by = walkedBy.step.position;
+    return `${said}, and step ${at} is itself the listing step ${by} repeats over. ${once} ${takeRepeatOff(at)}; step ${by}'s repeat over step ${at} then stands as it is.`;
+  }
+  if (listPort(input.entry, input.registry, input.resolution)) {
+    return `${said}, and step ${at} is a listing. ${once} ${takeRepeatOff(at)}, and repeat the act over it instead: {"step": <the act>, "change": "repeat", "over": ${at}}.`;
+  }
+  if (listPort(over, input.registry, input.resolution)) {
+    return `${said}. The listing a span walks runs before the span: move it ahead of the act with amend_draft {"step": ${to}, "change": "reorder", "to": ${at}}; the act is then step ${at + 1} and keeps its repeat over the listing.`;
+  }
+  return `${said}, and a span repeats over a step that runs before it. If step ${at} should run once, take the repeat off with amend_draft {"step": ${at}, "change": "unrepeat"}; if it should run while step ${to} succeeds, move step ${to} just ahead of it with amend_draft {"step": ${to}, "change": "reorder", "to": ${at}}.`;
+}
+
+/** The amendment that takes the repeat, and nothing else, off a step (`unrepeat`), as a sentence. */
+function takeRepeatOff(position: number): string {
+  return `Take the repeat off step ${position} with amend_draft {"step": ${position}, "change": "unrepeat"}`;
 }
 
 /**

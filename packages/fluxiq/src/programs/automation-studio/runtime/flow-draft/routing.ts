@@ -29,7 +29,7 @@
 // writes positions, because that is what it is shown; positions are renumbered
 // the moment a step is reordered or dropped, so what is *kept* is the step's
 // own id and the translation happens once, where the amendment is applied
-// (`./amendment.ts`).
+// (`./amendment/`).
 
 import { automationStudioFlowDraftStepAnsweredInterruption } from "./interruption.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
@@ -169,6 +169,32 @@ function repeatedSpan(steps: readonly AutomationStudioFlowDraftStep[], first: Au
   const end = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === through);
   if (start < 0 || end < start) return [automationStudioFlowDraftStepId(first)];
   return steps.slice(start, end + 1).filter(automationStudioFlowDraftStepIsProposed).map(automationStudioFlowDraftStepId);
+}
+
+/**
+ * Why a repeat cannot run where its steps now stand, or nothing when it can:
+ * `over_after`, the step it repeats over is not before it; `span_broken`, the
+ * step its span runs through is before it. A name that names no step is the
+ * assembler's to report (header), not this.
+ *
+ * A statement names steps by id, so a reorder never changes which steps a
+ * repeat names -- but it can leave the listing after the step that repeats
+ * over it. Live run `run-musr9pv3-f4bf6256` carried such a repeat from decision
+ * 0056 on; a decision that moves a step now checks every repeat with this and
+ * takes off the ones that cannot run (`./amendment/repeat-revalidation.ts`).
+ */
+export function automationStudioFlowDraftRepeatOrderProblem(
+  steps: readonly AutomationStudioFlowDraftStep[],
+  step: AutomationStudioFlowDraftStep,
+  routing: Extract<AutomationStudioFlowDraftStepRouting, { kind: "repeat" }>
+): "over_after" | "span_broken" | undefined {
+  const start = steps.indexOf(step);
+  const over = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === routing.over);
+  const through = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === routing.through);
+  if (start < 0 || over < 0 || through < 0) return undefined;
+  if (over >= start) return "over_after";
+  if (through < start) return "span_broken";
+  return undefined;
 }
 
 /**

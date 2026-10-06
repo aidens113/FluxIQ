@@ -48,7 +48,7 @@ export type AutomationStudioFlowDraftStepEffect = "observe" | "mutate";
  * draft (user, 2026-09-30: "IT SHOULD NOT JUST BLINDLY ADD EACH STEP THAT IT
  * TOOK ONE BY ONE IN ORDER"): the step ran and is evidence, and it is not in
  * the Flow until the model adds it -- `add` on the call itself, or an `add`
- * amendment naming it (`./amendment.ts`). `kept` is a step the model put in the
+ * amendment naming it (`./amendment/`). `kept` is a step the model put in the
  * Flow; it is also where every step started under the older transcript rule,
  * which a loop can still be run under to replay a build recorded before
  * (`../llm/loop-configuration.ts`, `draftAuthoring`). The other two are the
@@ -232,7 +232,7 @@ export type AutomationStudioFlowDraftStep = {
    *
    * It is about the step as the test ran it: after the steps before it then,
    * with the argument it had then. So a move clears it on every step from
-   * where the move begins (`./amendment.ts`), and a checked rerun that gives
+   * where the move begins (`./amendment/move.ts`), and a checked rerun that gives
    * the step a new argument clears it (`../llm/node-tools/rerun-check.ts`):
    * absent, the step has not been tested as it now stands (live run
    * `run-musq0b1m-0472cfa0`, Cause 6).
@@ -267,6 +267,20 @@ export type AutomationStudioFlowDraftStep = {
    */
   standsFor?: string;
   /**
+   * The id of the rerun that took this step's place, on the attempt it
+   * replaced (`../llm/evidence-loop/rerun-replacement.ts`). Set only where the
+   * model authors the draft, where the attempt stays listed at the end of the
+   * draft as the receipt of what was replaced. The draft entry shows it as
+   * replaced by that step's number, without the argument it ran with
+   * (`./entry.ts`), and an amendment or rerun naming it is refused naming that
+   * step (`./amendment/replaced-attempt.ts`, `../llm/evidence-loop/rerun-request.ts`):
+   * live run `run-musp474o-e0ed7432` was shown its withdrawn listing with the
+   * old where as an ordinary step 7 and reran it three times with the where its
+   * rerun at step 6 already held. A rerun later replaced in turn carries one
+   * too, so the chain ends at the step standing now.
+   */
+  replacedBy?: string;
+  /**
    * What state routing recorded on the Flow node a carried step stands for
    * (`metadata.routeSignatures`: the pages it ran between, and what it did,
    * as the build signed them), carried unread from the re-seed to whatever
@@ -295,7 +309,7 @@ export type AutomationStudioFlowDraftStep = {
   priorExecution?: Omit<AutomationStudioFlowDraftStep, "priorExecution" | "checkedCandidate"> & { lasting: true };
   /**
    * The argument the step first ran with, kept when `bind` lifted a value of it
-   * into a binding (`./amendment.ts`): the evidence that the step worked with
+   * into a binding (`./amendment/bind.ts`): the evidence that the step worked with
    * that value. Never set on a written step, which never ran with one, and
    * never replaced by a later `bind`. Carried, never run.
    */
@@ -340,7 +354,7 @@ export function automationStudioFlowDraftStepIsProposable(step: AutomationStudio
  * result contains. A list with the other two silently absent is a claim nobody
  * can audit. A step that only looked is not of that kind at all: it is listed
  * as a look only so its number shows (`./entry.ts`), and no amendment puts it in
- * the Flow (`./amendment.ts`).
+ * the Flow (`./amendment/`).
  */
 export function automationStudioFlowDraftStepIsAction(step: AutomationStudioFlowDraftStep): boolean {
   return step.proposes ?? step.effect === "mutate";

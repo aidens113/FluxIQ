@@ -269,7 +269,7 @@ describe("a Flow the model says is ready", () => {
     expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1, stepsInFlow: 1, tested: "replayed_clean" } });
     // The person is told the Flow ran but was not judged, and that it was kept.
     expect(diagnostic.ending?.message).toContain("not judged");
-    expect(diagnostic.ending?.message).toContain("The Flow so far was kept as a draft");
+    expect(diagnostic.ending?.message).toContain("The steps I found so far were kept as a draft");
     expect(diagnostic.evidenceLoop?.incompleteDraft).toMatchObject({ revision: 1, steps: 1 });
     await expectNoTopology(run.instance, run.project.id, run.flow.flowId);
     expect(activity.some((event) => event.label === "Flow not verified")).toBe(false);
@@ -455,6 +455,6 @@ describe("a build the judging reserve stopped, through the service (t254 stage 2
     expect(diagnostic.ending?.message).toContain("went on testing and judging the Flow as it stood");
     expect(diagnostic.ending?.message).toContain(`The judge found: ${RESERVE_SAID.observed.replace(/\.$/u, "")}.`);
     expect(diagnostic.ending?.message).toContain(`What the judge says is left to change: "${RESERVE_SAID.changed.replace(/\.$/u, "")}".`);
-    expect(diagnostic.ending?.message).toContain("The Flow so far was kept as a draft");
+    expect(diagnostic.ending?.message).toContain("The steps I found so far were kept as a draft");
   }, 60_000);
 });

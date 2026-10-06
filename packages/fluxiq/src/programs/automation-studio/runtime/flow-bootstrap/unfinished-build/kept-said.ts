@@ -7,16 +7,20 @@
 // "never a Flow and never an adaptation"): nothing of it is put into the Flow.
 // The money ending said "The Flow so far was kept, and building again carries
 // on from it", and the chat's command said under it "What is left: the Flow
-// ..., empty": both true, and read together a contradiction. Now the kept
-// sentence says the draft was not put into the Flow, so the two agree.
+// ..., empty": both true, and read together a contradiction. The sentence then
+// said "The Flow so far was kept as a draft, not put into the Flow", which
+// calls the draft the Flow and then says it is not in it (t195-w44, lane D's
+// C4). Now it says what was kept -- the steps found so far, as a draft -- in
+// the words the chat's own closing uses for it
+// (`../../conversations/commands/create-here.ts`).
 
 /**
- * "The Flow so far was kept as a draft, not put into the Flow, and building
- * again carries on from it<tail>." -- or that nothing was kept. `tail` is a
- * clause that finishes the sentence (what of the Flow's ceiling is left).
+ * "The steps I found so far were kept as a draft, so building again carries on
+ * from them<tail>." -- or that nothing was kept. `tail` is a clause that
+ * finishes the sentence (what of the Flow's ceiling is left).
  */
 export function automationStudioFlowBootstrapKeptSaid(kept: boolean, tail = ""): string {
   return kept
-    ? `The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it${tail}.`
+    ? `The steps I found so far were kept as a draft, so building again carries on from them${tail}.`
     : "Nothing was kept to carry on from.";
 }

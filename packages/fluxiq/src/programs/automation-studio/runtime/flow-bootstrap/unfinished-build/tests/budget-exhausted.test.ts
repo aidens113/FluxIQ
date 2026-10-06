@@ -19,9 +19,9 @@ const judgedNo: AutomationStudioFlowBootstrapJudgement = {
 const told = { bound: "cost" as const, sizes: { maxCostUsd: 0.1 }, judgement: judgedNo, checklist, rounds: 1, decisions: 30, spending: { spentUsd: 0.089, pendingUsd: 0, ceilingUsd: 0.1 } };
 
 describe("a budget ending", () => {
-  it("says the draft was kept and not put into the Flow, never that the Flow is empty", () => {
+  it("says the steps found so far were kept as a draft, never that the Flow is empty", () => {
     const message = automationStudioFlowBootstrapBudgetExhausted({ ...told, kept: true }).message;
-    expect(message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it, with $0.011 left of this Flow's $0.10.");
+    expect(message).toContain("The steps I found so far were kept as a draft, so building again carries on from them, with $0.011 left of this Flow's $0.10.");
     expect(message).not.toContain("empty");
   });
 
@@ -31,7 +31,8 @@ describe("a budget ending", () => {
 
   it("never says worked of a Flow judged not to do what was asked", () => {
     const message = automationStudioFlowBootstrapBudgetExhausted({ ...told, kept: true }).message;
-    expect(message).not.toContain("worked");
+    // "I worked on it live" is what was tried, said of the build, not of what the Flow does.
+    expect(message.replace("I worked on it live", "")).not.toContain("worked");
     expect(message).toContain("2 of the 2 things you asked have a step that ran, or could run, when the Flow (13 steps) was run from its start, but the Flow was judged not to do what you asked.");
     expect(message.match(/not to do what you asked|not to be what you asked/gu)).toHaveLength(1);
   });

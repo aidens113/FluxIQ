@@ -95,7 +95,7 @@ export type AutomationStudioLlmEvidenceLoopTrace = {
    * amendment and nothing carried it out.
    *
    * A step number the model wrote and a reason from a closed set
-   * (`../../flow-draft/amendment.ts`), never a value from a page, and at most
+   * (`../../flow-draft/amendment/types.ts`), never a value from a page, and at most
    * the sixteen amendments one decision may carry. The loop's own refusals are
    * here too: a `rerun` it declined to carry out says so through this field
    * rather than disappearing (`./rerun-request.ts`).

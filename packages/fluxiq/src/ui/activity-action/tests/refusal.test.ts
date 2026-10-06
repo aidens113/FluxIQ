@@ -37,6 +37,13 @@ describe("activityActionRefusal", () => {
       .toEqual({ all: false, rerun: false, because: "that step has no such value to make vary" });
   });
 
+  // t195 w45 (`run-musr9pv3-f4bf6256`): a repeat a move left unable to run is taken off beside the
+  // move, so the edit landed in part, and the card says why the repeat went in plain words.
+  it("says a repeat a move took off beside the move that landed", () => {
+    expect(activityActionRefusal({ resultCode: "llm_evidence_loop.draft_amendments_refused", reason: "repeat_taken_off", applied: 1 }))
+      .toEqual({ all: false, rerun: false, because: "moving a step left a repeat unable to run, so it was taken off" });
+  });
+
   it("says a step asked to run again, unchanged, as not run again, whichever check refused it", () => {
     for (const record of [
       { resultCode: "llm_evidence_loop.repeat_refused", reason: "changed_nothing" },

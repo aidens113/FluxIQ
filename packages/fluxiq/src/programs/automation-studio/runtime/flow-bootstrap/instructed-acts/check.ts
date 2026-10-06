@@ -8,9 +8,11 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 // towels' Add (run 40): each time the Flow never reached the test that would
 // have shown what it did. The test from the start, and then a judge of its
 // actual results, decide whether the Flow does what it was told; this verdict
-// is information beside them. The one rule a completion is still refused for
-// is the permission rule (`./permission.ts`): an act whose verb names a class
-// a person is asked about needs a step declaring it, or nobody is asked.
+// is information beside them. Two rules a completion is still refused for read
+// it: the permission rule (`./permission.ts`), an act whose verb names a class
+// a person is asked about needs a step declaring it, or nobody is asked; and
+// `./optional-only.ts`, an act whose only step is marked optional may never be
+// done (run `run-musq0b1m-0472cfa0`, Cause 5).
 // "Refused" below is what this verdict says, not what happens to a completion.
 //
 // **What is checked, and what cannot be.** Core cannot see what a step did to
@@ -242,7 +244,9 @@ export function checkAutomationStudioInstructedActs(input: {
         ...(act.step ? { step: act.step } : {}),
         ...(act.after !== undefined ? { after: act.after } : {}),
         ...(act.actsOn !== undefined ? { actsOn: act.actsOn } : {}),
-        ...(act.presses ? { presses: [...act.presses] } : {})
+        ...(act.presses ? { presses: [...act.presses] } : {}),
+        // An act whose only step may be skipped: said beside it, for the model and the judge of the test.
+        ...(act.reason === "step_is_optional" && act.step ? { said: optionalSaid(act.id, act.step) } : {})
       })),
       // The steps that could be named: kept, and changed something, by the
       // positions the draft shows. Every one of them (user, 2026-09-30): no count cap.
@@ -275,6 +279,17 @@ function choicesAfterAct(
     return automationStudioInstructedChoiceAfterAct({ id: choice.id, of: choice.of, step: stood.done, actStep: stood.afterAct }) ?? [];
   });
   return found.length ? { choicesAfterAct: found } : {};
+}
+
+/**
+ * Said beside an act or choice whose only step is marked optional (live run
+ * `run-musq0b1m-0472cfa0`, Cause 5): the Flow carries on when that step fails,
+ * so the test passing it once is no evidence the Flow always does it. That
+ * run's judges dismissed the bare reason because the step "was replayed".
+ */
+function optionalSaid(id: string, step: string): string {
+  return `${id} is done only by step ${step}, which is marked optional: the Flow carries on when it fails, so ${id} may never be done, `
+    + `and step ${step} passing in one test is not evidence the Flow always does it.`;
 }
 
 /**

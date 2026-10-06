@@ -267,6 +267,25 @@ const AUTOMATION_STUDIO_DEEPSEEK_NODE_CATALOG_NOTE =
  * (`../evidence-loop.ts`, F31). The note used to say "nothing was opened for
  * you", and `run-muqc07fh-eeffbc86` spent 17k tokens on that navigation. It
  * still says what to do when the arrival failed, or a domain declared none.
+ *
+ * **The Flow may start where the work does (t195-w47).** In run
+ * `run-musr9pv3-f4bf6256` the build was told the site's front page, worked
+ * entirely at ~/friends/requests/, and its Flow kept every press of the journey
+ * there. So the note says the first step may go straight to the address the
+ * work begins at, once the build has seen it is stable, and that only the travel
+ * goes: a dismissal may be needed on the next run however the Flow arrives.
+ * The shortcut never overrides a route the person named (the user's rule, t195
+ * w49): the note says so in words. Lane D's detection of the named route
+ * and its separate note were not ported (t264 S4), so this clause is the
+ * whole of that rule here until the D waypoint design lands.
+ * The completion admits that first step under the host's declared arrival
+ * (t262, `flow-bootstrap/reachability/step-goes-to-location.ts`): the rerun
+ * keeps the arrival node, its declared parameter now holds the deeper address,
+ * and a deeper address on the same site agrees with the start location
+ * (`flow-bootstrap/reachability/location-agreement.ts`), so no arrival is put
+ * back in front of it.
  */
 const FLOW_START_LOCATION_NOTE =
-  "The build opened by going to startLocation: the first entry of your evidence is that step, and it is the Flow's first step, already kept. Only if that entry failed, or your evidence does not open with it, must your first call be the node that goes there, with startLocation as its destination; every action is refused until it has run.";
+  "The build opened by going to startLocation: the first entry of your evidence is that step, and it is the Flow's first step, already kept. Only if that entry failed, or your evidence does not open with it, must your first call be the node that goes there, with startLocation as its destination; every action is refused until it has run. "
+  + "Unless the person's instruction says how to get there (pages, menus or links to go through: then follow that route and keep its steps), the Flow's first step may instead go straight to the address where the work begins, deeper on the same site: once you have seen that address is stable -- the same on every visit, with nothing in it that looks like a session, a token or a one-time value -- rerun step 1 with it, and drop the steps that only travelled there. "
+  + "Keep every optional dismissal: a banner or popup may be there on the next run however the Flow arrives.";

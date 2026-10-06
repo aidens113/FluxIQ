@@ -135,7 +135,7 @@ needs it (t174-w107).** The read is `service/instruction-authority.ts`: one
 `evidence_tool_decision` with no tools, `metadata.source: "instructionAuthority"`,
 counted with the build (step-log phase `read`). Where the instruction's acts are
 read with no model (`runtime/flow-bootstrap/instructed-acts/instruction-acts.ts`,
-the same ids as the build's checklist), its completion
+the same ids as the build's checklist), its completion's consequence half
 (`automationStudioInstructedConsequencesSchema`, `action-permissions/instructed.ts`)
 asks first for `acts`: one required key per act id, described by the act's own
 words, answered with the classes that act asks for or `["none"]`; then the free
@@ -149,6 +149,40 @@ and sibling splits of one class share that clause's one entry. An act the answer
 skipped, or every act of a read that failed, is kept as unanswered
 (`consequences: null`) on the read the gate holds, never on the stored entries,
 and the Flow's thread is told once which act, in the person's words.
+
+**The same read answers the route the person names (D phase 1).** The user's
+rule: a route the person names must be followed; a Flow may start where the
+work begins unless the person names the route. The authority's completion is
+`automationStudioInstructionReadingSchema`
+(`action-permissions/instruction-reading/`): the consequence question above,
+unchanged, with a required `route` beside it answered `named` (the instruction's
+id, its words for the whole route, and each place in the order to visit them),
+`open`, or `unclear`. The exported consequence-only schema is unchanged. Core
+reads the two halves independently (`readAutomationStudioInstructionReading`):
+a route it cannot ground never removes a grounded consequence, and grounded
+consequences never make a missing route open. The route reading
+(`action-permissions/instruction-route/`) has four states. `named` holds only
+when the route's words occur exactly once in the named active instruction and
+each waypoint's words exactly once inside them, compared as the permission read
+compares quotes but mapped back to the person's own words
+(`action-permissions/instruction-quote/`) as UTF-16, half-open spans over
+`title + "\n" + body`; Core makes the route and waypoint ids and binds the
+reading to the active instruction set's digest. No 300-character quote bound
+applies, and a route past 20 waypoints is not shortened. `open` is only an
+explicit, well-formed answer. Everything else is `unavailable` with a closed
+reason (`transport`, `non_complete`, `malformed`, `ungrounded`, `ambiguous`,
+`stale`), never `open` and never the provider's words. `unread` means no read
+has settled. `currentAutomationStudioInstructionRoute` makes a named or open
+reading `stale` once any active instruction changes. The authority returns
+`route.read()`, which shares the one call with `derive` -- whichever comes
+first sends it, nothing sends it again, after an answer or a failure -- and
+`route.peek()`, which never sends. A call that threw stays a rejection for
+`derive`, so the gate still holds its answer as unknown and asks; `route` says
+`transport`. A route is the reader's interpretation of the person's words, not
+proof any step went anywhere, and nothing acts on it yet: the waypoint-to-step
+relation, route-aware draft edits and the model's route notes are later phases
+(`docs/working/mvp-live-continuation-2026-10-03/reports/d-grounded-waypoint-contract.md`
+downstream).
 
 The build's tests check, rather than do again, a step claiming an act that is
 lasting (`flow-bootstrap/action-permissions.ts`, `instructedLastingActs`;
@@ -679,7 +713,18 @@ does not fail a run, and the reading is not recorded on run records. The judge's
 test actually did decides, and a wrong result is repaired with its reasons. The
 instructed-act check that follows is information the same way, except
 `act_consequence_undeclared`, which is what makes a delete, a payment or a send
-get asked.
+get asked, and `step_is_optional` on an act or choice whose only step is marked
+optional: the Flow carries on when that step fails, so the act may never be
+done, and one passing test does not show it always is
+(`runtime/flow-bootstrap/instructed-acts/optional-only.ts`, issue
+`bootstrap.instructed_act_only_optional`; run `run-musq0b1m-0472cfa0`, Cause 5,
+where the 7-in-1 press was made optional on a false premise and both judges
+passed it because it "was replayed"). A step made conditional with `only_if` is
+not optional and is not answered, and a step that only arrives is answered
+`step_only_arrives` instead, read with the host's declared arrival as the
+restore reads it. Both rules share one `missingActs` account, and each optional
+entry carries `said`, the sentence the judge of the build's test also reads in
+`buildTest.missingActs`.
 
 1. The `{summary, plan}` envelope: `flow_bootstrap.evidence_completion_wrapper_invalid`.
 2. The plan's structure: `flow_bootstrap.evidence_completion_plan_invalid`.
@@ -777,7 +822,14 @@ not read, finishing before finishing was offered, editing the draft when that
 was not offered -- is refused as `llm_evidence_loop.decision_shape_invalid`,
 `complete_not_offered` or `amend_not_offered` and asked again like any unusable
 decision, rather than ending the loop `invalid_decision`
-(`runtime/llm/evidence-loop/decision-refusal.ts`).
+(`runtime/llm/evidence-loop/decision-refusal.ts`). An `amend_draft` left with no
+amendment because a rerun in it carried no `input` is refused as
+`llm_evidence_loop.rerun_needs_input` instead, whose feedback says a rerun needs
+input -- the parameters to change, or `{}` to run the step again as it stands
+(t194-w78, `runtime/llm/evidence-loop-decision.ts`): live run
+`run-musp39u8-9ac026ab` spent eleven decisions on such a rerun under the plain
+shape text, which never named the missing input. The rule that drops the rerun
+stands, and an `amend_draft` with other readable amendments is not refused.
 
 **The model authors the draft (user, 2026-09-30).** A step the loop runs is
 appended as `taken`: evidence, not a step of the Flow. It enters the Flow only
@@ -791,7 +843,16 @@ long free-form whole arguments it used to carry were the replies that came back
 unreadable (`runtime/llm/evidence-loop/rerun-input.ts`). A rerun that
 worked takes the replaced step's place: its position, its membership, its acts
 and its routing, and every routing statement naming the old step is rewritten
-to it (`runtime/llm/evidence-loop/rerun-replacement.ts`). The draft entry's
+to it (`runtime/llm/evidence-loop/rerun-replacement.ts`). No other step's
+number changes: the replaced attempt stays listed as the receipt of what was
+replaced, at the end of the draft, carrying `replacedBy` (the rerun's id); the
+draft entry shows it as `replacedBy: <step number>` without the argument it ran
+with, and an amendment or rerun naming it is refused `not_a_kept_step` with
+`replacedBy` and a `next` naming the step that replaced it
+(`runtime/flow-draft/amendment/replaced-attempt.ts`). The receipt used to sit
+just after the rerun, so every later step moved one on and its old argument
+read as a step still to fix: live run `run-musp474o-e0ed7432` reran such a
+stale listing three times and its round stopped short (t195-w41). The draft entry's
 guidance says so, and the Flow is assembled only from added steps. The loop
 option `draftAuthoring: "transcript"` keeps the old rule, under which every step
 that ran was `kept` unless withdrawn; it exists only to replay builds recorded
@@ -929,8 +990,10 @@ domain to hold it there: exploration carries on from the page as it stands
 coordinator in `runtime/flow-bootstrap/unfinished-build/phases.ts` tests a
 partial non-empty Flow from its start with the same deterministic gate, judges
 it against the checklist, and seeds a live repair with that Flow and judgement.
-An empty Flow has nothing to test and explores again from the live page while
-budget remains.
+Where that test ran clean and the completion check accepts the Flow, the
+build's judge is asked about it instead (see "A round that stopped short is
+judged too" under "One purse per Flow creation"). An empty Flow has nothing to
+test and explores again from the live page while budget remains.
 
 **Repairs are bounded by money and progress, not by a count (t240).** Another
 round opens only when both hold:
@@ -999,8 +1062,13 @@ round 1003 and t195-w48), and read as a chat answer, never a debug log:
   (`automationStudioFlowBootstrapWorkedLiveSaid`, `unfinished-build/not-done.ts`),
   shared with the not-doable ending; the counts a debug needs stay in the
   ending's `tried`. The stop clauses (`STOP_WORDS`, `BLOCKED_WORDS`) name "it",
-  never "the model". The budget and unreadable-replies endings still say "over N
-  decisions" and "the model's replies": tests outside the wording owner pin them.
+  never "the model". The budget ending says what was tried with the same
+  sentence, then what held it up as its own sentence; the unreadable-replies
+  ending says "the replies it got back could not be read", gives the count with
+  no round, and says what was tried only when more than one live round ran. The
+  kept sentence is "The steps I found so far were kept as a draft, so building
+  again carries on from them." (`unfinished-build/kept-said.ts`). A budget
+  ending stopped by the call limit still names that limit "model calls".
 - **Each judge pair said as what it was** (t193 round 1003). After a `no`, a
   split with one yes is "the judge no longer agreed it was wrong, as one of its
   two checks said it does what you asked"; an unconfirmed pair is "the judge
@@ -1046,7 +1114,8 @@ shares the build's time/token budget and declared call count; no round has a
 cost share of its own, and the per-round decision backstop starts afresh.
 A permission or person-needed question takes precedence over another round.
 A build that ends without a Flow records why each round stopped and, for "not
-doable", which case left no route, as closed words on its ending's `tried`
+doable" and "not finished", which case left no route, as closed words on its
+ending's `tried`
 (`stops: [{round, stopped}]`, `noRoute: {kind}`, `unfinished-build/tried.ts`);
 a re-author attempt keeps that ending (`service/runtime-adaptation/reauthor-build.ts`),
 so a debug can tell which bound ended which round. A rerun of a draft step says
@@ -1081,12 +1150,12 @@ draft is what the check builds the Flow from (every step a library
 on an unchanged state, so it is refused with
 `bootstrap.flow_unchanged_since_judged_wrong`, with feedback that testing it
 again tests the same thing, to change what the judge's advice names, and that a
-round that changes nothing ends the build as not doable
+round that changes nothing ends the build
 (`runtime/flow-bootstrap/unfinished-build/unchanged-complete.ts`). It never fires
 after an `unknown` or `not_judged` verdict, which refuted nothing, nor for a Flow
 built from the reply's own plan. Each refusal is an unusable decision: a model
 that keeps completing the unchanged Flow ends its round on the stall guard as
-`unusable_decisions`, and the build then ends `not_doable` for no progress
+`unusable_decisions`, and the build then ends `not_finished` for no progress
 against the judged round, without asking the judge again. In live run
 `run-murwcmx2` the unchanged Flow was tested again and one lone judge yes
 finished a build its earlier judges had refuted. A repair of a round whose Flow
@@ -1108,7 +1177,13 @@ same money and round bounds; its progress is fewer steps not run, or a changed
 Flow, and the announcement says which. The repair's resume names the steps and
 tells the model to rerun each live, in the Flow's order (`amend_draft rerun`),
 before completing, and the re-author's brief says the same up front (its step 5
-no longer says to keep steps as they are without running them). If money or the
+no longer says to keep steps as they are without running them). For a Flow that
+reads, the brief's step 3 also says that where the check's advice contradicts
+"How the read went" -- Core's own account of what the read did, such as more
+pages of a read that already read every page there was -- Core's account
+stands and that part of the advice is not followed (t194-w78,
+`runtime/recovery/refuted-result/brief.ts`): live run `run-musp39u8-9ac026ab`
+raised its page bound six times per try and reread the same rows. If money or the
 round limit runs out first, the budget ending says the Flow as it stands was
 never run whole and names those steps.
 
@@ -1135,7 +1210,7 @@ acts/choices and `tried` (rounds, decisions, Flow steps and test verdict).
 | `flow_bootstrap.not_doable` | The judge of a tested, non-empty Flow said what was asked can no longer be had (`stillAchievable: "no"`) | "I could not build this Flow, and I found no way to:" followed by what the judge found, what could not be done and what was tried |
 | `flow_bootstrap.build_not_finished` | A repair made no progress on the round before it, or a round ended on refused repeats with the Flow it started from unchanged | "I have not finished this Flow yet." followed by what stood still, the judge's advice or doubt, how much was done, what was tried and what was kept |
 | `flow_bootstrap.evidence_budget_exhausted` | The purse refused a call or could not fund another round (the only cost endings), time, token or declared calls ran out, or the live-round backstop was reached | "The build stopped at ... before the Flow was finished." followed by progress, what blocked it and whether the Flow was kept |
-| `flow_bootstrap.model_replies_unreadable` | Six consecutive unreadable replies, each asked again with a corrective note | "The build stopped because the model's replies could not be read:" followed by the count, cause, paid attempts, progress and kept-Flow status |
+| `flow_bootstrap.model_replies_unreadable` | Six consecutive unreadable replies, each asked again with a corrective note | "The build stopped because the replies it got back could not be read:" followed by the count, cause, paid attempts, progress and kept-Flow status |
 
 Budget exhaustion does not establish that the task is impossible, and an empty
 Flow never establishes `not_doable`. Budget and unreadable endings are
@@ -1511,7 +1586,30 @@ refused in one place. It never refuses:
 - anything after the page changed;
 - an outcome whose code says to try again later (a rate limit, a disabled
   control, a page still loading);
-- a call that threw.
+- a call that threw;
+- a call that failed only because a handle it names was never shown on that
+  page (`handle_not_in_packet`, `handle_not_issued`, `unknown_handle`), once a
+  later call on that page ran unrefused and answered something new -- a look, a
+  detect, a find. Until then it is refused like any failure, and the note says
+  the handle was never shown and which call shows or mints it. A handle that
+  was shown and has since gone is not one of them. Live run
+  `run-musp39u8-9ac026ab` (t194-w79) read a list by an extraction handle no
+  detect had minted, ran the detect, and was then refused the identical read
+  four times.
+
+**A part run is keyed on the draft too** (t195-w46,
+`runtime/llm/repeat-guard/draft-key.ts`). `core.run_flow` runs the draft again,
+so it is keyed on a digest of the draft's Flow signature as well as its page,
+and so is the repeat policy's request signature for it. The same part run on
+the same draft and page that changed nothing is refused unrun as `same_draft`,
+and the model is told to change the draft first; after any amendment that
+changes the Flow it runs again. A part run counts as applied only when one of
+its changing steps acted (`runtime/llm/node-tools/run-flow-part.ts`), never
+because a read it replayed answered. A completion refused again over the same
+draft counts in the same run of refusals, so a round that alternates the two
+stalls at the bound above. Live run `run-musr9pv3-f4bf6256` sent one passing
+`core.run_flow {from: 15, to: 16}` about twenty times between refused
+completions until its 64-decision bound.
 
 A dry run moves the page without the loop seeing it, so the last state is
 forgotten until a call reports one. The domain's `answered_the_same_again`
@@ -1594,15 +1692,24 @@ own run moved the target, which Core reads by comparing the two steps'
 the page before the move. A verified step that did not move the target excuses
 nothing, because the site still holds the effect from exploring. Steps that
 declare none (an open, a filter, a navigation) are run again as before, since
-the steps after them stand on them. A changing step that names one of the
-person's acts (a bare act id such as `a2`, never a choice such as
-`a2.quantity`) is verified whatever it declared, unless the next proposed step
-found the target on another page, when the declaration rule applies: live run
+the steps after them stand on them. A changing step that claims one of the
+person's lasting acts (a bare act id such as `a2`, never a choice such as
+`a2.quantity`; lasting by its kind, a grounded quote or the read's per-act
+answer, as in [the instruction's read](#permission-on-the-authoring-path)) is
+verified whatever it declared, also when it moves the page, since a Submit or a
+Place order would otherwise be pressed again: live run
 `run-murwdp4f-35f976d2`'s Add to cart declared nothing and was pressed by both
-build tests. The same predicate decides for the dry run, a rerun's put-back and
-`core.run_flow`. The build trace prints a dry run's own call
-ids (`dryrun.<attempt>.<step|reset>`), so a completion that replayed can be told
-from one that reused a verdict.
+build tests. An act that lasts nothing -- a setting or an open the read neither
+quotes nor answers as lasting -- runs again. The same predicate decides for the
+dry run, a rerun's put-back and `core.run_flow`. The build trace prints a dry
+run's own call ids (`dryrun.<attempt>.<step|reset>`), so a completion that
+replayed can be told from one that reused a verdict. The build trace is off
+unless `FLUXIQ_BUILD_PROGRESS_TRACE=1`, and then prints one content-free
+`[FluxIQ build-trace]` line per seam -- step names, durations, verdict words,
+error names and codes, never a sentence: the loop's own lines
+(`runtime/llm/evidence-progress/progress-trace.ts`, including a completion a
+test sent back) and, around the loop, the build, the build's judge and the
+proposal's apply (`build-trace.ts`, t174-w116).
 
 #### Running part of the Flow
 
@@ -1616,7 +1723,7 @@ the target as it stands**: nothing is reset first, which is the point -- a
 repaired step and the ones after it are tried without running everything
 before them. Each step is sent with the very call the dry run would send
 (`replay: "step"`, or `replay: "verify"` for a step that declares a lasting
-consequence or does one of the person's acts in place, D1) through the loop's own executor, so the permission gate sees
+consequence or claims one of the person's lasting acts, D1) through the loop's own executor, so the permission gate sees
 it as it sees every call. Unlike the dry run there is no second try on a step's
 own page.
 
@@ -1815,6 +1922,21 @@ binding that declares no arrival, and a continued build, which passes no start,
 open with the look as before. Every validator of the tool list accepts
 `arrival` only on a `perCallEffect` tool, and the provider projection never
 carries it.
+
+**The Flow may start where the work does (t195-w47).** The start-location note
+also says that, unless the person's instruction says how to get there (pages,
+menus or links to go through: then that route is followed and its steps kept),
+the Flow's first step may instead go straight to the address where the
+work begins, deeper on the same site. The clause is wording only: Core does not
+detect a named route. Once that address is seen to be stable
+(nothing in it like a session, a token or a one-time value), the build reruns
+step 1 with it and drops the steps that only travelled there, keeping every
+optional dismissal (`runtime/llm/deepseek/request-body.ts`). Live run
+`run-musr9pv3-f4bf6256` worked entirely at ~/friends/requests/ and its Flow kept
+every press of the journey from the front page. The completion admits that
+first step under the declared arrival (t262): the rerun keeps the arrival node,
+its declared parameter holds the deeper address, and that address agrees with
+the start location, so no arrival is restored in front of it.
 
 Reusable context is an explicit per-request option layered on this fresh
 inspection path. The service invokes a host-supplied, domain-neutral

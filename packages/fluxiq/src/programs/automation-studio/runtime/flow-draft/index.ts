@@ -12,7 +12,7 @@
 // step's parameters carry and how they are shown back, and the Flow inputs
 // those bindings declare.
 export * from "./act-claim.ts";
-export * from "./amendment.ts";
+export * from "./amendment/index.ts";
 export * from "./binding-forms.ts";
 export * from "./binding-render.ts";
 export * from "./control-words.ts";

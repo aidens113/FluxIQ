@@ -118,7 +118,7 @@ act was performed. Failed dry-run rows can show the opaque recorded
 ### `amend_draft bind`
 
 `bind` generalizes a kept step, recorded or written, by lifting concrete
-arguments into bindings (`bindStep`, `runtime/flow-draft/amendment.ts`). Its
+arguments into bindings (`automationStudioFlowDraftAmendmentBind`, `runtime/flow-draft/amendment/bind.ts`). Its
 `input` is a JSON merge patch over the step's parameters, with or without
 `parameters` around it, as for `rerun`. The bindings are written into both
 `ranWith` and the shown `input`, and the first concrete argument of a recorded
@@ -138,6 +138,33 @@ Refusals, each naming the parameter's dotted path where there is one:
 | `already_so` | the step already holds exactly these bindings |
 
 The model is told each reason by `runtime/llm/draft-amendment-feedback.ts`.
+What a bind lifts is a value a step typed, or a read's condition; a press's
+control or option is never bound, and the amendment schema and the draft entry
+say so. A `bind_new_key` whose key is absent from what the step ran with but
+present in what the draft shows -- the control a press acted on, such as its
+`target` -- carries `control: true` and is told as that: a press has no value
+to vary, its control is found by its words each run, and the step is left as
+it is.
+
+**Every answer to an edit says what is still to do** (`core.amendment_check`,
+live run `run-musp4h2f-72e8ed99`). A refusal with no other `next` ends its
+`next` with the acts and choices the checklist still shows not done
+(`already_in_flow` and `already_out` led by "leave it" / "leave it out"); the
+one exception is `act_already_named` for an act still to do, whose own todo is
+the fault. A `no_such_step` for the number right after the draft's last step
+says to run that action first with add true, since a step enters the draft
+only by running (t174-w108, Cause 6). **An act moved to another step names the
+step it left.** One act is done by one step (`runtime/flow-draft/act-claim.ts`):
+claiming it takes it off any other step. When that leaves a step in the Flow
+with no act, the answer carries `moved: [{step, act, to, note}]` saying that
+step now does no act and is pressed in every run unless dropped, with the drop
+to send. It is information, never a refusal and never a drop. It is told after
+an amendment that moved the act, alone (`ok: true`,
+`llm_evidence_loop.draft_act_moved`) or beside the decision's refusals, and
+after a tool call put into the Flow with `act` that moved it
+(`automationStudioLlmEvidenceClaimWrittenAct`,
+`runtime/llm/decision-handlers/amendment.ts`, called from
+`runtime/llm/evidence-loop.ts`).
 
 **A rerun keeps a step's kind** (`runtime/llm/evidence-loop/rerun-request.ts`).
 A rerun of a written step is sent with `write: true`, its forms translated as a
@@ -158,13 +185,40 @@ test, the assembler and the stored Flow read one shape and nothing new runs.
 | --- | --- | --- |
 | `{"$row": "name"}` | `{"$state":{"path":"item.name"}}` | in a loop pass, from the pass's row |
 | `{"$input": "query", "test": "blue towels"}` | `{"$state":{"path":"query","fallback":"blue towels"}}` | from the run's inputs, else the test value |
-| `{"$step": n, "output": port}` | not built (P5): refused `step_binding_not_yet` | -- |
+| `{"$step": n, "output": "port", "path": "a.b"}` | `{"$state":{"path":"$step.<id>.port.a.b"}}` in the draft; `$node.<key>.port.a.b` in the plan and stored Flow | in the test, from what step n answered in this test; in a run, from that node's output in this run |
 
 Input names match `^[a-z][A-Za-z0-9]{0,31}$` and may not be `item`, the row's
 name in run state; row fields are one path segment. A form with a stray key, a
 wrong type, or a missing or `null` test is refused as `malformed` where it
 sits and is never carried as a literal. Search depth is 16, as in the
 executor's resolver.
+
+**An earlier step's output (P5, t270).** `n` is a draft position, and a
+position is renumbered by every reorder and withdrawal, so the form is read
+against the draft as it stands when it is written
+(`AutomationStudioFlowDraftBindingContext`: the steps, the position of the step
+being written -- absent for one about to be appended -- and the node lookup)
+and stored under the step's own id. `path` is optional, one or more field
+names of a record output; a list index is refused, since the resolver walks no
+list. Refusals: `step_binding_not_yet` when the caller passed no draft (every
+caller before P5's wiring), `step_missing` (no step at `n`), `step_not_earlier`
+(`n` is the step itself or after it), `step_not_usable` (withdrawn, a look, or
+failed), `step_output_unknown` (the node is known and declares no such output),
+`malformed`. Shown back to the model as `{"$step": <its position now>, ...}`
+(`binding-render.ts` with the draft; `null` once the step is gone).
+
+Nothing keeps run state under `$step` or `$node`, so an unrewritten reference
+is reported missing, never read. The build's test supplies each step's outputs
+under `$step.<id>` from its own answer in the same walk, and only from a step
+asked to run that ran (`core.replay.replayed`); each repeat pass starts with
+none of the last pass's (`replay-draft.ts`, `replay-span.ts`). Assembly
+rewrites `$step.<id>` to `$node.<key>`, the plan key of the node the step
+became (`assemble-draft.ts`), and the executor resolves `<key>` to the one node
+of the graph whose `metadata.bootstrapSymbolicKey` is that key
+(`runtime/executor/node-inputs.ts`, `automationStudioNodeOutputReferences`),
+then reads `${nodeId}.<output>` with the ordinary resolver. A key no node or
+two nodes carry stays unresolved: the node fails
+`executor.parameter.unresolved_state_path` before it runs.
 
 **Assembly checks** (`runtime/flow-bootstrap/authoring/draft-bindings.ts`, run
 on the assembled plan by `assemble-draft.ts`). A `$state` survives
@@ -182,6 +236,15 @@ graph:
   proposed steps (`automationStudioFlowDraftInputs(...).conflicts`, checked in
   `assemble-draft.ts`), naming both values and the steps. A run that supplies no
   value would use one at one step and another at the next.
+- Earlier outputs (`assemble-draft.ts`), each naming the reading step:
+  `flow_draft.step_binding_source_missing` (its step became no node of the
+  plan: withdrawn, or not in the Flow), `flow_draft.step_binding_not_earlier`
+  (its node is the reader or after it: a reorder moved it),
+  `flow_draft.step_binding_unknown_output` (the registry's definition declares
+  no such output), `flow_draft.step_binding_conditional_source` (the Flow does
+  not always run it: optional, only-if, a fallback, an answered interruption),
+  `flow_draft.step_binding_repeated_source` (it is a member of a repeat the
+  reader is not in, so the reader would get whichever pass ran last).
 
 **Flow inputs.** A Flow input is declared by its first `$input` binding, and
 its test value is that binding's fallback: the value the build tests with, and
@@ -189,7 +252,7 @@ the value a stored Flow runs on when a run supplies none (the executor reads
 run inputs first). A name given two test values is refused at assembly
 (`flow_draft.input_conflict`, above).
 
-**Not built.** P5: `$step` bindings to an earlier step's output, the plan's
+**Not built.** The plan's
 `inputs`, the Flow's `interface.inputs` (so callers and the panel can see and
 fill an input) and declared defaults on root runs; until then an input exists
 only as the bindings' fallbacks. P6: row anchors from the list reader, so two
@@ -242,8 +305,8 @@ status is its first non-passing pass's, else `replayed`. A pass answering
 
 A member's mode is the same on every pass
 (`automationStudioFlowDraftStepReplayMode`, `runtime/flow-draft/verify-only.ts`):
-a step with a declared lasting consequence, or one doing an act of the
-person's, is sent `replay: "verify"` once per row, and is never pressed. An act
+a step with a declared lasting consequence, or one claiming a lasting act of
+the person's, is sent `replay: "verify"` once per row, and is never pressed. An act
 of the person's is lasting by its kind (an add, save, claim, move or submit), by
 a quote of the build's instruction read that grounds it (a split act by its
 original clause), or when the read answered it with a class or left it
@@ -322,8 +385,9 @@ checks the Confirm once per kept row with that row as `item`, presses nothing
 and names no excluded row; the judge reads three passes; the stored Flow has
 one For Each over the list, the Confirm inside it bound to `item.name`, the
 explored row's name nowhere, and `metadata.declaredConsequences` kept. Its
-variants cover a written Confirm, a Confirm that declares nothing lasting (sent
-as a step per row), and zero kept rows (refused `not_reached`).
+variants cover a written Confirm, a Confirm that declares nothing lasting
+(checked once per kept row too, never pressed, because confirming is a submit
+and lasts by its kind), and zero kept rows (refused `not_reached`).
 
 ## Consequences
 
@@ -342,9 +406,42 @@ every stored Flow does when it runs, which is the user's decision.
 
 An explicit act claim on a control whose wording does not name that act now includes informational claimSaid feedback. It preserves the claim and coverage; whole-Flow judgement remains authoritative. The feedback asks the author to review the actual control and add a distinct executable step when needed. A checked rerun verifies an existing target and does not add the claimed action. Existing act-kind vocabulary recognizes legitimate action wording; blank controls and set/open choices avoid speculative warnings.
 
+### How one decision's step numbers are read
+
+Every step number in one `amend_draft` -- `step`, `to`, `check`, `through`,
+`over` -- names the step as the draft entry the model was shown numbered it,
+and the draft the model reads next is numbered 1..n in the order the steps then
+stand (`runtime/flow-draft/amendment/shown-numbering.ts`). `to` is the place
+the step shown at that number holds: before it moving up, after it moving down
+(`move.ts`). So a listing after its act is moved with `18 reorder to 9` beside
+`9 repeat over 18`, in either order. Until t195 w45 a reorder renumbered at
+once and the next amendment read the new numbers: live run
+`run-musr9pv3-f4bf6256` sent `15 reorder to 14, 15 repeat over 14` and put the
+repeat on its listing. The amendment schema, both draft-entry tellings and the
+refusal feedback say how numbers are read.
+
+**A move revalidates every repeat** (`runtime/flow-draft/amendment/repeat-revalidation.ts`,
+`automationStudioFlowDraftRepeatOrderProblem` in `runtime/flow-draft/routing.ts`).
+A repeat the decision wrote is checked once all its moves are done; one that
+cannot run -- its `over` not before it, or its `through` before it -- is taken
+back and refused `over_not_before` or `no_such_position` as before. After a
+decision that moved a step (`reorder`, or `add` with `to`), every other
+repeat that can no longer run is taken off, its step and every step after it
+lose their test marks, and the answer carries one `repeat_taken_off` entry per
+repeat: `step`, `over`, `takenOff` (`over_after` or `span_broken`), `through`
+for a broken span, all in the numbers shown, and `now`, `overNow`,
+`throughNow` where the decision changed them. It is not an amendment refused:
+it is never marked `repeated`, and an answer holding only such entries does not
+say the amendments changed nothing. `unrepeat` below is how a repeat is taken
+off by hand.
+
 ### Removing an accidental row repeat
 
 The unrepeat draft amendment accepts only step and change. It removes a repeat on that step without changing the input, act claims or disposition, and invalidates replay marks from that step onward. Existing keep and keep with act preserve intentional repeats. Quantity-is-a-repeat feedback names unrepeat on the beginning of the repeated span, followed by the item quantity control; missing cart actions still prevent completion.
+
+**A repeat over a step written after it is told the fix this draft needs (t195-w47).** When the Flow is written, a span whose `over` comes after it is refused `flow_draft.repeat_not_after_its_source` (`runtime/flow-bootstrap/authoring/draft-routing.ts`), and the sentence now depends on which step is out of place. A step another span repeats over, or a step with a list output, is a listing, which runs once and never repeats: it is told to take its repeat off with `unrepeat`, a listing nothing repeats over also to repeat the act over it instead. An act whose listing merely comes after it is told to `reorder` the listing to the act's number. A step repeating over a later check, which may be either, is told both. A span over a listing whose own repeat was refused is told the same `unrepeat` of that listing, rather than that a branch or loop runs it. Each amendment is written out with the step numbers it takes. Live run `run-musr9pv3-f4bf6256` (decision 0072) had a listing at step 15 repeating over the Confirm at 16, which repeated over 15; the one sentence it had told step 15 to move step 16 ahead of it, and the model looped fifteen turns. The completion's feedback (`runtime/llm/harness-options/bootstrap-completion.ts`) carries the sentence of each of draft-routing's six refusal codes, which quote only step numbers and the amendment; before, the issue feedback dropped them and the model saw a code and a path.
+
+**A read before the last act asks for a new read, never a move (t195-w47, R18).** When every read giving the instruction's named columns runs before the draft's last act step, the note beside the draft (`runtime/flow-bootstrap/authoring/instruction-record-columns.ts`, through `runtime/llm/harness-options/draft-acts.ts`) says to run a new read after that step and add it, and to leave the reads before it where they are; of an act in a repeated span, that the listing it repeats over stays before it. "The draft needs a read after step N" had been read as "move the read": in the same run the model moved the loop's own listing after the act that walks it.
 
 ### Selecting a terminal recovery cause
 
@@ -352,7 +449,7 @@ Terminal recovery selects the newest failed or unknown attempt that has no later
 
 ### Lasting acts from counted-object instructions
 
-When one original instruction clause names multiple counted objects, each parsed act keeps its own display quote and parser-owned source clause/object provenance. On the quote path of the lasting-act rule (`instructedLastingActs`, `runtime/flow-bootstrap/action-permissions.ts`), the cached consequence read attributes such an act only when a grounded quote includes that child object and matches the original clause or display quote: a combined clause grounds both objects; a narrow sibling quote or shared verb grounds neither. The quote path is one of three. An add, save, claim, move or submit act is lasting by its kind whatever the read quoted, so split adds are checked, never pressed again, by build tests; and an act the per-act read answered with a class, or left unanswered, is lasting too ([the instruction's read](llm-flow-bootstrap.md#permission-on-the-authoring-path)). In the read itself, a split act's answered classes are recorded as entries quoting its original clause, because the assembled display quote is not the person's words; sibling splits of one clause give one entry per class. Dotted choice IDs remain ordinary preparation, and this attribution changes no permissions or normal Flow execution.
+When one original instruction clause names multiple counted objects, each parsed act keeps its own display quote and parser-owned source clause/object provenance. On the quote path of the lasting-act rule (`instructedLastingActs`, `runtime/flow-bootstrap/action-permissions.ts`), the cached consequence read attributes such an act only when a grounded quote includes that child object and matches the original clause or display quote: a combined clause grounds both objects; a narrow sibling quote or shared verb grounds neither. The quote path is one of the three in [Lasting Acts And Excusal](#lasting-acts-and-excusal); split adds are lasting by their kind whatever the read quoted, so build tests check them and never press them again. In the read itself, a split act's answered classes are recorded as entries quoting its original clause, because the assembled display quote is not the person's words; sibling splits of one clause give one entry per class. Dotted choice IDs remain ordinary preparation, and this attribution changes no permissions or normal Flow execution.
 
 ### Checked configuration and prior execution
 

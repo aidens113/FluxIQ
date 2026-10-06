@@ -47,9 +47,40 @@
 // in a row stall the round. Looks in a row of any kind are counted as well
 // (`./searching.ts`).
 //
+// **A call that runs the draft is keyed on the draft too.** In
+// `run-musr9pv3-f4bf6256` (t195) the model sent `core.run_flow {from: 15, to: 16}`
+// about twenty times from step 0066 to 0178, between unchanged `complete`s the
+// plan check refused, on one unchanged draft and page: every run passed with
+// the same answer, and round 0 ran to its 64-decision bound. Nothing here
+// refused it: the part run reported no page states, and it counted as applied
+// because the read it replayed did -- though it pressed nothing, its press only
+// checked. A part run now applies only what its changing steps did
+// (`../node-tools/run-flow-part.ts`), and a tool whose answer is the draft run
+// again (`draftOf`) is keyed on the draft's Flow signature as well as the page
+// (`./draft-key.ts`): the same call on the same draft and page that changed
+// nothing (`same_draft`) is refused unrun, and the model is told to change the
+// draft first. Once the draft changes it is a new call, so the first run of a
+// part, and a run after an amendment, run as they always did. An unchanged
+// completion refused again over the same draft counts in the same run of
+// refusals (`../evidence-loop.ts`, `unusable`), so that run stalls after two
+// refused part runs, not twenty.
+//
 // **A rerun is keyed where it runs.** A rerun runs from the page its step
 // started on (`../node-tools/step-place.ts`), not from the page the last call
 // left, so it is checked against that page (`blocks(..., at)`).
+//
+// **A call that failed on a handle not yet shown runs again once handles were
+// shown.** Lane t194's run-musp39u8 (debug cause C-B1) read a list by an
+// extraction handle no detect had minted yet: `handle_not_in_packet`. The
+// detect that minted it ran next, on the same page, and the identical read was
+// then refused four times as "failed before" and the round stalled. The
+// failure was about the evidence the model had, not the call: a failure whose
+// reason says the handle it names was never shown (`HANDLE_UNSHOWN`) is lifted
+// on that page as soon as a later call there ran and answered something new --
+// a look, a detect, a find, anything not refused and not answering exactly as
+// before. Until then it is refused like any failure, and the note says the
+// handle was never shown and which call shows it (`./feedback.ts`). Any other
+// failure stays refused while the page is unchanged, looks or not.
 //
 // **What still runs.**
 //
@@ -72,6 +103,13 @@ import { automationStudioLlmEvidenceSearchStreak, type AutomationStudioLlmEviden
 /** Words in a result code or reason that say the call may work if made again later. */
 const RETRY_LATER = /rate[_-]?limit|too[_-]?many|throttl|retry|disabled|busy|not[_-]?ready|loading|timed[_-]?out|timeout|try[_-]?again/iu;
 
+/**
+ * Reasons that say the call named a handle no call had shown or minted yet on
+ * this page: the call may work once one has. A handle that was shown and has
+ * since gone (`handle_no_longer_on_page`, `stale_handle`) is not one of them.
+ */
+const HANDLE_UNSHOWN = /^(?:handle[_-]?not[_-]?in[_-]?packet|handle[_-]?not[_-]?issued|unknown[_-]?handle)$/iu;
+
 /** How an earlier call went, as the model is told it. */
 export type AutomationStudioLlmEvidenceRepeatedOutcome = {
   /** The call that already did it. */
@@ -81,10 +119,14 @@ export type AutomationStudioLlmEvidenceRepeatedOutcome = {
    * page was as before. `same_result`: it ran again from the same page and
    * ended on the same page as the identical call before it. `same_answer`: a
    * look that answered on this page exactly as the identical look before it.
+   * `same_draft`: a call that runs the draft ran on this same draft and page
+   * and changed nothing (`core.run_flow`, run-musr9pv3-f4bf6256).
    */
-  outcome: "failed" | "changed_nothing" | "same_result" | "same_answer";
+  outcome: "failed" | "changed_nothing" | "same_result" | "same_answer" | "same_draft";
   resultCode?: string;
   resultReason?: string;
+  /** It failed only because a handle it names was never shown on this page; a later call that shows handles lifts it. */
+  handleUnshown?: true;
 };
 
 /** One call as it ran, for the record. */
@@ -123,16 +165,30 @@ export type AutomationStudioLlmEvidenceRepeatGuard = AutomationStudioLlmEvidence
   refusedAgain(iteration: number): number;
 };
 
-export function automationStudioLlmEvidenceRepeatGuard(): AutomationStudioLlmEvidenceRepeatGuard {
+/**
+ * `draftOf` names the draft, by its key (`./draft-key.ts`), for a tool whose
+ * answer is the draft run again (`core.run_flow`), and nothing for any other:
+ * such a call is keyed on the draft it ran on as well as its page (see the header).
+ */
+export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((toolId: string) => string | undefined) | undefined } = {}): AutomationStudioLlmEvidenceRepeatGuard {
   const outcomes = new Map<string, AutomationStudioLlmEvidenceRepeatedOutcome>();
   // Where each call that changed something left the page, and what each look answered, by its key.
   const endedOn = new Map<string, string>();
   const answered = new Map<string, string>();
+  // Failures on a handle not yet shown, by key, with the page each is on: lifted when a later call there shows something new.
+  const unshown = new Map<string, string>();
+  const showed = (state: string): void => {
+    for (const [at, on] of unshown) {
+      if (on !== state) continue;
+      unshown.delete(at);
+      if (outcomes.get(at)?.handleUnshown) outcomes.delete(at);
+    }
+  };
   const searching = automationStudioLlmEvidenceSearchStreak();
   let latest: string | undefined;
   let refusedInARow = 0;
   let lastRefused = Number.NEGATIVE_INFINITY;
-  const key = (toolId: string, input: JsonObject, state: string): string => `${toolId}\u0000${state}\u0000${automationStudioLlmEvidenceCanonicalJson(input)}`;
+  const key = (toolId: string, input: JsonObject, state: string): string => `${toolId}\u0000${state}\u0000${options.draftOf?.(toolId) ?? ""}\u0000${automationStudioLlmEvidenceCanonicalJson(input)}`;
   return {
     ...searching,
     seen(state) {
@@ -157,24 +213,34 @@ export function automationStudioLlmEvidenceRepeatGuard(): AutomationStudioLlmEvi
         const at = key(call.toolId, call.input, state);
         const answer = call.answer === undefined || call.refused ? undefined : createHash("sha256").update(call.answer).digest("hex");
         if (answer !== undefined && answered.get(at) === answer) outcomes.set(at, { callId: call.callId, outcome: "same_answer", ...(call.resultCode ? { resultCode: call.resultCode } : {}) });
-        else if (answer !== undefined) answered.set(at, answer);
+        else if (answer !== undefined) {
+          answered.set(at, answer);
+          showed(state);
+        }
         return;
       }
-      const failed = call.refused || (call.effect === "mutate" && !call.effectApplied);
+      // A part run that acted on nothing did not fail: it ran the draft and changed nothing (`same_draft`).
+      const runsDraft = options.draftOf?.(call.toolId) !== undefined;
+      const failed = call.refused || (call.effect === "mutate" && !call.effectApplied && !runsDraft);
       const changedNothing = !call.effectApplied || (call.stateAfter !== undefined && call.stateAfter === state);
       const retryLater = RETRY_LATER.test(`${call.resultCode ?? ""} ${call.resultReason ?? ""}`);
       const at = key(call.toolId, call.input, state);
+      if (!call.refused) showed(state);
       const sameResult = !failed && !changedNothing && call.stateAfter !== undefined && endedOn.get(at) === call.stateAfter;
       if (!failed && !changedNothing && call.stateAfter !== undefined) endedOn.set(at, call.stateAfter);
       if ((!failed && !changedNothing && !sameResult) || retryLater) {
         outcomes.delete(at);
         return;
       }
+      const handleUnshown = failed && HANDLE_UNSHOWN.test(call.resultReason ?? "");
+      if (handleUnshown) unshown.set(at, state);
+      else unshown.delete(at);
       outcomes.set(at, {
         callId: call.callId,
-        outcome: failed ? "failed" : changedNothing ? "changed_nothing" : "same_result",
+        outcome: failed ? "failed" : !changedNothing ? "same_result" : runsDraft ? "same_draft" : "changed_nothing",
         ...(call.resultCode ? { resultCode: call.resultCode } : {}),
-        ...(call.resultReason ? { resultReason: call.resultReason } : {})
+        ...(call.resultReason ? { resultReason: call.resultReason } : {}),
+        ...(handleUnshown ? { handleUnshown: true as const } : {})
       });
     },
     blocks(toolId, input, at) {

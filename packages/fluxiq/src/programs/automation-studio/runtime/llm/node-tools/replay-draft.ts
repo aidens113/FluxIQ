@@ -41,6 +41,15 @@
 // (`./replay-span.ts`). A step outside a repeat has its bindings resolved too,
 // so an input takes its test value; a binding nothing answers fails the step
 // `core.replay.unresolved_binding`, and nothing is sent for it.
+//
+// **An earlier step's output is what that step answered in this walk (P5,
+// t270).** Each step's real outputs are kept as the walk goes -- only from a
+// step asked to run that ran (`automationStudioFlowDraftReplayProduced`) -- and a
+// later step's `$step` binding resolves against them. Never the build's
+// exploration, a stored `produced`, or another test: a step that was checked,
+// failed, or has not run yet in this walk produced nothing, and the step
+// reading it fails `core.replay.unresolved_binding`. A part run that starts
+// after the step it reads therefore cannot send it either.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
@@ -52,6 +61,7 @@ import {
   automationStudioFlowDraftReplayOutcomeWord,
   automationStudioFlowDraftStepId,
   automationStudioFlowDraftStepIsProposed,
+  automationStudioFlowDraftStepOutputsState,
   automationStudioFlowDraftStepReplayMode,
   automationStudioFlowDraftStepWithholdsLater,
   automationStudioFlowDraftWithheldStepIds,
@@ -73,6 +83,7 @@ import {
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE,
   automationStudioFlowDraftReplayPassCall,
+  automationStudioFlowDraftReplayProduced,
   automationStudioFlowDraftReplaySpanPlan,
   automationStudioFlowDraftReplaySpanRun,
   type AutomationStudioFlowDraftReplayAnswer,
@@ -234,6 +245,8 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
   const excused = (stepId: string): boolean => conditional.has(stepId) && !expanded.has(stepId);
   // What each step was asked and answered, for a repeat over it.
   const asked = new Map<AutomationStudioFlowDraftStep, { answer: ReplayAnswer; mode: AutomationStudioFlowDraftReplayMode }>();
+  // What each step really produced in this walk, by its id, for a later step's `$step` binding (see the header).
+  const produced = new Map<string, JsonObject>();
   const send = async (callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject, excusable?: AutomationStudioFlowDraftExcusedReason): Promise<ReplayAnswer> => {
     const answer = await call(input, callId, automationStudioNodeReplayToolId(step), value, excusable);
     if (answer.readable) input.answered?.(step, answer.result);
@@ -253,7 +266,8 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
         callIdOf: input.callIdOf,
         send: (callId, member, value) => send(callId, member, value, passExcusable),
         ...(input.stopsAt ? { stops: (member: AutomationStudioFlowDraftStep) => input.stopsAt!(member, false) } : {}),
-        withheldBy
+        withheldBy,
+        earlier: automationStudioFlowDraftStepOutputsState(produced)
       });
       for (const member of plan.members) expanded.add(automationStudioFlowDraftStepId(member));
       outcomes.push(...span.outcomes);
@@ -264,7 +278,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       continue;
     }
     const mode = automationStudioFlowDraftStepReplayMode(step, input.lastingActs);
-    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId));
+    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced));
     const unresolved = built !== undefined && "unresolved" in built;
     const value = built && "value" in built ? built.value : undefined;
     const callId = input.callIdOf(step);
@@ -287,6 +301,9 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       }
     }
     if (value) asked.set(step, { answer: ran, mode });
+    const outputs = value ? automationStudioFlowDraftReplayProduced(ran, mode) : undefined;
+    if (outputs) produced.set(stepId, outputs);
+    else produced.delete(stepId);
     const resultCode = unresolved ? AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE : ran.readable ? ran.result.resultCode : undefined;
     const outcome: AutomationStudioFlowDraftReplayOutcome = {
       step: step.position,

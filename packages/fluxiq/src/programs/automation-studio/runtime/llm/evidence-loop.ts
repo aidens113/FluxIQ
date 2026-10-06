@@ -2,7 +2,7 @@ import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS, AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS } from "../loop-limits/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
-  automationStudioFlowDraftClaimAct, automationStudioFlowDraftDropReversals, automationStudioFlowDraftKeepOpeners,
+  automationStudioFlowDraftDropReversals, automationStudioFlowDraftKeepOpeners,
   automationStudioFlowDraftReplaySignature,
   automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsAction,
   automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf,
@@ -23,7 +23,7 @@ import {
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE,
   automationStudioLlmEvidenceAnswerCheck,
-  automationStudioLlmEvidenceAskedAgain,
+  automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest,
   automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceSearchingWithoutActing,
@@ -93,13 +93,10 @@ import {
 } from "./unusable-decision.ts";
 import { automationStudioLlmReplyUnreadable, automationStudioLlmUnreadableReplies } from "./unreadable-reply.ts";
 import { automationStudioLlmProviderUnanswered, automationStudioLlmProviderUnansweredCount } from "./unanswered-calls.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceRepeatGuard } from "./repeat-guard/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, automationStudioLlmEvidenceDraftKey, automationStudioLlmEvidenceRepeatGuard } from "./repeat-guard/index.ts";
 
-// The ceilings are held in runtime/loop-limits/ because runtime/recovery/ is
-// bounded by the same three numbers, and a constant both directories read is
-// how an import edge grows between them. Re-exported here so the loop's public
-// surface is unchanged: every existing consumer still reads it from
-// runtime/llm/.
+// The ceilings are held in runtime/loop-limits/ because runtime/recovery/ is bounded by the same three numbers, and a constant
+// both directories read is how an import edge grows between them. Re-exported so every consumer still reads it from runtime/llm/.
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
 /** What a loop may be configured with, in `loop-configuration.ts` with the arithmetic that reads it. */
 export type { AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
@@ -209,11 +206,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // A step that ran is `taken` -- evidence, not a step of the Flow -- unless
     // the model added it as it ran it and it worked (`../flow-draft/step.ts`).
     const appended: AutomationStudioFlowDraftStep = { ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: authoring ? "taken" : "kept" };
-    if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended)) {
-      appended.disposition = "kept";
-      if (authored.act !== undefined && appended.effect === "mutate") automationStudioFlowDraftClaimAct(draftSteps, appended, authored.act); // A read does no act (`../flow-draft/amendment.ts`, `act_on_a_read`); one act, one step (`../flow-draft/act-claim.ts`).
-    }
+    if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended)) appended.disposition = "kept";
     draftSteps.push(appended);
+    if (authoring && appended.disposition === "kept" && authored?.act !== undefined && appended.effect === "mutate") automationStudioLlmEvidenceClaimWrittenAct(handling, appended, authored.act); // A read does no act (`../flow-draft/amendment/apply.ts`, `act_on_a_read`); one act, one step, and a step it leaves is told (`./decision-handlers/amendment.ts`).
     if (authoring && appended.disposition === "kept") { automationStudioFlowDraftKeepOpeners(draftSteps, appended); automationStudioFlowDraftDropReversals(draftSteps); } // The press that opened its page joins it (`../flow-draft/opener.ts`); a pair of presses on one control that changed nothing leaves (`../flow-draft/reversal.ts`).
     return drafting && automationStudioFlowDraftStepIsAction(appended);
   };
@@ -317,7 +312,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (noProgress.sameIssuesAgain(issueSet) || sameDraftRefusedAgain) noProgress.stepped();
     else noProgress.restarted();
     recordRow(step, transition);
-    if (!noProgress.reached() && counters.unusableInARow < limits.maxUnusableDecisionsInARow) {
+    // It is also one more repeat refused in a row, beside the identical part runs it sat between (`repeat-guard/outcomes.ts`, run-musr9pv3-f4bf6256).
+    const repeatsStall = sameDraftRefusedAgain && handling.repeats.refusedAgain(step.iteration) >= AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW;
+    if (!repeatsStall && !noProgress.reached() && counters.unusableInARow < limits.maxUnusableDecisionsInARow) {
       // A refused completion is the one stall the redirection has something
       // specific to say about: its issue codes are what stand between the
       // draft and a Flow.
@@ -396,10 +393,11 @@ export async function runAutomationStudioLlmEvidenceLoop(
     ...(input.testEndView ? { endView: input.testEndView } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   });
+  const draftOf = (toolId: string): string | undefined => (toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID ? automationStudioLlmEvidenceDraftKey(draftSteps) : undefined); // A part run is keyed on its draft too (`repeat-guard/draft-key.ts`).
   // The state every decision handler reads and writes (`decision-handlers/types.ts`).
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
     input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
-    history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: automationStudioLlmEvidenceRepeatGuard(), looks,
+    history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: automationStudioLlmEvidenceRepeatGuard({ draftOf }), looks,
     recordRow, draftRecord, accountEvidence, unusable, dryRun, authored
   };
   // One call run and recorded, whoever decided it: the model's tool call, or the
@@ -750,15 +748,15 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // A repeat is answered from what the loop already holds. Checked before the
     // call id, so a request repeated word for word is a repeat, not a clash.
     const tool = toolsById.get(decision.toolId)!;
-    const toolRequestSignature = automationStudioLlmEvidenceRequestSignature({ tool, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: decision.input });
+    const draftKey = draftOf(decision.toolId);
+    const toolRequestSignature = automationStudioLlmEvidenceRequestSignature({ tool, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: draftKey ? { ...decision.input, draftKey } : decision.input });
     const answeredBy = answeredRequests.get(toolRequestSignature);
     // Not offered this iteration: an observation nothing has happened since (its latest call is always recorded with its epoch),
     // or, in the wrap-up, any tool at all -- the wrap-up offers none, and a call it was not offered is answered, never run.
     const reobservation = !eligibleToolIds.has(decision.toolId);
-    // The same call that already failed or changed nothing on this same page is
-    // refused unrun, before the repeat policy runs it again, so every action repeat
-    // is refused in one place and stalls the round at the third in a row; a look
-    // that answered the same twice here is too, unless the policy answers it from memory (`repeat-guard/outcomes.ts`).
+    // The same call that already failed or changed nothing on this same page -- a part run, on this same draft -- is refused unrun,
+    // before the repeat policy runs it again, so every action repeat is refused in one place and stalls the round at the third in a
+    // row; a look that answered the same twice here is too, unless the policy answers it from memory (`repeat-guard/outcomes.ts`).
     const blocked = wrappingUp ? undefined : handling.repeats.blocks(decision.toolId, decision.input);
     const triedHere = blocked?.outcome === "same_answer" && (answeredBy !== undefined || reobservation) ? undefined : blocked;
     if (triedHere) {

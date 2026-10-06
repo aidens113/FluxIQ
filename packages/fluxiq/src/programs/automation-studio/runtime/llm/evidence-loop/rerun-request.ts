@@ -4,7 +4,7 @@
 // `rerun` says "do this step again with a corrected argument". It has to
 // *execute* something, so the draft refuses it as `run_by_the_loop` and the loop
 // filters it out of the apply call and asks here for the step to run
-// (`../../flow-draft/amendment.ts`).
+// (`../../flow-draft/amendment/`).
 //
 // **What that cost until 2026-09-26.** This function answered with the first
 // runnable rerun or with nothing, and nothing was the end of it: a rerun naming
@@ -36,10 +36,21 @@
 // refused: the step carries an instructed act its own run already did, so the
 // call that answers it checks the new argument and does not do the act again
 // (`../node-tools/rerun-check.ts`).
+//
+// **A rerun of the attempt a rerun replaced is refused naming its replacement**
+// (`../../flow-draft/amendment/replaced-attempt.ts`). Live run
+// `run-musp474o-e0ed7432` reran its listing at step 6 with a fixed where, was
+// shown the withdrawn attempt as step 7, and reran "step 7" with that where
+// three times: each was refused `changes_nothing`, which never said step 6
+// already held it, and the round stopped. It is checked before anything else
+// about the rerun, so the model is told which step to change rather than why
+// this one would not run.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import {
+  AUTOMATION_STUDIO_FLOW_DRAFT_REPLACED_ATTEMPT_REASON,
   automationStudioFlowDraftHoldsBinding,
+  automationStudioFlowDraftReplacingStep,
   automationStudioFlowDraftTranslateBindings,
   type AutomationStudioFlowDraftAmendment,
   type AutomationStudioFlowDraftAmendmentRefusal,
@@ -87,6 +98,12 @@ export function automationStudioLlmEvidenceRerunRequest(
     // so a number that names nothing reads the same wherever the model wrote it.
     if (!step) {
       refused.push({ step: amendment.step, reason: "no_such_step" });
+      continue;
+    }
+    // The attempt a rerun replaced: change the step standing in its place (header).
+    const replacing = automationStudioFlowDraftReplacingStep(steps, step);
+    if (replacing) {
+      refused.push({ step: amendment.step, reason: AUTOMATION_STUDIO_FLOW_DRAFT_REPLACED_ATTEMPT_REASON, replacedBy: replacing.position });
       continue;
     }
     const toolId = step.toolId ?? step.actionId;

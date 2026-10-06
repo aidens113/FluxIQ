@@ -330,7 +330,7 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(requests).toHaveLength(1);
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
     expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("which left $0.008, too little for another round: judging its Flow takes two judge calls held at up to $0.008, and its first decision at least $0.001 more.");
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("The Flow so far was kept as a draft");
+    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("The steps I found so far were kept as a draft");
     // The Flow it finished with is kept whole, for building again to carry on from.
     expect(kept).toHaveLength(1);
     expect((kept[0]![2] as unknown[]).length).toBe(3);

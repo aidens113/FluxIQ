@@ -87,7 +87,8 @@ describe("the draft says when a read misses a column the instruction names", () 
 // naming the last act step and never the read.
 describe("the draft says when every read giving the named columns runs before the last act", () => {
   const RUN = "Go through my pending friend requests and confirm everyone I have at least five mutual friends with, leaving the rest alone. Then give me a table of every request the list now shows as accepted, in list order, with columns name and mutualFriends.";
-  const BEFORE = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act; if the instruction asks for what the page shows after it, the draft needs a read after step 10.";
+  const BEFORE = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step 10 and add it; leave every read before step 10 where it is.";
+  const BEFORE_REPEATED = "Every read in the draft that gives \"name\", \"mutualFriends\" runs before step 10, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step 10 and add it; the listing step 10 repeats over stays where it is, before step 10.";
 
   function confirmStep(position: number, disposition: AutomationStudioFlowDraftStep["disposition"] = "taken"): AutomationStudioFlowDraftStep {
     return {
@@ -103,6 +104,18 @@ describe("the draft says when every read giving the named columns runs before th
     const notes = notesOf(automationStudioFlowBootstrapDraftActs({ instructionText: RUN }).acts(steps));
     expect(notes).toEqual([BEFORE]);
     expect(notes.join(" ")).not.toContain("step 7");
+  });
+
+  // R18 (run `run-musr9pv3-f4bf6256`, decisions 0037, 0044, 0056): told the
+  // draft "needs a read after step N", the model moved the listing step N
+  // repeats over after it. A repeated act -- the first step of its span, or a
+  // step inside one -- is told the listing stays before it.
+  it("says the listing stays before a repeated last act, whether the act starts the span or sits inside it", () => {
+    const starts = { ...confirmStep(10), routing: { kind: "repeat" as const, over: "d7", through: "d10" } };
+    expect(notesOf(automationStudioFlowBootstrapDraftActs({ instructionText: RUN }).acts([navigate, read7, starts]))).toEqual([BEFORE_REPEATED]);
+    const { acts: _none, ...open } = confirmStep(9);
+    const opens: AutomationStudioFlowDraftStep = { ...open, routing: { kind: "repeat" as const, over: "d7", through: "d10" } };
+    expect(notesOf(automationStudioFlowBootstrapDraftActs({ instructionText: RUN }).acts([navigate, read7, opens, confirmStep(10)]))).toEqual([BEFORE_REPEATED]);
   });
 
   it("is silent once a read giving every column follows the last act", () => {

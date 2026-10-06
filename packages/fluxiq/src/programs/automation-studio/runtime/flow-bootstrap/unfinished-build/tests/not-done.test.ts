@@ -103,6 +103,12 @@ describe("what the person is told stopped the build", () => {
     expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.draft_amendments_refused"])).toBe("it kept trying changes to the Flow that changed nothing");
     expect(automationStudioFlowBootstrapBlockedSaid(["llm_evidence_loop.draft_amendment_undone"])).toBe("it kept trying changes to the Flow that changed nothing");
   });
+
+  it("says an act left to a step the Flow may skip as not yet done (`../../instructed-acts/optional-only.ts`)", () => {
+    expect(automationStudioFlowBootstrapBlockedSaid(["bootstrap.instructed_act_only_optional"])).toBe("the Flow did not yet do what you asked");
+    expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["bootstrap.instructed_act_only_optional"]))
+      .toBe("too many attempts in a row went nowhere, because the Flow did not yet do what you asked");
+  });
 });
 
 // Runs 36 and 38 (t193, bigbox) ended "6 of the 6 things you asked are done" and

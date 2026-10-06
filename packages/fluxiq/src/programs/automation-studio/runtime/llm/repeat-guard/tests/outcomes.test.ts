@@ -96,6 +96,75 @@ describe("what a call did on the page it found", () => {
     expect(guard.looks()).toEqual([]);
   });
 
+  it("lets a call that failed only on a handle not yet shown run again once a later call showed or minted handles (run-musp39u8, C-B1)", () => {
+    const read = call({ callId: "read-page3", input: { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.4" } } }, effect: "observe", resultCode: "web.action.rejected.target_unobserved", resultReason: "handle_not_in_packet" });
+    const detect = call({ callId: "detect-page3", toolId: "web.detect_repeating_structure", input: { target: "t2134" }, effect: "observe", proposes: false, effectApplied: false, refused: false, resultCode: "web.structure.detected", resultReason: undefined, answer: "{\"extraction\":\"extraction.4\"}" });
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.recorded(read);
+    // Before anything showed the handle, the same read is still refused, and says why.
+    expect(guard.blocks("core.run_node", read.input)).toEqual({ callId: "read-page3", outcome: "failed", resultCode: "web.action.rejected.target_unobserved", resultReason: "handle_not_in_packet", handleUnshown: true });
+    guard.recorded(detect);
+    expect(guard.blocks("core.run_node", read.input)).toBeUndefined();
+    // Failing again on the same unshown handle is refused again until something new is shown.
+    guard.recorded({ ...read, callId: "read-again" });
+    expect(guard.blocks("core.run_node", read.input)?.callId).toBe("read-again");
+    for (const resultReason of ["handle_not_issued", "unknown_handle"]) {
+      const family = automationStudioLlmEvidenceRepeatGuard();
+      family.recorded({ ...read, resultReason });
+      expect(family.blocks("core.run_node", read.input)?.handleUnshown, resultReason).toBe(true);
+      family.recorded(detect);
+      expect(family.blocks("core.run_node", read.input), resultReason).toBeUndefined();
+    }
+  });
+
+  it("keeps refusing a handle failure when the later look was refused, answered as before, or on another page, and any other failure after a look", () => {
+    const read = call({ callId: "read", input: { extractList: { handle: "extraction.4" } }, resultCode: "web.action.rejected.target_unobserved", resultReason: "handle_not_in_packet" });
+    const look = call({ callId: "look", toolId: "look", input: {}, effect: "observe", proposes: false, effectApplied: false, refused: false, resultCode: "web.inspect.succeeded", resultReason: undefined, answer: "page" });
+    const refusedLook = automationStudioLlmEvidenceRepeatGuard();
+    refusedLook.recorded(read);
+    refusedLook.recorded({ ...look, refused: true });
+    expect(refusedLook.blocks("core.run_node", read.input)?.callId).toBe("read");
+    const sameAnswer = automationStudioLlmEvidenceRepeatGuard();
+    sameAnswer.recorded(look);
+    sameAnswer.recorded(read);
+    sameAnswer.recorded({ ...look, callId: "look2" });
+    expect(sameAnswer.blocks("core.run_node", read.input)?.callId).toBe("read");
+    const elsewhere = automationStudioLlmEvidenceRepeatGuard();
+    elsewhere.recorded(read);
+    elsewhere.recorded({ ...look, stateBefore: "s2", stateAfter: "s2" });
+    expect(elsewhere.blocks("core.run_node", read.input, "s1")?.callId).toBe("read");
+    const covered = automationStudioLlmEvidenceRepeatGuard();
+    covered.recorded(call());
+    covered.recorded(look);
+    expect(covered.blocks("core.run_node", call().input)).toEqual({ callId: "c1", outcome: "failed", resultCode: "web.action.rejected.target_covered" });
+  });
+
+  it("keys a call that runs the draft on the draft as well, and refuses it once it ran on that draft and page and changed nothing (run-musr9pv3-f4bf6256)", () => {
+    let draft = "D1";
+    const guard = automationStudioLlmEvidenceRepeatGuard({ draftOf: (toolId) => (toolId === "core.run_flow" ? draft : undefined) });
+    guard.seen("s1");
+    // The live part run: no page states of its own, nothing lasting applied, passed.
+    const part = call({ toolId: "core.run_flow", input: { from: 15, to: 16 }, stateBefore: undefined, stateAfter: undefined, effectApplied: false, refused: false, resultCode: "core.run_flow.ran" });
+    expect(guard.blocks("core.run_flow", part.input)).toBeUndefined();
+    guard.recorded(part);
+    expect(guard.blocks("core.run_flow", part.input)).toEqual({ callId: "c1", outcome: "same_draft", resultCode: "core.run_flow.ran" });
+    // Another part, another draft, another page: each is a new call.
+    expect(guard.blocks("core.run_flow", { from: 16 })).toBeUndefined();
+    expect(guard.blocks("core.run_flow", part.input, "s2")).toBeUndefined();
+    draft = "D2";
+    expect(guard.blocks("core.run_flow", part.input)).toBeUndefined();
+    draft = "D1";
+    expect(guard.blocks("core.run_flow", part.input)?.outcome).toBe("same_draft");
+    // A part run that left something lasting is not refused, and a call that does not run the draft keys as before.
+    const acted = automationStudioLlmEvidenceRepeatGuard({ draftOf: () => "D1" });
+    acted.seen("s1");
+    acted.recorded({ ...part, effectApplied: true });
+    expect(acted.blocks("core.run_flow", part.input)).toBeUndefined();
+    guard.recorded(call({ callId: "c9" }));
+    draft = "D3";
+    expect(guard.blocks("core.run_node", call().input)?.outcome).toBe("failed");
+  });
+
   it("counts refused repeats in a row by decision", () => {
     const guard = automationStudioLlmEvidenceRepeatGuard();
     expect([guard.refusedAgain(4), guard.refusedAgain(5), guard.refusedAgain(7), guard.refusedAgain(8), guard.refusedAgain(9)]).toEqual([1, 2, 1, 2, 3]);

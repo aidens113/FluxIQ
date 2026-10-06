@@ -251,3 +251,18 @@ describe("a rerun of a step with bindings", () => {
     expect(resolved.request?.input).toEqual({ node: "demo.press", parameters: { query: "towels" }, consequences: [] });
   });
 });
+
+// Live run `run-musp474o-e0ed7432` reran "step 7" -- the withdrawn attempt its
+// own rerun of step 6 had left -- with the where step 6 already held, three
+// times; each was refused changes_nothing, which never said step 6 had it.
+describe("a rerun of the attempt a rerun replaced", () => {
+  it("is refused naming the step that replaced it, and runs nothing", () => {
+    const list = (position: number, id: string, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep =>
+      ({ ...step(position, "web.output.dom-extract_list", "core.run_node"), id, effect: "observe", ...over });
+    const draft = [list(6, "d18"), { ...step(7, "web.press", "core.run_node"), id: "d7" }, list(8, "d6", { disposition: "dropped", replacedBy: "d18" })];
+
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(8, { where: "fixed" })], draft, offered, () => true);
+
+    expect(resolved).toEqual({ request: undefined, refused: [{ step: 8, reason: "not_a_kept_step", replacedBy: 6 }] });
+  });
+});

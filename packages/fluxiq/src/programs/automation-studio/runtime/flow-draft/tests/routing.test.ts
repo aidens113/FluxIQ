@@ -2,10 +2,10 @@
 // the draft being renumbered under it, and a replay that only ever sees one
 // situation.
 import { describe, expect, it } from "vitest";
-import { applyAutomationStudioFlowDraftAmendments } from "../amendment.ts";
+import { applyAutomationStudioFlowDraftAmendments } from "../amendment/index.ts";
 import { automationStudioFlowDraftDryRunVerdict } from "../dry-run.ts";
 import { automationStudioFlowDraftEntry } from "../entry.ts";
-import { automationStudioFlowDraftConditionalStepIds } from "../routing.ts";
+import { automationStudioFlowDraftConditionalStepIds, automationStudioFlowDraftRepeatOrderProblem } from "../routing.ts";
 import type { AutomationStudioFlowDraftStep } from "../step.ts";
 
 function steps(count = 4): AutomationStudioFlowDraftStep[] {
@@ -198,5 +198,21 @@ describe("a step the host says answered an interruption", () => {
     draft[2]!.interruption = true;
     draft[2]!.disposition = "dropped";
     expect([...automationStudioFlowDraftConditionalStepIds(draft)]).toEqual([]);
+  });
+});
+
+// Live run `run-musr9pv3-f4bf6256`: a reorder left a repeat's listing after the
+// step repeating over it, and nothing looked. Whether a repeat can run where its
+// steps stand is read off the order alone, by id.
+describe("whether a repeat can run where its steps stand", () => {
+  it("says over_after when the listing is not before it, span_broken when its through is, and nothing when it holds", () => {
+    const draft = steps(4);
+    const at = (index: number) => draft[index]!;
+    expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(2), { kind: "repeat", through: "d4", over: "d1" })).toBeUndefined();
+    expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(2), { kind: "repeat", through: "d3", over: "d4" })).toBe("over_after");
+    expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(2), { kind: "repeat", through: "d3", over: "d3" })).toBe("over_after");
+    expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(2), { kind: "repeat", through: "d2", over: "d1" })).toBe("span_broken");
+    // A name that names no step is the assembler's to report.
+    expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(2), { kind: "repeat", through: "d3", over: "gone" })).toBeUndefined();
   });
 });

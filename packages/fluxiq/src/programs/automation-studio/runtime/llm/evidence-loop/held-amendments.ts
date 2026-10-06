@@ -17,6 +17,14 @@
 // other step numbers (`to`, `check`, `through`, `over`) were written in the
 // numbering the model read, which the rerun's taking its step's place shifts
 // (`./rerun-replacement.ts`), so each is read as the step it named then.
+//
+// A held move can also take off a repeat on another step
+// (`repeat_taken_off`, `../../flow-draft/amendment/repeat-revalidation.ts`).
+// That refusal is about the step whose repeat went, not the held amendment's,
+// so it keeps its own step and is told, like every other number of the
+// decision, in the numbering the model wrote: the rerun as the step it
+// replaced, and `now`, `overNow` and `throughNow` where the decision changed
+// a number.
 import {
   applyAutomationStudioFlowDraftAmendments,
   automationStudioFlowDraftStepIsProposable,
@@ -52,6 +60,7 @@ export function automationStudioLlmEvidenceHeldAmendments(
   const held = rerunStep === undefined ? [] : edits.filter((amendment) => amendment.step === rerunStep);
   const now = edits.filter((amendment) => !held.includes(amendment));
   const named = new Map(steps.map((step) => [step.position, step] as const));
+  const wrote = new Map(steps.map((step) => [step, step.position] as const));
   const replaced = rerunStep === undefined ? undefined : named.get(rerunStep);
   return {
     now,
@@ -65,9 +74,13 @@ export function automationStudioLlmEvidenceHeldAmendments(
         const step = named.get(position);
         return step === replaced ? rerun.position : step && draft.includes(step) ? step.position : position;
       };
+      // The number the model wrote for a step, which for the rerun is its replaced step's.
+      const written = (step: AutomationStudioFlowDraftStep): number => wrote.get(step === rerun ? replaced : step) ?? step.position;
       let applied = 0;
       const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
       for (const amendment of held) {
+        const shown = new Map<number, AutomationStudioFlowDraftStep>();
+        for (const step of draft) if (!shown.has(step.position)) shown.set(step.position, step);
         const moved: AutomationStudioFlowDraftAmendment = { ...amendment, step: rerun.position };
         for (const key of ["to", "check", "through", "over"] as const) {
           const position = amendment[key];
@@ -75,9 +88,38 @@ export function automationStudioLlmEvidenceHeldAmendments(
         }
         const result = applyAutomationStudioFlowDraftAmendments(draft, [moved]);
         applied += result.applied;
-        refused.push(...result.refused.map((refusal) => ({ ...refusal, step: amendment.step })));
+        refused.push(...result.refused.map((refusal) => refusal.reason === "repeat_taken_off" ? takenOffAsWritten(refusal, shown, written) : { ...refusal, step: amendment.step }));
       }
       return { applied, refused };
     }
   };
+}
+
+/**
+ * A `repeat_taken_off` from a held amendment, renumbered from the draft the
+ * amendment was applied to into the numbers the model wrote, with `now`,
+ * `overNow` and `throughNow` where the step stands elsewhere after it.
+ */
+function takenOffAsWritten(
+  refusal: AutomationStudioFlowDraftAmendmentRefusal,
+  shown: ReadonlyMap<number, AutomationStudioFlowDraftStep>,
+  written: (step: AutomationStudioFlowDraftStep) => number
+): AutomationStudioFlowDraftAmendmentRefusal {
+  const read = (position: number | undefined): { was: number; now: number } | undefined => {
+    const step = position === undefined ? undefined : shown.get(position);
+    return step ? { was: written(step), now: step.position } : position === undefined ? undefined : { was: position, now: position };
+  };
+  const step = read(refusal.step)!;
+  const over = read(refusal.over);
+  const through = read(refusal.through);
+  const told: AutomationStudioFlowDraftAmendmentRefusal = { ...refusal, step: step.was };
+  delete told.now;
+  delete told.overNow;
+  delete told.throughNow;
+  if (over) told.over = over.was;
+  if (through) told.through = through.was;
+  if (step.now !== step.was) told.now = step.now;
+  if (over && over.now !== over.was) told.overNow = over.now;
+  if (through && through.now !== through.was) told.throughNow = through.now;
+  return told;
 }

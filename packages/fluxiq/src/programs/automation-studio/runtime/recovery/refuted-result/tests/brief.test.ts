@@ -76,6 +76,27 @@ describe("the repair brief", () => {
     for (const locator of EARBUDS_LOCATORS) expect(brief.body).not.toContain(locator);
   });
 
+  it("says Core's account of the read stands where the check's advice contradicts it", () => {
+    // run-musp39u8-9ac026ab (R6): the brief carried Core's account that the read
+    // had already read every page and the check's advice to raise the page
+    // bound, then said to make every fix the advice named. The re-author raised
+    // the bound six times per try and reread the same rows.
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt()], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
+    const raise = { ...outcome, repair: { ...outcome.repair!, judgement: { ...outcome.repair!.judgement, advice: "Raise maxPages to 60 so every item is read." } } };
+    const refuted = automationStudioResultRepairHistoryEntry({ attempt: 1, outcome: raise, summary: { ...summary(), reads }, nodeId: "node.s3" });
+    const body = automationStudioReauthorBrief({ projectId: "p", flowId: "f", current: refuted, history: [], maxAttempts: 3, now: 5 }).body;
+    expect(body).toContain("How the read went:");
+    expect(body).toContain("The check's advice: Raise maxPages to 60");
+    const steps = body.slice(body.indexOf("What to do:"));
+    const step3 = steps.slice(steps.indexOf("\n3. "), steps.indexOf("\n4. "));
+    expect(step3).toContain("Where the check's advice contradicts \"How the read went\" (Core's account of what the step did)");
+    expect(step3).toContain("Core's account stands and that part of the advice is not followed");
+    // The rest of step 3 is kept.
+    expect(step3).toContain("Act on the check's findings and advice above.");
+    expect(step3).toContain("change that setting or condition in place instead of adding a step for it");
+    expect(step3).toContain("A condition that rejected rows the request wanted is the one to correct.");
+  });
+
   it("sorts after the person's own instruction and never pushes it out of the budget", () => {
     const brief = automationStudioReauthorBrief({ projectId: "p", flowId: "f", current: entry(3), history: [entry(1), entry(2)], maxAttempts: 3, now: 5 });
     expect(brief.body.length).toBeLessThanOrEqual(6_000);

@@ -28,9 +28,35 @@
 // mean as steps, ports and edges is `./draft-routing.ts`, which runs between
 // the written steps and the assembler; a draft that says nothing comes through
 // it unchanged.
+//
+// **A step may read an earlier step's output (P5, t270).** The draft keeps
+// such a binding under the earlier step's own id, `$step.<id>.<output>`
+// (`../../flow-draft/binding-forms.ts`). The plan names nodes by their key,
+// `s1`, `s2`, ..., which is where a node sits in the assembled graph and not
+// the draft's position -- a withdrawn step leaves no node, a join or loop the
+// routing adds takes a key -- so each binding is rewritten to the key of the
+// node its step became, `$node.<key>.<output>`, which the executor resolves
+// to that node's id in the stored Flow (`../../executor/node-inputs.ts`).
+// A binding the graph cannot honour refuses the plan, naming the reading
+// step: its step is not in the Flow, does not run before the reader, declares
+// no such output, is not always run, or repeats and is read from outside its
+// repeat.
 
-import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
-import { automationStudioFlowDraftInputs, automationStudioFlowDraftStepId, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import type { JsonObject } from "../../../../../core/index.ts";
+import {
+  AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT,
+  rewriteAutomationNodeStatePaths,
+  type AutomationStudioNodeRegistry,
+  type AutomationStudioNodeRegistryResolution
+} from "../../../nodes/index.ts";
+import {
+  AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT,
+  automationStudioFlowDraftConditionalStepReasons,
+  automationStudioFlowDraftInputs,
+  automationStudioFlowDraftStepId,
+  automationStudioFlowDraftStoredBindingKind,
+  type AutomationStudioFlowDraftStep
+} from "../../flow-draft/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
@@ -150,6 +176,7 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
       registry: input.registry,
       resolution: input.resolution
     }));
+    issues.push(...earlierOutputIssues(input, built, draftStepIdByNodeKey(steps, built), positionById));
   }
   // One Flow input tested with two values: a run that supplies nothing would
   // use one value at one step and another at the next, and the build's test
@@ -168,8 +195,9 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
   // honour, since the Flow would run the step on nothing or on the wrong value,
   // and an input tested with two values.
   if (issues.length) return { issues: all, ...(built ? { refusedPlan: built } : {}) };
+  const plan = assembled.plan ? withNodeOutputReferences(assembled.plan, draftStepIdByNodeKey(steps, assembled.plan)) : undefined;
   return {
-    ...(assembled.plan ? { plan: assembled.plan, draftStepIdByNodeKey: draftStepIdByNodeKey(steps, assembled.plan) } : {}),
+    ...(plan ? { plan, draftStepIdByNodeKey: draftStepIdByNodeKey(steps, plan) } : {}),
     ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}),
     issues: all
   };
@@ -194,4 +222,121 @@ function draftStepIdByNodeKey(
     if (step.draftStepId !== undefined && step.node !== undefined && nodes.get(key)?.definitionId === step.node) found[key] = step.draftStepId;
   }
   return found;
+}
+
+/** Why the Flow would not always run a step, for the reasons that leave a reader of it with nothing (`../../flow-draft/routing.ts`). */
+const UNRELIABLE_SOURCE = new Set(["interruption", "optional", "only_if", "fallback"]);
+
+/**
+ * The issues the plan's earlier-output bindings raise, each naming the step
+ * that reads (see the header). `stepIdByKey` is which draft step each node of
+ * the plan's one Subflow was written from.
+ */
+function earlierOutputIssues(
+  input: { steps: readonly AutomationStudioFlowDraftStep[]; registry: AutomationStudioNodeRegistry; resolution: AutomationStudioNodeRegistryResolution },
+  plan: AutomationStudioFlowBootstrapPlan,
+  stepIdByKey: Readonly<Record<string, string>>,
+  positionById: ReadonlyMap<string, number>
+): AutomationStudioFlowBootstrapIssue[] {
+  const issues: AutomationStudioFlowBootstrapIssue[] = [];
+  const nodes = plan.subflows[0]?.nodes ?? [];
+  const indexById = new Map<string, number>();
+  for (const [index, node] of nodes.entries()) {
+    const id = stepIdByKey[node.key];
+    if (id !== undefined) indexById.set(id, index);
+  }
+  const reasons = automationStudioFlowDraftConditionalStepReasons(input.steps);
+  const spans = repeatSpans(input.steps);
+  for (const [index, node] of nodes.entries()) {
+    const readerId = stepIdByKey[node.key];
+    const position = readerId === undefined ? undefined : positionById.get(readerId);
+    const who = position === undefined ? `The node "${node.key}"` : `Step ${position}`;
+    const at = position === undefined ? `plan.subflows.0.nodes.${index}` : `draft.steps.${position}`;
+    const refuse = (code: string, message: string): void => {
+      if (!issues.some((issue) => issue.code === code && issue.path === at)) issues.push(authoringError(code, `${who} ${message}`, at));
+    };
+    for (const path of earlierOutputPaths(node.parameters)) {
+      const binding = automationStudioFlowDraftStoredBindingKind({ $state: { path } });
+      const sourceIndex = binding?.kind === "step" ? indexById.get(binding.step) : undefined;
+      if (binding?.kind !== "step" || sourceIndex === undefined) {
+        refuse("flow_draft.step_binding_source_missing", "reads an output of a step that is not in the Flow, so the Flow would have nothing to give it. Put that step back in the Flow, or give the value itself.");
+        continue;
+      }
+      const source = `step ${positionById.get(binding.step) ?? "?"}`;
+      if (sourceIndex >= index) {
+        refuse("flow_draft.step_binding_not_earlier", `reads an output of ${source}, which does not run before it, so the value does not exist yet when it runs. Move ${source} before it, or read a step that runs earlier.`);
+        continue;
+      }
+      const sourceNode = nodes[sourceIndex]!;
+      const outputs = input.registry.get(sourceNode.definitionId, input.resolution)?.outputs ?? [];
+      if (!outputs.some((port) => port.id === binding.output)) {
+        refuse("flow_draft.step_binding_unknown_output", `reads the output "${binding.output}" of ${source}, and its node "${sourceNode.definitionId}" declares no output by that name. Read an output that node declares.`);
+        continue;
+      }
+      const reason = reasons.get(binding.step);
+      if (reason !== undefined && UNRELIABLE_SOURCE.has(reason)) {
+        refuse("flow_draft.step_binding_conditional_source", `reads an output of ${source}, which the Flow does not always run, so a run that skips it would have nothing to read. Read a step that always runs, or give the value itself.`);
+        continue;
+      }
+      const span = spans.find((members) => members.has(binding.step));
+      if (span && (readerId === undefined || !span.has(readerId))) {
+        refuse("flow_draft.step_binding_repeated_source", `reads an output of ${source}, which repeats, from outside that repeat, so it would read whichever pass ran last. Make it part of the same repeat, or read a step that does not repeat.`);
+      }
+    }
+  }
+  return issues;
+}
+
+/**
+ * Every earlier-output path in a node's parameters, at any depth a binding
+ * resolves. A `$node` reference a step carries in from a saved Flow is one
+ * too: its key named a node of that Flow, not of this plan, so it is refused
+ * as naming no step rather than kept pointing at whatever now holds the key.
+ */
+function earlierOutputPaths(parameters: JsonObject | undefined): string[] {
+  const paths: string[] = [];
+  if (!parameters) return paths;
+  const roots = [AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT, AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT];
+  rewriteAutomationNodeStatePaths(parameters, (path) => {
+    if (roots.some((root) => path === root || path.startsWith(`${root}.`))) paths.push(path);
+    return undefined;
+  });
+  return paths;
+}
+
+/** The ids of each span a step repeats: that step through the one it names as `through`, in draft order. */
+function repeatSpans(steps: readonly AutomationStudioFlowDraftStep[]): ReadonlySet<string>[] {
+  const spans: ReadonlySet<string>[] = [];
+  for (const [start, step] of steps.entries()) {
+    if (step.routing?.kind !== "repeat") continue;
+    const through = step.routing.through;
+    const end = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === through);
+    spans.push(new Set(steps.slice(start, end < start ? start + 1 : end + 1).map(automationStudioFlowDraftStepId)));
+  }
+  return spans;
+}
+
+/**
+ * The plan with every earlier-output binding naming the node its step became,
+ * by that node's key (see the header). Called once every binding is known to
+ * name a node of the plan's one Subflow.
+ */
+function withNodeOutputReferences(plan: AutomationStudioFlowBootstrapPlan, stepIdByKey: Readonly<Record<string, string>>): AutomationStudioFlowBootstrapPlan {
+  const keyById = new Map(Object.entries(stepIdByKey).map(([key, id]) => [id, key] as const));
+  const [first, ...rest] = plan.subflows;
+  if (!first) return plan;
+  let changed = false;
+  const nodes = first.nodes.map((node) => {
+    if (!node.parameters) return node;
+    const parameters = rewriteAutomationNodeStatePaths(node.parameters, (path) => {
+      const binding = automationStudioFlowDraftStoredBindingKind({ $state: { path } });
+      const key = binding?.kind === "step" ? keyById.get(binding.step) : undefined;
+      if (binding?.kind !== "step" || key === undefined) return undefined;
+      return [AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT, key, binding.output, ...(binding.path === undefined ? [] : [binding.path])].join(".");
+    });
+    if (parameters === node.parameters) return node;
+    changed = true;
+    return { ...node, parameters };
+  });
+  return changed ? { ...plan, subflows: [{ ...first, nodes }, ...rest] } : plan;
 }

@@ -174,7 +174,7 @@ const USAGE_FIELDS = ["inputTokens", "outputTokens", "totalTokens", "cacheHitInp
 /**
  * Why an amendment changed nothing, in the draft's own closed vocabulary.
  *
- * Keyed by that type, so a reason added in `../flow-draft/amendment.ts` fails
+ * Keyed by that type, so a reason added in `../flow-draft/amendment/types.ts` fails
  * this file's type check until it is named here -- the same rule the shape and
  * its allow-list below are held to, for the same reason.
  */
@@ -198,7 +198,8 @@ const EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS: {
   bind_new_key: true,
   bind_row_outside_loop: true,
   bind_malformed: true,
-  rerun_holds_binding: true
+  rerun_holds_binding: true,
+  repeat_taken_off: true
 });
 /**
  * The most refusals one step may report: the most amendments one decision may

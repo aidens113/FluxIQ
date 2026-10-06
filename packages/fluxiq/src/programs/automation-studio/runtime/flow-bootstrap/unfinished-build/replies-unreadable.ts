@@ -1,5 +1,9 @@
 // The model's replies kept arriving unreadable: reported as exactly that, with
-// how many tries it took.
+// how many tries it took -- in a person's words (t195-w48): "the replies it got
+// back", as the stop's own reason says it (`./not-done.ts`), and no "model"
+// or "round". A build that ran more than one live round says so as every
+// ending does (`automationStudioFlowBootstrapWorkedLiveSaid`); the counts stay
+// in `tried`.
 //
 // **Before t211 this was a bare code.** A round whose decision came back as
 // something the loop could not read ended `flow_bootstrap.evidence_invalid_decision`,
@@ -18,7 +22,7 @@ import type { AutomationStudioLlmEvidenceLoopUnreadable } from "../../llm/index.
 import type { AutomationStudioFlowBootstrapJudgement } from "./contracts.ts";
 import { automationStudioFlowBootstrapEndingFitted } from "./ending-fit.ts";
 import { automationStudioFlowBootstrapKeptSaid } from "./kept-said.ts";
-import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressAndTestSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapNotDone, automationStudioFlowBootstrapProgressAndTestSaid, automationStudioFlowBootstrapWorkedLiveSaid } from "./not-done.ts";
 import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The ending of a build whose model replies could not be read. */
@@ -36,13 +40,15 @@ export function automationStudioFlowBootstrapRepliesUnreadable(input: {
   const { inARow, total, cases, said } = input.unreadable;
   const notDone = automationStudioFlowBootstrapNotDone(input.checklist);
   const why = cases.length ? ` -- ${cases.length > 1 ? "most often because " : "because "}${said} --` : "";
-  const happened = `The build stopped because the model's replies could not be read: ${inARow} in a row came back unreadable${why} and each was asked again with a note of what was wrong.`;
-  const tries = `In all, ${total} of ${Math.max(total, input.decisions)} replies could not be read, over ${input.rounds === 1 ? "one live round" : `${input.rounds} live rounds`}; each was paid for and counted in the build's budget.`;
+  const happened = `The build stopped because the replies it got back could not be read: ${inARow} in a row came back unreadable${why} and it asked again each time, with a note of what was wrong.`;
+  const tries = `In all, ${total} of ${Math.max(total, input.decisions)} replies could not be read; each was paid for and counted in the build's budget.`;
+  // One live round is the stop just said; more are said as every ending says them.
+  const worked = input.rounds > 1 ? `${automationStudioFlowBootstrapWorkedLiveSaid(input.rounds)}.` : "";
   const kept = automationStudioFlowBootstrapKeptSaid(input.kept);
   // How far it got and what its test found, said once (`./not-done.ts`).
   const message = automationStudioFlowBootstrapEndingFitted((room) => ({
     body: [happened, tries, automationStudioFlowBootstrapProgressAndTestSaid(input.checklist, input.judgement, room)],
-    close: [kept]
+    close: [worked, kept].filter(Boolean)
   }));
   return {
     kind: "replies_unreadable",

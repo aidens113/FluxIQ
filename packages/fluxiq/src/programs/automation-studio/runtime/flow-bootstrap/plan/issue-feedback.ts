@@ -63,6 +63,10 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   // beside the issues in the feedback the completion check builds.
   "bootstrap.instructed_act_missing",
   "bootstrap.completion_profile_limit_exceeded",
+  // An act only a step the Flow may skip does (`../instructed-acts/optional-only.ts`).
+  // Its sentence is fixed and quotes nothing; the acts travel beside the issues,
+  // as the missing act's do.
+  "bootstrap.instructed_act_only_optional",
   // A plan over the Flow's size (`./size-limits.ts`): each sentence is Core's
   // own, carrying only counts and the setting's name and value, so the model
   // knows the bound it must write within.
