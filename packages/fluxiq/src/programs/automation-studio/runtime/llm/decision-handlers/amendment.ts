@@ -29,9 +29,10 @@ import { automationStudioRerunArgumentNote, type AutomationStudioRerunArgumentMe
 
 /**
  * Said before the refusals of a decision whose every amendment was a `keep` of
- * a step already in the Flow and which changed nothing (`keepOnly` below).
+ * a step already in the Flow, or a `drop` of a step already out, and which
+ * changed nothing (`keepOnly` below).
  */
-const KEEP_ADDS_NOTHING_INSTRUCTION = "keep adds nothing: every amendment in this decision was keep on a step already in the Flow, and keep only leaves a step in the Flow as it is -- it adds no step and does no act or choice, so the Flow is exactly as it was. "
+const KEEP_ADDS_NOTHING_INSTRUCTION = "keep adds nothing: every amendment in this decision was keep on a step already in the Flow or drop of a step already out, and keep only leaves a step in the Flow as it is -- it adds no step and does no act or choice, so the Flow is exactly as it was. "
   + "A step joins the Flow only by running it: an act or choice still not done on the checklist is done by running, on the page that shows its control, the call that does it, with add and act naming it. "
   + "Do not send keep for steps already in the Flow; this decision counts toward stopping this exploration.";
 
@@ -85,6 +86,8 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // switch that had worked, then ran it twice more).
   const keptBefore = new Map(draftSteps.filter((step) => step.disposition === "kept").map((step) => [step, step.position] as const));
   const keptPositions = new Set(keptBefore.values());
+  // The steps already out before the edit, so a drop of one is known to change nothing (`keepOnly` below).
+  const outBefore = new Set(draftSteps.filter((step) => step.disposition !== "kept").map((step) => step.position));
   amendmentMemory.before(iteration, draftSteps);
   const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, split.now);
   // Edits that put the draft back exactly as it stood changed nothing about the Flow.
@@ -178,8 +181,11 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // that was already in the Flow, and that changed nothing, is told so, and how
   // an owed act is done; it counts as no progress above like any decision that
   // changed nothing.
-  const keepOnly = !rerun.request && (!amended.applied || sameDraftAs !== undefined) && decision.amendments.length > 0
-    && decision.amendments.every((amendment) => amendment.change === "keep" && keptPositions.has(amendment.step));
+  // A `drop` of a step already out beside those keeps changes nothing either
+  // (`already_out`), so it does not hide them: lane B's round 3 sent exactly
+  // that and was never told (`run-mux6pndp-16feb842`, cause 6).
+  const keepOnly = !rerun.request && (!amended.applied || sameDraftAs !== undefined) && decision.amendments.some((amendment) => amendment.change === "keep")
+    && decision.amendments.every((amendment) => amendment.change === "keep" ? keptPositions.has(amendment.step) : amendment.change === "drop" && outBefore.has(amendment.step));
   if ((refused.length || sameDraftAs !== undefined || moved.length || unreached.length) && !split.held.length) tell(context, iteration, refusals, amended.applied + (rerun.request ? 1 : 0), sameDraftAs, moved, keepOnly, unreached);
   if (rerun.retainedRefusals?.length) {
     automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");

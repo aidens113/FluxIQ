@@ -108,6 +108,18 @@
 // refusals as any repeat (`../decision-handlers/amendment.ts`). Once the draft
 // changes it is a new decision and runs, as a call does once its page changes.
 //
+// **A rerun sent as a check is not an attempt of its input.** Live run
+// `run-mux74k5q-1c3c2127` (lane A round 3, C3, steps 0059-0068): step 12 had
+// done the lasting add-to-cart act, so its rerun `rerun.12.6` was sent as the
+// dry run's check (`replay: "verify"`, `../node-tools/rerun-check.ts`) and
+// answered `core.replay.present`: it acted on nothing, and so applied nothing.
+// Recorded here as a press that did not work, it made the model's plain call
+// with the same input on the same page (the digest after the put-back equal to
+// the live one) a repeat of a failure, refused twice, which ended the round.
+// A call the loop reports as `checked` still moves the last page seen and ends
+// a run of looks, but records no outcome for its key: the identical plain
+// call is the first attempt of that input there, and runs.
+//
 // **What still runs.**
 //
 // - Anything after the page changed: the key holds the page.
@@ -178,6 +190,8 @@ export type AutomationStudioLlmEvidenceCallOutcome = {
   resultReason?: string | undefined;
   /** What the call answered, as the model was shown it: compared for a look only. */
   answer?: string | undefined;
+  /** A rerun sent as the dry run's check (`../node-tools/rerun-check.ts`): it acted on nothing, so it is no attempt of its input (see the header). */
+  checked?: boolean | undefined;
 };
 
 /** The loop's record of what its calls did. */
@@ -251,7 +265,8 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       // included, since nothing says it did not move -- ends the run (`./searching.ts`).
       if (look && state !== undefined && call.stateAfter === state) searching.looked({ callId: call.callId, toolId: call.toolId, input: call.input });
       else searching.acted();
-      if (state === undefined) return;
+      // A check ran nothing: no outcome of its input to record (run `run-mux74k5q-1c3c2127`, C3).
+      if (state === undefined || call.checked === true) return;
       if (look) {
         const at = key(call.toolId, call.input, state);
         const answer = call.answer === undefined || call.refused ? undefined : createHash("sha256").update(call.answer).digest("hex");

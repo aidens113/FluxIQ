@@ -429,16 +429,21 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       // The Flow a judge last said no to, unchanged (t254 stage 3): testing and judging it again would buy the same answer, so nothing is spent judging it.
       const unchangedSinceNo = judgedNo !== undefined && toTest.length > 0 && automationStudioFlowDraftFlowSignature(toTest) === judgedNo.flowSignature;
       unchangedAtStop = stoppedAtReserve && unchangedSinceNo;
-      const atReserve = stoppedAtReserve && !unchangedAtStop;
+      // Judging is a pair, and a yes finishes the build only once its second call confirms it: where the purse can no longer hold the whole pair, nothing is tested or judged for it (D3-5, run-mux6nxst-c9bca37c: one unconfirmed yes finished a build).
+      const pairFits = input.purse?.judgingFits() ?? true;
+      const atReserve = stoppedAtReserve && !unchangedAtStop && pairFits;
       // A round that stopped short of a completion is judged too, once its test runs clean, unless its Flow is that one (t195-w42, run-musp474o-e0ed7432).
-      const shortJudged = ending.kind === "unfinished" && judge !== undefined && !unchangedSinceNo;
+      const shortJudged = ending.kind === "unfinished" && judge !== undefined && !unchangedSinceNo && pairFits;
+      const boundSaid = ending.kind === "budget" && ending.bound === "calls" ? "model call allowance" : "spending limit";
       if (unchangedAtStop) {
-        input.announce?.({ phase: "verifying", label: "Flow unchanged since judged", text: `The build reached its ${ending.kind === "budget" && ending.bound === "calls" ? "model call allowance" : "spending limit"} before the Flow was finished. The Flow is unchanged since the judge said it does not do what was asked, so what was kept back for judging is not spent judging it again.` });
+        input.announce?.({ phase: "verifying", label: "Flow unchanged since judged", text: `The build reached its ${boundSaid} before the Flow was finished. The Flow is unchanged since the judge said it does not do what was asked, so what was kept back for judging is not spent judging it again.` });
+      } else if (stoppedAtReserve && !pairFits) {
+        input.announce?.({ phase: "verifying", label: "Too little left to judge", text: `The build reached its ${boundSaid} before the Flow was finished, with too little left to judge the Flow whole, so it is not tested or judged again.` });
       }
       // Said only when the test will run: a Flow with steps in it that carries what a replay needs, exactly as `automationStudioFlowBootstrapJudgeUnfinished` decides. An empty Flow has nothing to run, and one nothing can replay is not run; announcing a test then was followed by none (live run murwcmx2, UI-4).
       if ((ending.kind === "unfinished" || atReserve) && toTest.length && input.replayable(toTest)) {
         input.announce?.(atReserve
-          ? { phase: "verifying", label: "Testing the Flow so far", text: `The build reached its ${ending.kind === "budget" && ending.bound === "calls" ? "model call allowance" : "spending limit"} before the Flow was finished. Running the Flow as far as it got from its start, and judging it with what was kept back for judging.` }
+          ? { phase: "verifying", label: "Testing the Flow so far", text: `The build reached its ${boundSaid} before the Flow was finished. Running the Flow as far as it got from its start, and judging it with what was kept back for judging.` }
           : { phase: "verifying", label: "Testing the Flow so far", text: `The build stopped before the Flow was finished: ${automationStudioFlowBootstrapStopSaid(stopped, ending.lastIssueCodes)}. Running the Flow as far as it got from its start, to judge what it does and what is left.` });
       }
       // Phase 2: a round any other budget stopped is judged from the checklist alone; nothing more is run for a build that is ending.
@@ -502,7 +507,8 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
       const next = funding.nextRound();
       const exhausted = exhaustedBound(input, spent, clock() - startedAt, next?.usd);
       if (exhausted === "cost" && next && input.purse && input.purse.leftUsd() > PURSE_EMPTY_USD) unfunded = next;
-      return exhausted;
+      // The call allowance must hold the round's first decision and its judging pair, or the round is not opened (`./round-funding.ts`, D3-5).
+      return exhausted ?? (funding.callsFit() ? undefined : "calls");
     };
     if (ending.kind === "budget") return await end(ending.bound);
     // Replies that kept arriving unreadable, each asked again: said as exactly that, with how many tries.

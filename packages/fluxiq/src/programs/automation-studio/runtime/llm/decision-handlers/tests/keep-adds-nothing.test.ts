@@ -59,6 +59,23 @@ describe("keep on steps already in the Flow", () => {
     expect(instruction).toContain("The listed amendments changed nothing");
   });
 
+  // Live run `run-mux6pndp-16feb842` (lane B, round 3) cause 6: no-op keeps
+  // beside a `drop` of a step already out (`already_out`) changed nothing just
+  // the same, and never heard that keep adds nothing.
+  it("is said too when the no-op keeps come with a drop of a step already out", async () => {
+    const decide = vi.fn();
+    for (const decision of built) decide.mockResolvedValueOnce(decision);
+    decide.mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "drop" }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "keep" }, { step: 2, change: "drop" }] })
+      .mockResolvedValue(complete);
+
+    await loop(decide);
+
+    const told = check(decide, 4);
+    expect(told).toMatchObject({ ok: false, keepAddsNothing: true, applied: 0, refused: [{ step: 1, reason: "already_in_flow" }, { step: 2, reason: "already_out" }] });
+    expect(String(told?.instruction).startsWith("keep adds nothing")).toBe(true);
+  });
+
   it("is not said when the decision did anything else, or named a step the Flow does not hold", async () => {
     // A keep beside a drop that landed (0023's shape): the draft changed.
     const dropped = decisions([{ step: 2, change: "keep" }, { step: 1, change: "drop" }]);

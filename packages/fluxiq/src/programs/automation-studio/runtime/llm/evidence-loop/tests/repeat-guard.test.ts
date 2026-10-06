@@ -397,3 +397,35 @@ describe("a rerun that changed nothing, sent again", () => {
     expect(clicks(executeTool)).toBe(3);
   });
 });
+
+// Live run `run-mux74k5q-1c3c2127` (lane A round 3, C3, steps 0059-0068): step 12 pressed "Spain" and claimed the
+// lasting act a1, so its rerun to type 3 into the quantity field was sent as the dry run's check (`replay: "verify"`,
+// `../../node-tools/rerun-check.ts`) and answered `core.replay.present`: nothing ran. The repeat guard recorded that
+// check as a failed attempt of its input, and the model's identical plain call on the same page (the digest after the
+// put-back equal to the live page's, `web-state.v4`) was refused `repeat_refused` twice, `sameAsCall: rerun.12.6`,
+// which ended the round. A check is not an attempt of its input: the plain call runs.
+describe("a rerun sent as a check, then the same input as a plain call", () => {
+  it("runs the plain call on the same page rather than refusing it as a repeat of the check", async () => {
+    const executeTool = vi.fn(async ({ value }: { toolId: string; value: JsonObject }) => {
+      const node = String(value.node);
+      const page = { before: "item", after: "item" };
+      if (value.replay === "verify") return { kind: "llm_evidence_tool_execution", stateDigests: page, evidence: { ok: true, node, code: "core.replay.present", found: "missing" }, effectApplied: false, resultCode: "core.replay.present" };
+      return { kind: "llm_evidence_tool_execution", stateDigests: page, evidence: { ok: true, node, status: "succeeded" }, effectApplied: true, resultCode: "web.action.succeeded", draft: { actionId: node, effect: "mutate", proposes: true } };
+    });
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "pick.spain", toolId: "core.run_node", input: spain, add: true, act: "a1" })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: quantity }] })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "type-quantity", toolId: "core.run_node", input: quantity, add: true, act: "a1.quantity" })
+      .mockResolvedValue(complete);
+
+    await runAutomationStudioLlmEvidenceLoop({
+      tools: nodeTools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true,
+      unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError }, lastingActs: async () => new Set(["a1"])
+    }).catch(() => undefined);
+
+    // The rerun was the check, never the typing; the plain call then typed for real.
+    const sent = executeTool.mock.calls.map(([call]) => [call.value.node, call.value.replay ?? null]);
+    expect(sent).toEqual([["web.output.dom-click", null], ["web.output.dom-type", "verify"], ["web.output.dom-type", null]]);
+    expect(shownAt(decide, 3).some((entry) => entry.toolId === "core.repeat_check")).toBe(false);
+  });
+});
