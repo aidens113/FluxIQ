@@ -34,7 +34,9 @@ describe("the rows a condition removed by itself", () => {
       condition: "name not contains [\"ear tips\", \"charging case\"]",
       rejected: 16,
       alone: 5,
-      leftOutOnlyByThis: [...EARBUDS_REMOVED, ...ACCESSORIES]
+      leftOutOnlyByThis: [...EARBUDS_REMOVED, ...ACCESSORIES],
+      // Its read is the name column's own, and every row is labelled by the name.
+      testedLabel: true
     });
     expect(reads[0]?.conditions?.[1]?.leftOutOnlyByThis).toEqual(["Budget Earbuds 3.9 stars"]);
     // A condition that removed nothing by itself names nothing.
@@ -86,6 +88,27 @@ describe("the rows a condition removed by itself", () => {
       ["Gift Earbuds — price: (withheld)"]
     ]);
     expect(JSON.stringify(reads)).not.toContain("sk-live");
+  });
+
+  // Live run `run-mux6naez-6c20f26e` (lane C, round 3): the Flow stored name, price, rating and url, so
+  // the plus and sponsored conditions' rows, their columns not stored, are said by label alone. Only the
+  // authored condition says which one tested the label; the rows' shape cannot.
+  it("run mux6naez: mark only the condition that tested the label's own column as testing the label", () => {
+    const node = earbudsNode();
+    const read = node.parameterValues!.extractList as Record<string, unknown>;
+    const where = [{ field: "plus", is: "present" }, { field: "sponsored", is: "absent" }, { field: "name", contains: ["ear tips", "charging case"], not: true }];
+    const byKey = { ...node, parameterValues: { ...node.parameterValues, extractList: { ...read, where } } };
+    const stored = (name: string) => ({ name, price: "$29.99", rating: "4.5 out of 5 stars", url: "/dp/B0EXAMPLE" });
+    const aloneRows = [
+      [stored("Zephyrline Z1 Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Ear Hooks for Running, Midnight Blue")],
+      [stored("Pulsebud Neo ANC Wireless Earbuds, Hybrid Active Noise Cancelling Bluetooth 5.4 Headphones, 50H Playtime, App EQ, Black")],
+      ACCESSORIES.map(stored)
+    ];
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [playedBack(aloneRows)], flowNodes: [byKey], deniedEvidenceKeys: [] });
+    const conditions = reads[0]?.conditions ?? [];
+    // Every row is said by its label alone, the tested cell of plus and sponsored not being stored.
+    expect(conditions.slice(0, 3).map((condition) => condition.leftOutOnlyByThis?.every((row) => !row.includes(" — ")))).toEqual([true, true, true]);
+    expect(conditions.map((condition) => condition.testedLabel)).toEqual([undefined, undefined, true, undefined]);
   });
 
   it("are not carried where the domain declared no keys, like the wording beside them", () => {

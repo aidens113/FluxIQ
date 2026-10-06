@@ -325,6 +325,8 @@ export const RUN_MUW60J7C_READS: AutomationStudioResultReadAccount[] = [
         "condition": "name not contains [\"ear tips\", \"charging case\", \"eartips\"]",
         "rejected": 20,
         "alone": 5,
+        // The name condition tests the column its rows are labelled by, as `read-account/accounts.ts` says.
+        "testedLabel": true,
         "leftOutOnlyByThis": [
           "Replacement Ear Tips for Wireless Earbuds, Memory Foam Eartips, 3 Pairs (S/M/L), Black",
           "Charging Case Replacement for Soundcrest Air Pro Wireless Earbuds, 600mAh Charger Case with Pairing Button, White",

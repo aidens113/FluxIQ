@@ -10,6 +10,16 @@
 // appended an unfiltered read's 20 rows beside its filtered read's 10 -- so a
 // run's read is taken to have kept every stored row that no condition of its own
 // left out alone.
+//
+// **Whether a condition tested the row's own label** (`types.ts`, `testedLabel`)
+// is read differently from each. A build test's replay sends the tested cell
+// after every label it did not test, an empty one as `(no value)`, so a
+// condition whose rows are all said by label alone tested the label. A run's
+// account says it itself (`../read-account/accounts.ts`), from the authored
+// condition: a run's row said by its label alone may only be a row whose tested
+// column was not stored -- live run `run-mux6naez-6c20f26e` stored name, price,
+// rating and url, and its `plus is present` rows, so said, were taken as tests
+// of the name.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
@@ -27,14 +37,18 @@ export function automationStudioRequestRowsReads(summary: AutomationStudioRunRes
     if (!isObject(sent)) continue;
     const rows = strings(sent.rows);
     const conditions = Array.isArray(sent.leftOutOnlyByThis)
-      ? sent.leftOutOnlyByThis.flatMap((entry) => isObject(entry) && typeof entry.condition === "string" ? [condition(entry.condition, strings(entry.rows))] : [])
+      ? sent.leftOutOnlyByThis.flatMap((entry) => {
+        if (!isObject(entry) || typeof entry.condition !== "string") return [];
+        const rows = strings(entry.rows);
+        return [condition(entry.condition, rows, rows.length > 0 && rows.every((row) => !TESTED_VALUE.test(row)))];
+      })
       : [];
     reads.push(read({ step: step.step }, rows, rows, conditions));
   }
   const storedLabels = unique(stored.map((row) => row.label));
   for (const account of summary.reads ?? []) {
     const conditions = (account.conditions ?? []).flatMap((entry, index) =>
-      entry.leftOutOnlyByThis?.length ? [condition(entry.condition ?? `condition ${index + 1}`, entry.leftOutOnlyByThis)] : []);
+      entry.leftOutOnlyByThis?.length ? [condition(entry.condition ?? `condition ${index + 1}`, entry.leftOutOnlyByThis, entry.testedLabel === true)] : []);
     const leftOut = new Set(conditions.flatMap((entry) => entry.labels));
     reads.push(read({ nodeId: account.nodeId }, storedLabels.filter((label) => !leftOut.has(label)), storedLabels, conditions));
   }
@@ -50,13 +64,8 @@ function read(at: { step: number } | { nodeId: string }, kept: string[], inResul
   return { ...at, kept: unique(kept), inResult: unique(inResult), conditions, labels: unique([...kept, ...inResult, ...conditions.flatMap((entry) => entry.labels)]) };
 }
 
-function condition(name: string, rows: string[]): AutomationStudioRequestRowsCondition {
-  return {
-    condition: name,
-    rows,
-    labels: rows.map(automationStudioRequestRowLabel),
-    testedLabel: rows.length > 0 && rows.every((row) => !TESTED_VALUE.test(row))
-  };
+function condition(name: string, rows: string[], testedLabel: boolean): AutomationStudioRequestRowsCondition {
+  return { condition: name, rows, labels: rows.map(automationStudioRequestRowLabel), testedLabel };
 }
 
 /** A record set's sampled rows, each by its label -- its first column holding text -- and every text cell. */

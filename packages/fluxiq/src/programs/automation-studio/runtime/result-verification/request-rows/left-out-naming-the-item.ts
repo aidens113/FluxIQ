@@ -21,6 +21,13 @@
 // "Charging Case Replacement for ... Wireless Earbuds" name their excluded phrase
 // first. A row the result holds anyway is not flagged: it is not missing.
 //
+// **A run's condition tested the label only where its account says so.** Live
+// run `run-mux6naez-6c20f26e` stored name, price, rating and url; its `plus is
+// present` rows, the column not stored, came by label alone, and two non-Plus
+// pairs "with Wireless Charging Case" were flagged as the item asked for. Both
+// result judges then refuted a correct result over the Plus condition. So a
+// run's `testedLabel` comes from the authored condition (`summary-reads.ts`).
+//
 // It flags; it does not judge. Whether the request excludes a flagged row is the
 // judge's to say, and `verdict.ts` holds a yes to saying it row by row.
 
