@@ -376,6 +376,29 @@ describe("a refusal about a listing says what comes next", () => {
     expect((feedback.reasons as Record<string, string>).changes_nothing).toContain("Inspect the previous result");
   });
 
+  // Live run `run-mux6nxst-c9bca37c` (lane D, D3-2, decision 0110 shape): the
+  // listing at 6 and Confirm at 7 already repeating over it. The model wanted a
+  // read of the accepted rows after the confirms and reran step 6 unchanged
+  // nineteen times, each told to "send repeat" on step 7 -- which was there.
+  it("an unchanged rerun of a listing an act already repeats over: the loop is in place, a read after the act is a new step", () => {
+    const loop = [look(1), act(2), act(3), act(4), look(5), { ...read(6, "kept"), id: "s6" }, { ...act(7), id: "s7", routing: { kind: "repeat", over: "s6", through: "s7" } }];
+    const next = nextOf(told([{ step: 6, reason: "changes_nothing", repeated: true }], loop));
+    expect(next).toContain("Step 7 already repeats over step 6, so the loop is in place");
+    expect(next).toContain("rerunning step 6 only replaces it and never adds a step after step 7");
+    expect(next).toContain("A read of the rows after the act is a new step");
+    expect(next).toContain(`"core.run_node"`);
+    expect(next).toContain("add true");
+    expect(next).toContain("after step 7");
+    expect(next).toContain("where");
+    expect(next).not.toContain(`"change": "repeat"`);
+    // Steps built without an id are named by position, as the draft names them.
+    const unnamed = [look(1), read(2, "kept"), { ...act(3), routing: { kind: "repeat", over: "p2", through: "p3" } }];
+    expect(nextOf(told([{ step: 2, reason: "changes_nothing" }], unnamed))).toContain("Step 3 already repeats over step 2");
+    // A repeat over another step leaves today's text.
+    const other = [look(1), read(2, "kept"), { ...act(3), routing: { kind: "repeat", over: "p1", through: "p3" } }];
+    expect(nextOf(told([{ step: 2, reason: "changes_nothing" }], other))).toContain(`send {"step": 3, "change": "repeat", "over": 2}`);
+  });
+
   it("says nothing extra where the refused step is not a listing, or the draft gives no effects", () => {
     expect(nextOf(told([{ step: 6, reason: "changes_nothing" }]))).toBeUndefined();
     expect(nextOf(told([{ step: 6, reason: "over_not_before", over: 6 }]))).toBeUndefined();

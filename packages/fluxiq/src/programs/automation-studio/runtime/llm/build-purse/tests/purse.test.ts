@@ -211,6 +211,49 @@ describe("a build's purse keeping its judging back (t254)", () => {
     expect(diagnostic).toBe("The build's spending limit of $0.1000 cannot pay for this call: $0.0900 is spent, $0.0000 is held for calls in flight, $0.0078 is kept back for judging the Flow and this request (10000 input tokens, 750 for the reply) would cost up to $0.0039. It was not sent.");
   });
 
+  // Live run run-mux6nxst-c9bca37c (D3-5): the next round opened with 47 of 48 calls spent. The pair kept back for
+  // judging is held only against calls that are not a judge's, so nothing said the pair itself no longer fitted, and the
+  // reserve judgement's confirming call was refused after its first yes.
+  it("says whether the whole judging kept back can still be held, on calls and on cost", () => {
+    // Nothing kept back: nothing to fit.
+    const none = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, maxCalls: 1, carriedUsd: 0.1 });
+    expect(none.judgingFits()).toBe(true);
+
+    // Calls: 47 of 48 spent leaves one call, and the pair needs two.
+    const calls = new AutomationStudioLlmBuildPurse({ ceilingUsd: 1, maxCalls: 48 });
+    calls.keepBackForJudging(JUDGING);
+    for (let index = 0; index < 46; index += 1) {
+      const held = calls.hold(decision(0.0001));
+      if (!held.ok) throw new Error(`expected decision ${index} to fit`);
+      held.hold.settle({ estimatedCostUsd: 0.0001 });
+    }
+    expect(calls.judgingFits()).toBe(true);
+    const judgeCallHeld = calls.hold(judgeCall(0.0001));
+    if (!judgeCallHeld.ok) throw new Error("expected the judge call to fit");
+    // In flight, the call counts: 46 spent, 1 pending and the pair is 49 of 48.
+    expect(calls.judgingFits()).toBe(false);
+    judgeCallHeld.hold.settle({ estimatedCostUsd: 0.0001 });
+    expect(calls.spentCalls()).toBe(47);
+    expect(calls.judgingFits()).toBe(false);
+
+    // Cost: the pair at the standing allowance, $0.0078, once a decision has brought the price, beside $0.09 carried of $0.10.
+    const cost = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.09 });
+    cost.keepBackForJudging(JUDGING);
+    const priced = cost.hold(decision(0.001));
+    if (priced.ok) priced.hold.settle({ estimatedCostUsd: 0.001 });
+    expect(cost.judgingFits()).toBe(true);
+    const more = cost.hold(decision(0.001));
+    if (more.ok) more.hold.settle({ estimatedCostUsd: 0.0013 });
+    // $0.0923 spent: $0.0077 left, short of the $0.0078 pair.
+    expect(cost.judgingFits()).toBe(false);
+
+    // A pair nothing could price yet is not refused on cost.
+    const unpriced = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.0999 });
+    unpriced.keepBackForJudging(JUDGING);
+    expect(unpriced.judgingHoldUsd()).toBeUndefined();
+    expect(unpriced.judgingFits()).toBe(true);
+  });
+
   it("records a reply that cost more than its reserve as a breach and its overshoot in dollars, never hidden", () => {
     let told = 0;
     const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.1, carriedUsd: 0.098, onBreach: () => { told += 1; } });

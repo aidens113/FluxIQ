@@ -193,11 +193,29 @@ describe("a verification that confirms a first yes (the build-test judge)", () =
     expect(agreed.repair).toBeUndefined();
   });
 
-  it("a second call that is unknown, silent or unavailable leaves the first yes standing, as two calls", () => {
-    for (const second of [said("unknown"), silent(), unavailable()]) {
+  it("a second call that answered unknown, or replied without an answer, leaves the first yes standing, as two calls", () => {
+    for (const second of [said("unknown"), silent()]) {
       const agreed = automationStudioResultVerificationAgreement({ first: said("yes"), second, confirmAnswer: true });
       expect(agreed, second.code).toMatchObject({ verdict: "answers", basis: "model", code: "core.result.answers_request", verdicts: ["answers", "unsure"], calls: 2 });
       expect(agreed).not.toHaveProperty("unconfirmedReading");
+    }
+  });
+
+  // Live run run-mux6nxst-c9bca37c (D3-5): the reserve judgement's first call
+  // said yes and the purse refused the confirming second, which verify reads as
+  // a call that did not come back usable. That one unconfirmed yes finished the build.
+  it("run mux6nxst: yes, then a confirming call that did not come back usable, is unconfirmed and unsure -- never a yes", () => {
+    // Mutation: let the first yes stand over an unavailable second. One unconfirmed yes then finishes a build.
+    for (const second of [unavailable(), automationStudioResultVerdict({ summary, basis: "model_unavailable", failureCode: "llm_budget.run_call_limit" })]) {
+      const agreed = automationStudioResultVerificationAgreement({ first: said("yes"), second, confirmAnswer: true });
+      expect(agreed).toMatchObject({ verdict: "unsure", basis: "model_unconfirmed", code: "core.result.refutation_unconfirmed", verdicts: ["answers", "unsure"], calls: 2 });
+      expect(agreed.reason).toBe(`This result was checked once: the first answer was that it does what was asked, and the second check, which confirms a yes, gave no answer, because it did not come back usable (${second.code}). That does not show the run went wrong, so the result is not confirmed, and the run is not marked as failed for it.`);
+      expect(agreed.reason).not.toMatch(/\bmodel\b/iu);
+      expect(agreed).not.toHaveProperty("unconfirmedReading");
+      expect(agreed.failure).toBeUndefined();
+      expect(automationStudioResultVerificationFailsRun(agreed)).toBe(false);
+      // The runtime result check, which never confirms a yes, is unchanged.
+      expect(automationStudioResultVerificationAgreement({ first: said("yes"), second })).toMatchObject({ verdict: "answers", verdicts: ["answers"], calls: 1 });
     }
   });
 

@@ -10,9 +10,11 @@
 // number, answered no and then yes, and the one yes finished the build on rows
 // the playback judge refused. And its outcome is read as a build's verdict:
 //
-//   answers (twice, or a second call that said nothing) -> yes
+//   answers, then answers, unknown or a silent reply  -> yes
 //   answers, then does_not_answer                     -> unknown, with the second
 //                                                         call's reading, unconfirmed
+//   answers, then a call not back usable              -> unknown, unconfirmed (not_judged
+//                                                         where the purse refused it)
 //   does_not_answer that fails a run                  -> no, with the judgement and Core's finding codes
 //   unsure, or a second ask that did not settle it     -> unknown, with the
 //                                                         reading of a call that
@@ -44,8 +46,10 @@
 // purse is still capped at half of what is left per call, as verify asks twice
 // after any first answer. A refused call never surfaces as a throw or as an
 // unsure verdict: the test was not judged, and the reason says the money ran
-// out -- except a refused confirmation of a first yes, which, like any second
-// call that said nothing, leaves that yes standing. A cancelled
+// out. That holds for a refused confirmation of a first yes too: a yes checked
+// once is not confirmed (`../agreement.ts`, live run `run-mux6nxst-c9bca37c`,
+// where it finished a build), and the first call's spend is still returned. A
+// confirmation that failed any other way leaves the yes unconfirmed: unknown. A cancelled
 // build is not a verdict: the cancellation is thrown, for the phases to end the
 // build as cancelled.
 
@@ -184,7 +188,7 @@ export function automationStudioBuildTestJudge(deps: {
     if (deps.signal?.aborted) throw deps.signal.reason ?? new DOMException("The build was cancelled.", "AbortError");
     // A call the purse refused reaches verify as a harness failure, which it reads as an unsure verdict; the judge says what it was.
     const refused = purse?.refusal !== undefined && purse.refusal !== refusedBefore ? purse.refusal : undefined;
-    // A refused confirmation of a first yes contradicts nothing (`../agreement.ts`): the yes stands, and is read below.
+    // A refused confirmation of a first yes confirms nothing (`../agreement.ts`, run-mux6nxst-c9bca37c): the outcome is unsure, so it is not judged here, with what the first call spent.
     const judgeSpend = bounded.settled ? spentBy(bounded.value.interventions) : { ...NOTHING_SPENT };
     if (refused?.code === "llm_budget.run_call_limit" && purse && callsBefore !== undefined) judgeSpend.calls = Math.max(0, purse.spentCalls() - callsBefore);
     const yesStood = bounded.settled && bounded.value.outcome.performed && bounded.value.outcome.verdict === "answers";

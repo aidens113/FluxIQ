@@ -287,7 +287,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
  * tell a listing from a press. A step given as a position alone gets the
  * general reason and no `next`.
  */
-type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: string; effectApplied?: boolean; disposition?: string; routing?: { kind: string } };
+type AutomationStudioDraftAmendmentFeedbackStep = { position: number; id?: string; effect?: string; effectApplied?: boolean; disposition?: string; routing?: { kind: string; over?: string } };
 
 /**
  * What to do instead of a refused amendment about a listing, in the draft's
@@ -295,7 +295,8 @@ type AutomationStudioDraftAmendmentFeedbackStep = { position: number; effect?: s
  *
  * `over_not_before`: the listing is whichever of the two steps named only
  * reads -- `over`, or the step the repeat was put on (`13 repeat over 13`).
- * `changes_nothing`: the step rerun unchanged, when it only reads.
+ * `changes_nothing`: the step rerun unchanged, when it only reads; when an act
+ * after it already repeats over it, that a read after the act is a new step.
  */
 function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string | undefined {
   const at = (position: number | undefined) => position === undefined ? undefined : steps.find((step) => step.position === position);
@@ -313,9 +314,33 @@ function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: rea
   if (refusal.reason === "changes_nothing") {
     const listing = at(refusal.step);
     if (!reads(listing)) return undefined;
+    const loop = repeatOver(listing, steps);
+    if (loop) return readAfterAct(listing.position, loop.position);
     return `Step ${listing.position}'s identical request was not sent again. Inspect the previous result: only if it actually returned the intended rows should you go on to the act; otherwise correct the failed/refused argument or gather new evidence. If those rows are right: ${rowAct(listing.position, steps)}`;
   }
   return undefined;
+}
+
+/**
+ * The step after the listing whose repeat is already over it, or nothing. The
+ * draft names a step in routing by its id, or `p<position>` for a step built
+ * without one (`../flow-draft/routing.ts`, `automationStudioFlowDraftStepId`).
+ */
+function repeatOver(listing: AutomationStudioDraftAmendmentFeedbackStep, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): AutomationStudioDraftAmendmentFeedbackStep | undefined {
+  const name = listing.id ?? `p${listing.position}`;
+  return steps.find((step) => step.position > listing.position && step.routing?.kind === "repeat" && step.routing.over === name);
+}
+
+/**
+ * What an unchanged rerun of a listing an act already repeats over needs
+ * instead (live run `run-mux6nxst-c9bca37c`, D3-2): the loop is in place, a
+ * rerun only replaces the listing, and a read of the rows after the act is a
+ * new step, run where the act left the page and added after it. Nineteen
+ * decisions of that run reran step 6 unchanged, each told to put the repeat on
+ * step 7, which already carried it.
+ */
+function readAfterAct(listing: number, act: number): string {
+  return `Step ${act} already repeats over step ${listing}, so the loop is in place: rerunning step ${listing} only replaces it and never adds a step after step ${act}. A read of the rows after the act is a new step: with the act done on the page, run the read there as a new call ("core.run_node" with add true) so it is added after step ${act}, with a where keeping the rows the instruction asks for -- or write it with write true.`;
 }
 
 /**
