@@ -107,12 +107,14 @@ export function automationStudioFlowBootstrapDraftUnreadColumnsSentence(input: {
   reads: readonly { step?: number; fieldKeys: readonly string[] }[];
   /** The draft's last kept step that does an instructed act, when it has one. */
   lastActStep?: number | undefined;
+  /** Whether that step is in a span that repeats over a listing, so the note says the listing stays before it. */
+  lastActRepeats?: boolean | undefined;
 }): string | undefined {
   const fieldKeys = [...new Set(input.reads.flatMap((read) => read.fieldKeys))];
   if (!fieldKeys.length) return undefined;
   const unmatched = unreadNamedColumns(input.instructionText, fieldKeys);
   if (unmatched.length) return unreadColumnsSentence(unmatched, "no read in the draft gives");
-  return readsBeforeLastActSentence(input.instructionText, input.reads, input.lastActStep);
+  return readsBeforeLastActSentence(input.instructionText, input.reads, input.lastActStep, input.lastActRepeats === true);
 }
 
 /**
@@ -121,11 +123,19 @@ export function automationStudioFlowBootstrapDraftUnreadColumnsSentence(input: {
  * step, no read with a known step gives every named column, or one of those
  * reads runs at or after the last act step (run `run-murwcaj0-40e56557`, R4).
  * It names the act step, never a read.
+ *
+ * **It asks for a new read, never a move (R18).** "The draft needs a read after
+ * step N" was read as "move the read after step N": in run
+ * `run-musr9pv3-f4bf6256` (decisions 0037, 0044, 0056) the model moved the
+ * loop's own listing after the act that walks it, which no repeat can walk. So
+ * the sentence says to run a new read after the act and leave the reads before
+ * it where they are, and of a repeated act, that its listing stays before it.
  */
 function readsBeforeLastActSentence(
   instructionText: string | undefined,
   reads: readonly { step?: number; fieldKeys: readonly string[] }[],
-  lastActStep: number | undefined
+  lastActStep: number | undefined,
+  lastActRepeats: boolean
 ): string | undefined {
   if (lastActStep === undefined) return undefined;
   const named = automationStudioFlowBootstrapInstructionColumns(instructionText ?? "");
@@ -133,7 +143,7 @@ function readsBeforeLastActSentence(
   const full = reads.filter((read) => read.step !== undefined && !authoringInstructionRecordColumns({ named, fieldKeys: read.fieldKeys }).unmatched.length);
   if (!full.length || full.some((read) => read.step! >= lastActStep)) return undefined;
   const names = named.map((name) => `"${name}"`).join(", ");
-  return `Every read in the draft that gives ${names} runs before step ${lastActStep}, the last step that does what the instruction asks, so it shows the page as it was before that act; if the instruction asks for what the page shows after it, the draft needs a read after step ${lastActStep}.`;
+  return `Every read in the draft that gives ${names} runs before step ${lastActStep}, the last step that does what the instruction asks, so it shows the page as it was before that act. If the instruction asks for what the page shows after it, run a new read after step ${lastActStep} and add it; ${lastActRepeats ? `the listing step ${lastActStep} repeats over stays where it is, before step ${lastActStep}` : `leave every read before step ${lastActStep} where it is`}.`;
 }
 
 /** The columns the instruction names that none of `fieldKeys` reads. */

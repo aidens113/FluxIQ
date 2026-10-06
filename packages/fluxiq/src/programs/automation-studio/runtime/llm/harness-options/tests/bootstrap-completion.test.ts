@@ -358,6 +358,47 @@ describe("a completed plan that could not reach where the Flow starts", () => {
 
     expect(verdict.ok).toBe(true);
   });
+
+  // The start-location note (`llm/deepseek/request-body.ts`, t195-w47) lets a
+  // build rerun step 1 with the stable address where the work begins and drop
+  // the steps that only travelled there. Run `run-musr9pv3-f4bf6256` started at
+  // the site's front page and worked at ~/friends/requests/: that Flow, its
+  // first step going straight to the deeper address on the same origin, is
+  // admitted with no reachability note and no arrival put back in front of it.
+  // The arrival is the host's declared one (t262): the rerun keeps its node,
+  // and its declared parameter holds the deeper address.
+  it("admits a first step that goes straight to a deeper address on the same origin", async () => {
+    const SITE = "http://127.0.0.1:59362/scenarios/social-network-feed/";
+    const REQUESTS = `${SITE}friends/requests/`;
+    const ran = (position: number, id: string, node: string, parameters: JsonObject, more: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+      position, id, iteration: position, actionId: node, toolId: "core.run_node",
+      input: { node, parameters, consequences: [] }, effect: node === "web.dom.extract_list" ? "observe" : "mutate", effectApplied: true, disposition: "kept",
+      ...(node === "web.dom.extract_list" ? { proposes: true } : {}),
+      ...more
+    });
+    const draftSteps = [
+      ran(1, "d17", "web.browser.navigate", { url: REQUESTS }),
+      ran(2, "d2", "web.dom.click", { selector: "#cookies-decline" }, { routing: { kind: "optional" } }),
+      ran(3, "d15", "web.dom.extract_list", { extractList: { item: ".request", fields: { name: ".name", mutualFriends: ".mutual" } } }),
+      ran(4, "d16", "web.dom.click", { selector: ".confirm" }, { acts: ["a1"], routing: { kind: "repeat", over: "d15", through: "d16" } }),
+      // The arrival the rerun replaced, listed at the end as its receipt.
+      ran(5, "d1", "web.browser.navigate", { url: SITE }, { disposition: "dropped", replacedBy: "d17" })
+    ];
+
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({
+      result: { summary: "Confirms every request with five or more mutual friends." },
+      projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps,
+      binding: { runsNodes: { arrival: { node: "web.browser.navigate", parameter: "url" } } }, startLocation: SITE
+    });
+
+    expect(verdict.ok).toBe(true);
+    if (!verdict.ok) return;
+    expect(verdict.notes).toBeUndefined();
+    expect(verdict.check.restoredStep).toBeUndefined();
+    const first = verdict.buildPlan.plan.subflows[0]?.nodes[0];
+    expect(first?.definitionId).toBe("web.output.browser-navigate");
+    expect(first?.parameters?.url).toBe(REQUESTS);
+  });
 });
 
 // `run-mulxsbyy-d4d4c7a1` was refused three times by three different checks,
@@ -493,6 +534,25 @@ describe("a completed draft that does not do what the instruction asks", () => {
     expect((await complete([onTheRead[0]!, listing, { ...confirm, acts: ["a1"] }], [{ action: "a1", step: "2" }], CONFIRM)).ok).toBe(true);
   });
 
+  // Live run `run-musr9pv3-f4bf6256`, decision 0072: the listing at step 15
+  // carried a stray repeat over step 16, the Confirm at 16 repeated over 15, and
+  // the refusal reached the model as a code and a path only. It looped fifteen
+  // turns. Each routing refusal now carries its sentence, which names the fix.
+  it("carries each routing refusal's sentence to the model, naming the amendment that fixes run 0072's draft", async () => {
+    const CONFIRM = "Go through my friend requests and confirm everyone I have at least five mutual friends with, and leave every other request as it is.";
+    const listing = { ...ran(15, "web.dom.extract_list", { extractList: { item: ".request", fields: { name: ".name", mutualFriends: ".mutual" } } }, "observe"), routing: { kind: "repeat" as const, over: "d16", through: "d15" } };
+    const confirm = { ...ran(16, "web.dom.click", { selector: ".confirm" }), acts: ["a1"], routing: { kind: "repeat" as const, over: "d15", through: "d16" } };
+    const verdict = await complete([ran(1, "web.browser.navigate", { url: "https://social.test/" }), ran(8, "web.dom.click", { selector: "#friend-requests" }), listing, confirm], undefined, CONFIRM);
+
+    if (verdict.ok) throw new Error("expected a refusal");
+    const issues = (verdict.check.feedback as unknown as Feedback).issues;
+    const unrepeat = "amend_draft {\"step\": 15, \"change\": \"unrepeat\"}";
+    expect(issues).toEqual([
+      { code: "flow_draft.repeat_not_after_its_source", path: "draft.steps.15", message: expect.stringContaining(unrepeat) },
+      { code: "flow_draft.repeat_not_after_its_source", path: "draft.steps.16", message: expect.stringContaining(unrepeat) }
+    ]);
+  });
+
   // Lane B: the size named on the Add press, refused six times `choice_is_the_act_step`.
   it("accepts lane B's shape: the size named on the press that adds, the checklist saying choice_is_the_act_step", async () => {
     const TOWELS = "Add the ValueRidge paper towels in the 12 Double Rolls size to my cart.";
@@ -559,17 +619,69 @@ describe("a completed draft whose act a person must be asked about is not declar
     expect(feedback.instruction).toContain("A reason of act_consequence_undeclared");
   });
 
-  it("is still refused for the declaration when the press is marked optional", async () => {
+  // Optional, the press is also the act's only step, which may be skipped
+  // (run `run-musq0b1m-0472cfa0`, Cause 5): both are said, in one account.
+  it("is still refused for the declaration when the press is marked optional, beside the optional step", async () => {
     const verdict = await complete(press(["modify_existing"], { routing: { kind: "optional" } }));
 
     expect(verdict.ok).toBe(false);
     if (verdict.ok) return;
-    expect((verdict.check.feedback as unknown as { missingActs: JsonObject }).missingActs).toEqual(undeclared);
+    expect(verdict.check.issueCodes).toEqual(["bootstrap.instructed_act_missing", "bootstrap.instructed_act_only_optional"]);
+    const feedback = verdict.check.feedback as unknown as Feedback & { missingActs: JsonObject };
+    expect(feedback.missingActs).toEqual({ acts: [...undeclared.acts, expect.objectContaining({ id: "a1", reason: "step_is_optional", step: "3" })] });
+    expect(feedback.instruction).toContain("A reason of act_consequence_undeclared");
+    expect(feedback.instruction).toContain("reason step_is_optional");
   });
 
-  it("is accepted once the press declares delete, optional or not", async () => {
+  it("is accepted once the press declares delete and always runs; optional, it is answered for the optional step alone", async () => {
     expect((await complete(press(["delete"]))).ok).toBe(true);
-    expect((await complete(press(["delete"], { routing: { kind: "optional" } }))).ok).toBe(true);
+    const optional = await complete(press(["delete"], { routing: { kind: "optional" } }));
+    expect(optional.ok).toBe(false);
+    if (optional.ok) return;
+    expect(optional.check.issueCodes).toEqual(["bootstrap.instructed_act_only_optional"]);
+  });
+});
+
+// Live run `run-musq0b1m-0472cfa0` (Cause 5): the only step doing a1.version
+// (7-in-1) was marked optional on a false premise ("already selected by
+// default" while 4-in-1 was marked), the completion passed and both judges
+// dismissed it. In playback a failed 7-in-1 press would carry on and add the
+// 4-in-1. An act whose only step may be skipped is not done: the completion is
+// answered with that, beside the checklist's information.
+describe("a completed draft whose act's only step may be skipped", () => {
+  const HUB = "Put the USB-C hub in my cart: Space Grey, the 7-in-1 version.";
+  const press = (position: number, selector: string, overrides: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+    position, id: "d" + position, iteration: position, actionId: "web.dom.click", toolId: "core.run_node",
+    input: { node: "web.dom.click", parameters: { selector }, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept", ...overrides
+  });
+  const draft = (version: Partial<AutomationStudioFlowDraftStep>): AutomationStudioFlowDraftStep[] => [
+    { position: 1, id: "d1", iteration: 1, actionId: "web.browser.navigate", toolId: "core.run_node", input: { node: "web.browser.navigate", parameters: { url: "https://shop.test/item/1" }, consequences: [] }, effect: "mutate", effectApplied: true, disposition: "kept" },
+    press(2, "#grey", { acts: ["a1.colour"] }),
+    press(3, "#v7", { acts: ["a1.version"], ...version }),
+    press(4, "#add", { acts: ["a1"] })
+  ];
+  const complete = (draftSteps: AutomationStudioFlowDraftStep[]) => checkAutomationStudioFlowBootstrapCompletion({
+    result: { summary: "Adds the hub." }, projectId: "project.1", flowId: "flow.1", registry, resolution, draftSteps, instructionText: HUB,
+    binding: { resolvePlanNodeParameters: async () => ({ status: "unchanged" }) },
+    permissionFor: () => async () => ({ permitted: true })
+  });
+
+  it("is not complete when the 7-in-1 press is optional, and says why beside the act", async () => {
+    const verdict = await complete(draft({ routing: { kind: "optional" } }));
+
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.codes).toEqual(["flow_bootstrap.evidence_completion_cannot_answer"]);
+    expect(verdict.check.issueCodes).toEqual(["bootstrap.instructed_act_only_optional"]);
+    const feedback = verdict.check.feedback as unknown as Feedback & { missingActs: { acts: JsonObject[] } };
+    expect(feedback.missingActs.acts).toEqual([expect.objectContaining({ id: "a1.version", reason: "step_is_optional", step: "3", said: expect.stringContaining("step 3") })]);
+    expect(feedback.instruction).toContain("step_is_optional");
+    expect(feedback.instruction).toContain("only_if");
+  });
+
+  it("is complete once the press always runs, or runs only when a check says it is needed", async () => {
+    expect((await complete(draft({}))).ok).toBe(true);
+    expect((await complete(draft({ routing: { kind: "only_if", check: "d2" } }))).ok).toBe(true);
   });
 });
 

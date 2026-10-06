@@ -35,6 +35,14 @@
 // are: the re-author reran only the read it fixed, both rounds stopped
 // untested, and the fix never ran from the Flow's start.
 //
+// **Core's account of the read outranks the check's advice (t194-w78).** Live
+// run `run-musp39u8-9ac026ab` carried Core's account that the read had read
+// every page there was and the check's advice to raise the page bound, and step
+// 3 said to make every fix the advice named: the re-author raised the bound six
+// times per try and reread the same rows. Step 3 now says that where the two
+// disagree, Core's account stands. ACT_STEPS carries no such line, because a
+// Flow that reads nothing has no read to account for.
+//
 // **What it deliberately does not name.** Core does not know what a filter
 // condition, a page or a column is called in the bound domain, so the brief
 // speaks of "the step that reads the items" and "its own parameters", and the
@@ -64,7 +72,7 @@ const ACTS_JUDGED_UNDONE: (typeof AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES)
 const READ_STEPS: readonly string[] = [
   "1. Read the request clause by clause. For every clause that narrows the answer -- which items to keep or drop (by a value, a range, a word or a pattern), how many pages or items to read, which order to put them in, or that an item may appear only once -- put it into the parameters of the step that reads the items, using the parameters that step's catalog entry lists (a condition list, a pagination setting, a limit). Leaving a clause out to be narrowed later is no longer right: this repair is the later.",
   "2. Where a column holds the wrong kind of value (an address where text was asked for, one field where another was meant), change that step's column mapping so the column holds what the request asked for.",
-  "3. Act on the check's findings and advice above. Where the advice names a fix, make it -- but where \"How the read went\" shows the step already pages, deduplicates or filters, change that setting or condition in place instead of adding a step for it. A condition that rejected rows the request wanted is the one to correct.",
+  "3. Act on the check's findings and advice above. Where the advice names a fix, make it -- but where \"How the read went\" shows the step already pages, deduplicates or filters, change that setting or condition in place instead of adding a step for it. Where the check's advice contradicts \"How the read went\" (Core's account of what the step did) -- it asks for more pages of a read that already read every page there was, say, or a filter the step already applies -- Core's account stands and that part of the advice is not followed: changing that setting again reads the same items. A condition that rejected rows the request wanted is the one to correct.",
   "4. If the step has no parameter that can express a clause, keep the rest of the fix and say which clause in your completion summary rather than dropping it silently.",
   "5. Change only what the findings require: the steps that reach the page keep their parameters unless the findings say they are wrong, but each is still rerun live (amend_draft rerun), in the Flow's order, so the whole Flow can be tested."
 ];

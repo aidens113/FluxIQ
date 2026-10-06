@@ -5,7 +5,7 @@
 // the item page five page-changing steps after the last kept one, and the rule
 // stopped two steps back: the search and the listing were never kept.
 import { describe, expect, it } from "vitest";
-import { applyAutomationStudioFlowDraftAmendments } from "../amendment.ts";
+import { applyAutomationStudioFlowDraftAmendments } from "../amendment/index.ts";
 import { automationStudioFlowDraftKeepOpeners } from "../opener.ts";
 import type { AutomationStudioFlowDraftStep } from "../step.ts";
 

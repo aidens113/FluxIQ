@@ -142,6 +142,11 @@ describe("the feedback on a refused plan", () => {
       .toEqual([{ code: "record_output.unknown_key", path: recordOutputPath }]);
   });
 
+  it("carries the sentence of an act only a step the Flow may skip does", () => {
+    expect(automationStudioFlowBootstrapIssueFeedback({ issues: [{ severity: "error", code: "bootstrap.instructed_act_only_optional", message: "Only an optional step does it." }] }))
+      .toEqual([{ code: "bootstrap.instructed_act_only_optional", message: "Only an optional step does it." }]);
+  });
+
   it("never carries a validator's message", () => {
     const { feedback } = feedbackFor({ extractList, recordOutput: { nonsense: true } });
 

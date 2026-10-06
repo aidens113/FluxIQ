@@ -57,11 +57,13 @@ describe("a build whose model replies kept arriving unreadable", () => {
     expect(outcome.ending).toMatchObject({ kind: "replies_unreadable", tried: { rounds: 1, decisions: 14, stepsInFlow: 1, tested: "not_tested" } });
     expect(outcome.ending.notDone.map((item) => item.id)).toEqual(["a1.quantity", "a2"]);
     const message = outcome.ending.message;
-    expect(message).toMatch(/^The build stopped because the model's replies could not be read: 6 in a row came back unreadable -- most often because its brackets did not match/u);
-    expect(message).toContain("each was asked again with a note of what was wrong.");
-    expect(message).toContain("In all, 8 of 14 replies could not be read, over one live round; each was paid for and counted in the build's budget.");
+    expect(message).toMatch(/^The build stopped because the replies it got back could not be read: 6 in a row came back unreadable -- most often because its brackets did not match/u);
+    expect(message).toContain("and it asked again each time, with a note of what was wrong.");
+    expect(message).toContain("In all, 8 of 14 replies could not be read; each was paid for and counted in the build's budget.");
+    // In a person's words (t195-w48), and one live round is not said again as a count.
+    expect(message).not.toMatch(/\bmodel\b|\bround\b|I worked on it live/u);
     expect(message).toContain("1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it; still to do:");
-    expect(message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it.");
+    expect(message).toContain("The steps I found so far were kept as a draft, so building again carries on from them.");
     expect(message).not.toMatch(/llm\.|_/u);
     // The round's rows are published with the ending, and its spend with them:
     // they were left out when this ending and the whole-build record first met (t214).

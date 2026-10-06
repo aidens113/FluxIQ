@@ -53,8 +53,8 @@ describe("a rerun and the step it replaces", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, unusableDecisions: { stalled } });
 
-    // In the Flow as the original was, and at its position; the original stays listed behind it, withdrawn.
-    expect(result.steps.map((step) => [step.id, step.disposition, step.position])).toEqual([["d2", "kept", 1], ["d1", "dropped", 2]]);
+    // In the Flow as the original was, and at its position; the original stays listed at the end, withdrawn, as the rerun's receipt.
+    expect(result.steps.map((step) => [step.id, step.disposition, step.position, step.replacedBy])).toEqual([["d2", "kept", 1, undefined], ["d1", "dropped", 2, "d2"]]);
     expect(result.steps[0]?.input).toMatchObject({ url: "https://shop.test/audio" });
   });
 
@@ -63,7 +63,7 @@ describe("a rerun and the step it replaces", () => {
 
     const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide: decisions(), executeTool, maxIterations: 6, maxToolCalls: 6, draftAuthoring: "transcript", unusableDecisions: { stalled } });
 
-    expect(result.steps.map((step) => [step.id, step.disposition])).toEqual([["d1", "dropped"], ["d2", "kept"]]);
+    expect(result.steps.map((step) => [step.id, step.disposition, step.replacedBy])).toEqual([["d1", "dropped", undefined], ["d2", "kept", undefined]]);
   });
 });
 
@@ -79,8 +79,31 @@ describe("a rerun taking the replaced step's place", () => {
       step("d17", 3, { effect: "observe", disposition: "taken" })
     ];
     automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
-    expect(steps.map((entry) => [entry.id, entry.position, entry.disposition])).toEqual([["d17", 1, "kept"], ["d15", 2, "dropped"], ["d16", 3, "kept"]]);
-    expect(steps[2]!.routing).toEqual({ kind: "repeat", through: "d16", over: "d17" });
+    expect(steps.map((entry) => [entry.id, entry.position, entry.disposition])).toEqual([["d17", 1, "kept"], ["d16", 2, "kept"], ["d15", 3, "dropped"]]);
+    expect(steps[1]!.routing).toEqual({ kind: "repeat", through: "d16", over: "d17" });
+  });
+
+  // Live run `run-musp474o-e0ed7432`: the listing at 6 was rerun with a fixed
+  // where, and its withdrawn attempt was listed just after the rerun -- so the
+  // old listing became step 7 and the Confirm step 8. The model then reran
+  // "step 7" with the fixed where three times, each refused changes_nothing,
+  // and the round stopped. A rerun takes the replaced step's number and no
+  // other number changes: the attempt moves to the end, linked to its rerun.
+  it("keeps every other step's number: the attempt it replaced moves to the end, linked to the rerun", () => {
+    const steps = [
+      step("d5", 1),
+      step("d6", 2, { effect: "observe" }),
+      step("d7", 3, { routing: { kind: "repeat", through: "d7", over: "d6" } }),
+      step("d18", 4, { effect: "observe", disposition: "taken" })
+    ];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[1], { takesItsPlace: true });
+    expect(steps.map((entry) => [entry.id, entry.position, entry.disposition, entry.replacedBy])).toEqual([
+      ["d5", 1, "kept", undefined],
+      ["d18", 2, "kept", undefined],
+      ["d7", 3, "kept", undefined],
+      ["d6", 4, "dropped", "d18"]
+    ]);
+    expect(steps[2]!.routing).toEqual({ kind: "repeat", through: "d7", over: "d18" });
   });
 
   // t244: a re-authored Flow's carried steps (`f<n>`) must each run in the build

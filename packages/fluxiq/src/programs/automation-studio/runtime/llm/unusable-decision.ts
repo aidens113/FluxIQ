@@ -106,6 +106,8 @@ const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
   "llm_evidence_loop.amend_not_offered": "Editing the draft was not offered for this decision: the decision schema has no amend_draft variant. Choose one of the variants it does offer.",
   // `./evidence-loop/decision-refusal.ts`: a reply that was JSON, but not a decision of any accepted shape.
   "llm_evidence_loop.decision_shape_invalid": "The decision was JSON but not one of the accepted shapes: check its kind, write only the keys that shape lists, give input and result as objects, and give every amendment a step number and a change from the list.",
+  // `./evidence-loop-decision.ts` (t194-w78): an amend_draft left with nothing because a rerun had no input.
+  "llm_evidence_loop.rerun_needs_input": "A rerun needs input, and a rerun without it is dropped, so this amend_draft changed nothing: give the rerun an input -- the parameters to change, or {} to run the step again as it stands.",
   // `./evidence-loop-decision.ts` (t252, D1): a node call that runs now with a binding in its parameters.
   "run_node.binding_needs_write": "A binding runs only in the Flow; write the step (write true), or run it with the value and bind it after (amend_draft bind).",
   // `./evidence-loop-decision.ts` (t252, D3): a written node call with a binding that cannot be read.

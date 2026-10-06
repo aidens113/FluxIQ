@@ -625,6 +625,9 @@ describe("the policy where the result is a Flow", () => {
     expect(policy).toContain("repetitive work is a loop, not a sequence");
     expect(policy).toContain("never doing it to every item");
     expect(policy).toContain("is bound ({\"$input\": ...}, {\"$row\": ...}), never typed in");
+    // Live run `run-mustzxhi-2e2cda87`: bound a press's target about 12 times.
+    expect(policy).toContain("only a value a step typed, or a read's condition, is bound");
+    expect(policy).toContain("a press's control or option is never bound");
     // Pinned elsewhere (`../../tests/evidence-loop-provider.test.ts`), kept.
     expect(policy).toContain("Never mutate merely to perform an eventual workflow step");
     expect(policy).toContain("never repeat a successful mutation merely to try another eventual-workflow value");

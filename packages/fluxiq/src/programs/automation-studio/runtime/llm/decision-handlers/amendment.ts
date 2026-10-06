@@ -1,7 +1,7 @@
 // A decision to edit the draft: carried out, refused with the reason, or --
 // for a `rerun` -- turned into the call that does the step again, with the
 // decision's amendments naming that step held until it has run.
-import { applyAutomationStudioFlowDraftAmendments, automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { applyAutomationStudioFlowDraftAmendments, automationStudioFlowDraftClaimAct, automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioLlmDecisionContextSignature, automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE, automationStudioLlmEvidenceDraftAmendmentFeedback } from "../draft-amendment-feedback.ts";
 import {
@@ -136,14 +136,17 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // `applied` counts a rerun the decision asked for, as the row's draft change
   // and the history do: step 0061 of `run-musq0b1m-0472cfa0` was told 0 beside
   // an `appliedCount` of 1 (t174-w116).
-  if ((refused.length || sameDraftAs !== undefined) && !split.held.length) tell(context, iteration, refusals, amended.applied + (rerun.request ? 1 : 0), sameDraftAs);
+  // An act moved off a step left in the Flow is told too, on an edit that
+  // landed whole: information, never a refusal (`../draft-amendment-feedback.ts`, `moved`).
+  const moved = amended.moved ?? [];
+  if ((refused.length || sameDraftAs !== undefined || moved.length) && !split.held.length) tell(context, iteration, refusals, amended.applied + (rerun.request ? 1 : 0), sameDraftAs, moved);
   if (rerun.retainedRefusals?.length) {
     automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");
     for (const refusal of rerun.retainedRefusals) tellRetained(context, iteration, refusal.retained, { kind: "refused", reason: refusal.reason });
   }
   if (!rerun.request) return { kind: "continue" };
   const held: AutomationStudioLlmEvidenceRerunHeld | undefined = rerunReplaces
-    ? { amendments: split, nodeId: rerunReplaces.actionId, applied: amended.applied, refusals: split.held.length ? refusals : [], ...(rerun.request.retained ? { retained: rerun.request.retained } : {}) }
+    ? { amendments: split, nodeId: rerunReplaces.actionId, applied: amended.applied, refusals: split.held.length ? refusals : [], ...(split.held.length && moved.length ? { moved } : {}), ...(rerun.request.retained ? { retained: rerun.request.retained } : {}) }
     : undefined;
   return { kind: "rerun", decision: { kind: "tool_call", callId: rerun.request.callId, toolId: rerun.request.toolId, input: rerun.request.input }, replaces: rerunReplaces, ...(held ? { held } : {}) };
 }
@@ -167,7 +170,7 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
   const settled = held.amendments.settle(context.draftSteps, rerun);
   const refused = settled.refused.map((refusal) => ({ ...refusal, nodeId: held.nodeId }));
   const refusals = [...held.refusals, ...context.amendmentMemory.refusals(refused)];
-  if (refusals.length) tell(context, iteration, refusals, held.applied + settled.applied, undefined);
+  if (refusals.length || held.moved?.length) tell(context, iteration, refusals, held.applied + settled.applied, undefined, held.moved ?? []);
   return held.amendments.held.length ? { amended: settled.applied, ...(refused.length ? { amendmentsRefused: refused } : {}) } : {};
 }
 
@@ -179,8 +182,29 @@ function tellRetained(context: AutomationStudioLlmEvidenceDecisionHandlerContext
 }
 
 /**
- * The model is told which of its amendments changed nothing and why, as
- * evidence, before it is asked again; a newer telling replaces the older.
+ * Records that `step`, a call just put into the Flow with `act`, does that act
+ * and no other step does (`../../flow-draft/act-claim.ts`), and tells the model
+ * of each step the act left in the Flow doing no act, as an answer that
+ * refused nothing: information, never a refusal and never a drop. Live run
+ * `run-musp4h2f-72e8ed99` moved a3 this way at step 0144, by a `core.run_node`
+ * write with `act a3`, and the 3-Pack press it left was pressed again in the
+ * next test with no word to the model (`../evidence-loop.ts`).
+ */
+export function automationStudioLlmEvidenceClaimWrittenAct(
+  context: AutomationStudioLlmEvidenceDecisionHandlerContext,
+  step: AutomationStudioFlowDraftStep,
+  act: string
+): void {
+  const moved = automationStudioFlowDraftClaimAct(context.draftSteps, step, act)
+    .filter((left) => automationStudioFlowDraftStepIsProposed(left) && !left.acts?.length)
+    .map((left) => ({ act, from: left.position, to: step.position }));
+  if (moved.length) tell(context, step.iteration, [], 1, undefined, moved);
+}
+
+/**
+ * The model is told which of its amendments changed nothing and why, and which
+ * acts moved off a step left in the Flow (`moved`), as evidence, before it is
+ * asked again; a newer telling replaces the older.
  * What it is told joins the decision's answer step as `told`
  * (`../step-log/answer-step.ts`): it is built after the decision's row was
  * recorded, because it carries the guard's count of that row, so the answer
@@ -192,11 +216,13 @@ function tell(
   iteration: number,
   refusals: AutomationStudioLlmEvidenceRerunHeld["refusals"],
   applied: number,
-  sameDraftAs: number | undefined
+  sameDraftAs: number | undefined,
+  moved: NonNullable<AutomationStudioLlmEvidenceRerunHeld["moved"]>
 ): void {
   const amendmentFeedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
     refusals, applied, steps: context.draftSteps, stepsWithoutProgress: context.noProgress.steps, maxStepsWithoutProgress: context.limits.maxStepsWithoutProgress,
     ...(sameDraftAs === undefined ? {} : { sameDraftAsIteration: sameDraftAs }),
+    ...(moved.length ? { moved } : {}),
     // What is still to do, for an act named again that the checklist shows done (`../draft-amendment-feedback.ts`).
     actsNotDone: context.input.draft ? context.input.draft.actsMissing?.(context.draftSteps) : undefined
   });

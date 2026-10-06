@@ -39,8 +39,18 @@
 // the form the model writes (`./binding-render.ts`), so the model reads one
 // vocabulary; the Flow inputs those bindings declare are listed once for the
 // draft (`inputs`, `./flow-inputs.ts`).
+//
+// **The attempt a rerun replaced is shown as replaced, not as a step to fix.**
+// It stays listed at the end of the draft as the receipt of what was replaced
+// (`../llm/evidence-loop/rerun-replacement.ts`), and it used to be listed with
+// the argument it ran with, like any other step. Live run
+// `run-musp474o-e0ed7432` read its withdrawn listing, old where and all, as
+// step 7 and reran it three times with the where its rerun at step 6 already
+// held. Its line now says only which step it was, its action, and
+// `replacedBy`: the number of the step standing in its place now.
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { automationStudioFlowDraftReplacingStep } from "./amendment/index.ts";
 import { automationStudioFlowDraftRenderBindings } from "./binding-render.ts";
 import { automationStudioFlowDraftInputs } from "./flow-inputs.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
@@ -54,19 +64,30 @@ import { automationStudioFlowDraftReplayOutcomeWord } from "./verify-only.ts";
 // act done to one item, then amend_draft repeat over the listing step" as a
 // repeat on the listing, sent `13 repeat over 13` with no press in the draft,
 // and never pressed a Confirm.
+//
+// Both tellings say every number in one amend_draft is read against the draft
+// shown, which is renumbered once after the decision (`./amendment/`): live
+// run `run-musr9pv3-f4bf6256` carried a stray repeat on its listing, made by a
+// decision whose numbers Core read one amendment at a time (t195 w45). The
+// sentence about a replaced attempt is said only where one is listed, like the
+// checked candidate's: the whole draft of a seven-step build is held to 5,000
+// bytes by `../tests/deepseek-bootstrap/tests/answerability.test.ts`.
 
 /** The entry the draft is shown under. */
 export const AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID = "core.flow_draft";
 
 const DRAFT_CODE = "llm_evidence_loop.draft";
-const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it: every step here is something you actually ran, with the argument it ran with. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down at the end and nothing to confirm. A did_not_work step is already out: only rerun changes it. A step whose disposition is look only looked: it is listed so its number shows, and it is never in the Flow and does no act. Correct the draft with amend_draft: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. To do one act to every item of a list, run the step listing the items with a where that keeps only those to act on, do the act to one item it kept -- that row's own control -- then put repeat on that act with over the listing step: the repeat goes on the act, never on the listing, and the Flow does the rest, so never act on the others yourself. A listing that already keeps the right rows is not run again. A step you want and have not run yet is run, not written. Getting to the page is part of the work: going somewhere, dismissing what covers it, typing a search and pressing it are never exploratory; only a page you opened to read and moved on from is.";
+const DRAFT_INSTRUCTION = "The Flow you are building, in the order you built it: every step here is something you actually ran, with the argument it ran with. Every step whose inResult is true is a step of the finished Flow, so there is nothing to write down at the end and nothing to confirm. A did_not_work step is already out: only rerun changes it. A step whose disposition is look only looked: it is listed so its number shows, and it is never in the Flow and does no act. Correct the draft with amend_draft: drop a step that should not be there, exploratory for one you ran only to look, reorder to move one, rerun to do one again with a corrected argument. Every number in one amend_draft is this draft's; it is renumbered after the decision. To do one act to every item of a list, run the step listing the items with a where that keeps only those to act on, do the act to one item it kept -- that row's own control -- then put repeat on that act with over the listing step: the repeat goes on the act, never on the listing, and the Flow does the rest, so never act on the others yourself. A listing that already keeps the right rows is not run again. A step you want and have not run yet is run, not written. Getting to the page is part of the work: going somewhere, dismissing what covers it, typing a search and pressing it are never exploratory; only a page you opened to read and moved on from is.";
 
 // The same draft where the model authors it (user, 2026-09-30: "IT SHOULD
 // ONLY ADD STEPS IN A WAY THAT MAKE AN INTELLIGENT FLOW!"): a step that ran is
 // evidence, marked `taken`, and is in the Flow only once the model adds it
 // (`./step.ts`). The acts checklist beside it (`acts`) is what "ready" means
 // (audit A1, cause 1), so the telling names it.
-const AUTHORED_INSTRUCTION = "The Flow you are authoring. Every step you run is listed here as evidence (disposition taken) and is not in the Flow until you add it: add true on the call that runs it, or amend_draft add naming its step. Run any node configuration to see what it does; what you add is your choice. You may also write a step without running it -- core.run_node with write true, which adds it -- once what you have seen is enough to know its node and parameters: it is listed with written true, it was checked and not done, and the test runs it. inResult true marks a step of the Flow. Add only what the finished Flow needs, in the order it needs it: getting to the page, dismissing what covers it, and the acts themselves. Getting to a control includes the press that opened the chooser, drawer or menu it is inside: adding the control's step adds that press with it if you have not. Never add a look, a failed try, a detour, or a second copy of a step already added. acts lists what the person asked to be done, in their words: say which act a step does with act (a1, a2 ...) when you add it, and done then names that step. For a preparatory setting, claim its listed child choice ID when one exists. If none is listed, add the necessary setting step without act; never invent a child ID or claim the parent act for preparation. Claim the parent only on its own act step. does, beside a step, names the control it acted on and the words it typed: name an act only on a step whose does is that act. Repetitive work is a loop, not a sequence: never do it to every item yourself. To do one act to every item of a list, three steps in this order: add the step listing them, with a where keeping only those to act on; do or write the act on one row it kept -- that row's own control -- and add that press with its act; then send amend_draft {\"step\": <that press>, \"change\": \"repeat\", \"over\": <the listing>}, and never act yourself on the items your listing left out. The repeat goes on the press, never on the listing, and a listing that already keeps the right rows is not run again. For an act with a lasting effect on the items a loop keeps, write it rather than doing it to one real item, so the build changes nothing the Flow should not. A value that changes between runs or rows is bound, never typed in: {\"$input\": <name>, \"test\": <value>} for a value the person gave (test is that value, and the Flow takes it as an input), {\"$row\": <field>} for a field of the row a repeat is on. Write a step with them, or send amend_draft bind on a step you ran to lift its value into one: parameters show bindings in these forms, and inputs lists the Flow's inputs with their test values and the steps using them. For something only sometimes there, add it and mark it optional: a cookie banner, a sign-up popup or anything else that covers the page may not be there the next time the Flow runs, so its dismissal is optional. reorder moves a step, drop takes one out, rerun does one again with a corrected argument in its place. Complete when the Flow does what the person asked: it is then tested from its start and judged on what it does, and acts done is your own reading, not the bar. The test runs a repeated step once for each row its listing returned, and passes beside it says how many times it ran. A did_not_work step can only be rerun. A step whose disposition is look only looked: it is listed so its number shows, and it can never be added or do an act.";
+const AUTHORED_INSTRUCTION = "The Flow you are authoring. Every step you run is listed here as evidence (disposition taken) and is not in the Flow until you add it: add true on the call that runs it, or amend_draft add naming its step. Run any node configuration to see what it does; what you add is your choice. You may also write a step without running it -- core.run_node with write true, which adds it -- once what you have seen is enough to know its node and parameters: it is listed with written true, it was checked and not done, and the test runs it. inResult true marks a step of the Flow. Add only what the finished Flow needs, in the order it needs it: getting to the page, dismissing what covers it, and the acts themselves. Getting to a control includes the press that opened the chooser, drawer or menu it is inside: adding the control's step adds that press with it if you have not. Never add a look, a failed try, a detour, or a second copy of a step already added. acts lists what the person asked to be done, in their words: say which act a step does with act (a1, a2 ...) when you add it, and done then names that step. For a preparatory setting, claim its listed child choice ID when one exists. If none is listed, add the necessary setting step without act; never invent a child ID or claim the parent act for preparation. Claim the parent only on its own act step. does, beside a step, names the control it acted on and the words it typed: name an act only on a step whose does is that act. Repetitive work is a loop, not a sequence: never do it to every item yourself. To do one act to every item of a list, three steps in this order: add the step listing them, with a where keeping only those to act on; do or write the act on one row it kept -- that row's own control -- and add that press with its act; then send amend_draft {\"step\": <that press>, \"change\": \"repeat\", \"over\": <the listing>}, and never act yourself on the items your listing left out. The repeat goes on the press, never on the listing, and a listing that already keeps the right rows is not run again. For an act with a lasting effect on the items a loop keeps, write it rather than doing it to one real item, so the build changes nothing the Flow should not. Only a value a step typed, or a read's condition, is bound, and one that changes between runs or rows is bound, never typed in: {\"$input\": <name>, \"test\": <value>} for one the person gave (test is that value, and the Flow takes it as an input), {\"$row\": <field>} for a field of the row a repeat is on. A press's control or option is never bound: a repeat finds each row's own control in that row, and a single item's option is pressed as the page offers it. Write a step with them, or send amend_draft bind on a step you ran to lift its value into one: parameters show bindings in these forms, and inputs lists the Flow's inputs with their test values and the steps using them. For something only sometimes there, add it and mark it optional: a cookie banner, a sign-up popup or anything else that covers the page may not be there the next time the Flow runs, so its dismissal is optional. reorder moves a step, drop takes one out, rerun does one again with a corrected argument in its place. Every number in one amend_draft is this draft's; it is renumbered after the decision. Complete when the Flow does what the person asked: it is then tested from its start and judged on what it does, and acts done is your own reading, not the bar. The test runs a repeated step once for each row its listing returned, and passes beside it says how many times it ran. A did_not_work step can only be rerun. A step whose disposition is look only looked: it is listed so its number shows, and it can never be added or do an act.";
+
+/** Said only where the draft lists the attempt a rerun replaced (header). */
+const REPLACED_INSTRUCTION = " A step showing replacedBy is the attempt a rerun replaced, listed only as the record of it: nothing changes it, so amend or rerun the step replacedBy names.";
 
 /**
  * The draft as one entry, or nothing when the draft holds no step a result
@@ -99,12 +120,17 @@ export function automationStudioFlowDraftEntry(input: {
     steps: listed.map((step) => stepLine(step, listed)),
     // The Flow's inputs, declared by the bindings its steps carry (`./flow-inputs.ts`).
     ...(inputs.length ? { inputs: inputs.map((entry) => ({ name: entry.name, test: entry.test, steps: entry.steps })) } : {}),
-    instruction: (input.authored ? AUTHORED_INSTRUCTION : DRAFT_INSTRUCTION) + (listed.some((step) => step.checkedCandidate) ? " A checkedCandidate is an exception to the recorded runs: its current configuration was checked, not performed; its act claims are intentions. priorExecution identifies the original configuration that performed the earlier effect, not this candidate. A verified/present test of a candidate establishes the check's result, never execution of its effect." : "")
+    instruction: (input.authored ? AUTHORED_INSTRUCTION : DRAFT_INSTRUCTION)
+      + (listed.some((step) => automationStudioFlowDraftReplacingStep(listed, step) !== undefined) ? REPLACED_INSTRUCTION : "")
+      + (listed.some((step) => step.checkedCandidate) ? " A checkedCandidate is an exception to the recorded runs: its current configuration was checked, not performed; its act claims are intentions. priorExecution identifies the original configuration that performed the earlier effect, not this candidate. A verified/present test of a candidate establishes the check's result, never execution of its effect." : "")
   };
   return { callId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, value };
 }
 
 function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationStudioFlowDraftStep[]): JsonObject {
+  // The attempt a rerun replaced: which step stands in its place now, and not the argument it ran with (header).
+  const replacing = automationStudioFlowDraftReplacingStep(all, step);
+  if (replacing) return { step: step.position, actionId: step.actionId, replacedBy: replacing.position, inResult: false };
   return {
     step: step.position,
     actionId: step.actionId,
@@ -171,13 +197,13 @@ function stepLine(step: AutomationStudioFlowDraftStep, all: readonly AutomationS
  * decisions dropping or "keeping" refused presses, and the draft's own
  * instruction said every listed step had worked. Only what is shown changes:
  * the step keeps its disposition, and no amendment but `rerun` touches it
- * (`./amendment.ts`).
+ * (`./amendment/`).
  */
 function shownDisposition(step: AutomationStudioFlowDraftStep): string {
   // A written step changed nothing by construction: it was never performed.
   if (step.written !== true && step.checkedCandidate === undefined && step.effectApplied === false && (step.effect === "mutate" || automationStudioFlowDraftStepIsAction(step))) return "did_not_work";
   // Not of the kind a Flow is made of: listed only so its number shows, and
-  // no amendment puts it in the Flow (`./amendment.ts`).
+  // no amendment puts it in the Flow (`./amendment/`).
   return automationStudioFlowDraftStepIsAction(step) ? step.disposition : "look";
 }
 

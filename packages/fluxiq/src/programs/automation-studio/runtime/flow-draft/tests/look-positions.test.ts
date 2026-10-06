@@ -5,7 +5,7 @@
 // model's `5 add a2` landed on the `snap.store` look, which was then recorded as
 // doing "add two packs of towels".
 import { describe, expect, it } from "vitest";
-import { applyAutomationStudioFlowDraftAmendments } from "../amendment.ts";
+import { applyAutomationStudioFlowDraftAmendments } from "../amendment/index.ts";
 import { automationStudioFlowDraftEntry } from "../entry.ts";
 import type { AutomationStudioFlowDraftStep } from "../step.ts";
 

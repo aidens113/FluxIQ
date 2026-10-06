@@ -90,12 +90,12 @@ describe("the not-finished ending's account of the judge", () => {
     expect(ending(one, before, judged({ advice: "read the list" })).message).toContain("the judge now found it does not do what you asked");
   });
 
-  it("never says no way, and says what was kept as a draft not put into the Flow, or that nothing was", () => {
+  it("never says no way, and says the steps found so far were kept as a draft, or that nothing was", () => {
     const before = judged({ advice: "read the list" });
     const kept = ending(one, before, judged({ advice: "read the list" })).message;
     expect(kept).toMatch(/^I have not finished this Flow yet\. /u);
     expect(kept).not.toContain("found no way");
-    expect(kept).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it.");
+    expect(kept).toContain("The steps I found so far were kept as a draft, so building again carries on from them.");
     expect(ending(one, before, judged({ advice: "read the list" }), false).message).toContain("Nothing was kept to carry on from.");
   });
 });
@@ -146,7 +146,7 @@ describe("the not-finished ending of run-musp4h2f-72e8ed99", () => {
     expect(message).toContain("I worked on it live 4 times: first exploring the page, then fixing it 3 times after testing what I had.");
     expect(message).not.toMatch(/decision|\bmodel\b|\bround\b|measurable|as before\)|handed back/iu);
     expect(ended.tried).toMatchObject({ rounds: 4, decisions: 60 });
-    expect(message.split("carries on from it")).toHaveLength(2);
+    expect(message.split("carries on from them")).toHaveLength(2);
     expect(message).not.toContain("What is left");
   });
 });
@@ -167,7 +167,7 @@ describe("the not-finished ending as a person reads it", () => {
     expect(said.message).not.toMatch(internal);
     expect(said.message).toMatch(/^I have not finished this Flow yet\. My last attempt to fix it got no further than the one before: the Flow came out exactly the same, the one thing you asked has a step as it did before, and no more of its steps worked when it was run from the start\. /u);
     expect(said.message).toContain("I worked on it live twice: first exploring the page, then fixing it once after testing what I had.");
-    expect(said.message).toContain("building again carries on from it");
+    expect(said.message).toContain("building again carries on from them");
     expect(said.tried).toMatchObject({ rounds: 2, decisions: 73 });
   });
 

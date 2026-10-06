@@ -23,6 +23,8 @@ import {
   runAutomationStudioLlmEvidenceLoop,
   type AutomationStudioLlmTaskResult
 } from "../index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE, automationStudioLlmEvidenceDecisionIssueCodes, automationStudioLlmEvidenceParseDecision } from "../evidence-loop-decision.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_SHAPE_INVALID_CODE, automationStudioLlmEvidenceDecisionRefusal } from "../evidence-loop/index.ts";
 
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];
 const complete = { kind: "complete", result: { done: true } };
@@ -752,5 +754,44 @@ describe("the account of an unreadable reply on an unusable decision", () => {
     expect(result.trace[0]).toMatchObject({ iteration: 1, decision: "unusable", resultCode: "llm.provider_malformed_response", resultReason: "content_unclosed", usage });
     expect(result.accounting).toMatchObject({ inputTokens: 21_524, outputTokens: 581, totalTokens: 22_105 });
     expect(result.accounting.estimatedCostUsd).toBeCloseTo(0.0013, 10);
+  });
+});
+
+// A rerun with no input is dropped (`../evidence-loop-decision.ts`): it would rerun the step with the argument that
+// was already wrong. Live run `run-musp39u8-9ac026ab` (R7, t194-w78) spent 11 decisions, up to five in a row, on an
+// amend_draft whose only amendment was such a rerun, refused with a shape text that never said a rerun needs input.
+
+const rerunOffered = { complete: true, amend: true };
+const amend = (...amendments: unknown[]) => ({ kind: "amend_draft", amendments });
+
+describe("an amend_draft whose only amendment is a rerun without input", () => {
+  it("is refused with feedback that names the missing input and {}", () => {
+    const raw = amend({ step: 3, change: "rerun" });
+    expect(automationStudioLlmEvidenceParseDecision(raw)).toBeUndefined();
+    const refusal = automationStudioLlmEvidenceDecisionRefusal(raw, undefined, rerunOffered);
+    expect(refusal?.issueCodes).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE]);
+    const feedback = automationStudioLlmUnusableDecisionFeedback({ issueCodes: refusal!.issueCodes, stepsWithoutProgress: 1, maxStepsWithoutProgress: 4, offers: { tools: true, ...rerunOffered } });
+    expect(feedback.issueCodes).toContain(AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE);
+    expect(feedback.instruction).toContain("A rerun needs input");
+    expect(feedback.instruction).toContain("the parameters to change");
+    expect(feedback.instruction).toContain("{} to run the step again as it stands");
+    // Not the plain shape text, which named neither.
+    expect(feedback.instruction).not.toContain("not one of the accepted shapes");
+  });
+
+  it("says so too when every amendment was dropped and one of them was such a rerun", () => {
+    const raw = amend({ step: 0, change: "remove" }, { step: 2, change: "rerun", settings: { note: "again" } });
+    expect(automationStudioLlmEvidenceDecisionIssueCodes(raw)).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE]);
+  });
+
+  it("leaves a rerun with input, and {} in particular, a decision", () => {
+    expect(automationStudioLlmEvidenceParseDecision(amend({ step: 3, change: "rerun", input: {} }))).toEqual({ kind: "amend_draft", amendments: [{ step: 3, change: "rerun", input: {} }] });
+    expect(automationStudioLlmEvidenceDecisionIssueCodes(amend({ step: 3, change: "rerun", input: {} }))).toBeUndefined();
+  });
+
+  it("keeps the plain shape refusal for an amend_draft that dropped nothing for want of input", () => {
+    const raw = amend({ step: 0, change: "remove" });
+    expect(automationStudioLlmEvidenceDecisionIssueCodes(raw)).toBeUndefined();
+    expect(automationStudioLlmEvidenceDecisionRefusal(raw, undefined, rerunOffered)?.issueCodes).toEqual([AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_SHAPE_INVALID_CODE]);
   });
 });

@@ -100,8 +100,8 @@ describe("a Flow build whose model reply arrives unreadable", () => {
     expect(diagnostic.code).not.toBe("flow_bootstrap.evidence_invalid_decision");
     expect(diagnostic.retryable).toBe(true);
     expect(diagnostic.ending).toMatchObject({ kind: "replies_unreadable", tried: { rounds: 1, decisions: 6, stepsInFlow: 0 } });
-    expect(diagnostic.ending?.message).toMatch(/^The build stopped because the model's replies could not be read: 6 in a row came back unreadable -- because its brackets did not match/u);
-    expect(diagnostic.ending?.message).toContain("In all, 6 of 6 replies could not be read, over one live round; each was paid for and counted in the build's budget.");
+    expect(diagnostic.ending?.message).toMatch(/^The build stopped because the replies it got back could not be read: 6 in a row came back unreadable -- because its brackets did not match/u);
+    expect(diagnostic.ending?.message).toContain("In all, 6 of 6 replies could not be read; each was paid for and counted in the build's budget.");
     // Every unreadable reply was paid for, and the build's accounting says so.
     expect(diagnostic.accounting?.estimatedCostUsd).toBeCloseTo(0.012, 6);
   });

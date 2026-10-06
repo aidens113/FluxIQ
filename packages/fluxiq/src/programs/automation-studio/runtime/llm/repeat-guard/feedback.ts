@@ -31,6 +31,34 @@ const LOOK_INSTRUCTION = "You already made this exact look -- the same tool with
   + "Change your approach: act on what the answers show (press, type into or choose a control the page shows), go to another page, use the page's own search or menus, or look for something different. "
   + "Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 
+/**
+ * Said instead for a call that failed only because a handle it names was never
+ * shown on this page (`handleUnshown`, `./outcomes.ts`): the call itself may be
+ * right, and the same call runs again once a call has shown or minted the handle.
+ */
+const HANDLE_UNSHOWN_INSTRUCTION = "You already made this exact call -- the same tool with the same input -- on this exact page, and it failed because a handle it names was never shown here (then.resultReason): no call had shown or minted that handle yet, and none has since, so it was not run. "
+  + "The call itself may be right. First make the call that shows the handle: look at the page, which lists each control under its handle, "
+  + "or for a list's extraction handle detect the list's repeating structure from one of its items, which mints the handle and its fields. "
+  + "Once a call has shown it, this same call may be made again with the handle exactly as shown. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+
+/**
+ * Said instead for a call that runs the draft, made again on the same draft and
+ * page after it changed nothing (`same_draft`): `run-musr9pv3-f4bf6256` sent
+ * one passing `core.run_flow` about twenty times over an unchanged draft.
+ */
+const DRAFT_INSTRUCTION = "This exact call -- the same tool with the same input -- already ran on this unchanged draft and this unchanged page, and changed nothing: its result is shown above, under sameAsCall. "
+  + "Running it again on the same draft and page gives the same result, so it was not run. "
+  + "If that result, or a refused completion, says something is wrong, change the draft first (amend_draft: reorder, bind, mark optional, rerun with a corrected argument, add or drop the steps it names), then run it again; "
+  + "if nothing is wrong, do the next thing the instruction needs. Completing again over an unchanged draft that was refused is refused the same way. "
+  + "Repeats refused in a row, and completions refused again over the same draft, end this round, and the Flow so far is then tested and judged.";
+
+/** The instruction for one earlier outcome: a look, a part run, a handle never shown, or any other call. */
+function instructionFor(earlier: AutomationStudioLlmEvidenceRepeatedOutcome): string {
+  if (earlier.outcome === "same_answer") return LOOK_INSTRUCTION;
+  if (earlier.outcome === "same_draft") return DRAFT_INSTRUCTION;
+  return earlier.handleUnshown ? HANDLE_UNSHOWN_INSTRUCTION : INSTRUCTION;
+}
+
 /** The note shown for one refused repeat. */
 export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
   toolId: string;
@@ -45,10 +73,11 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
     then: {
       outcome: input.earlier.outcome,
       ...(input.earlier.resultCode ? { resultCode: input.earlier.resultCode } : {}),
-      ...(input.earlier.resultReason ? { resultReason: input.earlier.resultReason } : {})
+      ...(input.earlier.resultReason ? { resultReason: input.earlier.resultReason } : {}),
+      ...(input.earlier.handleUnshown ? { handleUnshown: true } : {})
     },
     refusedInARow: input.inARow,
     maxRefusedInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW,
-    instruction: input.earlier.outcome === "same_answer" ? LOOK_INSTRUCTION : INSTRUCTION
+    instruction: instructionFor(input.earlier)
   };
 }

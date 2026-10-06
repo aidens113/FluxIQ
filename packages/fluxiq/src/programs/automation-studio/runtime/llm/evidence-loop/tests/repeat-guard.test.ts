@@ -135,3 +135,74 @@ describe("a call already tried on this same page", () => {
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "act_already_named" }] });
   });
 });
+
+/**
+ * `run-musr9pv3-f4bf6256`'s friend requests: a list read and a Confirm press
+ * that repeats over its rows. A part run replays the read (applied: a read ran)
+ * and checks the press, which declares a lasting effect, without pressing it (`verified`),
+ * with no page states, as the live part runs reported none. `pressing` makes the
+ * replayed press act instead.
+ */
+function requests(pressing = false) {
+  const from = { location: "https://circleway.test/requests" };
+  return vi.fn(async ({ toolId, value }: { callId: string; toolId: string; value: JsonObject }) => {
+    if (value.replay === "step" && toolId === "read") return { kind: "llm_evidence_tool_execution", evidence: { ok: true, code: "core.replay.replayed", rows: 3 }, effectApplied: true, resultCode: "core.replay.replayed" };
+    if (value.replay === "verify") return { kind: "llm_evidence_tool_execution", evidence: { ok: true, code: "core.replay.verified" }, effectApplied: false, resultCode: "core.replay.verified" };
+    if (value.replay === "step") return { kind: "llm_evidence_tool_execution", evidence: { ok: true, code: "core.replay.replayed" }, effectApplied: true, resultCode: "core.replay.replayed" };
+    const states = { stateDigests: { before: "s1", after: "s1" } };
+    if (toolId === "read") return { kind: "llm_evidence_tool_execution", ...states, evidence: { rows: 3 }, effectApplied: true, resultCode: "web.inspect.succeeded", draft: { actionId: "web.read", effect: "observe", proposes: true, ranWith: { list: "requests" }, replay: { from } } };
+    return { kind: "llm_evidence_tool_execution", ...states, evidence: { ok: true }, effectApplied: true, resultCode: "web.action.succeeded", draft: { actionId: "web.click", effect: "mutate", proposes: true, ranWith: { target: "Confirm", ...(pressing ? {} : { consequences: ["social_connection"] }) }, replay: { from } } };
+  });
+}
+
+/** The completion check refuses the plan every time, as `flow_bootstrap.completion_refused` did from 0071 to 0182. */
+const refusingPlan = () => ({ ok: false as const, issueCodes: ["flow_draft.repeat_not_after_its_source"], feedback: { code: "flow_bootstrap.completion_refused" } });
+const partRun = (index: number) => ({ kind: "tool_call", callId: `part.${index}`, toolId: "core.run_flow", input: { from: 1, to: 2 } });
+const builtDraft = [
+  { kind: "tool_call", callId: "read.1", toolId: "read", input: { list: "requests" }, add: true },
+  { kind: "tool_call", callId: "press.1", toolId: "press", input: { target: "Confirm" }, add: true }
+];
+const partLoop = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof requests>) => runAutomationStudioLlmEvidenceLoop({
+  tools, decide, executeTool, maxIterations: 40, maxToolCalls: 40, propagateDecisionErrors: true, checkCompletion: refusingPlan,
+  unusableDecisions: { maxConsecutive: 30, stalled: () => stalledError }
+});
+const replays = (executeTool: ReturnType<typeof requests>) => executeTool.mock.calls.filter(([call]) => (call as { value: JsonObject }).value.replay !== undefined);
+
+describe("an identical call on an unchanged draft and page (run-musr9pv3-f4bf6256)", () => {
+  it("the same passing part run, sent again and again between refused completions: run once, refused unrun after, and the round stalls", async () => {
+    // Live (0066-0182): run_flow {from: 15, to: 16}, complete, run_flow, run_flow, complete ... to the 64-decision bound.
+    const cycle = [partRun(0), complete, partRun(0)];
+    const decide = vi.fn();
+    for (const decision of builtDraft) decide.mockResolvedValueOnce(decision);
+    decide.mockImplementation(async () => { const next = cycle[(decide.mock.calls.length - 3) % cycle.length]!; return next.kind === "tool_call" ? { ...next, callId: `d${decide.mock.calls.length}` } : next; });
+    const executeTool = requests();
+
+    await expect(partLoop(decide, executeTool)).rejects.toBe(stalledError);
+
+    // One part run reached the target (its read and its checked press); the next two were refused unrun, and the
+    // completion refused again over the same draft was the third in a row.
+    expect(replays(executeTool).map(([call]) => [call.callId, call.value.replay])).toEqual([["d3.1", "step"], ["d3.2", "verify"]]);
+    expect(decide).toHaveBeenCalledTimes(7);
+    const note = shownAt(decide, 5).find((entry) => entry.toolId === "core.repeat_check")?.value;
+    expect(note).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_refused", toolId: "core.run_flow", sameAsCall: "d3", then: { outcome: "same_draft", resultCode: "core.run_flow.ran" }, refusedInARow: 1 });
+    expect(String(note?.instruction)).toContain("unchanged draft");
+    expect(String(note?.instruction)).toContain("change the draft first");
+  });
+
+  it("runs the same part again once the draft has changed, and when the run pressed something", async () => {
+    const decide = vi.fn();
+    for (const decision of [...builtDraft, partRun(1), { kind: "amend_draft", amendments: [{ step: 2, change: "optional" }] }, partRun(2), complete]) decide.mockResolvedValueOnce(decision);
+    decide.mockResolvedValue(complete);
+    const executeTool = requests();
+    await expect(partLoop(decide, executeTool)).rejects.toBe(stalledError);
+    expect(replays(executeTool)).toHaveLength(4);
+    expect(shownAt(decide, 5).some((entry) => entry.toolId === "core.repeat_check")).toBe(false);
+
+    const pressed = vi.fn();
+    for (const decision of [...builtDraft, partRun(1), partRun(2), partRun(3)]) pressed.mockResolvedValueOnce(decision);
+    pressed.mockResolvedValue(complete);
+    const pressing = requests(true);
+    await expect(partLoop(pressed, pressing)).rejects.toBe(stalledError);
+    expect(replays(pressing)).toHaveLength(6);
+  });
+});

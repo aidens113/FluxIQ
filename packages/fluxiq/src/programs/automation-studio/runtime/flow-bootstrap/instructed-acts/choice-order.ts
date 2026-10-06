@@ -17,7 +17,7 @@
 // **It names the amendment that moves the choice (live run
 // `run-murzln6g-11debe1d`, C3).** Told eight times to "make the choice before
 // the step that does a2", the model never moved step 16: the sentence said
-// what to do and not how. `reorder` with `to` (`../../flow-draft/amendment.ts`)
+// what to do and not how. `reorder` with `to` (`../../flow-draft/amendment/move.ts`)
 // moves a step to a position, and the act's own position puts the choice just
 // before it.
 

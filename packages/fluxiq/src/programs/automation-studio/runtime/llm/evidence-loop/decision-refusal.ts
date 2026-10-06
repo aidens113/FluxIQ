@@ -38,9 +38,10 @@ export function automationStudioLlmEvidenceDecisionRefusal(
 ): { issueCodes: string[]; usage?: AutomationStudioLlmUsageSummary } | undefined {
   if (!decision) {
     const usage = usageOf(raw);
-    // A tool call the grammar read and refused for a reason it can name -- a
+    // A reply the grammar read and refused for a reason it can name -- a
     // binding on a node call that runs now, or one a written call cannot use
-    // (t252) -- says that reason rather than "not a shape".
+    // (t252), or an amend_draft left with nothing because its rerun carried no
+    // input (t194-w78) -- says that reason rather than "not a shape".
     const named = automationStudioLlmEvidenceDecisionIssueCodes(raw);
     return { issueCodes: named ?? [AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_SHAPE_INVALID_CODE], ...(usage ? { usage } : {}) };
   }

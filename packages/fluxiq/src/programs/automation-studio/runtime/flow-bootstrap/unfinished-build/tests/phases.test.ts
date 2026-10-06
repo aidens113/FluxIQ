@@ -159,7 +159,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     expect(outcome.ending.message).toContain("ran from its start, but it does not yet do all you asked");
     expect(outcome.ending.message).not.toContain("without failing");
     expect(outcome.ending.message).toContain("I worked on it live twice: first exploring the page, then fixing it once after testing what I had.");
-    expect(outcome.ending.message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it.");
+    expect(outcome.ending.message).toContain("The steps I found so far were kept as a draft, so building again carries on from them.");
     expect(outcome.ending.message).not.toMatch(/[a-z]+_[a-z]+|bootstrap\./u);
     expect(outcome.ending.message.length).toBeLessThanOrEqual(1_000);
     expect(outcome.kept).toEqual({ revision: 1, steps: 1 });
@@ -183,7 +183,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", tried: { rounds: 1, tested: "not_tested" } });
     expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.250, which left nothing for its next call\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
-    expect(outcome.ending.message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it.");
+    expect(outcome.ending.message).toContain("The steps I found so far were kept as a draft, so building again carries on from them.");
     expect(outcome.ending.message).not.toContain("not doable");
   });
 
@@ -296,7 +296,7 @@ describe("a build whose exploration stops before the Flow is ready", () => {
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost", notDone: [{ id: "a1" }, { id: "a1.quantity" }, { id: "a2" }], tried: { rounds: 1, decisions: 40, stepsInFlow: 0, tested: "not_tested" } });
     expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.250, which left nothing for its next call\. None of the 3 things you asked is done; still to do: /u);
-    expect(outcome.ending.message).toContain("No step I found belonged in the Flow. I explored live once over 40 decisions, and what held it up was that the Flow did not yet do what you asked. Nothing was kept to carry on from.");
+    expect(outcome.ending.message).toContain("No step I found belonged in the Flow. I worked on it live once, exploring the page. What held it up was that the Flow did not yet do what you asked. Nothing was kept to carry on from.");
   });
 
   it.each(["llm_evidence_loop.cancelled", "llm_evidence_loop.invalid_configuration", "llm_evidence_loop.evidence_limit"] as const)("retains every round when a later round ends %s", async (code) => {

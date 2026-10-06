@@ -145,7 +145,8 @@ describe("a Flow build that stops with nothing in its Flow", () => {
     expect(diagnostic.ending).toMatchObject({ kind: "budget_exhausted", bound: "calls", tried: { stepsInFlow: 0, decisions: 12 } });
     expect(diagnostic.ending?.message).toMatch(/^The build stopped at its limit of 12 model calls before the Flow was finished\./u);
     expect(diagnostic.ending?.message).toContain("No step I found belonged in the Flow.");
-    expect(diagnostic.ending?.message).toMatch(/I explored live (?:once|\d+ times) over 12 decisions, and what held it up was that /u);
+    expect(diagnostic.ending?.message).toMatch(/I worked on it live (?:once|twice|\d+ times)[^.]*\. What held it up was that /u);
+    expect(diagnostic.ending?.message).not.toMatch(/\bdecisions?\b/u);
   });
 });
 

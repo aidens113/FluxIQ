@@ -77,7 +77,8 @@ export function automationStudioFlowBootstrapNotDoneSaid(notDone: AutomationStud
 
 /** A refusal the model was shown, as the clause that finishes "... because ...", in a person's words (never "the model"). First match wins. */
 const BLOCKED_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/^bootstrap\.instructed_act_missing$/u, "the Flow did not yet do what you asked"],
+  // An act no step does, or only a step the Flow may skip does (`../instructed-acts/optional-only.ts`).
+  [/^bootstrap\.instructed_act_(?:missing|only_optional)$/u, "the Flow did not yet do what you asked"],
   [/^bootstrap\.cannot_answer_instruction$/u, "the Flow could not give the answer you asked for"],
   [/dry_run|replay/u, "a step did not work when the Flow was run from its start"],
   [/permission/u, "a step needed your permission"],

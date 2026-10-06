@@ -141,11 +141,13 @@ function rerun(step: number) {
 
 /**
  * Rerun both carried steps, the first then the second. A rerun takes its
- * step's place and the step it replaced stays listed, withdrawn, just after it
- * (`llm/evidence-loop/rerun-replacement.ts`): once `f1` is rerun the draft
- * reads rerun, `f1` withdrawn, `f2`, so `f2` is then step 3.
+ * step's own number and no other step's number changes: the step it replaced
+ * stays listed, withdrawn, at the end of the draft
+ * (`llm/evidence-loop/rerun-replacement.ts`, t195 run `run-musp474o-e0ed7432`):
+ * once `f1` is rerun the draft reads rerun, `f2`, `f1` withdrawn, so `f2` is
+ * still step 2.
  */
-const RERUN_CARRIED = [rerun(1), rerun(3)];
+const RERUN_CARRIED = [rerun(1), rerun(2)];
 
 /** Each reply in turn, the last one repeated. */
 function inOrder(replies: unknown[]) {
