@@ -106,6 +106,26 @@
 // step left unreached is not a refusal and never travels as one: it is
 // `unreached`, beside `refused` as `moved` is, each entry with a `note` saying
 // which step before it does not bring it to its page and which steps did.
+//
+// **A step that did not work has no result to stand (live run
+// `run-mustvzvg-99695308`, C4).** The read rerun as step 8 was refused
+// `malformed_handle` and never ran; four identical reruns of it were each
+// refused `changes_nothing` in words written for a read that ran -- "its result
+// stands as shown ... go on to the act" -- and the model resent the same call
+// until the round stalled. A `changes_nothing` about a step that did not work
+// now says that exact call was refused before and would be refused again,
+// names the step's own codes and the call whose result says what was refused
+// (code-shaped words only, never a page's), and says to change exactly that,
+// with `null` to remove a key, or to gather new evidence.
+//
+// **Every refusal names its way out (W2, refusal churn).** Many reasons got a
+// `next` only when a checklist existed, `no_such_step` only for the next free
+// number, and `already_so`, `no_such_position`, `run_by_the_loop`,
+// `not_a_kept_step`, `did_not_work`, `act_on_a_read`, the `bind_*` reasons and
+// `rerun_holds_binding` often none; a refusal with no way out is resent. Every
+// reason now has a `next` in the draft's own numbers naming the amendment or
+// call to send instead, with or without a checklist (`fallback`, below), and
+// ends with the acts the checklist still shows not done when there is one.
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftUnreachedStep } from "../flow-draft/index.ts";
@@ -136,7 +156,7 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   no_step_before_it: "This change was about the step before the one it named, and there is none. Name the step it is about: check for only_if, over for repeat.",
   over_not_before: "repeat goes on the act that is done to each row -- the press, or the first of the steps done to a row -- never on the step that lists the rows. over names that listing, and it must come before the act: send {\"step\": <the act>, \"change\": \"repeat\", \"over\": <the listing>}. When the listing comes after the act, sending that again is refused again: move the listing before the act with reorder, {\"step\": <the listing>, \"change\": \"reorder\", \"to\": <the act>}, and send the repeat beside it in the same decision -- every number in one decision names the step as the draft entry shows it, and the draft is renumbered once, after the whole decision. When no step does the act to a row yet, do it to one row the listing kept and add it first: there is nothing to repeat until then.",
   not_a_kept_step: "It named a step the Flow does not contain -- one dropped, marked exploratory, or that did not work, or the attempt a rerun replaced. Routing describes the Flow, so it may only name steps the Flow runs; an attempt a rerun replaced is changed through the step that replaced it.",
-  changes_nothing: "This identical request was not sent again on the same state. Inspect the previous result: only if it actually returned the intended rows should you go on to the act; otherwise correct the failed/refused argument or gather new evidence. A rerun patch merges over the step's argument: an omitted key remains, and null explicitly removes an unneeded key. Required parameters still need valid values.",
+  changes_nothing: "This identical request was not sent again on the same state. Inspect the previous result: only if it actually returned the intended rows should you go on to the act; otherwise correct the failed/refused argument or gather new evidence. A rerun patch merges over the step's argument: an omitted key remains, and null explicitly removes an unneeded key. Required parameters still need valid values. A step whose disposition is did_not_work was refused and never ran, so it has no result to go on with, and the same call would be refused again: change exactly what its refusal named.",
   did_not_work: "That step did not work, so it is already out of the Flow and nothing needs dropping or keeping about it. The only amendment that changes it is rerun with a corrected argument; or run the action again as a new call. If the Flow does not need it, leave it alone.",
   already_in_flow: "That step is already in the Flow (inResult: true). Every step with inResult true is part of the finished Flow as it stands, so there is nothing to confirm: do not keep it again. Run what the Flow still lacks, or complete.",
   already_out: "That step is already out of the Flow (inResult: false), so dropping it again changes nothing. Leave it, or keep it to put it back.",
@@ -232,8 +252,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
   unreached?: readonly AutomationStudioFlowDraftUnreachedStep[] | undefined;
 }): JsonObject {
   const refused = input.refusals.map((refusal) => {
-    const next = reach(refusal) ?? takenOff(refusal) ?? replacedAttempt(refusal, input.actsNotDone) ?? secondCopy(refusal, input.steps, input.actsNotDone) ?? nextStep(refusal, input.steps) ?? actDone(refusal, input.actsNotDone)
-      ?? notRunYet(refusal, input.steps, input.actsNotDone) ?? stillToDo(refusal, input.actsNotDone);
+    const next = wayOut(refusal, input.steps, input.actsNotDone);
     return {
       step: refusal.step,
       reason: refusal.reason,
@@ -244,7 +263,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
       ...(refusal.reason === "bind_new_key" && refusal.bindable ? { bindable: refusal.bindable } : {}),
       // A repeat Core took off was never sent, so it is never sent again (header).
       ...(refusal.repeated && refusal.reason !== "repeat_taken_off" ? { repeated: true } : {}),
-      ...(next ? { next } : {})
+      next
     };
   });
   // Entries that are only repeats Core took off refuse no amendment of the model's (header).
@@ -287,10 +306,30 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
  * What the feedback reads of a draft step. The position always; from the loop,
  * which passes the draft itself, also whether the step changes something
  * (`effect`), whether that worked, and whether it is in the Flow -- enough to
- * tell a listing from a press. A step given as a position alone gets the
- * general reason and no `next`.
+ * tell a listing from a press. A step given as a position alone still gets a
+ * `next` by its number, from the reason alone (`fallback`).
+ *
+ * The rest is what tells a step that did not work from one that ran, read
+ * exactly as the draft entry and the amendments read it (`../flow-draft/entry.ts`,
+ * `shownDisposition`; `../flow-draft/amendment/apply.ts`), and what the step's
+ * own call said of it: its codes and call id, quoted only when code-shaped
+ * (`coded`), never a value from a page. `resultReason` is read when the draft
+ * step carries it; today's draft records only `resultCode` (`../evidence-loop.ts`).
  */
-type AutomationStudioDraftAmendmentFeedbackStep = { position: number; id?: string; effect?: string; effectApplied?: boolean; disposition?: string; routing?: { kind: string; over?: string } };
+type AutomationStudioDraftAmendmentFeedbackStep = {
+  position: number;
+  id?: string;
+  effect?: string;
+  effectApplied?: boolean;
+  disposition?: string;
+  routing?: { kind: string; over?: string };
+  proposes?: boolean;
+  written?: true;
+  checkedCandidate?: object;
+  resultCode?: string;
+  resultReason?: string;
+  callId?: string;
+};
 
 /**
  * What to do instead of a refused amendment about a listing, in the draft's
@@ -298,8 +337,10 @@ type AutomationStudioDraftAmendmentFeedbackStep = { position: number; id?: strin
  *
  * `over_not_before`: the listing is whichever of the two steps named only
  * reads -- `over`, or the step the repeat was put on (`13 repeat over 13`).
- * `changes_nothing`: the step rerun unchanged, when it only reads; when an act
- * after it already repeats over it, that a read after the act is a new step.
+ * `changes_nothing`: about a step that did not work, that the same call would
+ * be refused again (header, C4); otherwise the step rerun unchanged, when it
+ * only reads; when an act after it already repeats over it, that a read after
+ * the act is a new step.
  */
 function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string | undefined {
   const at = (position: number | undefined) => position === undefined ? undefined : steps.find((step) => step.position === position);
@@ -316,6 +357,8 @@ function nextStep(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: rea
   }
   if (refusal.reason === "changes_nothing") {
     const listing = at(refusal.step);
+    // A step that did not work never ran: it has no result to stand (header, C4).
+    if (listing && didNotWork(listing)) return refusedAgain(listing);
     if (!reads(listing)) return undefined;
     const loop = repeatOver(listing, steps);
     if (loop) return readAfterAct(listing.position, loop.position);
@@ -428,15 +471,14 @@ function takenOff(refusal: AutomationStudioFlowDraftAmendmentRefusal): string | 
 
 /**
  * What to do instead of amending or rerunning the attempt a rerun replaced, or
- * nothing when the refusal is not about one (header, `run-musp474o-e0ed7432`),
- * ending, like every other refusal's, with what the checklist still shows not
- * done when there is one.
+ * nothing when the refusal is not about one (header, `run-musp474o-e0ed7432`).
+ * Like every refusal's, it ends with what the checklist still shows not done
+ * when there is one (`wayOut`).
  */
-function replacedAttempt(refusal: AutomationStudioFlowDraftAmendmentRefusal, actsNotDone: readonly string[] | undefined): string | undefined {
+function replacedAttempt(refusal: AutomationStudioFlowDraftAmendmentRefusal): string | undefined {
   if (refusal.replacedBy === undefined) return undefined;
   const by = refusal.replacedBy;
-  const change = `Step ${refusal.step} is the attempt step ${by}'s rerun replaced: it is listed only as the record of what was replaced, and nothing changes it, so change step ${by} instead -- amend it, or rerun it with what still differs. When step ${by} already holds the argument you meant, its result stands as shown: go on from it.`;
-  return actsNotDone === undefined ? change : `${change} ${checklistLeft(actsNotDone)}`;
+  return `Step ${refusal.step} is the attempt step ${by}'s rerun replaced: it is listed only as the record of what was replaced, and nothing changes it, so change step ${by} instead -- amend it, or rerun it with what still differs. When step ${by} already holds the argument you meant, its result stands as shown: go on from it.`;
 }
 
 /**
@@ -445,14 +487,13 @@ function replacedAttempt(refusal: AutomationStudioFlowDraftAmendmentRefusal, act
  * `run-murwdp4f-35f976d2`, C9): the step that does it, and which kind of copy
  * it was, read off that step's effect where the draft says it.
  */
-function secondCopy(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[], actsNotDone: readonly string[] | undefined): string | undefined {
+function secondCopy(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string | undefined {
   if (refusal.reason !== "second_copy" || refusal.copyOf === undefined) return undefined;
   const effect = steps.find((step) => step.position === refusal.copyOf)?.effect;
   const what = effect === "mutate" ? "the same press on the same page"
     : effect === undefined ? "the same press on the same page, or a read of the same list with nothing changed in between"
       : "a read of the same list with nothing changed in between";
-  const told = `Step ${refusal.step} was not added to the Flow: step ${refusal.copyOf} already does this (${what}); the Flow does each step once.`;
-  return actsNotDone === undefined ? told : `${told} ${checklistLeft(actsNotDone)}`;
+  return `Step ${refusal.step} was not added to the Flow: step ${refusal.copyOf} already does this (${what}); the Flow does each step once.`;
 }
 
 /**
@@ -468,55 +509,171 @@ function secondCopy(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: r
 function actDone(refusal: AutomationStudioFlowDraftAmendmentRefusal, actsNotDone: readonly string[] | undefined): string | undefined {
   if (refusal.reason !== "act_already_named" || refusal.act === undefined || actsNotDone === undefined) return undefined;
   if (actsNotDone.includes(refusal.act)) return undefined;
-  return `The acts checklist shows ${refusal.act} done, so nothing is left to do for it: do not name it again. ${checklistLeft(actsNotDone)}`;
+  return `Step ${refusal.step} already names ${refusal.act}, and the acts checklist shows ${refusal.act} done, so nothing is left to do for it: do not name it again.`;
 }
 
 /**
  * What to do instead of amending a step that has not run yet: a refusal of the
  * number right after the draft's last step, which is the number the step would
- * take, says to run it first with add true, then what the checklist still
- * shows not done when there is one. Nothing for any other number.
+ * take, says to run it first with add true. Nothing for any other number,
+ * which `fallback` answers.
  *
  * Run `run-musp8nz1-dbd3905a` (t174-w108, Cause 6) had steps 1-13 and sent
  * `{step 14, add, act a1}` for an Add to cart press it had not run. It was told
  * `no_such_step` and the positions, but not that a step enters the draft by
  * running; it ran the press only in the decision after.
  */
-function notRunYet(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[], actsNotDone: readonly string[] | undefined): string | undefined {
+function notRunYet(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string | undefined {
   if (refusal.reason !== "no_such_step") return undefined;
-  const positions = existingPositions(steps);
-  const free = positions.length ? Math.max(...positions) + 1 : 1;
+  const free = lastPosition(steps) + 1;
   if (refusal.step !== free) return undefined;
-  const run = `There is no step ${free} yet: a step enters the draft only by running. Run that action first as a call with add true (and its act, if it does one), and it becomes step ${free}; do not amend it before it has run.`;
-  return actsNotDone === undefined ? run : `${run} ${checklistLeft(actsNotDone)}`;
+  return `There is no step ${free} yet: a step enters the draft only by running. Run that action first as a call with add true (and its act, if it does one), and it becomes step ${free}; do not amend it before it has run.`;
 }
 
 /**
- * What every other refusal is told to go on with: the acts the checklist still
- * shows not done, the one source `act_already_named` reads -- led, where the
- * refusal says something the model keeps re-sending, by what to do about its
- * step. A bind of the control a step acted on (`control`) is told as a press
- * even with no checklist to read. Nothing for an act named again that is still
- * to do: its todo is the fault, and naming the checklist would send it back to
- * the same act.
+ * What a refusal is told to do instead (header, W2): the most precise answer
+ * the refusal and the draft allow, or the reason's own way out by number
+ * (`fallback`), ending with the acts the checklist still shows not done -- the
+ * one source `act_already_named` reads -- when there is one. Not for an act
+ * named again that is still to do: its todo is the fault, and naming the
+ * checklist would send it back to the same act.
  *
  * Live run `run-musp4h2f-72e8ed99` re-sent `keep 9` and `drop 10` three
  * decisions running, refused `already_in_flow` and `already_out` with no word
  * of the four acts still to do, and bound a press's `target` four times.
  */
-function stillToDo(refusal: AutomationStudioFlowDraftAmendmentRefusal, actsNotDone: readonly string[] | undefined): string | undefined {
-  if (refusal.reason === "bind_new_key" && refusal.control === true) {
-    const press = `On step ${refusal.step}, ${refusal.parameter ?? "that parameter"} names the control the step acted on, not a value it typed: a press has no value to vary, and its control is found by its words each run, so it is never bound. Bind only a value a step typed, or a read's condition.`;
-    return actsNotDone === undefined
-      ? `${press} Leave step ${refusal.step} as it is and go on with what the Flow still lacks.`
-      : `${press} Leave step ${refusal.step} as it is. ${checklistLeft(actsNotDone)}`;
+function wayOut(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[], actsNotDone: readonly string[] | undefined): string {
+  const lead = reach(refusal) ?? takenOff(refusal) ?? replacedAttempt(refusal) ?? secondCopy(refusal, steps) ?? nextStep(refusal, steps) ?? actDone(refusal, actsNotDone)
+    ?? notRunYet(refusal, steps) ?? pressBound(refusal, actsNotDone !== undefined) ?? fallback(refusal, steps, actsNotDone);
+  if (actsNotDone === undefined) return lead;
+  if (refusal.reason === "act_already_named" && refusal.act !== undefined && actsNotDone.includes(refusal.act)) return lead;
+  return `${lead} ${checklistLeft(actsNotDone)}`;
+}
+
+/**
+ * A bind of the control a step acted on (`control`), told as a press, or
+ * nothing for any other refusal (live run `run-musp4h2f-72e8ed99`).
+ */
+function pressBound(refusal: AutomationStudioFlowDraftAmendmentRefusal, checklist: boolean): string | undefined {
+  if (refusal.reason !== "bind_new_key" || refusal.control !== true) return undefined;
+  const press = `On step ${refusal.step}, ${refusal.parameter ?? "that parameter"} names the control the step acted on, not a value it typed: a press has no value to vary, and its control is found by its words each run, so it is never bound. Bind only a value a step typed, or a read's condition.`;
+  return checklist ? `${press} Leave step ${refusal.step} as it is.` : `${press} Leave step ${refusal.step} as it is and go on with what the Flow still lacks.`;
+}
+
+/**
+ * Each reason's own way out, by the number the model wrote, for a refusal no
+ * more precise answer above covers: the amendment or call to send instead,
+ * placeholders in angle brackets where only the model knows the value
+ * (header, W2). Exhaustive by type, so a reason added to the draft's set fails
+ * to compile until it is given one here.
+ */
+function fallback(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[], actsNotDone: readonly string[] | undefined): string {
+  const n = refusal.step;
+  const step = steps.find((candidate) => candidate.position === n);
+  const key = refusal.parameter ?? "each value";
+  const rerun = `{"step": ${n}, "change": "rerun", "input": {<only the keys that change>}}`;
+  const ways: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"], () => string> = {
+    no_such_step: () => existingPositions(steps).includes(n)
+      ? `Step ${n} is in the draft, but the step its check, to or over named is not: name only a step listed under positions, as the draft shows it; a step not run yet is run first, as a new call with add true.`
+      : `There is no step ${n} in the draft: name a step listed under positions, as the draft shows it, or run the step you meant as a new call with add true.`,
+    already_so: () => `Step ${n} already says that, so it stays as it is: do not send the same change again. Send step ${n} a different change only if it should say something else; otherwise go on with what the Flow still lacks.`,
+    no_such_position: () => `Step ${n} was not moved: to, or a repeat's through, has to name a step the draft shows. Send {"step": ${n}, "change": "reorder", "to": <a step from 1 to ${Math.max(lastPosition(steps), 1)}>}, or leave step ${n} where it is.`,
+    run_by_the_loop: () => `Step ${n} was not rerun. Send it on its own in the next decision, with an input: ${rerun} -- one rerun per decision -- or, when its action is no longer offered, run an offered tool as a new call with add true.`,
+    no_step_before_it: () => `Step ${n} has no step before it in the Flow for this change to be about: name the step it is about -- {"step": ${n}, "change": "only_if", "check": <that step>}, or {"step": ${n}, "change": "repeat", "over": <the listing>} -- or leave step ${n} as it is.`,
+    over_not_before: () => `Step ${n}'s repeat over step ${refusal.over ?? "<the listing>"} was refused: the repeat goes on the act done to each row, over the listing before it. Send {"step": <the act>, "change": "repeat", "over": <the listing>}; when the listing comes after the act, send {"step": <the listing>, "change": "reorder", "to": <the act>} beside it, in the same decision.`,
+    not_a_kept_step: () => notKept(n, step),
+    did_not_work: () => `Step ${n} did not work, so it is already out of the Flow: leave it, and do not drop or keep it. To have what it tried, read what its result${under(step)} names as refused and rerun it with exactly that changed: ${rerun} -- or run the action again as a new call with add true.`,
+    already_in_flow: () => `Step ${n} is in the Flow already: leave it, and do not keep it again. Run what the Flow still lacks as a new call with add true, or complete.`,
+    already_out: () => `Step ${n} is out of the Flow already: leave it out, or send {"step": ${n}, "change": "add"} if the Flow needs it after all.`,
+    changes_nothing: () => `Step ${n}'s identical call was not sent again: on the same page it would do what it did before. Rerun it only with what should differ -- ${rerun} -- or leave step ${n} as it is and go on with what the Flow still lacks.`,
+    act_on_a_read: () => actOnRead(n, steps),
+    act_already_named: () => refusal.act !== undefined && actsNotDone?.includes(refusal.act)
+      ? `Step ${n} already names ${refusal.act}, and the checklist still shows it not done: naming it again changes nothing. Its todo says why and which step: correct exactly that step -- rerun it with a corrected argument -- or run the act's own control as a new call with add true and act ${refusal.act}.`
+      : `Step ${n} already names ${refusal.act ?? "that act"}, so naming it again changes nothing: leave step ${n} as it is and go on with what the Flow still lacks, or complete.`,
+    bind_not_a_binding: () => `On step ${n}, ${key} is not a binding form. To bind it, send bind on step ${n} with ${key} set to {"$input": <name>, "test": <its value>} (or {"$row": <field>} inside a repeat); to give it another concrete value, rerun step ${n} with it: ${rerun}.`,
+    bind_new_key: () => refusal.bindable?.length
+      ? `Step ${n} ran with no value at ${key}: bind one of ${refusal.bindable.join(", ")} on step ${n} instead, or leave it as it is.`
+      : `Step ${n} has no value to bind at ${key}: leave step ${n} as it is. A value that should vary is bound on the step that typed it, or written into a new step with a new call with write true.`,
+    bind_row_outside_loop: () => `Step ${n} is in no repeat, so ${key} has no row to come from: send {"step": ${n}, "change": "repeat", "over": <the listing>} first and the bind after it, or bind ${key} as {"$input": <name>, "test": <its value>} when it is the same for every row.`,
+    bind_malformed: () => `Write ${key} on step ${n} again in one of the forms reasons.bind_malformed lists and send it again; to set a concrete value instead, rerun step ${n} with it: ${rerun}.`,
+    rerun_holds_binding: () => `Step ${n} holds a binding, so it runs only in the Flow: rerun it with a concrete value for every bound parameter -- {"step": ${n}, "change": "rerun", "input": {<each bound key: a value>}} -- or write the step you need as a new call to core.run_node with write true.`,
+    strands_a_step: () => `Step ${n} stays in the Flow: it brings the page to where a later step of the Flow acted. Leave step ${n} in, or drop that later step too if the Flow does not need it.`,
+    second_copy: () => `Step ${n} was not added to the Flow: a step of the Flow already does it, and the Flow does each step once. Leave it out and go on with what the Flow still lacks.`,
+    settings_rewrite_run: () => `Step ${n} keeps what it ran with. To act on another control or with another value, run that call as a new step with add true and its act; to correct step ${n}'s own argument, rerun it: ${rerun}.`,
+    repeat_taken_off: () => `Step ${n}'s repeat was taken off after this decision's moves, so it now runs once. If it should still repeat, send {"step": ${n}, "change": "repeat", "over": <the listing>} with the listing before it, in the numbers the draft now shows.`
+  };
+  return ways[refusal.reason]();
+}
+
+/**
+ * A routing, bind or act named a step that is not in the Flow: the look named
+ * itself, the step named is out of the Flow, or -- the step named being in it
+ * -- the step its check, to, over or through named is not.
+ */
+function notKept(n: number, step: AutomationStudioDraftAmendmentFeedbackStep | undefined): string {
+  if (step?.effect !== undefined && !(step.proposes ?? step.effect === "mutate")) {
+    return `Step ${n} only looked, so it is never in the Flow and does no act: leave it, and run the step that does what you meant as a new call with add true (and its act).`;
   }
-  if (actsNotDone === undefined) return undefined;
-  if (refusal.reason === "act_already_named" && refusal.act !== undefined && actsNotDone.includes(refusal.act)) return undefined;
-  const lead = refusal.reason === "already_in_flow" ? `Step ${refusal.step} is in the Flow already: leave it. `
-    : refusal.reason === "already_out" ? `Step ${refusal.step} is out of the Flow already: leave it out. `
-      : "";
-  return `${lead}${checklistLeft(actsNotDone)}`;
+  if (step && didNotWork(step)) return `Step ${n} did not work, so it is not in the Flow: rerun it with a corrected argument, {"step": ${n}, "change": "rerun", "input": {<only the keys that change>}}, then send this change again.`;
+  if (step?.disposition !== undefined && step.disposition !== "kept") {
+    return `Step ${n} is not in the Flow (inResult false): add it first, {"step": ${n}, "change": "add"}, and send this change again in the next decision -- or leave step ${n} out.`;
+  }
+  if (step?.disposition === "kept") {
+    return `Step ${n} is in the Flow, but the step its check, to, over or through named is not: name a step whose inResult is true, or add that step first with {"step": <that step>, "change": "add"} and send this change again in the next decision.`;
+  }
+  return `Name only steps whose inResult is true: step ${n} and the step its check, to, over or through named each have to be in the Flow -- add one that is not with {"step": <it>, "change": "add"} first, or leave step ${n} as it is.`;
+}
+
+/** An act named on a read: the press after it to name the act on, or that one is still to run. */
+function actOnRead(n: number, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string {
+  const lead = `Step ${n} only reads, so the act was not recorded on it; the rest of that change was made.`;
+  const press = steps.find((step) => step.position > n && step.effect === "mutate" && step.effectApplied !== false);
+  if (press) return `${lead} Name the act on the step that does it: {"step": ${press.position}, "change": "${press.disposition === "kept" ? "keep" : "add"}", "act": <the act>}, if step ${press.position} is that act's press.`;
+  const known = steps.some((step) => step.effect !== undefined);
+  return known
+    ? `${lead} No step after step ${n} does an act yet: run the press that does it as a new call with add true and its act.`
+    : `${lead} Name the act on the press that does it, {"step": <that press>, "change": "keep", "act": <the act>}, or run that press as a new call with add true and its act.`;
+}
+
+/**
+ * Whether a step did not work, read exactly as the draft entry shows it
+ * `did_not_work` and the amendments refuse it (`../flow-draft/entry.ts`,
+ * `../flow-draft/amendment/apply.ts`): a call that was performed, of the kind a
+ * Flow is made of or one that changes something, and did not take effect. A
+ * written or checked step was never performed, so it never failed.
+ */
+function didNotWork(step: AutomationStudioDraftAmendmentFeedbackStep): boolean {
+  return step.written !== true && step.checkedCandidate === undefined && step.effectApplied === false && (step.effect === "mutate" || step.proposes === true);
+}
+
+/**
+ * What an unchanged rerun of a step that did not work is told (header, C4):
+ * the call was refused and never ran, the same call would be refused again,
+ * and what to change -- read off its own result, named by its call -- or that
+ * new evidence comes first. Never that its result stands.
+ */
+function refusedAgain(step: AutomationStudioDraftAmendmentFeedbackStep): string {
+  const n = step.position;
+  const codes = [coded(step.resultCode), coded(step.resultReason)].filter((code): code is string => code !== undefined);
+  const said = codes.length ? ` (${codes.join(", ")})` : "";
+  return `Step ${n} did not work: this exact call was refused before${said} and would be refused again, so it was not sent, and there is nothing from it to go on with. `
+    + `Read what its result${under(step)} names as refused and change exactly that in a rerun: {"step": ${n}, "change": "rerun", "input": {<only the keys to change>}} -- the input merges over step ${n}'s stored argument, so a key the refusal named stays until you change it, and null removes it. `
+    + "Or gather new evidence first: look at the page again, or run the action as a new call.";
+}
+
+/** Where a step's result is, by its call id, when it has one that is code-shaped. */
+function under(step: AutomationStudioDraftAmendmentFeedbackStep | undefined): string {
+  const call = coded(step?.callId);
+  return call === undefined ? "" : ` under call ${call}`;
+}
+
+// A word Core may quote from a step: letters, digits and code punctuation, with
+// no space, so neither a page's text nor a value it carried can pass.
+const CODE_SHAPED = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$/u;
+
+/** The value when it is code-shaped, and nothing otherwise. */
+function coded(value: string | undefined): string | undefined {
+  return value !== undefined && CODE_SHAPED.test(value) ? value : undefined;
 }
 
 /** The acts the checklist still shows not done, to go on with, or that none are. */
@@ -539,4 +696,10 @@ function movedNote(move: { act: string; from: number; to: number }): string {
 /** Every position the draft has, ascending. */
 function existingPositions(steps: readonly { position: number }[]): number[] {
   return steps.map((step) => step.position).filter((position) => Number.isSafeInteger(position));
+}
+
+/** The draft's last position, or 0 for a draft with none. */
+function lastPosition(steps: readonly { position: number }[]): number {
+  const positions = existingPositions(steps);
+  return positions.length ? Math.max(...positions) : 0;
 }

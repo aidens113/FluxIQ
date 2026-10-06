@@ -5,10 +5,13 @@
 // On its own the doubt changes nothing. Beside one more fact it does: a
 // doubted step after which a step named for one of the act's own choices acted
 // at a different place only opened the page of those choices, and does not do
-// the act (`./standing.ts`, `step_only_opens_its_choices`, run mux6pndp).
+// the act (`./standing.ts`, `step_only_opens_its_choices`, run mux6pndp). So
+// does a record showing the step did something else -- chose one of the act's
+// options, cleared a layer, went to another page (`./act-evidence.ts`, W1);
+// the checklist then says that verdict in place of this doubt.
 import { automationStudioFlowDraftStepMovedTarget, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioInstructedAct } from "./contracts.ts";
-import { AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS } from "./kind-words.ts";
+import { AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS, automationStudioInstructedActNamesWord as namesWord } from "./kind-words.ts";
 
 /** A possible mismatch between an act claim and its known control; executes nothing, and alone never changes done/todo (see the header). */
 export function automationStudioInstructedActClaimDoubt(act: AutomationStudioInstructedAct, step: AutomationStudioFlowDraftStep, steps: readonly AutomationStudioFlowDraftStep[]): string | undefined {
@@ -22,9 +25,4 @@ export function automationStudioInstructedActClaimDoubt(act: AutomationStudioIns
     + `Those words do not name "${act.verb}" or its act kind, so the claim may describe a choice or preparation rather than the requested act. `
     + `The claim is kept. Review the control and what the step actually does; if the requested act needs a different control, author a distinct step for that act and name it there. `
     + `A checked rerun only verifies its target without repeating a lasting effect; it does not add a distinct action. The whole-Flow test and its judge decide.`;
-}
-
-function namesWord(text: string, word: string): boolean {
-  const escaped = word.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/gu, "\\$&").replace(/\s+/gu, "\\s+");
-  return escaped !== "" && new RegExp(`(?<![a-z])${escaped}(?![a-z])`, "iu").test(text);
 }

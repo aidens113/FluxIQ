@@ -172,13 +172,45 @@ describe("a check-out after an order", () => {
   it("is the same transaction as the order, which keeps its size", () => {
     const acts = automationStudioInstructedActs("Order one pack of ValueRidge Essentials Select-A-Size Paper Towels in the 6 Double Rolls size for pickup at my current store, and nothing else: whatever is already in my cart should be saved for later, not bought and not deleted. Check out as a guest as Dana Whitfield, email dana.whitfield@example.com, phone 555-014-2290, take the earliest pickup time on offer, and pay at pickup. Once the order is placed, give me a one-row table with columns order, item, quantity, total and pickup: the order number, the item as the confirmation names it, how many, the order total written like $12.97, and the pickup window exactly as the confirmation writes it.");
     expect(acts.map((act) => [act.id, act.kind, act.verb])).toEqual([["a1", "submit", "order"]]);
-    expect(acts[0]?.requires?.map((choice) => [choice.id, choice.value])).toEqual([["a1.size", "6 Double Rolls"]]);
+    // musp4h2f (row 9) and munovwp3 (cause 6): the pickup the order asks for,
+    // and the earliest slot its check-out clause asks for, are its choices too.
+    expect(acts[0]?.requires?.map((choice) => [choice.id, choice.value])).toEqual([["a1.size", "6 Double Rolls"], ["a1.fulfilment", "pickup"], ["a1.time", "earliest"]]);
+    expect(acts[0]?.requires?.at(-1)).toEqual({ id: "a1.time", kind: "set", of: "a1", choice: "variant", value: "earliest", quote: "the earliest pickup time" });
     expect(automationStudioInstructedActs("Buy the kettle, then checkout as a guest.").map((act) => act.verb)).toEqual(["buy"]);
+  });
+
+  it("hands the order only its fulfilment and time, never a quantity, a variant or a second of an id", () => {
+    const requiresOf = (instruction: string) => automationStudioInstructedActs(instruction).map((act) => act.requires?.map((choice) => [choice.id, choice.value]));
+    expect(requiresOf("Buy the kettle. Check out with three of them in blue for delivery in the first available slot.")).toEqual([[["a1.fulfilment", "delivery"], ["a1.time", "first available"]]]);
+    expect(requiresOf("Order the kettle for pickup. Check out for delivery.")).toEqual([[["a1.fulfilment", "pickup"]]]);
+    // A check-out asked alone chooses nothing.
+    expect(automationStudioInstructedActs("Check out for delivery in the earliest slot.")[0]).not.toHaveProperty("requires");
   });
 
   it("is still an act asked alone, or before the order", () => {
     expect(automationStudioInstructedActs("Check out the cart as a guest.").map((act) => act.verb)).toEqual(["check out"]);
     expect(automationStudioInstructedActs("Check out as a guest. Then order a second one.").map((act) => act.verb)).toEqual(["check out", "order"]);
+  });
+});
+
+// musp4h2f (row 9) and munovwp3 (cause 6, causes-early row 34): pickup and
+// the earliest slot were never read as asked for. Across the corpus exactly
+// these fulfilment and time choices are read, and nothing else changes.
+describe("the fulfilment and time choices of the realistic sites", () => {
+  const TIMED: Record<string, string[]> = {
+    "bigbox pickup cart": ["a2.fulfilment", "a3.fulfilment"],
+    "company book service": ["a1.time"],
+    "bigbox pickup order": ["a1.fulfilment", "a1.time"]
+  };
+
+  it.each(CONSEQUENTIAL)("reads exactly the intended ones in %s", (label, instruction) => {
+    const ids = automationStudioInstructedActs(instruction).flatMap((act) => (act.requires ?? []).map((choice) => choice.id));
+    expect(ids.filter((id) => /\.(?:fulfilment|time)$/u.test(id))).toEqual(TIMED[label] ?? []);
+  });
+
+  it("gives the boiler booking its earliest slot and nothing else", () => {
+    const [book] = automationStudioInstructedActs(CONSEQUENTIAL.find(([label]) => label === "company book service")?.[1] ?? "");
+    expect(book?.requires).toEqual([{ id: "a1.time", kind: "set", of: "a1", choice: "variant", value: "earliest", quote: "the earliest weekday morning slot" }]);
   });
 });
 

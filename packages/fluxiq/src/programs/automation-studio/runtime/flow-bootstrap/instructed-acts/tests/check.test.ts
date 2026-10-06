@@ -261,7 +261,11 @@ describe("a quantity or a size the instruction attaches to an item", () => {
   const go = (position: number, url: string) => step(position, { actionId: "web.output.browser-navigate", input: { node: "web.output.browser-navigate", parameters: { url } } });
   const press = (position: number) => step(position, { actionId: "web.output.dom-click", input: { node: "web.output.dom-click", parameters: { target: { handle: `h${position}` } } } });
   // s1 arrives; s2 consent; s4-s5 the store; s7-s8 search; s9 and s14 product pages; s12 and s15 the add presses.
-  const RUN_28_DRAFT = [go(1, START), press(2), press(4), press(5), step(7, { actionId: "web.output.dom-type" }), press(8), go(9, `${START}/p/1`), press(10), press(12), go(14, `${START}/p/2`), press(15)];
+  // "both for pickup" asks a2.fulfilment and a3.fulfilment too; each is chosen by a
+  // "Pickup" press of its own before its add (s11, s13, free positions), so each case
+  // here stays about the quantity and the sizes.
+  const pickup = (position: number, choice: string) => step(position, { actionId: "web.output.dom-click", input: { node: "web.output.dom-click", parameters: { target: { handle: `h${position}` } } }, words: { target: "Pickup" }, acts: [choice] });
+  const RUN_28_DRAFT = [go(1, START), press(2), press(4), press(5), step(7, { actionId: "web.output.dom-type" }), press(8), go(9, `${START}/p/1`), press(10), pickup(11, "a2.fulfilment"), press(12), pickup(13, "a3.fulfilment"), go(14, `${START}/p/2`), press(15)];
   const RUN_28_CLAIMS = [{ action: "a1", step: "d5" }, { action: "a2", step: "d12" }, { action: "a3", step: "d15" }];
   const check = (draftSteps: AutomationStudioFlowDraftStep[], acts: unknown) => checkAutomationStudioInstructedActs({ instructionText: RUN_28, startLocation: START, arrival: { node: "web.output.browser-navigate", parameter: "url" }, result: { summary: "x", acts: acts as never }, draftSteps });
 
@@ -392,8 +396,16 @@ describe("a repeat that stops one step short, and an act declared as a class nob
   // Pickup audit #5 (`run-muny5y17-a927214b`): the order and its check-out are one act, so Place order holds it alone.
   it("accepts Place order, declared move_money, as the order, with the size chosen by a step of its own", () => {
     const pickupOrder = "Order one pack of ValueRidge Essentials Select-A-Size Paper Towels in the 6 Double Rolls size for pickup at my current store, and nothing else: whatever is already in my cart should be saved for later, not bought and not deleted. Check out as a guest as Dana Whitfield, email dana.whitfield@example.com, phone 555-014-2290, take the earliest pickup time on offer, and pay at pickup. Once the order is placed, give me a one-row table with columns order, item, quantity, total and pickup: the order number, the item as the confirmation names it, how many, the order total written like $12.97, and the pickup window exactly as the confirmation writes it.";
-    const draft = [step(1, { actionId: "web.navigate" }), step(2), step(3, { input: { consequences: ["move_money"] } })];
-    expect(checkAutomationStudioInstructedActs({ instructionText: pickupOrder, result: { summary: "x", acts: [{ action: "a1", step: "d3" }, { action: "a1.size", step: "d2" }] }, draftSteps: draft }).ok).toBe(true);
+    // "for pickup" and "the earliest pickup time" ask a1.fulfilment and a1.time: a "Pickup" press (d3)
+    // and the earliest slot's press (d4), each of its own, before Place order (now d5).
+    const draft = [
+      step(1, { actionId: "web.navigate" }),
+      step(2),
+      step(3, { words: { target: "Pickup" }, acts: ["a1.fulfilment"] }),
+      step(4, { words: { target: "2pm–3pm" }, acts: ["a1.time"] }),
+      step(5, { input: { consequences: ["move_money"] } })
+    ];
+    expect(checkAutomationStudioInstructedActs({ instructionText: pickupOrder, result: { summary: "x", acts: [{ action: "a1", step: "d5" }, { action: "a1.size", step: "d2" }] }, draftSteps: draft }).ok).toBe(true);
   });
 });
 

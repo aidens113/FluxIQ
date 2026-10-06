@@ -48,6 +48,17 @@
 // about the rerun, so the model is told which step to change rather than why
 // this one would not run.
 
+//
+// **A rerun of a step the domain refused** (live run `run-mustvzvg-99695308`,
+// C3) merges over the input that was refused, like any other: the draft step
+// keeps only the domain's result code, not the keys its refusal named, and a
+// failed attempt records no link to the input that last ran. What keeps a
+// refused key out of the next call is the merge itself: an object the model
+// writes out again drops what it was shown and left out (`./rerun-input.ts`),
+// which is why the domain's `deniedEvidenceKeys` reach the merge. A key the
+// patch kept without writing is still named with the rerun's answer
+// (`retained`, `../rerun-arguments/note.ts`), with how to remove it.
+
 import type { JsonObject } from "../../../../../core/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLACED_ATTEMPT_REASON,
@@ -117,7 +128,7 @@ export function automationStudioLlmEvidenceRerunRequest(
       continue;
     }
     // Only the keys that change, merged over what the step ran with (`./rerun-input.ts`).
-    const merged = automationStudioLlmEvidenceRerunInput(step.input, amendment.input);
+    const merged = automationStudioLlmEvidenceRerunInput(step.input, amendment.input, deniedEvidenceKeys);
     const collected = automationStudioRerunRetainedPaths(step.input, amendment.input, merged);
     const paths = automationStudioRerunScreenedPaths(collected.paths, deniedEvidenceKeys);
     const retained = paths.length ? { step: step.position, paths, parameters: collected.parameters } : undefined;
