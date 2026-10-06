@@ -489,7 +489,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
             ? automationStudioFlowBootstrapProviderUnavailable({ ...told, providerUnavailable: kind.providerUnavailable, changes: record.filter((row) => row.decision === "tool_call" && row.effectApplied === true).length, kept: kept !== undefined })
           : typeof kind === "object"
             ? automationStudioFlowBootstrapRepliesUnreadable({ ...told, unreadable: kind.unreadable, kept: kept !== undefined })
-            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.purse?.ceilingUsd ?? input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRounds }, spending: kind === "cost" ? costSpending(phase2.progress.exhaustion?.costRefusal, input.purse, spentBefore, spent.estimatedCostUsd, unfunded, judgedAtStopUsd, unchangedAtStop) : undefined }),
+            : automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: kind, kept: kept !== undefined, sizes: { maxCostUsd: input.purse?.ceilingUsd ?? input.budget.maxCostUsd, maxDurationMs: input.budget.maxDurationMs, maxTotalTokens: input.budget.maxTotalTokens, declaredCalls: input.declaredCalls, maxRounds }, spending: kind === "cost" ? costSpending(phase2.progress.exhaustion?.costRefusal, input.purse, spentBefore, spent.estimatedCostUsd, unfunded, judgedAtStopUsd, unchangedAtStop) : undefined, lastRound: phase2.progress.trace }),
         progress: { trace: [...record], accounting: { ...spent }, ...(phase2.progress.exhaustion ? { exhaustion: phase2.progress.exhaustion } : {}) },
         lastIssueCodes: phase2.lastIssueCodes,
         kept,
