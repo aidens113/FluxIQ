@@ -24,9 +24,10 @@ describe("the choices an instruction attaches to an item it adds", () => {
   });
 
   it.each([
-    ["the crossborder hub to cart", "On Farbazaar, put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart: Space Grey, the 7-in-1 version, shipped from Spain. Collect that store's coupon while you are on the item. Do not buy anything.", [["a1", [["a1.quantity", "quantity", "three"], ["a1.colour", "variant", "Space Grey"], ["a1.version", "variant", "7-in-1"]]], ["a2", []]]],
+    ["the crossborder hub to cart", "On Farbazaar, put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart: Space Grey, the 7-in-1 version, shipped from Spain. Collect that store's coupon while you are on the item. Do not buy anything.", [["a1", [["a1.quantity", "quantity", "three"], ["a1.colour", "variant", "Space Grey"], ["a1.version", "variant", "7-in-1"], ["a1.origin", "variant", "Spain"]]], ["a2", []]]],
     ["the everything-store kettles", "Put two Tidewell electric kettles in sage green, 1.7 litre, sold by Brightaisle itself, in my cart, and move the phone case that is already in my cart to Save for later.", [["a1", [["a1.quantity", "quantity", "two"], ["a1.colour", "variant", "sage green"]]], ["a2", []]]],
-    ["the crossborder hub bought", "On Farbazaar, buy two of the Voltbay USB-C hub sold by Voltbay Official Store: Space Grey, the 7-in-1 version, shipped from Spain, with standard shipping.", [["a1", [["a1.quantity", "quantity", "two"], ["a1.colour", "variant", "Space Grey"], ["a1.version", "variant", "7-in-1"]]]]],
+    ["the crossborder hub bought", "On Farbazaar, buy two of the Voltbay USB-C hub sold by Voltbay Official Store: Space Grey, the 7-in-1 version, shipped from Spain, with standard shipping.", [["a1", [["a1.quantity", "quantity", "two"], ["a1.colour", "variant", "Space Grey"], ["a1.version", "variant", "7-in-1"], ["a1.origin", "variant", "Spain"]]]]],
+    ["where it ships from, named with the", "Add the Harbour rain jacket, ships from the UK, to my cart.", [["a1", [["a1.origin", "variant", "UK"]]]]],
     ["a size by letter", "Add the Harbour rain jacket in size M to my cart.", [["a1", [["a1.size", "variant", "M"]]]]],
     ["a colour on its own", "Add the enamel mug in blue to my basket.", [["a1", [["a1.colour", "variant", "blue"]]]]],
     ["a quantity in digits", "Add 3 packs of the paper towels to my cart.", [["a1", [["a1.quantity", "quantity", "3"]]]]],
@@ -52,7 +53,8 @@ describe("the choices an instruction attaches to an item it adds", () => {
     ["a colour in the product's name", "Add the Navy Harbour jacket to my cart."],
     ["a save, which chooses nothing", "Save two tables in the large size to my saved items."],
     ["a store switch", "Switch my pickup store to the one in Green Lane."],
-    ["a count the verb does not govern", "Add the kettle to my cart if two or more are in stock."]
+    ["a count the verb does not govern", "Add the kettle to my cart if two or more are in stock."],
+    ["a place that names no warehouse", "Add the kettle shipped from the warehouse to my cart."]
   ])("reads no choice from %s", (_label, instruction) => {
     const acts = automationStudioInstructedActs(instruction);
     expect(acts.length).toBeGreaterThan(0);
@@ -72,7 +74,8 @@ describe("an act's choices have no cap", () => {
         ["a1.version", "variant", "7-in-1"],
         ["a1.length", "variant", "2 metre"],
         ["a1.material", "variant", "braided"],
-        ["a1.finish", "variant", "matte"]
+        ["a1.finish", "variant", "matte"],
+        ["a1.origin", "variant", "Spain"]
       ]]
     ]);
   });

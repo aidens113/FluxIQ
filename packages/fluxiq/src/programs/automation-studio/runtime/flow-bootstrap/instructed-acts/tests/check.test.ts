@@ -422,7 +422,7 @@ describe("a choice the item's page already opens chosen", () => {
     at(10, "web.output.dom-click", { target: "Get coupons" }),
     at(11, "web.output.dom-click", { target: "Add to cart" })
   ];
-  const CLAIMS = [{ action: "a1", step: "d11" }, { action: "a2", step: "d10" }, { action: "a1.quantity", step: "d8" }, { action: "a1.version", step: "d6" }];
+  const CLAIMS = [{ action: "a1", step: "d11" }, { action: "a2", step: "d10" }, { action: "a1.quantity", step: "d8" }, { action: "a1.version", step: "d6" }, { action: "a1.origin", step: "d7" }];
 
   it("refuses the colour left unnamed, and tells the model not to press an option already chosen but to name the step after which it showed", () => {
     const verdict = checkAutomationStudioInstructedActs({ instructionText: HUB, result: { summary: "x", acts: CLAIMS }, draftSteps: HONEST, startLocation: START });
