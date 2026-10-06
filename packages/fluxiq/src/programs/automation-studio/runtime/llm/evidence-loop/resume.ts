@@ -238,6 +238,21 @@ function instructionFor(resume: AutomationStudioLlmEvidenceLoopResume): string {
   return resume.judgement.test === "not_tested" ? UNTESTED_REPAIR_INSTRUCTION : REPAIR_INSTRUCTION;
 }
 
+/**
+ * Said after a repair's instruction when its judgement names where each step
+ * to fix starts (`../../flow-bootstrap/unfinished-build/judgement.ts`,
+ * `whereToFix`). Live run `run-muwansvz-a2b4a987` (lane C, R2-4): the repair
+ * looked and detected on the page the test left, results page 5, and every
+ * paging rerun built on that detect was refused.
+ */
+const WHERE_TO_FIX = "judgement.whereToFix says where each step to fix starts: look and detect there, not on the page the test left.";
+
+/** The instruction, with the pointer to `whereToFix` when the judgement carries it. */
+function withWhereToFix(instruction: string, resume: AutomationStudioLlmEvidenceLoopResume): string {
+  const where = resume.judgement?.whereToFix;
+  return Array.isArray(where) && where.length ? `${instruction} ${WHERE_TO_FIX}` : instruction;
+}
+
 /** The entry itself, under a call id of its own. */
 export function automationStudioLlmEvidenceResumeEntry(
   resume: AutomationStudioLlmEvidenceLoopResume,
@@ -251,7 +266,7 @@ export function automationStudioLlmEvidenceResumeEntry(
     proposableSteps: steps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
     outstanding: resume.outstandingIssueCodes.filter((code) => /^[a-z0-9_.:-]{1,100}$/iu.test(code)),
     ...(resume.judgement ? { judgement: resume.judgement } : {}),
-    instruction: instructionFor(resume)
+    instruction: withWhereToFix(instructionFor(resume), resume)
   };
   return { callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID}.0`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RESUMED_TOOL_ID, value };
 }

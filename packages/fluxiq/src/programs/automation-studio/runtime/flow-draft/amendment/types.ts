@@ -61,7 +61,8 @@ export type AutomationStudioFlowDraftAmendment = {
 export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
   reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named"
-    | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed" | "rerun_holds_binding" | "repeat_taken_off";
+    | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed" | "rerun_holds_binding" | "repeat_taken_off"
+    | "strands_a_step";
   /**
    * `over_not_before` only: the step the repeat named as `over`, so the
    * telling can say, in the draft's numbers, which step lists the rows and
@@ -136,4 +137,22 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    * `run-musp474o-e0ed7432`). Refused under `./replaced-attempt.ts`'s reason.
    */
   replacedBy?: number;
+  /**
+   * `strands_a_step` only: a `drop` or `exploratory` refused because the step was the last step of
+   * the Flow that moved the target to the page a kept step acted on: that kept
+   * step, in the draft's shown numbers (`./strand-check.ts`, live run
+   * `run-muwao5n4-44977b2a`, D2-1).
+   */
+  strands?: number;
 };
+
+/**
+ * Not a refusal: a step of the Flow an applied decision newly left after a step
+ * that does not leave the target on the page it acted on, so when the Flow runs
+ * it runs on another page (`./strand-check.ts`, live run
+ * `run-muwao5n4-44977b2a`, D2-1). Returned beside `refused`, never in it, so
+ * nothing that counts refusals counts it. `step` is the step, `after` the step
+ * before it in the Flow now, and `reachedBy` the steps that moved the target to
+ * its page while exploring (possibly none), all in the draft's shown numbers.
+ */
+export type AutomationStudioFlowDraftUnreachedStep = { step: number; after: number; reachedBy: number[] };

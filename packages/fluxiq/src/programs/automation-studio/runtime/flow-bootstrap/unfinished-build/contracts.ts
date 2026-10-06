@@ -307,6 +307,15 @@ export type AutomationStudioFlowBootstrapJudgement = {
   /** A finished round the judge sent back: what it found. Absent for a round that stopped short. */
   judge?: AutomationStudioFlowBootstrapJudgedWrong;
   /**
+   * The positions, in the Flow, of the steps the repair is to fix whose start
+   * is not where the test left the page: the steps that did not work when the
+   * Flow was run from its start, or, for a Flow a judge said `no` to, its
+   * reads (`./judgement.ts`, `stepsToFix`). The repair is told where each
+   * starts, so it looks and detects there (run `run-muwansvz-a2b4a987`, R2-4).
+   * Absent when there is none.
+   */
+  fixSteps?: number[];
+  /**
    * The Flow's replay signature (`automationStudioFlowDraftReplaySignature`):
    * a repair after a judged Flow advanced only if this changed, or more of the
    * checklist was done.

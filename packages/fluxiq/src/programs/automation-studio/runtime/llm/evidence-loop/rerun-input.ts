@@ -97,16 +97,42 @@
 // stored `maxPages: 3` is a second bound), and a value several left-out keys could
 // be renames none. This cannot remove a withheld key: the model cannot write the
 // value of one it never saw. Leaving a key out still keeps it; `null` removes it.
+//
+// **A patch that changes the step's `node` drops the old node's parameters
+// (`run-muwaobm2-882cadd9`, draft step 14).** The same rule as a column's `kind`,
+// one level up: a node's parameters belong to that node. Decision 0052 reran a
+// quantity typing, `{node: "web.output.dom-type", parameters: {target, text: "3",
+// submit: false}}`, as the clean click `{node: "web.output.dom-click",
+// parameters: {target: {handle: "t958"}}}`; the merge kept `text` and `submit`, so
+// the call that ran was a click carrying `text: "3"`, Core counted the quantity
+// as set by a Spain click, and the same clean rerun, sent five more times
+// (0060-0092), merged back into the same call every time. So when a patch changes
+// `node` from one string to another, the stored `parameters` leave with the old
+// node: the result's parameters are the patch's as written, and none when it
+// writes none. Every other top-level key merges as before. Where the node stays,
+// nothing changes -- withheld keys are kept as described above.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioRerunPatchPlacement } from "../rerun-arguments/index.ts";
 
 /** The key an object names what it is by. */
 const KIND_KEY = "kind";
+/** The key a step's argument names its node by, and the key its node's parameters sit under. */
+const NODE_KEY = "node";
+const PARAMETERS_KEY = "parameters";
 
 /** The argument a rerun runs with: `patch` merged over `previous` (RFC 7386). */
 export function automationStudioLlmEvidenceRerunInput(previous: JsonObject | undefined, patch: JsonObject): JsonObject {
   const target = structuredClone(previous ?? {});
-  return mergePatch(target, automationStudioRerunPatchPlacement(target, patch));
+  const placed = automationStudioRerunPatchPlacement(target, patch);
+  if (changesNode(target, placed)) delete target[PARAMETERS_KEY];
+  return mergePatch(target, placed);
+}
+
+/** Whether the patch names a node other than the one the step ran: the stored parameters are that node's, not this one's. */
+function changesNode(target: JsonObject, patch: JsonObject): boolean {
+  const was = target[NODE_KEY];
+  const becomes = patch[NODE_KEY];
+  return typeof was === "string" && typeof becomes === "string" && was !== becomes;
 }
 
 function mergePatch(target: JsonObject, patch: JsonObject): JsonObject {

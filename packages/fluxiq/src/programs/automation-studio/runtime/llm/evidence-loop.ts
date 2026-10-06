@@ -26,7 +26,7 @@ import {
   automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest,
-  automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceSearchingWithoutActing,
+  automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
   automationStudioLlmEvidenceHandleCompletion,
   automationStudioLlmEvidenceHandleFailedCall,
   automationStudioLlmEvidenceLookWithdrawal,
@@ -478,14 +478,14 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
     const draftChanged = decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act, place: decision.place });
     automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring }); if (authoring) automationStudioFlowDraftDropReversals(draftSteps); // A rerun that took a kept step's place joined the Flow too (`../flow-draft/reversal.ts`).
-    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, rerunTook ? rerunReplaces : draftSteps.find((step) => step.callId === callId), { kind: rerunTook || (!refusedCall && (record.effect !== "mutate" || effectApplied || record.written === true)) ? "accepted" : "failed", callId }) : {};
+    const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, rerunTook ? rerunReplaces : draftSteps.find((step) => step.callId === callId), { kind: rerunTook || (!refusedCall && (record.effect !== "mutate" || effectApplied || record.written === true)) ? "accepted" : "failed", callId }) : undefined;
     // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
     const addedToFlow = authored?.advanced() === true;
     const pageState: AutomationStudioLlmEvidenceLoopProgress["pageState"] = stateBefore === undefined || stateAfter === undefined
       ? "unobserved"
       : stateBefore === stateAfter ? "unchanged" : "changed";
     recordRow(
-      { iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...settled, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) },
+      { iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...settled?.row, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) },
       { draftChanged, pageState }
     );
     // **What the loop learned, not what it ran.** The whole rule -- the four
@@ -506,8 +506,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // A look asked again and run once more: the same page is a step without
     // progress whatever its bytes, and a page that moved by itself is progress.
     const reask = verifying ? automationStudioLlmEvidenceReaskOutcome(verifying, { stateAfter, refused: lookRefused }) : undefined;
-    // A step the model added to its Flow is the draft advancing, wherever the page went.
-    if (addedToFlow || (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied }) && (reask === "moved" || (reask !== "repeat" && !repeated)))) {
+    // A step the model added to its Flow is the draft advancing, wherever the page went; a rerun that put back an identical step with the same result is not (`decision-handlers/refused-repeat.ts`).
+    if (settled?.unchanged) { const ended = automationStudioLlmEvidenceRerunChangedNothing(handling, iteration); if (ended) return ended; }
+    else if (addedToFlow || (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied }) && (reask === "moved" || (reask !== "repeat" && !repeated)))) {
       // Progress: a redirect about steps without it no longer holds.
       noProgress.cleared();
       automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID);
@@ -759,7 +760,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // The same call that already failed or changed nothing on this same page -- a part run, on this same draft -- is refused unrun,
     // before the repeat policy runs it again, so every action repeat is refused in one place and stalls the round at the third in a
     // row; a look that answered the same twice here is too, unless the policy answers it from memory (`repeat-guard/outcomes.ts`).
-    const blocked = wrappingUp ? undefined : handling.repeats.blocks(decision.toolId, decision.input);
+    // Never a rerun: it runs from its step's own page, where the amendment handler checked it, not the one the last call left (`same_amendment` too).
+    const blocked = wrappingUp || rerunning ? undefined : handling.repeats.blocks(decision.toolId, decision.input);
     const triedHere = blocked?.outcome === "same_answer" && (answeredBy !== undefined || reobservation) ? undefined : blocked;
     if (triedHere) {
       const next = automationStudioLlmEvidenceHandleRefusedRepeat(handling, iteration, decision, triedHere);

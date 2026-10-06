@@ -37,6 +37,9 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     // Only beside an edit that moved a step, which changed the Flow, so a card
     // shows it as partly done at most; here because the reasons are exhaustive by type.
     repeat_taken_off: "moving a step left a repeat unable to run, so it was taken off",
+    // A drop put back: it was the only step that brings the page to where a
+    // step still in the Flow acted (`flow-draft/amendment/strand-check.ts`).
+    strands_a_step: "that step is the only one that gets to the page a later step needs",
   } as const),
   repeated: Object.freeze({
     failed: "it was already tried exactly this way and did not work",

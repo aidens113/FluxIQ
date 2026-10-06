@@ -67,4 +67,18 @@ describe("decision history recorder", () => {
     expect(() => recorder.record(-1, call("b", "b"))).toThrow(/non-negative integer/);
     expect(() => recorder.record(4.5, call("b", "b"))).toThrow(/non-negative integer/);
   });
+
+  it("completes an amendment row once its rerun has run, as the same decision", () => {
+    const recorder = new AutomationStudioLlmDecisionContextRecorder();
+    recorder.record(19, { kind: "amendment", signature: "A", applied: 1, refusals: [{ step: 3, reason: "no_such_step", repeated: false }], withdrewChanged: [], rerun: 14 });
+    recorder.record(19, call("rerun.14", "web.click"));
+    recorder.settleAmendment(19, { refusals: [{ step: 14, reason: "act_already_named", repeated: true }], applied: 0, changed: "no" });
+    // A row from another iteration is never touched.
+    recorder.settleAmendment(20, { refusals: [], applied: 9, changed: "yes" });
+    expect(recorder.records()[0]!.decision).toEqual({
+      kind: "amendment", signature: "A", applied: 0, rerun: 14, withdrewChanged: [], changed: "no",
+      refusals: [{ step: 3, reason: "no_such_step", repeated: false }, { step: 14, reason: "act_already_named", repeated: true }]
+    });
+    expect(recorder.repeats("A")).toEqual({ times: 1, iterations: [19] });
+  });
 });

@@ -320,3 +320,22 @@ describe("the repair entry, for a Flow holding steps that never ran in this buil
     expect(instruction).not.toContain("notRunInThisBuild");
   });
 });
+
+// Live lane C (`run-muwansvz-a2b4a987`, R2-4): the repair round opened on results
+// page 5, where the test left the page, and looked and detected there. The
+// judgement now says where each step to fix starts (`whereToFix`), and the
+// instruction points the model at it.
+describe("a repair whose judgement says where each step to fix starts", () => {
+  const judgement = { stopped: "iterations", test: "replay_failed", stepsInFlow: 5, actsDone: 1, actsTodo: [], whereToFix: ["Step 5 starts on the page step 4 leaves."] };
+
+  it("tells the model to look and detect where that step starts, not where the test left the page", () => {
+    const instruction = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [], judgement }, [step(1)]).value.instruction as string;
+    expect(instruction).toContain("judgement.whereToFix says where each step to fix starts");
+  });
+
+  it("says nothing of it when the judgement names no such step", () => {
+    const { whereToFix: _where, ...rest } = judgement;
+    const instruction = automationStudioLlmEvidenceResumeEntry({ revision: 1, stopped: "judged_wrong", outstandingIssueCodes: [], judgement: rest }, [step(1)]).value.instruction as string;
+    expect(instruction).not.toContain("whereToFix");
+  });
+});

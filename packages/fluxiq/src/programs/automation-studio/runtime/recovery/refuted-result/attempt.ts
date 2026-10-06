@@ -163,6 +163,9 @@ function resultRepairInput(repair: AutomationStudioResultRepairDirective): JsonO
     })),
     fix: [...repair.fix],
     ...(repair.judgement ? { judgement: { ...repair.judgement } } : {}),
+    // Core's check of the rows the judgement names: without it a node repair
+    // weighs advice the result contradicts as if nothing said so (lane C).
+    ...(repair.checked?.length ? { checked: [...repair.checked] } : {}),
     ...(repair.withheld ? { withheld: true } : {})
   };
 }
