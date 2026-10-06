@@ -165,20 +165,34 @@ function isObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * The owed id the note sends the model to next: the first owed act's own owed
+ * choice before the act, since the press that does an act commits the choices
+ * made before it. Live run `run-muwaq9w3-baaa4e19`: with a2.quantity owed the
+ * note said "the one that does a2", the model pressed Add to cart at quantity
+ * 1, and then tried a repeat for the second pack.
+ */
+function nextOwed(owed: readonly string[]): string {
+  const first = owed[0]!;
+  const act = first.split(".")[0]!;
+  return owed.find((id) => id.startsWith(`${act}.`)) ?? first;
+}
+
 function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {
   // What is missing leads, because it is the only sentence here that says what
   // to do next rather than what not to do again.
   const said = stillMissing ? [RECORDS_MISSING] : [];
   const owed = actsMissing(input);
   if (owed.length) {
-    const named = namedStep(input.acts, owed[0]!);
+    const id = nextOwed(owed);
+    const named = namedStep(input.acts, id);
     // "Run it" only when no step names the act. Where one does, the checklist
     // says why it is not done, and running another step for the act is what
     // live run 36 did on this note: it confirmed a request its listing had left
     // out (E36).
     const next = named
-      ? ` Step ${named.step} already names ${owed[0]}, and the checklist says it is not done because ${named.todo}: correct step ${named.step} for that reason. Do not run another step for ${owed[0]}, and never act yourself on an item your listing left out.`
-      : ` Your next step is the one that does ${owed[0]}: run it and add it with act ${owed[0]}.`;
+      ? ` Step ${named.step} already names ${id}, and the checklist says it is not done because ${named.todo}: correct step ${named.step} for that reason. Do not run another step for ${id}, and never act yourself on an item your listing left out.`
+      : ` Your next step is the one that does ${id}: run it and add it with act ${id}.`;
     said.push(`The acts checklist still has ${owed.join(", ")} not done by any step in your Flow (actsMissing). Going back to a page you have already been on, or pressing what you already pressed, does not do them.`
       + `${next} Complete only once no act is missing.`);
   }
