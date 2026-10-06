@@ -19,7 +19,7 @@ import {
 import { automationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
 import { automationStudioFlowDraftReach } from "./reach.ts";
 import { automationStudioFlowDraftStrandCheck, type AutomationStudioFlowDraftWithdrawal } from "./strand-check.ts";
-import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal } from "./types.ts";
+import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftUnreachedStep } from "./types.ts";
 
 /** The four changes that say when a step runs rather than whether it is kept. */
 const ROUTING_CHANGES = new Set<AutomationStudioFlowDraftAmendmentChange>(["optional", "only_if", "on_failed", "repeat"]);
@@ -63,12 +63,15 @@ const NOT_A_FLOW_STEP: AutomationStudioFlowDraftAmendmentRefusal["reason"] = "no
  * taken off and reported `repeat_taken_off` (`./repeat-revalidation.ts`).
  *
  * `moved`, when there is any, names each step an act was moved off that the
- * decision left in the Flow with no act (`ActMove`).
+ * decision left in the Flow with no act (`ActMove`). `unreached`, when there is
+ * any, names each step of the Flow the decision newly left after a step that
+ * does not bring it to its page: information, never a refusal
+ * (`./strand-check.ts`).
  */
 export function applyAutomationStudioFlowDraftAmendments(
   steps: AutomationStudioFlowDraftStep[],
   amendments: readonly AutomationStudioFlowDraftAmendment[]
-): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[]; moved?: ActMove[] } {
+): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[]; moved?: ActMove[]; unreached?: AutomationStudioFlowDraftUnreachedStep[] } {
   let applied = 0;
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
   const claims: { act: string; from: AutomationStudioFlowDraftStep; to: AutomationStudioFlowDraftStep }[] = [];
@@ -234,7 +237,7 @@ export function applyAutomationStudioFlowDraftAmendments(
   applied -= reach.takenBack;
   refused.push(...reach.refused);
   const moved = movedActs(claims);
-  return { applied, refused, ...(moved.length ? { moved } : {}) };
+  return { applied, refused, ...(moved.length ? { moved } : {}), ...(reach.unreached.length ? { unreached: reach.unreached } : {}) };
 }
 
 /**

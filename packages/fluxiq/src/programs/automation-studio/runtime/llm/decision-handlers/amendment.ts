@@ -166,6 +166,10 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // An act moved off a step left in the Flow is told too, on an edit that
   // landed whole: information, never a refusal (`../draft-amendment-feedback.ts`, `moved`).
   const moved = amended.moved ?? [];
+  // A step of the Flow the decision newly left after one that does not bring it
+  // to its page is told the same way: beside the refusals, never as one, so it
+  // counts nowhere a refusal counts (`../../flow-draft/amendment/strand-check.ts`, D2-1).
+  const unreached = amended.unreached ?? [];
   // **`keep` adds nothing (live run `run-muwaq9w3-baaa4e19`, decisions 0027-0036).**
   // Lane B sent `keep` on steps already in the Flow five rounds running, its
   // summaries saying it was "adding the paper towel quantity" steps; each answer
@@ -176,7 +180,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // changed nothing.
   const keepOnly = !rerun.request && (!amended.applied || sameDraftAs !== undefined) && decision.amendments.length > 0
     && decision.amendments.every((amendment) => amendment.change === "keep" && keptPositions.has(amendment.step));
-  if ((refused.length || sameDraftAs !== undefined || moved.length) && !split.held.length) tell(context, iteration, refusals, amended.applied + (rerun.request ? 1 : 0), sameDraftAs, moved, keepOnly);
+  if ((refused.length || sameDraftAs !== undefined || moved.length || unreached.length) && !split.held.length) tell(context, iteration, refusals, amended.applied + (rerun.request ? 1 : 0), sameDraftAs, moved, keepOnly, unreached);
   if (rerun.retainedRefusals?.length) {
     automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");
     for (const refusal of rerun.retainedRefusals) tellRetained(context, iteration, refusal.retained, { kind: "refused", reason: refusal.reason });
@@ -184,7 +188,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
   if (!rerun.request) return { kind: "continue" };
   const held: AutomationStudioLlmEvidenceRerunHeld | undefined = rerunReplaces
     ? {
-      amendments: split, nodeId: rerunReplaces.actionId, applied: amended.applied, refusals: split.held.length ? refusals : [], ...(split.held.length && moved.length ? { moved } : {}), ...(rerun.request.retained ? { retained: rerun.request.retained } : {}),
+      amendments: split, nodeId: rerunReplaces.actionId, applied: amended.applied, refusals: split.held.length ? refusals : [], ...(split.held.length && moved.length ? { moved } : {}), ...(split.held.length && unreached.length ? { unreached } : {}), ...(rerun.request.retained ? { retained: rerun.request.retained } : {}),
       before: { signature, draft: draftBefore, observed: observedBy(rerunReplaces) }
     }
     : undefined;
@@ -225,7 +229,7 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
   const refused = settled.refused.map((refusal) => ({ ...refusal, nodeId: held.nodeId }));
   const given = context.amendmentMemory.refusals(refused);
   const refusals = [...held.refusals, ...given];
-  if (refusals.length || held.moved?.length) tell(context, iteration, refusals, held.applied + settled.applied, undefined, held.moved ?? []);
+  if (refusals.length || held.moved?.length || held.unreached?.length) tell(context, iteration, refusals, held.applied + settled.applied, undefined, held.moved ?? [], false, held.unreached ?? []);
   // Only a rerun that took its step's place is measured against that step; one that failed or never ran left the draft to say.
   const tookItsPlace = attempt.kind === "accepted" && rerun !== undefined && automationStudioFlowDraftStepIsProposable(rerun);
   const draftAfter = automationStudioLlmEvidenceDraftKey(context.draftSteps);
@@ -340,12 +344,14 @@ function tell(
   applied: number,
   sameDraftAs: number | undefined,
   moved: NonNullable<AutomationStudioLlmEvidenceRerunHeld["moved"]>,
-  keepOnly = false
+  keepOnly = false,
+  unreached: NonNullable<AutomationStudioLlmEvidenceRerunHeld["unreached"]> = []
 ): void {
   const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
     refusals, applied, steps: context.draftSteps, stepsWithoutProgress: context.noProgress.steps, maxStepsWithoutProgress: context.limits.maxStepsWithoutProgress,
     ...(sameDraftAs === undefined ? {} : { sameDraftAsIteration: sameDraftAs }),
     ...(moved.length ? { moved } : {}),
+    ...(unreached.length ? { unreached } : {}),
     // What is still to do, for an act named again that the checklist shows done (`../draft-amendment-feedback.ts`).
     actsNotDone: context.input.draft ? context.input.draft.actsMissing?.(context.draftSteps) : undefined
   });

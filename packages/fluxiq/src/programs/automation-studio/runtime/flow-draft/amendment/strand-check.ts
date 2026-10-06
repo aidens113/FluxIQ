@@ -28,16 +28,15 @@
 // **Newly only.** A step that already had no way to its page before the
 // decision is not said again, so a draft that stood so never starts refusing.
 //
-// Two reasons of their own: `strands_a_step`, a refusal -- the drop was put
-// back -- and `left_unreached`, information beside an amendment that was
-// applied, never a refusal. Every reader that counts or words refusals has to
-// tell the second apart, as it does `repeat_taken_off`
+// A drop put back is refused `strands_a_step`. A step left unreached is not a
+// refusal and never travels as one: it is returned on its own (`unreached`),
+// beside the refusals, and told to the model on its own
 // (`../../llm/draft-amendment-feedback.ts`).
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "../step.ts";
 import { automationStudioFlowDraftReach, type AutomationStudioFlowDraftReach } from "./reach.ts";
 import type { AutomationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
-import type { AutomationStudioFlowDraftAmendmentRefusal } from "./types.ts";
+import type { AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftUnreachedStep } from "./types.ts";
 
 type Step = AutomationStudioFlowDraftStep;
 
@@ -62,7 +61,7 @@ export function automationStudioFlowDraftStrandCheck(
   before: AutomationStudioFlowDraftReach,
   withdrawn: readonly AutomationStudioFlowDraftWithdrawal[],
   shown: AutomationStudioFlowDraftShownNumbering
-): { refused: AutomationStudioFlowDraftAmendmentRefusal[]; takenBack: number } {
+): { refused: AutomationStudioFlowDraftAmendmentRefusal[]; takenBack: number; unreached: AutomationStudioFlowDraftUnreachedStep[] } {
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
   const wasInFlow = new Set(before.flow);
   let open = withdrawn.filter((entry) => entry.disposition === "kept" && wasInFlow.has(entry.step));
@@ -82,14 +81,15 @@ export function automationStudioFlowDraftStrandCheck(
     }
     open = open.filter((entry) => entry.step.disposition !== "kept");
   }
+  const unreached: AutomationStudioFlowDraftUnreachedStep[] = [];
   for (const step of now.flow) {
     if (!now.unreached.has(step) || (wasInFlow.has(step) && before.unreached.has(step))) continue;
     const index = now.flow.indexOf(step);
     const at = now.page(step);
     const reachedBy = steps.filter((other) => other !== step && automationStudioFlowDraftStepIsProposable(other) && now.moves(other) && now.leaves(other) === at).map((other) => shown.number(other));
-    refused.push({ step: shown.number(step), reason: "left_unreached", after: shown.number(now.flow[index - 1]!), reachedBy });
+    unreached.push({ step: shown.number(step), after: shown.number(now.flow[index - 1]!), reachedBy });
   }
-  return { refused, takenBack: refused.filter((refusal) => refusal.strands !== undefined).length };
+  return { refused, takenBack: refused.length, unreached };
 }
 
 /** The first step of the Flow `withdrawn` was the last way to, that had one before the decision, or nothing. */

@@ -59,7 +59,8 @@ describe("a decision that leaves a step of the Flow with no way to its page", ()
     const draft = [step(1, HOME), step(2, HOME), step(3, HOME), step(4, FRIENDS), step(5, REQUESTS, "read", "taken")];
     const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 5, change: "add", to: 2 }]);
     expect(report.applied).toBe(1);
-    expect(report.refused).toEqual([{ step: 5, reason: "left_unreached", after: 1, reachedBy: [4] }]);
+    expect(report.refused).toEqual([]);
+    expect(report.unreached).toEqual([{ step: 5, after: 1, reachedBy: [4] }]);
     expect(draft.map((entry) => entry.id)).toEqual(["d1", "d5", "d2", "d3", "d4"]);
   });
 

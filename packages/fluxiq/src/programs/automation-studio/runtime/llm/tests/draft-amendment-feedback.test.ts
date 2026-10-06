@@ -228,7 +228,7 @@ describe("the feedback an amendment refusal is shown as", () => {
     no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, over_not_before: true, not_a_kept_step: true,
     did_not_work: true, already_in_flow: true, already_out: true, changes_nothing: true, act_on_a_read: true, act_already_named: true,
     bind_not_a_binding: true, bind_new_key: true, bind_row_outside_loop: true, bind_malformed: true,
-    rerun_holds_binding: true, repeat_taken_off: true, strands_a_step: true, left_unreached: true
+    rerun_holds_binding: true, repeat_taken_off: true, strands_a_step: true
   };
 
   it("can say every reason the draft computes, with what the word means", () => {
@@ -741,23 +741,29 @@ describe("a step of the Flow left without its way to its page", () => {
     expect(String(feedback.instruction)).toContain("The listed amendments changed nothing");
   });
 
-  it("tells a step newly left after one that does not bring it to its page as left_unreached, applied, never repeated", () => {
+  it("tells a step newly left after one that does not bring it to its page as unreached, beside refused, never as a refusal", () => {
     const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
-      refusals: [{ step: 5, reason: "left_unreached", after: 1, reachedBy: [4], repeated: true }],
+      refusals: [], unreached: [{ step: 5, after: 1, reachedBy: [4] }],
       applied: 1, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8
     });
-    const [entry] = refusedOf(feedback);
-    expect(entry?.reason).toBe("left_unreached");
-    expect(entry?.repeated).toBeUndefined();
-    expect(entry?.next).toContain("the step before it now, step 1, does not leave the page where step 5 acted");
-    expect(entry?.next).toContain("Step 4 moved the page to where step 5 acted while exploring");
-    expect((feedback.reasons as Record<string, string>).left_unreached).toContain("Not a refusal");
+    expect(feedback).toMatchObject({ ok: true, code: "llm_evidence_loop.draft_step_unreached", refused: [], applied: 1 });
+    const [entry] = feedback.unreached as { step: number; after: number; reachedBy: number[]; note: string }[];
+    expect(entry).toMatchObject({ step: 5, after: 1, reachedBy: [4] });
+    expect(entry?.note).toContain("the step before it now, step 1, does not leave the page where step 5 acted");
+    expect(entry?.note).toContain("Step 4 moved the page to where step 5 acted while exploring");
+    expect(feedback.reasons).toEqual({});
     expect(String(feedback.instruction)).not.toContain("The listed amendments changed nothing");
-    expect(String(feedback.instruction)).toContain("left_unreached");
+    expect(String(feedback.instruction)).toContain("unreached is not a refusal");
   });
 
-  it("says to run the step that gets there when no step in the draft did", () => {
-    const [entry] = refusedOf(feedbackOf([{ step: 3, reason: "left_unreached", after: 2, reachedBy: [] }]));
-    expect(entry?.next).toContain("No step in the draft moved the page to where step 3 acted: run the step that gets there with add true, before step 3.");
+  it("says to run the step that gets there when no step in the draft did, beside a refusal of the same decision", () => {
+    const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
+      refusals: [{ step: 9, reason: "no_such_step" }], unreached: [{ step: 3, after: 2, reachedBy: [] }],
+      applied: 1, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8
+    });
+    expect(feedback.code).toBe("llm_evidence_loop.draft_amendments_refused");
+    expect(refusedOf(feedback).map((entry) => entry.reason)).toEqual(["no_such_step"]);
+    const [entry] = feedback.unreached as { note: string }[];
+    expect(entry?.note).toContain("No step in the draft moved the page to where step 3 acted: run the step that gets there with add true, before step 3.");
   });
 });
