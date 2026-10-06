@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 3144
+- Public declarations: 3145
 - Class: 93
 - Interface: 2
 - Object: 399
 - Type: 1730
 - Type Alias: 1
-- Value: 919
+- Value: 920
 
 ## Public Declarations
 
@@ -207,7 +207,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AUTOMATION_STUDIO_FLOW_DRAFT_ROUTING_KINDS` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/routing.ts:39` | Every statement a step may carry about when it runs. |
 | `AUTOMATION_STUDIO_FLOW_DRAFT_ROW_FIELD` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/binding-forms.ts:54` | The name a row's field may have: one path segment. |
 | `AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/binding-forms.ts:60` | The first segment of the path an earlier step's output is stored under, until assembly names the node: `$step.<step id>.<output>[.<field>]`. |
-| `AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/entry.ts:77` | The entry the draft is shown under. |
+| `AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/entry.ts:78` | The entry the draft is shown under. |
 | `AUTOMATION_STUDIO_FLOW_FIRST_SCHEMA_VERSION` | Object | `packages/fluxiq/src/programs/automation-studio/model/legacy-retirement.ts:4` | - |
 | `AUTOMATION_STUDIO_FLOW_REPRESENTATION_VERSION` | Object | `packages/fluxiq/src/programs/automation-studio/model/flows.ts:21` | - |
 | `AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/plan/flow-script-format.ts:90` | - |
@@ -1043,6 +1043,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioFlowDraftAmendment` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/amendment/types.ts:7` | One edit to one step of the draft. |
 | `AutomationStudioFlowDraftAmendmentChange` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/amendment/changes.ts:4` | - |
 | `AutomationStudioFlowDraftAmendmentRefusal` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/amendment/types.ts:51` | Why one amendment changed nothing -- or, for `act_on_a_read`, the one part of it that was not done: the act a read cannot do, beside the rest, which was; or, for `repeat_taken_off`, a repeat the decision's moves left unable to run. |
+| `automationStudioFlowDraftBindablePaths` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/bindable/paths.ts:34` | - |
 | `AutomationStudioFlowDraftBindingContext` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/binding-forms.ts:92` | The draft an earlier step's output is read against: its steps as they stand now, and the position of the step the form is written into -- absent, a step about to be appended after all of them. `nodeOf` says which outputs a node declares; absent, or for a node it does not know, the assembler checks the output against the registry instead. |
 | `AutomationStudioFlowDraftBindingRefusal` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/binding-forms.ts:80` | Why a form was not translated, at the dotted path it sits at. For an earlier step's output: no draft to read it against (`step_binding_not_yet`), no step at that position (`step_missing`), that step or one after it (`step_not_earlier`), a step withdrawn, only looked or failed (`step_not_usable`), an output its node does not declare (`step_output_unknown`). |
 | `automationStudioFlowDraftClaimAct` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/act-claim.ts:29` | - |
@@ -1059,7 +1060,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioFlowDraftDryRunIssueCodes` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/dry-run.ts:297` | - |
 | `AutomationStudioFlowDraftDryRunRefusal` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/dry-run-gate.ts:96` | What a gate answers. `undefined` is the only way past it: either the draft replayed clean, or it is not a draft this gate applies to. The other two each end or interrupt the completion the loop was about to accept. A refusal also carries `steps`, the positions it names, beside its codes and not among them (not enumerable), so the build trace and the chat can say which steps stood in the way (`../evidence-loop/completion-attempt.ts`) while a caller comparing refusals by their codes reads them as before. Live run `run-musp39u8-9ac026ab` (R3c) was refused `full_run_required` three times and neither core.log nor the chat said so. |
 | `automationStudioFlowDraftDryRunVerdict` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/dry-run.ts:259` | - |
-| `automationStudioFlowDraftEntry` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/entry.ts:97` | - |
+| `automationStudioFlowDraftEntry` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/entry.ts:101` | - |
 | `AutomationStudioFlowDraftExcusedReason` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/excused.ts:28` | Why a test passed over a step that did not hold: why the Flow does not always run it, or `withheld`. |
 | `automationStudioFlowDraftExcusedWords` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-draft/excused.ts:53` | - |
 | `AutomationStudioFlowDraftFlowSeed` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/llm/node-tools/draft-from-flow.ts:125` | A Flow read back as a draft: the steps, and which node each one stands for. The map is the half that makes this an edit rather than a replacement. A draft step carries no node id -- it is a record of an action, and an action has no id in a graph -- so the correspondence is kept beside the steps and travels with them to whoever materialises the amended draft (`automationStudioFlowDraftPlanNodeIds`). |

@@ -186,6 +186,20 @@ describe("a repeat on a listing, run 37", () => {
 // binding the Flow resolves at run time, and the run that worked stays as the
 // step's `instance` (design D2, t252).
 describe("binding a step's arguments", () => {
+  // Design B7 assertion 3: a whole object the step already has binds as one
+  // value, with its object test or the object it replaces as the default.
+  it("binds a whole object the step already has, with its object test or the object it replaces", () => {
+    for (const explicit of [false, true]) {
+      const object = { label: "fixture", options: { count: 2 } };
+      const argument = { parameters: { configuration: object } };
+      const draft: AutomationStudioFlowDraftStep[] = [{ position: 1, iteration: 1, actionId: "fixture.configure",
+        input: structuredClone(argument), ranWith: structuredClone(argument), effect: "mutate", effectApplied: true, disposition: "kept" }];
+      const form = { $input: "configuration", ...(explicit ? { test: object } : {}) };
+      expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "bind", input: { configuration: form } }])).toMatchObject({ applied: 1, refused: [] });
+      expect(draft[0]?.ranWith).toEqual({ parameters: { configuration: { $state: { path: "configuration", fallback: object } } } });
+      expect(draft[0]?.instance).toEqual(argument);
+    }
+  });
   // d1 lists the rows, d2 searches with a typed value, d3 acts on one row and repeats over d1.
   function loopDraft(): AutomationStudioFlowDraftStep[] {
     const search = { node: "node.search", parameters: { query: "blue towels", options: { limit: 5 } }, consequences: [] };
@@ -245,8 +259,8 @@ describe("binding a step's arguments", () => {
     expect(refusedFor({ query: "red towels" })).toEqual([{ step: 2, reason: "bind_not_a_binding", parameter: "query" }]);
     expect(refusedFor({ query: { $input: "query" }, options: { limit: 7 } })).toEqual([{ step: 2, reason: "bind_not_a_binding", parameter: "options.limit" }]);
     expect(refusedFor({})).toEqual([{ step: 2, reason: "bind_not_a_binding" }]);
-    expect(refusedFor({ page: { $input: "page", test: 2 } })).toEqual([{ step: 2, reason: "bind_new_key", parameter: "page" }]);
-    expect(refusedFor({ options: { sort: { $input: "sort", test: "asc" } } })).toEqual([{ step: 2, reason: "bind_new_key", parameter: "options.sort" }]);
+    expect(refusedFor({ page: { $input: "page", test: 2 } })).toEqual([{ step: 2, reason: "bind_new_key", parameter: "page", bindable: ["query", "options", "options.limit"] }]);
+    expect(refusedFor({ options: { sort: { $input: "sort", test: "asc" } } })).toEqual([{ step: 2, reason: "bind_new_key", parameter: "options.sort", bindable: ["query", "options", "options.limit"] }]);
     expect(refusedFor({ query: { $input: "Query" } })).toEqual([{ step: 2, reason: "bind_malformed", parameter: "query" }]);
     expect(refusedFor({ query: { $step: 1, output: "records" } })).toEqual([{ step: 2, reason: "bind_malformed", parameter: "query" }]);
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind" }]).refused).toEqual([{ step: 2, reason: "bind_not_a_binding" }]);
@@ -270,11 +284,11 @@ describe("binding a step's arguments", () => {
     const before = structuredClone(draft);
     const refusedFor = (input: Record<string, unknown>) => applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "bind", input: input as never }]).refused;
     // 0021: a binding form on the target itself.
-    expect(refusedFor({ target: { $input: "paperTowelVariant", test: { handle: "t667" } } })).toEqual([{ step: 1, reason: "bind_new_key", parameter: "target", control: true }]);
+    expect(refusedFor({ target: { $input: "paperTowelVariant", test: { handle: "t667" } } })).toEqual([{ step: 1, reason: "bind_new_key", parameter: "target", control: true, bindable: [] }]);
     // A form below it, under the parameters wrapper.
-    expect(refusedFor({ parameters: { target: { handle: { $input: "variant", test: "t667" } } } })).toEqual([{ step: 1, reason: "bind_new_key", parameter: "target", control: true }]);
+    expect(refusedFor({ parameters: { target: { handle: { $input: "variant", test: "t667" } } } })).toEqual([{ step: 1, reason: "bind_new_key", parameter: "target", control: true, bindable: [] }]);
     // A key neither shown nor run with is a new key, as before.
-    expect(refusedFor({ quantity: { $input: "quantity", test: 2 } })).toEqual([{ step: 1, reason: "bind_new_key", parameter: "quantity" }]);
+    expect(refusedFor({ quantity: { $input: "quantity", test: 2 } })).toEqual([{ step: 1, reason: "bind_new_key", parameter: "quantity", bindable: [] }]);
     expect(draft).toEqual(before);
   });
 

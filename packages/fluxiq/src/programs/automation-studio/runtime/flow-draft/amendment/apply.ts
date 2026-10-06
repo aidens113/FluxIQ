@@ -140,7 +140,7 @@ export function applyAutomationStudioFlowDraftAmendments(
     if (amendment.change === "bind") {
       const bound = automationStudioFlowDraftAmendmentBind(steps, step, amendment);
       if (bound.ok) applied += 1;
-      else refused.push({ step: amendment.step, reason: bound.reason, ...(bound.parameter === undefined ? {} : { parameter: bound.parameter }), ...(bound.control ? { control: true as const } : {}) });
+      else refused.push({ step: amendment.step, reason: bound.reason, ...(bound.parameter === undefined ? {} : { parameter: bound.parameter }), ...(bound.control ? { control: true as const } : {}), ...(bound.bindable ? { bindable: bound.bindable } : {}) });
       continue;
     }
     if (amendment.change === "reorder") {

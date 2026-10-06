@@ -112,6 +112,14 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    */
   control?: true;
   /**
+   * `bind_new_key` only: the dotted parameter paths the step does offer bind
+   * (`../bindable/paths.ts`), read from the step the bind examined -- never a
+   * number looked up again after the decision moved steps -- and never a
+   * private value its argument resolved to. Live run B7 (t262) bound a click's
+   * shown `target` five times and was told only to name a parameter it has.
+   */
+  bindable?: string[];
+  /**
    * The step the amendment named is the attempt a rerun replaced: the number of
    * the step standing in its place, so the telling can say to change that one
    * instead (`../../llm/draft-amendment-feedback.ts`, live run

@@ -146,6 +146,26 @@ present in what the draft shows -- the control a press acted on, such as its
 to vary, its control is found by its words each run, and the step is left as
 it is.
 
+**What a step offers `bind` is listed, never guessed** (live run B7, t262).
+A step's `input` is the model-safe argument it was written with; `ranWith` is
+what it runs with, which a domain may have resolved -- a Web click written with
+a `target` handle runs with a private selector and element identity. The model
+read only `input`, bound the click's `target` five times, and was refused each
+time. `automationStudioFlowDraftBindablePaths` (`runtime/flow-draft/bindable/paths.ts`)
+lists the dotted parameter paths at which `input` and `ranWith ?? input` hold
+the same value: read from the shown input only, so a private resolved key or
+value is never named and no shown alias is mapped to what it resolved to. A
+value already stored as a binding is one path; nothing inside a binding, an
+array or a null is listed. It is an affordance, not a rule: `bind` still
+checks `ranWith` and may accept a path not listed. The draft entry shows
+`bindable` beside a step in the Flow only where its input holds a value it did
+not run with as shown -- a press shows `[]`, a step that ran as shown pays
+nothing -- with one instruction sentence when any step shows it. A
+`bind_new_key` refusal carries `bindable`, computed by `bind` from the step it
+examined rather than looked up again by number after the decision moved steps;
+the telling passes it on beside the refusal, and its reason tells the model to
+bind only those, never to rerun with a guessed parameter.
+
 **Every answer to an edit says what is still to do** (`core.amendment_check`,
 live run `run-musp4h2f-72e8ed99`). A refusal with no other `next` ends its
 `next` with the acts and choices the checklist still shows not done

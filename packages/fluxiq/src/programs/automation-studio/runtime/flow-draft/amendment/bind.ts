@@ -5,6 +5,7 @@ import {
   automationStudioFlowDraftStoredBindingKind,
   automationStudioFlowDraftTranslateBindings
 } from "../binding-forms.ts";
+import { automationStudioFlowDraftBindablePaths } from "../bindable/index.ts";
 import { automationStudioFlowDraftStepId } from "../routing.ts";
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../step.ts";
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal } from "./types.ts";
@@ -12,7 +13,7 @@ import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmend
 /** The key a node call's argument holds its parameters under. */
 const PARAMETERS_KEY = "parameters";
 
-type BindRefusal = { ok: false; reason: AutomationStudioFlowDraftAmendmentRefusal["reason"]; parameter?: string; control?: true };
+type BindRefusal = { ok: false; reason: AutomationStudioFlowDraftAmendmentRefusal["reason"]; parameter?: string; control?: true; bindable?: string[] };
 
 /** One binding form the patch sets, where it sits under the parameters, and the value it replaces. */
 type BindLeaf = { path: string[]; form: JsonObject; replaced: JsonValue };
@@ -34,7 +35,8 @@ type BindLeaf = { path: string[]; form: JsonObject; replaced: JsonValue };
  * What the step ran with is what is checked, and what the draft shows (`input`)
  * is read beside it only to say what a key missing there is: one the draft
  * shows is the control the step acted on (`control`, live run
- * `run-musp4h2f-72e8ed99`), not a key the model made up.
+ * `run-musp4h2f-72e8ed99`), not a key the model made up. Either way the
+ * refusal carries what the step does offer (`bindable`, `../bindable/paths.ts`).
  */
 export function automationStudioFlowDraftAmendmentBind(
   steps: readonly AutomationStudioFlowDraftStep[],
@@ -50,7 +52,7 @@ export function automationStudioFlowDraftAmendmentBind(
   const leaves: BindLeaf[] = [];
   const shown = isObject(step.input[PARAMETERS_KEY]) ? step.input[PARAMETERS_KEY] as JsonObject : step.input;
   const problem = collectBindLeaves(patch, parameters, shown, [], leaves);
-  if (problem) return problem;
+  if (problem) return problem.reason === "bind_new_key" ? { ...problem, bindable: automationStudioFlowDraftBindablePaths(step) } : problem;
   const bindings: { path: string[]; binding: JsonObject }[] = [];
   for (const leaf of leaves) {
     const parameter = leaf.path.join(".");

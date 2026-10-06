@@ -9,7 +9,7 @@ function step(position: number, actionId: string, input: Record<string, string>,
 type Entry = {
   code: string;
   format?: string;
-  steps: { step: number; actionId: string; input?: unknown; control?: string; inputTooLarge?: boolean; inResult: boolean; disposition: string; changed: string; act?: string; replayed?: string; runs?: string; settings?: unknown }[];
+  steps: { step: number; actionId: string; input?: unknown; bindable?: string[]; control?: string; inputTooLarge?: boolean; inResult: boolean; disposition: string; changed: string; act?: string; replayed?: string; runs?: string; settings?: unknown }[];
   unlisted?: number;
   omitted?: string[];
   instruction: string;
@@ -325,5 +325,51 @@ describe("what both tellings say about numbering", () => {
     for (const instruction of [authored, transcript]) {
       expect(instruction).toContain("Every number in one amend_draft is this draft's; it is renumbered after the decision.");
     }
+  });
+});
+
+// Live run B7 (t262): the draft showed a click's `target`, the click ran with a
+// resolved selector and element, and the model bound `target` five times. The
+// draft now says beside a kept step which of its shown values it ran with
+// alike: those are what `bind` can lift (`../bindable/paths.ts`).
+describe("what a kept step offers bind, run B7", () => {
+  const typed = (over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+    ...step(1, "fixture.type", {}),
+    input: { node: "fixture.type", parameters: { target: { handle: "fixture-handle" }, text: "fixture-text" } },
+    ranWith: { node: "fixture.type", parameters: { selector: "private-locator", element: { identity: "private-identity" }, text: "fixture-text" } },
+    ...over
+  });
+
+  it("lists the typed value the step ran with beside its unchanged input, and never the control or its private identity", () => {
+    const recorded = typed();
+    const before = structuredClone(recorded);
+    const shown = value([recorded]);
+    expect(shown.steps[0]).toMatchObject({ input: before.input, bindable: ["text"] });
+    expect(shown.instruction).toContain("bindable, beside a step, lists the only values of its input it ran with as shown");
+    expect(JSON.stringify(shown)).not.toMatch(/private-locator|private-identity|"selector"|"element"/u);
+    expect(recorded).toEqual(before);
+  });
+
+  it("lists an empty bindable on a press that ran with none of its shown input, and never names what it resolved to", () => {
+    const press = step(1, "press", {}, { input: { parameters: { target: { handle: "fixture-handle" } } }, ranWith: { parameters: { selector: "private-locator" } } });
+    const shown = value([press]);
+    expect(shown.steps[0]).toMatchObject({ input: { parameters: { target: { handle: "fixture-handle" } } }, bindable: [] });
+    expect(shown.instruction).toContain("bindable");
+    expect(JSON.stringify(shown)).not.toContain("private-locator");
+  });
+
+  it("lists nothing, and says nothing of it, for a step that ran with its input as shown or a step not in the Flow", () => {
+    const asShown = step(1, "search", { query: "fixture-query" }, { ranWith: { query: "fixture-query" } });
+    const shown = value([asShown, step(2, "search", { query: "fixture-query" }), typed({ position: 3, disposition: "dropped" })]);
+    for (const line of shown.steps) expect(line).not.toHaveProperty("bindable");
+    expect(shown.instruction).not.toContain("bindable");
+  });
+
+  it("reads a checked candidate's own current argument, never the one its earlier execution ran with", () => {
+    const original = typed({ ranWith: { node: "fixture.type", parameters: { text: "private-original" } } });
+    const candidate = typed({ effectApplied: false, checkedCandidate: { callId: "checked", code: "core.replay.present" }, priorExecution: { ...original, lasting: true } });
+    const shown = value([candidate]);
+    expect(shown.steps[0]).toMatchObject({ bindable: ["text"], checkedCandidate: { performed: false } });
+    expect(JSON.stringify(shown)).not.toContain("private-");
   });
 });
