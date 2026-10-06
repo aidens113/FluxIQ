@@ -135,7 +135,7 @@ needs it (t174-w107).** The read is `service/instruction-authority.ts`: one
 `evidence_tool_decision` with no tools, `metadata.source: "instructionAuthority"`,
 counted with the build (step-log phase `read`). Where the instruction's acts are
 read with no model (`runtime/flow-bootstrap/instructed-acts/instruction-acts.ts`,
-the same ids as the build's checklist), its completion
+the same ids as the build's checklist), its completion's consequence half
 (`automationStudioInstructedConsequencesSchema`, `action-permissions/instructed.ts`)
 asks first for `acts`: one required key per act id, described by the act's own
 words, answered with the classes that act asks for or `["none"]`; then the free
@@ -149,6 +149,40 @@ and sibling splits of one class share that clause's one entry. An act the answer
 skipped, or every act of a read that failed, is kept as unanswered
 (`consequences: null`) on the read the gate holds, never on the stored entries,
 and the Flow's thread is told once which act, in the person's words.
+
+**The same read answers the route the person names (D phase 1).** The user's
+rule: a route the person names must be followed; a Flow may start where the
+work begins unless the person names the route. The authority's completion is
+`automationStudioInstructionReadingSchema`
+(`action-permissions/instruction-reading/`): the consequence question above,
+unchanged, with a required `route` beside it answered `named` (the instruction's
+id, its words for the whole route, and each place in the order to visit them),
+`open`, or `unclear`. The exported consequence-only schema is unchanged. Core
+reads the two halves independently (`readAutomationStudioInstructionReading`):
+a route it cannot ground never removes a grounded consequence, and grounded
+consequences never make a missing route open. The route reading
+(`action-permissions/instruction-route/`) has four states. `named` holds only
+when the route's words occur exactly once in the named active instruction and
+each waypoint's words exactly once inside them, compared as the permission read
+compares quotes but mapped back to the person's own words
+(`action-permissions/instruction-quote/`) as UTF-16, half-open spans over
+`title + "\n" + body`; Core makes the route and waypoint ids and binds the
+reading to the active instruction set's digest. No 300-character quote bound
+applies, and a route past 20 waypoints is not shortened. `open` is only an
+explicit, well-formed answer. Everything else is `unavailable` with a closed
+reason (`transport`, `non_complete`, `malformed`, `ungrounded`, `ambiguous`,
+`stale`), never `open` and never the provider's words. `unread` means no read
+has settled. `currentAutomationStudioInstructionRoute` makes a named or open
+reading `stale` once any active instruction changes. The authority returns
+`route.read()`, which shares the one call with `derive` -- whichever comes
+first sends it, nothing sends it again, after an answer or a failure -- and
+`route.peek()`, which never sends. A call that threw stays a rejection for
+`derive`, so the gate still holds its answer as unknown and asks; `route` says
+`transport`. A route is the reader's interpretation of the person's words, not
+proof any step went anywhere, and nothing acts on it yet: the waypoint-to-step
+relation, route-aware draft edits and the model's route notes are later phases
+(`docs/working/mvp-live-continuation-2026-10-03/reports/d-grounded-waypoint-contract.md`
+downstream).
 
 The build's tests check, rather than do again, a step claiming an act that is
 lasting (`flow-bootstrap/action-permissions.ts`, `instructedLastingActs`;

@@ -185,13 +185,40 @@ test, the assembler and the stored Flow read one shape and nothing new runs.
 | --- | --- | --- |
 | `{"$row": "name"}` | `{"$state":{"path":"item.name"}}` | in a loop pass, from the pass's row |
 | `{"$input": "query", "test": "blue towels"}` | `{"$state":{"path":"query","fallback":"blue towels"}}` | from the run's inputs, else the test value |
-| `{"$step": n, "output": port}` | not built (P5): refused `step_binding_not_yet` | -- |
+| `{"$step": n, "output": "port", "path": "a.b"}` | `{"$state":{"path":"$step.<id>.port.a.b"}}` in the draft; `$node.<key>.port.a.b` in the plan and stored Flow | in the test, from what step n answered in this test; in a run, from that node's output in this run |
 
 Input names match `^[a-z][A-Za-z0-9]{0,31}$` and may not be `item`, the row's
 name in run state; row fields are one path segment. A form with a stray key, a
 wrong type, or a missing or `null` test is refused as `malformed` where it
 sits and is never carried as a literal. Search depth is 16, as in the
 executor's resolver.
+
+**An earlier step's output (P5, t270).** `n` is a draft position, and a
+position is renumbered by every reorder and withdrawal, so the form is read
+against the draft as it stands when it is written
+(`AutomationStudioFlowDraftBindingContext`: the steps, the position of the step
+being written -- absent for one about to be appended -- and the node lookup)
+and stored under the step's own id. `path` is optional, one or more field
+names of a record output; a list index is refused, since the resolver walks no
+list. Refusals: `step_binding_not_yet` when the caller passed no draft (every
+caller before P5's wiring), `step_missing` (no step at `n`), `step_not_earlier`
+(`n` is the step itself or after it), `step_not_usable` (withdrawn, a look, or
+failed), `step_output_unknown` (the node is known and declares no such output),
+`malformed`. Shown back to the model as `{"$step": <its position now>, ...}`
+(`binding-render.ts` with the draft; `null` once the step is gone).
+
+Nothing keeps run state under `$step` or `$node`, so an unrewritten reference
+is reported missing, never read. The build's test supplies each step's outputs
+under `$step.<id>` from its own answer in the same walk, and only from a step
+asked to run that ran (`core.replay.replayed`); each repeat pass starts with
+none of the last pass's (`replay-draft.ts`, `replay-span.ts`). Assembly
+rewrites `$step.<id>` to `$node.<key>`, the plan key of the node the step
+became (`assemble-draft.ts`), and the executor resolves `<key>` to the one node
+of the graph whose `metadata.bootstrapSymbolicKey` is that key
+(`runtime/executor/node-inputs.ts`, `automationStudioNodeOutputReferences`),
+then reads `${nodeId}.<output>` with the ordinary resolver. A key no node or
+two nodes carry stays unresolved: the node fails
+`executor.parameter.unresolved_state_path` before it runs.
 
 **Assembly checks** (`runtime/flow-bootstrap/authoring/draft-bindings.ts`, run
 on the assembled plan by `assemble-draft.ts`). A `$state` survives
@@ -209,6 +236,15 @@ graph:
   proposed steps (`automationStudioFlowDraftInputs(...).conflicts`, checked in
   `assemble-draft.ts`), naming both values and the steps. A run that supplies no
   value would use one at one step and another at the next.
+- Earlier outputs (`assemble-draft.ts`), each naming the reading step:
+  `flow_draft.step_binding_source_missing` (its step became no node of the
+  plan: withdrawn, or not in the Flow), `flow_draft.step_binding_not_earlier`
+  (its node is the reader or after it: a reorder moved it),
+  `flow_draft.step_binding_unknown_output` (the registry's definition declares
+  no such output), `flow_draft.step_binding_conditional_source` (the Flow does
+  not always run it: optional, only-if, a fallback, an answered interruption),
+  `flow_draft.step_binding_repeated_source` (it is a member of a repeat the
+  reader is not in, so the reader would get whichever pass ran last).
 
 **Flow inputs.** A Flow input is declared by its first `$input` binding, and
 its test value is that binding's fallback: the value the build tests with, and
@@ -216,7 +252,7 @@ the value a stored Flow runs on when a run supplies none (the executor reads
 run inputs first). A name given two test values is refused at assembly
 (`flow_draft.input_conflict`, above).
 
-**Not built.** P5: `$step` bindings to an earlier step's output, the plan's
+**Not built.** The plan's
 `inputs`, the Flow's `interface.inputs` (so callers and the panel can see and
 fill an input) and declared defaults on root runs; until then an input exists
 only as the bindings' fallbacks. P6: row anchors from the list reader, so two
