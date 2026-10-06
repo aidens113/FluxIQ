@@ -132,6 +132,10 @@ export const AUTOMATION_STUDIO_INSTRUCTED_ACTS_INSTRUCTION = "Nothing was create
 const ARRIVAL_INSTRUCTION = " A reason of step_only_arrives means the step named only goes to an address -- the page this Flow starts on, or another page of its site -- "
   + "and arriving at a page does not do the act. After arriving, press or set the control that does it (the add, collect, save or set control), keep that step, and name it for the act instead.";
 
+/** Said only when a claim named a step that only opened the page of the act's choices (`./standing.ts`, run mux6pndp). */
+const OPENS_CHOICES_INSTRUCTION = " A reason of step_only_opens_its_choices means the step named only opened the page where the act's own choices are made, and its control does not name the act: it prepares the act and does not do it. "
+  + "On that page, after the choices, press the control that does the act (such as its add), keep that step, and name it for the act.";
+
 /** Said only when a claim named an optional step. */
 const OPTIONAL_INSTRUCTION = " A reason of step_is_optional means the step named is marked optional, so the Flow carries on without it when it fails and the act may never be done: "
   + "make it always run with amend_draft keep on that step, or name a step that always runs.";
@@ -306,6 +310,7 @@ function readsSaid(id: string, positions: readonly number[]): string {
 /** What a refusal adds for each reason that needs more than the plain instruction, in this order. */
 const REASON_INSTRUCTIONS: ReadonlyArray<readonly [AutomationStudioInstructedActMissing["reason"], string]> = [
   ["step_only_arrives", ARRIVAL_INSTRUCTION],
+  ["step_only_opens_its_choices", OPENS_CHOICES_INSTRUCTION],
   ["step_is_optional", OPTIONAL_INSTRUCTION],
   ["act_needs_repeat", REPEAT_INSTRUCTION],
   ["span_stops_short", SPAN_INSTRUCTION],
