@@ -248,6 +248,16 @@ export class AutomationStudioLlmBuildPurse {
     return holdUsd === undefined || this.spentUsd() + this.pendingUsd() + holdUsd <= this.ceilingUsd + EPSILON_USD;
   }
 
+  /**
+   * Whether `calls` more calls can all still be held beside what is spent and
+   * in flight under `maxCalls`; always true without one. What a round needs of
+   * the allowance before it is opened: its first decision and, with a judge,
+   * the judging pair (`../../flow-bootstrap/unfinished-build/round-funding.ts`).
+   */
+  callsFit(calls: number): boolean {
+    return this.callAllowance.canHoldAll(calls);
+  }
+
   /** The provider's price, at the rate in force now, for a request of `inputTokens` and a reply of `outputTokens`, all uncached; `undefined` before any call brought a price, or where it prices nonsense. */
   priceUsd(inputTokens: number, outputTokens: number): number | undefined {
     let priced: number | undefined;
