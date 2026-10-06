@@ -228,6 +228,42 @@ describe("Automation Studio training modes", () => {
     expect(decision).toEqual({ autoApply: false, requiresManualApproval: true, reason: "A change with no succeeded trial is never promoted automatically." });
   });
 
+  // t267: a target override on a Flow that declares no evidence has a trial
+  // that proves nothing either way. Its evidence is the judged whole run the
+  // promotion already waits for, so the trial-evidence rule alone gives way.
+  it("lets a change that awaits its judged whole run past the evidence rule, and past nothing else", () => {
+    const base = { approvalMode: "auto" as const, riskLevel: "high" as const, patchKinds: ["edit_action_target" as const], promoteAdaptations: true, awaitsJudgedRun: true };
+
+    expect(decideAutomationStudioAdaptationPromotionGate({ ...base, confidence: tierOf([], "high") })).toEqual({
+      autoApply: true,
+      requiresManualApproval: false,
+      reason: "A change whose trial proved nothing either way is applied only once a whole run from the Flow's start, which ran it, is judged to answer: that judged run is its evidence."
+    });
+    // A failure on record is still a failure, whatever the change awaits.
+    expect(decideAutomationStudioAdaptationPromotionGate({ ...base, confidence: tierOf([trial("failed")], "high") }))
+      .toEqual({ autoApply: false, requiresManualApproval: true, reason: "Its latest trial failed, so the change is not promoted until a new trial succeeds." });
+    // Without the marker the rule stands.
+    expect(decideAutomationStudioAdaptationPromotionGate({ ...base, awaitsJudgedRun: false, confidence: tierOf([], "high") }))
+      .toEqual({ autoApply: false, requiresManualApproval: true, reason: "Adaptation must pass validation before promotion." });
+    const { awaitsJudgedRun: _marker, ...unmarked } = base;
+    expect(decideAutomationStudioAdaptationPromotionGate({ ...unmarked, confidence: tierOf([], "high") }))
+      .toEqual({ autoApply: false, requiresManualApproval: true, reason: "Adaptation must pass validation before promotion." });
+    // A person's own settings still decide.
+    expect(decideAutomationStudioAdaptationPromotionGate({ ...base, approvalMode: "manual", confidence: tierOf([], "high") }))
+      .toEqual({ autoApply: false, requiresManualApproval: true, reason: "Manual adaptation approval mode requires explicit review." });
+    expect(decideAutomationStudioAdaptationPromotionGate({ ...base, requireFirstManualReview: true, priorManualReviewExists: false, confidence: tierOf([], "high") }))
+      .toEqual({ autoApply: false, requiresManualApproval: true, reason: "First automatic promotion is blocked until a manual review has been completed." });
+    expect(decideAutomationStudioAdaptationPromotionGate({ ...base, approvalMode: "mixed", confidence: tierOf([], "high") }))
+      .toEqual({ autoApply: false, requiresManualApproval: true, reason: "Mixed adaptation approval mode routes a high-risk adaptation to a person." });
+    expect(decideAutomationStudioAdaptationPromotionGate({ ...base, promoteAdaptations: false, confidence: tierOf([], "high") }))
+      .toEqual({ autoApply: false, requiresManualApproval: false, reason: "Adaptation promotion is disabled by training mode or settings." });
+  });
+
+  it("keeps the created-Flow gate on its own trial, even for a caller that claims to await a judged run", () => {
+    const claimed = { mode: "create", approvalMode: "auto", riskLevel: "low", confidence: tierOf([]), promoteAdaptations: true, awaitsJudgedRun: true } as AutomationStudioBootstrapApplyGateInput;
+    expect(decideAutomationStudioBootstrapApplyGate(claimed)).toEqual({ autoApply: false, requiresManualApproval: true, reason: "Adaptation must pass validation before promotion." });
+  });
+
   it("ignores a fabricated or wrong-kind result when promoting", () => {
     const wrongKind = { ...trial(), kind: "structural_check" } as unknown as AutomationStudioFlowAdaptationValidationResult;
     const unknownStatus = { ...trial(), status: "passed" } as unknown as AutomationStudioFlowAdaptationValidationResult;

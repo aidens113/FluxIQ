@@ -199,3 +199,74 @@ describe("the epoch and the state a run is counted at", () => {
     expect(automationStudioResultCheckStateFromRows({ ordinal: 1, lastCheckedOrdinal: 1, checksPassed: 0, lastStatus: "passed" }).lastStatus).toBeNull();
   });
 });
+
+// A routine run's caller pays for judging a repair, never for routine sampling
+// (MVP item 23): under `repair_checks` the caller's provider is reached only for
+// a check that follows a repair or a refuted result.
+describe("who pays for a check when the caller pays only for repair checks", () => {
+  const callers = { provider: model, maxEstimatedCostUsd: 0.25 };
+
+  /** Each check the schedule makes, with its own code, and the resolution each `callerPays` gives it. */
+  function checks(withAuthorization: boolean) {
+    const auth = withAuthorization ? authorization() : undefined;
+    const run = (options: Parameters<typeof context>[0]) => automationStudioRunResultCheck({ context: context({ ...options, authorization: auth }), nowMs: NOW });
+    return {
+      afterRepair: automationStudioRepairedRunResultCheck({ context: context({ ordinal: 5, lastCheckedOrdinal: 3, lastStatus: "confirmed", authorization: auth }), check: null, nowMs: NOW })!,
+      afterRefutation: run({ ordinal: 5, lastCheckedOrdinal: 4, lastStatus: "refuted" }),
+      initialWindow: run({ ordinal: 1 }),
+      intervalReached: run({ ordinal: 8, lastCheckedOrdinal: 3, lastStatus: "confirmed" }),
+      reaskUnsettled: run({ ordinal: 4, lastCheckedOrdinal: 3, lastStatus: "unverified" })
+    } as const;
+  }
+
+  async function resolve(check: ReturnType<typeof automationStudioRunResultCheck>, callerPays: "every_run" | "repair_checks" | undefined) {
+    const standing: unknown[] = [];
+    let callerAsked = 0;
+    const resolution = await resolveAutomationStudioResultCheckProvider({
+      scope: { projectId: "project.checks", flowId: "flow.catalogue" },
+      check,
+      ...(callerPays ? { callerPays } : {}),
+      resolveCallerProvider: async () => { callerAsked += 1; return callers; },
+      resolveStandingProvider: async (request) => { standing.push(request); return { provider: model }; }
+    });
+    return { resolution, callerAsked, standing };
+  }
+
+  it("reaches each schedule code it is meant to", () => {
+    const found = checks(true);
+    for (const [name, check] of Object.entries(found)) expect(check.decision).toMatchObject({ check: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES[name as keyof typeof found] });
+  });
+
+  it("lets the caller pay for the check after a repair and after a refuted result", async () => {
+    for (const check of [checks(false).afterRepair, checks(false).afterRefutation]) {
+      const { resolution, callerAsked, standing } = await resolve(check, "repair_checks");
+      expect(resolution).toBe(callers);
+      expect(callerAsked).toBe(1);
+      expect(standing).toEqual([]);
+    }
+  });
+
+  it("never lets the caller pay for routine sampling, which only a standing authorization pays for", async () => {
+    for (const name of ["initialWindow", "intervalReached", "reaskUnsettled"] as const) {
+      const authorized = await resolve(checks(true)[name], "repair_checks");
+      expect(authorized.callerAsked, name).toBe(0);
+      expect(authorized.standing, name).toHaveLength(1);
+      expect(authorized.resolution, name).toEqual({ provider: model, maxEstimatedCostUsd: 0.05 });
+
+      const unauthorized = await resolve(checks(false)[name], "repair_checks");
+      expect(unauthorized.callerAsked, name).toBe(0);
+      expect(unauthorized.standing, name).toEqual([]);
+      expect(unauthorized.resolution, name).toBeUndefined();
+    }
+  });
+
+  it("lets the caller pay on every run under every_run and when callerPays is absent, as before", async () => {
+    for (const callerPays of ["every_run", undefined] as const) {
+      for (const check of Object.values(checks(false))) {
+        const { resolution, standing } = await resolve(check, callerPays);
+        expect(resolution).toBe(callers);
+        expect(standing).toEqual([]);
+      }
+    }
+  });
+});

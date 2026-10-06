@@ -1,5 +1,9 @@
-// One re-author build, held to the repair's purse: build, approve, apply, and
+// One re-author build, held to the repair's purse: build, approve, hold, and
 // once more only after a named transient provider request failure.
+//
+// **Held, not applied (t267).** The approved edit is left unapplied: the re-run
+// from the start runs it as a candidate (`./repair-rerun.ts`) and it is applied
+// only once that whole run is judged to answer (`./judged-reauthor.ts`).
 //
 // Two routes re-author a Flow from the run: a result the check refuted
 // (`refuted-result-port.ts`) and a step the patch ladder could not repair
@@ -17,6 +21,8 @@ import { automationStudioRunNodeStartPages, type AutomationStudioLlmModelCaller 
 import {
   AUTOMATION_STUDIO_RESULT_REPAIR_COST_BOUND_CODE,
   automationStudioReauthorRefutedResult,
+  automationStudioRefutedResultReauthorMarked,
+  automationStudioRefutedResultWaitingReauthors,
   automationStudioResultRepairPurseAllowsPart,
   automationStudioResultRepairPurseCharged,
   automationStudioResultRepairPurseLeftUsd,
@@ -24,6 +30,7 @@ import {
   type AutomationStudioRefutedResultFailure,
   type AutomationStudioResultRepairPurse
 } from "../../recovery/refuted-result/index.ts";
+import { AutomationStudioProjectStoreUnavailableError } from "../../../storage/index.ts";
 import type { AutomationStudioGenerateFlowBootstrapAdaptationInput, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "../flow-bootstrap-commands/index.ts";
 
 /** What a re-author build borrows from the service: the run's caller, and the build and its review. */
@@ -44,12 +51,13 @@ export type AutomationStudioReauthorBuildDependencies = {
    * Empty when the run's host recorded none.
    */
   generate(request: AutomationStudioGenerateFlowBootstrapAdaptationInput, brief: AutomationStudioFlowInstruction, costLeftUsd: number, startPages: Readonly<Record<string, JsonObject>>): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult>;
+  /** Approves the adaptation. Nothing here applies it: the judged re-run does (`./judged-reauthor.ts`). */
   approve(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
-  /** Applies the approved adaptation; the run then replays the Flow it produced. */
-  apply(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
+  /** Rejects a held edit an earlier attempt of this run left waiting, which this attempt replaces. */
+  reject(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
 };
 
-/** What one build answered: its adaptation and whether it applied, or the failure it ended under. */
+/** What one build answered: its adaptation and that it is held, or the failure it ended under. */
 export type AutomationStudioReauthorBuilt = Awaited<ReturnType<typeof automationStudioReauthorRefutedResult>>;
 
 /** The actor every re-author is reviewed and applied as. */
@@ -67,7 +75,7 @@ const COST_BOUND_FAILURE: AutomationStudioRefutedResultFailure = Object.freeze({
 });
 
 /**
- * Builds the extend-mode edit from `brief`, approves and applies it, and
+ * Builds the extend-mode edit from `brief`, approves and holds it, and
  * records each attempt on the run through `record`. A build that failed for a
  * transient provider request reason is built again once, handed only what the first left.
  * A build the purse has nothing left for is not started: it asks no model and
@@ -111,7 +119,7 @@ export async function automationStudioReauthorBuild(input: {
         return { adaptationId: generated.adaptationId, accounting: { ...generated.accounting } };
       },
       approve: (adaptationId) => deps.approve({ projectId, flowId, adaptationId, actorId: REPAIR_ACTOR }),
-      apply: (adaptationId) => deps.apply({ projectId, flowId, adaptationId, actorId: REPAIR_ACTOR }),
+      hold: true,
       failureCode: (error) => automationStudioRefutedResultFailureOf(automationStudioFlowBootstrapFailureDiagnosticOf(error, "pre_provider_validation"))
     });
     // A build that made an edit called the model; a failed one says whether
@@ -124,8 +132,14 @@ export async function automationStudioReauthorBuild(input: {
     });
     return built;
   };
+  // A held edit an earlier attempt of this run left waiting was run and not
+  // judged to answer, or this attempt would not be starting. It is never
+  // applied: it is rejected -- a pending adaptation refuses every new build of
+  // the Flow (`flow_bootstrap.pending_adaptation_exists`) -- and marked
+  // superseded, before this attempt builds (`./judged-reauthor.ts`).
+  let detail = await supersedeWaitingReauthors(deps, projectId, flowId, input.detail);
   let built = await build();
-  let detail = input.record(input.detail, built);
+  detail = input.record(detail, built);
   // Public retryability also covers continuing a kept draft after an unfinished
   // or budget ending. Only a named transient request failure merits immediately
   // rebuilding the unchanged brief. Both attempts remain on the same purse.
@@ -134,6 +148,30 @@ export async function automationStudioReauthorBuild(input: {
     detail = input.record(detail, built);
   }
   return { detail, built, purse };
+}
+
+/**
+ * The run with every held edit an earlier attempt left waiting rejected and
+ * marked `superseded`. A rejection that is refused is said on the marker, in a
+ * code, and the build that follows meets the pending edit and says so too.
+ */
+async function supersedeWaitingReauthors(
+  deps: AutomationStudioReauthorBuildDependencies,
+  projectId: string,
+  flowId: string,
+  detail: AutomationStudioFlowRunDetail
+): Promise<AutomationStudioFlowRunDetail> {
+  let next = detail;
+  for (const adaptationId of automationStudioRefutedResultWaitingReauthors(detail)) {
+    let rejectRefused: "store_unavailable" | "refused" | undefined;
+    try {
+      await deps.reject({ projectId, flowId, adaptationId, actorId: REPAIR_ACTOR });
+    } catch (error) {
+      rejectRefused = AutomationStudioProjectStoreUnavailableError.is(error) ? "store_unavailable" : "refused";
+    }
+    next = automationStudioRefutedResultReauthorMarked(next, adaptationId, { notAppliedReason: "superseded", settledAt: Date.now(), ...(rejectRefused ? { rejectRefused } : {}) });
+  }
+  return next;
 }
 
 function automaticRequestRetry(failure: AutomationStudioRefutedResultFailure | undefined): boolean {

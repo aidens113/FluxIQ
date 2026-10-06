@@ -10,6 +10,10 @@ import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATIO
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS } from "../../../runtime/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../../runtime/loop-limits/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
+import { automationStudioConversationEffectiveCaller } from "../../../runtime/conversations/commands/index.ts";
+
+/** The service's conversations, answering `callerFor` as Core does for a person's own session: unchanged. */
+const CONVERSATIONS = { callerFor: (who: { userId: string; sessionId: string }) => automationStudioConversationEffectiveCaller(who, () => null) };
 
 function readyLlmApiService<T extends object>(service: T): T & { getFlowBootstrapGenerationRuntimeReadiness(): { providerResolverConfigured: true; nativeNodeRegistryConfigured: true; llmEvidenceRuntime: { bound: true; toolCount: number } } } {
   return Object.assign({
@@ -21,7 +25,7 @@ describe("Automation Studio LLM execution API", () => {
   it("runs a diagnosis_only intent for the signed-in actor, with no grant, and may name the run it continues", async () => {
     const runRuntimeSession = vi.fn().mockResolvedValue({ runId: "run.one", status: "failed" });
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn().mockResolvedValue(null) } as any);
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn().mockResolvedValue(null), conversations: CONVERSATIONS } as any);
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
     const run = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", runIntent: "diagnosis_only" } });
     expect(run.ok).toBe(true);
@@ -45,7 +49,7 @@ describe("Automation Studio LLM execution API", () => {
       metadata: { runtimePatchAttempts: [{ adaptationId: "adaptation.manual", approvalDecision: { autoApply: false } }] }
     });
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail } as any);
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail, conversations: CONVERSATIONS } as any);
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
 
     const response = await registry.call({
@@ -364,7 +368,7 @@ describe("Automation Studio LLM execution API", () => {
   it("refuses an unsupported run intent and an unknown consequence class", async () => {
     const runRuntimeSession = vi.fn();
     const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, { runRuntimeSession } as any);
+    registerAutomationStudioApi(registry, { runRuntimeSession, conversations: CONVERSATIONS } as any);
     const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
     const call = (payload: Record<string, unknown>) => registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one", ...payload } });
     await expect(call({ runIntent: "unbounded_build" })).resolves.toEqual({ ok: false, error: "The run intent is not one Core supports." });

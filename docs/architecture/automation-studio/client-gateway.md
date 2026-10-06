@@ -305,14 +305,21 @@ A token call's request is also narrowed (`narrowPairedClientRequest`), and a
 refusal is 403 with a sentence naming the field, never its value:
 
 - `run-runtime-session` must name a saved Flow by `flowId`, and may not carry an
-  inline `flow`, `inputs`, `runIntent`, `permittedConsequences`, `dryRunLlm`,
+  inline `flow`, `inputs`, `permittedConsequences`, `dryRunLlm`,
   `useReusableContext`, or `authorizedExternalSideEffects` other than `false`.
   Its `adaptiveMode` must be `no_llm_intervention` or `deterministic`; an absent
   mode, which would mean fully adaptive, is set to `no_llm_intervention`. A
-  paired token therefore never asks the model into a run, and never allows a
-  consequence on the person's behalf. One LLM call remains
-  possible: a Flow's standing result check, which the person authorized on
-  that Flow in the web panel, runs on a token run as on any other.
+  paired token never allows a consequence on the person's behalf.
+- The one exception is the extension's Automations Run (t267). A run may carry
+  `runIntent: "explore_and_adapt"`, and no other intent. It may then carry no
+  `adaptiveMode`, and it runs under the Flow's own mode, so a saved Flow whose
+  page changed can be repaired. The run handler maps the paired actor to the
+  person's unlocked session (`runtime/conversations/commands/caller.ts`), so
+  their key pays. With no unlocked session the run gets no model at all. A
+  lasting consequence is still asked of the person act by act.
+- Without that intent, a paired token never asks the model into a run. One LLM
+  call remains possible: a Flow's standing result check, which the person
+  authorized on that Flow in the web panel, runs on a token run as on any other.
 - `generate-recording-proposal` may not be `llm_assisted` and may not carry
   `instructions` or `constraints`.
 - `review-recording-flow-proposal` may only approve, and may not carry

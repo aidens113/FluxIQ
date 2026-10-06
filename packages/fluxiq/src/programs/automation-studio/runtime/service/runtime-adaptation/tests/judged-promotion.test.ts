@@ -9,6 +9,7 @@ import {
   settleAutomationStudioRunJudgedPromotions
 } from "../judged-promotion.ts";
 import { AutomationStudioProjectStoreUnavailableError } from "../../../../storage/index.ts";
+import { adaptationConfidence, evaluateFlowAdaptationPromotionGates } from "../../../recovery/index.ts";
 
 // The rule a runtime patch is kept by (t249): applied only once a whole run
 // that ran it ended `succeeded` with a performed verdict of `answers`.
@@ -148,6 +149,84 @@ describe("settling a run's pending patches", () => {
     const { stored } = await settle({ session: session("succeeded", { performed: true, verdict: "answers" }), ran: true, applyFails: true });
 
     expect(stored.get("a.1")?.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "apply_failed", autoApplyFailed: true, error: expect.stringContaining("destructive") });
+  });
+
+  // t267: a target override on a Flow that declares no evidence proved nothing
+  // in its trial, so it carries no validation result, and the apply gate wants
+  // a succeeded trial. The judged whole run is that evidence: it is recorded
+  // before the apply, so the gate the apply runs reads it.
+  describe("for a change whose evidence is the judged whole run", () => {
+    const awaitingVerification = { status: "unverifiable", reason: "no_expectation_declared", awaitsJudgedRun: true };
+    const awaiting = (overrides: Partial<AutomationStudioFlowAdaptation> = {}) => adaptation("a.1", {
+      status: "testing",
+      riskLevel: "high",
+      patch: [{ kind: "edit_action_target", targetId: "press", summary: "Use the renamed control.", after: { handles: { control: "replacement" } } }],
+      metadata: { approvalDecision: pending, verification: awaitingVerification },
+      ...overrides
+    });
+
+    async function settleAwaiting(ended: ReturnType<typeof session>, stored: AutomationStudioFlowAdaptation) {
+      const store = new Map([["a.1", stored]]);
+      const atApply: AutomationStudioFlowAdaptation[] = [];
+      await settleAutomationStudioJudgedPromotions({
+        ports: {
+          getFlowAdaptation: async (_projectId, _flowId, id) => store.get(id) ?? null,
+          saveFlowAdaptation: async (saved) => { store.set(saved.adaptationId, saved); return saved; },
+          applyFlowAdaptation: async (request) => {
+            const read = store.get(request.adaptationId)!;
+            atApply.push(read);
+            const gates = evaluateFlowAdaptationPromotionGates(read);
+            if (!gates.ok) throw new Error(`Adaptation cannot be applied: ${gates.issues.join("; ")}`);
+            return { ...read, status: "applied" };
+          }
+        },
+        projectId: "project.judged",
+        flowId: "flow.judged",
+        session: ended,
+        detail: {
+          adaptationIds: ["a.1"],
+          metadata: {
+            runtimePatchAttempts: [{ kind: "temporary_target_override", adaptationId: "a.1", approvalDecision: pending }],
+            adaptiveRetry: { attempted: true, status: "succeeded", candidateAdaptationIds: ["a.1"] }
+          }
+        } as unknown as AutomationStudioFlowRunDetail
+      });
+      return { stored: store.get("a.1")!, atApply };
+    }
+
+    it("records the judged run as a succeeded trial before the apply, so the apply gate passes", async () => {
+      const { stored, atApply } = await settleAwaiting(session("succeeded", { performed: true, verdict: "answers" }), awaiting());
+
+      expect(atApply).toHaveLength(1);
+      expect(atApply[0]?.validationResults).toEqual([{ runId: RUN_ID, status: "succeeded", checkedAt: expect.any(Number), kind: "trial", basis: ["judged_whole_run"], detail: expect.stringContaining("judged to answer") }]);
+      expect(adaptationConfidence(atApply[0]!)).toMatchObject({ tier: "provisional", trials: 1 });
+      expect(stored.metadata?.approvalDecision).toMatchObject({ applied: true, judgedRunId: RUN_ID });
+      expect(stored.metadata?.approvalDecision).not.toHaveProperty("notAppliedReason");
+    });
+
+    it("keeps what was recorded before, and adds the judged run after it", async () => {
+      const earlier = { runId: "run.earlier", status: "succeeded" as const, checkedAt: 3, kind: "replay" as const };
+      const { atApply } = await settleAwaiting(session("succeeded", { performed: true, verdict: "answers" }), awaiting({ validationResults: [earlier] }));
+
+      expect(atApply[0]?.validationResults).toEqual([earlier, expect.objectContaining({ runId: RUN_ID, basis: ["judged_whole_run"] })]);
+    });
+
+    it("records nothing when the run is refuted or not judged", async () => {
+      for (const ended of [session("failed", { performed: true, verdict: "does_not_answer" }), session("succeeded", { performed: false })]) {
+        const { stored, atApply } = await settleAwaiting(ended, awaiting());
+
+        expect(atApply).toEqual([]);
+        expect(stored).not.toHaveProperty("validationResults");
+        expect(stored.metadata?.approvalDecision).toMatchObject({ applied: false });
+      }
+    });
+
+    it("records nothing for a change that does not await a judged run, so its apply is still refused without a trial", async () => {
+      const { stored, atApply } = await settleAwaiting(session("succeeded", { performed: true, verdict: "answers" }), awaiting({ metadata: { approvalDecision: pending, verification: { status: "unverifiable", reason: "no_expectation_declared" } } }));
+
+      expect(atApply[0]).not.toHaveProperty("validationResults");
+      expect(stored.metadata?.approvalDecision).toMatchObject({ applied: false, notAppliedReason: "apply_failed", error: expect.stringContaining("at least one successful trial") });
+    });
   });
 
   it("leaves the patch of a run that failed after resuming unapplied, and asks for no apply", async () => {

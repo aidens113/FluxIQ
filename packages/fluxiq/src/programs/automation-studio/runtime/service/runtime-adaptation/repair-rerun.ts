@@ -28,8 +28,14 @@
 // It was a private method on `AutomationStudioService`, where the second caller
 // could not have been added: that file is at its line ratchet, and the wrong
 // answer's re-run is the same ninety lines with one branch in them.
+//
+// **A held re-author runs unapplied (t267).** Both re-author routes hold their
+// approved edit (`./reauthor-build.ts`), so a `start` re-run whose latest
+// re-author is held runs the held graph as its candidate, or applies it first
+// where it cannot be run alone (`./held-candidate.ts`), and names the held edit it
+// ran for the run's judged end to settle (`./judged-reauthor.ts`).
 
-import type { JsonValue } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type {
   AutomationStudioFlowAdaptation,
   AutomationStudioFlowArtifact,
@@ -41,7 +47,8 @@ import type {
 } from "../../../model/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor.ts";
-import { automationStudioRefutedResultFlowWasReauthored } from "../../recovery/refuted-result/index.ts";
+import type { AutomationStudioBootstrapAdaptation } from "../../flow-bootstrap/index.ts";
+import { automationStudioRefutedResultFlowWasReauthored, automationStudioRefutedResultHeldReauthor, automationStudioRefutedResultReauthorMarked } from "../../recovery/refuted-result/index.ts";
 import { decideAutomationStudioAdaptiveRetry } from "../adaptations/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions } from "../../flow-version/index.ts";
 import { canonicalFlowDocument } from "../flows/index.ts";
@@ -56,6 +63,8 @@ import {
   settleAutomationStudioJudgedPromotions,
   type AutomationStudioJudgedPromotionPorts
 } from "./judged-promotion.ts";
+import { automationStudioHeldReauthorCandidate } from "./held-candidate.ts";
+import { AUTOMATION_STUDIO_HELD_REAUTHOR_RAN_KEY } from "./judged-reauthor.ts";
 
 /**
  * What the service lends a re-run: the reads it makes, the two writes it lands,
@@ -71,6 +80,10 @@ export type AutomationStudioRepairRerunPorts = AutomationStudioJudgedPromotionPo
   deprecatedPublicationIds(): Promise<string[]>;
   writeRuntimeSession(projectId: string, session: AutomationStudioRuntimeSession): Promise<unknown>;
   saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<unknown>;
+  /** A held re-author's record, whose graph the re-run runs unapplied. */
+  getFlowBootstrapAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioBootstrapAdaptation | null>;
+  /** Applies a held re-author whose graph cannot be run alone, before the re-run. */
+  applyFlowBootstrapAdaptation(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
 };
 
 export type AutomationStudioRepairRerunInput = {
@@ -132,9 +145,16 @@ export async function rerunAutomationStudioSessionAfterRepair(
   }
   const resumeNodeId = decision && !("declined" in decision) ? decision.resume.nodeId : undefined;
   const rerunStartedAt = Date.now();
-  const found = await changedFlow(input);
+  const reauthored = input.from === "start" && automationStudioRefutedResultFlowWasReauthored(input.detail);
+  // A held re-author: its graph, unapplied, or -- for a shape that cannot be
+  // run alone -- applied first, before the Flow is read back below.
+  const heldId = reauthored ? automationStudioRefutedResultHeldReauthor(input.detail) : undefined;
+  const held = heldId ? await automationStudioHeldReauthorCandidate(input, heldId) : undefined;
+  if (held && "unreadable" in held) return { declinedCode: UNREADABLE[held.unreadable] };
+  const found = held && "flow" in held ? held : await changedFlow(input);
   if ("declinedCode" in found) return found;
   const updatedFlow = found.flow;
+  const ranHeld = held && "flow" in held ? heldId : undefined;
   if (input.subflowId) await input.ports.assertOwnedSubflowGraph(input.projectId, updatedFlow);
   // Every pass runs the unapplied candidate: the stored Flow with this run's
   // pending runtime patches written onto it, unsaved. Nothing is applied until
@@ -144,10 +164,12 @@ export async function rerunAutomationStudioSessionAfterRepair(
   // first: they were written for the graph before. Otherwise the re-run is the
   // whole-Flow pass for the patches the refuted result's repair wrote, which had
   // no failed step to resume from.
-  const reauthored = input.from === "start" && automationStudioRefutedResultFlowWasReauthored(input.detail);
-  const detail = input.from === "start"
+  const settled = input.from === "start"
     ? await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.adaptationContext.flowId, session: input.session, detail: input.detail, ...(reauthored ? {} : { only: "ran" as const }) })
     : input.detail;
+  const detail = heldId && held && "appliedBeforeJudged" in held
+    ? automationStudioRefutedResultReauthorMarked(settled, heldId, { applied: true, appliedBeforeJudged: held.appliedBeforeJudged })
+    : settled;
   const candidate = reauthored ? { flow: updatedFlow, adaptationIds: [] } : await pendingCandidate({ ...input, detail }, updatedFlow);
   if ("declinedCode" in candidate) return candidate;
   if (input.from === "start" && !reauthored && !candidate.adaptationIds.length) return { declinedCode: UNREADABLE.nothingToRerun };
@@ -170,7 +192,8 @@ export async function rerunAutomationStudioSessionAfterRepair(
     // graph the run entered exactly as it was -- the orchestration Flow does
     // not move when a Subflow's graph is rewritten, and claiming it did would
     // sever the parent from its own history.
-    metadata: automationStudioMetadataWithFlowVersions(input.session.metadata, automationStudioRunFlowVersions([
+    // Which held re-author this pass ran, if any, for the judged end to settle; a pass that ran none clears an earlier pass's.
+    metadata: automationStudioMetadataWithFlowVersions(withHeldReauthorRan(input.session.metadata, ranHeld), automationStudioRunFlowVersions([
       ...automationStudioFlowVersionsFromMetadata(input.session.metadata),
       automationStudioFlowGraphVersion({ flow: updatedFlow, ...(input.subflowId ? { subflowId: input.subflowId } : {}) })
     ])),
@@ -227,7 +250,9 @@ export async function rerunAutomationStudioSessionAfterRepair(
         attemptCount: retryTrace.attempts.length,
         ...(adopted ? { trialCompleted: true } : {}),
         // The pending patches this pass ran, which the judged-promotion settle reads.
-        ...(candidate.adaptationIds.length ? { candidateAdaptationIds: candidate.adaptationIds } : {})
+        ...(candidate.adaptationIds.length ? { candidateAdaptationIds: candidate.adaptationIds } : {}),
+        // The held re-author this pass ran unapplied (`./judged-reauthor.ts`).
+        ...(ranHeld ? { [AUTOMATION_STUDIO_HELD_REAUTHOR_RAN_KEY]: ranHeld } : {})
       },
       ...rerunRecoveryState(detail, retryTrace.status, rerunStartedAt, retryTrace.finishedAt ?? Date.now())
     }
@@ -259,6 +284,12 @@ async function pendingCandidate(
   } catch {
     return { declinedCode: UNREADABLE.candidateUnwritable };
   }
+}
+
+/** The session's metadata naming the held re-author this pass ran, or with no such name when it ran none. */
+function withHeldReauthorRan(metadata: JsonObject | undefined, adaptationId: string | undefined): JsonObject {
+  const { [AUTOMATION_STUDIO_HELD_REAUTHOR_RAN_KEY]: _earlierPass, ...kept } = metadata ?? {};
+  return adaptationId ? { ...kept, [AUTOMATION_STUDIO_HELD_REAUTHOR_RAN_KEY]: adaptationId } : kept;
 }
 
 /**
@@ -326,7 +357,9 @@ const UNREADABLE = {
   graph: "repair_rerun.subflow_graph_unreadable",
   nothingToRerun: "repair_rerun.nothing_to_rerun",
   candidate: "repair_rerun.candidate_unreadable",
-  candidateUnwritable: "repair_rerun.candidate_unwritable"
+  candidateUnwritable: "repair_rerun.candidate_unwritable",
+  heldReauthor: "repair_rerun.held_reauthor_unreadable",
+  heldReauthorApply: "repair_rerun.held_reauthor_apply_failed"
 } as const;
 
 /** The Flow as it now stands: the Subflow's graph where one ran, else the Flow itself. */

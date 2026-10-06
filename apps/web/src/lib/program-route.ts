@@ -181,17 +181,37 @@ export type PairedClientRequestNarrowing =
  * (`normalizeAutomationStudioRuntimeInterventionMode` reads absent and
  * `default` as `fully_adaptive`, and `runtimeAdaptationContextWithRunOverride`
  * turns `invokeLlm` off only for `no_llm_intervention`), so a token's run with
- * no mode is pinned to `no_llm_intervention` and any other mode is refused.
+ * no mode and no intent is pinned to `no_llm_intervention` and any other mode
+ * is refused. A run that names the repair intent is the one exception
+ * (`PAIRED_CLIENT_RUN_INTENT`).
  */
 const PAIRED_CLIENT_RUN_MODES: readonly string[] = ["no_llm_intervention", "deterministic"];
+
+/**
+ * The one model intent a paired client's run may carry: the extension's
+ * Automations Run (t267), so a saved Flow the person runs is repaired when its
+ * page has changed since it was built. It is a deliberate exception to the
+ * rule below that no token call reaches an LLM, made for the same reason as
+ * the chat's (`runtime/conversations/commands/caller.ts` in `fluxiq`): the
+ * person asked for the extension to do it. The token still grants nothing.
+ * The run handler maps the paired actor to the person's unlocked session, so
+ * the key that pays is theirs, and with no unlocked session the Flow runs with
+ * no model at all. The run executes under the Flow's own mode, so no
+ * `adaptiveMode` may be named beside it. A lasting consequence -- money, a
+ * delete, a send -- is still asked of the person act by act, since
+ * `permittedConsequences` stays refused.
+ */
+const PAIRED_CLIENT_RUN_INTENT = "explore_and_adapt";
 
 /**
  * What a paired client may put in the request body of an endpoint whose
  * handler would otherwise let it reach further than the allowlist means. The
  * rule is least privilege: no token call carries an LLM grant or reaches an
- * LLM, runs an inline Flow document, authorizes an external side effect, or
- * speaks for a reviewer other than the person the actor already is. A refused
- * field is named, never its value. Endpoints not listed here pass unchanged.
+ * LLM -- except a run that names `PAIRED_CLIENT_RUN_INTENT`, under the
+ * person's own key --, runs an inline Flow document, authorizes an external
+ * side effect, or speaks for a reviewer other than the person the actor
+ * already is. A refused field is named, never its value. Endpoints not listed
+ * here pass unchanged.
  */
 export function narrowPairedClientRequest(programId: string, endpoint: string, payload: unknown): PairedClientRequestNarrowing {
   const program = programId.trim().toLowerCase();
@@ -206,11 +226,16 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
 function narrowRunRuntimeSession(payload: unknown): PairedClientRequestNarrowing {
   const body = payloadRecord(payload);
   if (!body || typeof body.flowId !== "string" || !body.flowId.trim()) return forbidden("A paired client's run must name a saved Flow by a string flowId.");
-  for (const field of ["flow", "runIntent", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs"] as const) {
+  for (const field of ["flow", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs"] as const) {
     if (field in body) return forbidden(`A paired client's run may not carry ${field}.`);
   }
   if ("authorizedExternalSideEffects" in body && body.authorizedExternalSideEffects !== false) {
     return forbidden("A paired client's run may not carry authorizedExternalSideEffects.");
+  }
+  if ("runIntent" in body) {
+    if (body.runIntent !== PAIRED_CLIENT_RUN_INTENT) return forbidden("A paired client's run may carry only the explore_and_adapt intent.");
+    if ("adaptiveMode" in body) return forbidden("A paired client's run that names an intent may not also carry adaptiveMode.");
+    return { ok: true, payload: body };
   }
   if (body.adaptiveMode === undefined) return { ok: true, payload: { ...body, adaptiveMode: "no_llm_intervention" } };
   if (typeof body.adaptiveMode !== "string" || !PAIRED_CLIENT_RUN_MODES.includes(body.adaptiveMode)) {
