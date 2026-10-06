@@ -6,7 +6,7 @@
  * here).
  *
  * - `amendment`: why an edit to the draft changed nothing, by the draft's own
- *   refusal reason (`programs/automation-studio/runtime/flow-draft/amendment.ts`).
+ *   refusal reason (`programs/automation-studio/runtime/flow-draft/amendment/types.ts`).
  * - `repeated`: why a call, or a step asked to run again, was not run, by what
  *   the same call came to before (`programs/automation-studio/runtime/llm/repeat-guard/outcomes.ts`).
  *
@@ -32,6 +32,9 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     bind_row_outside_loop: "that step is not repeated for each item, so there is no item to take the value from",
     bind_malformed: "the placeholder for that value was not written correctly",
     rerun_holds_binding: "that step takes a value that varies, which is known only when the Flow runs",
+    // Only beside an edit that moved a step, which changed the Flow, so a card
+    // shows it as partly done at most; here because the reasons are exhaustive by type.
+    repeat_taken_off: "moving a step left a repeat unable to run, so it was taken off",
   } as const),
   repeated: Object.freeze({
     failed: "it was already tried exactly this way and did not work",

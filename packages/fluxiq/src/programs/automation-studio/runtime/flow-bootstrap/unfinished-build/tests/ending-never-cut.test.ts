@@ -105,7 +105,7 @@ describe("the other endings that sliced their message", () => {
       spending: { spentUsd: 0.08, pendingUsd: 0, ceilingUsd: 0.1, judgedUsd: 0.004, carriedUsd: 0.02, projectedCostUsd: 0.03 }
     }).message;
     expect(said.length).toBeLessThanOrEqual(MAX);
-    expect(said).toMatch(/I explored live 3 times over 38 decisions[^.]*\. The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it, with \$0\.020 left of this Flow's \$0\.10\.$/u);
+    expect(said).toMatch(/I worked on it live 3 times: first exploring the page, then fixing it twice after testing what I had\. The steps I found so far were kept as a draft, so building again carries on from them, with \$0\.020 left of this Flow's \$0\.10\.$/u);
     expect(said).toMatch(/^The build stopped at its spending limit of \$0\.10 before the Flow was finished: /u);
     // A Flow judged wrong is said so once, with how far it got, never again as what held it up (t264 S3).
     expect(said.match(/judged not to (?:do|be) what you asked/gu)).toHaveLength(1);
@@ -119,7 +119,9 @@ describe("the other endings that sliced their message", () => {
     }).message;
     expect(said.length).toBeLessThanOrEqual(MAX);
     expect(said.endsWith(KEPT)).toBe(true);
-    expect(said).toMatch(/^The build stopped because the model's replies could not be read: 6 in a row came back unreadable/u);
+    expect(said).toMatch(/^The build stopped because the replies it got back could not be read: 6 in a row came back unreadable/u);
+    // Three live rounds are said as every ending says them, before what was kept.
+    expect(said).toContain("I worked on it live 3 times: first exploring the page, then fixing it twice after testing what I had. " + KEPT);
   });
 });
 

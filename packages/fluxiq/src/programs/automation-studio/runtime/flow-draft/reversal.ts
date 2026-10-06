@@ -43,7 +43,7 @@
 // Run wherever a step joins the Flow, after the steps that opened its page
 // joined with it: a step appended with `add` (`../llm/evidence-loop.ts`), a
 // rerun that took a kept step's place, and an `add` or `keep` amendment
-// (`./amendment.ts`).
+// (`./amendment/apply.ts`).
 
 import { automationStudioFlowDraftStepId } from "./routing.ts";
 import { automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "./step.ts";

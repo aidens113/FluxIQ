@@ -67,6 +67,28 @@ describe("what an evidence decision is shown of the node catalog", () => {
   });
 });
 
+// t195-w47 (run `run-musr9pv3-f4bf6256`): the build started at the site's front
+// page and clicked through to ~/friends/requests/, where all its work was, and
+// its Flow kept every press of that journey. The note now says the Flow's first
+// step may go straight to where the work begins, once that address is seen to
+// be stable, and that the dismissals stay.
+describe("what a build is told about where its Flow starts", () => {
+  it("says step 1 may be rerun with the stable address the work begins at, the travel dropped and the dismissals kept", () => {
+    const note = (userPayload(evidenceRequest(catalogContext)).context.flowBootstrap as Record<string, unknown>).startLocationNote as string;
+
+    expect(note).toContain("the Flow's first step, already kept");
+    expect(note).toContain("may instead go straight to the address where the work begins");
+    expect(note).toContain("stable");
+    expect(note).toContain("session");
+    expect(note).toContain("rerun step 1 with it");
+    expect(note).toContain("drop the steps that only travelled there");
+    expect(note).toContain("Keep every optional dismissal");
+    // A route the person named is followed, whatever the shortcut (user's rule, t195 w49).
+    expect(note).toContain("Unless the person's instruction says how to get there");
+    expect(note).toContain("then follow that route and keep its steps");
+  });
+});
+
 describe("what a one-shot build is shown of the node catalog", () => {
   it("is byte for byte the payload it was before the names-only catalog", () => {
     const request = oneShotRequest();

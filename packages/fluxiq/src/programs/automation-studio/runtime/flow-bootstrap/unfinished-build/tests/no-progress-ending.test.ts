@@ -109,7 +109,7 @@ describe("a round without measured progress, after a judge who named the fix", (
     expect(message).toContain("this time the judge found: \"the accepted read kept none\"");
     expect(message).not.toContain("the judge found the same as before");
     expect(message).toContain("What the judge says is left to change: \"match the accepted text the list shows\".");
-    expect(message).toContain("The Flow so far was kept as a draft, not put into the Flow, and building again carries on from it.");
+    expect(message).toContain("The steps I found so far were kept as a draft, so building again carries on from them.");
     expect(outcome.kept).toEqual({ revision: 1, steps: 4 });
     expect(kept[0]![0]).toBe("judged_wrong");
     expect(parseAutomationStudioFlowBootstrapBuildEnding(outcome.ending, "flow_bootstrap.build_not_finished")).toEqual(outcome.ending);

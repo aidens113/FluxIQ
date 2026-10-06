@@ -97,6 +97,12 @@ describe("withAutomationStudioBuildActivity", () => {
     const budget = Object.assign(new Error("y"), { diagnostic: { code: "flow_bootstrap.evidence_budget_exhausted", ending: { kind: "budget_exhausted", message: "The build stopped at its spending limit of $0.25." } } });
     await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw budget; })).rejects.toBe(budget);
     expect(seen[3]).toMatchObject({ label: "Build stopped: a budget ran out", detail: { text: "The build stopped at its spending limit of $0.25." } });
+
+    // No "model" in what the person reads (t195-w48).
+    const unreadable = Object.assign(new Error("z"), { diagnostic: { code: "flow_bootstrap.model_replies_unreadable", ending: { kind: "replies_unreadable", message: "The build stopped because the replies it got back could not be read." } } });
+    await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw unreadable; })).rejects.toBe(unreadable);
+    expect(seen[5]).toMatchObject({ label: "Build stopped: the replies it got back could not be read", detail: { title: "Build stopped: the replies it got back could not be read" } });
+    expect(seen[5]!.label).not.toMatch(/model/u);
   });
 
   it("runs unobserved without a usable project", async () => {

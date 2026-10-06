@@ -117,7 +117,7 @@ describe("creating a Flow through an exploration, with no grant", () => {
     });
     expect(run.failure?.evidenceLoop?.steps).toHaveLength(6);
     expect(run.failure?.ending).not.toHaveProperty("bound");
-    expect(run.failure?.ending?.message).toBe("The build stopped because the model's replies could not be read: 6 in a row came back unreadable -- because the JSON object never closed: it stopped part-way through -- and each was asked again with a note of what was wrong. In all, 6 of 6 replies could not be read, over one live round; each was paid for and counted in the build's budget. No step I found belonged in the Flow. Nothing was kept to carry on from.");
+    expect(run.failure?.ending?.message).toBe("The build stopped because the replies it got back could not be read: 6 in a row came back unreadable -- because the JSON object never closed: it stopped part-way through -- and it asked again each time, with a note of what was wrong. In all, 6 of 6 replies could not be read; each was paid for and counted in the build's budget. No step I found belonged in the Flow. Nothing was kept to carry on from.");
     // Nothing ran out: the round was ended by its unreadable replies, with
     // calls left, so the record carries no exhaustion.
     expect(run.failure?.evidenceLoop).not.toHaveProperty("exhausted");

@@ -72,7 +72,20 @@
 // because no test can undo it: an act whose verb names a class a person is
 // asked about (`delete`, `move_money`, `send_or_publish`) needs a step that
 // declares it, or nobody is asked (`act_consequence_undeclared`,
-// `flow-bootstrap/instructed-acts/permission.ts`).
+// `flow-bootstrap/instructed-acts/permission.ts`). And one more, because no
+// single test can show it either: an act whose only step is marked optional
+// may be skipped by the Flow whenever that step fails, so it is not done
+// (`step_is_optional`, `flow-bootstrap/instructed-acts/optional-only.ts`; run
+// `run-musq0b1m-0472cfa0`, Cause 5, where the 7-in-1 press was made optional
+// on a false premise and both judges passed it because it "was replayed").
+// Both travel together under `missingActs`, one entry per act.
+//
+// **A routing refusal carries its sentence (t195-w47).** A repeat, guard or
+// recovery that cannot be wired as stated is refused by the draft's routing
+// (`flow-bootstrap/authoring/draft-routing.ts`) with a sentence that names the
+// amendment fixing this draft. The issue feedback carries only its listed
+// authored codes' sentences, so the routing codes' sentences are put back here
+// (`withRoutingSentence`, below).
 //
 // None costs a provider call, and each refusal carries its own account of what
 // is missing beside the issue rather than only a code. A plan that cannot be
@@ -99,6 +112,8 @@ import {
   checkAutomationStudioFlowBootstrapAnswersInstruction,
   checkAutomationStudioFlowBootstrapReachesStartLocation,
   checkAutomationStudioInstructedActPermissions,
+  checkAutomationStudioInstructedActsOptionalOnly,
+  AUTOMATION_STUDIO_INSTRUCTED_ACT_OPTIONAL_ONLY_INSTRUCTION,
   parseAutomationStudioFlowBootstrapPlan,
   validateAutomationStudioFlowBootstrapPlan,
   type AutomationStudioFlowBootstrapIssue,
@@ -114,8 +129,9 @@ import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HAN
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters } from "./plan-parameter-resolution.ts";
 
-// `evidence_completion_cannot_answer` is still produced, by the one act rule
-// that refuses (an undeclared consequence a person is asked about); the
+// `evidence_completion_cannot_answer` is still produced, by the two act rules
+// that refuse (an undeclared consequence a person is asked about, and an act
+// whose only step is optional); the
 // answerability and start-location checks no longer refuse at all.
 export type AutomationStudioFlowBootstrapCompletionFailureCode = Extract<AutomationStudioFlowBootstrapPhaseFailureCode,
   | "flow_bootstrap.evidence_completion_wrapper_invalid"
@@ -342,11 +358,26 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // Whether every act a person is asked about is declared, read off the draft
   // rather than the plan, so it is asked even of a draft whose plan did not
   // assemble. Only a Flow built from the draft has steps a claim can name.
-  // Whether the acts are done is the test's and the judge's, never this check's.
+  // Whether the acts are done is the test's and the judge's, never this check's,
+  // save for an act only an optional step does, which no test can show done.
   const permissions = checkAutomationStudioInstructedActPermissions({ instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined });
-  if (!permissions.ok) {
-    // Filed under the cannot-answer code, as the instructed acts were: the issue code says which way.
-    failures.push({ code: "flow_bootstrap.evidence_completion_cannot_answer", issues: [permissions.issue], detail: { key: "missingActs", value: permissions.missingActs, instruction: permissions.instruction } });
+  // Read with the host's declared arrival, as the restore above and the checklist read it (t262).
+  const optional = checkAutomationStudioInstructedActsOptionalOnly({
+    instructionText: input.instructionText, result, draftSteps: drafted ? draftSteps : undefined,
+    startLocation: input.startLocation, arrival: input.binding?.runsNodes?.arrival
+  });
+  if (!permissions.ok || !optional.ok) {
+    // Filed under the cannot-answer code, as the instructed acts were: the issue codes say which way.
+    // One account of the acts, so the two rules never overwrite each other's `missingActs`.
+    const acts = [...(permissions.ok ? [] : objects(permissions.missingActs.acts)), ...(optional.ok ? [] : optional.missingActs.acts)];
+    const instruction = permissions.ok
+      ? (optional.ok ? "" : optional.instruction)
+      : permissions.instruction + (optional.ok ? "" : AUTOMATION_STUDIO_INSTRUCTED_ACT_OPTIONAL_ONLY_INSTRUCTION);
+    failures.push({
+      code: "flow_bootstrap.evidence_completion_cannot_answer",
+      issues: [...(permissions.ok ? [] : [permissions.issue]), ...(optional.ok ? [] : [optional.issue])],
+      detail: { key: "missingActs", value: { acts }, instruction }
+    });
   }
   const restoredField = restoredStep ? { restoredStep } : {};
   if (failures.length || !buildPlan || !accepted.ok) {
@@ -362,6 +393,11 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     ...(warnings.length ? { warnings } : {}),
     ...(notes.length ? { notes } : {})
   };
+}
+
+/** The objects of a list an account carries, as written. */
+function objects(value: unknown): JsonObject[] {
+  return Array.isArray(value) ? value.filter((item): item is JsonObject => typeof item === "object" && item !== null && !Array.isArray(item)) : [];
 }
 
 /** The strings of a list an account carries, as written. */
@@ -497,6 +533,7 @@ function refused(
   // was shown the first 16 issues, and the script only under 6,000 characters.
   const feedbackIssues = all.flatMap((failure) => failure.issues.length
     ? automationStudioFlowBootstrapIssueFeedback({ issues: failure.issues, ...(failure.about ? { plan: failure.about.plan, registry: failure.about.registry, resolution: failure.about.resolution } : {}) })
+      .map((entry, index) => withRoutingSentence(entry, failure.issues[index]))
     : []);
   const codes = [...new Set(all.map((failure) => failure.code))];
   const details = Object.fromEntries(all.flatMap((failure) => failure.detail ? [[failure.detail.key, failure.detail.value]] : []));
@@ -525,6 +562,31 @@ function refused(
     ? baseCheck
     : { ...baseCheck, answerability };
   return { ok: false, code: codes[0]!, codes, issues: all.flatMap((failure) => failure.issues), check };
+}
+
+/**
+ * The refusals of a draft's routing (`flow-bootstrap/authoring/draft-routing.ts`):
+ * a repeat, guard or recovery that cannot be wired as stated. Each sentence is
+ * Core's own and quotes nothing but step numbers and the amendment that fixes
+ * it, so it may travel with the code. The issue feedback carries only its listed
+ * authored codes' sentences, and these were not among them: run
+ * `run-musr9pv3-f4bf6256` (decision 0072) was shown
+ * `repeat_not_after_its_source` at two paths and nothing else, and looped
+ * fifteen turns on a fix the sentence named.
+ */
+const DRAFT_ROUTING_CODES: ReadonlySet<string> = new Set([
+  "flow_draft.check_not_before_step",
+  "flow_draft.recovery_behind_step",
+  "flow_draft.recovery_is_routed",
+  "flow_draft.repeat_span_unknown",
+  "flow_draft.repeat_not_after_its_source",
+  "flow_draft.repeat_body_is_routed"
+]);
+
+/** A routing refusal's feedback entry with its sentence, where the feedback left it out. */
+function withRoutingSentence(entry: JsonObject, source: AutomationStudioFlowBootstrapIssue | undefined): JsonObject {
+  if (!source || entry.message !== undefined || !source.message || !DRAFT_ROUTING_CODES.has(source.code) || entry.code !== source.code) return entry;
+  return { ...entry, message: source.message };
 }
 
 function errors(issues: AutomationStudioFlowBootstrapIssue[]): AutomationStudioFlowBootstrapIssue[] {

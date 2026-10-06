@@ -11,7 +11,7 @@ import {
   run36, run36Report, run40, run41Steps
 } from "./live-run-drafts.ts";
 import type { JsonValue } from "../../../../../../core/index.ts";
-import { DENIED, ROW_CONTEXT, SITE, present, replayed, report, verified, web } from "./draft-steps.ts";
+import { DENIED, ROW_CONTEXT, SITE, navigate, present, replayed, report, verified, web } from "./draft-steps.ts";
 
 const run40Summary = () => automationStudioBuildTestResultSummary({
   steps: RUN_40_STEPS,
@@ -258,3 +258,28 @@ function verificationRequest(summary: AutomationStudioRunResultSummary): Automat
     }
   };
 }
+
+// Live run `run-musq0b1m-0472cfa0` (Cause 5): the only step doing a1.version
+// (7-in-1) was made optional on a false premise, the test replayed it, and both
+// judges dismissed the build's flag because "it was replayed". A step that may
+// be skipped passing one test is not evidence the Flow always does its act.
+describe("an act whose only step may be skipped", () => {
+  const HUB = "Put the USB-C hub in my cart: the 7-in-1 version.";
+  const ITEM = `${SITE}item/1`;
+  const draft = [
+    navigate(1),
+    web(2, "web.output.dom-click", { selector: "#v7", accessibleName: "7-in-1" }, ITEM, { step: { acts: ["a1.version"], routing: { kind: "optional" } } }),
+    web(3, "web.output.dom-click", { selector: "#add", accessibleName: "Add to cart" }, ITEM, { consequences: ["modify_existing"], step: { acts: ["a1"] } })
+  ];
+  const summary = automationStudioBuildTestResultSummary({
+    steps: draft, report: report(draft.map(replayed)), nodes: [], instructionText: HUB,
+    result: { summary: "Adds the hub." }, startLocation: SITE, deniedEvidenceKeys: DENIED
+  });
+
+  it("tells the judge, beside the act, that its passing this test is no evidence the Flow always does it", () => {
+    const missing = (summary.buildTest!.missingActs!.acts as Array<Record<string, unknown>>).find((act) => act.id === "a1.version");
+    expect(missing).toMatchObject({ reason: "step_is_optional", step: "2" });
+    expect(missing?.said).toEqual(expect.stringContaining("not evidence"));
+    expect(missing?.said).toEqual(expect.stringContaining("step 2"));
+  });
+});

@@ -7,6 +7,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, automationStudioFlowBootstrapDraftStepIsWritable, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "../../../llm/evidence-loop/index.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW } from "../../../llm/repeat-guard/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS } from "../../../loop-limits/index.ts";
 import { automationStudioInstructedActsChecklist } from "../../instructed-acts/index.ts";
 import {
@@ -60,7 +61,7 @@ describe("a repair's completion of the Flow its judge said does not do what was 
     const instruction = refusal!.feedback.instruction as string;
     expect(instruction).toContain("This is the Flow the judge said does not do what was asked (judgement.judge), unchanged: testing it again tests the same thing");
     expect(instruction).toContain("Change what judgement.judge.advice names");
-    expect(instruction).toContain("a round that changes nothing ends the build as not doable");
+    expect(instruction).toContain("a round that changes nothing ends the build unfinished");
     // The loop has no verb for "not doable": the model is never told to say it.
     expect(instruction).not.toContain("say that it is not doable");
   });
@@ -120,8 +121,12 @@ describe("a model that keeps completing the refuted Flow unchanged", () => {
     // Every completion was refused, none accepted, and the round stalled on that refusal's code.
     expect(checkCompletion).toHaveBeenCalledTimes(decide.mock.calls.length);
     expect(stalled.mock.calls[0]![0]).toMatchObject({ issueCodes: [AUTOMATION_STUDIO_FLOW_BOOTSTRAP_UNCHANGED_SINCE_JUDGED_WRONG] });
-    // Stopped by the guard at its eight refusals in a row, well before its 64 decisions ran out.
-    expect(decide.mock.calls.length).toBe(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS);
+    // Stopped by the repeat guard (t195-w46, run `run-musr9pv3-f4bf6256`): the
+    // first refusal is new, and each completion refused again over the same
+    // draft counts toward its in-a-row bound, well before the no-progress bound
+    // or the 64 decisions.
+    expect(decide.mock.calls.length).toBe(1 + AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW);
+    expect(decide.mock.calls.length).toBeLessThan(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_DEFAULT_MAX_STEPS_WITHOUT_PROGRESS);
     // The second decision read the refusal's feedback.
     const shown = (decide.mock.calls[1] as unknown as [{ evidence: { toolId: string; value: JsonObject }[] }])[0].evidence;
     expect(shown.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID)?.value).toMatchObject({ code: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_UNCHANGED_SINCE_JUDGED_WRONG, advice: ADVICE });

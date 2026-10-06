@@ -82,3 +82,40 @@ describe("a choice named on a step after its act's step", () => {
     expect(said).toContain("amend_draft reorder on step 16 with to 12");
   });
 });
+
+// Live run `run-musq0b1m-0472cfa0` (Cause 2), as decision 0019 was shown it:
+// the model had named a1 on the listing click (step 6), which opened the item
+// in a new tab; Space Grey (7, then 8) and 7-in-1 (9) were pressed on the item
+// page after it. The sentence then said "reorder on step 8 with to 6" on
+// position alone, the model obeyed, and the first test ran both choices on the
+// search page: unreproducible, nine repair decisions. Only what Core reads is
+// kept from that draft -- the positions, the claims and each step's recorded
+// place (`replay.from`, compared whole) -- with placeholder places and words.
+describe("the choices after an act claimed on a step that led to another page", () => {
+  const HUB = "Put the USB-C hub in my cart: Space Grey, the 7-in-1 version.";
+  const press = (position: number, from: string, target: string, acts?: string[]): AutomationStudioFlowDraftStep =>
+    step(position, { words: { target }, replay: { from: { location: from } }, ...(acts ? { acts } : {}) });
+  const draft = [
+    press(6, "search", "hub listing", ["a1"]),
+    press(7, "item", "Space Grey"),
+    press(8, "item", "Space Grey", ["a1.colour"]),
+    press(9, "item", "7-in-1", ["a1.version"])
+  ];
+
+  it("prescribes no reorder of either choice ahead of the step that opened their page, and keeps both done", () => {
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: HUB, result: { summary: "Adds the hub." }, draftSteps: draft });
+    const colour = verdict.choicesAfterAct?.find((each) => each.id === "a1.colour");
+    expect(colour).toMatchObject({ step: 8, actStep: 6 });
+    expect(colour?.said).not.toContain("reorder");
+    expect(colour?.said).toContain("Do not move step 8 before step 6");
+    expect(colour?.said).toContain("claim");
+    // The checklist the model reads every decision says the same, and the choices stay done.
+    const items = automationStudioInstructedActsChecklist({ instructionText: HUB, draftSteps: draft })!;
+    const choices = items[0]?.choices ?? [];
+    expect(choices.find((each) => each.id === "a1.colour")).toMatchObject({ done: 8, afterAct: 6, afterActSaid: colour?.said });
+    expect(choices.find((each) => each.id === "a1.version")).toMatchObject({ done: 9, afterAct: 6 });
+    expect(choices.find((each) => each.id === "a1.version")?.afterActSaid).not.toContain("reorder");
+    // The claim on the listing click is doubted, and stands (`../claim-doubt.ts`).
+    expect(items[0]).toMatchObject({ done: 6, claimSaid: expect.stringContaining("step 6") });
+  });
+});

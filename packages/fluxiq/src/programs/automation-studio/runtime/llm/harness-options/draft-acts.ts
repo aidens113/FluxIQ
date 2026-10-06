@@ -41,7 +41,7 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./index.ts";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftStepIsProposable } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposable } from "../../flow-draft/index.ts";
 import {
   automationStudioFlowBootstrapDraftUnreadColumnsSentence,
   automationStudioInstructedActsChecklist,
@@ -104,8 +104,23 @@ function unreadColumnNotes(instructionText: string | undefined, steps: readonly 
   });
   const actSteps = steps.filter((step) => isKept(step) && (step.acts?.length ?? 0) > 0).map((step) => step.position);
   const lastActStep = actSteps.length ? Math.max(...actSteps) : undefined;
-  const note = automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText, reads, lastActStep });
+  const lastActRepeats = lastActStep !== undefined && inRepeatedSpan(steps, lastActStep);
+  const note = automationStudioFlowBootstrapDraftUnreadColumnsSentence({ instructionText, reads, lastActStep, lastActRepeats });
   return note ? [{ note }] : [];
+}
+
+/**
+ * Whether the step at `position` is in a span a kept step repeats: that step
+ * itself, or one up to the step its `through` names. Said so the note tells a
+ * repeated act that the listing it walks stays before it (R18).
+ */
+function inRepeatedSpan(steps: readonly AutomationStudioFlowDraftStep[], position: number): boolean {
+  return steps.some((step) => {
+    if (!isKept(step) || step.routing?.kind !== "repeat") return false;
+    const through = step.routing.through;
+    const end = steps.find((candidate) => automationStudioFlowDraftStepId(candidate) === through)?.position ?? step.position;
+    return step.position <= position && position <= Math.max(end, step.position);
+  });
 }
 
 function isKept(step: AutomationStudioFlowDraftStep): boolean {

@@ -28,6 +28,8 @@
 // otherwise from the plan the reply carried, and a reply can carry a corrected
 // plan over an unchanged draft. The draft says nothing about that Flow, so a
 // completion built from the reply is never refused here.
+// An unchanged round ends the build `not_finished` (`./phases.ts`, `repeated_unchanged`), never not
+// doable: the instruction said "not doable" until t264 corrected it.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceLoopResume } from "../../llm/evidence-loop/index.ts";
@@ -37,7 +39,7 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_UNCHANGED_SINCE_JUDGED_WRONG = "bo
 
 const INSTRUCTION = "This is the Flow the judge said does not do what was asked (judgement.judge), unchanged: testing it again tests the same thing, so completing it again is refused. "
   + "Change what judgement.judge.advice names, then complete. "
-  + "Completing it unchanged is refused every time, and a round that changes nothing ends the build as not doable.";
+  + "Completing it unchanged is refused every time, and a round that changes nothing ends the build unfinished.";
 
 /**
  * The refusal for a repair round's completion of the Flow its judge said does

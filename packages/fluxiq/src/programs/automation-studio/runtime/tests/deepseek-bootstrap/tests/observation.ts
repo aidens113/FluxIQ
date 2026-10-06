@@ -81,7 +81,10 @@ export function draftObservation(value: unknown, budget: number): DecisionObserv
     : !step
       || typeof step !== "object"
       || Array.isArray(step)
-      || (!("input" in step) && (step as Record<string, unknown>).inputTooLarge !== true)
+      // The attempt a rerun replaced is listed with `replacedBy` and, by design,
+      // no argument (`flow-draft/entry.ts`, t195 run `run-musp474o-e0ed7432`):
+      // nothing was dropped from it.
+      || (!("input" in step) && (step as Record<string, unknown>).inputTooLarge !== true && !("replacedBy" in step))
   ).length;
   const inputTooLarge = steps.filter((step) => !packed
     && step && typeof step === "object" && !Array.isArray(step) && (step as Record<string, unknown>).inputTooLarge === true

@@ -463,6 +463,25 @@ judge's card closes with the build's sentence ("the build cannot finish on this
 test") rather than the run's ("the run is not marked as failed for it",
 `runtime/result-verification/unsettled/unsettled-words.ts`, `check-activity.ts`).
 
+The other rows a build or run ends a step with are said in Core's words too.
+A completion the check passed but the build's test refused is "The proposed
+Flow was sent back to be fixed" with why and how many steps need fixing
+(`runtime/activity/wording/completion-refusal.ts`, through the completion
+attempt's `testRefused`). A reply the loop could not use is "Deciding the next
+step -- didn't work", with no reason and no edit card
+(`runtime/activity/decision-answer/draft-edit.ts`). A decision's reason is
+screened before it is shown (`wording/reason-text.ts`): a sentence naming an
+act id or the draft's mechanics is dropped, handles and node ids are hidden, and
+a reason made only of codes shows nothing. A test step that did not do the same again says why by its replay code
+(`activityActionFailureReason` in `fluxiq/ui`: "it did nothing this time, where
+it did something before", "the page wasn't in the same state when the test got
+there"). The result check's card opens with the rows that came back ("3 rows
+came back."), shows the check's reading only where it names nothing internal,
+and never shows its advice (`runtime/result-verification/check-words.ts`). A
+run failed by its result check ends "Run failed: <what came back, why that
+failed it, and how the repair ended>", read from the run's own record
+(`runtime/activity/wording/run-ending.ts`).
+
 A wait opens an ask activity row and settles through another ask row with the
 same `ref` and `detail.resolution`. The closed resolutions are:
 

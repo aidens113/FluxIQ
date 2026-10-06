@@ -61,8 +61,9 @@ export type AutomationStudioFlowBootstrapBuildJudge = {
    */
   testEndView: AutomationStudioFlowDraftDryRunGateInput["endView"];
   /**
-   * For the phases' test of a Flow the judge reads next -- the one a round the
-   * judging reserve stopped left (`../../flow-bootstrap/unfinished-build/reserve-judging.ts`):
+   * For the phases' test of a Flow the judge reads next -- the one left by a
+   * round the judging reserve stopped, or by a round that stopped short of
+   * saying its Flow was ready (`../../flow-bootstrap/unfinished-build/reserve-judging.ts`):
    * what that test's gate is given so its pass reaches this judge, as the
    * loop's own test does, with the look at the page it ended on. Any test kept
    * before is dropped first, so the judge reads this test or none.

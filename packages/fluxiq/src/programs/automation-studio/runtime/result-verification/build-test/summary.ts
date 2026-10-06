@@ -37,7 +37,11 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 //   - `explored`, what a checked step did while the build explored it, since
 //     the test did not do it again.
 //   - `claims`, `checklist` and `missingActs`: the model's claims and the
-//     build's own check. Information, never proof.
+//     build's own check. Information, never proof. An act whose only step is
+//     optional carries `said` in `missingActs`: that step passing this test
+//     is not evidence the Flow always does it. Run
+//     `run-musq0b1m-0472cfa0`'s judges dismissed the bare `step_is_optional`
+//     because the step "was replayed" (Cause 5).
 //   - `carried`, a step seeded from an earlier Flow (run 41). Such a step has
 //     no replay, so the draft was not testable and nothing ran.
 //   - `notes`, what the completion check's capability questions found of the

@@ -137,6 +137,8 @@ export type AutomationStudioLlmEvidenceRerunHeld = {
   applied: number;
   /** Their refusals, as already given (`../evidence-loop/amendment-memory.ts`). */
   refusals: ReadonlyArray<AutomationStudioFlowDraftAmendmentRefusal & { nodeId?: string; repeated?: true }>;
+  /** Acts the decision's other amendments moved off a step left in the Flow, told with the refusals (`./amendment.ts`). */
+  moved?: ReadonlyArray<{ act: string; from: number; to: number }>;
 };
 
 /** What the loop does once a handler has answered: ask again, end, or run a rerun as this iteration's call. */

@@ -6,7 +6,7 @@
 // colour the page arrived with and chose it again.
 import { describe, expect, it } from "vitest";
 import { automationStudioFlowDraftClaimAct } from "../act-claim.ts";
-import { applyAutomationStudioFlowDraftAmendments } from "../amendment.ts";
+import { applyAutomationStudioFlowDraftAmendments } from "../amendment/index.ts";
 import { automationStudioFlowDraftKeepOpeners } from "../opener.ts";
 import { automationStudioFlowDraftDropReversals } from "../reversal.ts";
 import type { AutomationStudioFlowDraftStep } from "../step.ts";

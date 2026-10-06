@@ -159,7 +159,7 @@ const MAX_ROW_AMENDMENT_REFUSALS = 16;
  *
  * Bounded by shape and not by an allow-list of reasons, for the reason the
  * result code above is: the vocabulary is the draft's
- * (`../../flow-draft/amendment.ts`), a closed copy here would silently drop a
+ * (`../../flow-draft/amendment/types.ts`), a closed copy here would silently drop a
  * reason added there, and this is a reader's detail -- so an entry that is not
  * shaped like a refusal is left behind rather than failing a build that
  * finished. A reason that passes the shape is carried as the draft's own word

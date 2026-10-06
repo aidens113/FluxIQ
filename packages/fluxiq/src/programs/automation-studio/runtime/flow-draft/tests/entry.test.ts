@@ -270,4 +270,60 @@ describe("written steps, bindings and inputs in the draft entry", () => {
     expect(instruction).toContain("passes");
     expect(instruction).toMatch(/never do it to every item yourself/u);
   });
+
+  // Live run `run-mustzxhi-2e2cda87` bound a press's target about 12 times on
+  // "a value that changes between runs or rows is bound".
+  it("narrows binding to a value a step typed, or a read's condition, and says a press's control or option is never bound", () => {
+    const { instruction } = automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry;
+    expect(instruction).not.toContain("A value that changes between runs or rows is bound");
+    expect(instruction).toContain("a value a step typed, or a read's condition");
+    expect(instruction).toContain("press's control or option is never bound");
+    expect(instruction).toContain("a repeat finds each row's own control in that row");
+    expect(instruction).toContain("a single item's option is pressed as the page offers it");
+  });
+});
+
+// Live run `run-musp474o-e0ed7432`: the attempt a rerun replaced was listed
+// with the old where it ran with, like any step to fix, and the model reran it
+// three times with the where its rerun already had. It is shown as replaced by
+// its rerun, by the number that rerun now has, and without its old argument.
+describe("the attempt a rerun replaced", () => {
+  const receipt = (position: number, id: string, replacedBy: string): AutomationStudioFlowDraftStep =>
+    step(position, "list", { where: "old" }, { id, effect: "observe", proposes: true, disposition: "dropped", replacedBy, resultCode: "ok", acts: ["a1"] });
+
+  it("is shown as replaced by the step that took its place, without the argument it ran with", () => {
+    const steps = [
+      step(1, "list", { where: "fixed" }, { id: "d18", effect: "observe", proposes: true }),
+      step(2, "press", { target: "t1" }, { id: "d7" }),
+      receipt(3, "d6", "d18")
+    ];
+    const shown = automationStudioFlowDraftEntry({ steps, authored: true })!.value as Entry;
+    expect(shown.steps[2]).toEqual({ step: 3, actionId: "list", replacedBy: 1, inResult: false });
+    expect(shown.steps[0]).toMatchObject({ step: 1, input: { where: "fixed" }, inResult: true });
+    expect(shown.instruction).toContain("A step showing replacedBy is the attempt a rerun replaced");
+    // Said only where such an attempt is listed.
+    expect(value(steps.slice(0, 2)).instruction).not.toContain("replacedBy");
+  });
+
+  it("names the step standing now when the rerun was replaced in turn", () => {
+    const steps = [
+      step(1, "list", { where: "newest" }, { id: "d20", effect: "observe", proposes: true }),
+      receipt(2, "d6", "d18"),
+      receipt(3, "d18", "d20")
+    ];
+    const shown = value(steps);
+    expect(shown.steps.slice(1).map((line) => (line as Record<string, unknown>).replacedBy)).toEqual([1, 1]);
+  });
+});
+
+// Live run `run-musr9pv3-f4bf6256` (t195 w45): a stray repeat from a decision
+// whose numbers Core read one amendment at a time.
+describe("what both tellings say about numbering", () => {
+  it("says every number in one decision is the number the draft shows, in both tellings", () => {
+    const authored = (automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry).instruction;
+    const transcript = value([step(1, "press", { target: "t" })]).instruction;
+    for (const instruction of [authored, transcript]) {
+      expect(instruction).toContain("Every number in one amend_draft is this draft's; it is renumbered after the decision.");
+    }
+  });
 });

@@ -19,6 +19,16 @@
 // `repeat` naming the old step: `run-muog33va-96469cb2` was refused
 // `repeat_span_unknown` nine times for exactly that. A build replayed under the
 // older transcript rule keeps the old behaviour, which is what it recorded.
+//
+// **No other step's number changes.** The withdrawn attempt stays listed as the
+// receipt of what was replaced, and it used to be listed just after the rerun,
+// so every step after it moved one on. Live run `run-musp474o-e0ed7432` reran
+// its listing at 6 with a fixed where: the old listing became step 7 and the
+// Confirm step 8, and the model reran "step 7" with the fixed where three
+// times, each refused `changes_nothing`, until the round stopped. The attempt
+// now goes to the end of the draft, carrying `replacedBy`, the rerun's id
+// (`../../flow-draft/step.ts`), so the draft shows it as replaced by its rerun
+// and an amendment naming it is told to change that step instead.
 import {
   applyAutomationStudioFlowDraftAmendments,
   automationStudioFlowDraftStepId,
@@ -44,7 +54,7 @@ export function automationStudioLlmEvidenceRerunReplaced(
   applyAutomationStudioFlowDraftAmendments(steps, [{ step: replaced.position, change: "drop" }]);
   if (!options.takesItsPlace) return;
   if (wasInFlow) rerun.disposition = "kept";
-  // Only a step that changes something does an act (`../../flow-draft/amendment.ts`,
+  // Only a step that changes something does an act (`../../flow-draft/amendment/`,
   // `act_on_a_read`). An act a read carried -- live run 36 named a1 on a rerun
   // listing -- is not passed on to the next rerun of that listing, where it
   // made the completion check judge the listing as the act 24 times running.
@@ -68,9 +78,15 @@ export function automationStudioLlmEvidenceRerunReplaced(
   const from = automationStudioFlowDraftStepId(replaced);
   const to = automationStudioFlowDraftStepId(rerun);
   for (const step of steps) if (step.routing) step.routing = renamed(step.routing, from, to);
-  // Just before the withdrawn step, which stays listed as the receipt of what was replaced.
+  // The rerun takes the replaced step's number and no other number changes:
+  // the withdrawn attempt, kept listed as the receipt of what was replaced,
+  // moves to the end -- where the rerun was appended -- linked to its rerun
+  // (header, `run-musp474o-e0ed7432`).
+  replaced.replacedBy = to;
+  const at = steps.indexOf(replaced);
   steps.splice(steps.indexOf(rerun), 1);
-  steps.splice(steps.indexOf(replaced), 0, rerun);
+  steps.splice(at, 1, rerun);
+  steps.push(replaced);
   steps.forEach((step, index) => { step.position = index + 1; });
 }
 

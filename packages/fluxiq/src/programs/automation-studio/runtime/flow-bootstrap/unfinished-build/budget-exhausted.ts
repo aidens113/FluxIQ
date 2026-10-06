@@ -10,10 +10,13 @@
 // ending says the figures that stopped it (F41); where one purse holds the
 // Flow's whole creation (t234), also what earlier builds of the Flow spent of
 // them and what of the Flow's ceiling building again has left. What was kept
-// is said as a draft not put into the Flow (`./kept-said.ts`; t195-w37, live
-// run `run-murz83zy-5030820f`, whose chat also said the Flow was left empty).
-// The message is fitted, never cut inside a sentence (`./ending-fit.ts`; t193
-// round 1003): what was tried and what was kept close it, always whole.
+// is said as a draft (`./kept-said.ts`; t195-w37, live run
+// `run-murz83zy-5030820f`, whose chat also said the Flow was left empty).
+// What was tried is said as every ending says it, with no count of decisions
+// or rounds (`automationStudioFlowBootstrapWorkedLiveSaid`, t195-w48); the
+// counts stay in `tried`. The message is fitted, never cut inside a sentence
+// (`./ending-fit.ts`; t193 round 1003): what was tried and what was kept close
+// it, always whole.
 import {
   type AutomationStudioFlowBootstrapBudgetBound,
   type AutomationStudioFlowBootstrapBuildEnding
@@ -25,7 +28,8 @@ import {
   automationStudioFlowBootstrapNotDone,
   automationStudioFlowBootstrapProgressAndTestSaid,
   automationStudioFlowBootstrapStopSaid,
-  automationStudioFlowBootstrapUnsettledForBuild
+  automationStudioFlowBootstrapUnsettledForBuild,
+  automationStudioFlowBootstrapWorkedLiveSaid
 } from "./not-done.ts";
 import { automationStudioFlowBootstrapEndingFitted } from "./ending-fit.ts";
 import { automationStudioFlowBootstrapKeptSaid } from "./kept-said.ts";
@@ -121,7 +125,7 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   const saidJudged = input.judgement.stopped === "judged_wrong" && input.judgement.judge !== undefined;
   const blocked = automationStudioFlowBootstrapBlockedSaid(input.judgement.lastIssueCodes)
     || (input.judgement.stopped === "budget" || saidJudged ? "" : automationStudioFlowBootstrapStopSaid(input.judgement.stopped));
-  const tried = `I explored live ${input.rounds === 1 ? "once" : `${input.rounds} times`} over ${input.decisions} decisions${blocked ? `, and what held it up was that ${blocked}` : ""}.`;
+  const tried = `${automationStudioFlowBootstrapWorkedLiveSaid(input.rounds)}.${blocked ? ` What held it up was that ${blocked}.` : ""}`;
   const spending = input.bound === "cost" && input.spending ? spendingSaid(input.spending, input.sizes.maxCostUsd) : "";
   const judged = input.bound === "cost" && (input.spending?.judgedUsd !== undefined || input.spending?.unchangedSinceJudgedNo);
   const message = automationStudioFlowBootstrapEndingFitted((room) => ({

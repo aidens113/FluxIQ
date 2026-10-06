@@ -261,6 +261,83 @@ describe("a span that repeats", () => {
   });
 });
 
+// Live run `run-musr9pv3-f4bf6256`, decision 0072: the kept listing at step 15
+// carried a stray `repeat over step 16`, and the Confirm at step 16 repeated
+// over step 15. Both were refused `repeat_not_after_its_source`, and step 15's
+// sentence said to "move step 16 ahead of step 15" -- the act before its own
+// listing. The model looped fifteen turns. The kept steps of that draft, in its
+// own numbering.
+describe("a span whose over comes after it", () => {
+  const RUN_0072 = [
+    step(1, "press", { target: "#home" }),
+    step(2, "press", { target: "#cookies-decline" }),
+    step(3, "press", { target: "#friends" }),
+    step(7, "press", { target: "#not-now" }),
+    step(8, "press", { target: "#friend-requests" }),
+    step(15, "read", { target: ".request" }, { kind: "repeat", through: "d15", over: "d16" }),
+    step(16, "press", { target: ".request-confirm" }, { kind: "repeat", through: "d16", over: "d15" })
+  ];
+  const refusalAt = (assembled: ReturnType<typeof assemble>, path: string) =>
+    assembled.issues.find((issue) => issue.path === path && issue.code === "flow_draft.repeat_not_after_its_source")?.message;
+
+  it("tells the listing that repeats over its own act to take the repeat off, never to move the act", () => {
+    const assembled = assemble(RUN_0072);
+
+    expect(assembled.plan).toBeUndefined();
+    const listing = refusalAt(assembled, "draft.steps.15");
+    expect(listing).toBe("Step 15 repeats over step 16, which comes after it, and step 15 is itself the listing step 16 repeats over. A listing runs once, before the act that walks its rows; it never repeats. Take the repeat off step 15 with amend_draft {\"step\": 15, \"change\": \"unrepeat\"}; step 16's repeat over step 15 then stands as it is.");
+    expect(listing).not.toContain("ahead of step 15");
+  });
+
+  it("tells the act repeating over that listing the same fix, rather than blaming a branch or loop", () => {
+    const act = refusalAt(assemble(RUN_0072), "draft.steps.16");
+
+    expect(act).toBe("Step 16 repeats over step 15, and step 15 also says it repeats, which was refused, so the Flow has no listing on its own line for step 16 to walk. Take the repeat off step 15 with amend_draft {\"step\": 15, \"change\": \"unrepeat\"}; step 16's repeat over step 15 then stands as it is.");
+  });
+
+  it("builds once the stray repeat is off the listing, which is all the fix asks", () => {
+    const fixed = RUN_0072.map((draftStep) => {
+      if (draftStep.id !== "d15") return draftStep;
+      const { routing: _stray, ...rest } = draftStep;
+      return rest;
+    });
+    const assembled = assemble(fixed);
+
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    expect(wiring(assembled.plan!)).toContain("web.output.dom-extract_list:records -> builtin.control.for-each:items");
+  });
+
+  it("tells a listing that repeats over a later step, with no act over it, to take the repeat off and repeat the act instead", () => {
+    const message = refusalAt(assemble([
+      step(1, "press", { target: "#friends" }),
+      step(2, "read", { target: ".request" }, { kind: "repeat", through: "d2", over: "d3" }),
+      step(3, "press", { target: ".request-confirm" })
+    ]), "draft.steps.2");
+
+    expect(message).toBe("Step 2 repeats over step 3, which comes after it, and step 2 is a listing. A listing runs once, before the act that walks its rows; it never repeats. Take the repeat off step 2 with amend_draft {\"step\": 2, \"change\": \"unrepeat\"}, and repeat the act over it instead: {\"step\": <the act>, \"change\": \"repeat\", \"over\": 2}.");
+  });
+
+  it("tells an act whose listing merely comes after it to move the listing ahead of it", () => {
+    const message = refusalAt(assemble([
+      step(1, "press", { target: "#friends" }),
+      step(2, "press", { target: ".request-confirm" }, { kind: "repeat", through: "d2", over: "d3" }),
+      step(3, "read", { target: ".request" })
+    ]), "draft.steps.2");
+
+    expect(message).toBe("Step 2 repeats over step 3, which comes after it. The listing a span walks runs before the span: move it ahead of the act with amend_draft {\"step\": 3, \"change\": \"reorder\", \"to\": 2}; the act is then step 3 and keeps its repeat over the listing.");
+  });
+
+  it("tells a step repeating over a later check to take the repeat off, or to move the check just ahead of it", () => {
+    const message = refusalAt(assemble([
+      step(1, "press", { target: "#friends" }),
+      step(2, "press", { target: ".next-page" }, { kind: "repeat", through: "d2", over: "d3" }),
+      step(3, "look", { target: ".next-page" })
+    ]), "draft.steps.2");
+
+    expect(message).toBe("Step 2 repeats over step 3, which comes after it, and a span repeats over a step that runs before it. If step 2 should run once, take the repeat off with amend_draft {\"step\": 2, \"change\": \"unrepeat\"}; if it should run while step 3 succeeds, move step 3 just ahead of it with amend_draft {\"step\": 3, \"change\": \"reorder\", \"to\": 2}.");
+  });
+});
+
 // A step whose node can act on "the row this pass is on" declares an optional
 // `item` input after its way in. The web domain's nodes gain it downstream, so
 // here the library is the real one with that input added to the nodes named.
