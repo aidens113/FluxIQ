@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionDeclaration } from "../../action-permissions/index.ts";
 import { automationStudioFlowBootstrapActionPermissions, automationStudioInstructedActs } from "../../flow-bootstrap/index.ts";
+import { automationStudioLlmBuildPurseHoldCall } from "../../llm/build-purse/index.ts";
 import { automationStudioFlowBootstrapCreationPurse } from "../flow-bootstrap-commands/index.ts";
 import { automationStudioFlowBootstrapInstructionAuthority } from "../instruction-authority.ts";
 
@@ -320,5 +321,34 @@ describe("the read also answers the route the person names", () => {
     expect(wrapped).toBe(1);
     expect(sent).toHaveLength(1);
     expect(creation.readingRefused).toBeUndefined();
+  });
+
+  // Run `run-mux6nxst-c9bca37c` (lane D round 3): the build sent 48 calls, its whole test allowance (41
+  // decisions, 7 judgements), and its judge said yes. Nothing had asked for the instruction's consequences
+  // until the cross-check after the build, so the read came last and the purse refused it unsent. The read
+  // still counted itself, the proposal said 49 calls, and the Lab failed a judged Flow on a call never made.
+  it("counts no call, and no tokens, for a read the build's purse refused unsent", async () => {
+    const creation = await automationStudioFlowBootstrapCreationPurse({ store: { get: async () => undefined, save: async () => undefined, delete: async () => undefined } as never, projectId: "project.demo", flowId: "flow.demo", repair: true, ceilingUsd: 1, maxCalls: 1 });
+    const provider = { estimateCostUsd: () => 0.0001 };
+    // The harness's own hold (`../../llm/harness/run.ts`): a call the purse refuses returns unsent.
+    const { reader, sent } = routed(async () => {
+      const held = automationStudioLlmBuildPurseHoldCall({ provider, estimatedInputTokens: 10, maxOutputTokens: 10 });
+      if (held && !held.ok) return { ok: false, request: { estimatedInputTokens: 10 }, providerInvocation: "not_attempted", diagnostics: [held.diagnostic] };
+      held?.hold.settle({ inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 } as never);
+      return answered({ acts: { [CART_ACT().id]: ["create_new"] }, instructed: [], route: NAMED });
+    }, (inner) => creation.reading(inner as never) as never);
+
+    await creation.run(async () => {
+      // The build's last allowed call, sent and settled.
+      const last = automationStudioLlmBuildPurseHoldCall({ provider, estimatedInputTokens: 10, maxOutputTokens: 10 });
+      if (!last?.ok) throw new Error("the build's own call should be admitted");
+      last.hold.settle({ inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.0001 } as never);
+      expect(await reader.route.read()).toEqual({ state: "unavailable", reason: "non_complete" });
+    });
+
+    expect(creation.readingRefused?.code).toBe("llm_budget.run_call_limit");
+    expect(sent).toHaveLength(1);
+    expect(creation.purse.spentCalls()).toBe(1);
+    expect(reader.usage).toEqual({ calls: 0, estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
   });
 });

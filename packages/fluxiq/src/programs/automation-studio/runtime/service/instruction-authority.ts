@@ -72,7 +72,8 @@ export type AutomationStudioInstructionAuthorityUsage = {
    * How many provider calls this made. Counted, because the build's own
    * `providerCallCount` comes from the evidence loop's trace and this call is
    * not in it -- so every per-build call count published anywhere was short by
-   * exactly this, silently, while its tokens and its money were counted.
+   * exactly this, silently, while its tokens and its money were counted. A
+   * read refused unsent (`providerInvocation: "not_attempted"`) is not one.
    */
   calls: number;
   estimatedInputTokens: number;
@@ -124,12 +125,17 @@ export function automationStudioFlowBootstrapInstructionAuthority(input: {
       expectedOutput: "evidence_tool_decision",
       metadata: { source: "instructionAuthority" }
     });
-    usage.calls += 1;
-    usage.estimatedInputTokens += answer.request.estimatedInputTokens;
-    usage.inputTokens += answer.usage?.inputTokens ?? 0;
-    usage.outputTokens += answer.usage?.outputTokens ?? 0;
-    usage.totalTokens += answer.usage?.totalTokens ?? 0;
-    usage.estimatedCostUsd += answer.usage?.estimatedCostUsd ?? 0;
+    // A read refused before the provider was invoked -- the build's purse out of calls or money -- was never
+    // sent, so it is no call and spent nothing. Counting it made a build that sent exactly its allowance
+    // report one call over it (`run-mux6nxst-c9bca37c`: 48 sent, 49 published, a judged Flow failed).
+    if (answer.providerInvocation !== "not_attempted") {
+      usage.calls += 1;
+      usage.estimatedInputTokens += answer.request.estimatedInputTokens;
+      usage.inputTokens += answer.usage?.inputTokens ?? 0;
+      usage.outputTokens += answer.usage?.outputTokens ?? 0;
+      usage.totalTokens += answer.usage?.totalTokens ?? 0;
+      usage.estimatedCostUsd += answer.usage?.estimatedCostUsd ?? 0;
+    }
     const decision = answer.ok && answer.response?.kind === "evidence_tool_decision" ? answer.response.decision : undefined;
     if (decision?.kind !== "complete") return { instructed: automationStudioInstructedReadUnanswered(acts), route: NON_COMPLETE };
     return readAutomationStudioInstructionReading({ result: decision.result, instructions: input.active, acts });
