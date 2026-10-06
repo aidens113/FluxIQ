@@ -21,6 +21,15 @@
 //     where its digests differ because the target went on loading under it;
 //   - a step that changed nothing, or whose states were not seen, is passed
 //     over: nothing says it moved the target;
+//   - a read -- a step of the Flow's kind whose effect is `observe`, such as a
+//     list read -- is passed over too, though its digests differ: what it
+//     changed is rows scrolled in or pages turned while it read, which no
+//     later step stands on, and as a step of the Flow it would store its rows
+//     as well. Live run `run-muw60j7c-bb7c9a62` (lane C) ran an unfiltered
+//     page-1 read to look, then added the filtered read over every page; this
+//     walk brought the first along because it had scrolled page 1, and the
+//     Flow stored its 20 unfiltered rows before the 10 it was built for. A read
+//     the model added is still where the walk stops;
 //   - a step the model withdrew (`dropped`, `exploratory`) ends the walk: the
 //     model said that step is not part of the result, and what came before it
 //     is not this step's way either;
@@ -50,6 +59,7 @@ export function automationStudioFlowDraftPathToStep(steps: readonly AutomationSt
   for (const candidate of earlier) {
     if (!automationStudioFlowDraftStepIsProposable(candidate)) continue;
     if (candidate.disposition === "kept") { from = candidate; break; }
+    if (candidate.effect === "observe") continue;
     if (candidate.stateBefore === undefined || candidate.stateAfter === undefined || candidate.stateBefore === candidate.stateAfter) continue;
     if (candidate.disposition !== "taken") break;
     way.unshift(candidate);
