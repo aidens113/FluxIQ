@@ -6,7 +6,7 @@
 // next thing every handler needs is one more member here and one more line
 // where the loop builds it.
 import type { JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftStep, AutomationStudioFlowDraftUnreachedStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "../context-window.ts";
 import type { AutomationStudioLlmDecisionContextRecorder } from "../decision-context/index.ts";
 import type {
@@ -139,6 +139,12 @@ export type AutomationStudioLlmEvidenceRerunHeld = {
   refusals: ReadonlyArray<AutomationStudioFlowDraftAmendmentRefusal & { nodeId?: string; repeated?: true }>;
   /** Acts the decision's other amendments moved off a step left in the Flow, told with the refusals (`./amendment.ts`). */
   moved?: ReadonlyArray<{ act: string; from: number; to: number }>;
+  /**
+   * Steps of the Flow the decision's other amendments newly left after a step
+   * that does not bring them to their page, told with the refusals and never
+   * counted as one (`../../flow-draft/amendment/strand-check.ts`).
+   */
+  unreached?: ReadonlyArray<AutomationStudioFlowDraftUnreachedStep>;
   /**
    * What the decision is measured against once its rerun has run (`./amendment.ts`):
    * its signature (`../decision-context/signature.ts`), the draft's key before it

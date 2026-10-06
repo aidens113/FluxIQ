@@ -94,9 +94,21 @@
 // the next test. The move stands -- it is applied, never refused -- and the
 // answer says which step the act left, that it now does no act, and that it is
 // pressed in every run unless dropped (`moved`, `../flow-draft/amendment/apply.ts`).
+//
+// **A step of the Flow keeps its way to its page (live run
+// `run-muwao5n4-44977b2a`, D2-1).** Decision 0030 dropped both navigations to
+// the friend-requests page with the listing that ran there still in the Flow,
+// and was told "applied 7". A drop that leaves a kept step no way to its page
+// is now refused (`strands`), and a step the decision newly left after a step
+// that does not bring it to its page is said beside the applied decision
+// (`../flow-draft/amendment/strand-check.ts`). The refused drop is
+// `strands_a_step`, with `next` naming the step it would have stranded. The
+// step left unreached is not a refusal and never travels as one: it is
+// `unreached`, beside `refused` as `moved` is, each entry with a `note` saying
+// which step before it does not bring it to its page and which steps did.
 
 import type { JsonObject } from "../../../../core/index.ts";
-import type { AutomationStudioFlowDraftAmendmentRefusal } from "../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftUnreachedStep } from "../flow-draft/index.ts";
 
 /** The evidence entry a refused amendment's feedback arrives under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENT_FEEDBACK_TOOL_ID = "core.amendment_check";
@@ -135,6 +147,7 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   bind_row_outside_loop: "{\"$row\": <field>} is the field of the row a repeat is on, and this step is in no repeat, so it has no row. Put the step in a repeat over the listing first (repeat, with over the listing), or bind the value as {\"$input\": <name>, \"test\": <value>} when it is the same for every row.",
   bind_malformed: "That binding is not one bind can write. {\"$input\": <name>, \"test\": <value>}: name starts with a lowercase letter, then letters and digits, at most 32, never item, and test is a value, not null. {\"$row\": <field>}: field is one of the row's own field names, with no dot or space. Nothing else may sit beside either. {\"$step\": <n>, \"output\": <output id>}: n is a step before this one that worked and is not withdrawn, output an output its node declares, and \"path\" (optional) field names of a record output, never a list index.",
   rerun_holds_binding: "A bound step runs only in the Flow. Rerun patches merge: omitted bound parameters remain bound. Replace every binding with a concrete value, or null-remove an unneeded parameter where the node schema permits removal. If evidence is sufficient to author a new written step, use a new tool_call to the offered core.run_node with input.write:true and declared parameters/consequences. That does not convert or remove the old recorded step, prove an act performed, or bypass permissions and whole-Flow testing. write:true on a recorded step's rerun does not convert it to written.",
+  strands_a_step: "That drop was not made: the step is the only step of the Flow that brings the page to where a step still in the Flow acted, so without it that step would run on another page. Keep it, or drop the step it brings there as well when the Flow does not need that step.",
   repeat_taken_off: "This is not an amendment of yours that changed nothing: it is a repeat Core took off after this decision's moves left it unable to run -- the step it repeated over no longer runs before it, or the step its span ran through now runs before it. That step now runs once, in order. next names the step, the step it repeated over and why; if the step should still repeat, send the repeat again with the listing before the act, in the numbers the draft now shows."
 };
 
@@ -150,6 +163,12 @@ const NUMBERING_INSTRUCTION = " Every step number in one decision names the step
 const TAKEN_OFF_INSTRUCTION = " An entry whose reason is repeat_taken_off is a repeat Core took off after this decision's moves, not one of your amendments: next beside it says which step's repeat over which step was taken off, and why.";
 
 /** What an amendment that put the draft back exactly as it stood is recorded and shown under. */
+// Said when the decision newly left a step after one that does not bring it to its page (`unreached`).
+const UNREACHED_INSTRUCTION = " unreached is not a refusal: those amendments were applied, and each entry names a step of the Flow that now runs after a step that does not leave the page it acted on, so when the Flow runs it runs on another page; its note says how to give it its way back.";
+
+/** What an answer whose amendments all landed, one of them leaving a step without its way to its page, is shown under. */
+const STEP_UNREACHED_CODE = "llm_evidence_loop.draft_step_unreached";
+
 const AMENDMENT_UNDONE_CODE = "llm_evidence_loop.draft_amendment_undone";
 
 /** What an answer whose amendments all landed, one of them moving an act, is shown under. */
@@ -203,9 +222,15 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
    * the Flow with no act (`../flow-draft/amendment/apply.ts`, `moved`).
    */
   moved?: readonly { act: string; from: number; to: number }[] | undefined;
+  /**
+   * Each step of the Flow the decision newly left after a step that does not
+   * bring it to its page (`../flow-draft/amendment/strand-check.ts`):
+   * information, never a refusal.
+   */
+  unreached?: readonly AutomationStudioFlowDraftUnreachedStep[] | undefined;
 }): JsonObject {
   const refused = input.refusals.map((refusal) => {
-    const next = takenOff(refusal) ?? replacedAttempt(refusal, input.actsNotDone) ?? nextStep(refusal, input.steps) ?? actDone(refusal, input.actsNotDone)
+    const next = reach(refusal) ?? takenOff(refusal) ?? replacedAttempt(refusal, input.actsNotDone) ?? nextStep(refusal, input.steps) ?? actDone(refusal, input.actsNotDone)
       ?? notRunYet(refusal, input.steps, input.actsNotDone) ?? stillToDo(refusal, input.actsNotDone);
     return {
       step: refusal.step,
@@ -224,16 +249,18 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
   const repeatsTakenOff = refused.length > 0 && !amendmentsRefused;
   const undone = input.sameDraftAsIteration !== undefined;
   const moved = (input.moved ?? []).map((move) => ({ step: move.from, act: move.act, to: move.to, note: movedNote(move) }));
-  // An answer that is only about a moved act refused nothing: it is told as that.
-  const onlyMoved = !refused.length && !undone && moved.length > 0;
+  const unreached = (input.unreached ?? []).map((entry) => ({ step: entry.step, after: entry.after, reachedBy: [...entry.reachedBy], note: unreachedNote(entry) }));
+  // An answer that is only about a moved act, or a step left unreached, refused nothing: it is told as that.
+  const onlyMoved = !refused.length && !undone && (moved.length > 0 || unreached.length > 0);
   const met = [...new Set(refused.map((refusal) => refusal.reason))];
   const reasons: JsonObject = {};
   for (const reason of met) reasons[reason] = REFUSAL_REASONS[reason];
   return {
     ok: onlyMoved,
-    code: onlyMoved ? ACT_MOVED_CODE : refused.length || !undone ? AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE : AMENDMENT_UNDONE_CODE,
+    code: onlyMoved ? (moved.length ? ACT_MOVED_CODE : STEP_UNREACHED_CODE) : refused.length || !undone ? AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE : AMENDMENT_UNDONE_CODE,
     refused,
     ...(moved.length ? { moved } : {}),
+    ...(unreached.length ? { unreached } : {}),
     applied: input.applied,
     steps: input.steps.length,
     // Only when the model named a step that is not there: the numbers that are.
@@ -248,7 +275,8 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
       + (refused.some((refusal) => refusal.repeated) ? REPEATED_INSTRUCTION : "")
       + (refused.some((refusal) => refusal.next) ? NEXT_INSTRUCTION : "")
       + (undone ? UNDONE_INSTRUCTION : "")
-      + (moved.length ? MOVED_INSTRUCTION : "")).trim()
+      + (moved.length ? MOVED_INSTRUCTION : "")
+      + (unreached.length ? UNREACHED_INSTRUCTION : "")).trim()
   };
 }
 
@@ -320,6 +348,30 @@ function rowAct(listing: number, steps: readonly AutomationStudioDraftAmendmentF
   }
   const add = press.disposition === "kept" ? "" : `add step ${press.position} with its act, then `;
   return `Step ${press.position} is the first step after step ${listing} that changes something. If it is the act done to one row step ${listing} kept, the repeat goes on it: ${add}send ${repeat(String(press.position))}.`;
+}
+
+/**
+ * What to do about a drop refused because it would strand a step of the Flow
+ * from its page, or nothing when the refusal is not one (header, D2-1).
+ */
+function reach(refusal: AutomationStudioFlowDraftAmendmentRefusal): string | undefined {
+  if (refusal.reason !== "strands_a_step" || refusal.strands === undefined) return undefined;
+  const kept = refusal.strands;
+  return `Step ${refusal.step} stays in the Flow: it is the only step of the Flow that brings the page to where step ${kept} acted, and step ${kept} is still in the Flow. Leave step ${refusal.step} in, or drop step ${kept} too if the Flow does not need it.`;
+}
+
+/**
+ * What the model is told of a step the decision newly left after one that does
+ * not bring it to its page (header, D2-1): the step before it now, and the
+ * steps that moved the page there while exploring, or that none did.
+ */
+function unreachedNote(entry: AutomationStudioFlowDraftUnreachedStep): string {
+  const step = entry.step;
+  const by = entry.reachedBy;
+  const way = by.length === 0
+    ? `No step in the draft moved the page to where step ${step} acted: run the step that gets there with add true, before step ${step}.`
+    : `Step${by.length > 1 ? "s" : ""} ${by.join(", ")} moved the page to where step ${step} acted while exploring: keep ${by.length > 1 ? "the one it needs" : `step ${by[0]}`} in the Flow and put step ${step} after it with reorder.`;
+  return `Step ${step} is in the Flow, but the step before it now, step ${entry.after}, does not leave the page where step ${step} acted, so when the Flow runs step ${step} runs on another page. ${way}`;
 }
 
 /**
