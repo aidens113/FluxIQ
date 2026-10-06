@@ -425,6 +425,20 @@ receives the conversation and per-step record counts, and result data is every
 record set, column and stored row the run kept, screened for the domain's
 denied keys and credential-shaped values but not sampled or cut to a size.
 
+Each `flowShape` step also carries `changed`: what this run saw that step change
+where it stayed, one entry per time it ran, in run order, taken from the
+session's own in-memory trace (`stateRefs.stateDiff`) and never from a
+persisted record. An entry is the domain's own `added` and `removed` view
+lines, forwarded uncapped and uninterpreted; a run of the step whose diff
+reports `locationChanged` carries none, since the later steps and the end view
+(`endView`) say what the new location shows. It is screened like the end view:
+nothing without a denied-keys declaration, a diff holding a denied key or a
+credential-shaped value is withheld whole, and locator-shaped runs are
+redacted, each setting the summary's `withheld`. Run `run-muw5zv4m-52d83027`'s
+judges, shown only status rows and a stale end view, refuted a playback that
+had built exactly what was asked
+(`result-verification/step-changes.ts`).
+
 A `does_not_answer` verdict carries
 `automation-studio.result-repair-directive.v1`: Core-authored coded findings and
 fix lines, plus optional screened judgement fields `expected`, `observed`, and
