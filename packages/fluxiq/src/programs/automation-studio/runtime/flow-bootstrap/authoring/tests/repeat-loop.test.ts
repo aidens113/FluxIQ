@@ -10,7 +10,7 @@
 // press relies on, run end to end through For Each (same audit, R3).
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, AutomationStudioNodeRegistry, type AutomationNodePort } from "../../../../nodes/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, AutomationStudioNodeRegistry, type AutomationNodePort, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { AutomationNodeExecutionResult } from "../../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRouting } from "../../../flow-draft/index.ts";
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
@@ -29,7 +29,21 @@ const resolution = {
 // The real library, with the click able to take "the row this pass is on" the
 // way the web domain's click declares it downstream.
 const ROW_INPUT: AutomationNodePort = { id: "item", label: "Item", valueType: "any", role: "data", required: false };
-const definitions = webDomainNodeDefinitionsFixture().map((definition) => definition.id === "web.output.dom-click" ? { ...definition, inputs: [...definition.inputs, ROW_INPUT] } : definition);
+const fixture = webDomainNodeDefinitionsFixture();
+// Next-page as the web domain declares it downstream: the fixture's shape, plus
+// the `ended` route it answers when there is no further page.
+const ENDED_OUTPUT: AutomationNodePort = { id: "ended", label: "Ended", valueType: "any", role: "branch" };
+const click = fixture.find((definition) => definition.id === "web.output.dom-click")!;
+const nextPage: AutomationStudioNodeDefinition = {
+  ...click,
+  id: "web.output.dom-next_page",
+  label: "Next Page",
+  description: "Go to the list's next page, and answer ended when there is none.",
+  source: { kind: "importer", domainId: "web-automation", packageId: "@fluxiq-web-extension/domain", implementationKey: "web.dom.next_page" },
+  outputAction: { fixedOutputId: "web.dom.next_page" },
+  outputs: [...click.outputs, ENDED_OUTPUT]
+};
+const definitions = [...fixture.map((definition) => definition.id === "web.output.dom-click" ? { ...definition, inputs: [...definition.inputs, ROW_INPUT] } : definition), nextPage];
 const registry = new AutomationStudioNodeRegistry();
 for (const definition of definitions) registry.register(definition);
 
@@ -39,6 +53,8 @@ function step(position: number, actionId: string, input: Record<string, string>,
 
 function write(draftStep: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftWrittenStep | undefined {
   if (draftStep.actionId === "press") return { description: "press the control", node: "web.dom.click", entries: [{ key: "selector", value: String(draftStep.input.target) }] };
+  if (draftStep.actionId === "type") return { description: "type the query", node: "web.dom.type", entries: [{ key: "selector", value: String(draftStep.input.target) }] };
+  if (draftStep.actionId === "next") return { description: "go to the next page", node: "web.dom.next_page", entries: [{ key: "selector", value: String(draftStep.input.target) }] };
   if (draftStep.actionId === "read") return { description: "read the rows", node: "web.dom.extract_list", entries: [{ key: "extractList", value: JSON.stringify({ item: String(draftStep.input.target), fields: { name: ".name" } }) }] };
   return undefined;
 }
@@ -197,18 +213,106 @@ describe("a pass the page refuses as too fast", () => {
   });
 });
 
+// The read-list loop (read-list design, section 4): read a page, press Next,
+// and again while Next found one. Next ends the loop on its own `ended` route,
+// which is not a failure, and the Repeat node at the head bounds it.
+describe("a span that repeats while its own last step succeeds, run end to end", () => {
+  const DO_WHILE = (most?: number) => [
+    step(1, "type", { target: "#query" }),
+    step(2, "read", { target: ".row" }, { kind: "repeat", through: "d3", while: "d3", ...(most === undefined ? {} : { most }) }),
+    step(3, "next", { target: "a.next" }),
+    step(4, "press", { target: "#done" })
+  ];
+  const ok = (): AutomationNodeExecutionResult => ({ status: "success", route: "success", outputs: {} });
+
+  it("reads each page, leaves on Next's ended route, and carries on after the loop", async () => {
+    const assembled = assemble(DO_WHILE());
+    expect(errors(assembled)).toEqual([]);
+    let nexts = 0;
+    const trace = await run(assembled.plan!, {
+      "web.dom.type": ok,
+      "web.dom.extract_list": () => ({ status: "success", route: "success", outputs: { records: [{ name: "synthetic-row" }] } }),
+      "web.dom.next_page": () => { nexts += 1; return nexts === 3 ? { status: "success", route: "ended", outputs: {} } : ok(); },
+      "web.dom.click": ok
+    });
+
+    const of = (definitionId: string) => trace.attempts.filter((attempt) => attempt.definitionId === definitionId);
+    expect(of("web.output.dom-extract_list")).toHaveLength(3);
+    expect(of("web.output.dom-next_page")).toHaveLength(3);
+    expect(of("web.output.dom-next_page").map((attempt) => attempt.route)).toEqual(["success", "success", "ended"]);
+    expect(of("web.output.dom-click")).toHaveLength(1);
+    expect(trace.status).toBe("succeeded");
+    // Ending the loop is a route, not a failure: nothing was recovered or re-routed by state.
+    expect(trace.attempts.filter((attempt) => attempt.recoveryDecision !== undefined || attempt.stateRouting !== undefined)).toEqual([]);
+  });
+
+  it("stops at most passes when Next never ends, and carries on after the loop", async () => {
+    const assembled = assemble(DO_WHILE(2));
+    expect(errors(assembled)).toEqual([]);
+    const trace = await run(assembled.plan!, {
+      "web.dom.type": ok,
+      "web.dom.extract_list": () => ({ status: "success", route: "success", outputs: { records: [] } }),
+      "web.dom.next_page": ok,
+      "web.dom.click": ok
+    });
+
+    const of = (definitionId: string) => trace.attempts.filter((attempt) => attempt.definitionId === definitionId);
+    expect(of("web.output.dom-extract_list")).toHaveLength(2);
+    expect(of("web.output.dom-next_page")).toHaveLength(2);
+    expect(of("builtin.control.repeat").map((attempt) => attempt.route)).toEqual(["body", "body", "done"]);
+    expect(of("web.output.dom-click")).toHaveLength(1);
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.filter((attempt) => attempt.recoveryDecision !== undefined || attempt.stateRouting !== undefined)).toEqual([]);
+  });
+
+  // The domain's web nodes do not answer a route themselves: each emits its
+  // output for dispatch, and the dispatch answers it (`../../../io-policy.ts`
+  // lifts the action's `payload.route`). An importer node's definition is the
+  // native runtime's, not the builtin library's, so this is the path that
+  // proves Next's `ended` reaches the loop -- and that a route naming a port
+  // the node declares only as data, the read's `records`, is ignored.
+  it("leaves on Next's ended when the dispatch answers it, as the web nodes dispatch", async () => {
+    const assembled = assemble(DO_WHILE());
+    expect(errors(assembled)).toEqual([]);
+    const dispatching = (outputId: string): Implementation => () => ({ status: "success", route: "success", outputs: {}, effects: [{ type: "policy.output.dispatch", payload: { outputId, parameters: {} } }] });
+    let nexts = 0;
+    const trace = await run(assembled.plan!, {
+      "web.dom.type": ok,
+      "web.dom.extract_list": dispatching("web.dom.extract_list"),
+      "web.dom.next_page": dispatching("web.dom.next_page"),
+      "web.dom.click": ok
+    }, undefined, (effect) => {
+      const outputId = (effect.payload as { outputId?: string } | undefined)?.outputId;
+      if (outputId === "web.dom.next_page") nexts += 1;
+      const route = outputId === "web.dom.extract_list" ? "records" : outputId === "web.dom.next_page" && nexts === 3 ? "ended" : "success";
+      return { status: "success", route, outputs: {} };
+    });
+
+    const of = (definitionId: string) => trace.attempts.filter((attempt) => attempt.definitionId === definitionId);
+    expect(of("web.output.dom-extract_list").map((attempt) => attempt.route)).toEqual(["success", "success", "success"]);
+    expect(of("web.output.dom-next_page").map((attempt) => attempt.route)).toEqual(["success", "success", "ended"]);
+    expect(of("web.output.dom-click")).toHaveLength(1);
+    expect(trace.status).toBe("succeeded");
+  });
+});
+
 type Implementation = (call: { inputs: Readonly<Record<string, JsonValue>>; parameters: Readonly<Record<string, JsonValue>> }) => AutomationNodeExecutionResult;
 
-/** Runs the plan with the web nodes it uses bound to `implementations`. */
-async function run(plan: Plan, implementations: Record<string, Implementation>, delay?: (ms: number) => Promise<void>) {
-  const used = new Set(["web.output.dom-extract_list", "web.output.dom-click"]);
+type EffectDispatcher = NonNullable<NonNullable<Parameters<typeof runAutomationStudioGraph>[1]>["effectDispatcher"]>;
+
+/** Runs the plan with the web nodes it uses bound to `implementations`, and their dispatched outputs answered by `effectDispatcher`. */
+async function run(plan: Plan, implementations: Record<string, Implementation>, delay?: (ms: number) => Promise<void>, effectDispatcher?: EffectDispatcher) {
+  // Only the nodes this run has implementations for: registering one without is refused.
+  const implemented = new Set(Object.keys(implementations));
+  const used = new Set(definitions.filter((definition) => implemented.has(definition.outputAction?.fixedOutputId ?? "")).map((definition) => definition.id));
   const runtime = new AutomationStudioNativeNodeRuntime({ permissions: ["web-automation.action"], runtimeCapabilities: ["web.actions"] }).register(
     { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "@fluxiq-web-extension/domain", packageVersion: "1.0.0", domainId: "web-automation", nodes: definitions.filter((definition) => used.has(definition.id)) },
     { packageId: "@fluxiq-web-extension/domain", packageVersion: "1.0.0", implementations }
   );
   return await runAutomationStudioGraph(flowDocument(plan), {
     nativeNodeExecutor: ({ node, inputs, signal }) => runtime.execute(node, inputs, signal),
-    ...(delay ? { delay } : {})
+    ...(delay ? { delay } : {}),
+    ...(effectDispatcher ? { effectDispatcher } : {})
   });
 }
 

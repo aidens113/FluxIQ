@@ -33,7 +33,7 @@ import {
   type AutomationStudioLlmEvidenceToolExecutionResult
 } from "../../index.ts";
 import type { JsonObject, JsonValue } from "../../../../../../core/index.ts";
-import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, AutomationStudioNodeRegistry, type AutomationNodeExecutionResult, type AutomationNodePort } from "../../../../nodes/index.ts";
+import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, AutomationStudioNodeRegistry, type AutomationNodeExecutionResult, type AutomationNodePort, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { createBlankAutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import {
   applyAutomationStudioFlowDraftAmendments,
@@ -55,13 +55,28 @@ const resolution = {
 // The web domain's library, with the click taking the row a pass is on, as the
 // domain's press declares it downstream; typing does not take it.
 const ROW_INPUT: AutomationNodePort = { id: "item", label: "Item", valueType: "any", role: "data", required: false };
-const definitions = webDomainNodeDefinitionsFixture().map((definition) => definition.id === "web.output.dom-click" ? { ...definition, inputs: [...definition.inputs, ROW_INPUT] } : definition);
+const fixture = webDomainNodeDefinitionsFixture();
+// A next-page press, as the domain's next-page node declares it downstream
+// (read-list design S2, "What S4 and S5 need"): a click with an `ended` branch
+// it answers when there is no further page.
+const clickDefinition = fixture.find((definition) => definition.id === "web.output.dom-click")!;
+const nextPageDefinition: AutomationStudioNodeDefinition = {
+  ...clickDefinition,
+  id: "web.output.dom-next_page",
+  label: "Next Page",
+  description: "Show the next page of a detected list, or answer ended when there is none.",
+  source: { kind: "importer", domainId: "web-automation", packageId: "@fluxiq-web-extension/domain", implementationKey: "web.dom.next_page" },
+  outputAction: { fixedOutputId: "web.dom.next_page" },
+  outputs: [...clickDefinition.outputs, { id: "ended", label: "No more pages", valueType: "any", role: "branch" }]
+};
+const definitions = [...fixture.map((definition) => definition.id === "web.output.dom-click" ? { ...definition, inputs: [...definition.inputs, ROW_INPUT] } : definition), nextPageDefinition];
 const registry = new AutomationStudioNodeRegistry();
 for (const definition of definitions) registry.register(definition);
 
 const TYPE = "web.output.dom-type";
 const LIST = "web.output.dom-extract_list";
 const CLICK = "web.output.dom-click";
+const NEXT = "web.output.dom-next_page";
 
 const ROWS: JsonObject[] = [{ name: "Ada Park", mutual: 6 }, { name: "Ben Ito", mutual: 7 }, { name: "Cy Moss", mutual: 9 }];
 
@@ -124,7 +139,7 @@ type Implementation = (call: { inputs: Readonly<Record<string, JsonValue>>; para
  * primary Subflow's graph, read as the document the runtime executes
  * (`canonicalFlowDocument`), with each web node faked, recording what it was handed.
  */
-async function storedFlowRun(steps: readonly AutomationStudioFlowDraftStep[]): Promise<{ sent: Sent[]; status: string }> {
+async function storedFlowRun(steps: readonly AutomationStudioFlowDraftStep[], options: { nextEndsOn?: number } = {}): Promise<{ sent: Sent[]; status: string }> {
   const assembled = assembleAutomationStudioFlowDraftPlan({
     steps: steps.filter(automationStudioFlowDraftStepIsProposed),
     write: automationStudioFlowBootstrapDraftNodeStep,
@@ -143,7 +158,14 @@ async function storedFlowRun(steps: readonly AutomationStudioFlowDraftStep[]): P
     sent.push({ node, parameters: { ...parameters }, item: inputs.item });
     return { status: "success", route: "success", outputs };
   };
-  const used = new Set([TYPE, LIST, CLICK]);
+  // The next-page press answers its `ended` route on its `nextEndsOn`th call, else succeeds.
+  let nextCalls = 0;
+  const nextPage: Implementation = ({ inputs, parameters }) => {
+    nextCalls += 1;
+    sent.push({ node: NEXT, parameters: { ...parameters }, item: inputs.item });
+    return { status: "success", route: nextCalls === options.nextEndsOn ? "ended" : "success", outputs: {} };
+  };
+  const used = new Set([TYPE, LIST, CLICK, NEXT]);
   const runtime = new AutomationStudioNativeNodeRuntime({ permissions: ["web-automation.action"], runtimeCapabilities: ["web.actions"] }).register(
     { schemaVersion: "0.1", sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, packageId: "@fluxiq-web-extension/domain", packageVersion: "1.0.0", domainId: "web-automation", nodes: definitions.filter((definition) => used.has(definition.id)) },
     {
@@ -152,7 +174,8 @@ async function storedFlowRun(steps: readonly AutomationStudioFlowDraftStep[]): P
       implementations: {
         "web.dom.type": recording(TYPE),
         "web.dom.extract_list": recording(LIST, { records: ROWS }),
-        "web.dom.click": recording(CLICK)
+        "web.dom.click": recording(CLICK),
+        "web.dom.next_page": nextPage
       }
     }
   );
@@ -167,17 +190,20 @@ async function storedFlowRun(steps: readonly AutomationStudioFlowDraftStep[]): P
  * passes as `nodeOf`) and a host that answers the list's replay with the same
  * rows on `outputs`, recording each step and pass call.
  */
-async function buildTest(steps: readonly AutomationStudioFlowDraftStep[], withNodes = true): Promise<{ sent: (Sent & { replay: JsonValue | undefined })[]; ok: boolean }> {
+async function buildTest(steps: readonly AutomationStudioFlowDraftStep[], withNodes = true, options: { nextEndsOn?: number } = {}): Promise<{ sent: (Sent & { replay: JsonValue | undefined })[]; ok: boolean }> {
   const sent: (Sent & { replay: JsonValue | undefined })[] = [];
+  // The domain's next-page replay answers `core.replay.ended` when there is no further page (contract C6).
+  let nextCalls = 0;
   const executeTool = async ({ value }: { callId: string; toolId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
     if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };
     sent.push({ node: String(value.node), parameters: value.parameters, item: value.item, replay: value.replay });
     const verify = value.replay === "verify";
+    const ended = value.node === NEXT && (nextCalls += 1) === options.nextEndsOn;
     return {
       kind: "llm_evidence_tool_execution",
       evidence: { node: value.node ?? null },
       effectApplied: !verify,
-      resultCode: verify ? "core.replay.verified" : "core.replay.replayed",
+      resultCode: verify ? "core.replay.verified" : ended ? "core.replay.ended" : "core.replay.replayed",
       ...(value.node === LIST ? { outputs: { records: ROWS } } : {})
     };
   };
@@ -243,5 +269,43 @@ describe("the build's test and the stored Flow run one draft's loop alike", () =
     expect(presses(tested.sent).map((call) => [call.replay, call.parameters, call.item])).toEqual(ROWS.map((row) => ["verify", { selector: ".request-confirm" }, row]));
     // Nothing else is only checked: the rest is sent as steps.
     expect(tested.sent.filter((call) => !(call.node === CLICK && call.item !== undefined)).every((call) => call.replay === "step")).toBe(true);
+  });
+});
+
+// Read-list design S2 (4.2(e)): read the list, press Next, again while Next
+// found a page. The stored Flow runs it through the Repeat node, the next
+// page's `ended` route leaving the loop (contract C4, C5); the build's test
+// runs the span pass by pass until the next page's replay answers
+// `core.replay.ended` (C6). Both must read and press the same pages.
+describe("the build's test and the stored Flow run one draft's do-while alike", () => {
+  const doWhile = (): AutomationStudioFlowDraftStep[] => {
+    const steps = [
+      step(1, TYPE, { selector: "#search", text: "blue towels" }),
+      step(2, LIST, { extractList: { item: ".request", fields: { name: ".name", mutual: ".mutual" } } }, { observe: true }),
+      step(3, NEXT, { selector: "a.next" }),
+      step(4, CLICK, { selector: "#done" })
+    ];
+    steps[1]!.routing = { kind: "repeat", through: "d3", while: "d3" };
+    return steps;
+  };
+
+  it("read and press next the same pages, ending where the next page answers ended", async () => {
+    const stored = await storedFlowRun(doWhile(), { nextEndsOn: 3 });
+    const tested = await buildTest(doWhile(), true, { nextEndsOn: 3 });
+
+    expect(stored.status).toBe("succeeded");
+    expect(tested.ok).toBe(true);
+    const page = (): Sent[] => [
+      { node: LIST, parameters: { extractList: { item: ".request", fields: { name: ".name", mutual: ".mutual" } } }, item: undefined },
+      { node: NEXT, parameters: { selector: "a.next" }, item: undefined }
+    ];
+    const expected: Sent[] = [
+      { node: TYPE, parameters: { selector: "#search", text: "blue towels" }, item: undefined },
+      // Three passes: the third next page ends the loop.
+      ...page(), ...page(), ...page(),
+      { node: CLICK, parameters: { selector: "#done" }, item: undefined }
+    ];
+    expect(comparable(stored.sent)).toEqual(expected);
+    expect(comparable(tested.sent)).toEqual(expected);
   });
 });

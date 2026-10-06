@@ -14,6 +14,7 @@ import type { AutomationStudioFlowDocument } from "../../../../model/index.ts";
 import { runAutomationStudioGraph } from "../../../executor/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowDraftWrittenStep } from "../assemble-draft.ts";
+import { routeAutomationStudioFlowDraftSteps } from "../draft-routing.ts";
 
 // The real library: Core's built-ins, which is where the join and the list
 // walker come from, plus the web domain's own nodes.
@@ -517,3 +518,144 @@ function flowDocument(plan: NonNullable<ReturnType<typeof assemble>["plan"]>): A
     edges: subflow.edges.map((edge) => ({ id: edge.key, sourceNodeId: edge.source.nodeKey, targetNodeId: edge.target.nodeKey, sourcePortId: edge.source.portId, targetPortId: edge.target.portId }))
   };
 }
+
+// The do-while (read-list design, section 4): read the list, press Next, and
+// again while Next found a page. The span's last step ends the loop on its own
+// `ended` route; the Repeat node at the head bounds it. Next-page is the web
+// fixture's shape plus that route, as the domain declares it downstream.
+const ENDED_OUTPUT: AutomationNodePort = { id: "ended", label: "Ended", valueType: "any", role: "branch" };
+
+function nextPageDefinition(): AutomationStudioNodeDefinition {
+  const click = webDomainNodeDefinitionsFixture().find((definition) => definition.id === "web.output.dom-click")!;
+  return {
+    ...click,
+    id: "web.output.dom-next_page",
+    label: "Next Page",
+    description: "Go to the list's next page, and answer ended when there is none.",
+    source: { kind: "importer", domainId: "web-automation", packageId: "@fluxiq-web-extension/domain", implementationKey: "web.dom.next_page" },
+    outputAction: { fixedOutputId: "web.dom.next_page" },
+    outputs: [...click.outputs, ENDED_OUTPUT]
+  };
+}
+
+const paged = new AutomationStudioNodeRegistry();
+for (const definition of [...webDomainNodeDefinitionsFixture(), nextPageDefinition()]) paged.register(definition);
+
+function writePaged(draftStep: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftWrittenStep | undefined {
+  if (draftStep.actionId === "next") return { description: "go to the next page", node: "web.dom.next_page", entries: [{ key: "selector", value: String(draftStep.input.target) }] };
+  return write(draftStep);
+}
+
+function assemblePaged(steps: AutomationStudioFlowDraftStep[]) {
+  return assembleAutomationStudioFlowDraftPlan({ steps, write: writePaged, registry: paged, resolution, summary: "Read every page of results" });
+}
+
+/** Every edge as `source:port -> target:port`, each node named by its role, after its definitions were checked. */
+function roleWiring(plan: NonNullable<ReturnType<typeof assemble>["plan"]>, definitionIds: string[], names: string[]): string[] {
+  const subflow = plan.subflows[0]!;
+  expect(subflow.nodes.map((node) => node.definitionId)).toEqual(definitionIds);
+  const named = new Map(subflow.nodes.map((node, index) => [node.key, names[index]!]));
+  return subflow.edges.map((edge) => `${named.get(edge.source.nodeKey)}:${edge.source.portId} -> ${named.get(edge.target.nodeKey)}:${edge.target.portId}`);
+}
+
+const DO_WHILE_DEFINITIONS = [
+  "web.output.dom-click", "builtin.control.merge", "builtin.control.repeat", "web.output.dom-extract_list",
+  "web.output.dom-next_page", "builtin.control.merge", "web.output.dom-click"
+];
+const DO_WHILE_ROLES = ["search", "loop", "pass", "read", "next", "exit", "after"];
+
+describe("a span that repeats while its own last step succeeds", () => {
+  const draft = (routing: AutomationStudioFlowDraftStepRouting) => [
+    step(1, "press", { target: "#search" }),
+    step(2, "read", { target: ".row" }, routing),
+    step(3, "next", { target: "a.next" }),
+    step(4, "press", { target: "#done" })
+  ];
+
+  it("runs the span from a Repeat at the head, back to the head on success, and out on ended or done", () => {
+    const assembled = assemblePaged(draft({ kind: "repeat", through: "d3", while: "d3" }));
+
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const byRole = roleWiring(assembled.plan!, DO_WHILE_DEFINITIONS, DO_WHILE_ROLES);
+    expect(byRole).toEqual(expect.arrayContaining([
+      "search:success -> loop:branches",
+      "loop:success -> pass:in",
+      "pass:body -> read:in",
+      "read:success -> next:in",
+      "next:success -> loop:branches",
+      "next:ended -> exit:branches",
+      "pass:done -> exit:branches",
+      "exit:success -> after:in"
+    ]));
+    // Nothing else leaves the loop or enters it: the read is reached only by a pass.
+    expect(byRole.filter((edge) => edge.endsWith("-> read:in"))).toEqual(["pass:body -> read:in"]);
+    expect(byRole.filter((edge) => edge.startsWith("next:"))).toEqual(["next:success -> loop:branches", "next:ended -> exit:branches"]);
+    // Absent `most`, nothing is written and the Repeat node keeps its own
+    // default, which the assembler fills in as it does any unsaid parameter.
+    const repeat = assembled.plan!.subflows[0]!.nodes[2]!;
+    expect(repeat.parameters?.most).toBe(50);
+  });
+
+  it("writes most on the Repeat step only when the routing carries it", () => {
+    const assembled = assemblePaged(draft({ kind: "repeat", through: "d3", while: "d3", most: 7 }));
+
+    expect(assembled.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const nodes = assembled.plan!.subflows[0]!.nodes;
+    expect(nodes.map((node) => node.definitionId)).toEqual(DO_WHILE_DEFINITIONS);
+    expect(nodes[2]!.parameters?.most).toBe(7);
+    expect(nodes.filter((node) => node.parameters?.most !== undefined)).toHaveLength(1);
+    // The entry itself is written only when the routing carries `most`.
+    const passEntries = (routing: AutomationStudioFlowDraftStepRouting) => routeAutomationStudioFlowDraftSteps({
+      steps: draft(routing).map((draftStep) => {
+        const written = writePaged(draftStep)!;
+        // In the script's vocabulary, as `../assemble-draft.ts` hands a step to the router.
+        return { step: draftStep, written: { ...written, entries: (written.entries ?? []).map((entry) => ({ key: entry.key, lines: entry.value.split("\n"), line: 0 })) } };
+      }),
+      registry: paged,
+      resolution
+    }).steps.find((scripted) => scripted.node === "builtin.control.repeat")?.entries.map((entry) => `${entry.key}=${entry.lines.join("")}`);
+    expect(passEntries({ kind: "repeat", through: "d3", while: "d3", most: 7 })).toEqual(["most=7"]);
+    expect(passEntries({ kind: "repeat", through: "d3", while: "d3" })).toEqual([]);
+  });
+
+  it("produces a plan the validator accepts, back edge and all", () => {
+    for (const routing of [{ kind: "repeat", through: "d3", while: "d3" }, { kind: "repeat", through: "d3", while: "d3", most: 3 }] as const) {
+      const validated = validateAutomationStudioFlowBootstrapPlan({ plan: assemblePaged(draft(routing)).plan!, registry: paged, resolution });
+      expect(validated.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+      expect(validated.ok).toBe(true);
+    }
+  });
+
+  it("refuses a loop whose last step has no way to end it and no most, and builds it once most is given", () => {
+    const pressing = [
+      step(1, "press", { target: "#search" }),
+      step(2, "read", { target: ".row" }, { kind: "repeat", through: "d3", while: "d3" }),
+      step(3, "press", { target: "a.next" }),
+      step(4, "press", { target: "#done" })
+    ];
+    const refused = assemblePaged(pressing);
+    expect(refused.plan).toBeUndefined();
+    expect(refused.issues.map((issue) => issue.code)).toContain("flow_draft.repeat_while_never_ends");
+
+    const bounded = assemblePaged(pressing.map((draftStep) => draftStep.id === "d2" ? { ...draftStep, routing: { kind: "repeat", through: "d3", while: "d3", most: 5 } as const } : draftStep));
+    expect(bounded.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    const byRole = roleWiring(bounded.plan!, [
+      "web.output.dom-click", "builtin.control.merge", "builtin.control.repeat", "web.output.dom-extract_list",
+      "web.output.dom-click", "builtin.control.merge", "web.output.dom-click"
+    ], DO_WHILE_ROLES);
+    expect(byRole).toEqual(expect.arrayContaining(["next:success -> loop:branches", "pass:done -> exit:branches", "exit:success -> after:in"]));
+    expect(bounded.plan!.subflows[0]!.nodes[2]!.parameters?.most).toBe(5);
+  });
+
+  it("refuses another member of the span that says when it runs, as any repeat does", () => {
+    const assembled = assemblePaged([
+      step(1, "press", { target: "#search" }),
+      step(2, "read", { target: ".row" }, { kind: "repeat", through: "d3", while: "d3" }),
+      step(3, "next", { target: "a.next" }, { kind: "optional" }),
+      step(4, "press", { target: "#done" })
+    ]);
+
+    expect(assembled.plan).toBeUndefined();
+    expect(assembled.issues.map((issue) => issue.code)).toContain("flow_draft.repeat_body_is_routed");
+  });
+});

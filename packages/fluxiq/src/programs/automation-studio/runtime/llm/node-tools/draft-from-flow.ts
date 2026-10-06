@@ -62,7 +62,10 @@
 // re-read the list or wrote a single row. A loop in the assembler's own shape
 // (`./seeded-loops.ts`) is now seeded as its list step, then its body with the
 // repeat statement on the first body step; the For Each and the Merges that
-// only frame it are left for the assembler to derive again. The body keeps
+// only frame it are left for the assembler to derive again. A do-while (S2,
+// t283) is read back the same way: its body, with `repeat through <last>
+// while <last>` (and `most` when the Repeat's is not the default) on the
+// first body step, and the Repeat and both Merges left as framing. The body keeps
 // its parameters byte for byte: a `$state item.*` binding already names the
 // pass's row, and the fresh test resolves it against the row it reads.
 //
@@ -80,7 +83,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../model/index.ts";
 import { automationNodeOutputReference, rewriteAutomationNodeStatePaths } from "../../../nodes/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRouting } from "../../flow-draft/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT, automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftScheduleCandidate } from "../../flow-draft/scheduled-candidate/index.ts";
 // A type only, so nothing is imported back out of the directory this one is read by.
@@ -105,7 +108,7 @@ const MERGE_NODE_ID = "builtin.control.merge";
  * which hold plan keys of their own between the steps' nodes (`flow-bootstrap/
  * authoring/draft-routing.ts`).
  */
-const ROUTING_NODES = new Set([MERGE_NODE_ID, "builtin.control.for-each"]);
+const ROUTING_NODES = new Set([MERGE_NODE_ID, "builtin.control.for-each", "builtin.control.repeat"]);
 
 /**
  * Where a seeded step's own name starts, kept clear of the `d<n>` the loop
@@ -162,9 +165,13 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
   const optional = optionalNodeIds(authored, input.edges);
   const stepIdOf = new Map(ordered.map((node, index) => [node.id, `${SEED_STEP_ID_PREFIX}${index + 1}`]));
   const stepOutputPath = stepOutputPaths(input.nodes, stepIdOf);
-  const repeats = new Map(loops.map((loop) => [loop.body[0]!, {
-    kind: "repeat" as const, through: stepIdOf.get(loop.body.at(-1)!)!, over: stepIdOf.get(loop.over)!
-  }]));
+  const repeats = new Map(loops.map((loop): [string, AutomationStudioFlowDraftStepRouting] => {
+    const through = stepIdOf.get(loop.body.at(-1)!)!;
+    // A do-while repeats while its own last step succeeds (S2, t283).
+    return [loop.body[0]!, loop.over === undefined
+      ? { kind: "repeat", through, while: through, ...(loop.most === undefined ? {} : { most: loop.most }) }
+      : { kind: "repeat", through, over: stepIdOf.get(loop.over)! }];
+  }));
   const steps: AutomationStudioFlowDraftStep[] = [];
   const nodeIdByStepId: Record<string, string> = {};
   const startedOnByStepId: Record<string, JsonObject> = {};

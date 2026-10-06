@@ -71,7 +71,7 @@ import {
   automationStudioFlowDraftSometimesPresentStepIds,
   automationStudioFlowDraftStepId,
   automationStudioFlowDraftStepIsProposed,
-  automationStudioFlowDraftWithheldStepIds,
+  automationStudioFlowDraftExemptStepIds,
   type AutomationStudioFlowDraftDryRun,
   type AutomationStudioFlowDraftStep,
   type AutomationStudioFlowDraftUnrunnableWord
@@ -460,7 +460,7 @@ function repeatedStepIds(steps: readonly AutomationStudioFlowDraftStep[]): Reado
 function unchangedLine(steps: readonly AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun, test: "replayed" | "replayed_differently" | "not_replayed"): string {
   // The verdict's own exemption (`../../flow-draft/dry-run.ts`): a step of a
   // repeat the test ran once per row (`passes`) is excused only by a withheld effect.
-  const excused = new Set([...automationStudioFlowDraftConditionalStepIds(steps), ...automationStudioFlowDraftWithheldStepIds(verdict.outcomes)]);
+  const excused = automationStudioFlowDraftExemptStepIds(steps, verdict.outcomes);
   const passedOver = (outcome: AutomationStudioFlowDraftDryRun["outcomes"][number]): boolean => outcome.stepId !== undefined && excused.has(outcome.stepId)
     && (outcome.passes === undefined || outcome.withheldBy !== undefined);
   const failing = verdict.outcomes
@@ -509,7 +509,7 @@ function madeOptional(steps: AutomationStudioFlowDraftStep[], verdict: Automatio
     attempt: verdict.attempt,
     reset: verdict.reset,
     outcomes: verdict.outcomes,
-    conditional: new Set([...automationStudioFlowDraftConditionalStepIds(steps), ...automationStudioFlowDraftWithheldStepIds(verdict.outcomes), ...sometimesPresent])
+    conditional: new Set([...automationStudioFlowDraftExemptStepIds(steps, verdict.outcomes), ...sometimesPresent])
   });
   if (!judged.ok) return undefined;
   for (const step of steps) {

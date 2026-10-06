@@ -551,7 +551,7 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
  * for any other amendment that cannot be read.
  */
 function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rerun_needs_input" | undefined {
-  if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input", "check", "through", "over", "act", "place"])) return undefined;
+  if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input", "check", "through", "over", "while", "most", "act", "place"])) return undefined;
   if (item.act !== undefined && (typeof item.act !== "string" || !AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(item.act))) return undefined;
   if (!validPlace(item.place)) return undefined;
   if (!Number.isSafeInteger(item.step) || (item.step as number) < 1) return undefined;
@@ -563,7 +563,13 @@ function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rer
   if (item.input !== undefined && !isJsonObject(item.input)) return undefined;
   // Every key that names another step is one position, read the same way, so
   // a mistyped one leaves the amendment out rather than becoming step zero.
-  if (!["to", "check", "through", "over"].every((key) => isPosition(item[key]))) return undefined;
+  if (!["to", "check", "through", "over", "while"].every((key) => isPosition(item[key]))) return undefined;
+  // A repeat while its last step succeeds (`../flow-draft/routing.ts`) is a
+  // loop of its own, never one over an earlier step; its bound means nothing
+  // without it; and its while is its through. A shape saying two loops at once,
+  // or a bound with no loop, is left out rather than read as one of them.
+  if (item.while !== undefined && (item.over !== undefined || (item.through !== undefined && item.through !== item.while))) return undefined;
+  if (item.most !== undefined && (item.while === undefined || !Number.isSafeInteger(item.most) || (item.most as number) < 1 || (item.most as number) > 500)) return undefined;
   // The three changes that need a value are dropped when it is missing,
   // rather than applied as something else: a `rerun` with no argument would
   // rerun the step with the argument that was already wrong, and an
@@ -580,6 +586,8 @@ function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rer
     ...(item.check === undefined ? {} : { check: item.check as number }),
     ...(item.through === undefined ? {} : { through: item.through as number }),
     ...(item.over === undefined ? {} : { over: item.over as number }),
+    ...(item.while === undefined ? {} : { while: item.while as number }),
+    ...(item.most === undefined ? {} : { most: item.most as number }),
     ...(item.act === undefined ? {} : { act: item.act as string }),
     ...(item.place === undefined ? {} : { place: item.place as string })
   };

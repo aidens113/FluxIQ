@@ -287,9 +287,9 @@ function controlOf(step: Step): string | undefined {
   return words ? words : undefined;
 }
 
-/** The step a repeat runs over, when it names one the draft still has. */
+/** The step a repeat runs over, when it names one the draft still has; none for a repeat while its last step succeeds. */
 function overOf(carrier: Step, steps: readonly Step[]): Step | undefined {
-  return carrier.routing?.kind === "repeat" ? automationStudioFlowDraftStepById(steps, carrier.routing.over) : undefined;
+  return carrier.routing?.kind === "repeat" && carrier.routing.over !== undefined ? automationStudioFlowDraftStepById(steps, carrier.routing.over) : undefined;
 }
 
 /** Positions as a sentence lists them: `6`, `2 and 9`, `2, 4 and 9`. */

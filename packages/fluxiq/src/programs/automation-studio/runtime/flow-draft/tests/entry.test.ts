@@ -85,10 +85,10 @@ describe("the draft entry a decision is shown", () => {
     const authored = (automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry).instruction;
     expect(authored).toContain("three steps in this order");
     expect(authored).toContain(`{"step": <that press>, "change": "repeat", "over": <the listing>}`);
-    expect(authored).toContain("The repeat goes on the press, never on the listing");
+    expect(authored).toContain("A repeat over a listing goes on the press, never on it");
     expect(authored).toContain("a listing that already keeps the right rows is not run again");
     const transcript = value([step(1, "press", { target: "t" })]).instruction;
-    expect(transcript).toContain("the repeat goes on the act, never on the listing");
+    expect(transcript).toContain("a repeat over a listing goes on the act, never on the listing");
     expect(transcript).toContain("A listing that already keeps the right rows is not run again.");
   });
 
@@ -427,5 +427,32 @@ describe("the route the person named", () => {
     const value = shown();
     expect(value).not.toHaveProperty("route");
     expect(value.instruction).toBe((automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry).instruction);
+  });
+});
+
+// Read-list redesign S2 (contract C1): a do-while's line names its last step
+// and, when carried, its most passes; both tellings name the continuing list's
+// form, and say that a repeat goes on the act only over a listing.
+describe("a repeat that runs while its last step succeeds, in the draft entry", () => {
+  const read = (): AutomationStudioFlowDraftStep[] => [
+    step(1, "read", { list: "l1" }, { id: "d1", effect: "observe", routing: { kind: "repeat", through: "d2", while: "d2" } }),
+    step(2, "advance", { list: "l1" }, { id: "d2" })
+  ];
+
+  it("reads as repeating through its last step while it succeeds, with its most passes when carried", () => {
+    expect(value(read()).steps[0]?.runs).toBe("repeats through step 2 while it succeeds");
+    const most = read();
+    most[0]!.routing = { kind: "repeat", through: "d2", while: "d2", most: 3 };
+    expect(value(most).steps[0]?.runs).toBe("repeats through step 2 while it succeeds, at most 3 passes");
+  });
+
+  it("names the continuing list's form in both tellings", () => {
+    const authored = (automationStudioFlowDraftEntry({ steps: read(), authored: true })!.value as Entry).instruction;
+    const transcript = value(read()).instruction;
+    for (const instruction of [authored, transcript]) {
+      expect(instruction).toContain("list that continues");
+      expect(instruction).toContain("repeat on the read with while");
+      expect(instruction).toContain("the Flow keeps each row once");
+    }
   });
 });

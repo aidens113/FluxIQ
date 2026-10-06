@@ -94,6 +94,7 @@ import {
   automationStudioFlowDraftConditionalStepReasons,
   automationStudioFlowDraftExcusedWords,
   automationStudioFlowDraftReplayOutcomeWord,
+  automationStudioFlowDraftRepeatIsWhile,
   automationStudioFlowDraftStepById,
   automationStudioFlowDraftStepId,
   automationStudioFlowDraftStepIsProposed,
@@ -401,7 +402,8 @@ function targetWords(step: AutomationStudioFlowDraftStep, denied: readonly strin
   };
   collect(step.ranWith);
   collect(step.input);
-  if (step.routing?.kind === "repeat") {
+  // A repeat while its last step succeeds is over no listing, so it has no rows to name.
+  if (step.routing?.kind === "repeat" && !automationStudioFlowDraftRepeatIsWhile(step.routing)) {
     const over = automationStudioFlowDraftStepById(steps, step.routing.over)?.position;
     words.push(over === undefined ? "in each row its listing keeps" : `in each row step ${over} keeps`);
   }
@@ -413,6 +415,9 @@ function routingValue(routing: AutomationStudioFlowDraftStepRouting, steps: read
   const at = (id: string): number | null => automationStudioFlowDraftStepById(steps, id)?.position ?? null;
   if (routing.kind === "only_if") return { kind: routing.kind, check: at(routing.check) };
   if (routing.kind === "on_failed") return { kind: routing.kind, to: at(routing.to) };
+  if (automationStudioFlowDraftRepeatIsWhile(routing)) {
+    return { kind: routing.kind, through: at(routing.through), while: at(routing.while), ...(routing.most === undefined ? {} : { most: routing.most }) };
+  }
   if (routing.kind === "repeat") return { kind: routing.kind, over: at(routing.over), through: at(routing.through) };
   return { kind: routing.kind };
 }

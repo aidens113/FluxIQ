@@ -33,6 +33,14 @@ export type AutomationStudioFlowDraftAmendment = {
   /** `repeat` only: the step whose rows, or whose success, the span repeats on. Defaults to the step before it. */
   over?: number;
   /**
+   * `repeat` only, never with `over`: the span's last step, which runs on
+   * every pass; the span runs again while it succeeds (`../routing.ts`). It is
+   * `through`, which defaults to it.
+   */
+  while?: number;
+  /** `repeat` with `while` only: the most passes, 1 to 500; the Repeat node's default when absent. */
+  most?: number;
+  /**
    * `add` or `keep` only: the instructed act (`a1`, `a2` ...) this step does,
    * as the checklist beside the draft names it. Recorded on the step, and read
    * as the model's claim when it completes (`../step.ts`, `acts`). Only a step
@@ -69,7 +77,8 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    * what a loop over them still needs (`../../llm/draft-amendment-feedback.ts`).
    * Live run 37 (`run-muq5v4zg-39182b58`) sent `13 repeat over 13` on its
    * filtered listing with no press after it, and was told the rule in general.
-   * `repeat_taken_off`: the step the repeat taken off was over.
+   * `repeat_taken_off`: the step the repeat taken off was over; absent for a
+   * repeat while its last step succeeds, which is over no step.
    */
   over?: number;
   /**

@@ -21,6 +21,12 @@ describe("the run's progress mark", () => {
     const pass = attempt("loop", { definitionId: "builtin.control.for-each", route: "body" });
     expect(automationStudioRunProgressMark([pass, attempt("a"), pass, pass])).toBe(2 + 3);
   });
+
+  it("counts every Repeat pass into its body, and not the pass that ends the loop", () => {
+    const pass = attempt("again", { definitionId: "builtin.control.repeat", route: "body" });
+    const done = attempt("again", { definitionId: "builtin.control.repeat", route: "done" });
+    expect(automationStudioRunProgressMark([pass, attempt("a"), pass, done])).toBe(2 + 2);
+  });
 });
 
 describe("the state-route guard", () => {

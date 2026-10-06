@@ -48,7 +48,7 @@ export async function dispatchPolicyOutput(
     ...(!confirmationResult?.ok && confirmationResult?.error ? { error: confirmationResult.error } : {}),
     ...(result.payload !== undefined ? { result: result.payload as JsonValue } : {})
   };
-  if (result.ok && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: "success", outputs, ...targetResolutionField(prepared.resolution), ...clearedWaitField(result.clearedWait) };
+  if (result.ok && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: dispatchedRoute(result.payload), outputs, ...targetResolutionField(prepared.resolution), ...clearedWaitField(result.clearedWait) };
   return { ...failedDispatchResult(outputs, {
     message: confirmationFailureMessage(confirmationResult) ?? result.error,
     failure: dispatchFailure(result.ok, result.status, result.failure, confirmationResult),
@@ -116,13 +116,23 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
       ...(!confirmationResult?.ok && confirmationResult?.error ? { error: confirmationResult.error } : {}),
       ...(result.payload !== undefined ? { result: result.payload as JsonValue } : {})
     };
-    if (result.status === "succeeded" && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: "success", outputs, ...targetResolutionField(prepared.resolution), ...clearedWaitField(result.clearedWait) };
+    if (result.status === "succeeded" && (!confirmationResult || confirmationResult.ok)) return { status: "success", route: dispatchedRoute(result.payload), outputs, ...targetResolutionField(prepared.resolution), ...clearedWaitField(result.clearedWait) };
     return { ...failedDispatchResult(outputs, {
       message: confirmationFailureMessage(confirmationResult) ?? result.message ?? result.error,
       failure: dispatchFailure(result.status === "succeeded", result.status, result.failure, confirmationResult),
       resolution: prepared.resolution
     }), ...clearedWaitField(result.clearedWait) };
   };
+}
+
+// An output may answer which of its node's routes a success takes by naming
+// it in its result payload, as `route`: a list that has no further page, say.
+// Only a success is lifted, and never onto `success` or `failed`, which are
+// the dispatch's own to say; whether the node declares that route is the
+// executor's to check (`executor/node-execution.ts`).
+function dispatchedRoute(payload: unknown): string {
+  const route = payload && typeof payload === "object" && !Array.isArray(payload) ? (payload as { route?: unknown }).route : undefined;
+  return typeof route === "string" && route.length > 0 && route !== "success" && route !== "failed" ? route : "success";
 }
 
 function awaitConfirmation(io: IoRegistry, domainId: string | null | undefined, action: PolicyOutputAction, signal: AbortSignal | undefined): Promise<ConfirmationOutcome> | null {

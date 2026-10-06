@@ -2,7 +2,7 @@ import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import { createAutomationStudioElementMatcher } from "../fingerprinting/index.ts";
 import type { AutomationStudioFlowNode, AutomationStudioFlowScope } from "../model/index.ts";
 import { AutomationStudioImporterSdkRegistry, type AutomationStudioComparatorImplementation, type AutomationStudioImporterImplementationBundle, type AutomationStudioImporterSdkManifest, type AutomationStudioNativeLogEntry, type AutomationStudioNativeNodeImplementation, type AutomationStudioNodeDefinition, type AutomationStudioNodeRegistryResolution, type AutomationStudioRecordingMapperImplementation, type AutomationStudioTargetResolverImplementation } from "../nodes/index.ts";
-import type { AutomationNodeExecutionResult } from "../nodes/contracts.ts";
+import type { AutomationNodeExecutionResult, AutomationNodePort } from "../nodes/contracts.ts";
 
 export type AutomationStudioNativeRuntimeGrants = {
   permissions?: Iterable<string>;
@@ -13,7 +13,14 @@ export type AutomationStudioNativeRuntimeGrants = {
   process?: boolean;
   childProcess?: boolean;
 };
-export type AutomationStudioNativeExecution = { result: AutomationNodeExecutionResult; logs: AutomationStudioNativeLogEntry[] };
+/**
+ * What one native execution answered. `declaredOutputs` is the bound
+ * definition's output ports, given beside a result the implementation produced:
+ * the executor checks a route its dispatch answers against them
+ * (`executor/node-execution.ts`), and an importer definition lives only here,
+ * never in the builtin library the executor otherwise reads.
+ */
+export type AutomationStudioNativeExecution = { result: AutomationNodeExecutionResult; logs: AutomationStudioNativeLogEntry[]; declaredOutputs?: readonly AutomationNodePort[] };
 
 /**
  * Explicit trusted-local implementation binder. This is an authorization and
@@ -87,7 +94,7 @@ export class AutomationStudioNativeNodeRuntime {
       const execution = Promise.resolve(binding.implementation({ inputs: Object.freeze(isolatedInputs), parameters: Object.freeze({ ...(node.parameterValues ?? {}) }), signal: controller.signal, grants: Object.freeze({ ...this.grants, permissions: [...this.grants.permissions], runtimeCapabilities: [...this.grants.runtimeCapabilities], networkDestinations: [...this.grants.networkDestinations], secretHandles: [...this.grants.secretHandles], filesystemRoots: [...this.grants.filesystemRoots] }), ...(hostContext ? { host: Object.freeze({ ...hostContext, capabilityIds: [...hostContext.capabilityIds] }) } : {}), elementMatcher: this.elementMatcher, resolveTarget: (resolverId, target) => this.resolveTarget(binding.manifest.domainId, resolverId, target, controller.signal), log: (entry) => logs.push(redactLog(entry)) }));
       const result = await Promise.race([execution, new Promise<AutomationNodeExecutionResult>((resolve) => { timer = setTimeout(() => { resolve({ status: "failed", route: "failed", outputs: { error: `Native node exceeded ${timeoutMs}ms timeout.` } }); controller.abort(new Error("Native node timeout.")); }, timeoutMs); })]);
       const boundaryError = validateResultBoundary(definition, result); if (boundaryError) return { ...failed(boundaryError), logs };
-      return { result, logs };
+      return { result, logs, declaredOutputs: definition.outputs };
     } catch (error) { return { ...failed(error instanceof Error ? error.message : "Native node execution failed."), logs }; }
     finally { if (timer) clearTimeout(timer); signal?.removeEventListener("abort", abort); }
 }

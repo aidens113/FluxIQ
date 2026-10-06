@@ -115,7 +115,14 @@ export const AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES = {
   /** Its target was not there, on a page other than the one it acted on. */
   unreproducible: "core.replay.unreproducible",
   /** The target could not be put back at all, so nothing was replayed. */
-  resetFailed: "core.replay.reset_failed"
+  resetFailed: "core.replay.reset_failed",
+  /**
+   * It took its `ended` route: a next page with no further page (read-list
+   * design S2). The last step of a do-while span answering it is that pass
+   * passing and the loop ending (`./replay-span.ts`); anywhere else it is read
+   * as `failed`, since no status names it.
+   */
+  ended: "core.replay.ended"
 } as const;
 
 const STATUS_BY_CODE: Readonly<Record<string, AutomationStudioFlowDraftReplayStatus>> = Object.freeze({

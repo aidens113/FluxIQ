@@ -283,6 +283,32 @@ async function dispatchSavedRecords(root: string, rows: JsonObject[], extra: Jso
   return { result, saved: await readFile(path.join(root, "command-attempts", attempt!.attemptId, "attempt.json"), "utf8") };
 }
 
+describe("a route an output answers in its result payload", () => {
+  it("is lifted onto a succeeded IO dispatch's route, with the outputs unchanged", async () => {
+    const result = await dispatchPolicyOutput(ioWith(() => ({ ok: true, outputId: "activate-element", payload: { route: "ended" } })), "example", action);
+    expect(result).toMatchObject({ status: "success", route: "ended", outputs: { ok: true, result: { route: "ended" } } });
+  });
+
+  it("is lifted onto a succeeded runtime dispatch's route", async () => {
+    const result = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "succeeded", payload: { route: "ended" } }))(effect);
+    expect(result).toMatchObject({ status: "success", route: "ended", outputs: { ok: true, result: { route: "ended" } } });
+  });
+
+  it("leaves a failed dispatch failed whatever its payload says", async () => {
+    const io = await dispatchPolicyOutput(ioWith(() => ({ ok: false, outputId: "activate-element", error: "No.", payload: { route: "ended" } })), "example", action);
+    const runtime = await createRuntimePolicyEffectDispatcher(ioWith(), "example", runtimeReturning({ status: "failed", error: "No.", payload: { route: "ended" } }))(effect);
+    expect(io).toMatchObject({ status: "failed", route: "failed" });
+    expect(runtime).toMatchObject({ status: "failed", route: "failed" });
+  });
+
+  it("ignores an empty, non-string, success or failed route", async () => {
+    for (const route of ["", 3, "success", "failed", null]) {
+      const result = await dispatchPolicyOutput(ioWith(() => ({ ok: true, outputId: "activate-element", payload: { route } })), "example", action);
+      expect(result.route).toBe("success");
+    }
+  });
+});
+
 function ioWith(dispatch?: () => OutputDispatchResult, metadata?: JsonObject): IoRegistry {
   const io = new IoRegistry();
   io.registerOutput("example", defineOutput({

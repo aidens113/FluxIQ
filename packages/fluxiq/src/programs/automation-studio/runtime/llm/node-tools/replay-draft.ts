@@ -46,10 +46,22 @@
 //
 // **A repeat runs as a loop (t252).** A span whose list step returned its rows
 // in this test is run once per row, each member with that row and its bindings
-// resolved for it, and a span over a check runs while the check replays
-// (`./replay-span.ts`). A step outside a repeat has its bindings resolved too,
-// so an input takes its test value; a binding nothing answers fails the step
-// `core.replay.unresolved_binding`, and nothing is sent for it.
+// resolved for it, a span over a check runs while the check replays, and a
+// do-while runs pass by pass until its last step ends it -- planned from its
+// routing, with or without a node lookup (`./replay-span.ts`). A step outside a
+// repeat has its bindings resolved too, so an input takes its test value; a
+// binding nothing answers fails the step `core.replay.unresolved_binding`, and
+// nothing is sent for it.
+//
+// **A check before a span is excused when it does not hold (read-list design
+// 4.2(e)).** A repeat over a check -- the step right before the span, whose
+// node declares no array output -- runs the span zero times in the Flow when
+// the check's first ask does not hold, so that check failing is the loop not
+// running, not the Flow failing. It is excused `check`, on its call and its
+// outcome, and the verdict passes over it; a part run does not stop at it.
+// Decided here, because only the node definitions say a step is a check and
+// not a list (`../../flow-draft/routing.ts` knows none); a list a span walks
+// is never excused for this.
 //
 // **An earlier step's output is what that step answered in this walk (P5,
 // t270).** Each step's real outputs are kept as the walk goes -- only from a
@@ -62,9 +74,11 @@
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
-  automationStudioFlowDraftConditionalStepIds,
+  automationStudioFlowDraftExemptStepIds,
   automationStudioFlowDraftConditionalStepReasons,
   automationStudioFlowDraftDryRunVerdict,
+  automationStudioFlowDraftPrecedingProposedStep,
+  automationStudioFlowDraftRepeatIsWhile,
   automationStudioFlowDraftReplayFrom,
   automationStudioFlowDraftReplayOutcomeVerified,
   automationStudioFlowDraftReplayOutcomeWord,
@@ -73,7 +87,6 @@ import {
   automationStudioFlowDraftStepOutputsState,
   automationStudioFlowDraftStepReplayMode,
   automationStudioFlowDraftStepWithholdsLater,
-  automationStudioFlowDraftWithheldStepIds,
   type AutomationStudioFlowDraftDryRun,
   type AutomationStudioFlowDraftExcusedReason,
   type AutomationStudioFlowDraftReplayMode,
@@ -255,6 +268,8 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
   // Steps of a repeat this run ran once per row: no longer excused (`./replay-span.ts`).
   const expanded = new Set<string>();
   const excused = (stepId: string): boolean => conditional.has(stepId) && !expanded.has(stepId);
+  // The checks a repeat runs while, excused `check` when their first ask does not hold (see the header).
+  const checks = whileCheckIds(input.steps, input.nodeOf);
   // What each step was asked and answered, for a repeat over it.
   const asked = new Map<AutomationStudioFlowDraftStep, { answer: ReplayAnswer; mode: AutomationStudioFlowDraftReplayMode }>();
   // What each step really produced in this walk, by its id, for a later step's `$step` binding (see the header).
@@ -269,8 +284,9 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     const step = proposed[index]!;
     // A carried join is where two ways meet, not a step: nothing is sent and it has no outcome (see the header).
     if (automationStudioFlowDraftStepCarriedJoin(step)) continue;
-    const plan =input.nodeOf ? automationStudioFlowDraftReplaySpanPlan({ steps: input.steps, run: proposed, index, nodeOf: input.nodeOf, asked: (each) => asked.get(each) }) : undefined;
-    if (plan && input.nodeOf) {
+    // A do-while is planned without a node lookup; a repeat over a list or a check needs one.
+    const plan = automationStudioFlowDraftReplaySpanPlan({ steps: input.steps, run: proposed, index, nodeOf: input.nodeOf, asked: (each) => asked.get(each) });
+    if (plan) {
       // A pass is never excused as a step the Flow does not always run: only a withheld effect excuses it.
       const passExcusable: AutomationStudioFlowDraftExcusedReason | undefined = withheldBy === undefined ? undefined : "withheld";
       const span = await automationStudioFlowDraftReplaySpanRun({
@@ -299,7 +315,9 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     const toolId = automationStudioNodeReplayToolId(step);
     const stepId = automationStudioFlowDraftStepId(step);
     // Why the test passes over this step if it does not hold, known before it runs.
-    const excusable: AutomationStudioFlowDraftExcusedReason | undefined = (excused(stepId) ? reasons.get(stepId) : undefined) ?? (withheldBy !== undefined ? "withheld" : undefined);
+    const excusable: AutomationStudioFlowDraftExcusedReason | undefined = (excused(stepId) ? reasons.get(stepId) : undefined)
+      ?? (checks.has(stepId) ? "check" : undefined)
+      ?? (withheldBy !== undefined ? "withheld" : undefined);
     // A step with nothing to run it with is a failed step, not a skipped one.
     let ran: ReplayAnswer = value ? await send(callId, step, value, excusable) : { readable: false };
     let status = statusOf(ran, mode);
@@ -349,7 +367,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     // sense halfway, and the difference is what the model needs.
     if (!evidence && ran.readable) evidence = { callId: reanchored ? `${callId}.again` : callId, toolId, value: ran.result.evidence };
     // A part run is the exception: it stops where the Flow would, and leaves the target there.
-    if (input.stopsAt?.(step, excused(stepId))) stoppedAt = step.position;
+    if (input.stopsAt?.(step, excused(stepId) || checks.has(stepId))) stoppedAt = step.position;
   }
   return { outcomes, observations, ...(evidence ? { evidence } : {}), ...(stoppedAt === undefined ? {} : { stoppedAt }) };
 }
@@ -362,13 +380,35 @@ function verdictOf(
   // A step the Flow would not always run answers for itself: the replay is one
   // situation, and a step that exists for another one is not a broken step
   // (`../../flow-draft/routing.ts`). Nor is a step that ran without what a
-  // verified step's withheld effect would have made (`../../flow-draft/verify-only.ts`).
+  // verified step's withheld effect would have made (`../../flow-draft/verify-only.ts`),
+  // nor a check a repeat runs while, whose not holding is the loop not running (see the header).
   return automationStudioFlowDraftDryRunVerdict({
     attempt: input.attempt,
     reset,
     outcomes,
-    conditional: new Set([...automationStudioFlowDraftConditionalStepIds(input.steps), ...automationStudioFlowDraftWithheldStepIds(outcomes)])
+    conditional: automationStudioFlowDraftExemptStepIds(input.steps, outcomes)
   });
+}
+
+/**
+ * The ids of the checks a repeat runs while: the step a repeat's `over` names
+ * when it is the proposed step right before the span (where the assembler
+ * requires it) and its node is known and declares no array output -- a list's
+ * node declares one, and is never in here. None without a node lookup, and
+ * none for a do-while, which names no earlier step.
+ */
+function whileCheckIds(steps: readonly AutomationStudioFlowDraftStep[], nodeOf: AutomationStudioFlowDraftReplayNodeOf | undefined): ReadonlySet<string> {
+  const ids = new Set<string>();
+  if (!nodeOf) return ids;
+  for (const step of steps) {
+    const routing = step.routing;
+    if (routing?.kind !== "repeat" || automationStudioFlowDraftRepeatIsWhile(routing) || !automationStudioFlowDraftStepIsProposed(step)) continue;
+    const check = automationStudioFlowDraftPrecedingProposedStep(steps, step);
+    if (!check || automationStudioFlowDraftStepId(check) !== routing.over) continue;
+    const node = nodeOf(check.actionId);
+    if (node && !node.outputs.some((output) => output.type === "array")) ids.add(routing.over);
+  }
+  return ids;
 }
 
 /** The status one answer names, or `failed` for an answer that could not be read. */
