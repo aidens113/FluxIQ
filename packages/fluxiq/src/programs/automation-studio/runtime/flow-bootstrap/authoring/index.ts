@@ -11,10 +11,16 @@
 // hands that draft over instead of a written script, and both go through
 // `assemble.ts` from there.
 //
+// `assembled-record-output.ts` publishes the one record output assembly writes
+// on a node, because the build's test has to send that same output for a step
+// that ran with none (`../../llm/node-tools/replay.ts`); a second derivation
+// there is how the test and the Flow would come to write different datasets.
+//
 // `instruction-record-columns.ts` publishes one sentence and nothing else: what
 // its matcher found unread, said to the build and the judge, so neither grows a
 // second matcher.
 export * from "./accept.ts";
+export * from "./assembled-record-output.ts";
 export * from "./assemble-draft.ts";
 export * from "./contracts.ts";
 export { automationStudioFlowBootstrapDraftUnreadColumnsSentence, automationStudioFlowBootstrapUnreadColumnsSentence } from "./instruction-record-columns.ts";

@@ -152,6 +152,9 @@ function buildSubflow(input: {
       written: writtenParameters(value, found.definition),
       path: nodePath,
       fallbackName: typeof value.name === "string" ? value.name : found.definition.label,
+      // The same on every reading of the same plan, as `./assemble.ts` gives a
+      // script's step, so two reads under one name never share a dataset.
+      stepId: `${input.key}-${key}`,
       namedColumns: input.namedColumns
     });
     issues.push(...normalised.issues);

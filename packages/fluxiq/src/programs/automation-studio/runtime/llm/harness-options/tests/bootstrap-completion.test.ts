@@ -58,7 +58,7 @@ describe("the feedback on a completed plan that was refused", () => {
       answerability: { recordsRequested: false, recordProducerPresent: true, recordStorePresent: true }
     });
     expect(verdict.buildPlan.plan.subflows[0]?.nodes[0]?.parameters?.recordOutput).toMatchObject({
-      datasetId: "Product-Catalogue",
+      datasetId: "product-catalogue-primary-scrape",
       writeMode: "append",
       schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string" }] }
     });
@@ -140,7 +140,8 @@ describe("the feedback on a completed plan that was refused", () => {
       definitionId: "web.output.dom-extract_list",
       definitionVersion: "1.0.0",
       outputActionId: "web.dom.extract_list",
-      parameters: { extractList: { item: "li.product", fields: { name: ".name" } }, timeoutMs: 10_000, recordOutput: null }
+      // Since read-list S1 every read writes a dataset of its own step.
+      parameters: { extractList: { item: "li.product", fields: { name: ".name" } }, timeoutMs: 10_000, recordOutput: { datasetId: "read-the-product-list-main-s1", label: "read the product list" } }
     });
   });
 
@@ -246,7 +247,8 @@ describe("a completed plan that could not reach where the Flow starts", () => {
     expect(verdict.check.answerability).toEqual({
       recordsRequested: false,
       recordProducerPresent: true,
-      recordStorePresent: false
+      // Assembly gives the read a record output of its own (read-list S1).
+      recordStorePresent: true
     });
     expect(verdict.notes).toEqual([{
       code: "bootstrap.cannot_reach_start_location",

@@ -1,3 +1,4 @@
+import type { AutomationStudioRecordProcessing } from "./process/index.ts";
 import type { AutomationStudioRecordSchema } from "./schema.ts";
 
 /** How a capture meets rows already stored for the same dataset in the same run. */
@@ -39,4 +40,10 @@ export type AutomationStudioRecordOutput = {
   writeMode: AutomationStudioRecordWriteMode;
   /** Rows kept per capture, 1 to `maxRecordsCeiling`; `maxRecordsDefault` when absent. */
   maxRecords?: number;
+  /**
+   * How the dataset's collected rows become its answer when the run ends
+   * (`processAutomationStudioRecordRows`). Absent: the default, every collected
+   * row in capture order with exact repeats dropped.
+   */
+  process?: AutomationStudioRecordProcessing;
 };
