@@ -28,6 +28,16 @@
 //     that is only a colour or "the <words> version" ("...: Space Grey, the
 //     7-in-1 version, ..."). A value that names no particular variant ("the
 //     same size", "my usual colour") is none.
+//   - **Where it ships from** is "shipped|ships|dispatched from <Place>",
+//     the place a proper name ("shipped from Spain", "ships from the UK"),
+//     with the id word `origin`. "shipped from the warehouse" names none.
+//
+// **Why the origin is a choice (lane A, `run-muw60unq-591e23bd`).** Read as
+// quote text only, "shipped from Spain" had no id of its own, so the build
+// claimed the Spain press for the add itself (a1). The add's press and the
+// Spain press then took a1 from each other: each round kept one and dropped
+// the other as "no longer doing an act", and the build test only verified
+// the Spain press, as an act with a lasting effect, so it never chose Spain.
 //
 // Only an act that puts an item somewhere or buys it has choices: adding,
 // buying, ordering. Saving a thing, or switching a store, chooses nothing.
@@ -61,6 +71,9 @@ const VARIANT_PARTS: readonly RegExp[] = [
   new RegExp(`^\\s*(?<value>(?:[A-Za-z-]+\\s+)?(?:${COLOUR}))\\s*$`, "iu")
 ];
 
+/** Where the item ships from: a proper name after "shipped|ships|dispatched from" ("shipped from Spain", "ships from the UK"). Case matters: a place is capitalised. */
+const ORIGIN = /(?<![A-Za-z0-9'-])(?:[Ss]hipped|[Ss]hips|[Dd]ispatched)\s+[Ff]rom\s+(?:the\s+)?(?<value>[A-Z][A-Za-z'-]*(?:\s+[A-Z][A-Za-z'-]*){0,2})(?![A-Za-z0-9'-])/gu;
+
 /** Words that name no particular variant, or join clauses rather than name one. */
 const NOT_A_VALUE: ReadonlySet<string> = new Set(["same", "right", "correct", "other", "usual", "default", "current", "that", "this", "any", "whatever", "my", "your", "our", "their", "his", "her", "its", "each", "every", "whole", "entire", "the", "a", "an", "and", "or", "to", "for", "with", "from", "of", "in", "is", "as"]);
 const COLOUR_WORD = new RegExp(`^(?:${COLOUR})$`, "iu");
@@ -90,6 +103,10 @@ export function automationStudioInstructedChoices(actId: string, object: string)
     for (let match = pattern.exec(object); match; match = pattern.exec(object)) {
       if (match.groups?.value) found.push({ value: match.groups.value, ...(match.groups.word ? { word: match.groups.word } : {}), quote: match[0], at: match.index });
     }
+  }
+  ORIGIN.lastIndex = 0;
+  for (let match = ORIGIN.exec(object); match; match = ORIGIN.exec(object)) {
+    if (match.groups?.value) found.push({ value: match.groups.value, word: "origin", quote: match[0], at: match.index });
   }
   let offset = 0;
   for (const part of object.split(/[,:;]/u)) {
