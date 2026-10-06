@@ -104,26 +104,28 @@ describe("a round the judging reserve stopped (t254 stage 2)", () => {
     expect(kept).toEqual([3]);
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
     const message = outcome.kind === "unfinished" ? outcome.ending.message : "";
-    expect(message).toContain("so that went on testing and judging the Flow as it stood ($0.004), and it had spent $0.094 ($0.070 of it by earlier builds of this Flow) in all.");
+    // One money sentence, earlier builds and the judging included (R2-U-2).
+    expect(message).toContain("Building this Flow has used $0.09 of its spending limit of $0.10, and what was left was too little to go on.");
     // The test is said once, inside how much was done (t193 round 1003): its step count there, never "judged not" twice.
     expect(message).toContain("when the Flow (3 steps) was run from its start, and 3 more have a step that did not work in that run, but the Flow was judged not to do what you asked.");
     expect(message).not.toContain("what it did was judged not to be what you asked");
-    expect(message).toContain("The judge found: one pack was added. What the judge says is left to change: set the quantity to 2 before adding.");
+    expect(message).toContain("Its last check found: one pack was added. What is left to change: set the quantity to 2 before adding.");
     expect(message).toContain("The steps I found so far were kept as a draft");
-    expect(message).not.toContain("kept back for judging the Flow, and its next call");
+    expect(message).not.toContain("kept back");
   });
 
   it("ends at cost saying the judge could not confirm it, when the yes was about another version of the Flow", async () => {
     const { outcome } = await build({ verdict: () => ({ verdict: "yes", spent: SPENT, flowSignature: "another Flow" }) });
 
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("The judge could not confirm it: the judge's yes was about a test of another version of the Flow");
+    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("Its last check could not confirm it: the check's yes was about a test of another version of the Flow");
   });
 
   it("does not judge a Flow whose test failed, nor one the caller cannot build, nor an empty one: those end at cost as before", async () => {
     const failed = await build({ test: async () => ({ issueCodes: ["replay.target_missing"] }) });
     expect(failed.judged).toEqual([]);
-    expect(failed.outcome.kind === "unfinished" && failed.outcome.ending.message).toContain("$0.005 was kept back for judging the Flow, and its next call could have cost up to $0.006.");
+    expect(failed.outcome.kind === "unfinished" && failed.outcome.ending.message).toContain("of its spending limit of $0.10, and what was left was too little to go on.");
+    expect(failed.outcome.kind === "unfinished" && failed.outcome.ending.message).not.toContain("kept back");
 
     const refused = await build({ accept: false });
     expect(refused.accepted).toHaveLength(1);
@@ -142,7 +144,7 @@ describe("a round the judging reserve stopped (t254 stage 2)", () => {
     expect(tests).toEqual([]);
     expect(judged).toEqual([]);
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("it had spent $0.090 ($0.070 of it by earlier builds of this Flow), and its next call could have cost up to $0.006.");
+    expect(outcome.kind === "unfinished" && outcome.ending.message).toContain("Building this Flow has used $0.09 of its spending limit of $0.10, and what was left was too little to go on.");
   });
 });
 

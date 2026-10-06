@@ -22,7 +22,10 @@ import {
 const INSTRUCTION = "Add two packs of the Softly Paper Towels to my cart, then save the Brightline kettle to my saved items.";
 /** A Flow creation's ceiling, as configured (FLUXIQ_LLM_RUN_COST_CEILING_USD): every figure below is a share of it. */
 const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
-const usd = (amount: number) => `$${amount.toFixed(3)}`;
+/** A figure as the ending's one money sentence says it: to the cent, or to a tenth of one where cents would read as nothing or as the whole ceiling (R2-U-2). */
+const usd = (amount: number) => (amount < 0.01 || amount.toFixed(2) === CEILING.toFixed(2) ? `$${amount.toFixed(3)}` : `$${amount.toFixed(2)}`);
+/** The ending's opening: the budget used, then what building this Flow has used of the ceiling. */
+const usedOf = (amount: number) => `The build used its budget for this Flow before the Flow was finished. Building this Flow has used ${usd(amount)} of its spending limit of $${CEILING.toFixed(2)}, and what was left was too little to go on. `;
 /** That `message` opens with `prefix`, shown as a diff when it does not. */
 const opens = (message: string, prefix: string) => expect(message.slice(0, prefix.length)).toBe(prefix);
 
@@ -135,9 +138,9 @@ describe("a build's rounds draw from one purse", () => {
 
     expect(requests).toHaveLength(1);
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    // No call was refused: the figures are what the purse has spent, earlier builds' part named.
-    opens(outcome.ending.message, `The build stopped at its spending limit of $${CEILING.toFixed(2)} before the Flow was finished: it had spent ${usd(CEILING)} (${usd(0.9 * CEILING)} of it by earlier builds of this Flow), which left nothing for its next call. `);
-    expect(outcome.ending.message).toContain(`The steps I found so far were kept as a draft, so building again carries on from them, with nothing left of this Flow's $${CEILING.toFixed(2)}.`);
+    // No call was refused: what the purse has spent, earlier builds included, is all of the ceiling.
+    opens(outcome.ending.message, `The build used its budget for this Flow before the Flow was finished. Building this Flow has used all of its spending limit of $${CEILING.toFixed(2)}. `);
+    expect(outcome.ending.message).toContain("The steps I found so far were kept as a draft, so building again carries on from them.");
   });
 
   it("asks the judge within what the purse has left, not what the rounds' accounting left", async () => {
@@ -176,8 +179,9 @@ describe("a cost ending's figures are the purse's", () => {
     const outcome = await unfinished(input);
 
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    opens(outcome.ending.message, `The build stopped at its spending limit of $${CEILING.toFixed(2)} before the Flow was finished: it had spent ${usd(0.75 * CEILING)} (${usd(0.25 * CEILING)} of it by earlier builds of this Flow), and its next call could have cost up to ${usd(0.3 * CEILING)}. `);
-    expect(outcome.ending.message).toContain(`The steps I found so far were kept as a draft, so building again carries on from them, with ${usd(0.25 * CEILING)} left of this Flow's $${CEILING.toFixed(2)}.`);
+    // What earlier builds of this Flow spent is in what building it has used (R2-U-2: one money sentence).
+    opens(outcome.ending.message, usedOf(0.75 * CEILING));
+    expect(outcome.ending.message).not.toContain("earlier builds");
   });
 
   it("says a repair's refusal as it stands: the purse already counts what the rounds before it spent", async () => {
@@ -191,8 +195,7 @@ describe("a cost ending's figures are the purse's", () => {
 
     expect(requests).toHaveLength(2);
     // 70% spent, never the 110% that adding the exploration's spend to the refusal's again would say.
-    opens(outcome.ending.message, `The build stopped at its spending limit of $${CEILING.toFixed(2)} before the Flow was finished: it had spent ${usd(0.7 * CEILING)}, and its next call could have cost up to ${usd(0.5 * CEILING)}. `);
+    opens(outcome.ending.message, usedOf(0.7 * CEILING));
     expect(outcome.ending.message).not.toContain("earlier builds");
-    expect(outcome.ending.message).toContain(`with ${usd(0.3 * CEILING)} left of this Flow's $${CEILING.toFixed(2)}.`);
   });
 });

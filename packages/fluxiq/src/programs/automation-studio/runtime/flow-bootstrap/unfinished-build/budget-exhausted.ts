@@ -3,20 +3,38 @@
 // The user's rule (2026-09-30): a budget or cost ceiling that is hit is said
 // as the budget it is, never dressed up as "not doable" -- a build that ran
 // out of money had a route it did not get to finish. So the message names the
-// budget and its size, what of the request the Flow already does, what was
-// tried and what blocked it, and whether the steps found so far were kept for the next
-// build to carry on from. It is also how a build that authored nothing ends
-// (supervisor, t208): never as a bare code, always with this message. A cost
-// ending says the figures that stopped it (F41); where one purse holds the
-// Flow's whole creation (t234), also what earlier builds of the Flow spent of
-// them and what of the Flow's ceiling building again has left. What was kept
-// is said as a draft (`./kept-said.ts`; t195-w37, live run
+// budget, what of the request the Flow already does, what was tried and what
+// blocked it, and whether the steps found so far were kept for the next build
+// to carry on from. It is also how a build that authored nothing ends
+// (supervisor, t208): never as a bare code, always with this message. What
+// was kept is said as a draft (`./kept-said.ts`; t195-w37, live run
 // `run-murz83zy-5030820f`, whose chat also said the Flow was left empty).
 // What was tried is said as every ending says it, with no count of decisions
 // or rounds (`automationStudioFlowBootstrapWorkedLiveSaid`, t195-w48); the
 // counts stay in `tried`. The message is fitted, never cut inside a sentence
 // (`./ending-fit.ts`; t193 round 1003): what was tried and what was kept close
 // it, always whole.
+//
+// **Plain words, one money sentence (R2-U-2).** Live run
+// `run-muwansvz-a2b4a987` ended "its next call could have cost up to $0.008,
+// more than was left beside the $0.014 kept back for judging the Flow, and
+// that was not spent, because the Flow was unchanged since the judge said ...,
+// and it had spent $0.079 ($0.000 of it by earlier builds of this Flow) in
+// all", and never said what blocked the fix. The purse's arithmetic -- the
+// refused call's worst case, the judging reserve, earlier builds' share, what
+// another round needed -- is the purse's record (`../../llm/build-purse/`),
+// not the person's. A cost ending now says that the build used its budget for
+// this Flow, then one sentence of money: "Building this Flow has used $0.08 of
+// its spending limit of $0.10, and what was left was too little to go on."
+// What blocked the last fix is read from the round's own record
+// (`./last-fix.ts`): each try turned down as unchanged, a step that named
+// nothing on the page or did not say which list to read, a step that did not
+// work. The check's account of the Flow, where it was judged, is said as
+// "Its last check found", in a person's words
+// (`automationStudioActivityPersonWords`): never "the judge", "Step 8" or
+// "dedup".
+import { automationStudioActivityPersonWords } from "../../activity/index.ts";
+import type { AutomationStudioLlmEvidenceLoopTrace } from "../../llm/index.ts";
 import {
   type AutomationStudioFlowBootstrapBudgetBound,
   type AutomationStudioFlowBootstrapBuildEnding
@@ -34,6 +52,7 @@ import {
 import { automationStudioFlowBootstrapEndingFitted } from "./ending-fit.ts";
 import { automationStudioFlowBootstrapJudgeWordsSaid } from "./judge-words.ts";
 import { automationStudioFlowBootstrapKeptSaid } from "./kept-said.ts";
+import { automationStudioFlowBootstrapLastFixBlockedSaid } from "./last-fix.ts";
 import { automationStudioFlowBootstrapTried } from "./tried.ts";
 
 /** The size of each budget, as the person is told it. */
@@ -56,10 +75,11 @@ export type AutomationStudioFlowBootstrapBudgetSizes = {
 export type AutomationStudioFlowBootstrapNextRoundHold = { usd: number; judged: boolean; judgingUsd?: number | undefined; decisionUsd?: number | undefined };
 
 /**
- * What a cost ending says was spent: what the whole build had spent when its
+ * What a cost ending knows was spent: what the whole build had spent when its
  * cost budget stopped it, what was held for calls still in flight, and the
  * worst case of the call the purse refused (`../../llm/build-purse/`) -- absent
- * where the provider does not price or no call was refused.
+ * where the provider does not price or no call was refused. The person is told
+ * only what was used of the ceiling (R2-U-2); the rest is the purse's record.
  */
 export type AutomationStudioFlowBootstrapCostSpending = {
   spentUsd: number;
@@ -71,29 +91,27 @@ export type AutomationStudioFlowBootstrapCostSpending = {
   keptBackUsd?: number | undefined;
   /**
    * The Flow creation's ceiling, where one purse holds every build of it
-   * (t234): building again carries on from what is left of it, which the
-   * person is told. Absent where the build was given no purse.
+   * (t234): what was used is said of it, and of the whole creation. Absent
+   * where the build was given no purse.
    */
   ceilingUsd?: number | undefined;
   /**
    * What the round the purse could not fund would have needed at worst, where
-   * nothing was refused and the purse was not spent outright: what the person
-   * is told it was too little for. Absent otherwise.
+   * nothing was refused and the purse was not spent outright. Absent otherwise.
    */
   nextRound?: AutomationStudioFlowBootstrapNextRoundHold | undefined;
   /**
    * What testing and judging the Flow as it stood cost, where the refused call
    * would have eaten into the judging kept back and that reserve was spent
-   * judging the Flow instead (t254 stage 2, `./reserve-judging.ts`). The other
-   * figures are then the purse's after that judging, and the judge's account is
-   * said. Absent otherwise.
+   * judging the Flow instead (t254 stage 2, `./reserve-judging.ts`): the
+   * check's account is said. Absent otherwise.
    */
   judgedUsd?: number | undefined;
   /**
    * The refused call would have eaten into the judging kept back, and that
    * reserve was not spent: the Flow was unchanged since a judge of this build
    * said it does not do what was asked (t254 stage 3, `./phases.ts`), whose
-   * account is said. The other figures are the refusal's. Absent otherwise.
+   * account is said. Absent otherwise.
    */
   unchangedSinceJudgedNo?: true | undefined;
 };
@@ -111,30 +129,34 @@ export function automationStudioFlowBootstrapBudgetExhausted(input: {
   /** Whether the steps found so far were kept for the next build. */
   kept: boolean;
   /**
-   * The figures that stopped a `cost` ending, said only for one, so the person
-   * reads what stopped it -- and, where they are a Flow creation's, what of its
-   * ceiling building again has left.
+   * What the cost budget stopped it at, said only for a `cost` ending: what
+   * was used of the ceiling.
    */
   spending?: AutomationStudioFlowBootstrapCostSpending | undefined;
+  /**
+   * The last round's record, which what blocked the last fix is read from
+   * (`./last-fix.ts`). Absent, the last refusal codes say it, where known.
+   */
+  lastRound?: readonly AutomationStudioLlmEvidenceLoopTrace[] | undefined;
 }): AutomationStudioFlowBootstrapBuildEnding {
   const notDone = automationStudioFlowBootstrapNotDone(input.checklist);
-  const flowLeft = input.bound === "cost" && input.spending ? flowLeftSaid(input.spending) : "";
-  const kept = automationStudioFlowBootstrapKeptSaid(input.kept, flowLeft);
+  const kept = automationStudioFlowBootstrapKeptSaid(input.kept);
   // A Flow the judge did not pass is already said so with how far it got (`./not-done.ts`), so its stop is not said
   // again as what held it up: "... not judged to do what you asked ... what held it up was that the Flow it thought
   // was ready was not judged to do what you asked" (t264 S3, one owner of the ending's words).
   const saidJudged = input.judgement.stopped === "judged_wrong" && input.judgement.judge !== undefined;
-  const blocked = automationStudioFlowBootstrapBlockedSaid(input.judgement.lastIssueCodes)
+  const lastFix = automationStudioFlowBootstrapLastFixBlockedSaid(input.lastRound ?? [], input.rounds > 1);
+  const blocked = lastFix ? "" : automationStudioFlowBootstrapBlockedSaid(input.judgement.lastIssueCodes)
     || (input.judgement.stopped === "budget" || saidJudged ? "" : automationStudioFlowBootstrapStopSaid(input.judgement.stopped));
-  const tried = `${automationStudioFlowBootstrapWorkedLiveSaid(input.rounds)}.${blocked ? ` What held it up was that ${blocked}.` : ""}`;
-  const spending = input.bound === "cost" && input.spending ? spendingSaid(input.spending, input.sizes.maxCostUsd) : "";
+  const tried = `${automationStudioFlowBootstrapWorkedLiveSaid(input.rounds)}.${lastFix ? ` ${lastFix}` : blocked ? ` What held it up was that ${blocked}.` : ""}`;
+  const spent = input.bound === "cost" && input.spending ? spentSaid(input.spending, input.sizes.maxCostUsd) : "";
   const judged = input.bound === "cost" && (input.spending?.judgedUsd !== undefined || input.spending?.unchangedSinceJudgedNo);
   const message = automationStudioFlowBootstrapEndingFitted((room) => ({
     body: [
-      `The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished${spending}.`,
+      spent ? `The build used its budget for this Flow before the Flow was finished. ${spent}` : `The build stopped at ${budgetSaid(input.bound, input.sizes)} before the Flow was finished.`,
       // How far it got and what its test found, said once: never "not judged" twice (`./not-done.ts`).
       automationStudioFlowBootstrapProgressAndTestSaid(input.checklist, input.judgement, room),
-      judged ? judgeFoundSaid(input.judgement.judge, room.judge) : ""
+      judged ? checkFoundSaid(input.judgement.judge, room.judge) : ""
     ],
     close: [tried, kept]
   }));
@@ -159,65 +181,41 @@ function budgetSaid(bound: AutomationStudioFlowBootstrapBudgetBound, sizes: Auto
   }
 }
 
-/** What the build had spent -- earlier builds of the Flow's part named -- and what its refused call could have cost, as the person is told it. */
-function spendingSaid(spending: AutomationStudioFlowBootstrapCostSpending, ceilingUsd: number | undefined): string {
-  const carried = spending.carriedUsd !== undefined && spending.carriedUsd > 0 ? ` (${usd(spending.carriedUsd)} of it by earlier builds of this Flow)` : "";
-  const held = spending.pendingUsd > 0 ? `, with ${usd(spending.pendingUsd)} more held for calls still running` : "";
-  if (spending.judgedUsd !== undefined) {
-    // The reserve kept back for judging went on judging the Flow as it stood, after the call that would have eaten into it was refused.
-    const next = spending.projectedCostUsd !== undefined ? `its next call could have cost up to ${usd(spending.projectedCostUsd)}, more than was left beside` : "its next call did not fit beside";
-    return `: ${next} what was kept back for judging the Flow, so that went on testing and judging the Flow as it stood (${usd(spending.judgedUsd)}), and it had spent ${usd(spending.spentUsd)}${carried} in all${held}`;
-  }
-  if (spending.unchangedSinceJudgedNo) {
-    // The reserve kept back for judging was not spent: judging the Flow again, unchanged since the judge said no, would judge the same Flow.
-    const next = spending.projectedCostUsd !== undefined ? `its next call could have cost up to ${usd(spending.projectedCostUsd)}, more than was left beside` : "its next call did not fit beside";
-    const keptBack = spending.keptBackUsd !== undefined && spending.keptBackUsd > 0 ? `the ${usd(spending.keptBackUsd)} kept back for judging the Flow` : "what was kept back for judging the Flow";
-    return `: ${next} ${keptBack}, and that was not spent, because the Flow was unchanged since the judge said it does not do what was asked, and it had spent ${usd(spending.spentUsd)}${carried} in all${held}`;
-  }
-  const spent = `: it had spent ${usd(spending.spentUsd)}${carried}${held}`;
-  const keptBack = spending.keptBackUsd !== undefined && spending.keptBackUsd > 0 ? `, ${usd(spending.keptBackUsd)} was kept back for judging the Flow` : "";
-  if (spending.projectedCostUsd !== undefined) return `${spent}${keptBack}, and its next call could have cost up to ${usd(spending.projectedCostUsd)}`;
-  const left = leftOf(spending.ceilingUsd ?? ceilingUsd, spending);
-  if (spending.nextRound && left >= 0.0005) return `${spent}, which left ${usd(left)}, too little for another round: ${nextRoundSaid(spending.nextRound)}`;
-  return left >= 0.0005 ? `${spent}, which left ${usd(left)}, too little for its next call` : `${spent}, which left nothing for its next call`;
+/**
+ * The one money sentence: what was used of the spending limit -- of the Flow's
+ * whole creation where one purse holds it, earlier builds included -- and that
+ * what was left was too little to go on, or that all of it was used.
+ */
+function spentSaid(spending: AutomationStudioFlowBootstrapCostSpending, maxCostUsd: number | undefined): string {
+  const used = spending.spentUsd + spending.pendingUsd;
+  const ceiling = spending.ceilingUsd ?? maxCostUsd;
+  const who = spending.ceilingUsd !== undefined ? "Building this Flow has used" : "It used";
+  if (ceiling === undefined) return `${who} ${money(used, undefined)}.`;
+  const limit = `its spending limit of $${ceiling.toFixed(2)}`;
+  return ceiling - used >= 0.0005
+    ? `${who} ${money(used, ceiling)} of ${limit}, and what was left was too little to go on.`
+    : `${who} all of ${limit}.`;
+}
+
+/** Dollars to the cent, or to a tenth of one where cents would read as the whole limit or as nothing. */
+function money(amount: number, ceiling: number | undefined): string {
+  const cents = amount.toFixed(2);
+  return amount < 0.01 || (ceiling !== undefined && cents === ceiling.toFixed(2)) ? `$${amount.toFixed(3)}` : `$${cents}`;
 }
 
 /**
- * What the judge found of the Flow as it stood, where the judging reserve was
- * spent judging it, or where a judge had said no to it unchanged: what it
- * observed or its first finding, and what it says is
- * left to change; or why it could not confirm the Flow. Empty when it said
- * nothing. Its words are screened plain and said in whole sentences
- * (`./judge-words.ts`, t276), never a quote cut short.
+ * What the last check found of the Flow as it stood, where the judging reserve
+ * was spent judging it, or where a check had said no to it unchanged: what it
+ * observed or its first finding, and what it says is left to change; or why it
+ * could not confirm the Flow. Empty when it said nothing. Its words are in a
+ * person's words (`automationStudioActivityPersonWords`), screened plain and
+ * said in whole sentences (`./judge-words.ts`, t276), never a quote cut short.
  */
-function judgeFoundSaid(judge: AutomationStudioFlowBootstrapJudgement["judge"], most: number): string {
+function checkFoundSaid(judge: AutomationStudioFlowBootstrapJudgement["judge"], most: number): string {
   if (!judge) return "";
-  const finding = automationStudioFlowBootstrapJudgeWordsSaid(automationStudioFlowBootstrapUnsettledForBuild(judge.observed ?? judge.findings[0] ?? ""), most);
-  if (judge.verdict !== "no") return finding ? `The judge could not confirm it: ${finding}` : "";
-  const advice = automationStudioFlowBootstrapJudgeWordsSaid(judge.advice ?? "", most);
-  return [finding ? `The judge found: ${finding}` : "", advice ? `What the judge says is left to change: ${advice}` : ""].filter(Boolean).join(" ");
-}
-
-/** What another round needed at least, as the person is told it. */
-function nextRoundSaid(next: AutomationStudioFlowBootstrapNextRoundHold): string {
-  if (next.judged && next.judgingUsd !== undefined && next.decisionUsd !== undefined) {
-    return `judging its Flow takes two judge calls held at up to ${usd(next.judgingUsd)}, and its first decision at least ${usd(next.decisionUsd)} more`;
-  }
-  return next.judged ? `its first decision and the judging of its Flow need at least ${usd(next.usd)}` : `its first decision needs at least ${usd(next.usd)}`;
-}
-
-/** What a Flow creation's ceiling has left for building again, as the kept sentence ends; nothing where the build had no purse. */
-function flowLeftSaid(spending: AutomationStudioFlowBootstrapCostSpending): string {
-  if (spending.ceilingUsd === undefined) return "";
-  const left = leftOf(spending.ceilingUsd, spending);
-  const ceiling = `this Flow's $${spending.ceilingUsd.toFixed(2)}`;
-  return left >= 0.0005 ? `, with ${usd(left)} left of ${ceiling}` : `, with nothing left of ${ceiling}`;
-}
-
-function leftOf(ceilingUsd: number | undefined, spending: AutomationStudioFlowBootstrapCostSpending): number {
-  return ceilingUsd === undefined ? 0 : Math.max(0, ceilingUsd - spending.spentUsd - spending.pendingUsd);
-}
-
-function usd(amount: number): string {
-  return `$${amount.toFixed(3)}`;
+  const words = (text: string): string => automationStudioFlowBootstrapJudgeWordsSaid(automationStudioActivityPersonWords(text), most);
+  const finding = words(automationStudioFlowBootstrapUnsettledForBuild(judge.observed ?? judge.findings[0] ?? ""));
+  if (judge.verdict !== "no") return finding ? `Its last check could not confirm it: ${finding}` : "";
+  const advice = words(judge.advice ?? "");
+  return [finding ? `Its last check found: ${finding}` : "", advice ? `What is left to change: ${advice}` : ""].filter(Boolean).join(" ");
 }

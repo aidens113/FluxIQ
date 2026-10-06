@@ -106,8 +106,9 @@ describe("the other endings that sliced their message", () => {
       spending: { spentUsd: 0.08, pendingUsd: 0, ceilingUsd: 0.1, judgedUsd: 0.004, carriedUsd: 0.02, projectedCostUsd: 0.03 }
     }).message;
     expect(said.length).toBeLessThanOrEqual(MAX);
-    expect(said).toMatch(/I worked on it live 3 times: first exploring the page, then fixing it twice after testing what I had\. The steps I found so far were kept as a draft, so building again carries on from them, with \$0\.020 left of this Flow's \$0\.10\.$/u);
-    expect(said).toMatch(/^The build stopped at its spending limit of \$0\.10 before the Flow was finished: /u);
+    expect(said).toMatch(/I worked on it live 3 times: first exploring the page, then fixing it twice after testing what I had\. The steps I found so far were kept as a draft, so building again carries on from them\.$/u);
+    // One money sentence (R2-U-2): what building this Flow has used of its limit.
+    expect(said).toMatch(/^The build used its budget for this Flow before the Flow was finished\. Building this Flow has used \$0\.08 of its spending limit of \$0\.10, and what was left was too little to go on\. /u);
     // A Flow judged wrong is said so once, with how far it got, never again as what held it up (t264 S3).
     expect(said.match(/judged not to (?:do|be) what you asked/gu)).toHaveLength(1);
     expect(said).not.toContain("what held it up");
@@ -253,7 +254,7 @@ describe("fitting an ending", () => {
         spending: { spentUsd: 0.08, pendingUsd: 0, ceilingUsd: 0.1, judgedUsd: 0.004 }
       }).message;
       expect(message).not.toMatch(RAW);
-      expect(message).toContain("What the judge says is left to change: Fix the step's condition");
+      expect(message).toContain("What is left to change: Fix the step's condition");
     });
 
     it("the repair's heading: plain and whole", () => {

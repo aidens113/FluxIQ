@@ -112,7 +112,8 @@ describe("a repair round opens only when the purse can fund it", () => {
     expect(requests).toHaveLength(1);
     expect(outcome.kind === "unfinished" && outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
     expect(outcome.kind === "unfinished" && outcome.ending.message).toContain(
-      "it had spent $0.093, which left $0.007, too little for another round: judging its Flow takes two judge calls held at up to $0.008, and its first decision at least $0.001 more."
+      // What another round needed is the purse's record (R2-U-2).
+      "Building this Flow has used $0.09 of its spending limit of $0.10, and what was left was too little to go on."
     );
   });
 
