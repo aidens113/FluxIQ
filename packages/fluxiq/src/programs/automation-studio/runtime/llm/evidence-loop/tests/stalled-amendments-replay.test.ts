@@ -114,10 +114,11 @@ describe("replaying the recorded amendment stall", () => {
     // bigbox round 2 #7: the refused presses dropped, the one that worked kept.
     const { result, shown } = await replay([...opening, amend({ step: 2, change: "drop" }, { step: 1, change: "keep" }, { step: 3, change: "keep" })]);
     const check = amendmentCheck(shown, 5)!;
+    // Each refusal names its way out, in the draft's numbers (W2, t287).
     expect(check.refused).toEqual([
-      { step: 2, reason: "did_not_work" },
-      { step: 1, reason: "already_in_flow" },
-      { step: 3, reason: "already_in_flow" }
+      { step: 2, reason: "did_not_work", next: expect.stringContaining(`{"step": 2, "change": "rerun", "input": {`) },
+      { step: 1, reason: "already_in_flow", next: expect.stringContaining("Step 1 is in the Flow already") },
+      { step: 3, reason: "already_in_flow", next: expect.stringContaining("Step 3 is in the Flow already") }
     ]);
     const reasons = check.reasons as Record<string, string>;
     expect(reasons.did_not_work).toMatch(/rerun/);
@@ -134,8 +135,8 @@ describe("replaying the recorded amendment stall", () => {
     const again = amendmentCheck(shown, 6)!;
     expect((first.refused as JsonObject[]).some((refusal) => refusal.repeated)).toBe(false);
     expect(again.refused).toEqual([
-      { step: 2, reason: "did_not_work", repeated: true },
-      { step: 3, reason: "already_in_flow", repeated: true }
+      { step: 2, reason: "did_not_work", repeated: true, next: expect.stringContaining("Step 2 did not work") },
+      { step: 3, reason: "already_in_flow", repeated: true, next: expect.stringContaining("Step 3 is in the Flow already") }
     ]);
     expect(again.instruction).toMatch(/refused for the same reason before/);
   });
