@@ -103,3 +103,40 @@ describe("a step added to the Flow", () => {
     expect(positions(automationStudioFlowDraftKeepOpeners(steps, steps[3]!))).toEqual([3]);
   });
 });
+
+describe("a read the model ran and never added", () => {
+  // A list read is a node a Flow is made of (`proposes: true`) that changes
+  // nothing on the page (`effect: "observe"`); its digests still differ when it
+  // scrolls lazy rows in or pages. As an opener it would store its rows too.
+  const read = (step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftStep => Object.assign(step, { actionId: "read", effect: "observe" as const, proposes: true });
+
+  it("run muw60j7c: adding the filtered read leaves the unfiltered page-1 read it ran to look out of the Flow", () => {
+    // 1 open, 2 Decline, 3 Not now, 4 search (all kept), 5 a detect, 6 the
+    // unfiltered read that scrolled page 1 to load its last cards (taken),
+    // 7 the filtered read over every page, added. The proposed Flow ran both
+    // reads into one dataset: 20 unfiltered rows before the 10 filtered ones.
+    const steps = draft([
+      { from: "blank", to: "home+cookies", disposition: "kept" }, { from: "home+cookies", to: "home+deal", disposition: "kept" },
+      { from: "home+deal", to: "home", disposition: "kept" }, { from: "home", to: "results", disposition: "kept" },
+      { from: "results", to: "results", look: true }, { from: "results", to: "results-scrolled" }, { from: "results-scrolled", to: "results-page5" }
+    ]);
+    read(steps[5]!); read(steps[6]!);
+    applyAutomationStudioFlowDraftAmendments(steps, [{ step: 7, change: "add" }]);
+    expect(inFlow(steps)).toEqual([1, 2, 3, 4, 7]);
+    expect(steps[5]!.disposition).toBe("taken");
+  });
+
+  it("is passed over, while the press before it that moved the page is still brought", () => {
+    // Kept arrival, a taken press to the results, a taken read, then the press added.
+    const steps = draft([{ from: "s0", to: "s1", disposition: "kept" }, { from: "s1", to: "s2" }, { from: "s2", to: "s2-scrolled" }, { from: "s2-scrolled", to: "s3" }]);
+    read(steps[2]!);
+    expect(positions(automationStudioFlowDraftKeepOpeners(steps, steps[3]!))).toEqual([2]);
+    expect(steps[2]!.disposition).toBe("taken");
+  });
+
+  it("still ends the walk where the model added it: a read in the Flow is where the way starts", () => {
+    const steps = draft([{ from: "s0", to: "s1" }, { from: "s1", to: "s1-scrolled", disposition: "kept" }, { from: "s1-scrolled", to: "s2" }, { from: "s2", to: "s3" }]);
+    read(steps[1]!);
+    expect(positions(automationStudioFlowDraftKeepOpeners(steps, steps[3]!))).toEqual([3]);
+  });
+});
