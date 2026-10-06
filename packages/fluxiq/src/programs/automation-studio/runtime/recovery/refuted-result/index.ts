@@ -5,6 +5,7 @@
 export * from "./attempt.ts";
 export * from "./brief.ts";
 export * from "./conversation.ts";
+export * from "./held-reauthor.ts";
 export * from "./history.ts";
 export * from "./ladder-skip.ts";
 export * from "./purse.ts";

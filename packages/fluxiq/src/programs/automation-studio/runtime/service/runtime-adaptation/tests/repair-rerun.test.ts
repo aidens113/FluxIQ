@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createBlankAutomationStudioFlowArtifact, type AutomationStudioFlowAdaptation, type AutomationStudioFlowArtifact, type AutomationStudioFlowDocument, type AutomationStudioFlowRunDetail, type AutomationStudioRuntimeSession } from "../../../../model/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
-import { runtimeSessionToFlowRunDetail } from "../../summaries/index.ts";
+import type { AutomationStudioFlowAdaptation } from "../../../../model/index.ts";
+import type { AutomationStudioGraphExecutionOptions } from "../../../executor/index.ts";
 import { recoveryBudgetFromRuntimeAdaptationContext } from "../context.ts";
-import { rerunAutomationStudioSessionAfterRepair } from "../repair-rerun.ts";
-import { resolveAutomationStudioRuntimeAdaptationContext } from "../resolve-context.ts";
+import { PROJECT_ID, adaptationContext, flow, readFails, rerun } from "./repair-rerun-harness.ts";
 
 // Live run `run-munv53gt-a0e6f545`, shrunk: the first pass pressed a one-time
 // check and read the list; its answer was refuted and the Flow re-authored with
@@ -18,114 +16,6 @@ import { resolveAutomationStudioRuntimeAdaptationContext } from "../resolve-cont
 // `skipped` and `skipped.reason` `target_absent`, then the run takes the
 // press's failed route into the Merge, with no retry and no recovery ladder.
 // The re-run therefore has one check attempt where it used to have three.
-
-const PROJECT_ID = "project.rerun";
-
-const flow: AutomationStudioFlowArtifact = {
-  ...createBlankAutomationStudioFlowArtifact({ flowId: "flow.rerun", projectId: PROJECT_ID, name: "Re-authored", now: 1 }),
-  nodes: [
-    { id: "search", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", parameters: { elementId: "search" } } },
-    { id: "check", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", parameters: { elementId: "soft-check" } } },
-    { id: "join", definitionId: "builtin.control.merge", parameterValues: { mergeMode: "first" } },
-    { id: "read", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", parameters: { elementId: "results" } } }
-  ],
-  edges: [
-    { id: "search.check", sourceNodeId: "search", sourcePortId: "success", targetNodeId: "check", targetPortId: "in" },
-    { id: "check.failed", sourceNodeId: "check", sourcePortId: "failed", targetNodeId: "join", targetPortId: "in" },
-    { id: "check.success", sourceNodeId: "check", sourcePortId: "success", targetNodeId: "join", targetPortId: "branches" },
-    { id: "join.read", sourceNodeId: "join", sourcePortId: "success", targetNodeId: "read", targetPortId: "in" }
-  ]
-};
-
-/** The Flow as the run executes it. */
-const flowDocument: AutomationStudioFlowDocument = { schemaVersion: "0.1", flowId: flow.flowId, ownerKind: "routine", ownerId: flow.flowId, name: flow.name, createdAt: 1, updatedAt: 1, nodes: flow.nodes, edges: flow.edges };
-
-const succeeds: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> = () => ({ status: "success", route: "success", outputs: { ok: true } });
-
-/** The session has already passed the check, so its button is gone; the host reports that as it did live. */
-const checkPassed: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> = (effect) => JSON.stringify(effect.payload ?? null).includes("soft-check")
-  ? { status: "failed", route: "failed", message: "No target resolved.", failure: { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" } }
-  : { status: "success", route: "success", outputs: { ok: true } };
-
-async function adaptationContext() {
-  return await resolveAutomationStudioRuntimeAdaptationContext({
-    projectId: PROJECT_ID,
-    flow,
-    ports: {
-      listFlowRunSummaries: async () => ({ runs: [] }),
-      listFlowAdaptationSummaries: async () => ({ adaptations: [] }),
-      getFlowAdaptation: async () => null,
-      readResultCheckState: async () => null
-    }
-  });
-}
-
-async function refutedSession(): Promise<AutomationStudioRuntimeSession> {
-  // Every step of the first pass succeeded; the answer was refuted afterwards.
-  const firstPass = await runAutomationStudioGraph(flowDocument, { effectDispatcher: succeeds });
-  return {
-    schemaVersion: "0.1",
-    runId: "run.rerun",
-    projectId: PROJECT_ID,
-    targetKind: "flow",
-    targetId: flow.flowId,
-    flowId: flow.flowId,
-    status: "failed",
-    queuedAt: 1,
-    startedAt: 1,
-    finishedAt: 2,
-    flow: flowDocument,
-    trace: { ...firstPass, status: "failed", message: "The result was judged not to answer the request." }
-  };
-}
-
-/** The read itself fails on the re-run, so the repaired Flow ends failed. */
-const readFails: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> = (effect) => JSON.stringify(effect.payload ?? null).includes("results")
-  ? { status: "failed", route: "failed", message: "No target resolved.", failure: { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" } }
-  : checkPassed(effect);
-
-async function rerun(options: {
-  dispatcher?: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>;
-  detailMetadata?: NonNullable<AutomationStudioFlowRunDetail["metadata"]>;
-  sessionMetadata?: NonNullable<AutomationStudioRuntimeSession["metadata"]>;
-  adaptations?: AutomationStudioFlowAdaptation[];
-  from?: "start" | "resume";
-  /** A re-run from the start follows a re-authored Flow unless told otherwise (t249: else it re-runs an untried ladder patch). */
-  reauthored?: boolean;
-} = {}) {
-  const context = await adaptationContext();
-  const first = await refutedSession();
-  const session = options.sessionMetadata ? { ...first, metadata: { ...(first.metadata ?? {}), ...options.sessionMetadata } } : first;
-  const firstDetail = runtimeSessionToFlowRunDetail(session, PROJECT_ID);
-  const reauthorMarker = (options.from ?? "start") === "start" && options.reauthored !== false ? { resultReauthor: { routed: true, applied: true, adaptationId: "adaptation.bootstrap.1", attempt: 1, attempts: [] } } : {};
-  const written: AutomationStudioRuntimeSession[] = [];
-  const saved: AutomationStudioFlowRunDetail[] = [];
-  const savedAdaptations: AutomationStudioFlowAdaptation[] = [];
-  const applied: string[] = [];
-  // The stored Flow: a fresh copy each read, so a write onto it would show.
-  const stored = structuredClone(flow);
-  const result = await rerunAutomationStudioSessionAfterRepair({
-    ports: {
-      getFlowSubflow: async () => null,
-      getFlow: async () => stored,
-      assertOwnedSubflowGraph: async () => undefined,
-      listPublishedFlowSnapshots: async () => [],
-      deprecatedPublicationIds: async () => [],
-      writeRuntimeSession: async (_projectId, next) => { written.push(next); },
-      saveFlowRunDetail: async (detail) => { saved.push(detail); },
-      getFlowAdaptation: async (_projectId, _flowId, adaptationId) => options.adaptations?.find((adaptation) => adaptation.adaptationId === adaptationId) ?? null,
-      saveFlowAdaptation: async (adaptation) => { savedAdaptations.push(adaptation); return adaptation; },
-      applyFlowAdaptation: async (request) => { applied.push(request.adaptationId); throw new Error("A re-run never applies a patch."); }
-    },
-    projectId: PROJECT_ID,
-    session,
-    detail: { ...firstDetail, metadata: { ...(firstDetail.metadata ?? {}), ...reauthorMarker, ...(options.detailMetadata ?? {}) } },
-    graphOptions: { effectDispatcher: options.dispatcher ?? checkPassed, delay: async () => undefined, recoveryBudget: recoveryBudgetFromRuntimeAdaptationContext(context) },
-    adaptationContext: context,
-    from: options.from ?? "start"
-  });
-  return { context, session, result, written, saved, savedAdaptations, applied, stored };
-}
 
 describe("a repaired re-run of an optional press whose target is gone", () => {
   it("runs under the default recovery budget a Flow is created with", async () => {

@@ -1,7 +1,9 @@
 // The failed-step re-author, as the run reaches it: the verification is handed
 // a run that failed at a step, the ladder has already ended with nothing
-// executed, and the Flow is re-authored, applied and run again -- and the re-run
-// is judged like any other (t193-wK cause C2). Before this the verification
+// executed, and the Flow is re-authored, held and run again -- and the re-run
+// is judged like any other (t193-wK cause C2). Since t267 the edit is approved
+// and held, never applied here: the re-run runs it unapplied, and the run's
+// judged end applies it (`service/runtime-adaptation/judged-reauthor.ts`). Before this the verification
 // returned a failed run at its first line and nothing followed.
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
@@ -29,6 +31,7 @@ function wired(detail: AutomationStudioFlowRunDetail, rerunStatus: "succeeded" |
   const context = harness({ answer: ANSWER.yes });
   const generate = vi.fn(async () => ({ adaptationId: "adaptation.bootstrap.1", accounting: { estimatedCostUsd: 0.03 } }));
   const approve = vi.fn(async () => undefined);
+  // Not a dependency any more: a sentinel that nothing in the route applies the edit.
   const apply = vi.fn(async () => undefined);
   const reruns: AutomationStudioFlowRunDetail[] = [];
   const ports: AutomationStudioResultVerificationPorts = {
@@ -38,7 +41,7 @@ function wired(detail: AutomationStudioFlowRunDetail, rerunStatus: "succeeded" |
     repairFailedStep: automationStudioStepFailureRepairPort({
       projectId: "project-1", flowId: () => "flow-1", now: () => 0,
       caller: { actorUserId: "user-1", actorSessionId: "session-1" },
-      generate: generate as never, approve, apply
+      generate: generate as never, approve, reject: vi.fn(async () => undefined)
     }),
     rerunRepairedFlow: async (request) => {
       reruns.push(request.detail);
@@ -49,7 +52,7 @@ function wired(detail: AutomationStudioFlowRunDetail, rerunStatus: "succeeded" |
 }
 
 describe("a run that failed at a step the ladder could not repair", () => {
-  it("is re-authored in extend mode, approved, applied, re-run, and the re-run judged", async () => {
+  it("is re-authored in extend mode, approved and held, re-run, and the re-run judged", async () => {
     const context = wired(ladderEnded({ llmGate: { invoked: true, costAccounting: { calls: 2, estimatedCostUsd: 0.01 }, patchSkippedCode: "llm.runtime_patch_goal_unachievable", diagnostics: [] } }));
     const next = await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session({ status: "failed" }), flow });
 
@@ -57,10 +60,10 @@ describe("a run that failed at a step the ladder could not repair", () => {
     expect((context.generate.mock.calls[0] as unknown[])[0]).toMatchObject({ projectId: "project-1", flowId: "flow-1", mode: "extend", evidenceGuided: true });
     expect(((context.generate.mock.calls[0] as unknown[])[1] as AutomationStudioFlowInstruction).body).toContain("step n2");
     expect(context.approve).toHaveBeenCalledTimes(1);
-    expect(context.apply).toHaveBeenCalledTimes(1);
+    expect(context.apply).not.toHaveBeenCalled();
     expect(context.reruns).toHaveLength(1);
     // The attempt is on the run before it is re-run, so a re-run that throws still leaves it.
-    expect(context.reruns[0]?.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toMatchObject({ routed: true, applied: true });
+    expect(context.reruns[0]?.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toMatchObject({ routed: true, held: true });
     // The corrected Flow ran and was judged: the caller is handed that run.
     expect(next.status).toBe("succeeded");
     expect((next.metadata?.resultVerification as JsonObject).status).toBe("confirmed");

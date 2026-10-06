@@ -54,6 +54,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       // capability nothing could ask for. The intent says what the run is for;
       // the signed-in actor is whose unlocked key pays for its model calls.
       let llmExecution: AutomationStudioRuntimeSessionLlm | undefined;
+      let pairedCaller = false;
       if (requestedIntent !== undefined) {
         const intent = AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS.find((candidate) => candidate === requestedIntent);
         if (!intent) return { ok: false, error: "The run intent is not one Core supports." };
@@ -68,6 +69,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
         // refused. A person's own session passes through unchanged.
         const caller = service.conversations.callerFor(request.actor);
         if (!caller.keyLocked) llmExecution = { actorUserId: caller.userId, actorSessionId: caller.sessionId, intent };
+        pairedCaller = caller.paired;
       }
       // What the person allowed the run's actions to do. Absent is nothing; a
       // class Core does not know refuses the run rather than being dropped.
@@ -79,7 +81,12 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       // `newRunId` is a different field: it names the session the run is about
       // to create, so the caller can read the run back if its own request is cut
       // short (`runtime/service/runtime-session/requested-run-id.ts`).
-      const runtimeSession = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}) });
+      // The paired person's key pays only for the result checks that judge a
+      // repair; an Automations Run's routine checks are sampled under the
+      // Flow's standing authorization, or not at all (MVP item 23). A person's
+      // own session pays for every check its run makes, as it always has.
+      const resultCheckCallerPays = llmExecution && pairedCaller ? { resultCheckCallerPays: "repair_checks" as const } : {};
+      const runtimeSession = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays });
       const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
       const runDetailLink = { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, runId: runtimeSession.runId };
       let runDetail: AutomationStudioFlowRunDetail | null = null;

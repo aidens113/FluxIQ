@@ -231,3 +231,45 @@ describe("every re-author a run makes, recorded", () => {
     expect(result).toEqual({ adaptationId: "adaptation.2", applied: true, accounting: { requestId: "evidence.9", totalTokens: 1_234 }, durationMs: 500 });
   });
 });
+
+// t267: a re-author is kept only after a whole run that ran it is judged to
+// answer. The run's routes hold their edit -- approved, not applied -- and the
+// re-run runs it unapplied; the marker says it is held until the judged end
+// settles it.
+describe("holding the edit for the judged re-run", () => {
+  const routed = { route: true as const, projectId: "project.demo", flowId: "flow.catalog" };
+
+  it("approves and stops, under hold: nothing is applied and the answer says held", async () => {
+    const order: string[] = [];
+    const result = await automationStudioReauthorRefutedResult({
+      generate: async () => { order.push("generate"); return "adaptation.held"; },
+      approve: async (adaptationId) => { order.push(`approve:${adaptationId}`); },
+      hold: true,
+      failureCode: () => ({ code: "unused" })
+    });
+    expect(result).toEqual({ adaptationId: "adaptation.held", held: true, durationMs: expect.any(Number) });
+    expect(order).toEqual(["generate", "approve:adaptation.held"]);
+  });
+
+  it("keeps a refused approval a failure under hold, never held", async () => {
+    const result = await automationStudioReauthorRefutedResult({
+      generate: async () => "adaptation.held",
+      approve: async () => { throw new Error("permission unanswered"); },
+      hold: true,
+      failureCode: () => ({ code: "flow_bootstrap.permission_unanswered" })
+    });
+    expect(result).toEqual({ adaptationId: "adaptation.held", failure: { code: "flow_bootstrap.permission_unanswered" }, durationMs: expect.any(Number) });
+  });
+
+  it("records held on the latest fields and the attempt, and a held edit re-runs the Flow", () => {
+    const recorded = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision: routed, adaptationId: "adaptation.held", held: true, attempt: 1 });
+    expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({ routed: true, adaptationId: "adaptation.held", held: true, attempt: 1, attempts: [{ attempt: 1, routed: true, adaptationId: "adaptation.held", held: true }] });
+    expect(automationStudioRefutedResultFlowWasReauthored(recorded)).toBe(true);
+  });
+
+  it("does not re-run a Flow whose latest re-author built nothing, though an earlier one is held", () => {
+    const first = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision: routed, adaptationId: "adaptation.first", held: true, attempt: 1 });
+    const failed = automationStudioRefutedResultReauthored({ detail: first, decision: routed, failure: { code: "flow_bootstrap.provider_http_error" }, attempt: 2 });
+    expect(automationStudioRefutedResultFlowWasReauthored(failed)).toBe(false);
+  });
+});

@@ -49,6 +49,8 @@ describe("the run endpoint and a run's model intent", () => {
 
     expect(response).toMatchObject({ ok: true });
     expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.one", intent: "explore_and_adapt" } });
+    // A person's own run pays for every result check it makes, as it always has (MVP item 23).
+    expect((runRuntimeSession.mock.calls[0] as unknown[])[0]).not.toHaveProperty("resultCheckCallerPays");
   });
 
   // The extension's Automations Run calls as a paired client, under a session
@@ -64,11 +66,13 @@ describe("the run endpoint and a run's model intent", () => {
     return { response, runRuntimeSession };
   }
 
-  it("runs a paired client's model run under the person's unlocked session", async () => {
+  // The person's key pays only for the result checks that judge a repair, never
+  // for the routine sampling of an Automations Run (MVP item 23).
+  it("runs a paired client's model run under the person's unlocked session, paying only for repair checks", async () => {
     const { response, runRuntimeSession } = await pairedRun("session.unlocked", { runIntent: "explore_and_adapt" });
 
     expect(response).toMatchObject({ ok: true });
-    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.unlocked", intent: "explore_and_adapt" } });
+    expect(runRuntimeSession).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", llmExecution: { actorUserId: "user.one", actorSessionId: "session.unlocked", intent: "explore_and_adapt" }, resultCheckCallerPays: "repair_checks" });
   });
 
   it("runs a paired client's Flow deterministically, without a model, when the person has no unlocked session", async () => {

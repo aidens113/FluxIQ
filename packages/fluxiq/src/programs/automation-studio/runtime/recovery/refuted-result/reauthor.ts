@@ -98,15 +98,24 @@ function automationStudioRefutedResultCode(detail: AutomationStudioFlowRunDetail
 }
 
 /**
- * Builds the edit, then approves and applies it, so the Flow on disk is the
- * corrected one before anything runs again.
+ * Builds the edit and approves it, then either applies it or, under `hold`,
+ * leaves it approved and unapplied for the run's judged end.
  *
- * **Why this applies itself.** A repair is required to be automatic. A run that
+ * **Why this approves itself.** A repair is required to be automatic. A run that
  * files an edit and waits for somebody to press approve has produced a receipt
  * nobody is shown, which is the behaviour the whole failure entry point exists
  * to end. The authority is the person's own instruction: they asked for the
  * answer, and the bounded, non-destructive means of getting it are authorised
  * by that ask rather than by a second, per-occurrence press.
+ *
+ * **Why it no longer applies itself in the run (`hold`, t267).** The run's own
+ * re-author routes hold: the edit stays validated and unapplied, the re-run
+ * from the start runs it as an unapplied candidate, and it is applied only once
+ * that whole run is judged to answer (user, 2026-10-02: a change is kept only
+ * after a whole run that ran it is judged to answer;
+ * `service/runtime-adaptation/judged-reauthor.ts`). Applying first left an
+ * unjudged edit on the Flow whenever the re-run was refuted or failed, and an
+ * extend cannot be reverted. Without `hold` the edit is applied here, as before.
  *
  * **Nothing is widened to make that true, and the gates that matter still
  * stand.** The route runs with no permitted consequence, so
@@ -129,7 +138,6 @@ export async function automationStudioReauthorRefutedResult(input: {
    */
   generate(): Promise<string | AutomationStudioRefutedResultGenerated>;
   approve(adaptationId: string): Promise<unknown>;
-  apply(adaptationId: string): Promise<unknown>;
   /**
    * The caller's own reading of a thrown value; codes, flags and counts only,
    * never a message.
@@ -144,7 +152,11 @@ export async function automationStudioReauthorRefutedResult(input: {
    */
   failureCode(error: unknown): AutomationStudioRefutedResultFailure;
   now?: () => number;
-}): Promise<{ adaptationId?: string; applied?: true; failure?: AutomationStudioRefutedResultFailure; accounting?: JsonObject; durationMs: number }> {
+} & (
+  /** Approve and stop: the edit waits, approved and unapplied, for the judged whole run that runs it. */
+  | { hold: true; apply?: undefined }
+  | { hold?: undefined; apply(adaptationId: string): Promise<unknown> }
+)): Promise<{ adaptationId?: string; applied?: true; held?: true; failure?: AutomationStudioRefutedResultFailure; accounting?: JsonObject; durationMs: number }> {
   const now = input.now ?? Date.now;
   const started = now();
   let adaptationId: string;
@@ -161,11 +173,11 @@ export async function automationStudioReauthorRefutedResult(input: {
   // proposal, and the person's answer is what it is waiting for.
   try {
     await input.approve(adaptationId);
-    await input.apply(adaptationId);
+    if (!input.hold) await input.apply(adaptationId);
   } catch (error) {
     return { adaptationId, failure: input.failureCode(error), ...(accounting ? { accounting } : {}), durationMs: now() - started };
   }
-  return { adaptationId, applied: true, ...(accounting ? { accounting } : {}), durationMs: now() - started };
+  return { adaptationId, ...(input.hold ? { held: true as const } : { applied: true as const }), ...(accounting ? { accounting } : {}), durationMs: now() - started };
 }
 
 /** What a successful re-author build answers: its adaptation, and what it spent (`generateFlowBootstrapAdaptation`'s accounting). */
@@ -194,6 +206,8 @@ export function automationStudioRefutedResultReauthored(input: {
   decision: AutomationStudioRefutedResultReauthorDecision;
   adaptationId?: string | undefined;
   applied?: true | undefined;
+  /** Approved and held for the judged whole run that runs it: `applied` is written only once that run answers. */
+  held?: true | undefined;
   failure?: AutomationStudioRefutedResultFailure | undefined;
   /** Which repair of this run this was: 1 for the first. */
   attempt?: number | undefined;
@@ -208,6 +222,7 @@ export function automationStudioRefutedResultReauthored(input: {
         routed: true,
         ...(input.adaptationId ? { adaptationId: input.adaptationId } : {}),
         ...(input.applied ? { applied: true } : {}),
+        ...(input.held ? { held: true } : {}),
         ...(failure ? { code: failure.code } : {}),
         // Everything the diagnostic knew that a reader can act on. Each is
         // absent when the caller could not read it, so "not recorded" and
@@ -301,15 +316,18 @@ export type AutomationStudioRefutedResultFailure = {
 };
 
 /**
- * Whether this run's Flow was actually changed by a re-authoring.
+ * Whether this run's latest re-authoring left a changed Flow to run: an edit
+ * applied, or one approved and held for the judged whole run that runs it.
  *
  * What the re-run is keyed on, and deliberately narrower than "was routed": a
- * route that built an edit and could not apply it has changed nothing, and
+ * route that built an edit and could not approve it has changed nothing, and
  * running the same Flow again would spend a second verification to reach the
- * same wrong answer.
+ * same wrong answer. A held edit counts: the re-run runs it unapplied, and that
+ * run's verdict is what keeps it or not (`service/runtime-adaptation/judged-reauthor.ts`).
  */
 export function automationStudioRefutedResultFlowWasReauthored(detail: AutomationStudioFlowRunDetail): boolean {
-  return reauthorMarker(detail)?.applied === true;
+  const marker = reauthorMarker(detail);
+  return marker?.applied === true || marker?.held === true;
 }
 
 /**

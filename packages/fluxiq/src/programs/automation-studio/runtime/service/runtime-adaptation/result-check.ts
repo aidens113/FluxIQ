@@ -166,8 +166,10 @@ export type AutomationStudioResultCheckCallerPays = "every_run" | "repair_checks
  * `callerPays: "repair_checks"` keeps the caller's provider to the checks that
  * judge a repair (`afterRepair`, `afterRefutation`); any other check falls
  * through to the standing authorization exactly as if no caller had asked, and
- * the caller's provider is not even resolved. Absent is `every_run`. Nothing
- * passes `repair_checks` yet: the service's wiring is a later change.
+ * the caller's provider is not even resolved. Absent is `every_run`.
+ * `runRuntimeSession`'s `resultCheckCallerPays` passes it, and the run
+ * endpoint sets `repair_checks` for a paired client's model run -- the
+ * extension's Automations Run -- while a person's own session passes nothing.
  *
  * `resolveStandingProvider` is the host's, because obtaining the key is the
  * host's business and Core holds no credential. It is handed only what the
