@@ -23,6 +23,25 @@ describe("rows a condition alone left out that name the asked item", () => {
     ]);
   });
 
+  // Live run `run-mux6naez-6c20f26e` (lane C, round 3): the Flow stored name, price, rating and url, so
+  // the playback's `plus is present` condition, its column not stored, sent its rows by label alone. Taken
+  // as a condition on the label, two non-Plus pairs naming a charging case were flagged as the item asked
+  // for, and both result judges refuted a correct result over the Plus condition.
+  it("run mux6naez: rows the plus condition alone left out are not flagged, though they name the item first and a charging case after", () => {
+    const summary = runMuw60j7cRunSummary();
+    const conditions = summary.reads!.find((read) => read.nodeId === RUN_MUW60J7C_FILTERED_READ)!.conditions!;
+    const plus = conditions.find((entry) => entry.condition === "plus is present")!;
+    plus.leftOutOnlyByThis = [
+      ...plus.leftOutOnlyByThis!,
+      "Zephyrline Z1 Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Ear Hooks for Running, Midnight Blue",
+      "Pulsebud Mini Wireless Earbuds, Bluetooth 5.3 Headphones with 30H Playtime, Deep Bass, Wireless Charging Case, Ivory"
+    ];
+    const name = conditions.find((entry) => entry.condition?.startsWith("name not contains"))!;
+    name.leftOutOnlyByThis = name.leftOutOnlyByThis!.filter((row) => !RUN_MUW60J7C_PAIRS_LEFT_OUT.includes(row));
+    expect(name.leftOutOnlyByThis).toHaveLength(2);
+    expect(automationStudioResultLeftOutNamingTheItem(summary, RUN_MUW60J7C_REQUEST)).toEqual([]);
+  });
+
   it("never flags a condition that tested another column, though its rows name the item first", () => {
     const flagged = automationStudioResultLeftOutNamingTheItem(runMuw60j7cTestSummary(), RUN_MUW60J7C_REQUEST);
     expect(flagged.map((entry) => entry.condition)).toEqual(["name"]);

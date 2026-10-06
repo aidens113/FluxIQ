@@ -11,9 +11,13 @@ export type AutomationStudioRequestRowsCondition = {
   /** The same rows by label alone, in the same order. */
   labels: string[];
   /**
-   * True when every row is said by its label alone: the condition tested the
-   * label's own column, which is the one case a sender says no value after it
-   * (`../read-account/alone-rows.ts`).
+   * True when the condition tested the label's own column. For a build test,
+   * when every row is said by its label alone: its replay says the tested cell
+   * after every other label, empty as `(no value)`. For a finished run, as the
+   * read's account says (`../read-account/accounts.ts`, `testedLabel`), from the
+   * authored condition: a run's row is also said by its label alone when the
+   * tested column was not stored (live run `run-mux6naez-6c20f26e`, `plus is
+   * present` over a Flow storing name, price, rating and url).
    */
   testedLabel: boolean;
 };
