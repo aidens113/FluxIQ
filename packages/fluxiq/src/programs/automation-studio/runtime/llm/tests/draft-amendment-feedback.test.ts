@@ -228,7 +228,7 @@ describe("the feedback an amendment refusal is shown as", () => {
     no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, over_not_before: true, not_a_kept_step: true,
     did_not_work: true, already_in_flow: true, already_out: true, changes_nothing: true, act_on_a_read: true, act_already_named: true,
     bind_not_a_binding: true, bind_new_key: true, bind_row_outside_loop: true, bind_malformed: true,
-    rerun_holds_binding: true, repeat_taken_off: true
+    rerun_holds_binding: true, repeat_taken_off: true, strands_a_step: true, left_unreached: true
   };
 
   it("can say every reason the draft computes, with what the word means", () => {
@@ -717,5 +717,47 @@ describe("a refused bind says what the step offers instead, run B7", () => {
 
   it("passes on nothing for a refusal of another reason", () => {
     expect(told([{ step: 9, reason: "bind_row_outside_loop", parameter: "text", bindable: ["text"] }]).refused).toEqual([{ step: 9, reason: "bind_row_outside_loop", parameter: "text" }]);
+  });
+});
+
+// Live run `run-muwao5n4-44977b2a` (lane D, D2-1): decision 0030 dropped both
+// navigations to the friend-requests page with the listing that ran there still
+// in the Flow, and was told "applied 7" and nothing about reach. The drop is now
+// refused naming the step it would strand, and a step newly left after one that
+// does not bring it to its page is said beside the applied decision
+// (`../../flow-draft/amendment/strand-check.ts`), each under words of its own.
+describe("a step of the Flow left without its way to its page", () => {
+  const steps = Array.from({ length: 7 }, (_, index) => ({ position: index + 1 }));
+  const feedbackOf = (refusals: readonly AutomationStudioFlowDraftAmendmentRefusal[], applied = 1) =>
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8, actsNotDone: ["a1"] });
+  const refusedOf = (feedback: Record<string, unknown>) => feedback.refused as { step: number; reason: string; next?: string; repeated?: true }[];
+
+  it("tells a refused drop as strands_a_step, naming the step it would have stranded", () => {
+    const feedback = feedbackOf([{ step: 4, reason: "strands_a_step", strands: 6 }]);
+    const [entry] = refusedOf(feedback);
+    expect(entry?.reason).toBe("strands_a_step");
+    expect(entry?.next).toContain("Step 4 stays in the Flow: it is the only step of the Flow that brings the page to where step 6 acted");
+    expect(Object.keys(feedback.reasons as object)).toEqual(["strands_a_step"]);
+    expect(String(feedback.instruction)).toContain("The listed amendments changed nothing");
+  });
+
+  it("tells a step newly left after one that does not bring it to its page as left_unreached, applied, never repeated", () => {
+    const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
+      refusals: [{ step: 5, reason: "left_unreached", after: 1, reachedBy: [4], repeated: true }],
+      applied: 1, steps, stepsWithoutProgress: 0, maxStepsWithoutProgress: 8
+    });
+    const [entry] = refusedOf(feedback);
+    expect(entry?.reason).toBe("left_unreached");
+    expect(entry?.repeated).toBeUndefined();
+    expect(entry?.next).toContain("the step before it now, step 1, does not leave the page where step 5 acted");
+    expect(entry?.next).toContain("Step 4 moved the page to where step 5 acted while exploring");
+    expect((feedback.reasons as Record<string, string>).left_unreached).toContain("Not a refusal");
+    expect(String(feedback.instruction)).not.toContain("The listed amendments changed nothing");
+    expect(String(feedback.instruction)).toContain("left_unreached");
+  });
+
+  it("says to run the step that gets there when no step in the draft did", () => {
+    const [entry] = refusedOf(feedbackOf([{ step: 3, reason: "left_unreached", after: 2, reachedBy: [] }]));
+    expect(entry?.next).toContain("No step in the draft moved the page to where step 3 acted: run the step that gets there with add true, before step 3.");
   });
 });

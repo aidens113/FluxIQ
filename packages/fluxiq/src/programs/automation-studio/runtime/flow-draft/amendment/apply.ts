@@ -17,6 +17,8 @@ import {
   type AutomationStudioFlowDraftWrittenRepeat
 } from "./repeat-revalidation.ts";
 import { automationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
+import { automationStudioFlowDraftReach } from "./reach.ts";
+import { automationStudioFlowDraftStrandCheck, type AutomationStudioFlowDraftWithdrawal } from "./strand-check.ts";
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal } from "./types.ts";
 
 /** The four changes that say when a step runs rather than whether it is kept. */
@@ -73,6 +75,9 @@ export function applyAutomationStudioFlowDraftAmendments(
   const shown = automationStudioFlowDraftShownNumbering(steps);
   const written: AutomationStudioFlowDraftWrittenRepeat[] = [];
   let movedStep = false;
+  // Each step's way to its page as the decision found it, and the steps it took out (`./strand-check.ts`).
+  const reachBefore = automationStudioFlowDraftReach(steps);
+  const withdrawn: AutomationStudioFlowDraftWithdrawal[] = [];
   for (const amendment of amendments) {
     const step = shown.step(amendment.step);
     if (!step) {
@@ -201,6 +206,7 @@ export function applyAutomationStudioFlowDraftAmendments(
       if (!actOnRead) refused.push({ step: amendment.step, reason, ...(reason === "act_already_named" ? { act: amendment.act! } : {}) });
       continue;
     }
+    if (disposition !== "kept" && step.disposition === "kept") withdrawn.push({ step, named: amendment.step, disposition: step.disposition, settings: step.settings });
     step.disposition = disposition;
     // A step in the Flow brings the press that opened its page (`../opener.ts`).
     if (disposition === "kept") automationStudioFlowDraftKeepOpeners(steps, step);
@@ -222,6 +228,11 @@ export function applyAutomationStudioFlowDraftAmendments(
   applied -= settled.takenBack;
   refused.push(...settled.refused);
   if (movedStep) refused.push(...automationStudioFlowDraftTakeOffBrokenRepeats(steps, shown));
+  // A drop that left a kept step no way to its page is put back and refused; a
+  // step newly left after one that does not bring it there is said (D2-1).
+  const reach = automationStudioFlowDraftStrandCheck(steps, reachBefore, withdrawn, shown);
+  applied -= reach.takenBack;
+  refused.push(...reach.refused);
   const moved = movedActs(claims);
   return { applied, refused, ...(moved.length ? { moved } : {}) };
 }
