@@ -34,7 +34,8 @@ const WHY: Readonly<Record<AutomationStudioFlowDraftConditionalReason, string>> 
   only_if: "conditional: the Flow runs it only when the step it depends on succeeded",
   check: "a check: when it does not hold, the Flow skips the step that depends on it",
   fallback: "a fallback: the Flow runs it only when another step fails",
-  repeat: "repeated: the Flow runs it once per row, or while a check holds, so it may not run at all"
+  // Not "may not run at all", which the chat read as "it only runs sometimes" (U11, `run-muwao5n4-44977b2a`).
+  repeat: "repeated: the Flow runs it once per row of what it repeats over, or while a check holds, so it does not run when the test reaches no row"
 };
 
 /** What the step did in this test, by its status. */

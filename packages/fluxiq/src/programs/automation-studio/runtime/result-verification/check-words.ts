@@ -13,6 +13,7 @@
 // shown: it is the repair's instruction, written in the step's parameter names
 // and node ids, and it travels to the repair unchanged (`repair-directive.ts`).
 
+import { activityActionSentences } from "../../../../ui/index.ts";
 import type { AutomationStudioResultVerification } from "./contracts.ts";
 
 /** A dotted path or handle: `reads.stop`, `extractList.paginate.maxPages`, `node.bootstrap.….main.s7`, `extraction.4`. */
@@ -72,10 +73,9 @@ function rowsWords(observation: string): string[] {
 /** The model's sentences a person may read, joined, or nothing when none survives. */
 function plain(text: string | undefined): string | undefined {
   if (!text) return undefined;
-  const kept = text
-    .split(/(?<=[.!?])\s+/u)
-    .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence && !INTERNAL.some((shape) => shape.test(sentence)))
+  // Whole sentences: never split after "e.g." nor inside an aside (R2-U-3).
+  const kept = activityActionSentences(text)
+    .filter((sentence) => !INTERNAL.some((shape) => shape.test(sentence)))
     .map((sentence) => (/[.!?]["')]?$/u.test(sentence) ? sentence : `${sentence}.`));
   return kept.length ? kept.join(" ") : undefined;
 }

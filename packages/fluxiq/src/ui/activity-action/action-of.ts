@@ -1,3 +1,4 @@
+import { activityActionCheckWhy } from "./check-why.ts";
 import { activityActionFailureReason } from "./failure-reason.ts";
 import { activityActionRecordOf } from "./record.ts";
 import { activityActionRefusal } from "./refusal.ts";
@@ -94,6 +95,12 @@ const FOR_ROW = /\sfor “([^”]+)”$/u;
 const DETAILS_OF = /^Reading the details of “([^”]+)”$/u;
 /** A look for the repeating list around one element. */
 const LIST_AROUND = /^Looking for the repeating list around “([^”]+)”$/u;
+/**
+ * A look-up of how a kind of step is used, as the wording says it
+ * (`runtime/activity/wording/core-tool.ts`): "Looking up how to read a list".
+ * It named the node, "Look · Extract list" (R2-U-4, `run-muwansvz-a2b4a987`).
+ */
+const LOOKED_UP = /^Looking up (how to [^“”"]+)$/u;
 /** The most of a page's own name a look's card shows. */
 const MAX_SHORT_WORDS = 4;
 const MAX_SHORT_CHARS = 32;
@@ -269,9 +276,13 @@ function shortName(text: string): { words: string; whole: boolean } | undefined 
  *   details of that label: `the "Brightaisle Plus" label`, short;
  * - the repeating list around an element (`Looking for the repeating list
  *   around “Sponsored”`) is that list: `the list around "Sponsored"` when the
- *   element's name is short and whole, else the repeating list on the page.
+ *   element's name is short and whole, else the repeating list on the page;
+ * - a look-up of how a kind of step is used (`Looking up how to read a list`)
+ *   is what it looks up: `how to read a list`.
  */
 function lookedFor(title: string): string | undefined {
+  const lookedUp = LOOKED_UP.exec(title)?.[1];
+  if (lookedUp !== undefined) return lookedUp;
   const details = DETAILS_OF.exec(title)?.[1];
   if (details !== undefined) {
     const name = shortName(details);
@@ -353,7 +364,9 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * for, in straight quotes, else by what its title says it looked over ("the
  * whole page", never the bare page); a look at one element is named by what it
  * looked for, short (`the "Brightaisle Plus" label`, `the list around
- * "Sponsored"`), never by the page's label alone; a pass of a repeated test
+ * "Sponsored"`), never by the page's label alone; a look-up of how a kind of
+ * step is used by what it looks up (`how to read a list`), never by a node's
+ * name; a pass of a repeated test
  * step adds the row it was on (`Confirm · Jonas Weber`); else null. Never an id, though a
  * navigate's address path ("/help/index.html") is not one. A result check
  * that could not confirm the result, or could not check it, is `unconfirmed`,
@@ -361,9 +374,13 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * verified, present, remembered) is done, not failed, and so is one for a step
  * the test passes over (its record's `Excused`); `tested` says which in words
  * (`./tested.ts`), for each of them but a step done again. `why` is set only for a failure: a settled ask's
- * resolution in words ("you pressed Stop", "nobody answered in time"), or
- * else the refusal's own reason or the result code's last words
- * (`./failure-reason.ts`), and never is the code or the reason.
+ * resolution in words ("you pressed Stop", "nobody answered in time"); for a
+ * result check that refuted the result, how many rows came back or would be
+ * stored and why they did not pass, read from the check's text
+ * (`./check-why.ts`: "82 rows would be stored, but ..."), and null for one
+ * that could not confirm it; or else the refusal's own reason or the result
+ * code's last words, said for the card's kind (`./failure-reason.ts`: a list
+ * read in a list's words), and never is the code or the reason.
  *
  * A decision Core declined before doing it -- a call refused as a repeat, an
  * edit to the draft refused in whole or in part -- is `refused`, read from its
@@ -383,12 +400,13 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   if (!kind) return null;
   const refusal = detail.kind === "tool" ? activityActionRefusal(record) : null;
   const outcome = refusal ? (refusal.all ? "failed" : "done") : outcomeOf(event, detail, record.resultCode, record.excused);
-  const why = outcome !== "failed" ? null
+  const unconfirmed = kind === "result_check" && outcome === "failed" && event.label !== undefined && NOT_CONFIRMED.has(event.label.trim());
+  const why = outcome !== "failed" || unconfirmed ? null
     : refusal ? refusal.because
       : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
-        : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason) : null;
+        : kind === "result_check" ? activityActionCheckWhy(detail.text)
+          : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason, kind) : null;
   const testing = kind !== "test" && testStep(event, detail, detail.ref ? CORE_TOOL_KINDS.get(detail.ref) : undefined);
-  const unconfirmed = kind === "result_check" && outcome === "failed" && event.label !== undefined && NOT_CONFIRMED.has(event.label.trim());
   // What a test did with the step, when it did not simply do it again: a test
   // step is named by its action (`testing`), and one that names none by the verb of its title.
   const tested = outcome === "done" && record.resultCode && !refusal ? activityActionTested(record.resultCode, { excused: record.excused, kind: kind === "test" ? kindOfTitle(detail.title) : kind }) : null;

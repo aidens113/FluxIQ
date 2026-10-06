@@ -1,5 +1,6 @@
 import { activityActionVerb, type ActivityActionVerb } from "../../../../../ui/index.ts";
 import { automationStudioActivityHumanLabel } from "./human-label.ts";
+import { automationStudioActivityListName } from "./list-name.ts";
 import { automationStudioActivityPageName } from "./page-name.ts";
 
 type Phrase = {
@@ -54,8 +55,10 @@ const PHRASES: readonly Phrase[] = [
   { verb: "upload", plain: "Adding a file", named: (name) => `Adding a file to ${quoted(name)}` },
   // A list read named nothing: in a build's test, where every other step's card
   // named its subject, its card read a bare "Test run" (t194,
-  // `run-murwcmx2-a1c6edf7`, screenshot 00016). The domain says what it reads.
-  { verb: "read", plain: "Reading from the page", also: { word: /^(list|rows|records|items)$/u, plain: "Reading the list", named: (name) => `Reading the list of ${quoted(name)}`, byWords: true } },
+  // `run-murwcmx2-a1c6edf7`, screenshot 00016). The domain says what it reads,
+  // and Core names the list by two of its fields, so the overlay and every
+  // card say one name (`./list-name.ts`, R2-U-8).
+  { verb: "read", plain: "Reading from the page", also: { word: /^(list|rows|records|items)$/u, plain: "Reading the list", named: (name) => `Reading the list of ${quoted(automationStudioActivityListName(name))}`, byWords: true } },
   { verb: "describe", plain: "Reading the details of a control", named: (name) => `Reading the details of ${quoted(name)}` },
   {
     verb: "detect",

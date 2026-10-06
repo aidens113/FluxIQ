@@ -1,10 +1,18 @@
 import { activityActionReplayFailing } from "./replay-failing.ts";
+import type { ActivityActionKind } from "./types.ts";
+
+/**
+ * One reason's words: `why`, and `read` where a list read says it in a
+ * list's words ("FluxIQ didn't read it"), since a read sends nothing to a
+ * control.
+ */
+type Reason = { words: RegExp; why: string; read?: string };
 
 /**
  * Short reasons, each told by the words a result code ends with. Generic words
  * only; the first that matches decides.
  */
-const REASONS: readonly { words: RegExp; why: string }[] = [
+const REASONS: readonly Reason[] = [
   // A layer in front of the control is not the control being hidden, and a
   // dialog in the way is not a refusal: "it was hidden on the page" and "it
   // wasn't allowed" were said of a press a coupon popup covered (crossborder
@@ -12,7 +20,16 @@ const REASONS: readonly { words: RegExp; why: string }[] = [
   // is not read as `blocked`.
   { words: /_(dialog|blocked_by_dialog|modal)_/u, why: "a dialog on the page was in front of it" },
   { words: /_(covered|obscured|overlaid|covered_by_layer)_/u, why: "a popup or banner on the page was covering it" },
-  { words: /_(not_found|missing|unobserved|no_match|absent|gone)_/u, why: "it wasn't on the page" },
+  // A call naming something FluxIQ had not seen (`target_unobserved`) was never
+  // sent, and nothing was looked for on the page: a list read refused so read
+  // "Read list · Didn't work: it wasn't on the page" beside the list in plain
+  // sight (R2-U-6, `run-muwansvz-a2b4a987`, moment 07). Before the page miss.
+  {
+    words: /_(unobserved)_/u,
+    why: "FluxIQ didn't send it, as the step named something it hadn't seen on the page",
+    read: "FluxIQ didn't read it, as the step named a list it hadn't seen on the page"
+  },
+  { words: /_(not_found|missing|no_match|absent|gone)_/u, why: "it wasn't on the page" },
   { words: /_(timeout|timed_out|too_slow|slow)_/u, why: "the page took too long" },
   { words: /_(ambiguous|multiple_matches|many_matches)_/u, why: "more than one thing on the page matched" },
   { words: /_(not_visible|hidden|offscreen)_/u, why: "it was hidden on the page" },
@@ -47,7 +64,7 @@ const REASONS: readonly { words: RegExp; why: string }[] = [
  * failing the step (U7, live run `run-musp39u8-9ac026ab`, moment 26), so the
  * words say FluxIQ did not send it, and why.
  */
-const REFUSAL_REASONS: readonly { words: RegExp; why: string }[] = [
+const REFUSAL_REASONS: readonly Reason[] = [
   // A handle from a page view older than the one the call was checked against:
   // the control was in plain sight, and "it wasn't on the page" said it was
   // missing (t174-w111 D17, `run-musq0b1m-0472cfa0`, steps 0063 and 0067).
@@ -55,7 +72,21 @@ const REFUSAL_REASONS: readonly { words: RegExp; why: string }[] = [
   // "since it named no control from the page" was FluxIQ's own term for a
   // handle, and read beside "it wasn't on the page" for the same step as two
   // stories (U-12, `run-muw60j7c-bb7c9a62`, moment 14).
-  { words: /_(not_a_handle|malformed_handle|handle_in_wrong_parameter)_/u, why: "FluxIQ didn't send it, as the step didn't say which control on the page to use" },
+  {
+    words: /_(not_a_handle|malformed_handle|handle_in_wrong_parameter)_/u,
+    why: "FluxIQ didn't send it, as the step didn't say which control on the page to use",
+    read: "FluxIQ didn't read it, as the step didn't say which list on the page to read"
+  },
+  // The same refusal given again, which a domain may say in place of its cause
+  // (`answered_the_same_again`): the cause was said on the first of them, and
+  // the chat's observer carries it onto the repeats where it saw it
+  // (`programs/automation-studio/runtime/activity/repeated-reason.ts`). Never a
+  // page miss: the repeats of a list read refused for its list read "it wasn't
+  // on the page" (R2-U-6, `run-muwansvz-a2b4a987`, steps 0039 and 0046).
+  { words: /_(answered_the_same_again|same_answer_again)_/u, why: "FluxIQ didn't send it, for the same reason as the time before", read: "FluxIQ didn't read it, for the same reason as the time before" },
+  // A step asked to run again exactly as it was (`changes_nothing`, the draft's
+  // own refusal reason): nothing was looked for on the page.
+  { words: /_(changes_nothing)_/u, why: "it was already tried exactly this way on this same page" },
   { words: /_(no_longer_on_page)_/u, why: "it was no longer on the page" },
   // What the call was written with, never the page: a press refused for
   // leaving out `consequences` read "it wasn't on the page", from the word
@@ -103,12 +134,14 @@ const CORE_REASONS: ReadonlyMap<string, string> = new Map([
   ["core.result.verdict_absent", "no verdict came back"]
 ]);
 
-/** `REASONS` without its page miss, for a Core code. */
-const CORE_CODE_REASONS = REASONS.filter((candidate) => !candidate.words.test("_not_found_"));
+/** `REASONS` without its page miss or its unseen target, for a Core code. */
+const CORE_CODE_REASONS = REASONS.filter((candidate) => !candidate.words.test("_not_found_") && !candidate.words.test("_unobserved_"));
 
-/** `REASONS`' entry for a code segment or a reason, written `_like_this_`. */
-function reasonFor(table: readonly { words: RegExp; why: string }[], words: string): string | null {
-  return table.find((candidate) => candidate.words.test(words))?.why ?? null;
+/** A table's words for a code segment or a reason, written `_like_this_`, in a list's words for a read. */
+function reasonFor(table: readonly Reason[], words: string, kind: ActivityActionKind | undefined): string | null {
+  const reason = table.find((candidate) => candidate.words.test(words));
+  if (!reason) return null;
+  return kind === "read" && reason.read !== undefined ? reason.read : reason.why;
 }
 
 /**
@@ -118,14 +151,17 @@ function reasonFor(table: readonly { words: RegExp; why: string }[], words: stri
  * ("web.target.not_found" -> "it wasn't on the page"). Null when neither names
  * a reason this knows; never the code or the reason itself. A Core code
  * (`core.*`) is never a page miss: Core's own words for it come from
- * `CORE_REASONS`.
+ * `CORE_REASONS`. Nor is a call that named something FluxIQ had not seen
+ * (`unobserved`), the same refusal given again, or a step asked to run
+ * again unchanged: none of them looked at the page. `kind`, the card's kind
+ * where the caller knows it, has a list read said in a list's words.
  */
-export function activityActionFailureReason(resultCode: string, reason?: string): string | null {
+export function activityActionFailureReason(resultCode: string, reason?: string, kind?: ActivityActionKind): string | null {
   const code = resultCode.trim().toLowerCase();
   const reasons = code.startsWith(CORE_NAMESPACE) ? CORE_CODE_REASONS : REASONS;
   const said = reason?.trim().toLowerCase().replace(/[\s.-]+/gu, "_");
   if (said) {
-    const why = reasonFor(REFUSAL_REASONS, `_${said}_`) ?? reasonFor(reasons, `_${said}_`);
+    const why = reasonFor(REFUSAL_REASONS, `_${said}_`, kind) ?? reasonFor(reasons, `_${said}_`, kind);
     if (why) return why;
   }
   if (activityActionReplayFailing(code)) return REPLAY_REASONS.get(code) ?? REPLAY_OTHER;
@@ -136,7 +172,7 @@ export function activityActionFailureReason(resultCode: string, reason?: string)
   // first segment is a namespace, not a reason.
   const ordered = [segments.at(-1) ?? "", ...segments.slice(1, -1).reverse()];
   for (const segment of ordered) {
-    const why = reasonFor(reasons, segment);
+    const why = reasonFor(reasons, segment, kind);
     if (why) return why;
   }
   return null;

@@ -4,6 +4,11 @@
 // The shapes below are therefore this module's own, and deliberately broader
 // than the evidence screen's (`llm/harness/evidence-screen.ts`): a reason that
 // loses a product code to "…" still reads, and one that shows a key does not.
+// The sentence splitter is the chat's one (`ui/activity-action/sentences.ts`),
+// which imports nothing of the runtime.
+
+import { activityActionSentences } from "../../../../../ui/index.ts";
+import { automationStudioActivityPersonWords } from "./person-words.ts";
 
 /** A run of token characters this long: a candidate key, token or id. */
 const TOKEN_RUN = /[A-Za-z0-9+/_=-]{20,}/gu;
@@ -28,21 +33,33 @@ const SNAKE = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gu;
 const STEP_REF = /\s*\(\s*steps?\s+\d+(?:\s*(?:,|and|to|-)\s*\d+)*\s*\)/giu;
 /** Parentheses a screened name left empty. */
 const EMPTY_PARENS = /\s*\(\s*[,;]?\s*\)/gu;
+/** One id, handle or snake_case name, whole: what an aside of ids is made of ("(web.output.dom-extract_list)"). */
+const ID_WORD = /^(?:(?:web|core|builtin|domain)\.[a-z0-9_.-]*[a-z0-9]|[a-z]+\.\d+(?::[A-Za-z0-9_.:-]+)?|[tde]\d{1,6}|[a-z][a-z0-9]*(?:_[a-z0-9]+)+)$/u;
+
+/** `text` without each aside in parentheses that holds only ids: "Step 8 (web.output.dom-extract_list) kept". */
+function withoutIdAsides(text: string): string {
+  return text.replace(/\s*\(([^()]*)\)/gu, (whole: string, inner: string) => {
+    const words = inner.split(/[\s,;]+/u).filter((word) => word && !/^(?:and|or)$/u.test(word));
+    return words.length && words.every((word) => ID_WORD.test(word.replace(/^[`'"]|[`'"]$/gu, ""))) ? "" : whole;
+  });
+}
 
 /**
- * The model's words without the names it was shown: a handle is left out, a
- * node id is said by its last word ("dom extract"), a snake_case name as its
- * words ("extract list"), and a parenthesised draft step number is left out.
- * A word holding "/" or "@" -- an address -- is left whole.
+ * The model's words without the names it was shown: an aside of ids only is
+ * left out, a handle is left out, a node id is said by its last word ("dom
+ * extract"), a snake_case name as its words ("extract list"), and a
+ * parenthesised draft step number is left out. A word holding "/" or "@" -- an
+ * address -- is left whole. Then its words for the work are said as a
+ * person's (`./person-words.ts`: "the list reader", "a step").
  */
 function screened(text: string): string {
-  const words = text.replace(/\S+/gu, (word) => /[/@]/u.test(word)
+  const words = withoutIdAsides(text).replace(/\S+/gu, (word) => /[/@]/u.test(word)
     ? word
     : word
       .replace(NODE_ID, (id) => (id.split(".").at(-1) ?? id).replace(/[-_]+/gu, " "))
       .replace(HANDLE, "")
       .replace(SNAKE, (name) => name.replace(/_+/gu, " ")));
-  return words.replace(STEP_REF, "").replace(EMPTY_PARENS, "").replace(/\s+([,.;:!?])/gu, "$1");
+  return automationStudioActivityPersonWords(words.replace(STEP_REF, "").replace(EMPTY_PARENS, "").replace(/\s+([,.;:!?])/gu, "$1"));
 }
 
 /**
@@ -75,9 +92,51 @@ const ACT_ID = /\b(?:acts?\s+)?[a-z]\d+(?:\.[\w-]+)?\b/u;
  */
 const MECHANICS = /\b(?:acts?|draft|amend\w*|unreproducible|re-?runs?|re-?running|re-?test\w*|replay\w*|dry[- ]runs?|tool_call|steps?\s+\d+|complet(?:e|es|ed|ing)\s+(?:with|the\s+(?:draft|build|flow|task|run)))\b/iu;
 
-/** The sentences of `text` that name neither an act id nor the draft's mechanics, rejoined. */
+/**
+ * The sentences, and clauses between semicolons, of `text` that name neither
+ * an act id nor the draft's mechanics, rejoined. Split by the chat's one
+ * splitter, so "(e.g." ends no sentence (R2-U-3).
+ */
 function withoutMechanics(text: string): string {
-  return text.split(/(?<=[.!?;])\s+/u).filter((sentence) => !ACT_ID.test(sentence) && !MECHANICS.test(sentence)).join(" ");
+  return activityActionSentences(text, { clauses: true }).filter((sentence) => !ACT_ID.test(sentence) && !MECHANICS.test(sentence)).join(" ");
+}
+
+/** `sentence` without its asides in parentheses. */
+function withoutAsides(sentence: string): string {
+  let plain = sentence;
+  for (let before = ""; before !== plain;) {
+    before = plain;
+    plain = plain.replace(/\s*\([^()]*\)/gu, "");
+  }
+  return plain.replace(/\s+([,.;:!?])/gu, "$1");
+}
+
+/**
+ * `text` within `max` characters, in whole sentences (`activityActionSentences`,
+ * which leaves out an aside opened and never closed): each one that fits, with
+ * its asides left out where only that makes it fit, up to the first that does
+ * not. When not even the first fits, it is cut where a word ends, if one does
+ * in the second half of the room, with "…" after; it has no aside left to cut
+ * inside. A judge's sentence cut at 600 characters ended inside "(e.g." (R2-U-3,
+ * live run `run-muwansvz-a2b4a987`).
+ */
+function held(text: string, max: number): string {
+  const sentences = activityActionSentences(text);
+  const whole = sentences.join(" ");
+  if (whole.length <= max) return whole;
+  let kept = "";
+  for (const sentence of sentences) {
+    const next = [sentence, withoutAsides(sentence)].map((said) => (kept ? `${kept} ${said}` : said)).find((joined) => joined.length <= max);
+    if (next === undefined) break;
+    kept = next;
+  }
+  if (kept) return kept;
+  const first = withoutAsides(sentences[0] ?? text);
+  if (first.length <= max) return first;
+  const room = first.slice(0, max - 1);
+  const space = first.charAt(max - 1) === " " ? max - 1 : room.lastIndexOf(" ");
+  const cut = space >= max / 2 ? room.slice(0, space) : room;
+  return `${cut.trimEnd().replace(/[,;:]+$/u, "")}…`;
 }
 
 /**
@@ -86,13 +145,17 @@ function withoutMechanics(text: string): string {
  *
  * Text naming a private key is withheld whole. Otherwise the names the model
  * was shown and the person never is -- handles, node ids, snake_case names,
- * parenthesised draft step numbers -- are screened (`screened`, t194-w80 U4),
- * any run shaped like a token or key (20 or more letters, digits and token punctuation with no
- * space, holding both a letter and a digit, or 32 or more of them) is replaced
- * by "…", whitespace is collapsed, and the text is held to `max` characters,
- * cut with an ellipsis. Text that is only codes and ids is nothing. The words
- * are otherwise the model's: its stated reason for what it does, shown to the
- * person whose page and request it is about.
+ * parenthesised draft step numbers, asides of ids -- are screened (`screened`,
+ * t194-w80 U4), and its words for the work are said as a person's ("the list
+ * reader", "reads", "the result pages", "removing duplicates", "the check",
+ * "a step": `./person-words.ts`, R2-U-4); any run shaped like a token or key
+ * (20 or more letters, digits and token punctuation with no space, holding
+ * both a letter and a digit, or 32 or more of them) is replaced by "…",
+ * whitespace is collapsed, an aside opened and never closed is left out, and
+ * the text is held to `max` characters in whole sentences (`held`), never cut
+ * inside an aside nor split after "e.g." (R2-U-3). Text that is only codes and
+ * ids is nothing. The words are otherwise the model's: its stated reason for
+ * what it does, shown to the person whose page and request it is about.
  *
  * A decision's reason (`decision`, read by `../observer.ts`) also loses each
  * sentence that names an act id or the draft's mechanics ("That completes act
@@ -111,6 +174,5 @@ export function automationStudioActivityReasonText(text: unknown, max = 240, scr
   const kept = screen.decision ? withoutMechanics(collapsed) : collapsed;
   if (!kept || onlyCodes(kept)) return undefined;
   const shown = screened(kept).replace(/\s+/gu, " ").trim();
-  if (!shown) return undefined;
-  return shown.length <= max ? shown : `${shown.slice(0, max - 1).trimEnd()}…`;
+  return shown ? held(shown, max) || undefined : undefined;
 }

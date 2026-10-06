@@ -24,6 +24,7 @@ export {
   automationStudioActivityDecision,
   automationStudioActivityDraftEditCard,
   automationStudioActivityHumanLabel,
+  automationStudioActivityPersonWords,
   automationStudioActivityReasonText,
   automationStudioActivityRecoveryChoice,
   automationStudioActivityToolCall

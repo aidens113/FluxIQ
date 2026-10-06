@@ -25,6 +25,8 @@
 // Not a quote: what comes back is the judge's account in plain words, which is
 // why no ending puts quotation marks round it any more.
 
+import { activityActionSentences } from "../../../../../ui/index.ts";
+
 /** A step id the draft gives (`s8`, `n12`). */
 const STEP_ID = /\b[sn]\d{1,5}\b/u;
 /** A page handle (`t958`, `e3`, `d7`) or an act id (`a1`, `a2.quantity`). */
@@ -34,10 +36,9 @@ const CODE = /\b(?:[a-z][a-z0-9]*_[a-z0-9_]*(?:\.[a-z0-9_-]+)+|(?:result|core|we
 
 /** The judge's words, screened and in whole sentences of at most `most` characters; empty when none fits or none is plain. */
 export function automationStudioFlowBootstrapJudgeWordsSaid(text: string, most: number): string {
-  const pieces = screened(folded(text))
-    .split(/(?<=[.!?;])\s+/u)
-    .map((piece) => piece.trim())
-    .filter(Boolean);
+  // The chat's one splitter: never after "e.g." nor inside an aside, and an
+  // aside left unclosed is left out (R2-U-3, `run-muwansvz-a2b4a987`).
+  const pieces = activityActionSentences(screened(folded(text)), { clauses: true });
   const kept: { piece: string; index: number }[] = [];
   pieces.forEach((piece, index) => {
     if (!STEP_ID.test(piece) && !HANDLE.test(piece) && !CODE.test(piece) && /[A-Za-z]/u.test(piece)) kept.push({ piece, index });

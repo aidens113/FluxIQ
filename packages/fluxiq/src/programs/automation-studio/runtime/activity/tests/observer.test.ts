@@ -79,6 +79,31 @@ describe("observeAutomationStudioEvidenceLoop", () => {
     expect(seen.map((event) => event.detail?.kind)).toEqual(["tool", "tool"]);
   });
 
+  // R2-U-6 (`run-muwansvz-a2b4a987`, steps 0034, 0039 and 0046): a list read
+  // refused for its list (`malformed_handle`), then refused the same way again,
+  // which the domain says as `answered_the_same_again`: the repeats read "it
+  // wasn't on the page". A repeat carries the cause the first refusal gave.
+  it("carries the cause of a refusal onto the same refusal given again", async () => {
+    const LIST = "web.output.dom-extract_list";
+    const reasons = ["malformed_handle", "answered_the_same_again", "answered_the_same_again"];
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false, resultCode: "web.action.rejected.target_unobserved", resultReason: reasons.shift() ?? "" })
+    }));
+    for (const callId of ["rerun.5", "rerun.8", "rerun.8.2"]) await inScope(() => observed.executeTool({ callId, toolId: "core.run_node", value: { node: LIST, parameters: {} } }));
+    const ends = seen.filter((event) => event.detail?.status === "succeeded");
+    expect(ends.map((event) => event.detail?.text)).toEqual(Array(3).fill(`Result: web.action.rejected.target_unobserved · Reason: malformed_handle · Node: ${LIST}`));
+    for (const end of ends) expect(activityActionOf(end)?.why).toBe("FluxIQ didn't read it, as the step didn't say which list on the page to read");
+  });
+
+  it("leaves a repeat whose first refusal it never saw as a repeat", async () => {
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: {}, effectApplied: false, resultCode: "web.action.rejected.target_unobserved", resultReason: "answered_the_same_again" })
+    }));
+    await inScope(() => observed.executeTool({ callId: "rerun.8", toolId: "core.run_node", value: { node: "web.output.dom-extract_list", parameters: {} } }));
+    expect(seen[1]!.detail?.text).toContain("Reason: answered_the_same_again");
+    expect(activityActionOf(seen[1]!)?.why).toBe("FluxIQ didn't read it, for the same reason as the time before");
+  });
+
   it("says building for the draft tool", async () => {
     const observed = observeAutomationStudioEvidenceLoop(loopInput({ executeTool: async () => ({ ok: true }) }));
     await inScope(() => observed.executeTool(call(AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID)));
