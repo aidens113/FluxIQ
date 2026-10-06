@@ -40,6 +40,8 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     // A drop put back: it was the only step that brings the page to where a
     // step still in the Flow acted (`flow-draft/amendment/strand-check.ts`).
     strands_a_step: "that step is the only one that gets to the page a later step needs",
+    // Settings that would change the control or value a step ran with (`flow-draft/amendment/settings-rewrite-run.ts`).
+    settings_rewrite_run: "that would change what the step was done with, which makes it a different step",
   } as const),
   repeated: Object.freeze({
     failed: "it was already tried exactly this way and did not work",

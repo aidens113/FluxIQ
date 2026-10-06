@@ -165,6 +165,24 @@ describe("what a call did on the page it found", () => {
     expect(guard.blocks("core.run_node", call().input)?.outcome).toBe("failed");
   });
 
+  // Live run `run-mux74k5q-1c3c2127` (lane A round 3, C3): `rerun.12.6` was a done lasting act's rerun sent as the dry
+  // run's check (`../../node-tools/rerun-check.ts`), answered `core.replay.present` with nothing run. It was recorded as a
+  // failed attempt of its input, and the model's identical plain call on the same page was refused twice.
+  it("records no outcome for a rerun sent as a check, but still follows the page and ends a run of looks", () => {
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.recorded(call({ callId: "look.1", effect: "observe", proposes: false, effectApplied: false, refused: false, stateBefore: "s1", stateAfter: "s1", resultCode: "web.inspect.succeeded" }));
+    expect(guard.looks()).toHaveLength(1);
+    const check = call({ callId: "rerun.12.6", refused: false, effectApplied: false, resultCode: "core.replay.present", stateBefore: "s1", stateAfter: "s2", checked: true });
+    guard.recorded(check);
+    expect(guard.state()).toBe("s2");
+    expect(guard.looks()).toHaveLength(0);
+    expect(guard.blocks("core.run_node", check.input, "s1")).toBeUndefined();
+    // Recorded as the call it is not -- an attempt of that input -- the same check is a failure to refuse.
+    const attempt = automationStudioLlmEvidenceRepeatGuard();
+    attempt.recorded({ ...check, checked: false });
+    expect(attempt.blocks("core.run_node", check.input, "s1")?.outcome).toBe("failed");
+  });
+
   it("counts refused repeats in a row by decision", () => {
     const guard = automationStudioLlmEvidenceRepeatGuard();
     expect([guard.refusedAgain(4), guard.refusedAgain(5), guard.refusedAgain(7), guard.refusedAgain(8), guard.refusedAgain(9)]).toEqual([1, 2, 1, 2, 3]);
