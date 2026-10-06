@@ -308,7 +308,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
 /**
  * An evidence decision's catalog context, with what it is shown of the catalog:
  * every node by name (`catalogNames`) and, in full, only the nodes this build
- * asked `core.describe_nodes` about (`describedNodes`, in the order first
+ * asked `core.describe_nodes` about or ran (`describedNodes`, in the order first
  * described; an id the catalog does not hold is skipped, and the field is
  * absent while there are none). `nodeCatalog`, `catalogTruncated` and
  * `catalogSelection` stay as they were, because the readers that check a
