@@ -117,6 +117,11 @@ function sendableExplorationEvidence(request: AutomationStudioLlmTaskRequest, de
  * looked for, and each step's own words. No string anywhere in it may be shaped
  * like a locator. The builder (`result-verification/build-test/summary.ts`)
  * drops both before this sees them, so a refusal here means the two drifted.
+ *
+ * What each step changed in the run (`flowShape[].changed`, run
+ * `run-muw5zv4m-52d83027`) is the domain's view lines, held to the same
+ * contract: no line shaped like a locator. Its builder
+ * (`result-verification/step-changes.ts`) redacts them first.
  */
 function sendableResultSummary(request: AutomationStudioLlmTaskRequest, deniedKeys: readonly string[] | undefined): boolean {
   const summary = request.context.resultSummary;
@@ -124,6 +129,8 @@ function sendableResultSummary(request: AutomationStudioLlmTaskRequest, deniedKe
   if (!credentialFree(summary)) return false;
   const sampled = summary.recordSets.flatMap((set) => set.sampleRows ?? []);
   if (screenAutomationStudioLlmEvidence(sampled, deniedKeys).deniedKey) return false;
+  const steps: unknown[] = Array.isArray(summary.flowShape) ? summary.flowShape : [];
+  if (locatorShapedAnywhere(steps.map((step) => (isRecord(step) ? step.changed : undefined)))) return false;
   if (summary.buildTest !== undefined && !sendableBuildTest(summary.buildTest, deniedKeys)) return false;
   return Number.isFinite(serializedBytes(summary));
 }

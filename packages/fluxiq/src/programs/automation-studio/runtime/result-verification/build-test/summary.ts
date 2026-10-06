@@ -49,7 +49,14 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 //     `run-musq0b1m-0472cfa0`'s judges dismissed the bare `step_is_optional`
 //     because the step "was replayed" (Cause 5).
 //   - `carried`, a step seeded from an earlier Flow (run 41). Such a step has
-//     no replay, so the draft was not testable and nothing ran.
+//     no replay, so the draft was not testable and nothing ran. A carried
+//     routing join is not shown at all (t274-c4b): the test passes through it
+//     and sends nothing (`../../flow-draft/carried-step/`), so it has no
+//     outcome to give, and shown as a carried step `not_run` it was counted
+//     untested (`automationStudioBuildTestUntestedCarried`), the round marked
+//     `not_tested` for it and the repair told to rerun it live (live run
+//     `run-muw60j7c-bb7c9a62`'s seeded Merge). Any outcome word would be one
+//     the test never answered; the steps keep their Flow's numbers either way.
 //   - `notes`, what the completion check's capability questions found of the
 //     Flow -- no step producing the records asked for, or none going to where
 //     it starts (t195-w28a). Information the judge confirms against the steps,
@@ -59,6 +66,13 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 //     own outcome and observation (`./pass-lines.ts`, `./span-rows.ts`).
 //   - `inputs`, once: the Flow's parameters at the values the test ran on
 //     (t252 D4, `./test-inputs.ts`).
+//   - `stores`, once: what the Flow would store, per dataset, as the test's
+//     reads filled it -- the steps that write it, its rows and their labels in
+//     order, and the labels stored twice (t274-c3, `./stores.ts`). The test
+//     stores nothing, and run `run-muw60j7c-bb7c9a62`'s judge read that as an
+//     empty result while two reads appended 30 rows into one dataset, 3 of them
+//     twice (C-3). Only when the test ran and the Flow's nodes are known: with
+//     neither, what it would store is not known, which is not "nothing".
 //
 // **And the page the test ended on** (`endView`, t174-w87), once, beside the
 // steps: the view the caller captured after the test, or else the domain's view
@@ -87,6 +101,7 @@ import {
   type AutomationStudioFlowDraftStep,
   type AutomationStudioFlowDraftStepRouting
 } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftStepCarriedJoin } from "../../flow-draft/carried-step/index.ts";
 import {
   automationStudioInstructedActsChecklist,
   automationStudioInstructedActsChecklistValue,
@@ -111,6 +126,7 @@ import {
 import { automationStudioBuildTestObservationReader } from "./observation.ts";
 import { automationStudioBuildTestPassLines } from "./pass-lines.ts";
 import { automationStudioBuildTestSpanRows } from "./span-rows.ts";
+import { automationStudioBuildTestStores } from "./stores.ts";
 import { automationStudioBuildTestInputs } from "./test-inputs.ts";
 
 /**
@@ -203,7 +219,8 @@ export function automationStudioBuildTestResultSummary(input: {
   const reasons = automationStudioFlowDraftConditionalStepReasons(input.steps);
   // The checked steps so far whose act this test left undone: `verified` on the step or a pass (`present` was already in place).
   const undone: number[] = [];
-  const steps = proposed.map((step): AutomationStudioBuildTestStep => {
+  // A carried routing join is judged nowhere: the test never sends it (see the header).
+  const steps = proposed.filter((step) => !automationStudioFlowDraftStepCarriedJoin(step)).map((step): AutomationStudioBuildTestStep => {
     const outcome = input.report ? outcomeOf(step, input.report.verdict.outcomes) : undefined;
     const excused = outcome ? excusedWords(outcome, reasons.get(automationStudioFlowDraftStepId(step))) : undefined;
     const checked = outcome?.mode === "verify";
@@ -258,6 +275,12 @@ export function automationStudioBuildTestResultSummary(input: {
   });
   const tested = denied === undefined ? undefined : automationStudioBuildTestInputs(input.steps, denied);
   if (tested?.withheld) withheld = true;
+  const report = input.report;
+  const stored = denied === undefined || !report || !input.nodes.length ? undefined : automationStudioBuildTestStores({
+    steps: proposed, nodes: input.nodes, deniedEvidenceKeys: denied,
+    answers: (step) => observationsOf(step, report.observations).map((observation) => observation.evidence)
+  });
+  if (stored?.withheld) withheld = true;
   const buildTest: AutomationStudioBuildTestAccount = {
     kind: "build_test",
     test: input.report ? (input.report.reused ? "reused" : "ran") : "not_run",
@@ -265,7 +288,8 @@ export function automationStudioBuildTestResultSummary(input: {
     ...(checklist?.length ? { checklist: checklist.map((item) => automationStudioWithoutLocators(item)) } : {}),
     ...(!check.ok ? { missingActs: automationStudioWithoutLocators(check.missingActs) } : {}),
     ...(input.notes?.length ? { notes: input.notes.map((note) => automationStudioWithoutLocators({ ...note })) } : {}),
-    ...(tested?.inputs.length ? { inputs: tested.inputs } : {})
+    ...(tested?.inputs.length ? { inputs: tested.inputs } : {}),
+    ...(stored ? { stores: stored.stores } : {})
   };
   const shape = summarizeAutomationStudioRunResult({ recordSets: [], flowNodes: input.nodes, deniedEvidenceKeys: denied });
   const held = input.endView ?? lastView(input.report, input.observedStateKeys);

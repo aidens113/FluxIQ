@@ -40,17 +40,36 @@
 // had a judge say "still achievable" twice, and the build ended "I found no
 // way to" all the same, because the judgement never carried it.
 //
-// **Steps that never ran in this build are named (t194-w70).** A re-author or
-// an extend seeds its draft from a stored Flow, and a step carried from it has
-// nothing it ran with and nothing to put the target back with until it is
-// rerun live (`not_run_in_this_build`, `../../flow-draft/full-run-required.ts`).
-// Core never runs such a step itself, so a Flow holding one is not tested here,
-// and its judgement says which they are (`notRunInThisBuild`): the round has no
+// **A `no` carries Core's lines on the rows (t274-c25b).** Live run
+// `run-muw60j7c-bb7c9a62`'s test judges said yes over three pairs of earbuds the
+// name condition alone left out; Core now takes such a yes as a no
+// (`../../result-verification/verdict.ts`), and its fix lines and its check of
+// the rows (`fix`, `checked`) are what name them. The judgement kept only the
+// finding code, so the repair was told a code and no row; now it keeps both.
+//
+// **Steps the test cannot run are named (t194-w70).** A re-author or an extend
+// seeds its draft from a stored Flow. A step carried from it that the test
+// cannot run as saved -- changed since, declaring nothing, or with no captured
+// start -- has nothing to run it with until it is rerun live
+// (`not_run_in_this_build`, `../../flow-draft/full-run-required.ts`). Core never
+// runs such a step itself, so a Flow holding one is not tested here, and its
+// judgement says which they are (`notRunInThisBuild`): the round has no
 // measurement, which `./phases.ts` never concludes "not doable" from, and the
 // repair is told to rerun them (`../../llm/evidence-loop/resume.ts`). Live run
 // murwcmx2's re-author was judged `not_tested` twice with nothing saying why,
 // and ended not doable with the advised fix in its draft, never run.
+//
+// **An unchanged carried step is not one of them (t274-c4).** It holds a
+// scheduled candidate, and the test runs it as the Flow saved it; the Merge an
+// optional step joins at is passed through (`../../flow-draft/carried-step/`).
+// Live run `run-muw60j7c-bb7c9a62` listed both here, every round was told to
+// rerun steps 1-5, and the domain refused every rerun of the carried type step
+// for naming no handle until the budget ran out. So such a Flow is tested here
+// like any other, and the repair seed keeps each candidate (below), so the next
+// round's test still runs those steps as saved.
 import type { JsonObject } from "../../../../../core/index.ts";
+import { automationStudioFlowDraftStepCarriedJoin } from "../../flow-draft/carried-step/index.ts";
+import { automationStudioFlowDraftCopyScheduledCandidate } from "../../flow-draft/scheduled-candidate/index.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioInstructedActsNotDone, type AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type {
@@ -76,6 +95,11 @@ export type AutomationStudioFlowBootstrapUnfinishedTest = (steps: AutomationStud
  * The Flow as a round left it, as a repair starts from it: only the steps in
  * the Flow, renumbered, each keeping its own id, the act it does and how to run
  * it again, and nothing of the call that took it or of a test before this one.
+ *
+ * A carried step still as the Flow saved it keeps its scheduled candidate: a
+ * deep copy lends it none by itself (`../../flow-draft/scheduled-candidate/`),
+ * and without it the next round's test could not run the step as saved and
+ * would list it for a live rerun (t274-c4).
  */
 export function automationStudioFlowBootstrapRepairSeed(steps: readonly AutomationStudioFlowDraftStep[]): AutomationStudioFlowDraftStep[] {
   return steps.filter(automationStudioFlowDraftStepIsProposed).map((step, index) => {
@@ -84,6 +108,10 @@ export function automationStudioFlowBootstrapRepairSeed(steps: readonly Automati
     delete copy.replayed;
     copy.position = index + 1;
     copy.iteration = 0;
+    if (step.scheduledCandidate !== undefined) {
+      copy.scheduledCandidate = step.scheduledCandidate;
+      automationStudioFlowDraftCopyScheduledCandidate(step, copy);
+    }
     return copy;
   });
 }
@@ -107,7 +135,8 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
   const seed = automationStudioFlowBootstrapRepairSeed(input.steps);
   let tested: AutomationStudioFlowBootstrapTested = "not_tested";
   let testIssueCodes: string[] = [];
-  if (input.test && input.replayable(seed)) {
+  // A carried routing join is passed through by the test, as the gate passes it (t274-c4).
+  if (input.test && input.replayable(seed.filter((step) => !automationStudioFlowDraftStepCarriedJoin(step)))) {
     const refusal = await input.test(seed);
     if (refusal === "cancelled") return { kind: "cancelled" };
     if (refusal === "evidence_limit") testIssueCodes = ["llm_evidence_loop.evidence_limit"];
@@ -226,6 +255,9 @@ function judgedWrong(verdict: Exclude<AutomationStudioFlowBootstrapTestVerdict, 
     ...(verdict.observed ? { observed: verdict.observed } : {}),
     ...(verdict.advice ? { advice: verdict.advice } : {}),
     findings: [...verdict.findings],
+    // Core's lines naming the rows, so the repair sees the rows and not only the finding code (t274-c25b).
+    ...(verdict.fix?.length ? { fix: [...verdict.fix] } : {}),
+    ...(verdict.checked?.length ? { checked: [...verdict.checked] } : {}),
     ...(verdict.records ? { records: { ...verdict.records } } : {}),
     // Whether what was asked can still be had: only a `no` here ends the build "not doable" (t195-w37, `./phases.ts`).
     ...(verdict.stillAchievable ? { stillAchievable: verdict.stillAchievable } : {})
@@ -279,6 +311,9 @@ function judgeValue(judge: AutomationStudioFlowBootstrapJudgedWrong): JsonObject
     ...(judge.observed ? { observed: judge.observed } : {}),
     ...(judge.advice ? { advice: judge.advice } : {}),
     findings: [...judge.findings],
+    // Core's own lines on the rows, under their own keys so they are never read as the judge's (`resume.ts` says what they are).
+    ...(judge.fix?.length ? { fix: [...judge.fix] } : {}),
+    ...(judge.checked?.length ? { checked: [...judge.checked] } : {}),
     ...(judge.untestedCarried?.length ? { untestedCarried: [...judge.untestedCarried] } : {}),
     // An unknown's one unconfirmed reading, under its own key so it is never read as a no (`resume.ts` says what it is).
     ...(judge.unconfirmedReading ? { unconfirmedReading: { ...judge.unconfirmedReading } } : {})

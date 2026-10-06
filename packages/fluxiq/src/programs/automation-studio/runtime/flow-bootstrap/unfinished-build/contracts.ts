@@ -69,7 +69,7 @@ export type AutomationStudioFlowBootstrapJudgeSpend = { inputTokens: number; out
 export type AutomationStudioFlowBootstrapTestVerdict =
   | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string; confidence?: number; unconfirmedAdvice?: AutomationStudioFlowBootstrapYesAdvice }
   | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; unconfirmedReading?: AutomationStudioFlowBootstrapJudgeReading; oneCallSaidYes?: true; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
-  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; stillAchievable?: AutomationStudioFlowBootstrapStillAchievable; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
+  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; fix?: string[]; checked?: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; stillAchievable?: AutomationStudioFlowBootstrapStillAchievable; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
 
 /**
  * Whether the judge said what was asked can still be had (its diagnosis's
@@ -112,6 +112,15 @@ export type AutomationStudioFlowBootstrapJudgedWrong = {
   observed?: string;
   advice?: string;
   findings: string[];
+  /**
+   * A `no`'s only, where Core gave them: Core's fix lines naming the rows a yes
+   * passed over (`fix`), and Core's check of the rows the judgement names
+   * against what the test read (`checked`, `result-verification/request-rows/`).
+   * Core's words, never the judge's: what the repair weighs the advice by
+   * (live run `run-muw60j7c-bb7c9a62`, t274-c25b).
+   */
+  fix?: string[];
+  checked?: string[];
   untestedCarried?: number[];
   /**
    * An `unknown`'s only: the reading of the one judge call that said the test

@@ -40,6 +40,7 @@
 import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 import type {
+  AutomationStudioResultLeftOutNamingTheItem,
   AutomationStudioResultRepairDirective,
   AutomationStudioResultRepairFinding,
   AutomationStudioResultRecordSetSummary,
@@ -68,7 +69,13 @@ export const AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES = Object.freeze({
   /** Nothing in the counts is wrong, so what is wrong is which rows or values were kept. */
   countsLookRight: "result.counts_look_right",
   /** The Flow reads and stores nothing, so what is wrong is an act its steps did not do, or did differently. */
-  actsJudgedUndone: "result.acts_judged_undone"
+  actsJudgedUndone: "result.acts_judged_undone",
+  /**
+   * A yes that did not account, row by row, for rows a condition alone left out
+   * that name the asked item first (`request-rows/`, live run
+   * `run-muw60j7c-bb7c9a62`): set only where `verdict.ts` does not take that yes.
+   */
+  leftOutNamingTheItem: "result.left_out_naming_the_item"
 } as const);
 
 // **Whole.** Every finding, every fix line, every column and every word of the
@@ -100,6 +107,14 @@ export type AutomationStudioResultRepairDirectiveInput = {
   summary: AutomationStudioRunResultSummary;
   /** What the model said, when a model was asked and answered anything. */
   judgement?: AutomationStudioResultJudgementText | undefined;
+  /**
+   * The flagged rows a yes did not name (`request-rows/unaccounted-rows.ts`):
+   * each becomes a finding and a fix line naming its condition, the item, the
+   * request's other phrases and the rows, so the repair has the rows themselves.
+   */
+  leftOutUnaccounted?: readonly AutomationStudioResultLeftOutNamingTheItem[] | undefined;
+  /** Core's check of the rows the judgement names (`request-rows/checked-rows.ts`), carried as `checked`. */
+  checked?: readonly string[] | undefined;
 };
 
 /**
@@ -111,18 +126,50 @@ export type AutomationStudioResultRepairDirectiveInput = {
  * most -- a Flow that returned everything when the request asked for some of it.
  */
 export function automationStudioResultRepairDirective(input: AutomationStudioResultRepairDirectiveInput): AutomationStudioResultRepairDirective {
-  const findings = automationStudioResultRepairFindings(input.summary);
-  const fix = findings
-    .map((finding) => fixLine(finding, input.summary))
-    .filter((line): line is string => line !== undefined);
+  const unaccounted = input.leftOutUnaccounted ?? [];
+  // The rows a yes passed over first: they are the most concrete thing wrong, and what the repair acts on.
+  const findings = [...unaccounted.map(unaccountedFinding), ...automationStudioResultRepairFindings(input.summary)];
+  const fix = [
+    ...unaccounted.map(unaccountedFix),
+    ...findings
+      .map((finding) => fixLine(finding, input.summary))
+      .filter((line): line is string => line !== undefined)
+  ];
   const judged = screenedJudgement(input.judgement);
   return {
     schemaVersion: "automation-studio.result-repair-directive.v1",
     findings,
     fix,
     ...(judged.judgement ? { judgement: judged.judgement } : {}),
+    ...(input.checked?.length ? { checked: [...input.checked] } : {}),
     ...(judged.withheld ? { withheld: true } : {})
   };
+}
+
+/**
+ * The finding for one condition's flagged rows a yes did not name, in Core's
+ * words: where, the condition, the item every kept row names first, the
+ * request's phrases each row names after it, and the rows as the read gave them.
+ */
+function unaccountedFinding(entry: AutomationStudioResultLeftOutNamingTheItem): AutomationStudioResultRepairFinding {
+  return {
+    code: AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.leftOutNamingTheItem,
+    detail: `${leftOutWhere(entry)}: the condition "${entry.condition}" alone left out ${entry.rows.length === 1 ? "a row whose label names" : `${entry.rows.length} rows whose labels name`} "${entry.item}" first, as every kept row does, and ${quotedList(entry.also)} only after it, and the check answered yes without saying why the request excludes ${entry.rows.length === 1 ? "it" : "each"}: ${entry.rows.join("; ")}.`
+  };
+}
+
+/** What to do about one condition's flagged rows: decide each by the request, and change the condition that left out the ones it asks for. */
+function unaccountedFix(entry: AutomationStudioResultLeftOutNamingTheItem): string {
+  return `Decide row by row whether the request excludes each row the condition "${entry.condition}" (${leftOutWhere(entry)}) alone left out that names "${entry.item}" first and ${quotedList(entry.also)} after it -- an item sold with or including something the request leaves out is still the item -- and change that condition so it keeps the rows the request asks for: ${entry.rows.join("; ")}.`;
+}
+
+/** Where a flagged condition is: the test's step, or the run's read node. */
+function leftOutWhere(entry: AutomationStudioResultLeftOutNamingTheItem): string {
+  return entry.step !== undefined ? `Step ${entry.step}` : `Read ${entry.nodeId ?? "(unnamed)"}`;
+}
+
+function quotedList(phrases: readonly string[]): string {
+  return phrases.map((phrase) => `"${phrase}"`).join(", ");
 }
 
 /**

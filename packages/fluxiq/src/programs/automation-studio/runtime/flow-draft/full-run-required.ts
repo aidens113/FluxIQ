@@ -7,16 +7,25 @@
 // named here with its own word:
 //
 //   not_run_in_this_build -- carried from an earlier Flow by a re-author or an
-//                            extend (`../llm/node-tools/draft-from-flow.ts`): it
-//                            has no argument it ran with, nothing to put the
-//                            target back with, and no consequence declaration.
-//                            Running it would also bypass the permission gate,
-//                            which reads an absent declaration as "no
-//                            consequence". Before this refusal such a draft was
-//                            simply not tested, the judge answered `unknown`,
-//                            the build finished unverified, and the Flow was
-//                            approved and applied before anything had run it
-//                            whole (`recovery/refuted-result/reauthor.ts`).
+//                            extend (`../llm/node-tools/draft-from-flow.ts`) and
+//                            not runnable as that Flow saved it: changed since
+//                            it was seeded, declaring no consequences, or with
+//                            no start captured for its node, so it holds no
+//                            scheduled candidate (`./scheduled-candidate/`) and
+//                            has no argument it ran with. Running it would also
+//                            bypass the permission gate, which reads an absent
+//                            declaration as "no consequence". Before this
+//                            refusal such a draft was simply not tested, the
+//                            judge answered `unknown`, the build finished
+//                            unverified, and the Flow was approved and applied
+//                            before anything had run it whole
+//                            (`recovery/refuted-result/reauthor.ts`). An
+//                            unchanged carried step is not one: the test runs it
+//                            as saved, and a carried Merge is passed through
+//                            (`./carried-step/`). Live run
+//                            `run-muw60j7c-bb7c9a62` named both and its
+//                            re-author spent five rounds rerunning a type step
+//                            the domain refused to run live (t274-c4).
 //   cannot_run_again      -- a step whose run left nothing to run it again
 //                            with, or a first step with nothing to put the
 //                            target back where the Flow starts. Until t244 a
@@ -43,6 +52,8 @@
 // The refusal names those steps and says the one way through: rerun each, in
 // the Flow's order, so it becomes a step that ran, with the consequences it
 // would have declared; a step of another tool is run again as its library node.
+// It also says that the Flow's other steps are run as they stand, so a step it
+// does not name is never rerun for the test's sake.
 // Since t252 a step may also be written rather than run (`core.run_node` with
 // `write: true`), and both tellings say so: writing is how a step whose run
 // would do something lasting takes its place without doing it.
@@ -60,8 +71,8 @@ export const AUTOMATION_STUDIO_FLOW_DRAFT_FULL_RUN_REQUIRED_CODE = "llm_evidence
 export type AutomationStudioFlowDraftUnrunnableWord = "not_run_in_this_build" | "cannot_run_again" | "not_a_library_step" | "not_reached";
 
 const FULL_RUN_REQUIRED_INSTRUCTION = "The Flow is finished only once it has run whole from its start and been judged to do what was asked. "
-  + "These steps cannot be run again as they stand, so the Flow cannot be tested whole until they can. "
-  + "not_run_in_this_build: the step came from the Flow being changed and has not run in this build; a rerun of it is first put back where its node started in the run being repaired, where that run recorded it. "
+  + "These steps cannot be run again as they stand, so the Flow cannot be tested whole until they can; the Flow's other steps are run as they stand, and need nothing done to them. "
+  + "not_run_in_this_build: the step came from the Flow being changed and cannot be run as that Flow saved it -- it was changed since, or that Flow kept too little to run it -- so it has to run in this build; a rerun of it is first put back where its node started in the run being repaired, where that run recorded it. "
   + "cannot_run_again: its run left nothing to run it again with, or, for the first step, nothing to put the target back where the Flow starts. "
   + "not_a_library_step: it ran through a tool that is not the node library, and a Flow is made only of library nodes that ran: run or write the node that does it with core.run_node (add true, or write true) in its place, and drop this one. "
   + "not_reached: it was written, not run, or it takes a value from the item ($row), and the test never ran it on an item of the list its repeat goes over, for one of two reasons. "

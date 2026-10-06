@@ -26,9 +26,30 @@
 // `actual`, which is the field a domain's own sentences have always travelled in
 // (`llm/harness/locator-text.ts`). What stays unrecorded is prose in a run's
 // metadata; what a failure record says about its own failure is not that.
+//
+// **A yes has to account for the rows that name the asked item** (live run
+// `run-muw60j7c-bb7c9a62`, debug C-2). Both build-test judges answered yes over
+// three pairs of earbuds the name condition alone had left out, each "with
+// Wireless Charging Case", though the judge's instructions said an item sold
+// with an excluded part is still the item. Core flags such rows on the judge's
+// copy of the summary (`request-rows/`, `leftOutNamingTheItem`), and a yes that
+// does not name each of them -- by a label prefix that tells it apart from the
+// rest of its read, or by an id from it -- is not taken: it becomes
+// `does_not_answer`, carrying Core's finding and fix line with the condition,
+// the item and the rows, so the repair has the rows themselves. It keeps the
+// wrong-answer code, which is what routes a run to its re-author
+// (`recovery/refuted-result/reauthor.ts`), and counts as a no in the pair rules
+// (`agreement.ts`) and in a build's test (`build-test/judge.ts`).
+//
+// **And a no's named rows are checked against the run** (debug C-5). The result
+// judges said the Plus condition "alone excluded" B0J5MCMBAY and B07Z1RZGJG; both
+// are in the stored result, and the re-author followed that reading and threw
+// away the answer it held. So a refutation carries `repair.checked`: Core's lines
+// on each row the judgement names, in Core's words (`request-rows/checked-rows.ts`).
 
 import type { AutomationStudioLlmDiagnosisFields } from "../llm/index.ts";
 import {
+  type AutomationStudioResultLeftOutNamingTheItem,
   type AutomationStudioResultRepairDirective,
   type AutomationStudioResultVerdict,
   type AutomationStudioResultVerdictBasis,
@@ -38,6 +59,7 @@ import {
 import { automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultReadSentence } from "./read-account/index.ts";
 import { automationStudioResultRepairDirective } from "./repair-directive.ts";
+import { automationStudioResultCheckedRows, automationStudioResultLeftOutRowsUnaccounted } from "./request-rows/index.ts";
 
 /**
  * Core's codes for a verdict a model call reached, or failed to. The last two
@@ -106,6 +128,15 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
   }
   const verdict = automationStudioResultVerdictFromDiagnosis(input.diagnosis);
   if (verdict === "answers") {
+    const unaccounted = automationStudioResultLeftOutRowsUnaccounted(input.summary, replyText(input));
+    if (unaccounted.length) {
+      // Core's words only: the yes's own prose argues the opposite of the verdict it now carries.
+      return failed("does_not_answer", "model", codes.doesNotAnswer, "The result was judged to answer the request without saying why the request excludes each row a condition alone left out that names the item asked for, so it is not taken as an answer.", observation, automationStudioResultRepairDirective({
+        summary: input.summary,
+        leftOutUnaccounted: unaccounted,
+        checked: unaccounted.map(unaccountedLine)
+      }));
+    }
     return {
       schemaVersion: "automation-studio.result-verification.v1",
       verdict,
@@ -128,7 +159,9 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
         // Whether what was asked can still be had: the one field a build reads
         // to end "not doable" (t195-w37, live run `run-murwcaj0-40e56557`).
         ...(input.diagnosis?.stillAchievable !== undefined ? { stillAchievable: input.diagnosis.stillAchievable } : {})
-      }
+      },
+      // Each row the judgement names, checked against what the run holds (live run `run-muw60j7c-bb7c9a62`, C-5).
+      checked: automationStudioResultCheckedRows(input.summary, replyText(input))
     }));
   }
   const silent = input.basis === "model_silent" || input.diagnosis?.answersRequest === undefined;
@@ -153,6 +186,18 @@ function callFailureWords(code: string | undefined): string {
   return "the verification call did not come back usable";
 }
 
+/** Everything the reply said in words: its expected, observed and changed, and its summary. Read for the rows it names, never recorded. */
+function replyText(input: AutomationStudioResultVerdictInput): string {
+  const said = [input.diagnosis?.expected, input.diagnosis?.observed, input.diagnosis?.changed, input.summaryText];
+  return said.filter((text): text is string => typeof text === "string" && text.trim().length > 0).join("\n");
+}
+
+/** Core's line for one condition's flagged rows a yes did not name, as `repair.checked` carries it to a build's repair. */
+function unaccountedLine(entry: AutomationStudioResultLeftOutNamingTheItem): string {
+  const where = entry.step !== undefined ? `Step ${entry.step}` : `Read ${entry.nodeId ?? "(unnamed)"}`;
+  return `The check answered yes without accounting for ${entry.rows.length === 1 ? "this row" : "these rows"} the condition "${entry.condition}" (${where}) alone left out, which name "${entry.item}" first and ${entry.also.map((phrase) => `"${phrase}"`).join(", ")} only after it: ${entry.rows.join("; ")}.`;
+}
+
 /** The judgement's advice: what it said changed, or failing that what its reply said at all. */
 function advice(input: AutomationStudioResultVerdictInput): string | undefined {
   const changed = typeof input.diagnosis?.changed === "string" && input.diagnosis.changed.trim() ? input.diagnosis.changed : undefined;
@@ -167,9 +212,17 @@ function advice(input: AutomationStudioResultVerdictInput): string | undefined {
  * than only that something was judged wrong.
  */
 export function automationStudioResultObservation(summary: AutomationStudioRunResultSummary): string {
-  const stored = `${summary.totalRecordCount} record${summary.totalRecordCount === 1 ? "" : "s"} stored`;
+  // A build's test stores nothing itself; what it is judged on is what the Flow
+  // would store (`build-test/stores.ts`), and the check's card reads its count
+  // off this head (`check-words.ts`). Run `run-muw60j7c-bb7c9a62` (C-3): the head
+  // said "0 records stored" and the card "Passed: no rows came back" over a Flow
+  // that would store 30 rows, 3 of them twice.
+  const tested = summary.buildTest?.stores;
+  const stored = tested ? wouldStore(tested) : `${summary.totalRecordCount} record${summary.totalRecordCount === 1 ? "" : "s"} stored`;
   const refused = summary.totalRefusedCount > 0 ? `, ${summary.totalRefusedCount} refused by record validation` : "";
-  const sets = `, across ${summary.recordSetCount} record set${summary.recordSetCount === 1 ? "" : "s"}`;
+  const sets = tested
+    ? `, in ${tested.length} dataset${tested.length === 1 ? "" : "s"}`
+    : `, across ${summary.recordSetCount} record set${summary.recordSetCount === 1 ? "" : "s"}`;
   // Every step, named: the observation reaches the repair, which is shown the
   // whole Flow.
   const listed = summary.flowShape.map((step) => step.definitionId);
@@ -180,6 +233,12 @@ export function automationStudioResultObservation(summary: AutomationStudioRunRe
   // repair acts on, where a definition id only says the step exists.
   const reads = (summary.reads ?? []).map((read) => `; ${automationStudioResultReadSentence(read, "brief")}`).join("");
   return `${stored}${refused}${sets}${reads}${shape}${cut}.`;
+}
+
+/** "30 records would be stored": every row of every dataset a build's Flow would write, which the card says as rows that would be stored. */
+function wouldStore(stores: NonNullable<NonNullable<AutomationStudioRunResultSummary["buildTest"]>["stores"]>): string {
+  const rows = stores.reduce((total, store) => total + store.rows, 0);
+  return `${rows} record${rows === 1 ? "" : "s"} would be stored`;
 }
 
 /**

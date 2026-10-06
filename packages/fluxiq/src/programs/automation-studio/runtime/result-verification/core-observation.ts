@@ -120,13 +120,23 @@ export function automationStudioResultFailureRecord(input: {
   };
 }
 
-/** What was wanted, and what would produce it. */
+/**
+ * What was wanted, and what would produce it.
+ *
+ * Core's check of the rows the check names (`checked`, `request-rows/`) goes
+ * between Core's fix and the check's advice: it says which of the advice rests
+ * on rows the result contradicts, and the ladder's repair reads this text
+ * (`../recovery/context.ts`). Live run `run-muw60j7c-bb7c9a62`: the check said
+ * the Plus condition left out B0J5MCMBAY, which is in the result. Placed before
+ * the advice, it is the advice the record's bound cuts first (t274-c25b).
+ */
 function expectedText(repair: AutomationStudioResultRepairDirective | undefined): string {
   if (!repair) return EXPECTED_BASELINE;
   const asked = repair.judgement?.expected;
   const wanted = asked ? `A result that answers the request: ${asked}` : EXPECTED_BASELINE;
+  const checked = repair.checked?.length ? [`Core checked the rows the check names: ${repair.checked.join(" ")}`] : [];
   const advice = repair.judgement?.advice ? [`The check's own advice: ${repair.judgement.advice}`] : [];
-  const lines = [...repair.fix, ...advice];
+  const lines = [...repair.fix, ...checked, ...advice];
   return lines.length ? `${wanted} To fix: ${lines.join(" ")}` : wanted;
 }
 

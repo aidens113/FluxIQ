@@ -27,12 +27,14 @@
 //   - The report a passing test hands the judge carries that signature, so a
 //     verdict says which Flow version it was about.
 //   - A Flow holding a step the test cannot run -- carried from an earlier Flow
-//     and never run in this build, or left with nothing to run it again with --
-//     is refused `llm_evidence_loop.full_run_required`
+//     and neither runnable as saved nor rerun, or left with nothing to run it
+//     again with -- is refused `llm_evidence_loop.full_run_required`
 //     (`../../flow-draft/full-run-required.ts`). Before, such a draft was "not
 //     a draft this gate applies to": it was never tested, the judge answered
 //     `unknown` or a yes about no test, and a re-authored Flow was approved and
-//     applied before anything ran it whole.
+//     applied before anything ran it whole. An unchanged carried step is run as
+//     its scheduled candidate, and a carried Merge is passed through, so neither
+//     is refused (t274-c4, `../../flow-draft/carried-step/`).
 //   - A written step the test never came to -- inside a repeat whose list had
 //     no rows in the test, so it ran zero times, or a repeat the test could not
 //     walk row by row, where it did not pass on the explored row (t252,
@@ -74,7 +76,7 @@ import {
   type AutomationStudioFlowDraftStep,
   type AutomationStudioFlowDraftUnrunnableWord
 } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftStepCarried } from "./draft-from-flow.ts";
+import { automationStudioFlowDraftStepCarried, automationStudioFlowDraftStepCarriedJoin, automationStudioFlowDraftStepNotRunInThisBuild } from "../../flow-draft/carried-step/index.ts";
 import { automationStudioFlowBootstrapDraftStepIsWritable } from "./draft-step.ts";
 import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "./replay-draft.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE, type AutomationStudioFlowDraftReplayObservation } from "./replay-span.ts";
@@ -296,22 +298,30 @@ export function automationStudioFlowDraftDryRunGate(
     // "not a draft this gate applies to" and passed untested. Nothing is
     // replayed, so the target has not moved and nothing was observed.
     const proposed = input.steps.filter(automationStudioFlowDraftStepIsProposed);
-    const cannotRun = proposed.filter((step) => step.scheduledCandidate !== undefined
+    // A carried routing join acts on nothing and is never sent, so it is
+    // neither refused nor needed for the test (t274-c4, `../../flow-draft/carried-step/`):
+    // live run `run-muw60j7c-bb7c9a62`'s re-author had its seeded Merge refused
+    // here and listed for a rerun no domain can make.
+    const tested = proposed.filter((step) => !automationStudioFlowDraftStepCarriedJoin(step));
+    // An unchanged carried step is run as its scheduled candidate, where its
+    // node names the output it runs; anything else needs what it ran with and
+    // where it starts.
+    const cannotRun = tested.filter((step) => step.scheduledCandidate !== undefined
       ? !automationStudioFlowDraftScheduledCandidateCall(step) || !input.nodeOf?.(step.actionId)?.outputAction?.fixed
       : step.ranWith === undefined || step.replay === undefined);
-    const noStart = !cannotRun.length && proposed.length > 0 && automationStudioFlowDraftReplayFrom(input.steps) === undefined;
+    const noStart = !cannotRun.length && tested.length > 0 && automationStudioFlowDraftReplayFrom(tested) === undefined;
     // Only a Flow-authoring caller is refused for steps it cannot run again, or
     // for a Flow with no step that ran in this build (one the model wrote out
     // whole in its reply), which is refused naming no step. Carried steps are
     // refused whoever asks: only a build carries them.
     const offLibrary = input.requireRunnable && input.requireLibrarySteps ? proposed.filter((step) => !automationStudioFlowBootstrapDraftStepIsWritable(step)) : [];
     const notRun = input.requireRunnable
-      ? [...new Set([...(noStart ? proposed.slice(0, 1) : cannotRun), ...offLibrary])].sort((a, b) => a.position - b.position)
+      ? [...new Set([...(noStart ? tested.slice(0, 1) : cannotRun), ...offLibrary])].sort((a, b) => a.position - b.position)
       : cannotRun.filter(automationStudioFlowDraftStepCarried);
     if (notRun.length || (input.requireRunnable && !proposed.length)) {
       return refuseUnrunnable(notRun.map((step) => ({ position: step.position, actionId: step.actionId, word: unrunnableWord(step, offLibrary) })));
     }
-    if (!automationStudioFlowDraftReplayable(input.steps)) return undefined;
+    if (!automationStudioFlowDraftReplayable(tested)) return undefined;
     const signature = automationStudioFlowDraftFlowSignature(input.steps);
     if (signature === cleanSignature) {
       input.reusedClean?.();
@@ -473,9 +483,16 @@ function sameFailures(before: AutomationStudioFlowDraftDryRun | undefined, after
   return before !== undefined && failures(before) === failures(after);
 }
 
-/** Why the test cannot run `step`: carried and never run, off the library, or nothing to run it again with. */
+/**
+ * Why the test cannot run `step`: carried and not runnable as saved, off the
+ * library, or nothing to run it again with. The first is the very test the
+ * round's judgement lists steps by (`../../flow-bootstrap/unfinished-build/not-run.ts`),
+ * so a step is told to be rerun in both places or in neither (t274-c4). A
+ * carried step whose candidate stands but whose node names no output to run is
+ * `cannot_run_again`: a rerun would not change what its node is.
+ */
 function unrunnableWord(step: AutomationStudioFlowDraftStep, offLibrary: readonly AutomationStudioFlowDraftStep[]): AutomationStudioFlowDraftUnrunnableWord {
-  if (automationStudioFlowDraftStepCarried(step) && (step.ranWith === undefined || step.replay === undefined)) return "not_run_in_this_build";
+  if (automationStudioFlowDraftStepNotRunInThisBuild(step)) return "not_run_in_this_build";
   return offLibrary.includes(step) ? "not_a_library_step" : "cannot_run_again";
 }
 
