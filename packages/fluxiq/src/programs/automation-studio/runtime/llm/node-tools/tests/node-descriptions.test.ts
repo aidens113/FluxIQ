@@ -3,6 +3,9 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
+import { automationStudioActionPermissionDenied } from "../../../action-permissions/index.ts";
+import type { AutomationStudioHarnessOptionImplementation } from "../../harness-options/index.ts";
+import { automationStudioLlmRunNodeDescribingFailures } from "../describing-failures.ts";
 import { automationStudioLlmNodeDescriptions } from "../node-descriptions.ts";
 
 const resolution = { scope: { kind: "global" as const } };
@@ -47,5 +50,56 @@ describe("the described-node memory", () => {
     const first = automationStudioLlmNodeDescriptions({ resolution });
     first.describe(["builtin.logic.and"]);
     expect(automationStudioLlmNodeDescriptions({ resolution }).ids()).toEqual([]);
+  });
+});
+
+// t280: a node's definition reaches the model without the model asking. Across
+// 23 live runs `core.describe_nodes` was called in 2; lane D ran the list read
+// 10-16 times per build without its definition (`run-mux6nxst-c9bca37c`,
+// `run-muwao5n4-44977b2a`), because only a call that failed described its node.
+// Every run the model makes now describes its node, at no cost of a decision.
+describe("a node the model runs is described by running it", () => {
+  const AND = "builtin.logic.and";
+  function wrapped(answer: Awaited<ReturnType<AutomationStudioHarnessOptionImplementation>>) {
+    const memory = automationStudioLlmNodeDescriptions({ resolution });
+    const implementation = vi.fn<AutomationStudioHarnessOptionImplementation>(async () => answer);
+    const call = automationStudioLlmRunNodeDescribingFailures(implementation, memory);
+    const run = (value: Record<string, unknown>) => call({
+      projectId: "p.1", flowId: "f.1", callId: "c.1", optionId: "core.run_node", value: value as never, permission: automationStudioActionPermissionDenied
+    });
+    return { memory, implementation, run };
+  }
+
+  it("leaves the definition of a first, successful run in describedNodes and the answer untouched", async () => {
+    const answer = { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, rows: 2 }, effectApplied: false };
+    const { memory, implementation, run } = wrapped(answer);
+    expect(await run({ node: AND, parameters: { emptyBehavior: "true" }, consequences: [] })).toBe(answer);
+    expect(implementation).toHaveBeenCalledTimes(1);
+    expect(memory.ids()).toEqual([AND]);
+    // A second run adds nothing: each node once, in the order first run.
+    await run({ node: "builtin.logic.or", parameters: {}, consequences: [] });
+    await run({ node: AND, parameters: {}, consequences: [] });
+    expect(memory.ids()).toEqual([AND, "builtin.logic.or"]);
+  });
+
+  it("describes a written step's node too, since writing it is using it", async () => {
+    const { memory, run } = wrapped({ ok: true, code: "core.run_node.written" });
+    await run({ node: AND, parameters: {}, consequences: [], write: true });
+    expect(memory.ids()).toEqual([AND]);
+  });
+
+  it("points a refused first run at the definition it now has", async () => {
+    const { memory, run } = wrapped({ ok: false, code: "node_failed" });
+    expect(await run({ node: AND, parameters: { selector: "#go" }, consequences: [] })).toEqual({
+      ok: false, code: "node_failed", described: `${AND} is now in flowBootstrap.describedNodes`, undeclaredParameters: ["selector"]
+    });
+    expect(memory.ids()).toEqual([AND]);
+  });
+
+  it("leaves the loop's own replays and unknown nodes out", async () => {
+    const { memory, run } = wrapped({ ok: true });
+    await run({ node: AND, parameters: {}, consequences: [], replay: "verify" });
+    await run({ node: "web.output.nowhere", parameters: {}, consequences: [] });
+    expect(memory.ids()).toEqual([]);
   });
 });

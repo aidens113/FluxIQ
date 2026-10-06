@@ -35,6 +35,14 @@
 // (`condition.ts`), the two-cell shape the build-test's rows arrive in. A row
 // stored before then holds its label alone and is said as before.
 //
+// **Whether a condition tested the label is said here, from structure**
+// (`testedLabel`): its left-out rows exist and each is labelled by the very
+// column the authored condition tests. A row said by its label alone cannot
+// say it: live run `run-mux6naez-6c20f26e` stored name, price, rating and url,
+// so its `plus is present` and `sponsored is absent` rows, their columns not
+// stored, came by label alone, and `../request-rows/` took them as tests of
+// the name.
+//
 // **Every read, every condition and every dedupe key** (user, 2026-09-30:
 // "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT
 // HIDE INFORMATION"). Until then a judge saw four reads, eight conditions each
@@ -150,14 +158,16 @@ function conditionAccounts(
     const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index]) : undefined;
     const rows = count(rejected[index]);
     const byItself = count(alone[index]);
+    const tested = automationStudioResultReadConditionColumn(written[index], columns);
     const leftOutOnlyByThis = deniedKeys
-      ? automationStudioResultReadAloneRows(withTestedValue(aloneRows[index], automationStudioResultReadConditionColumn(written[index], columns)), deniedKeys)
+      ? automationStudioResultReadAloneRows(withTestedValue(aloneRows[index], tested), deniedKeys)
       : undefined;
     accounts.push({
       ...(condition ? { condition } : {}),
       ...(rows !== undefined ? { rejected: rows } : {}),
       ...(byItself !== undefined && (rows === undefined || byItself <= rows) ? { alone: byItself } : {}),
-      ...(leftOutOnlyByThis ? { leftOutOnlyByThis } : {})
+      ...(leftOutOnlyByThis ? { leftOutOnlyByThis } : {}),
+      ...(leftOutOnlyByThis?.length && labelledBy(aloneRows[index], tested) ? { testedLabel: true as const } : {})
     });
   }
   return accounts;
@@ -180,6 +190,16 @@ function withTestedValue(rows: JsonValue | undefined, tested: string | undefined
     const value = row[tested];
     return typeof value === "string" ? { ...cut, [tested]: value } : cut;
   });
+}
+
+/**
+ * Whether every left-out row is labelled by the column the condition tests: its
+ * first cell's key is that column. False for no rows, a row that is not an
+ * object, or a condition whose column is not known.
+ */
+function labelledBy(rows: JsonValue | undefined, tested: string | undefined): boolean {
+  if (tested === undefined || !Array.isArray(rows) || rows.length === 0) return false;
+  return rows.every((row) => isRecord(row) && Object.keys(row)[0] === tested);
 }
 
 /** The read's own parameters: the step's, or the one object inside them that holds what a read is authored with. */

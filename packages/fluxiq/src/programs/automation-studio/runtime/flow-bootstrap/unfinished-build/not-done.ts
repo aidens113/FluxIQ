@@ -28,6 +28,7 @@ const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo | Automation
   step_changed_nothing: "the step I tried for it changed nothing",
   step_only_reads: "the step I named for it only read the page, and did not do it",
   step_only_arrives: "the step I tried for it only opened a page",
+  step_only_opens_its_choices: "the step I tried for it only opened the page where its options are chosen, and did not do it",
   step_is_optional: "the step for it may be skipped, so it might never happen",
   act_needs_repeat: "it has to be done for every item, and I found no way to repeat it over them",
   span_stops_short: "part of it ran once after the loop instead of on every item",

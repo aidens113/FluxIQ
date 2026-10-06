@@ -151,7 +151,7 @@ describe("a round without measured progress, after a judge who named the fix", (
 
     expect(requests).toHaveLength(2);
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    expect(outcome.ending.message).toContain("which left $0.008, too little for another round: judging its Flow takes two judge calls");
+    expect(outcome.ending.message).toContain("Building this Flow has used $0.09 of its spending limit of $0.10, and what was left was too little to go on.");
   });
 });
 

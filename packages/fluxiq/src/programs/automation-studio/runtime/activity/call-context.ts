@@ -20,6 +20,12 @@
 //   Done" said nothing of a read the chat claimed covered every page (U-1,
 //   `run-muw60j7c-bb7c9a62`). Pages are counted nowhere a Core reader can rely
 //   on, so only rows are.
+// - **What the page calls a list a detection found.** A detection's answer
+//   names the list when the page does -- a heading or an accessible name, as
+//   `list` on its evidence (the web domain's `structure/list-name.ts`) -- so its
+//   card says "Look · the “Search results” list" rather than "the repeating
+//   list on the page" (R2-U-9, `run-muwansvz-a2b4a987`). Read by shape, kept
+//   only as a short plain label.
 //
 // Reads only: a call and its result pass through the observer unchanged.
 
@@ -40,6 +46,10 @@ const PASS = /\.pass\.\d+$/u;
 const READ_ROWS = "readRows";
 /** The most of a row's name a title carries. */
 const MAX_ROW_NAME = 40;
+/** The member a detection's answer names its list in, as the domain writes it (the web domain's `structure/packet.ts`). */
+const LIST = "list";
+/** The most of a list's name a title carries. */
+const MAX_LIST_NAME = 60;
 
 const record = (value: unknown): Record<string, unknown> | undefined => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined);
 const address = (value: unknown): string | undefined => (typeof value === "string" && /^https?:\/\//iu.test(value.trim()) ? value.trim() : undefined);
@@ -72,6 +82,11 @@ function rowsOf(result: unknown): number | undefined {
   return named.rows.length + more;
 }
 
+/** The page's own name for the list a call's answer found (`evidence.list`), as a short plain label. */
+function listOf(result: unknown): string | undefined {
+  return automationStudioActivityHumanLabel(record(record(result)?.evidence)?.[LIST], MAX_LIST_NAME);
+}
+
 /** The column a read named its rows by: the one cell of its first row. */
 function labelColumn(result: unknown): string | undefined {
   const rows = record(record(record(result)?.evidence)?.[READ_ROWS])?.rows;
@@ -88,7 +103,7 @@ function labelColumn(result: unknown): string | undefined {
 export function automationStudioActivityCallContext(): {
   decided(evidence: Evidence): void;
   sent(call: Call): { start?: string; row?: string };
-  answered(call: Call, result: unknown): { rows?: number };
+  answered(call: Call, result: unknown): { rows?: number; list?: string };
   /** The address the work starts at, where it is known yet. */
   start(): string | undefined;
 } {
@@ -108,7 +123,8 @@ export function automationStudioActivityCallContext(): {
       // A read inside a pass names the pass's rows, never the list the repeat walks.
       if (!PASS.test(call.callId)) column = labelColumn(result) ?? column;
       const rows = rowsOf(result);
-      return rows === undefined ? {} : { rows };
+      const list = listOf(result);
+      return { ...(rows !== undefined ? { rows } : {}), ...(list !== undefined ? { list } : {}) };
     },
     start: () => start
   };

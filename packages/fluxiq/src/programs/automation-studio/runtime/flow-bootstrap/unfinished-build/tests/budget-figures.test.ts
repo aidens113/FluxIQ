@@ -89,7 +89,7 @@ describe("the closing message of a build its purse stopped", () => {
     const outcome = await unfinished(input);
 
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.154, and its next call could have cost up to \$0\.146\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
+    expect(outcome.ending.message).toMatch(/^The build used its budget for this Flow before the Flow was finished\. It used \$0\.15 of its spending limit of \$0\.25, and what was left was too little to go on\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
     expect(outcome.ending.message.length).toBeLessThanOrEqual(1_000);
   });
 
@@ -104,16 +104,17 @@ describe("the closing message of a build its purse stopped", () => {
     const outcome = await unfinished(input);
 
     expect(requests[1]!.budget.maxCostUsd).toBeCloseTo(0.17, 5);
-    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.130, and its next call could have cost up to \$0\.130\./u);
+    expect(outcome.ending.message).toMatch(/^The build used its budget for this Flow before the Flow was finished\. It used \$0\.13 of its spending limit of \$0\.25, and what was left was too little to go on\./u);
   });
 
   it("says nothing was left where the provider does not price, and names money held for calls in flight", () => {
     const told = { bound: "cost" as const, sizes: { maxCostUsd: 0.25 }, judgement: { round: 0, stopped: "budget" as const, tested: "not_tested" as const, testIssueCodes: [], failedSteps: [], stepsInFlow: 0, done: 0, todo: [], lastIssueCodes: [] }, checklist: undefined, rounds: 1, decisions: 9, kept: false };
 
     expect(automationStudioFlowBootstrapBudgetExhausted({ ...told, spending: { spentUsd: 0.25, pendingUsd: 0 } }).message)
-      .toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.250, which left nothing for its next call\. /u);
+      .toMatch(/^The build used its budget for this Flow before the Flow was finished\. It used all of its spending limit of \$0\.25\. /u);
+    // Money held for calls still running counts as used; the refused call's worst case is the purse's record, not the person's (R2-U-2).
     expect(automationStudioFlowBootstrapBudgetExhausted({ ...told, spending: { spentUsd: 0.1, pendingUsd: 0.02, projectedCostUsd: 0.2 } }).message)
-      .toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.100, with \$0\.020 more held for calls still running, and its next call could have cost up to \$0\.200\. /u);
+      .toMatch(/^The build used its budget for this Flow before the Flow was finished\. It used \$0\.12 of its spending limit of \$0\.25, and what was left was too little to go on\. /u);
     // Figures belong to a spending limit: another bound says none even if handed some.
     expect(automationStudioFlowBootstrapBudgetExhausted({ ...told, bound: "duration", sizes: { ...told.sizes, maxDurationMs: 540_000 }, spending: { spentUsd: 0.1, pendingUsd: 0 } }).message)
       .toMatch(/^The build stopped at its time limit of 9 minutes before the Flow was finished\. /u);
@@ -125,7 +126,7 @@ describe("the closing message of a build its purse stopped", () => {
 
     const outcome = await unfinished(input);
 
-    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.240, which left \$0\.010, too little for its next call\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
+    expect(outcome.ending.message).toMatch(/^The build used its budget for this Flow before the Flow was finished\. It used \$0\.24 of its spending limit of \$0\.25, and what was left was too little to go on\. 1 of the 3 things you asked has a step in the Flow, not yet shown to work by running it/u);
   });
 
   it("says the whole build's spend where a repair had nothing left to start with", async () => {
@@ -135,7 +136,7 @@ describe("the closing message of a build its purse stopped", () => {
     const outcome = await unfinished(input);
 
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "cost" });
-    expect(outcome.ending.message).toMatch(/^The build stopped at its spending limit of \$0\.25 before the Flow was finished: it had spent \$0\.250, which left nothing for its next call\. /u);
+    expect(outcome.ending.message).toMatch(/^The build used its budget for this Flow before the Flow was finished\. It used all of its spending limit of \$0\.25\. /u);
   });
 });
 

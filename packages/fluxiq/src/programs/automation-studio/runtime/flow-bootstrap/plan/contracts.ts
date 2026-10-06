@@ -146,7 +146,7 @@ export type AutomationStudioFlowBootstrapContext = {
    */
   catalogNames?: AutomationStudioFlowBootstrapCatalogNames;
   /**
-   * The full entries of the nodes this build has asked `core.describe_nodes`
+   * The full entries of the nodes this build has run or asked `core.describe_nodes`
    * about, in the order first described; ids the catalog does not hold are
    * skipped. Evidence decisions only, and absent until a node is described.
    * Append-only for the length of a build, so it never cuts the cached prefix

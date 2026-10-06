@@ -213,8 +213,15 @@ export type AutomationStudioResultReadAccount = {
    * value after its label, `label — column: value` (t195-w34, live run
    * `run-murwcaj0-40e56557`: "Jonas Weber — mutualFriends: Aisha Khan and 4
    * other mutual friends", which a regex for five or more had dropped).
+   * `testedLabel` is true where the condition tested the column each of those
+   * rows is labelled by, decided from the authored condition and the rows' own
+   * keys (`read-account/accounts.ts`), never from a row said by its label alone:
+   * live run `run-mux6naez-6c20f26e` stored name, price, rating and url, so its
+   * `plus is present` rows came by label alone, were taken as a test of the
+   * label, and two non-Plus pairs naming a charging case were flagged as the
+   * item asked for (`request-rows/left-out-naming-the-item.ts`).
    */
-  conditions?: Array<{ condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[] }>;
+  conditions?: Array<{ condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[]; testedLabel?: true }>;
   /** True when every row failed the conditions and the read answered with the unfiltered rows instead. */
   unfiltered?: boolean;
   /** How many attempts of this step reported a read. Absent when one did; the account is the last one's. */

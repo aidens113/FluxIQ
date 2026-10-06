@@ -84,6 +84,8 @@ export type AutomationStudioInstructedActTodo =
   /** Every step that says it does this act only reads the page. */
   | "step_only_reads"
   | "step_only_arrives"
+  /** The step said to do it only opened the page where its choices are made (`./standing.ts`). */
+  | "step_only_opens_its_choices"
   | "step_is_optional"
   | "act_needs_repeat"
   | "span_stops_short"

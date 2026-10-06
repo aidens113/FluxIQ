@@ -246,13 +246,13 @@ describe("Automation Studio harness option binding with a described-node memory"
     expect(await run({ node: AND, parameters: { bogus: 1 }, consequences: [] })).toEqual({ ok: false, code: "node_failed", described: `${AND} is now in flowBootstrap.describedNodes`, undeclaredParameters: ["bogus"] });
   });
 
-  it("leaves a call that worked untouched, and never refuses an undescribed node before it runs", async () => {
+  it("leaves a call that worked untouched, never refuses an undescribed node before it runs, and describes it (t280)", async () => {
     const answer = { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, rows: 2 }, effectApplied: false };
     const executeTool = vi.fn(async () => answer);
     const { memory, run } = wired(executeTool);
     expect(await run({ node: AND, parameters: { bogus: 1 }, consequences: [] })).toBe(answer);
     expect(executeTool).toHaveBeenCalledTimes(1);
-    expect(memory.ids()).toEqual([]);
+    expect(memory.ids()).toEqual([AND]);
   });
 
   it("passes the loop's own replays through untouched", async () => {
