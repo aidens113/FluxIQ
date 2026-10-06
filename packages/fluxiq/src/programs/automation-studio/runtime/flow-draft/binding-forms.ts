@@ -87,11 +87,14 @@ export type AutomationStudioFlowDraftBindingRefusal = {
  * now, and the position of the step the form is written into -- absent, a step
  * about to be appended after all of them. `nodeOf` says which outputs a node
  * declares; absent, or for a node it does not know, the assembler checks the
- * output against the registry instead.
+ * output against the registry instead. `stepAt` finds the step at n where the
+ * numbers are not the steps' own positions: an amendment's, read against the
+ * draft as shown before the decision moved anything (`./amendment/shown-numbering.ts`).
  */
 export type AutomationStudioFlowDraftBindingContext = {
   steps: readonly AutomationStudioFlowDraftStep[];
   at?: number | undefined;
+  stepAt?: ((position: number) => AutomationStudioFlowDraftStep | undefined) | undefined;
   nodeOf?: ((nodeId: string) => { readonly outputs: readonly { readonly id: string }[] } | undefined) | undefined;
 };
 
@@ -229,7 +232,7 @@ function translateStepForm(form: JsonObject, context: AutomationStudioFlowDraftB
   if (typeof output !== "string" || !OUTPUT_ID.test(output)) return { reason: "malformed" };
   if (field !== undefined && (typeof field !== "string" || !field.split(".").every(isField))) return { reason: "malformed" };
   if (context.at !== undefined && position >= context.at) return { reason: "step_not_earlier" };
-  const source = context.steps.find((step) => step.position === position);
+  const source = context.stepAt ? context.stepAt(position) : context.steps.find((step) => step.position === position);
   if (!source) return { reason: "step_missing" };
   const id = automationStudioFlowDraftStepId(source);
   const withdrawn = source.disposition === "dropped" || source.disposition === "exploratory";

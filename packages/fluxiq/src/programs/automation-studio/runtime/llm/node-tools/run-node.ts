@@ -102,7 +102,8 @@ const WRITE_DESCRIPTION = "true: write this step into the Flow without running i
  * concrete values only, and the decision parse refuses one that does not.
  */
 const PARAMETERS_DESCRIPTION = "That node's own parameters, exactly as its definition in flowBootstrap.describedNodes declares them. "
-  + "Where a value changes between runs or rows, a written step (write true) holds a binding in its place: {\"$input\": \"<name>\", \"test\": <the value to test with>} for a value the person gave, which becomes an input of the Flow, or {\"$row\": \"<field>\"} for a field of the row a repeat is on. "
+  + "Where a value changes between runs or rows, a written step (write true) holds a binding in its place: {\"$input\": \"<name>\", \"test\": <the value to test with>} for a value the person gave, which becomes an input of the Flow, or {\"$row\": \"<field>\"} for a field of the row a repeat is on, "
+  + "or {\"$step\": <n>, \"output\": \"<output id>\"} for an output of the earlier step n (add \"path\": \"<field>\" for one field of a record output). "
   + "A call that runs now takes concrete values only.";
 
 /**

@@ -222,3 +222,14 @@ describe("the judge's instruction on an excused step", () => {
     expect(instruction).toMatch(/never asks? to fix, rerun or remove it/u);
   });
 });
+
+// t273 S2 (D phase 2): Core holds the build to the route the person named only
+// as far as each step's own claim of a place; whether the Flow really goes that
+// way is the build-test judge's to see, from the steps and the person's words.
+describe("the build-test judge is told a named route is part of what was asked", () => {
+  it("says a Flow that starts deeper than the route's first place, or skips a place, does not do what was asked", () => {
+    const sentence = "When the person's instructions name a route to follow -- pages, menus or links to go through in order -- a Flow that starts deeper than the route's first place, or skips a place on it, does not do what was asked.";
+    expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true }).endsWith(sentence)).toBe(true);
+    expect(automationStudioDiagnosisPromptInstruction("loop_verification")).not.toContain("name a route to follow");
+  });
+});

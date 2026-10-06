@@ -163,4 +163,15 @@ describe("a rerun taking the replaced step's place", () => {
     automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
     expect(steps.map((entry) => [entry.id, entry.disposition])).toEqual([["d2", "taken"], ["d1", "dropped"]]);
   });
+
+  // D phase 2: the places on the named route a step said it is on
+  // (`../../../flow-draft/step.ts`, `places`). Unlike an act, a read can be on
+  // a place -- the listing on the Friends page is on it -- so a rerun of a read
+  // keeps them too, and the withdrawn attempt keeps none, so it is never
+  // counted on the route.
+  it.each(["mutate", "observe"] as const)("carries the places onto a rerun that %s, and leaves none on the attempt", (effect) => {
+    const steps = [step("d1", 1, { effect, places: ["r1", "r2"] }), step("d2", 2, { effect, disposition: "taken" })];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    expect(steps.map((entry) => [entry.id, entry.disposition, entry.places])).toEqual([["d2", "kept", ["r1", "r2"]], ["d1", "dropped", undefined]]);
+  });
 });

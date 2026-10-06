@@ -26,7 +26,9 @@
 // **Bindings (t252).** A binding resolves only in the Flow, so a rerun never
 // sends one live. A written step is put back written: its call carries `write`,
 // and a binding form in the patch is translated as a written call's is, once,
-// here. A recorded step whose merged argument still holds a binding is refused
+// here, a `$step` against the steps before it (P5, t270; `bind_malformed` when
+// it names this step, a later one or one that is not in the Flow). A recorded
+// step whose merged argument still holds a binding is refused
 // as `rerun_holds_binding`, unrun: rerun it with a value for every bound
 // parameter, or write it.
 //
@@ -119,7 +121,7 @@ export function automationStudioLlmEvidenceRerunRequest(
     const collected = automationStudioRerunRetainedPaths(step.input, amendment.input, merged);
     const paths = automationStudioRerunScreenedPaths(collected.paths, deniedEvidenceKeys);
     const retained = paths.length ? { step: step.position, paths, parameters: collected.parameters } : undefined;
-    const input = step.written ? writtenInput(merged) : merged;
+    const input = step.written ? writtenInput(merged, steps, step) : merged;
     if (input === undefined) {
       refused.push({ step: amendment.step, reason: "bind_malformed" });
       continue;
@@ -143,12 +145,13 @@ export function automationStudioLlmEvidenceRerunRequest(
  * A written step's rerun argument: written again, with any binding form its
  * parameters were given translated to the state binding a written call sends
  * (`../evidence-loop-decision.ts`); nothing when a form cannot be read, which
- * is never sent on as a literal.
+ * is never sent on as a literal. A `$step` reads a step before the one rerun,
+ * where it stands in the draft (P5, t270).
  */
-function writtenInput(input: JsonObject): JsonObject | undefined {
+function writtenInput(input: JsonObject, steps: readonly AutomationStudioFlowDraftStep[], step: AutomationStudioFlowDraftStep): JsonObject | undefined {
   const parameters = input[PARAMETERS_KEY];
   if (parameters === null || typeof parameters !== "object" || Array.isArray(parameters)) return { ...input, [WRITE_KEY]: true };
-  const translated = automationStudioFlowDraftTranslateBindings(parameters);
+  const translated = automationStudioFlowDraftTranslateBindings(parameters, { steps, at: step.position });
   if (translated.refused.length) return undefined;
   return { ...input, [PARAMETERS_KEY]: translated.parameters, [WRITE_KEY]: true };
 }

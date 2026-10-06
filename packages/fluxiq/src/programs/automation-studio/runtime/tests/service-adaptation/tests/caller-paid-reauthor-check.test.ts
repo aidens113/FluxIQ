@@ -183,9 +183,10 @@ it("judges a re-authored Flow's re-run with the caller's key, after the standing
   expect(detail?.metadata?.resultReauthor).toMatchObject({ routed: true, applied: true });
   expect(run.status).toBe("succeeded");
   expect(run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
-  // What the record says of the check is the decision taken when the run
-  // started: the re-run's verification is handed the run's original check
-  // (`result-verification/run-outcome.ts` re-enters with `...input`), so only
-  // whose key paid changes, not the code recorded.
-  expect(detail?.summary.metadata?.resultCheck).toMatchObject({ checked: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.initialWindow });
+  // What the record says of the check is the one that judged the re-run: the
+  // re-run port answers the check it re-decided as a repair, and the re-run is
+  // verified with it (t273), so the code recorded matches whose key paid.
+  // Until then the record kept the routine decision taken when the run started.
+  expect(detail?.summary.metadata?.resultCheck).toMatchObject({ checked: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRepair });
+  expect(run.metadata?.resultCheck).toMatchObject({ checked: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRepair });
 });

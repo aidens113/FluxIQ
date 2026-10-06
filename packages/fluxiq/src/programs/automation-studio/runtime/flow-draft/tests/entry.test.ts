@@ -9,7 +9,7 @@ function step(position: number, actionId: string, input: Record<string, string>,
 type Entry = {
   code: string;
   format?: string;
-  steps: { step: number; actionId: string; input?: unknown; control?: string; inputTooLarge?: boolean; inResult: boolean; disposition: string; changed: string; act?: string; replayed?: string; runs?: string; settings?: unknown }[];
+  steps: { step: number; actionId: string; input?: unknown; bindable?: string[]; control?: string; inputTooLarge?: boolean; inResult: boolean; disposition: string; changed: string; act?: string; replayed?: string; runs?: string; settings?: unknown }[];
   unlisted?: number;
   omitted?: string[];
   instruction: string;
@@ -252,6 +252,19 @@ describe("written steps, bindings and inputs in the draft entry", () => {
     expect(value([nodeStep(1, { query: "x" })])).not.toHaveProperty("inputs");
   });
 
+  // P5 (t270, t273): an earlier step's output is stored under that step's id
+  // and shown at the position the step holds now, or null once it is gone.
+  it("shows an earlier step's output at the position its step holds now, and null once it is gone", () => {
+    const read = { $state: { path: "$step.d1.records.name" } };
+    const source = nodeStep(1, {}, { id: "d1" });
+    const reader = nodeStep(2, { text: read }, { id: "d2" });
+    const shown = (position: number | null) => ({ node: "node.act", parameters: { text: { $step: position, output: "records", path: "name" } } });
+    expect(value([source, reader]).steps[1]?.input).toEqual(shown(1));
+    // After a reorder that put the source third.
+    expect(value([nodeStep(1, {}, { id: "d0" }), { ...reader, position: 2 }, { ...source, position: 3 }]).steps[1]?.input).toEqual(shown(3));
+    expect(value([{ ...reader, position: 1 }]).steps[0]?.input).toEqual(shown(null));
+  });
+
   it("shows passes beside a replayed step when its replay carries them", () => {
     const replayed = { step: 1, actionId: "node.act", status: "replayed" as const };
     const lines = value([nodeStep(1, {}, { replayed: { ...replayed, passes: 3 } as never }), nodeStep(2, {}, { replayed })]).steps as Array<Record<string, unknown>>;
@@ -325,5 +338,94 @@ describe("what both tellings say about numbering", () => {
     for (const instruction of [authored, transcript]) {
       expect(instruction).toContain("Every number in one amend_draft is this draft's; it is renumbered after the decision.");
     }
+  });
+});
+
+// Live run B7 (t262): the draft showed a click's `target`, the click ran with a
+// resolved selector and element, and the model bound `target` five times. The
+// draft now says beside a kept step which of its shown values it ran with
+// alike: those are what `bind` can lift (`../bindable/paths.ts`).
+describe("what a kept step offers bind, run B7", () => {
+  const typed = (over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+    ...step(1, "fixture.type", {}),
+    input: { node: "fixture.type", parameters: { target: { handle: "fixture-handle" }, text: "fixture-text" } },
+    ranWith: { node: "fixture.type", parameters: { selector: "private-locator", element: { identity: "private-identity" }, text: "fixture-text" } },
+    ...over
+  });
+
+  it("lists the typed value the step ran with beside its unchanged input, and never the control or its private identity", () => {
+    const recorded = typed();
+    const before = structuredClone(recorded);
+    const shown = value([recorded]);
+    expect(shown.steps[0]).toMatchObject({ input: before.input, bindable: ["text"] });
+    expect(shown.instruction).toContain("bindable, beside a step, lists the only values of its input it ran with as shown");
+    expect(JSON.stringify(shown)).not.toMatch(/private-locator|private-identity|"selector"|"element"/u);
+    expect(recorded).toEqual(before);
+  });
+
+  it("lists an empty bindable on a press that ran with none of its shown input, and never names what it resolved to", () => {
+    const press = step(1, "press", {}, { input: { parameters: { target: { handle: "fixture-handle" } } }, ranWith: { parameters: { selector: "private-locator" } } });
+    const shown = value([press]);
+    expect(shown.steps[0]).toMatchObject({ input: { parameters: { target: { handle: "fixture-handle" } } }, bindable: [] });
+    expect(shown.instruction).toContain("bindable");
+    expect(JSON.stringify(shown)).not.toContain("private-locator");
+  });
+
+  it("lists nothing, and says nothing of it, for a step that ran with its input as shown or a step not in the Flow", () => {
+    const asShown = step(1, "search", { query: "fixture-query" }, { ranWith: { query: "fixture-query" } });
+    const shown = value([asShown, step(2, "search", { query: "fixture-query" }), typed({ position: 3, disposition: "dropped" })]);
+    for (const line of shown.steps) expect(line).not.toHaveProperty("bindable");
+    expect(shown.instruction).not.toContain("bindable");
+  });
+
+  it("reads a checked candidate's own current argument, never the one its earlier execution ran with", () => {
+    const original = typed({ ranWith: { node: "fixture.type", parameters: { text: "private-original" } } });
+    const candidate = typed({ effectApplied: false, checkedCandidate: { callId: "checked", code: "core.replay.present" }, priorExecution: { ...original, lasting: true } });
+    const shown = value([candidate]);
+    expect(shown.steps[0]).toMatchObject({ bindable: ["text"], checkedCandidate: { performed: false } });
+    expect(JSON.stringify(shown)).not.toContain("private-");
+  });
+});
+
+// D phase 2 (t273 S2): the route the person named, shown once the build's read
+// of it has settled, and the places each step says it is on.
+describe("the route the person named", () => {
+  const steps = (): AutomationStudioFlowDraftStep[] => [
+    step(1, "go", { url: "https://social.test/" }, { places: ["r1"] }),
+    step(2, "press", { target: "friends" }, { acts: ["a1"], places: ["r1", "r2"] }),
+    step(3, "press", { target: "remove" })
+  ];
+  const shown = (route?: Parameters<typeof automationStudioFlowDraftEntry>[0]["route"]): Entry & { route?: unknown } =>
+    automationStudioFlowDraftEntry({ steps: steps(), authored: true, ...(route ? { route } : {}) })!.value as Entry & { route?: unknown };
+
+  it("shows a named route in the person's words, each place by id, and how to say which steps are on each", () => {
+    const value = shown({ state: "named", quote: "go to my profile, then Friends", places: ["my profile", "Friends"] });
+    expect(value.route).toEqual({ named: "go to my profile, then Friends", places: { r1: "my profile", r2: "Friends" } });
+    expect(value.instruction).toMatch(/goes through every place[^.]*in order/u);
+    expect(value.instruction).toMatch(/first step never goes deeper than r1/u);
+    expect(value.instruction).toContain("\"r1,r2\"");
+    expect(value.instruction).toMatch(/none/u);
+    expect(value.instruction).toMatch(/[Cc]ompletion is refused while a place has no step in the Flow[^.]*out of order/u);
+    expect(value.instruction).not.toMatch(/named no route/u);
+  });
+
+  it("shows an open route as open, and that the first step may go straight to where the work begins", () => {
+    const value = shown({ state: "open" });
+    expect(value.route).toBe("open");
+    expect(value.instruction).toMatch(/named no route[^.]*first step may go straight to where the work begins/u);
+    expect(value.instruction).not.toMatch(/goes through every place/u);
+  });
+
+  it("shows each step's places after its act", () => {
+    const value = shown({ state: "named", quote: "q", places: ["a", "b"] });
+    expect(value.steps.map((line) => (line as { place?: string }).place)).toEqual(["r1", "r1,r2", undefined]);
+    const keys = Object.keys(value.steps[1]!);
+    expect(keys.indexOf("place")).toBe(keys.indexOf("act") + 1);
+  });
+
+  it("adds nothing when no route has been read", () => {
+    const value = shown();
+    expect(value).not.toHaveProperty("route");
+    expect(value.instruction).toBe((automationStudioFlowDraftEntry({ steps: [step(1, "press", { target: "t" })], authored: true })!.value as Entry).instruction);
   });
 });

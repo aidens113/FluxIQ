@@ -257,6 +257,14 @@ export type AutomationStudioFlowDraftStep = {
    */
   acts?: string[];
   /**
+   * The places on the route the person named (`r1`, `r2` ... in the route's
+   * order) the model says this step is on: reaching one, or on the way to it
+   * (D phase 2, `./route-places/`). A statement about the plan, never proof the
+   * step went there. Unlike `acts`, many steps may be on one place; the newest
+   * `place` for a step replaces its own and touches no other step's.
+   */
+  places?: string[];
+  /**
    * The id of the step whose place in the Flow this one took when it was rerun
    * (`../llm/evidence-loop/rerun-replacement.ts`), or of the step that one stood
    * for: the start of the chain. A step carried from an earlier Flow (`f<n>`,

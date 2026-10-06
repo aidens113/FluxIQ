@@ -41,6 +41,16 @@ export type AutomationStudioFlowDraftAmendment = {
    * (`act_on_a_read`).
    */
   act?: string;
+  /**
+   * `add` or `keep` only: the places on the route the person named this step
+   * is on (`r1`, `"r1,r2"`, or `none`; `../route-places/place-value.ts`),
+   * replacing the step's own and never another step's (`../step.ts`,
+   * `places`). D phase 2. Taken on a read too, since a listing may be on the
+   * way; ignored outside that grammar, as a bad `act` id is; and, saying only
+   * what the step already says, refused `already_so`. A `keep` carrying it
+   * clears no condition, as one carrying `act` does not.
+   */
+  place?: string;
 };
 
 /**
@@ -111,6 +121,14 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    * wording is keyed by it.
    */
   control?: true;
+  /**
+   * `bind_new_key` only: the dotted parameter paths the step does offer bind
+   * (`../bindable/paths.ts`), read from the step the bind examined -- never a
+   * number looked up again after the decision moved steps -- and never a
+   * private value its argument resolved to. Live run B7 (t262) bound a click's
+   * shown `target` five times and was told only to name a parameter it has.
+   */
+  bindable?: string[];
   /**
    * The step the amendment named is the attempt a rerun replaced: the number of
    * the step standing in its place, so the telling can say to change that one

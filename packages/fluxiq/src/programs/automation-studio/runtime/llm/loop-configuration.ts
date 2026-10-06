@@ -20,7 +20,7 @@ import type { AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftRoute, AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-draft/scheduled-candidate/index.ts";
 import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
@@ -285,6 +285,16 @@ export type AutomationStudioLlmEvidenceLoopInput = {
     acts?: (steps: readonly AutomationStudioFlowDraftStep[]) => JsonValue | undefined;
     /** The acts not done yet, by id: what a redirect names and what authored progress counts down. */
     actsMissing?: (steps: readonly AutomationStudioFlowDraftStep[]) => readonly string[];
+    /** The route the person named, or that they named none, shown with the draft once known (`./harness-options/draft-route.ts`). */
+    route?: () => AutomationStudioFlowDraftRoute | undefined;
+    /**
+     * Whether the draft follows that route, asked of a completion before
+     * `checkCompletion` once the caller composes the two
+     * (`automationStudioLlmEvidenceLoopRouteChecked`; the loop never does): a
+     * refusal is fed back and counted exactly as that check's would be, and
+     * the caller's check is not asked.
+     */
+    routeCheck?: (steps: readonly AutomationStudioFlowDraftStep[]) => Promise<Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: false }> | undefined>;
   };
   /**
    * Who decides which steps are in the Flow. Absent, the model: a step that
@@ -372,6 +382,34 @@ export function automationStudioLlmEvidenceLoopSeedSteps(
     automationStudioFlowDraftCopyScheduledCandidate(step, copy);
     return copy;
   });
+}
+
+/**
+ * The loop's input with the draft's route check asked before the caller's
+ * completion check, as one check, so a route refusal takes the path every
+ * refused check takes: the same evidence entry, the same no-progress count, the
+ * same trace line. A test's refusal of a completion both accepted still reaches
+ * the caller's check (`./evidence-loop/completion-attempt.ts`, `testRefused`).
+ * With no route check the input comes back as it was.
+ *
+ * **The caller composes it, before it observes the loop.** The activity
+ * observer (`../activity/observer.ts`) wraps `checkCompletion` to put each
+ * completion check and each refusal in the chat; a route check composed inside
+ * the loop would sit outside that wrapper and refuse unseen. So the build
+ * composes it first and observes the result (`../service.ts`, the round's
+ * loop input), and the loop never composes it on its own.
+ */
+export function automationStudioLlmEvidenceLoopRouteChecked(input: AutomationStudioLlmEvidenceLoopInput): AutomationStudioLlmEvidenceLoopInput {
+  const routeCheck = input.draft === false ? undefined : input.draft?.routeCheck;
+  if (!routeCheck) return input;
+  const check = input.checkCompletion;
+  const checked = async (result: JsonObject, context: { steps: readonly AutomationStudioFlowDraftStep[] }): Promise<AutomationStudioLlmEvidenceCompletionCheck> =>
+    await routeCheck(context.steps) ?? (check ? check.call(input, result, context) : { ok: true });
+  const testRefused = (refusal: unknown): void => {
+    const inner = (check as { testRefused?: unknown } | undefined)?.testRefused;
+    if (typeof inner === "function") inner.call(check, refusal);
+  };
+  return { ...input, checkCompletion: Object.assign(checked, { testRefused }) };
 }
 
 export type EvidenceLoopLimits = {

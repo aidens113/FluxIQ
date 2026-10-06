@@ -160,6 +160,23 @@ describe("a stored record read back", () => {
     }
   });
 
+  // D phase 2: the places on the named route a kept step said it is on
+  // (`../../../flow-draft/step.ts`, `places`), so a continuation's route
+  // coverage starts where the stopped build's stood.
+  it("keeps a step's places through the record and back, and refuses places that are not the route's ids", () => {
+    const record = automationStudioFlowBootstrapIncompleteDraftKept({
+      ...BUILD, stopped: "budget", outstandingIssueCodes: [], completionAttempts: 0, now: 1,
+      steps: [step(1, { places: ["r1"] }), step(2, { effect: "observe", proposes: true, places: ["r2", "r3"] }), step(3)]
+    })!;
+    const read = parseAutomationStudioFlowBootstrapIncompleteDraft(JSON.parse(JSON.stringify(record)), OWNER);
+    expect(read?.steps.map((kept) => kept.places)).toEqual([["r1"], ["r2", "r3"], undefined]);
+    for (const places of [["x"], ["r0"], ["r1,r2"], ["none"], [1], "r1", { r1: true }]) {
+      const damaged = JSON.parse(JSON.stringify(record));
+      damaged.steps[0].places = places;
+      expect(parseAutomationStudioFlowBootstrapIncompleteDraft(damaged, OWNER)).toBeNull();
+    }
+  });
+
   // A Flow is no longer capped at sixty-four nodes, so a draft kept from a
   // build of a larger Flow must seed the next build. The reader has only the
   // owner's ids and bounds by the largest Flow the setting allows.

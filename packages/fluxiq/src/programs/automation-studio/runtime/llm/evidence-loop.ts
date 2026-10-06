@@ -5,7 +5,7 @@ import {
   automationStudioFlowDraftDropReversals, automationStudioFlowDraftKeepOpeners,
   automationStudioFlowDraftReplaySignature,
   automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsAction,
-  automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf,
+  automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf, automationStudioFlowDraftSetRoutePlaces,
   type AutomationStudioFlowDraftStep
 } from "../flow-draft/index.ts";
 // The record of every decision and what the loop answered it, and what one
@@ -100,6 +100,7 @@ import { AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW, AUTOMATION
 export { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_LIMITS };
 /** What a loop may be configured with, in `loop-configuration.ts` with the arithmetic that reads it. */
 export type { AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
+export { automationStudioLlmEvidenceLoopRouteChecked } from "./loop-configuration.ts"; // The build composes it before it observes the loop (D phase 2).
 // The decision grammar lives in `evidence-loop-decision.ts`: one module says
 // what a decision may be, this one says what to do about each. Re-exported so
 // every existing consumer still reads the schema builder from here.
@@ -199,7 +200,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const match = /^d([0-9]+)$/.exec(step.id ?? "");
     return match ? Math.max(largest, Number(match[1])) : largest;
   }, 0);
-  const draftRecord = (step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition" | "id">, authored?: { add?: true | undefined; act?: string | undefined }): boolean => {
+  const draftRecord = (step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition" | "id">, authored?: { add?: true | undefined; act?: string | undefined; place?: string | undefined }): boolean => {
     draftAppended += 1;
     // The step's own name, which a position stops being the moment the draft is
     // reordered. Routing statements are kept under it (`../flow-draft/routing.ts`).
@@ -209,6 +210,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended)) appended.disposition = "kept";
     draftSteps.push(appended);
     if (authoring && appended.disposition === "kept" && authored?.act !== undefined && appended.effect === "mutate") automationStudioLlmEvidenceClaimWrittenAct(handling, appended, authored.act); // A read does no act (`../flow-draft/amendment/apply.ts`, `act_on_a_read`); one act, one step, and a step it leaves is told (`./decision-handlers/amendment.ts`).
+    if (authoring && appended.disposition === "kept" && authored?.place !== undefined) automationStudioFlowDraftSetRoutePlaces(appended, authored.place); // The places on the named route it is on; a read may be on one too (`../flow-draft/route-places/set.ts`).
     if (authoring && appended.disposition === "kept") { automationStudioFlowDraftKeepOpeners(draftSteps, appended); automationStudioFlowDraftDropReversals(draftSteps); } // The press that opened its page joins it (`../flow-draft/opener.ts`); a pair of presses on one control that changed nothing leaves (`../flow-draft/reversal.ts`).
     return drafting && automationStudioFlowDraftStepIsAction(appended);
   };
@@ -474,7 +476,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no", ...(refusedCall ? { refused: true } : {})
     });
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
-    const draftChanged = decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act });
+    const draftChanged = decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act, place: decision.place });
     automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring }); if (authoring) automationStudioFlowDraftDropReversals(draftSteps); // A rerun that took a kept step's place joined the Flow too (`../flow-draft/reversal.ts`).
     const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, rerunTook ? rerunReplaces : draftSteps.find((step) => step.callId === callId), { kind: rerunTook || (!refusedCall && (record.effect !== "mutate" || effectApplied || record.written === true)) ? "accepted" : "failed", callId }) : {};
     // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
@@ -650,16 +652,16 @@ export async function runAutomationStudioLlmEvidenceLoop(
       // (`decision-context/shown.ts` says why each is where it is).
       const decisionContext = automationStudioLlmDecisionContextShown({
         evidence, records: history.records(), budgetEntry, observedStateKeys: input.observedStateKeys,
-        draft: drafting ? { steps: draftSteps, authored: authoring, acts: input.draft ? input.draft.acts?.(draftSteps) : undefined } : undefined
+        draft: drafting ? { steps: draftSteps, authored: authoring, acts: input.draft ? input.draft.acts?.(draftSteps) : undefined, route: input.draft ? input.draft.route?.() : undefined } : undefined
       });
       rows.draftShown = decisionContext.draftShown;
       const shown = decisionContext.shown;
       noProgress.shown(shown.map((entry) => entry.callId));
       const raw = await purse.run(() => input.decide({ iteration, tools: offered, evidence: shown, decisionSchema, canComplete, ...(input.signal ? { signal: input.signal } : {}) }));
-      unreadable.readable();
-      unanswered.answered();
-      decision = automationStudioLlmEvidenceParseDecision(raw);
-      refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend }) : undefined;
+      unreadable.readable(); unanswered.answered();
+      const binding = drafting ? { steps: draftSteps, nodeOf: input.nodeOf } : undefined; // A written call's `$step` reads the draft it joins after its last step (P5, t270).
+      decision = automationStudioLlmEvidenceParseDecision(raw, binding);
+      refusal = input.unusableDecisions ? automationStudioLlmEvidenceDecisionRefusal(raw, decision, { complete: canComplete, amend: canAmend }, binding) : undefined;
     } catch (thrown) { const costRefusal = purse.refused(thrown); if (costRefusal) { accounting.iterations = iteration - 1; return exhausted("budget", costRefusal); } // Not sent: the purse could not pay for it at worst, the only cost ending.
       if (input.signal?.aborted) return failure(draftSteps, "llm_evidence_loop.cancelled", trace, accounting);
       let error = thrown;

@@ -83,9 +83,12 @@ describe("what a build is told about where its Flow starts", () => {
     expect(note).toContain("rerun step 1 with it");
     expect(note).toContain("drop the steps that only travelled there");
     expect(note).toContain("Keep every optional dismissal");
-    // A route the person named is followed, whatever the shortcut (user's rule, t195 w49).
-    expect(note).toContain("Unless the person's instruction says how to get there");
-    expect(note).toContain("then follow that route and keep its steps");
+    // A route the person named is followed, whatever the shortcut (user's rule, t195 w49),
+    // with a step in the Flow on each place, said with place once the draft shows the route
+    // (t273 S2, D phase 2), and the shortcut stands only once Core has read that none was named.
+    expect(note).toContain("Unless the person's instruction names a route to follow (pages, menus or links to go through: then follow it in that order and keep a step in the Flow on each place on it, and once the draft shows route, say with place which steps are on each), the Flow's first step may instead go straight");
+    expect(note).toContain("drop the steps that only travelled there; the completion accepts that only once Core has read that the person named no route. ");
+    expect(note).not.toContain("says how to get there");
   });
 });
 

@@ -55,6 +55,7 @@ import {
   readAutomationStudioInstructionReading,
   type AutomationStudioInstructedRead,
   type AutomationStudioInstructionReading,
+  type AutomationStudioInstructionRouteAccessor,
   type AutomationStudioInstructionRouteReading,
   type AutomationStudioInstructionText
 } from "../action-permissions/index.ts";
@@ -84,13 +85,8 @@ export type AutomationStudioInstructionAuthorityUsage = {
 /** What this decision is, said where its answer is shaped: a read of the instruction, not a next step on a page. */
 const READ_DECISION = "This call reads the person's instructions alone: there is no page here and nothing to do next, so complete at once. Write summary as one plain sentence saying what the instructions ask for, act by act, and whether they name a route to follow.";
 
-/** The build's route, from the same one read as its consequences. */
-export type AutomationStudioInstructionAuthorityRoute = {
-  /** The route as the one read answered it, sending that read if nothing has yet; a read that failed is `unavailable`, never `open`. */
-  read(): Promise<AutomationStudioInstructionRouteReading>;
-  /** What is known without sending anything: `unread` until the one read has settled. */
-  peek(): AutomationStudioInstructionRouteReading;
-};
+/** The build's route, from the same one read as its consequences (`../action-permissions/instruction-route/accessor.ts`). */
+export type AutomationStudioInstructionAuthorityRoute = AutomationStudioInstructionRouteAccessor;
 
 /** The one read's outcome, held whatever it was so nothing reads again: its answer, or what it threw. */
 type Outcome = { answer: AutomationStudioInstructionReading } | { failed: unknown };

@@ -352,7 +352,7 @@ describe("the extension's chat, end to end in Core", () => {
   it("does not apply an explored creation while its adaptation carries a permission request", async () => {
     const calls: string[] = [];
     const result = await AUTOMATION_STUDIO_CONVERSATION_EXPLORE.run({
-      projectId: "project.example", conversationId: "conversation.example", sessionId: UNLOCKED_SESSION, keyLocked: false, startLocation: null,
+      projectId: "project.example", conversationId: "conversation.example", sessionId: UNLOCKED_SESSION, keyLocked: false, paired: true, startLocation: null,
       host: {
         async appendAutomationTurn() { throw new Error("Explore must return its pending-permission outcome without writing a turn itself"); },
         async pendingAsks() { return []; },

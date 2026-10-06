@@ -251,7 +251,9 @@ describe("the feedback an amendment refusal is shown as", () => {
     expect(reasons.bind_row_outside_loop).toMatch(/repeat/u);
     const malformed = built([{ step: 2, reason: "bind_malformed" }]).reasons as Record<string, string>;
     expect(malformed.bind_malformed).toContain("$input");
-    expect(malformed.bind_malformed).toContain("$step");
+    expect(malformed.bind_malformed).toContain("{\"$step\": <n>, \"output\": <output id>}");
+    expect(malformed.bind_malformed).toContain("n is a step before this one that worked and is not withdrawn");
+    expect(malformed.bind_malformed).not.toContain("cannot be bound yet");
     const notOne = built([{ step: 2, reason: "bind_not_a_binding" }]).reasons as Record<string, string>;
     expect(notOne.bind_not_a_binding).toMatch(/rerun/u);
   });
@@ -687,5 +689,33 @@ describe("a repeat taken off after a decision's moves", () => {
     const feedback = feedbackOf([{ step: 3, reason: "already_so" }], 0);
     expect(String(feedback.instruction)).toContain("renumbered once, after the whole decision");
     expect(String(feedback.instruction)).toContain("The listed amendments changed nothing");
+  });
+});
+
+// Live run B7 (t262, decisions 0019-0055): a refused bind of a click's `target`
+// was told to name a parameter the step has. The refusal now carries the paths
+// the step does offer, read by the bind from the step it examined
+// (`../../flow-draft/amendment/bind.ts`), and the telling passes them on.
+describe("a refused bind says what the step offers instead, run B7", () => {
+  type Input = Parameters<typeof automationStudioLlmEvidenceDraftAmendmentFeedback>[0];
+  const told = (refusals: Input["refusals"]) =>
+    automationStudioLlmEvidenceDraftAmendmentFeedback({ refusals, applied: 0, steps: [{ position: 9, effect: "mutate", effectApplied: true, disposition: "kept" }], stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 });
+
+  it("passes on the paths the step offers beside the refusal, and tells the model to bind only those", () => {
+    const feedback = told([{ step: 9, reason: "bind_new_key", parameter: "target", control: true, bindable: ["text"] }]);
+    expect(feedback.refused).toEqual([{ step: 9, reason: "bind_new_key", parameter: "target", bindable: ["text"], next: expect.any(String) }]);
+    const reason = (feedback.reasons as Record<string, string>).bind_new_key!;
+    expect(reason).toContain("bind only a parameter bindable lists beside the refusal");
+    expect(reason).not.toContain("rerun the step with the new parameter");
+  });
+
+  it("passes on an empty bindable, and says what that means", () => {
+    const feedback = told([{ step: 9, reason: "bind_new_key", parameter: "quantity", bindable: [] }]);
+    expect(feedback.refused).toEqual([{ step: 9, reason: "bind_new_key", parameter: "quantity", bindable: [] }]);
+    expect((feedback.reasons as Record<string, string>).bind_new_key).toContain("An empty bindable");
+  });
+
+  it("passes on nothing for a refusal of another reason", () => {
+    expect(told([{ step: 9, reason: "bind_row_outside_loop", parameter: "text", bindable: ["text"] }]).refused).toEqual([{ step: 9, reason: "bind_row_outside_loop", parameter: "text" }]);
   });
 });

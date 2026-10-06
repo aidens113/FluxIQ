@@ -50,6 +50,13 @@ export type AutomationStudioConversationCommandContext = {
   sessionId: string;
   /** True for a paired client whose person has no unlocked session: a build or run will find the key locked. */
   keyLocked: boolean;
+  /**
+   * True when a paired client -- the browser extension -- asked. Its calls run
+   * under the person's unlocked session, so the endpoints cannot see it; a run
+   * the command starts reads it to pay only for the result checks that judge a
+   * repair, as the extension's own Run does (MVP item 23, `run-flow.ts`).
+   */
+  paired: boolean;
   /** The page the person has open, as a build's start location. Null when none was sent. */
   startLocation: string | null;
   /**

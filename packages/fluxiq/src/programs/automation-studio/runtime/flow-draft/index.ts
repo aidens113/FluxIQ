@@ -9,10 +9,12 @@
 // domain's words for what a step's call named, the words of the control a
 // step acted on, what Flow version a draft stands for, what a completion
 // is told when steps carried into it never ran in this build, the bindings a
-// step's parameters carry and how they are shown back, and the Flow inputs
-// those bindings declare.
+// step's parameters carry and how they are shown back, the paths a kept step
+// offers bind, the Flow inputs those bindings declare, and the route the person
+// named with the places a step says it is on.
 export * from "./act-claim.ts";
 export * from "./amendment/index.ts";
+export * from "./bindable/index.ts";
 export * from "./binding-forms.ts";
 export * from "./binding-render.ts";
 export * from "./control-words.ts";
@@ -26,6 +28,7 @@ export * from "./full-run-required.ts";
 export * from "./interruption.ts";
 export * from "./opener.ts";
 export * from "./reversal.ts";
+export * from "./route-places/index.ts";
 export * from "./routing.ts";
 export * from "./site-memory.ts";
 export * from "./sometimes-present.ts";

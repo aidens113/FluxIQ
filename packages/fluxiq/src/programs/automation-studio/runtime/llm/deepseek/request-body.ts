@@ -275,9 +275,14 @@ const AUTOMATION_STUDIO_DEEPSEEK_NODE_CATALOG_NOTE =
  * work begins at, once the build has seen it is stable, and that only the travel
  * goes: a dismissal may be needed on the next run however the Flow arrives.
  * The shortcut never overrides a route the person named (the user's rule, t195
- * w49): the note says so in words. Lane D's detection of the named route
- * and its separate note were not ported (t264 S4), so this clause is the
- * whole of that rule here until the D waypoint design lands.
+ * w49): the note says so in words. Since D phase 2 (t273 S2) it is also held:
+ * once the draft shows the route (`../../flow-draft/route-places/`), the model
+ * says with `place` which steps are on each place, and the completion refuses
+ * a Flow with a place no step is on, places out of order, or a first step
+ * deeper than the start under a named route or one Core could not read as
+ * unnamed (`../harness-options/draft-route.ts`). So the note asks for a step
+ * on each place and the `place` claims, and says the shortcut stands only once
+ * Core has read that the person named no route.
  * The completion admits that first step under the host's declared arrival
  * (t262, `flow-bootstrap/reachability/step-goes-to-location.ts`): the rerun
  * keeps the arrival node, its declared parameter now holds the deeper address,
@@ -287,5 +292,5 @@ const AUTOMATION_STUDIO_DEEPSEEK_NODE_CATALOG_NOTE =
  */
 const FLOW_START_LOCATION_NOTE =
   "The build opened by going to startLocation: the first entry of your evidence is that step, and it is the Flow's first step, already kept. Only if that entry failed, or your evidence does not open with it, must your first call be the node that goes there, with startLocation as its destination; every action is refused until it has run. "
-  + "Unless the person's instruction says how to get there (pages, menus or links to go through: then follow that route and keep its steps), the Flow's first step may instead go straight to the address where the work begins, deeper on the same site: once you have seen that address is stable -- the same on every visit, with nothing in it that looks like a session, a token or a one-time value -- rerun step 1 with it, and drop the steps that only travelled there. "
+  + "Unless the person's instruction names a route to follow (pages, menus or links to go through: then follow it in that order and keep a step in the Flow on each place on it, and once the draft shows route, say with place which steps are on each), the Flow's first step may instead go straight to the address where the work begins, deeper on the same site: once you have seen that address is stable -- the same on every visit, with nothing in it that looks like a session, a token or a one-time value -- rerun step 1 with it, and drop the steps that only travelled there; the completion accepts that only once Core has read that the person named no route. "
   + "Keep every optional dismissal: a banner or popup may be there on the next run however the Flow arrives.";

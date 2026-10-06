@@ -75,6 +75,8 @@ function keptStep(value: unknown, position: number): value is AutomationStudioFl
   if (value.proposes !== undefined && typeof value.proposes !== "boolean") return false;
   // The acts the model said the step does (`../../flow-draft/step.ts`): Core's own ids, nothing else.
   if (value.acts !== undefined && (!Array.isArray(value.acts) || !value.acts.every((act) => typeof act === "string" && /^a[1-9][0-9]{0,2}(?:\.[a-z]{1,16})?$/u.test(act)))) return false;
+  // The places on the named route the model said the step is on (`../../flow-draft/step.ts`, `places`; D phase 2): the route's ids, nothing else.
+  if (value.places !== undefined && (!Array.isArray(value.places) || !value.places.every((place) => typeof place === "string" && /^r[1-9][0-9]?$/u.test(place)))) return false;
   // The domain's words for the call (`../../flow-draft/step.ts`, `words`): a target and a text, each a string, and nothing else.
   if (value.words !== undefined && !stepWords(value.words)) return false;
   return OPTIONAL_OBJECTS.every((key) => value[key] === undefined || isRecord(value[key]))

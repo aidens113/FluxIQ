@@ -35,7 +35,7 @@ describe("the re-run a repair earns", () => {
    * next pass reads. Without that the marker a repair writes would not survive
    * into the second verification, which is exactly what bounds the loop.
    */
-  function looping(answers: readonly ScriptedAnswer[], options: { applied?: true; rerunStatus?: "succeeded" | "failed" } = {}) {
+  function looping(answers: readonly ScriptedAnswer[], options: { applied?: true; rerunStatus?: "succeeded" | "failed"; rerunCheck?: { checked: boolean; epoch: number; code: string; reason: string } } = {}) {
     const context = harness({ answers });
     const reruns: Array<{ detail: AutomationStudioFlowRunDetail; subflowId?: string | undefined }> = [];
     const repairs: AutomationStudioFlowRunDetail[] = [];
@@ -51,7 +51,7 @@ describe("the re-run a repair earns", () => {
       },
       rerunRepairedFlow: async (request) => {
         reruns.push(request);
-        return { session: session({ status: options.rerunStatus ?? "succeeded", runId: "run-1" }) };
+        return { session: session({ status: options.rerunStatus ?? "succeeded", runId: "run-1" }), ...(options.rerunCheck ? { resultCheck: options.rerunCheck } : {}) };
       }
     };
     return { ...context, ports, reruns, repairs, histories };
@@ -71,6 +71,19 @@ describe("the re-run a repair earns", () => {
     // Flow answered the question, which is the whole point of the loop.
     expect(next.status).toBe("succeeded");
     expect((next.metadata?.resultVerification as JsonObject).status).toBe("confirmed");
+  });
+
+  // The re-run is judged as a repair, so the check that judges it is the one
+  // the re-run port re-decided, not the run's routine decision (t273).
+  it("records the check the re-run port re-decided, not the one the run started with", async () => {
+    const started = { checked: true, epoch: 1, code: "core.result_check.initial_window", reason: "Started." };
+    const repairedCheck = { checked: true, epoch: 1, code: "core.result_check.after_repair", reason: "Repaired." };
+    const context = looping([ANSWER.no, ANSWER.no, ANSWER.yes, ANSWER.yes], { applied: true, rerunCheck: repairedCheck });
+    const next = await verifyAutomationStudioRuntimeSessionResult({ ports: context.ports, projectId: "project-1", session: session(), flow, resultCheck: started });
+
+    expect(context.reruns).toHaveLength(1);
+    expect(next.metadata?.resultCheck).toMatchObject({ code: "core.result_check.after_repair", status: "confirmed" });
+    expect(context.saved.at(-1)?.summary.metadata?.resultCheck).toMatchObject({ code: "core.result_check.after_repair" });
   });
 
   it("does not re-run when the repair changed nothing", async () => {

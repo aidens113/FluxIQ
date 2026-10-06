@@ -18,13 +18,15 @@ import {
   AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID,
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES,
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA,
+  AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE,
   type AutomationStudioFlowDraftAmendment,
   type AutomationStudioFlowDraftStepReplay,
   type AutomationStudioFlowDraftStepToggle,
   automationStudioFlowDraftControlWords,
   automationStudioFlowDraftHoldsBinding,
   automationStudioFlowDraftTranslateBindings,
-  type AutomationStudioFlowDraftAmendmentChange
+  type AutomationStudioFlowDraftAmendmentChange,
+  type AutomationStudioFlowDraftBindingContext
 } from "../flow-draft/index.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import { automationStudioLlmEvidenceDiagnostic } from "./evidence-diagnostic/index.ts";
@@ -302,9 +304,11 @@ function readReplayRecord(value: unknown): AutomationStudioFlowDraftStepReplay |
  * allowance of them, which no tool does.
  */
 export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: AutomationStudioLlmEvidenceTool[], completionSchema: JsonObject = { type: "object" }, allowComplete = true, allowAmend = false, authoring = false): JsonObject {
-  // `add` and `act` are explained once, on the first call that can act, and
-  // offered bare on every other: the same two sentences on each variant were
-  // 468 characters a tool on every decision (t235). Every call still takes them.
+  // `add`, `act` and `place` are explained once, on the first call that can
+  // act, and offered bare on every other: the same two sentences on each variant
+  // were 468 characters a tool on every decision (t235). Every call still takes
+  // them. A bare `place` carries no pattern either -- it is said only where the
+  // person named a route, and the parse below holds every call to the ids.
   const explainedAt = Math.max(0, tools.findIndex((tool) => tool.effect === "mutate" || tool.perCallEffect === true));
   return {
     oneOf: [
@@ -336,13 +340,17 @@ export function buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools: Automa
 /** What a call may say about the draft, where the model authors it. */
 const AUTHORING_CALL_PROPERTIES: JsonObject = {
   add: { type: "boolean", description: "true: if this call works, put its step into the Flow now -- a step you run or write; write true implies add. A step you run is not in the Flow until you add it, here or with amend_draft add. Leave it out for a look, a try or a step the Flow does not need." },
-  act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$", description: "The act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity. Implies add." }
+  act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$", description: "The act from the acts checklist this step does, such as a2, or the choice under it this step makes, such as a2.quantity. Implies add." },
+  // D phase 2 (`../flow-draft/route-places/`): which places on the route the
+  // draft shows this step is on. Replaces the step's own, and no other step's.
+  place: { type: "string", pattern: AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE.source, description: "Once the draft shows route: the places on it this step is on, such as r1, or r1,r2 for two; none clears them. Implies add." }
 };
 
-/** The same two properties without their explanation, which one variant carries. */
+/** The same three properties without their explanation, which one variant carries. */
 const AUTHORING_CALL_PROPERTIES_BARE: JsonObject = {
   add: { type: "boolean" },
-  act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$" }
+  act: { type: "string", pattern: "^a[1-9][0-9]{0,2}([.][a-z]{1,16})?$" },
+  place: { type: "string" }
 };
 
 /** The three shapes a decision may take, which is also what a reply may arrive as instead of the wrapper. */
@@ -399,7 +407,12 @@ function decisionSummary(summary: unknown, decision: Record<string, unknown>, ma
   return `${kind}${toolId}`.slice(0, maxLength);
 }
 
-export function automationStudioLlmEvidenceParseDecision(value: unknown): AutomationStudioLlmEvidenceLoopDecision | undefined {
+/**
+ * A reply as the decision it is, or nothing. `binding` is the draft as it
+ * stands, so a written node call's `$step` names an earlier step
+ * (`../flow-draft/binding-forms.ts`); without it a `$step` is refused.
+ */
+export function automationStudioLlmEvidenceParseDecision(value: unknown, binding?: AutomationStudioFlowDraftBindingContext): AutomationStudioLlmEvidenceLoopDecision | undefined {
   if (!isRecord(value)) return undefined;
   if (value.kind === "complete" && exactKeys(value, ["kind", "result", "usage"]) && isJsonObject(value.result) && validUsage(value.usage)) {
     return { kind: "complete", result: value.result, ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {}) };
@@ -407,14 +420,16 @@ export function automationStudioLlmEvidenceParseDecision(value: unknown): Automa
   if (isToolCall(value)) {
     // A node call that writes its step, or one that may not carry a binding
     // because it runs now: read here, refused by the codes below.
-    const call = readNodeCall(value.toolId, value.input);
+    const call = readNodeCall(value.toolId, value.input, binding);
     if ("refused" in call) return undefined;
-    // `act` says the step does an act, which only a step in the Flow can: it
-    // adds. `write` puts the step into the Flow by writing it: it adds too.
-    const add = value.add === true || value.act !== undefined || call.written;
+    // `act` says the step does an act, and `place` that it is on the route the
+    // person named, which only a step in the Flow can: each adds. `write` puts
+    // the step into the Flow by writing it: it adds too.
+    const add = value.add === true || value.act !== undefined || value.place !== undefined || call.written;
     return {
       kind: "tool_call", callId: value.callId, toolId: value.toolId, input: call.input,
       ...(add ? { add: true as const } : {}), ...(typeof value.act === "string" ? { act: value.act } : {}),
+      ...(typeof value.place === "string" ? { place: value.place } : {}),
       ...(value.usage ? { usage: value.usage as AutomationStudioLlmUsageSummary } : {})
     };
   }
@@ -450,22 +465,32 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE = "llm_eviden
  * (`./evidence-loop/decision-refusal.ts`). Answered by the same readers as the
  * parse above, so the two never disagree.
  */
-export function automationStudioLlmEvidenceDecisionIssueCodes(value: unknown): string[] | undefined {
+export function automationStudioLlmEvidenceDecisionIssueCodes(value: unknown, binding?: AutomationStudioFlowDraftBindingContext): string[] | undefined {
   if (isRecord(value) && value.kind === "amend_draft" && exactKeys(value, ["kind", "amendments", "usage"]) && validUsage(value.usage)) {
     if (readAmendments(value.amendments) || !Array.isArray(value.amendments) || value.amendments.length > MAX_AMENDMENTS_PER_DECISION) return undefined;
     return value.amendments.some((item) => readAmendment(item) === "rerun_needs_input") ? [AUTOMATION_STUDIO_LLM_EVIDENCE_RERUN_NEEDS_INPUT_CODE] : undefined;
   }
   if (!isToolCall(value)) return undefined;
-  const call = readNodeCall(value.toolId, value.input);
+  const call = readNodeCall(value.toolId, value.input, binding);
   return "refused" in call ? call.refused : undefined;
 }
 
 /** Whether a reply is a tool call of the shape the grammar reads. */
-function isToolCall(value: unknown): value is { kind: "tool_call"; callId: string; toolId: string; input: JsonObject; add?: boolean; act?: string; usage?: unknown } {
-  return isRecord(value) && value.kind === "tool_call" && exactKeys(value, ["kind", "callId", "toolId", "input", "usage", "add", "act"])
+function isToolCall(value: unknown): value is { kind: "tool_call"; callId: string; toolId: string; input: JsonObject; add?: boolean; act?: string; place?: string; usage?: unknown } {
+  return isRecord(value) && value.kind === "tool_call" && exactKeys(value, ["kind", "callId", "toolId", "input", "usage", "add", "act", "place"])
     && validId(value.callId) && validId(value.toolId) && isJsonObject(value.input) && validUsage(value.usage)
     && (value.add === undefined || typeof value.add === "boolean")
-    && (value.act === undefined || (typeof value.act === "string" && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(value.act)));
+    && (value.act === undefined || (typeof value.act === "string" && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(value.act)))
+    && validPlace(value.place);
+}
+
+/**
+ * Whether a `place` is absent or one the grammar reads: the route's ids, or
+ * `none` (`../flow-draft/route-places/place-value.ts`). Anything else is
+ * refused exactly as an act that is not an id is.
+ */
+function validPlace(value: unknown): boolean {
+  return value === undefined || (typeof value === "string" && AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE.test(value));
 }
 
 /**
@@ -479,9 +504,11 @@ function isToolCall(value: unknown): value is { kind: "tool_call"; callId: strin
  * see one shape; a form that cannot be translated refuses the decision rather
  * than reaching a node as an object it was never meant to receive. **Run now**:
  * a binding anywhere in its parameters refuses it, because a binding resolves
- * only in the Flow and a live call carries concrete values only.
+ * only in the Flow and a live call carries concrete values only. A `$step`
+ * is read against `binding`, the draft the written step joins after its last
+ * step (P5, t270).
  */
-function readNodeCall(toolId: string, input: JsonObject): { input: JsonObject; written: boolean } | { refused: string[] } {
+function readNodeCall(toolId: string, input: JsonObject, binding?: AutomationStudioFlowDraftBindingContext): { input: JsonObject; written: boolean } | { refused: string[] } {
   if (toolId !== RUN_NODE_TOOL_ID) return { input, written: false };
   const parameters = input.parameters;
   if (input[WRITE_KEY] !== true) {
@@ -489,7 +516,7 @@ function readNodeCall(toolId: string, input: JsonObject): { input: JsonObject; w
   }
   // Parameters that are not an object are the host's to refuse, as for any call.
   if (!isJsonObject(parameters)) return { input, written: true };
-  const translated = automationStudioFlowDraftTranslateBindings(parameters);
+  const translated = automationStudioFlowDraftTranslateBindings(parameters, binding);
   if (translated.refused.length) {
     return { refused: [AUTOMATION_STUDIO_LLM_EVIDENCE_BINDING_REFUSED_CODE, ...translated.refused.map(({ path, reason }) => bindingRefusedCode(path, reason))] };
   }
@@ -524,8 +551,9 @@ function readAmendments(value: unknown): AutomationStudioFlowDraftAmendment[] | 
  * for any other amendment that cannot be read.
  */
 function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rerun_needs_input" | undefined {
-  if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input", "check", "through", "over", "act"])) return undefined;
+  if (!isRecord(item) || !exactKeys(item, ["step", "change", "settings", "to", "input", "check", "through", "over", "act", "place"])) return undefined;
   if (item.act !== undefined && (typeof item.act !== "string" || !AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(item.act))) return undefined;
+  if (!validPlace(item.place)) return undefined;
   if (!Number.isSafeInteger(item.step) || (item.step as number) < 1) return undefined;
   if (typeof item.change !== "string" || !(AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_CHANGES as readonly string[]).includes(item.change)) return undefined;
   // Explicit repeat removal changes only routing, not an act/argument or
@@ -552,7 +580,8 @@ function readAmendment(item: unknown): AutomationStudioFlowDraftAmendment | "rer
     ...(item.check === undefined ? {} : { check: item.check as number }),
     ...(item.through === undefined ? {} : { through: item.through as number }),
     ...(item.over === undefined ? {} : { over: item.over as number }),
-    ...(item.act === undefined ? {} : { act: item.act as string })
+    ...(item.act === undefined ? {} : { act: item.act as string }),
+    ...(item.place === undefined ? {} : { place: item.place as string })
   };
 }
 

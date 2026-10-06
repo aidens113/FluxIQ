@@ -423,6 +423,21 @@ same capabilities. The ids are:
 - **A Flow's thread means that Flow.** With no `onScreen.flowId`, a thread whose
   subject is a Flow supplies it. So "run it" in an automation's own chat runs
   that automation.
+- **"Run it" is the Automations Run** (`runtime/conversations/commands/run-flow.ts`).
+  It asks for `runIntent: "explore_and_adapt"`, so a broken step can be
+  repaired. The command's port calls as the person's unlocked session, so the
+  run endpoint cannot see the pairing; a paired chat therefore asks for
+  `resultCheckCallerPays: "repair_checks"` itself (`context.paired`), and the
+  endpoint accepts that one value and refuses any other: the person's key pays
+  only for the result checks that judge a repair, as the extension's Run button
+  (MVP item 23). A web-panel chat pays for every check, as that person's own
+  Run does. A run that ended without failing says what it learned, from Core's
+  closed change kinds only (`get-flow-adaptation`: `patch[].kind`, then
+  `appliedTo[].kind`), never a diagnosis, page text or selector, and whether
+  the next run starts with it or it waits for review. A re-authored Flow is
+  said apart, from the endpoint's closed `reauthored` (`applied` once a whole
+  re-run with it was judged to answer, `not_applied` otherwise), since a
+  re-author is no Flow adaptation.
 - **A paired client spends its person's key.** A `client-gateway:` caller is
   mapped to the approving person's live unlocked session
   (`SecretKeysService.unlockedSessionFor`: the latest-expiring unlock that

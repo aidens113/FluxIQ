@@ -146,6 +146,26 @@ present in what the draft shows -- the control a press acted on, such as its
 to vary, its control is found by its words each run, and the step is left as
 it is.
 
+**What a step offers `bind` is listed, never guessed** (live run B7, t262).
+A step's `input` is the model-safe argument it was written with; `ranWith` is
+what it runs with, which a domain may have resolved -- a Web click written with
+a `target` handle runs with a private selector and element identity. The model
+read only `input`, bound the click's `target` five times, and was refused each
+time. `automationStudioFlowDraftBindablePaths` (`runtime/flow-draft/bindable/paths.ts`)
+lists the dotted parameter paths at which `input` and `ranWith ?? input` hold
+the same value: read from the shown input only, so a private resolved key or
+value is never named and no shown alias is mapped to what it resolved to. A
+value already stored as a binding is one path; nothing inside a binding, an
+array or a null is listed. It is an affordance, not a rule: `bind` still
+checks `ranWith` and may accept a path not listed. The draft entry shows
+`bindable` beside a step in the Flow only where its input holds a value it did
+not run with as shown -- a press shows `[]`, a step that ran as shown pays
+nothing -- with one instruction sentence when any step shows it. A
+`bind_new_key` refusal carries `bindable`, computed by `bind` from the step it
+examined rather than looked up again by number after the decision moved steps;
+the telling passes it on beside the refusal, and its reason tells the model to
+bind only those, never to rerun with a guessed parameter.
+
 **Every answer to an edit says what is still to do** (`core.amendment_check`,
 live run `run-musp4h2f-72e8ed99`). A refusal with no other `next` ends its
 `next` with the acts and choices the checklist still shows not done
@@ -193,15 +213,27 @@ wrong type, or a missing or `null` test is refused as `malformed` where it
 sits and is never carried as a literal. Search depth is 16, as in the
 executor's resolver.
 
-**An earlier step's output (P5, t270).** `n` is a draft position, and a
-position is renumbered by every reorder and withdrawal, so the form is read
-against the draft as it stands when it is written
+**An earlier step's output (P5, t270; wired end to end in t273 S3).** `n` is a
+draft position, and a position is renumbered by every reorder and withdrawal,
+so the form is read against the draft as it stands when it is written
 (`AutomationStudioFlowDraftBindingContext`: the steps, the position of the step
-being written -- absent for one about to be appended -- and the node lookup)
-and stored under the step's own id. `path` is optional, one or more field
+being written -- absent for one about to be appended -- the node lookup, and
+`stepAt` where the numbers are not the steps' own positions) and stored under
+the step's own id. Every path that writes a step passes the draft: a written
+`core.run_node` call's parameters (`runtime/llm/evidence-loop-decision.ts`, with
+the loop's draft and node lookup), a rerun's (`rerun-request.ts`, at the rerun
+step's position) and `amend_draft bind` (`amendment/bind.ts`, against the draft
+as shown before the decision moved anything, so a `$step` beside a reorder
+names the step shown at `n`). A bind's `step_*` refusal is `bind_malformed`
+with its parameter; a call's is `run_node.binding_refused.step_*`. A step that
+was run and not added (`taken`) is not refused when written: assembly refuses a
+source that is not a node of the Flow. Re-seeding a saved Flow translates its
+`$node.<key>` references back to `$step.<seed id>`
+(`runtime/llm/node-tools/draft-from-flow.ts`), so a repair's draft carries them;
+an unmapped key is left as written and assembly refuses it. `path` is optional, one or more field
 names of a record output; a list index is refused, since the resolver walks no
-list. Refusals: `step_binding_not_yet` when the caller passed no draft (every
-caller before P5's wiring), `step_missing` (no step at `n`), `step_not_earlier`
+list. Refusals: `step_binding_not_yet` when the caller passed no draft (no
+caller that writes a step any longer), `step_missing` (no step at `n`), `step_not_earlier`
 (`n` is the step itself or after it), `step_not_usable` (withdrawn, a look, or
 failed), `step_output_unknown` (the node is known and declares no such output),
 `malformed`. Shown back to the model as `{"$step": <its position now>, ...}`
@@ -461,6 +493,19 @@ A refused nonexistent-step amendment explains that add includes an existing draf
 ### Declared arrival evidence
 
 Restoration and instructed-act evidence classify arrival using the runtime binding's existing runsNodes.arrival opaque node identity and declared parameter. Only that action and parameter can match the start location, with resolved arguments taking precedence. A nonarrival action carrying stale location arguments cannot be refused as merely arriving; absent a declaration, arbitrary strings do not confer arrival. The same declaration reaches completion restoration, model/stopped checklists and build-test judge summaries. Other plan location comparisons remain unchanged; this classification does not invent performed evidence or alter permission, replay or host effect semantics.
+
+### The route the person named
+
+A step may say which places on the route the person named it is on (`place`,
+stored as `places`; `runtime/flow-draft/route-places/`), once the draft shows
+that route (`route` in the draft entry). Many steps may be on one place, one
+step may be on two, and a claim replaces only that step's own; `none` clears
+it. An amend_draft `place` that changes nothing is refused `already_so`; no
+refusal reason of its own exists. A rerun carries the step's places to its
+replacement, and a stopped build's stored draft keeps them. Completion holds a
+named route to these claims (`runtime/flow-draft/route-places/coverage.ts`,
+`runtime/llm/harness-options/draft-route.ts`), as
+`docs/architecture/automation-studio/llm-flow-bootstrap.md` describes.
 
 ### Continuing unfinished creation
 

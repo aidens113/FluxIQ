@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, buildAutomationStudioLlmEvidenceLoopDecisionSchema, runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceTool } from "../evidence-loop.ts";
 import { automationStudioLlmEvidenceParseDecision, automationStudioLlmEvidenceValidTools } from "../evidence-loop-decision.ts";
+import { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID } from "../evidence-loop/index.ts";
+import { automationStudioLlmEvidenceLoopRouteChecked } from "../loop-configuration.ts";
+import { automationStudioFlowBootstrapDraftActs } from "../harness-options/index.ts";
+import { automationStudioInstructionSetDigest, type AutomationStudioInstructionRouteReading, type AutomationStudioInstructionText } from "../../action-permissions/index.ts";
+import { automationStudioActivityHub, observeAutomationStudioEvidenceLoop, runWithAutomationStudioActivity } from "../../activity/index.ts";
 
 const tools = [{ toolId: "inspect", description: "Collect bounded evidence.", inputSchema: { type: "object" } }];
 
@@ -652,5 +657,86 @@ describe("the opening arrival (F31)", () => {
       expect(automationStudioLlmEvidenceValidTools([{ toolId: "inspect", description: "Look.", inputSchema: { type: "object" }, effect: "observe", initialObservation: { input: {}, arrival: {} } }])).toBe(false);
       expect(automationStudioLlmEvidenceValidTools([runNode({ input: look, arrival: "go" as unknown as JsonObject })])).toBe(false);
     });
+  });
+});
+
+// The route the person named, inside the loop (D phase 2): a call's `place`
+// is recorded on the step it takes, the draft is shown with the route, and a
+// completion that misses a place is refused back to the model under the same
+// entry and the same no-progress count as any refused completion check, before
+// the build's own check is asked (`../harness-options/draft-route.ts`).
+const routeTools = [{ toolId: "press", description: "Press a control.", inputSchema: { type: "object" }, effect: "mutate" as const }];
+const routePressing = async () => ({ kind: "llm_evidence_tool_execution", evidence: { page: "after" }, effectApplied: true });
+const routePress = (index: number, place?: string) => ({ kind: "tool_call", callId: `call.press.${index}`, toolId: "press", input: { target: `target.${index}` }, add: true, ...(place ? { place } : {}) });
+const routeComplete = { kind: "complete", result: { flow: "..." } };
+
+const routeInstructions: AutomationStudioInstructionText[] = [{ instructionId: "i1", title: "Requests", body: "Open Friends, then Requests, and confirm every request." }];
+const routeSpan = { start: 0, end: 1 };
+const namedRoute: AutomationStudioInstructionRouteReading = {
+  state: "named", instructionSetDigest: automationStudioInstructionSetDigest(routeInstructions), routeId: "route.1", instructionId: "i1", instructionDigest: "sha256:0",
+  quote: "Open Friends, then Requests", sourceSpan: routeSpan,
+  waypoints: [{ id: "w1", order: 1, instructionId: "i1", instructionDigest: "sha256:0", quote: "Friends", sourceSpan: routeSpan }, { id: "w2", order: 2, instructionId: "i1", instructionDigest: "sha256:0", quote: "Requests", sourceSpan: routeSpan }]
+};
+
+describe("the route the person named, in the loop", () => {
+  it("records each call's place, shows the route, and refuses a completion missing a place as core.completion_check, in the chat too", async () => {
+    const decide = vi.fn()
+      .mockResolvedValueOnce(routePress(1, "r1"))
+      .mockResolvedValueOnce(routeComplete)
+      .mockResolvedValueOnce(routePress(2, "r2"))
+      .mockResolvedValue(routeComplete);
+    const checkCompletion = vi.fn(async () => ({ ok: true as const }));
+    const wired = automationStudioFlowBootstrapDraftActs({ route: { read: async () => namedRoute, peek: () => namedRoute }, activeInstructions: routeInstructions });
+    const route = vi.fn(wired.route!);
+    const routeCheck = vi.fn(wired.routeCheck!);
+
+    // Composed, then observed, as the build does it (`../loop-configuration.ts`).
+    const seen: string[] = [];
+    const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event.label));
+    const result = await runWithAutomationStudioActivity({ kind: "build", id: "b1", projectId: "p1" }, () => runAutomationStudioLlmEvidenceLoop(observeAutomationStudioEvidenceLoop(automationStudioLlmEvidenceLoopRouteChecked({
+      tools: routeTools, decide, executeTool: routePressing, maxIterations: 8, maxToolCalls: 8, dryRun: false, propagateDecisionErrors: true, checkCompletion,
+      unusableDecisions: { maxConsecutive: 3, stalled: () => new Error("stalled") },
+      draft: { route, routeCheck }
+    })))).finally(unsubscribe);
+    expect(seen).toContain("The proposed Flow was sent back to be fixed");
+
+    expect(result.ok).toBe(true);
+    expect(result.steps.map((step) => step.places)).toEqual([["r1"], ["r2"]]);
+    // The refused completion never reached the build's own check; the accepted one did, once.
+    expect(routeCheck).toHaveBeenCalledTimes(2);
+    expect(checkCompletion).toHaveBeenCalledTimes(1);
+    expect(route).toHaveBeenCalled();
+    expect(result.trace.find((row) => row.decision === "unusable")).toMatchObject({ iteration: 2, resultCode: "bootstrap.route_place_missing" });
+    const third = decide.mock.calls[2]![0] as { evidence: { toolId: string; value: { instruction?: string } }[] };
+    const feedback = third.evidence.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID);
+    expect(feedback?.value.instruction).toBe("The person named the route \"Open Friends, then Requests\". No step in the Flow is on r2 (Requests): keep or add the steps that go through it, in order, and say which with place (place \"r2\").");
+  });
+
+  it("asks the build's check only after the route accepts, and passes a test's refusal on to it", async () => {
+    const testRefused = vi.fn();
+    const checkCompletion = Object.assign(vi.fn(async () => ({ ok: true as const })), { testRefused });
+    const refusal = { ok: false as const, issueCodes: ["bootstrap.route_place_missing"], feedback: { ok: false } };
+    const routeCheck = vi.fn().mockResolvedValueOnce(refusal).mockResolvedValue(undefined);
+    const input = automationStudioLlmEvidenceLoopRouteChecked({ tools: routeTools, decide: vi.fn(), executeTool: routePressing, checkCompletion, draft: { routeCheck } });
+    const check = input.checkCompletion!;
+    expect(await check({ flow: "..." }, { steps: [] })).toBe(refusal);
+    expect(checkCompletion).not.toHaveBeenCalled();
+    expect(await check({ flow: "..." }, { steps: [] })).toEqual({ ok: true });
+    expect(checkCompletion).toHaveBeenCalledTimes(1);
+    (check as unknown as { testRefused(refusal: unknown): void }).testRefused({ issueCodes: ["full_run_required"] });
+    expect(testRefused).toHaveBeenCalledWith({ issueCodes: ["full_run_required"] });
+  });
+
+  it("is never asked by the loop itself: only a caller's composition asks it", async () => {
+    const routeCheck = vi.fn(async () => undefined);
+    const decide = vi.fn().mockResolvedValueOnce(routePress(1, "r1")).mockResolvedValue(routeComplete);
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: routeTools, decide, executeTool: routePressing, maxIterations: 4, maxToolCalls: 4, dryRun: false, propagateDecisionErrors: true, draft: { routeCheck } });
+    expect(result.ok).toBe(true);
+    expect(routeCheck).not.toHaveBeenCalled();
+  });
+
+  it("leaves a loop with no route check exactly as it was", () => {
+    const input = { tools: routeTools, decide: vi.fn(), executeTool: routePressing, draft: {} };
+    expect(automationStudioLlmEvidenceLoopRouteChecked(input)).toBe(input);
   });
 });

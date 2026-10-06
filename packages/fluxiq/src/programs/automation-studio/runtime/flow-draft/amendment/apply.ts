@@ -3,6 +3,7 @@
 import { automationStudioFlowDraftClaimAct } from "../act-claim.ts";
 import { automationStudioFlowDraftKeepOpeners } from "../opener.ts";
 import { automationStudioFlowDraftDropReversals } from "../reversal.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE, automationStudioFlowDraftSetRoutePlaces } from "../route-places/index.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../step.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID } from "./act-id.ts";
 import { automationStudioFlowDraftAmendmentBind } from "./bind.ts";
@@ -138,9 +139,9 @@ export function applyAutomationStudioFlowDraftAmendments(
     const actOnRead = amendment.act !== undefined && step.effect !== "mutate";
     if (actOnRead) refused.push({ step: amendment.step, reason: "act_on_a_read" });
     if (amendment.change === "bind") {
-      const bound = automationStudioFlowDraftAmendmentBind(steps, step, amendment);
+      const bound = automationStudioFlowDraftAmendmentBind(steps, step, amendment, shown);
       if (bound.ok) applied += 1;
-      else refused.push({ step: amendment.step, reason: bound.reason, ...(bound.parameter === undefined ? {} : { parameter: bound.parameter }), ...(bound.control ? { control: true as const } : {}) });
+      else refused.push({ step: amendment.step, reason: bound.reason, ...(bound.parameter === undefined ? {} : { parameter: bound.parameter }), ...(bound.control ? { control: true as const } : {}), ...(bound.bindable ? { bindable: bound.bindable } : {}) });
       continue;
     }
     if (amendment.change === "reorder") {
@@ -172,21 +173,30 @@ export function applyAutomationStudioFlowDraftAmendments(
     // never clears. A `repeat` is the act done to every row, not a condition on
     // the step. And a `keep` carrying `act` is a statement about the act: live
     // run 36 (E21, E26) sent `keep act a1` about the repeated Confirm and lost
-    // its repeat each time.
-    const clearsRouting = amendment.change === "keep" && amendment.act === undefined && step.routing !== undefined && step.routing.kind !== "repeat";
+    // its repeat each time. A `keep` carrying `place` is likewise a statement
+    // about the route (D phase 2).
+    const clearsRouting = amendment.change === "keep" && amendment.act === undefined && amendment.place === undefined && step.routing !== undefined && step.routing.kind !== "repeat";
     const alreadyNamed = amendment.act !== undefined && step.acts?.includes(amendment.act) === true;
     const act = disposition === "kept" && !actOnRead && amendment.act !== undefined && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(amendment.act) && !alreadyNamed ? amendment.act : undefined;
+    // The places on the named route the step says it is on, taken wherever an
+    // act is, a read included: a listing may be on the way (`../route-places/`).
+    // A value outside the grammar is ignored, as a bad act id is. Whether it
+    // changes anything is asked of a copy, so a refused amendment changes nothing.
+    const routePlace = disposition === "kept" && amendment.place !== undefined && AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE.test(amendment.place) ? amendment.place : undefined;
+    const changesPlaces = routePlace !== undefined && automationStudioFlowDraftSetRoutePlaces({ ...step }, routePlace);
     // `add` at a position is one thought: put this step in the Flow, there.
     const place = amendment.change === "add" ? shown.step(amendment.to) : undefined;
     const moves = place !== undefined && place !== step;
-    if (!changesDisposition && !changesSettings && !clearsRouting && act === undefined && !moves) {
+    if (!changesDisposition && !changesSettings && !clearsRouting && act === undefined && !changesPlaces && !moves) {
       // Said as which side of the Flow the step is already on, because that is
       // what the model was trying to settle: a `keep` about a step in the Flow
       // is a confirmation, and the generic "already so" got it sent again.
       // Except where it named an act the step already names: that model was
       // told by the checklist to name it, and "nothing to confirm" contradicted
       // it (live run 36). It is told the name stands and the todo is the fault.
-      const reason = disposition !== "kept" ? "already_out" : alreadyNamed ? "act_already_named" : "already_in_flow";
+      // A place the step already says is plainly already so: no reason of its
+      // own, so the activity and chat refusal words stay as they are.
+      const reason = disposition !== "kept" ? "already_out" : alreadyNamed ? "act_already_named" : routePlace !== undefined ? "already_so" : "already_in_flow";
       // A read whose only news was the act has already been told why.
       if (!actOnRead) refused.push({ step: amendment.step, reason, ...(reason === "act_already_named" ? { act: amendment.act! } : {}) });
       continue;
@@ -197,6 +207,8 @@ export function applyAutomationStudioFlowDraftAmendments(
     if (clearsRouting) delete step.routing;
     // One act, one step: the claim moves here from any step that held it (`../act-claim.ts`).
     if (act !== undefined) for (const from of automationStudioFlowDraftClaimAct(steps, step, act)) claims.push({ act, from, to: step });
+    // Many steps may be on one place: the claim replaces this step's own and no other's.
+    if (changesPlaces) automationStudioFlowDraftSetRoutePlaces(step, routePlace!);
     if (moves && automationStudioFlowDraftAmendmentMove(steps, step, place, undefined)) movedStep = true;
     // A press a later press of the same control undid leaves the Flow with it, once the
     // step, its openers, its act and its place are settled (`../reversal.ts`).
