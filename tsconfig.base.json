@@ -19,6 +19,7 @@
       "@fluxiq/contracts/*": ["packages/contracts/src/*.ts"],
       "fluxiq": ["packages/fluxiq/src/index.ts"],
       "fluxiq/automation-studio": ["packages/fluxiq/src/programs/automation-studio/index.ts"],
+      "fluxiq/automation-studio/candidate-authoring": ["packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/authoring-result/index.ts"],
       "fluxiq/automation-studio/nodes": ["packages/fluxiq/src/programs/automation-studio/nodes/index.ts"],
       "fluxiq/automation-studio/dsl": ["packages/fluxiq/src/programs/automation-studio/dsl/index.ts"],
       "fluxiq/automation-studio/dsl/generator": ["packages/fluxiq/src/programs/automation-studio/dsl/generator.ts"],

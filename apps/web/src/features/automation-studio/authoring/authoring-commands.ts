@@ -1,3 +1,4 @@
+import { parseAutomationStudioCandidateAuthoringResult, type AutomationStudioCandidateAuthoringResult } from "fluxiq/automation-studio/candidate-authoring";
 import type { ProgramCommandTransport } from "../data/program-transport";
 import { saveFlowInstruction } from "../instructions";
 import { WEBSITE_EXPLORATION_OVERALL_TIMEOUT_MS } from "./blank-flow-authoring-model";
@@ -15,13 +16,16 @@ export function saveFlowGenerationInstruction(api: ProgramCommandTransport, payl
   return api.post<{ instruction?: { instructionId?: string; status?: string } }>("save-flow-generation-instruction", payload);
 }
 
-export function generateFlowFromWebsiteExplorationAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; permittedConsequences?: string[] }) {
-  return api.post<{ adaptation?: { projectId?: string; flowId?: string; adaptationId?: string; status?: string } }>("generate-flow-bootstrap-adaptation", {
+export async function generateFlowFromWebsiteExplorationAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; permittedConsequences?: string[] }) {
+  const response = await api.post<{ candidate?: AutomationStudioCandidateAuthoringResult }>("generate-flow-bootstrap-adaptation", {
     ...payload,
-    evidenceGuided: true
+    evidenceGuided: true,
+    authoringMode: "candidate"
   }, {
     policy: { timeoutMs: WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS }
   });
+  return response.ok && !parseAutomationStudioCandidateAuthoringResult(response.payload, payload)
+    ? { ...response, ok: false, error: "The build did not return a valid candidate draft for this Flow." } : response;
 }
 
 /**
@@ -30,14 +34,17 @@ export function generateFlowFromWebsiteExplorationAdaptation(api: ProgramCommand
  * `extend`, so the Flow's own steps are the draft the model amends and its
  * Router, Subflow and node ids are kept.
  */
-export function improveFlowFromWebsiteAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; permittedConsequences?: string[] }) {
-  return api.post<{ adaptation?: { projectId?: string; flowId?: string; adaptationId?: string; status?: string } }>("generate-flow-bootstrap-adaptation", {
+export async function improveFlowFromWebsiteAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; permittedConsequences?: string[] }) {
+  const response = await api.post<{ candidate?: AutomationStudioCandidateAuthoringResult }>("generate-flow-bootstrap-adaptation", {
     ...payload,
     evidenceGuided: true,
+    authoringMode: "candidate",
     mode: "extend"
   }, {
     policy: { timeoutMs: WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS }
   });
+  return response.ok && !parseAutomationStudioCandidateAuthoringResult(response.payload, payload)
+    ? { ...response, ok: false, error: "The build did not return a valid candidate draft for this Flow." } : response;
 }
 
 /**

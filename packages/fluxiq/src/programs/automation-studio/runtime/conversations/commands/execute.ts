@@ -47,7 +47,8 @@ export async function executeAutomationStudioConversationCommand(input: {
     ...(outcome.error === undefined ? {} : { error: outcome.error }),
     ...(outcome.flowId === undefined ? {} : { flowId: outcome.flowId }),
     ...(outcome.runId === undefined ? {} : { runId: outcome.runId }),
-    ...(outcome.adaptationId === undefined ? {} : { adaptationId: outcome.adaptationId })
+    ...(outcome.adaptationId === undefined ? {} : { adaptationId: outcome.adaptationId }),
+    ...(outcome.candidate === undefined ? {} : { candidate: outcome.candidate })
   };
 }
 
@@ -66,7 +67,12 @@ async function settle(command: AutomationStudioConversationCommand, context: Aut
     ask: null,
     attachment: { kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: command.capability.id }
   });
-  if (outcome.status === "done" && outcome.confirm) {
+  if (outcome.status === "done" && outcome.candidate) {
+    await context.host.appendAutomationTurn({ projectId: context.projectId, conversationId: context.conversationId,
+      text: "Saved candidate draft. Verification pending; the Flow's steps are unchanged.", ask: null,
+      attachment: { kind: "candidate-draft", ref: outcome.candidate.candidateId } });
+  }
+  if (outcome.status === "done" && !outcome.candidate && outcome.confirm) {
     const askId = await askToConfirmAutomationStudioConversationCommand(context, outcome.confirm);
     if (!askId) {
       await context.host.appendAutomationTurn({

@@ -71,7 +71,7 @@ const command = (id: string) => {
   return found;
 };
 
-const BUILD_OK: Handler = () => ({ ok: true, payload: { adaptation: { adaptationId: "adaptation.1", status: "proposed" } } });
+const BUILD_OK: Handler = (payload) => ({ ok: true, payload: { candidate: { status: "draft", projectId: payload.projectId, flowId: payload.flowId, candidateId: "candidate.1", revision: 1, digest: "a".repeat(64), sourceInstructionIds: ["instruction.1"], baseDependencyDigest: "base", baseSettingsRevision: 0, accounting: { requestId: "request", estimatedInputTokens: 10 }, verification: "not_performed", promotionAllowed: false } } });
 const REVIEW_OK: Handler = (payload) => ({ ok: true, payload: { adaptation: { adaptationId: payload.adaptationId, status: payload.action === "apply" ? "applied" : "validated" } } });
 /** What a failed build that kept nothing leaves: one plain sentence (t195 `run-musp474o-e0ed7432`). */
 const NOTHING_KEPT = 'The Flow "Kettles" has no steps yet, but it keeps your instruction, so you can build it again.';
@@ -89,116 +89,6 @@ describe("conversation commands", () => {
       pool = undefined;
     }
     await rm(rootDir, { recursive: true, force: true });
-  });
-
-  it("creates a Flow here in the background: create, save, explore from the page, approve and apply", async () => {
-    const conversations = openConversations();
-    const conversationId = await chat(conversations);
-    const { port, calls } = fakePort({
-      "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.kettle" } } }),
-      "save-flow-generation-instruction": () => ({ ok: true, payload: { instruction: { instructionId: "instruction.1" } } }),
-      "generate-flow-bootstrap-adaptation": BUILD_OK,
-      "review-flow-adaptation": REVIEW_OK
-    });
-
-    const execution = await executeAutomationStudioConversationCommand({
-      command: command("flow.createHere"),
-      context: contextFor(conversations, conversationId, port),
-      arguments: { instruction: "Find the cheapest blue kettle. Then tell me its price." }
-    });
-    expect(execution).toMatchObject({ capabilityId: "flow.createHere", status: "started" });
-    await automationStudioConversationCommandWork.idle();
-
-    expect(calls).toEqual([
-      { endpoint: "create-flow", payload: { projectId: PROJECT, name: "Find the cheapest blue kettle." } },
-      { endpoint: "save-flow-generation-instruction", payload: { projectId: PROJECT, flowId: "flow.kettle", authSessionId: "session.person", instruction: "Find the cheapest blue kettle. Then tell me its price." } },
-      { endpoint: "generate-flow-bootstrap-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", authSessionId: "session.person", evidenceGuided: true, startLocation: PAGE } },
-      { endpoint: "review-flow-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", adaptationId: "adaptation.1", action: "approve" } },
-      { endpoint: "review-flow-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", adaptationId: "adaptation.1", action: "apply" } }
-    ]);
-    const [result] = await turnsOf(conversations, conversationId);
-    expect(result?.author).toBe("automation");
-    expect(result?.attachment).toEqual({ kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.createHere" });
-    // The site is named by its name; no address, query or fragment reaches the thread (UI D9).
-    expect(result?.text).toContain('Your automation "Find the cheapest blue kettle." is ready');
-    expect(result?.text).toContain("shop.example");
-    expect(result?.text).not.toContain("https://");
-    expect(result?.text).not.toContain("token=secret");
-    // True whether or not a run follows: it never tells the person to start one (live run
-    // `run-musp8nz1-dbd3905a` showed `Say "run it" to try it.` above "Running your Flow").
-    expect(result?.text).not.toContain('Say "run it"');
-  });
-
-  it("names a page served from this machine as the page the person had open, never its address", async () => {
-    const conversations = openConversations();
-    const conversationId = await chat(conversations);
-    const { port } = fakePort({
-      "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.towels" } } }),
-      "save-flow-generation-instruction": () => ({ ok: true }),
-      "generate-flow-bootstrap-adaptation": BUILD_OK,
-      "review-flow-adaptation": REVIEW_OK
-    });
-    const context = contextFor(conversations, conversationId, port, { startLocation: "http://127.0.0.1:4100/scenarios/towels" });
-    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context, arguments: { instruction: "Find towels", name: "Towels" } });
-    await executeAutomationStudioConversationCommand({ command: command("flow.explore"), context, arguments: { flowId: "flow.blank" } });
-    await automationStudioConversationCommandWork.idle();
-
-    // The two run in the background and may finish in either order.
-    const turns = await turnsOf(conversations, conversationId);
-    const said = (ref: string) => turns.find((turn) => turn.attachment?.ref === ref)?.text ?? "";
-    const texts = [said("flow.createHere"), said("flow.explore")];
-    expect(turns).toHaveLength(2);
-    for (const text of texts) {
-      expect(text).toContain("the page you had open");
-      expect(text).not.toMatch(/127\.0\.0\.1|https?:\/\//u);
-      expect(text).not.toContain('Say "run it"');
-    }
-    expect(texts[0]).toContain('Your automation "Towels" is ready');
-    expect(texts[1]).toContain("The Flow's steps are in");
-  });
-
-  it("says how far a build got in the site's name, never its address", async () => {
-    const conversations = openConversations();
-    const conversationId = await chat(conversations);
-    const { port } = fakePort({
-      "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.towels" } } }),
-      "save-flow-generation-instruction": () => ({ ok: true }),
-      "generate-flow-bootstrap-adaptation": BUILD_OK,
-      "review-flow-adaptation": () => ({ ok: false, error: "The change could not be applied." })
-    });
-    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port), arguments: { instruction: "Find towels", name: "Towels" } });
-    await automationStudioConversationCommandWork.idle();
-    const [result] = await turnsOf(conversations, conversationId);
-    expect(result?.text).toContain("tried the steps on shop.example and worked out which ones work");
-    expect(result?.text).not.toContain("https://");
-  });
-
-  // The rule is a ceiling per Flow, and the chat call that decided to build the
-  // Flow is part of what it cost (t234 W9): the build is told it, to carry in
-  // the Flow's creation purse.
-  it("passes what reading the message cost to the build it runs", async () => {
-    const conversations = openConversations();
-    const conversationId = await chat(conversations);
-    const { port, calls } = fakePort({
-      "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.kettle" } } }),
-      "save-flow-generation-instruction": () => ({ ok: true, payload: { instruction: { instructionId: "instruction.1" } } }),
-      "generate-flow-bootstrap-adaptation": BUILD_OK,
-      "review-flow-adaptation": REVIEW_OK
-    });
-
-    await executeAutomationStudioConversationCommand({
-      command: command("flow.createHere"),
-      context: contextFor(conversations, conversationId, port, { interpretationCostUsd: 0.0003 }),
-      arguments: { instruction: "Find the cheapest blue kettle." }
-    });
-    await automationStudioConversationCommandWork.idle();
-
-    const builds = calls.filter((call) => call.endpoint === "generate-flow-bootstrap-adaptation");
-    expect(builds).toEqual([
-      { endpoint: "generate-flow-bootstrap-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", authSessionId: "session.person", evidenceGuided: true, startLocation: PAGE, interpretationCostUsd: 0.0003 } }
-    ]);
-    // Only the build carries it.
-    expect(calls.filter((call) => "interpretationCostUsd" in call.payload)).toEqual(builds);
   });
 
   it("says why a build stopped and how far it had got, and applies nothing", async () => {
@@ -330,43 +220,6 @@ describe("conversation commands", () => {
     expect(outside.conversationId).not.toBe(conversationId);
   });
 
-  it("improves a Flow, then asks before applying, and a yes applies exactly that change", async () => {
-    const conversations = openConversations();
-    const conversationId = await chat(conversations);
-    const { port, calls } = fakePort({
-      "save-flow-instruction": () => ({ ok: true }),
-      "generate-flow-bootstrap-adaptation": () => ({ ok: true, payload: { adaptation: { adaptationId: "adaptation.extend", status: "proposed" } } }),
-      "review-flow-adaptation": REVIEW_OK
-    });
-    const context = contextFor(conversations, conversationId, port);
-
-    await executeAutomationStudioConversationCommand({ command: command("flow.improve"), context, arguments: { flowId: "flow.kettle", change: "Also check the second page of results." } });
-    await automationStudioConversationCommandWork.idle();
-
-    expect(calls[0]).toEqual({
-      endpoint: "save-flow-instruction",
-      payload: { projectId: PROJECT, flowId: "flow.kettle", title: "Improvement: Also check the second page of results.", body: "Also check the second page of results.", requirement: "required", tags: ["generation"] }
-    });
-    // An extend starts where the Flow already starts, not from the page on screen.
-    expect(calls[1]).toEqual({ endpoint: "generate-flow-bootstrap-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", authSessionId: "session.person", evidenceGuided: true, mode: "extend" } });
-    expect(calls.map((call) => call.endpoint)).not.toContain("review-flow-adaptation");
-
-    const [result, question] = await turnsOf(conversations, conversationId);
-    expect(result?.attachment).toEqual({ kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.improve" });
-    expect(question?.ask).toMatchObject({ kind: "confirm", parks: false, status: "pending", consequences: ["modify_existing"] });
-    expect(question?.ask?.askId.startsWith(AUTOMATION_STUDIO_CONVERSATION_COMMAND_ASK_PREFIX)).toBe(true);
-    expect(question?.attachment?.kind).toBe(AUTOMATION_STUDIO_CONVERSATION_COMMAND_ATTACHMENT);
-    expect(JSON.parse(Buffer.from(question!.attachment!.ref, "base64url").toString("utf8"))).toEqual({ capabilityId: "adaptation.apply", arguments: { flowId: "flow.kettle", adaptationId: "adaptation.extend" } });
-
-    const answered = await conversations.answerAsk({ projectId: PROJECT, askId: question!.ask!.askId, kind: "grant" });
-    const execution = await runConfirmedAutomationStudioConversationCommand({ ask: answered, attachment: question!.attachment, context });
-    expect(execution).toMatchObject({ capabilityId: "adaptation.apply", status: "done", adaptationId: "adaptation.extend" });
-    expect(calls.slice(2)).toEqual([
-      { endpoint: "review-flow-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", adaptationId: "adaptation.extend", action: "approve" } },
-      { endpoint: "review-flow-adaptation", payload: { projectId: PROJECT, flowId: "flow.kettle", adaptationId: "adaptation.extend", action: "apply" } }
-    ]);
-  });
-
   it("sets the change aside on a no, and runs nothing on a yes whose question it cannot read", async () => {
     const conversations = openConversations();
     const conversationId = await chat(conversations);
@@ -402,26 +255,6 @@ describe("conversation commands", () => {
     expect(execution).toEqual({ capabilityId: "flow.describe", status: "done", summary: "Saved what this Flow should do.", flowId: "flow.kettle" });
     expect(calls).toEqual([{ endpoint: "save-flow-generation-instruction", payload: { projectId: PROJECT, flowId: "flow.kettle", authSessionId: "session.person", instruction: "Check kettle prices daily" } }]);
     expect((await turnsOf(conversations, conversationId))[0]?.attachment).toEqual({ kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "flow.describe" });
-  });
-
-  it("explores onto a blank Flow and applies, and says so when the Flow is not blank", async () => {
-    const conversations = openConversations();
-    const conversationId = await chat(conversations);
-    const { port, calls } = fakePort({
-      "save-flow-generation-instruction": () => ({ ok: true }),
-      "generate-flow-bootstrap-adaptation": (payload) => payload.flowId === "flow.blank" ? BUILD_OK(payload) : { ok: false, error: "Flow Bootstrap requires a blank top-level orchestration Flow." },
-      "review-flow-adaptation": REVIEW_OK
-    });
-    const context = contextFor(conversations, conversationId, port);
-    await executeAutomationStudioConversationCommand({ command: command("flow.explore"), context, arguments: { flowId: "flow.blank", instruction: "Find kettles" } });
-    await executeAutomationStudioConversationCommand({ command: command("flow.explore"), context, arguments: { flowId: "flow.full" } });
-    await automationStudioConversationCommandWork.idle();
-
-    expect(calls.filter((call) => call.endpoint === "review-flow-adaptation").map((call) => call.payload.flowId)).toEqual(["flow.blank", "flow.blank"]);
-    expect(calls.filter((call) => call.endpoint === "save-flow-generation-instruction")).toHaveLength(1);
-    const texts = (await turnsOf(conversations, conversationId)).map((turn) => turn.text);
-    expect(texts.some((text) => text.includes("The Flow's steps are in: I tried them on shop.example and kept the ones that worked."))).toBe(true);
-    expect(texts.some((text) => text.includes("requires a blank top-level orchestration Flow") && text.includes("Nothing was changed."))).toBe(true);
   });
 
   it("runs a Flow in the background and reports how the run ended", async () => {
@@ -495,4 +328,29 @@ describe("conversation commands", () => {
     expect(execution.summary).toContain("database is locked");
     expect((await turnsOf(conversations, conversationId))[0]?.text).toContain("database is locked");
   });
+  it.each(["flow.createHere", "flow.explore", "flow.improve"])("%s saves a draft reference with no apply or confirmation", async (id) => {
+    const conversations = openConversations(), conversationId = await chat(conversations);
+    const { port, calls } = fakePort({ "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.draft" } } }), "save-flow-generation-instruction": () => ({ ok: true }), "save-flow-instruction": () => ({ ok: true }), "generate-flow-bootstrap-adaptation": BUILD_OK });
+    await executeAutomationStudioConversationCommand({ command: command(id), context: contextFor(conversations, conversationId, port, { interpretationCostUsd: 0.005 }), arguments: { flowId: "flow.draft", instruction: "Find products", change: "Find products", name: "Draft" } });
+    await automationStudioConversationCommandWork.idle();
+    const build = calls.find((call) => call.endpoint === "generate-flow-bootstrap-adaptation");
+    expect(build?.payload).toMatchObject({ authoringMode: "candidate", evidenceGuided: true, authSessionId: "session.person", interpretationCostUsd: 0.005 });
+    expect(calls.some((call) => call.endpoint === "review-flow-adaptation")).toBe(false);
+    const turns = await turnsOf(conversations, conversationId);
+    expect(turns.filter((turn) => turn.ask)).toEqual([]);
+    expect(turns.some((turn) => turn.attachment?.kind === "candidate-draft" && turn.attachment.ref === "candidate.1")).toBe(true);
+    expect(turns.map((turn) => turn.text).join(" ")).toContain("Verification pending");
+  });
+
+  it("a failed candidate build reports saved progress without claiming verified website actions", async () => {
+    const conversations = openConversations(), conversationId = await chat(conversations);
+    const { port, calls } = fakePort({ "save-flow-instruction": () => ({ ok: true }), "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: "Provider stopped before submission" }) });
+    await executeAutomationStudioConversationCommand({ command: command("flow.improve"), context: contextFor(conversations, conversationId, port), arguments: { flowId: "flow.original", change: "Find more products" } });
+    await automationStudioConversationCommandWork.idle();
+    const text = (await turnsOf(conversations, conversationId)).map((turn) => turn.text).join(" ");
+    expect(text).toContain("saved what should change as an instruction");
+    expect(text).not.toContain("worked out which ones work"); expect(text).not.toContain("is ready");
+    expect(calls.some((call) => call.endpoint === "review-flow-adaptation")).toBe(false);
+  });
+
 });

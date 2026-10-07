@@ -1,3 +1,4 @@
+import type { AutomationStudioCandidateAuthoringResult } from "../../flow-bootstrap/authoring-result/index.ts";
 // What a conversation command is, what it runs against, and what it answers.
 //
 // Types only. A command is a capability the chat can choose that Core runs
@@ -90,6 +91,8 @@ export type AutomationStudioConversationCommandOutcome = {
   flowId?: string;
   runId?: string;
   adaptationId?: string;
+  /** Successful authoring only; never a verified or executable result. */
+  candidate?: AutomationStudioCandidateAuthoringResult;
   /** Asked after the result is written, when the command's work needs a yes before it takes effect. */
   confirm?: AutomationStudioConversationCommandConfirmation;
 };
@@ -132,4 +135,6 @@ export type AutomationStudioConversationCommandExecution = {
   flowId?: string;
   runId?: string;
   adaptationId?: string;
+  /** Successful authoring only; never a verified or executable result. */
+  candidate?: AutomationStudioCandidateAuthoringResult;
 };

@@ -34,6 +34,7 @@ import { uniqueStrings, upsertBy } from "../collections.ts";
 import { stableJson } from "../stable-json.ts";
 import { flowMapRouteGroups, flowMapSortedRules, flowNodeFromGraphRecord, flowSubflowCategoriesFromFlow, flowSummaryFromFlow, removeUndefinedSubflowFields, sqlInstructionRequirement, sqlInstructionStatus, subflowParentCategoryId } from "./mapping.ts";
 import { withoutAutomationStudioLockedDefaultSettings, withoutAutomationStudioTokensPerRunDefault } from "../flow-settings/index.ts";
+import type { CanonicalAuthorityWholeOperation } from "../../../storage/canonical-authority/index.ts";
 
 // The Flow documents and the per-project SQL projection of them, in one place
 // because they are mutually dependent: saving a Flow writes its projection and
@@ -46,7 +47,8 @@ export class AutomationStudioFlowStore {
     private readonly projects: AutomationStudioProjectStore,
     private readonly indexes: AutomationStudioServiceIndexes,
     private readonly repositories: CanonicalAutomationStudioRepositories,
-    private readonly projectDatabasePool?: AutomationStudioProjectDatabasePool
+    private readonly projectDatabasePool?: AutomationStudioProjectDatabasePool,
+    private readonly authority?: CanonicalAuthorityWholeOperation
   ) {}
 
   async listFlowMetadataPage(input: { projectId: string; limit?: number; cursor?: string | null; status?: string }): Promise<AutomationStudioFlowResourcePage<AutomationStudioSqlFlowRecord>> {
@@ -288,6 +290,7 @@ export class AutomationStudioFlowStore {
   async writeProjectFlow(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
     await this.projects.ensureProjectStructure(projectId);
     await new ProgramJsonStore<JsonObject>(this.flowPaths.flowFile(projectId, flow.flowId), () => ({})).write(flow as unknown as JsonObject);
+    if (this.authority) await this.authority.fileEffect("project_flow_document", flow.flowId, flow, await new ProgramJsonStore<JsonObject>(this.flowPaths.flowFile(projectId, flow.flowId), () => ({})).read());
     await this.indexes.writeFlowIndex(projectId, (index) => ({
       schemaVersion: "0.1",
       ...(index.ownershipMetadataVersion === 1 ? { ownershipMetadataVersion: 1 as const } : {}),
@@ -297,13 +300,13 @@ export class AutomationStudioFlowStore {
   }
 
   async writeSqlFlowMetadata(projectId: string, flow: AutomationStudioFlowArtifact): Promise<AutomationStudioSqlFlowDetail | null> {
-    if (!this.projectDatabasePool) return null;
+    if (!this.projectDatabasePool) { if (this.authority) throw new Error("canonical_whole.sql_unavailable"); return null; }
     const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool: this.projectDatabasePool, projectId });
     try {
       const metadata = jsonObjectFromUnknown(flow.metadata) ?? {};
       const parentSubflowId = stringOrNull(metadata.parentSubflowId);
       const scope = flow.scope.kind === "domain" ? { scopeKind: "domain" as const, scopeId: flow.scope.domainId } : { scopeKind: "global" as const, scopeId: null };
-      const detail = await repository.upsertFlow({
+      const sqlInput: Parameters<AutomationStudioProjectFlowResourceRepository["upsertFlow"]>[0] = {
         flowId: flow.flowId,
         parentFlowId: stringOrNull(metadata.parentFlowId),
         owningSubflowId: parentSubflowId && await repository.getSubflow(parentSubflowId) ? parentSubflowId : null,
@@ -343,7 +346,8 @@ export class AutomationStudioFlowStore {
         outputs: flow.interface.outputs.map((port, index) => ({ portId: port.id, name: port.name, valueType: port.valueType as JsonValue, required: port.required === true, defaultValue: port.defaultValue ?? null, description: port.description ?? "", sortKey: String(index).padStart(8, "0") })),
         variables: flow.variables.map((variable, index) => ({ variableId: variable.id, name: variable.name, valueType: variable.valueType as JsonValue, initialValue: variable.initialValue ?? null, description: variable.description ?? "", sortKey: String(index).padStart(8, "0") })),
         errors: flow.errors.map((error) => ({ errorId: error.id, code: error.id, description: error.description ?? "", metadata: error.metadata ?? {} }))
-      });
+      };
+      const detail = await repository.upsertFlow(sqlInput, undefined, this.authority?.sqlCapability("sql_flow_metadata", flow.flowId, sqlInput));
       for (const [index, category] of orderSubflowCategoriesParentFirst(flowSubflowCategoriesFromFlow(flow)).entries()) {
         await repository.upsertSubflowCategory({
           categoryId: category.id,

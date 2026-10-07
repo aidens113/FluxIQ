@@ -966,3 +966,81 @@ writes that row again.
 Domain scope is part of the document identity. Raw recordings read it from the
 recording environment; derived artifacts carry it in metadata until richer
 project/task ownership records exist.
+
+## Opted-in canonical owner infrastructure
+
+The canonical SQLite factory accepts an optional `canonicalRouting` with fixed
+server-owned `projectRootDir` and `projectDatabaseRootDir` (the former must be
+the latter's `projects` child). Default legacy behavior remains available until
+durable routing mode or a binding exists. The mode check and legacy mutation
+share one global transaction, including for objects opened before opt-in.
+Flow/publication bindings, permanent tombstones, bounded claims and effect
+receipts share the existing canonical `global.sqlite`; canonical documents
+retain their IDs, physical tables and `data.document` envelopes. Replacement
+`put` cannot allocate an unbound ID. No public allocation, seeding or adoption
+API is provided; actual creator, SQL/file/repair/policy/lifecycle writers and
+accepted-generation readers remain integration prerequisites.
+
+The internal coordinator commits a global claim before an original-project
+guard claim, then commits canonical effect and owner revision together. Project
+completion and global completion are separate. Partial joins remain unresolved
+and block a coordinated global-before-project capture fence. Deferred own-operation
+effects remain pending; joining an existing whole Flow save/publish/delete
+operation is not implemented. This fence is infrastructure, not an accepted
+snapshot or production authority. Reconciliation reads actual participant
+receipts and never reconstructs a lost pending completion capability.
+
+Project existence uses actual catalogue and manifest through existing-only
+reads, without migration or fallback. File observations are repeated and do
+not establish atomic lifecycle stability. SQLite existing-only reads support
+rollback-journal databases and refuse WAL headers before opening: the node
+SQLite readonly open was observed creating WAL/SHM sidecars. Normal WAL
+catalogue integration is therefore held; immutable/copy substitutes are not
+used. Custom/memory repositories, old process drain, offline legacy seeding and
+recovery remain unsupported for this infrastructure.
+
+The internal whole-writer foundation adds focused real project creation and
+empty visual orchestration Flow creation/save owners. It binds the actual
+SQLite factory bundle and unchanged member references to fixed server roots;
+shaped/custom bundles cannot establish provenance. The current host continues
+to select canonical memory by default. These helpers do not activate service
+routing, seed existing IDs, or protect unsupported writers.
+
+Whole records use the closed `fluxiq.canonical-whole.v1` discriminant in the
+existing operation table. A generated project reservation or an existing
+original lifecycle claim commits before the project guard claim and every
+catalogue/file/SQL effect. In the normal layout, catalogue and manifest rows
+in the actual `.fluxiq/global.sqlite` share the same private authoritative
+transaction as lifecycle admission. Project SQL remains in the actual
+artifacts root's `projects/<id>/project.sqlite`; it is a second participant.
+File catalogue effects remain cooperative and can fail after a physical
+write. Either participant alone cannot certify completion.
+
+The owning methods derive five project or seven Flow effects. SQL metadata
+and feed mutations require a private live-parent, single-use capability bound
+to exact physical DB, original project, entity, kind and frozen input digest.
+Their receipts commit in the same project transaction as the effect. The
+effect transaction checks bounded Guard history bytes in SQL before reading
+records, then reuses the Guard records validator for the exact actual admitted
+request, claim, predecessor, mutation joins, pending state and current head.
+The combined legacy/capture history is at most 4096 entries, each stored JSON
+at most 8 KiB and aggregate Guard observations at most 8 MiB. Corrupt or
+oversize parent history refuses before a physical metadata or feed mutation.
+The
+parent rereads these receipts and the sealed global receipt, then requires
+actual project completion before changing global lifecycle to active.
+Counterfeit, reused, wrong-owner and closed-parent privileges refuse. Missing
+privilege refuses a persisted routed project marker; legacy absent-mode
+semantics remain compatible. Partial failure or process death preserves the
+pending claims; no timeout, callback success, replay or caller assertion
+releases them.
+
+Requests are bounded to 8 KiB, aggregate receipts to 16 KiB, individual JSON
+observations to 4 MiB, and the catalogue pair to 8 MiB. Required effect lists
+contain at most 16 entries. Missing catalogue table/index refuses and retains
+an already-admitted claim; production first-installation freshness proof is
+not implemented. Graphs, publication/delete, hierarchy/policy/instruction
+writers, custom/raw access, repair-capable reads, old-worker drain, offline
+adoption and accepted-generation/pinned readers remain outside this first
+partition. Service activation requires explicit before-first-effect refusals
+for every unsupported entry as well as the actual constructor integration.

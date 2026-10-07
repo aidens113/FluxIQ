@@ -20,7 +20,7 @@ import {
   type CanonicalAutomationStudioRepositories
 } from "../../../storage/index.ts";
 import { createHash } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, open as openFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioFlowPaths, AutomationStudioProjectPaths } from "../paths/index.ts";
 import { type AutomationStudioProjectStore, withAutomationStudioProjectDatabaseHeld } from "../projects/index.ts";
@@ -32,6 +32,8 @@ import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-value
 import { stableJson } from "../stable-json.ts";
 import { projectArtifactDocumentFileName } from "../paths/index.ts";
 import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
+import { CanonicalAuthorityWholeOperation, CanonicalAuthorityValidation as V } from "../../../storage/canonical-authority/index.ts";
+import { flowSubflowCategoriesFromFlow } from "./mapping.ts";
 
 // Writing a Flow document and everything derived from it: its representation
 // checks, the generated source file and config artifact, the summary index
@@ -51,7 +53,8 @@ export class AutomationStudioFlowWriter {
     // through the collaborator that owns the method, so an override or a stub
     // on the public method is still honoured. See service/facade-ports.ts.
     private readonly facade: AutomationStudioFacadePorts,
-    private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool
+    private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool,
+    private readonly authority?: CanonicalAuthorityWholeOperation
   ) {}
 
   async getProjectArtifact(projectId: string, kind: AutomationStudioProjectArtifactKind, artifactId: string): Promise<unknown> {
@@ -62,6 +65,7 @@ export class AutomationStudioFlowWriter {
   }
 
   async saveProjectArtifact(input: { projectId: string; kind: AutomationStudioProjectArtifactKind; artifact: unknown }): Promise<unknown> {
+    if (this.authority && input.kind !== "config") throw new Error("canonical_whole.unsupported_artifact_write");
     await this.projects.requireProject(input.projectId);
     if (input.kind !== "config") await this.legacy.assertLegacyWriteAllowed(input.projectId);
     if (!input.artifact || typeof input.artifact !== "object" || Array.isArray(input.artifact)) throw new Error("Artifact object is required.");
@@ -74,7 +78,10 @@ export class AutomationStudioFlowWriter {
       createdAt: typeof artifact.createdAt === "number" ? artifact.createdAt : now,
       updatedAt: now
     } as unknown as JsonObject;
-    await new ProgramJsonStore<JsonObject>(this.paths.projectArtifactFile(input.projectId, input.kind, id), () => ({})).write(withTimestamps);
+    if (this.authority && id !== flowConfigArtifactId(this.authority.currentFlowId())) throw new Error("canonical_whole.config_identity");
+    const store = new ProgramJsonStore<JsonObject>(this.paths.projectArtifactFile(input.projectId, input.kind, id), () => ({}));
+    await store.write(withTimestamps);
+    if (this.authority) await this.authority.fileEffect("generated_config", this.authority.currentFlowId(), withTimestamps, await store.read());
     return withTimestamps;
   }
 
@@ -83,6 +90,12 @@ export class AutomationStudioFlowWriter {
     allowPublicationMutation: boolean,
     representationCreationKind?: AutomationStudioFlowRepresentationKind
   ): Promise<AutomationStudioFlowArtifact> {
+    if (this.authority) {
+      if (allowPublicationMutation || representationCreationKind && representationCreationKind !== "orchestration" || input.flow.nodes.length || input.flow.edges.length || flowSubflowCategoriesFromFlow(input.flow).length || input.flow.source.mode !== "visual" || input.flow.metadata?.subflowGraph || input.flow.metadata?.parentFlowId || input.flow.metadata?.parentSubflowId || input.flow.publication.status !== "draft" || input.flow.publicationHistory?.length) throw new Error("canonical_whole.unsupported_flow_write");
+      const frozen = V.clone({ projectId: input.projectId, flow: input.flow, ...(input.expectedUpdatedAt === undefined ? {} : { expectedUpdatedAt: input.expectedUpdatedAt }) });
+      const execute = () => this.saveFlowUnheld(frozen, false, representationCreationKind);
+      return CanonicalAuthorityWholeOperation.current(this.authority.globalRoot) === this.authority ? execute() : this.authority.saveFlow(input.projectId, input.flow.flowId, frozen as unknown as JsonObject, execute);
+    }
     // The graph reconciliation, SQL projection and change feed each take a lease;
     // held here, they share one open database (../projects/database-hold.ts).
     return await withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId,
@@ -94,7 +107,7 @@ export class AutomationStudioFlowWriter {
     allowPublicationMutation: boolean,
     representationCreationKind?: AutomationStudioFlowRepresentationKind
   ): Promise<AutomationStudioFlowArtifact> {
-    const project = await this.projects.findProject(input.projectId);
+    const project = this.authority ? await this.authority.requireProject(input.projectId) as unknown as AutomationStudioProject : await this.projects.findProject(input.projectId);
     if (input.flow.projectId !== project.id) throw new Error("Flow projectId must match the target project.");
     const expectedScope = flowScopeForProject(project);
     if (!sameFlowScope(input.flow.scope, expectedScope)) throw new Error("Flow scope must match the target project scope.");
@@ -123,7 +136,7 @@ export class AutomationStudioFlowWriter {
     if (!validationWithSourceMetadata.ok) throw new Error(`Invalid Automation Studio Flow: ${validationWithSourceMetadata.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     const saved = await this.repositories.flows.put(flow);
     await this.flows.writeProjectFlow(project.id, saved);
-    await this.flows.reconcileCanonicalGraphFromDocument(project.id, saved);
+    if (!this.authority) await this.flows.reconcileCanonicalGraphFromDocument(project.id, saved);
     await this.writeFlowSourceFile(project.id, saved);
     await this.writeGeneratedFlowConfig(project.id, saved);
     const sqlFlow = await this.flows.writeSqlFlowMetadata(project.id, saved);
@@ -175,10 +188,10 @@ export class AutomationStudioFlowWriter {
   }
 
   async appendProjectMutationChangeFeed(input: { projectId: string; entityKind: string; entityId: string; parentId?: string | null; operation: "create" | "update" | "delete" | "touch"; revision: number; changedAt: number; hierarchyScope?: { kind: string; id?: string } | null }): Promise<void> {
-    if (!this.runtimeProjectDatabasePool) return;
+    if (!this.runtimeProjectDatabasePool) { if (this.authority) throw new Error("canonical_whole.sql_unavailable"); return; }
     const admin = await AutomationStudioProjectAdministration.open({ pool: this.runtimeProjectDatabasePool, projectId: input.projectId });
     try {
-      await admin.changeFeed.append({
+      const feedInput: Parameters<typeof admin.changeFeed.append>[0] = {
         transactionId: projectChangeTransactionId(input),
         entityKind: input.entityKind,
         entityId: input.entityId,
@@ -187,7 +200,8 @@ export class AutomationStudioFlowWriter {
         revision: input.revision,
         changedAt: input.changedAt,
         ...(input.hierarchyScope !== undefined ? { hierarchyScope: input.hierarchyScope } : {})
-      });
+      };
+      await admin.changeFeed.append(feedInput, this.authority?.sqlCapability("project_change_feed", input.entityId, feedInput));
     } finally {
       await admin.close();
     }
@@ -256,7 +270,15 @@ export class AutomationStudioFlowWriter {
     const moduleId = flowSourceModuleId(flow);
     const filePath = this.paths.projectFile(projectId, "flows", safeSegment(flow.flowId), "source", ...safeRelativePathParts(moduleId));
     await mkdir(path.dirname(filePath), { recursive: true });
-    await writeFile(filePath, sourceText ?? generateFlowTypeScript(flow), "utf8");
+    const expected = sourceText ?? generateFlowTypeScript(flow);
+    if (this.authority && Buffer.byteLength(expected) > 4 * 1024 * 1024) throw new Error("canonical_whole.source_size");
+    await writeFile(filePath, expected, "utf8");
+    if (this.authority) {
+      const handle = await openFile(filePath, "r"); let actual: string;
+      try { const bytes = Buffer.alloc(Buffer.byteLength(expected) + 1); let used = 0; while (used < bytes.length) { const chunk = await handle.read(bytes, used, bytes.length - used, used); if (!chunk.bytesRead) break; used += chunk.bytesRead; } if (used > Buffer.byteLength(expected)) throw new Error("canonical_whole.source_size"); actual = bytes.subarray(0, used).toString("utf8"); }
+      finally { await handle.close(); }
+      await this.authority.fileEffect("flow_source", flow.flowId, expected, actual);
+    }
   }
 
   async deleteFlowSourceFile(projectId: string, flow: AutomationStudioFlowArtifact): Promise<void> {
@@ -280,6 +302,8 @@ export class AutomationStudioFlowWriter {
       declaredDependencies: (flow.source.mode === "code" ? flow.source.declaredDependencies ?? [] : []) as unknown as JsonObject
     };
     if (flow.description !== undefined) values.description = flow.description;
+    // Ordinary JSON persistence omits this absent optional value. Keep that exact document in the opted receipt.
+    if (this.authority && flow.executionDefaults === undefined) delete values.executionDefaults;
     const relativePath = `configs/${safeSegment(configId)}/${projectArtifactDocumentFileName("configs")}`;
     const config: AutomationStudioConfigArtifact = {
       schemaVersion: "0.1",

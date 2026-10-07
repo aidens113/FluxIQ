@@ -6,6 +6,7 @@ import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioPr
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION } from "../schema/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
+import { CanonicalAuthorityWholeSql, type CanonicalWholeSqlCapability } from "../../canonical-authority/index.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once
@@ -17,6 +18,17 @@ describe("AutomationStudioProjectAdministration", () => {
     rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-project-administration-test-"));
   });
   afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+
+  it("refuses routed feed append without a real parent capability before the first event", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir }), admin = await AutomationStudioProjectAdministration.open({ pool, projectId: "project.routed" }), lease = await pool.acquire("project.routed");
+    const input = { transactionId: "tx.refused", entityKind: "flow", entityId: "flow.refused", operation: "create" as const, revision: 1 };
+    try {
+      await lease.database.run(CanonicalAuthorityWholeSql.schema);
+      await expect(admin.changeFeed.append(input)).rejects.toThrow("canonical_whole.sql_capability_required");
+      await expect(admin.changeFeed.append(input, {} as CanonicalWholeSqlCapability)).rejects.toThrow("canonical_whole.sql_capability");
+      expect(await admin.changeFeed.listAfter(0)).toEqual([]);
+    } finally { await lease.release(); await admin.close(); await pool.closeAll(); }
+  });
 
   it("migrates project administration tables and persists metadata across reopen", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
