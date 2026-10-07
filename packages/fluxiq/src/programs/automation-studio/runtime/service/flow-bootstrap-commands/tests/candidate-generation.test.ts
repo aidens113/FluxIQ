@@ -111,6 +111,7 @@ function boundGeneration(store: Pick<AutomationStudioFlowCandidateDraftStore, "s
     submission: { projectId: "project.1", flowId: "flow.1", registry, resolution, baseDependencyDigest: "base", instructionText: context.bootstrapInstructionText, originalSource: binding },
     originalSource: binding, sourceInstructionIds: [...binding.originalSources.effectiveInstructionIds], baseSettingsRevision: 1,
     loop: { propagateDecisionErrors: true, tools: [], maxIterations: 3, maxToolCalls: 2, executeTool: async () => { throw new Error("No discovery/effect expected"); } },
+    maxConsecutiveUnusableDecisions: 3,
     harness: { projectId: "project.1", flowId: "flow.1", instructions: [sourceFixture.instruction()], provider, deniedEvidenceKeys: [] }, runHarness: runAutomationStudioLlmHarness,
     wrapDecision: decide => decide, beforeDecision: () => undefined, progress: () => undefined, ending: () => undefined,
     authorityUsage: { calls: 0, estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },

@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapFailureStage } from "../../flow-bootstrap/index.ts";
+import { flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapFailureStage } from "../../flow-bootstrap/index.ts";
 import { runAutomationStudioFlowCandidateAuthoringLoop } from "../../flow-bootstrap/candidate/index.ts";
-import { automationStudioLlmUnusableDecisionError, type AutomationStudioLlmHarnessInput, type AutomationStudioLlmTaskResult } from "../../llm/index.ts";
+import { automationStudioLlmUnusableDecisionError, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmHarnessInput, type AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import { automationStudioActivityDecisionReason, observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import type { AutomationStudioFlowCandidateDraftRecord, AutomationStudioFlowCandidateDraftStore } from "../candidate-drafts/index.ts";
 import type { AutomationStudioInstructionAuthorityUsage } from "../index.ts";
 import { AutomationStudioCandidateSource as Source } from "../candidate-drafts/index.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioCandidateOriginalSourceBinding, AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
+import { automationStudioFlowBootstrapUnusableDecisions } from "./unusable-decisions.ts";
+import { automationStudioFlowBootstrapFailureWithSpend } from "./failure-spend.ts";
 
 type AuthoringInput = Parameters<typeof runAutomationStudioFlowCandidateAuthoringLoop>[0];
 type Decide = AuthoringInput["loop"]["decide"];
@@ -18,16 +20,24 @@ type Decide = AuthoringInput["loop"]["decide"];
  * on a yes for its exact latest revision and digest; the draft is saved either
  * way, under the candidate id minted before the loop, and the standing verdict
  * is returned for the caller to promote or not. This never promotes.
+ *
+ * An unusable decision is refused and asked again under the bound the legacy
+ * round shares (`./unusable-decisions.ts`, t354); a run of them ends the build
+ * as an unusable answer, and every ending carries the build's spend
+ * (`./failure-spend.ts`).
  */
 export async function generateAutomationStudioFlowCandidateDraft(input: {
   submission: AuthoringInput["submission"];
-  loop: Omit<AuthoringInput["loop"], "decide">;
+  loop: Omit<AuthoringInput["loop"], "decide" | "unusableDecisions">;
+  /** The build's guard on unusable decisions in a row, the one the legacy round is given (`../../loop-limits/flow-bootstrap-evidence-loop.ts`). */
+  maxConsecutiveUnusableDecisions: number;
   harness: Omit<AutomationStudioLlmHarnessInput, "taskKind" | "expectedOutput" | "evidenceLoop" | "signal"> & { provider: NonNullable<AutomationStudioLlmHarnessInput["provider"]> };
   runHarness(request: AutomationStudioLlmHarnessInput): Promise<AutomationStudioLlmTaskResult>;
   wrapDecision(decide: Decide): Decide;
   beforeDecision(): void;
   progress(accounting: AutomationStudioBootstrapAccounting, stage: AutomationStudioFlowBootstrapFailureStage): void;
-  ending(loop: Awaited<ReturnType<typeof runAutomationStudioFlowCandidateAuthoringLoop>>["loop"], accounting: AutomationStudioBootstrapAccounting): Error | undefined;
+  /** The build's own ending (a permission ask, a person needed) for a loop that stopped or stalled, or `undefined`. */
+  ending(progress: { trace: readonly AutomationStudioLlmEvidenceLoopTrace[]; accounting: Readonly<AutomationStudioLlmEvidenceLoopAccounting> }, accounting: AutomationStudioBootstrapAccounting): Error | undefined;
   authorityUsage: AutomationStudioInstructionAuthorityUsage;
   sourceInstructionIds: string[];
   baseSettingsRevision: number;
@@ -64,9 +74,12 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
     provider: input.harness.provider.metadata.provider, model: input.harness.provider.metadata.model,
     inputTokens: spent.inputTokens + input.authorityUsage.inputTokens + judged.inputTokens, outputTokens: spent.outputTokens + input.authorityUsage.outputTokens + judged.outputTokens,
     totalTokens: spent.totalTokens + input.authorityUsage.totalTokens + judged.totalTokens, estimatedCostUsd: spent.estimatedCostUsd + input.authorityUsage.estimatedCostUsd + judged.estimatedCostUsd }); };
+  // A run of unusable decisions ends as an unusable answer, staged and worded as legacy's ("the model's answer could not be used"), with the build's spend.
+  const unusableDecisions = automationStudioFlowBootstrapUnusableDecisions({ maxConsecutiveUnusableDecisions: input.maxConsecutiveUnusableDecisions, maxIterations: input.loop.maxIterations,
+    callerEnding: (progress) => input.ending(progress, accounted(progress.accounting)), stalled: (progress) => flowBootstrapEvidenceUnusableDecisionFailure(progress, accounted(progress.accounting)) });
   const authored = await runAutomationStudioFlowCandidateAuthoringLoop({
     submission: input.submission, ...(input.trial ? { trial: { candidateId, port: input.trial } } : {}),
-    loop: observeAutomationStudioEvidenceLoop({ ...input.loop, decide: input.wrapDecision(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
+    loop: observeAutomationStudioEvidenceLoop({ ...input.loop, unusableDecisions, decide: input.wrapDecision(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
       input.beforeDecision();
       input.progress(accounted(observedUsage), "provider_request");
       const decision = await input.runHarness({
@@ -76,11 +89,13 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
       });
       estimatedInputTokens += decision.request.estimatedInputTokens;
       for (const key of ["inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd"] as const) observedUsage[key] += decision.usage?.[key] ?? 0;
-      input.progress(accounted(observedUsage), decision.ok ? "provider_output_validation" : "provider_request");
-      if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw automationStudioLlmUnusableDecisionError(decision) ?? flowBootstrapHarnessFailure(decision);
+      const unusable = decision.ok && decision.response?.kind === "evidence_tool_decision" ? undefined : automationStudioLlmUnusableDecisionError(decision);
+      // A reply arrived, usable or not: a failure from here is about the answer, never "the model could not be reached" (round 3's C2).
+      input.progress(accounted(observedUsage), decision.ok || (unusable !== undefined && !unusable.providerUnanswered) ? "provider_output_validation" : "provider_request");
+      if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw unusable ?? flowBootstrapHarnessFailure(decision);
       return automationStudioActivityDecisionReason.attach({ ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) }, decision.response.summary);
     }) })
-  });
+  }).catch((error: unknown) => { throw automationStudioFlowBootstrapFailureWithSpend(error, accounted(observedUsage)); }); // Whatever ended it, the failure says what the build spent (round 3's C3).
   const accounting = accounted(authored.loop.accounting);
   input.progress(accounting, "post_provider_validation");
   if (!authored.loop.ok) throw input.ending(authored.loop, accounting) ?? flowBootstrapEvidenceLoopFailure(authored.loop, accounting);
