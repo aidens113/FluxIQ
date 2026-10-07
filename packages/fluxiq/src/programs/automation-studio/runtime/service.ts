@@ -1,4 +1,4 @@
-import { readCoreRuntimeBuildIdentity } from "../../../runtime/build-identity/index.ts"; import { createHash, randomUUID } from "node:crypto";
+import { bindTrustedModuleIdentity, type TrustedModuleBuildIdentity } from "../../../runtime/build-identity/modules/index.ts"; import { readCoreRuntimeBuildIdentity } from "../../../runtime/build-identity/index.ts"; import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioSnapshot } from "../api/index.ts";
@@ -492,7 +492,7 @@ export class AutomationStudioService {
   }
 
   /** Binds explicitly registered importer and trusted-local Code Node implementations. */
-  bindNativeNodeRuntime(runtime: AutomationStudioNativeNodeRuntime): this { this.nativeNodeRuntime = runtime; return this; }
+  bindNativeNodeRuntime(runtime: AutomationStudioNativeNodeRuntime, identity?: TrustedModuleBuildIdentity | null): this { bindTrustedModuleIdentity(this, identity); this.nativeNodeRuntime = runtime; return this; }
 
   bindHostRuntime(runtime: AutomationStudioHostRuntimeBoundary): this { this.hostRuntime = runtime; return this; }
 
