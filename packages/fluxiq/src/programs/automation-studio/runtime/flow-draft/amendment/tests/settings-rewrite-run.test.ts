@@ -60,6 +60,49 @@ describe("settings that rewrite what a step ran with", () => {
     }
   });
 
+  // Live run `run-muxkzdjw-31a13429` (lane A round 4, decision 0029): about step
+  // 13, the press of "Get coupons" that collected the coupon (act a2), the model
+  // sent `add` with `act: a1.quantity` and the `input` of a step it never ran --
+  // typing 3 into the quantity field -- meaning "add the quantity step". `input`
+  // belongs to rerun and bind; on `add` it was dropped unsaid, the decision was
+  // answered "applied", and the coupon press claimed the quantity. The model
+  // then reran "its quantity step" onto the "+" control as a check that ran
+  // nothing, and the build never pressed Add to cart.
+  it("run muxkzdjw 0029: add with act and the input of another action is refused and changes nothing", () => {
+    const steps = draft();
+    const before = structuredClone(steps);
+    const report = applyAutomationStudioFlowDraftAmendments(steps, [
+      { step: 1, change: "add", to: 2, act: "a1.quantity", input: { node: "web.output.dom-type", parameters: { target: { handle: "t964" }, text: "3", submit: false }, consequences: [] } }
+    ]);
+    expect(report).toEqual({ applied: 0, refused: [{ step: 1, reason: "settings_rewrite_run" }] });
+    expect(steps).toEqual(before);
+    expect(steps[0]!.acts).toBeUndefined();
+  });
+
+  it("refuses an input on keep, drop or optional that names another control, as a patch or written out", () => {
+    for (const amendment of [
+      { step: 1, change: "keep" as const, act: "a1", input: { target: { handle: "t965" } } },
+      { step: 1, change: "optional" as const, input: { parameters: { target: { handle: "t965" } } } },
+      { step: 2, change: "add" as const, input: { node: "web.dom.click", parameters: { selector: "#elsewhere" } } }
+    ]) {
+      const steps = draft();
+      const before = structuredClone(steps);
+      expect(applyAutomationStudioFlowDraftAmendments(steps, [amendment])).toEqual({ applied: 0, refused: [{ step: amendment.step, reason: "settings_rewrite_run" }] });
+      expect(steps).toEqual(before);
+    }
+  });
+
+  it("still applies an add whose input repeats what the step ran with, and bind's own input", () => {
+    const steps = draft();
+    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "add", act: "a1", input: { node: "web.dom.click", parameters: { target: { handle: "t958" } }, consequences: [] } }]))
+      .toEqual({ applied: 1, refused: [] });
+    expect(steps[1]).toMatchObject({ disposition: "kept", acts: ["a1.origin", "a1"] });
+    const flat: AutomationStudioFlowDraftStep[] = [1, 2].map((position) => ({
+      position, iteration: position, actionId: "type", input: { text: `value ${position}`, submit: false }, effect: "mutate" as const, effectApplied: true, disposition: "kept" as const
+    }));
+    expect(applyAutomationStudioFlowDraftAmendments(flat, [{ step: 2, change: "bind", input: { text: { $input: "words", test: "value 2" } } }]).refused).toEqual([]);
+  });
+
   it("still applies settings the step did not run with, and a parameter given the value it ran with", () => {
     const steps = draft();
     expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "add", act: "a1", settings: { expectedState: "cart shows the hub", timeoutMs: 5000 } }]))

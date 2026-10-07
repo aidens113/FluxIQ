@@ -29,6 +29,18 @@
 //      that could do the act shows it by its change (`another_step_shows_it`,
 //      below).
 //
+// **Before all of that, and for an act of any kind: a press that changed
+// nothing anyone could see** -- the host's state digest the same either side,
+// no changed line, no flipped choice, no layer answered -- does no act
+// (`step_changed_nothing_seen`), whatever its words. Run `run-muxkyfxz-446c3a4e`
+// (lane B round 4) put a1, "Switch my pickup store to Millbrook Crossing
+// Supercenter", on `core.run_node` pressing the store's name in the chooser,
+// not its "Set as my store": the page's words after it were byte-identical,
+// only the chooser's list had moved, and a1 was counted done. With no step to
+// point at, the sentence names the words the doing control carries -- the
+// act's verb and the words of its kind the person used -- next to the control
+// pressed.
+//
 // Only acts of adding, saving, claiming, submitting and moving: a set or open
 // act's control often names only the value or the place, which is the act. A
 // toggle alone is never read: a heart or a clip toggle can be the save or the
@@ -77,12 +89,14 @@ export type AutomationStudioInstructedActStepInstead =
   /** `chooses`: the id of the act's own choice the step made. */
   | { fault: "step_only_chooses"; chooses: string }
   /** Its change shows nothing of the act, and another step's change shows it (see the header). */
-  | { fault: "another_step_shows_it" };
+  | { fault: "another_step_shows_it" }
+  /** It ran and worked and changed nothing anyone could see (see the header). */
+  | { fault: "step_changed_nothing_seen" };
 
 /** The reasons whose sentence says what the step did and where the act is named (`automationStudioInstructedActEvidenceSaid`). */
 export type AutomationStudioInstructedActEvidenceFault = Extract<
   AutomationStudioInstructedActMissingReason,
-  "step_only_chooses" | "step_only_clears_the_way" | "step_only_arrives" | "step_only_opens_its_choices" | "another_step_shows_it"
+  "step_only_chooses" | "step_only_clears_the_way" | "step_only_arrives" | "step_only_opens_its_choices" | "another_step_shows_it" | "step_changed_nothing_seen"
 >;
 
 const EVIDENCE_FAULTS: ReadonlySet<string> = new Set<AutomationStudioInstructedActEvidenceFault>([
@@ -90,7 +104,8 @@ const EVIDENCE_FAULTS: ReadonlySet<string> = new Set<AutomationStudioInstructedA
   "step_only_clears_the_way",
   "step_only_arrives",
   "step_only_opens_its_choices",
-  "another_step_shows_it"
+  "another_step_shows_it",
+  "step_changed_nothing_seen"
 ]);
 
 /** The acts whose control must name them: a set or open act's control often names only its value or place. */
@@ -124,7 +139,8 @@ export function automationStudioInstructedActChangeShows(act: AutomationStudioIn
  * when the act is not one of adding, saving, claiming, submitting or moving,
  * the step's change shows the act, its control has no words, its words name
  * the act, or its record shows nothing else (see the header). `acts`, the
- * instruction's acts, tell which other step could do it instead.
+ * instruction's acts, tell which other step could do it instead. A step that
+ * changed nothing anyone could see does no act of any kind, whatever its words.
  */
 export function automationStudioInstructedActStepDidInstead(
   act: AutomationStudioInstructedAct,
@@ -132,6 +148,7 @@ export function automationStudioInstructedActStepDidInstead(
   steps: readonly Step[],
   acts: readonly AutomationStudioInstructedAct[]
 ): AutomationStudioInstructedActStepInstead | undefined {
+  if (changedNothingSeen(step)) return { fault: "step_changed_nothing_seen" };
   if (!LASTING.has(act.kind)) return undefined;
   // What the step changed showing the act wins over its words, a choice and an interruption.
   if (automationStudioInstructedActChangeShows(act, step)) return undefined;
@@ -225,14 +242,52 @@ export function automationStudioInstructedActEvidenceSaid(input: {
         ? `Step ${step.position}${named} went to another page`
         : input.fault === "another_step_shows_it"
           ? `Step ${step.position}${named} changed nothing that shows ${act.id}`
-          : `Step ${step.position}${named} only opened the page where ${act.id}'s choices are made`;
+          : input.fault === "step_changed_nothing_seen"
+            ? `Step ${step.position}${named} changed nothing anyone could see on the page (no words, choice or layer changed; a list that only moved is no change)`
+            : `Step ${step.position}${named} only opened the page where ${act.id}'s choices are made`;
   const there = input.instead === undefined ? undefined : input.steps.find((each) => each.position === input.instead);
   const thereWords = there ? wordsOf(there) : undefined;
   const how = there && automationStudioInstructedActChangeShows(act, there) ? "shows it" : "names it";
   const next = input.instead !== undefined
     ? `Step ${input.instead}${thereWords ? ` (${JSON.stringify(thereWords)})` : ""} ${how}: name ${act.id} there with amend_draft add on step ${input.instead} with act ${act.id}.`
-    : `No step in the draft names it yet: on the page where ${act.id} is done, ${act.requires?.length ? "after its choices, " : ""}run the press whose words name it with add true and act ${act.id}.`;
+    : input.fault === "step_changed_nothing_seen"
+      ? unseenWayOut(act, words)
+      : `No step in the draft names it yet: on the page where ${act.id} is done, ${act.requires?.length ? "after its choices, " : ""}run the press whose words name it with add true and act ${act.id}.`;
   return `${did}, and does not do ${act.id}. ${next}`;
+}
+
+/**
+ * Whether the step ran, its command worked, and it changed nothing anyone
+ * could see: the host stated a state digest either side and the two are the
+ * same, and it states no changed line, no flipped choice and no layer it
+ * answered. The exploration reducer already reads equal digests as a step
+ * that changed nothing (`../../exploration-reduction/backward-slice.ts`); the
+ * web domain's digest leaves out where the page is scrolled and laid out, so a
+ * press that only moved a list is one of these. Never a step written,
+ * checked or standing for an earlier run, none of which was pressed here, and
+ * never one whose host stated no digests.
+ */
+function changedNothingSeen(step: Step): boolean {
+  if (step.effect !== "mutate" || step.effectApplied !== true || step.written === true || step.checkedCandidate !== undefined || step.priorExecution !== undefined) return false;
+  if (step.stateBefore === undefined || step.stateAfter === undefined || step.stateBefore !== step.stateAfter) return false;
+  return !step.changed?.length && step.toggle === undefined && step.interruption !== true;
+}
+
+/**
+ * Where to do an act no step of the draft does, after a press that changed
+ * nothing: the words the control that does it carries -- its verb, and the
+ * words of its kind the person used -- next to the control pressed, or, where
+ * the pressed control's own words name the act, that press again.
+ */
+function unseenWayOut(act: AutomationStudioInstructedAct, words: string | undefined): string {
+  if (words !== undefined && namesAct(act, words)) {
+    return `No step in the draft does it yet: the page ignored that press; press ${JSON.stringify(words)} again and keep the press that changes the page, with add true and act ${act.id}.`;
+  }
+  const said = [...new Set([act.verb, ...AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS[act.kind].filter((word) => automationStudioInstructedActNamesWord(act.quote, word))])]
+    .map((word) => JSON.stringify(word));
+  const which = said.length > 1 ? `${said.slice(0, -1).join(", ")} or ${said[said.length - 1]}` : said[0];
+  const near = words !== undefined ? ` next to ${JSON.stringify(words)} -- not those words themselves --` : "";
+  return `No step in the draft does it yet: on that page, press the control whose words say it, such as ${which},${near} with add true and act ${act.id}.`;
 }
 
 function choseSaid(act: AutomationStudioInstructedAct, step: Step, words: string | undefined, chooses: string | undefined): string {

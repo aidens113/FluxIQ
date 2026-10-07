@@ -159,6 +159,10 @@ const CLEARS_INSTRUCTION = " A reason of step_only_clears_the_way means the step
 const ANOTHER_SHOWS_INSTRUCTION = " A reason of another_step_shows_it means what the step named changed on its page shows nothing of the act, and its words do not name it, while another step's change does show it -- a cart count that rose, an \"Added to cart\" that appeared: "
   + "leave the step named as it is, and name the act on the step that shows it (instead).";
 
+/** Said only when a claim named a press that changed nothing anyone could see (`./act-evidence.ts`, run muxkyfxz). */
+const UNSEEN_INSTRUCTION = " A reason of step_changed_nothing_seen means the step named ran, but no words, choice or layer on the page changed after it, so it did not do the act: "
+  + "press the control whose words say the act (instead, where the draft has one), keep the press that changes the page, and name the act on it.";
+
 /** Said only when a claim named a step that only opened the page of the act's choices (`./standing.ts`, run mux6pndp). */
 const OPENS_CHOICES_INSTRUCTION = " A reason of step_only_opens_its_choices means the step named only opened the page where the act's own choices are made, and its control does not name the act: it prepares the act and does not do it. "
   + "On that page, after the choices, press the control that does the act (such as its add), keep that step, and name it for the act.";
@@ -356,6 +360,7 @@ const REASON_INSTRUCTIONS: ReadonlyArray<readonly [AutomationStudioInstructedAct
   ["step_only_chooses", CHOOSES_INSTRUCTION],
   ["step_only_clears_the_way", CLEARS_INSTRUCTION],
   ["another_step_shows_it", ANOTHER_SHOWS_INSTRUCTION],
+  ["step_changed_nothing_seen", UNSEEN_INSTRUCTION],
   ["step_is_optional", OPTIONAL_INSTRUCTION],
   ["act_needs_repeat", REPEAT_INSTRUCTION],
   ["span_stops_short", SPAN_INSTRUCTION],

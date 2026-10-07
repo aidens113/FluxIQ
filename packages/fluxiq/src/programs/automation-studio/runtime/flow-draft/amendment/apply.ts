@@ -155,7 +155,12 @@ export function applyAutomationStudioFlowDraftAmendments(
     // disposition, act, move, routing or bind of the amendment is applied
     // either. Live run `run-mux74k5q-1c3c2127` (C1, 0025) added a press of Spain
     // with `settings.target` the quantity field (`./settings-rewrite-run.ts`).
-    if (automationStudioFlowDraftSettingsRewriteRun(step, amendment.settings)) {
+    // So does an `input` on a change that takes none (all but bind here; a
+    // rerun was answered above): run `run-muxkzdjw-31a13429` (0029) added the
+    // coupon press with the input of typing 3 into the quantity field, which
+    // was dropped unsaid.
+    const inputNotTaken = amendment.change === "bind" ? undefined : amendment.input;
+    if (automationStudioFlowDraftSettingsRewriteRun(step, amendment.settings, inputNotTaken)) {
       refused.push({ step: amendment.step, reason: "settings_rewrite_run" });
       continue;
     }

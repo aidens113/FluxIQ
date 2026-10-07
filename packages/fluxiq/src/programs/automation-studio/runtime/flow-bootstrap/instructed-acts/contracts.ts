@@ -183,6 +183,18 @@ export type AutomationStudioInstructedActMissingReason =
    */
   | "another_step_shows_it"
   /**
+   * The step named ran and its command worked, but it changed nothing anyone
+   * could see: the host's state digest after it is the one before it, and it
+   * states no changed line and no flipped choice. A digest leaves out where the
+   * page is scrolled and laid out, so a press that only scrolled a list is one
+   * of these. Run `run-muxkyfxz-446c3a4e` (lane B round 4) put a1, "Switch my
+   * pickup store to Millbrook Crossing Supercenter", on a press of the store's
+   * name in the chooser -- not its "Set as my store" -- after which the page's
+   * words were byte-identical and the store was still Carden Falls
+   * (`./act-evidence.ts`). Any kind of act.
+   */
+  | "step_changed_nothing_seen"
+  /**
    * The step named is marked optional, so the Flow carries on when it fails
    * and the act may never be done (`run-munnop9n-5475d593`, `./check.ts`).
    */
@@ -245,7 +257,8 @@ type AutomationStudioInstructedMissingWhy = {
   chooses?: string;
   /**
    * `step_only_chooses`, `step_only_clears_the_way`, `step_only_arrives`,
-   * `step_only_opens_its_choices` and `another_step_shows_it`: the position of
+   * `step_only_opens_its_choices`, `another_step_shows_it` and
+   * `step_changed_nothing_seen`: the position of
    * a step whose change shows the act, else one whose words name it, where
    * the draft has one (`./act-evidence.ts`).
    */

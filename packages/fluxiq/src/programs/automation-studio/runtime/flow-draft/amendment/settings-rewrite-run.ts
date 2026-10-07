@@ -20,6 +20,18 @@
 // before. Checked once, in `./apply.ts`, before an amendment changes anything,
 // so it covers every place this directory merges settings: `./apply.ts`,
 // `./move.ts`, `./bind.ts` and `./route.ts`.
+//
+// **An `input` is held to the same rule where the change takes none.** Only
+// `rerun` (a patch over what the step ran with) and `bind` (the parameters to
+// lift) read an amendment's `input`; every other change dropped it unsaid. Live
+// run `run-muxkzdjw-31a13429` (lane A round 4, decision 0029) sent
+// `{"step":13,"change":"add","act":"a1.quantity","input":{"node":"web.output.dom-type",
+// "parameters":{"target":{"handle":"t964"},"text":"3"}}}` about the press of
+// "Get coupons" that collected the coupon: the model meant "add the quantity
+// step", was answered "applied", and the coupon press claimed the quantity. An
+// `input` naming another node, or giving a parameter the step ran with another
+// value, written out or as a patch, is refused whole the same way; one that
+// repeats what the step ran with says nothing new and passes.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../step.ts";
@@ -27,8 +39,26 @@ import type { AutomationStudioFlowDraftStep } from "../step.ts";
 /** The key a node call's argument holds its parameters under. */
 const PARAMETERS_KEY = "parameters";
 
+/** The key a node call's argument names its node under. */
+const NODE_KEY = "node";
+
+/**
+ * Whether `settings` -- or `input`, given only for a change that takes none
+ * (not `rerun` or `bind`) -- would make the step another action, or give a
+ * parameter the step ran with a value it did not run with.
+ */
+export function automationStudioFlowDraftSettingsRewriteRun(step: AutomationStudioFlowDraftStep, settings: JsonObject | undefined, input?: JsonObject | undefined): boolean {
+  return rewritesParameters(step, settings) || (input !== undefined && (namesAnotherNode(step, input) || rewritesParameters(step, parametersOf(input))));
+}
+
+/** Whether `input` names a node other than the one the step ran. */
+function namesAnotherNode(step: AutomationStudioFlowDraftStep, input: JsonObject): boolean {
+  const node = input[NODE_KEY];
+  return typeof node === "string" && node !== step.actionId && node !== step.input[NODE_KEY];
+}
+
 /** Whether `settings` would give a parameter the step ran with a value it did not run with. */
-export function automationStudioFlowDraftSettingsRewriteRun(step: AutomationStudioFlowDraftStep, settings: JsonObject | undefined): boolean {
+function rewritesParameters(step: AutomationStudioFlowDraftStep, settings: JsonObject | undefined): boolean {
   if (!settings) return false;
   const ranWith = [parametersOf(step.ranWith), parametersOf(step.input)].filter((value): value is JsonObject => value !== undefined);
   return Object.entries(settings).some(([key, value]) => {
