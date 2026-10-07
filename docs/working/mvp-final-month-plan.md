@@ -117,6 +117,8 @@ compatibility is migrated and recovery regenerates them after commit. Detailed
 owner/read/write migration is being recorded by the promotion worker; P2 remains
 incomplete, with no reduction in the requested atomicity or outcome proof.
 
+- Validation: Source audit only; no atomic promotion or crash-recovery success is claimed. See the paired downstream p2-promotion-design.md report for the inspected owners and migration requirements.
+
 ### 2026-10-06 - Draft facade paired push; durable ledger scope bounded
 - Agent: Codex supervisor.
 - Changed: Core7f9bae15/downstream59b61cc2 pushed; t304 next receipt ledger brief downstream, no accepting promoter yet.
