@@ -61,6 +61,7 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 /** The program endpoints a paired client's bearer token may call, by program. */
 export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   "automation-studio": Object.freeze([
+    "get-runtime-build-identity",
     "list-conversations",
     "open-conversation",
     "get-conversation",

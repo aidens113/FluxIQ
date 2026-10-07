@@ -1902,6 +1902,12 @@ Durable runtime sessions parked with `expiresAtMs` arm a deadline when written o
 
 Project deletion blocks deadline writes, waits for in-flight session writes, and persists cancellation of parked sessions before settling their asks and removing project records. If removal fails, the original error is retained, and waits already cancelled remain cancelled. Waiting records whose cancellation failed retain their deadlines.
 
+
+### Executing Core build identity
+
+`get-runtime-build-identity` is an authenticated read endpoint (`programs.read`) also explicitly allowed for restricted paired clients. It projects only the immutable build descriptor captured by the actual Automation Studio service at construction and the hash of requested reached artifact contracts. A retained Next global service cannot claim a newer route module or files written after it was constructed.
+
+The owning Core build generator embeds executing fluxiq/contracts JavaScript hashes and writes an ignored disk stamp with source freshness. Its `reader-payload-v1` digest normalizes only the reader's embedded payload literal; every surrounding reader byte remains hashed. This is a normalized artifact digest, not a raw full-dist checksum. Missing/malformed identity refuses admission. It certifies Core service/contracts artifacts, not the separately built client-gateway-websocket adapter or downstream host module.
 ### Build cancellation and extension Stop
 
 `cancel-flow-bootstrap` is an authoring endpoint under `runtime.control`, scoped

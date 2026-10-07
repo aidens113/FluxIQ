@@ -125,3 +125,10 @@ incomplete, with no reduction in the requested atomicity or outcome proof.
 - Validation: actual facade/API/conversation/reauthor53/53, package check/build and dependent webcheck0, taskaudits0; records in paired report.
 - Outcome: Partial overall plan.
 - Follow-up: t302 immutableidentity input inventory correction; t304 truthful durable claims and create-empty-scope negative, then authoritative topology migration. Public candidate request only returns unverified draft and cannot apply. No provider/fullsuite/userpanel.
+
+### 2026-10-07 - t302 executing Core identity verified
+- Agent: Codex supervisor.
+- Changed: owning generator/immutable reader snapshot at service construction; bounded authenticated diagnostic. Latest dev integrated preserving cancellation/facade.
+- Validation: independent generator/cache10/10, reader/diagnostic/real Next routes59/59, fluxiq check/build and webcheck0, both audits0; downstream headed Chromium retained-service identity/runner61/61 and HTTP15/15. Intended normalized artifact4f29565327f008c5bad030ebc88f2859c7178c37d32aeda3aa7c7d95868d2424; zero provider/chat dispatch.
+- Outcome: Paired task ready to integrate. Downstream reports/p0-core-runtime-identity.md preserves commands/limits.
+- Follow-up: running host-module/server-adapter identities not covered by this stamp; atomic receipt/topology authority and trusted start/oracle still pending. No full suite or user panel.

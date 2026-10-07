@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { readCoreRuntimeBuildIdentity } from "../../../runtime/build-identity/index.ts"; import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AutomationStudioSnapshot } from "../api/index.ts";
@@ -382,7 +382,7 @@ export class AutomationStudioService {
   private llmProviderResolver?: AutomationStudioServiceOptions["llmProviderResolver"];
   private llmEvidenceRuntime?: AutomationStudioServiceOptions["llmEvidenceRuntime"];
   private resultCheckProviderResolver?: AutomationStudioServiceOptions["resultCheckProviderResolver"];
-  private readonly runtimeAbortControllers = new Map<string, AbortController>(); readonly buildCancellation = new AutomationStudioBuildCancellation();
+  private readonly runtimeAbortControllers = new Map<string, AbortController>(); readonly buildCancellation = new AutomationStudioBuildCancellation(); readonly coreRuntimeBuildIdentity = readCoreRuntimeBuildIdentity();
   /** Live runs a person can pause, take over and resume; read by the run-control endpoints. */
   readonly runControl = new AutomationStudioRunControlRegistry();
   private readonly adaptiveRuntimeAdmissions = new Set<string>();

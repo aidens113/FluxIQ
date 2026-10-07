@@ -30,7 +30,8 @@ import { GET, POST } from "../route";
 const TOKEN = "pairing-token-secret-value";
 
 const ALLOWLISTED = [
-  "list-conversations",
+  "get-runtime-build-identity",
+    "list-conversations",
   "open-conversation",
   "get-conversation",
   "append-turn",
@@ -50,6 +51,7 @@ const ALLOWLISTED = [
 ];
 
 const CLASSIFICATIONS: Record<string, string> = {
+  "get-runtime-build-identity": "read",
   "list-conversations": "read",
   "open-conversation": "authoring",
   "get-conversation": "read",

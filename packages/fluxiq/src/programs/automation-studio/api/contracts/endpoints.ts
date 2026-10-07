@@ -1,4 +1,5 @@
 export const AUTOMATION_STUDIO_ENDPOINTS = {
+  runtimeBuildIdentity: "get-runtime-build-identity",
   performanceMetrics: "get-performance-metrics",
   snapshot: "snapshot",
   listProjectProblems: "list-project-problems",
