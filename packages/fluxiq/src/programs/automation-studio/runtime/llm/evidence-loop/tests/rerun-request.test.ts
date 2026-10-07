@@ -12,6 +12,8 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceRerunRequest } from "../index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
+import { automationStudioLlmEvidenceCanonicalJson } from "../../evidence-loop-decision.ts";
+import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "../../repeat-guard/index.ts";
 
 const step = (position: number, actionId: string, toolId?: string): AutomationStudioFlowDraftStep => ({
   position,
@@ -280,7 +282,7 @@ describe("a rerun of the attempt a rerun replaced", () => {
       ({ ...step(position, "web.output.dom-extract_list", "core.run_node"), id, effect: "observe", ...over });
     const draft = [list(6, "d18"), { ...step(7, "web.press", "core.run_node"), id: "d7" }, list(8, "d6", { disposition: "dropped", replacedBy: "d18" })];
 
-    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(8, { where: "fixed" })], draft, offered, () => true);
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(8, { where: "fixed" })], draft, offered, () => ({ callId: "earlier", outcome: "failed" }));
 
     expect(resolved).toEqual({ request: undefined, refused: [{ step: 8, reason: "not_a_kept_step", replacedBy: 6 }] });
   });
@@ -306,7 +308,7 @@ describe("a rerun of a step the domain refused", () => {
   it("runs without the key the model left out of the object it restated", () => {
     const patch = { extractList: { handle: "extraction.3", fields: columns, where, paginate: { mode: "next", next: "a[rel=next]", maxPages: 10 }, minItems: 0 } };
 
-    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(8, patch)], [refusedRead()], offered, () => false, ["selector"]);
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(8, patch)], [refusedRead()], offered, () => undefined, ["selector"]);
 
     // Before: the call carried `extractList.maxPages: 10` beside `paginate.maxPages: 10`.
     expect(extractListOf(resolved.request?.input)).toEqual(patch.extractList);
@@ -316,7 +318,7 @@ describe("a rerun of a step the domain refused", () => {
   });
 
   it("still names the key it kept when the patch changed only what it named", () => {
-    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(8, { extractList: { paginate: { mode: "next", maxPages: 10 } } })], [refusedRead()], offered, () => false, ["selector"]);
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(8, { extractList: { paginate: { mode: "next", maxPages: 10 } } })], [refusedRead()], offered, () => undefined, ["selector"]);
 
     expect(extractListOf(resolved.request?.input)).toMatchObject({ maxPages: 10, paginate: { next: "a[rel=next]", mode: "next", maxPages: 10 } });
     // What the loop tells the model with the rerun's answer (`../../rerun-arguments/note.ts`).
@@ -335,12 +337,98 @@ describe("a rerun that restates a column map", () => {
   const patch = { extractList: { fields: { name: "kA", mutualFriends: "kB" } } };
 
   it("runs with the columns it wrote, given the domain's denied keys", () => {
-    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(7, patch)], [listing()], offered, () => false, ["selector"]);
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(7, patch)], [listing()], offered, () => undefined, ["selector"]);
     expect(fieldsOf(resolved.request?.input)).toEqual({ name: "kA", mutualFriends: "kB" });
   });
 
   it("keeps the column without them, as before", () => {
     const resolved = automationStudioLlmEvidenceRerunRequest([rerun(7, patch)], [listing()], offered);
     expect(fieldsOf(resolved.request?.input)).toEqual({ name: "kA", mutualFriends: "kB", confirm: "kC" });
+  });
+});
+
+// Live run `run-muxky54f-fadb9d03` (lane D round 4, D4-1): step 11 read the
+// listing with `where [{field: mutual, atLeast: 5}]`, step 12 read it again with
+// no where and was kept as the Flow's listing. Five reruns of step 12 with that
+// where (0025-0037) merged to exactly step 11's call on the page both started
+// on, which the repeat guard holds as `changed_nothing` -- any read does -- and
+// each was refused `changes_nothing`, unrun, though it would have changed step
+// 12. The Flow kept the unfiltered listing.
+describe("a rerun of a read whose argument an earlier identical read on its page already ran", () => {
+  const where = [{ field: "mutual", atLeast: 5 }];
+  const read = (position: number, extractList: JsonObject, over: Partial<AutomationStudioFlowDraftStep> = {}): AutomationStudioFlowDraftStep => ({
+    ...step(position, "web.output.dom-extract_list", "core.run_node"), effect: "observe", effectApplied: true, proposes: true,
+    stateBefore: "suggestions", stateAfter: "suggestions", replay: { from: { location: "suggestions" } },
+    input: { node: "web.output.dom-extract_list", parameters: { extractList }, consequences: [] }, ...over
+  });
+  const columns = { handle: "extraction.4", fields: { name: "kName", mutual: "kMutual" } };
+  const filtered = read(11, { ...columns, where }, { disposition: "dropped" });
+  const listing = read(12, columns);
+  // The guard as it stood: step 11's call, on the page it started on, ran and changed nothing.
+  const guard = (outcome: AutomationStudioLlmEvidenceRepeatedOutcome["outcome"], held: AutomationStudioFlowDraftStep = filtered) =>
+    vi.fn((toolId: string, input: JsonObject, at?: string): AutomationStudioLlmEvidenceRepeatedOutcome | undefined =>
+      toolId === "core.run_node" && at === held.stateBefore && automationStudioLlmEvidenceCanonicalJson(input) === automationStudioLlmEvidenceCanonicalJson(held.input) ? { callId: "0022", outcome } : undefined);
+
+  it("is requested, because it changes the kept step, not refused changes_nothing", () => {
+    const ranAlready = guard("changed_nothing");
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(12, { extractList: { ...columns, where } })], [filtered, listing], offered, ranAlready);
+
+    expect(resolved.refused).toEqual([]);
+    expect(resolved.request).toMatchObject({ step: 12, toolId: "core.run_node", callId: "rerun.12" });
+    expect(automationStudioLlmEvidenceCanonicalJson(resolved.request!.input)).toBe(automationStudioLlmEvidenceCanonicalJson(filtered.input));
+    // It was asked on step 12's own page, and answered `changed_nothing`: the answer is what was ignored.
+    expect(ranAlready).toHaveReturnedWith({ callId: "0022", outcome: "changed_nothing" });
+  });
+
+  it("is still refused when it is the identical rerun: the step's own input, which changed nothing there", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(12, { extractList: columns })], [filtered, listing], offered, guard("changed_nothing", listing));
+
+    expect(resolved).toEqual({ request: undefined, refused: [{ step: 12, reason: "changes_nothing" }] });
+  });
+
+  it("is still refused when the earlier identical call failed there", () => {
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(12, { extractList: { ...columns, where } })], [filtered, listing], offered, guard("failed"));
+
+    expect(resolved).toEqual({ request: undefined, refused: [{ step: 12, reason: "changes_nothing" }] });
+  });
+
+  it("of a press is still refused when the earlier identical press changed nothing there", () => {
+    const pressAt = (position: number, target: string): AutomationStudioFlowDraftStep => ({
+      ...step(position, "web.dom.click", "core.run_node"), effect: "mutate", effectApplied: false, stateBefore: "suggestions", replay: { from: { location: "suggestions" } },
+      input: { node: "web.dom.click", parameters: { target }, consequences: [] }
+    });
+    const tried = pressAt(11, "Add friend");
+    const resolved = automationStudioLlmEvidenceRerunRequest([rerun(12, { parameters: { target: "Add friend" } })], [tried, pressAt(12, "Message")], offered, guard("changed_nothing", tried));
+
+    expect(resolved).toEqual({ request: undefined, refused: [{ step: 12, reason: "changes_nothing" }] });
+  });
+});
+
+// The same shape through the loop: the read with the where ran first and changed
+// nothing on its page, so its call is held; the rerun of the read without it
+// must run, from that page, and replace the kept step.
+describe("the loop running that rerun", () => {
+  it("runs the read with the where in step 2's place, unrefused", async () => {
+    const list = { toolId: "list", description: "List records.", inputSchema: { type: "object" }, effect: "observe" as const };
+    const where = [{ field: "mutual", atLeast: 5 }];
+    const executeTool = vi.fn(async ({ value }: { value: JsonObject }) => ({
+      kind: "llm_evidence_tool_execution" as const, stateDigests: { before: "suggestions", after: "suggestions" },
+      evidence: { ok: true, rows: value.where ? 4 : 13 }, effectApplied: true, resultCode: "web.inspect.succeeded",
+      draft: { actionId: "web.output.dom-extract_list", effect: "observe" as const, proposes: true }
+    }));
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "0022", toolId: "list", input: { list: "suggestions", where }, add: true })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "0024", toolId: "list", input: { list: "suggestions" }, add: true })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { where } }] })
+      .mockResolvedValue({ kind: "complete", result: { done: true } });
+
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [list], decide, executeTool, unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 6, maxToolCalls: 6, dryRun: false });
+
+    expect(executeTool.mock.calls.map(([call]) => call.value)).toEqual([{ list: "suggestions", where }, { list: "suggestions" }, { list: "suggestions", where }]);
+    const feedback = (decide.mock.calls[3]![0].evidence as { toolId: string; value: JsonObject }[]).find((entry) => entry.toolId === "core.amendment_check")?.value;
+    expect(JSON.stringify(feedback ?? {})).not.toContain("changes_nothing");
+    const kept = result.steps.filter((candidate) => candidate.disposition === "kept");
+    expect(kept.map((candidate) => candidate.input)).toContainEqual({ list: "suggestions", where });
+    expect(kept.map((candidate) => candidate.input)).not.toContainEqual({ list: "suggestions" });
   });
 });

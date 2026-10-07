@@ -178,7 +178,7 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   rerun_holds_binding: "A bound step runs only in the Flow. Rerun patches merge: omitted bound parameters remain bound. Replace every binding with a concrete value, or null-remove an unneeded parameter where the node schema permits removal. If evidence is sufficient to author a new written step, use a new tool_call to the offered core.run_node with input.write:true and declared parameters/consequences. That does not convert or remove the old recorded step, prove an act performed, or bypass permissions and whole-Flow testing. write:true on a recorded step's rerun does not convert it to written.",
   strands_a_step: "That drop was not made: the step is the only step of the Flow that brings the page to where a step still in the Flow acted, so without it that step would run on another page. Keep it, or drop the step it brings there as well when the Flow does not need that step.",
   settings_rewrite_run: "That amendment was not made: its settings, or its input, would change what the step ran with (its action, target, text or value), and a step is what it ran with; only rerun and bind take an input, and an amendment never makes a new step. To act on another control or with another value, run that as a new call with add true and its act; to correct this step's own argument, rerun it.",
-  act_not_done_there: "That act was not recorded on that step: by the step's own record it did something else -- chose one of the act's options, closed something in the way, or went to another page -- and did not do the act. The rest of your change to the step was made. said beside the refusal says what the step did and where to name the act; instead, when given, is the step whose words name it: name the act there, or run the press that does it with add true and the act. Do not name the act on this step again.",
+  act_not_done_there: "That act was not recorded on that step: by the step's own record it did something else -- chose one of the act's options, closed something in the way, went to another page, or changed nothing on the page at all -- and did not do the act. The rest of your change to the step was made. said beside the refusal says what the step did and where to name the act; instead, when given, is the step whose words name it: name the act there, or run the press that does it with add true and the act. Do not name the act on this step again.",
   second_copy: "That step was not added to the Flow: copyOf names the step of the Flow that already does it -- the same press on the same page, or a read of the same list with nothing changed in between -- and the Flow does each step once. Leave this step out and go on from the step copyOf names; an act this step was meant for belongs on that step.",
   repeat_taken_off: "This is not an amendment of yours that changed nothing: it is a repeat Core took off after this decision's moves left it unable to run -- the step it repeated over no longer runs before it, or the step its span ran through now runs before it. That step now runs once, in order. next names the step, the step it repeated over and why; if the step should still repeat, send the repeat again with the listing before the act, in the numbers the draft now shows."
 };
@@ -343,6 +343,8 @@ type AutomationStudioDraftAmendmentFeedbackStep = {
   resultCode?: string;
   resultReason?: string;
   callId?: string;
+  /** The host says the step answered a layer in front of the page (`../flow-draft/step.ts`): never a loop's act (`rowAct`). */
+  interruption?: true;
 };
 
 /**
@@ -424,9 +426,16 @@ function listingFirst(act: AutomationStudioDraftAmendmentFeedbackStep, listing: 
  * The act a loop over the listing at `listing` needs: the first step after it
  * that changed something, with the repeat to put on it, or -- when there is
  * none -- that the act on one row comes first.
+ *
+ * A press the host says answered a layer in front of the page (`interruption`)
+ * did nothing to a row the listing kept, so it is never named: live run
+ * `run-muxky54f-fadb9d03` (0034, 0036) was told its "Close chat", over the
+ * request list, might be the act, added a1 on it with the repeat, and the
+ * checklist then said it only cleared the way. The draft records no more than
+ * that of whether a press acted inside a row.
  */
 function rowAct(listing: number, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string {
-  const press = steps.find((step) => step.position > listing && step.effect === "mutate" && step.effectApplied !== false);
+  const press = steps.find((step) => step.position > listing && step.effect === "mutate" && step.effectApplied !== false && step.interruption !== true);
   const repeat = (act: string): string => `{"step": ${act}, "change": "repeat", "over": ${listing}}`;
   if (!press) {
     return `No step after step ${listing} does anything to a row yet, so there is nothing to repeat. A loop over rows needs the act done once first: do it to one row step ${listing} kept -- press that row's own control, never one on a row it left out -- with add true and its act, then send ${repeat("<that press>")}.`;

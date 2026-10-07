@@ -375,6 +375,18 @@ describe("a refusal about a listing says what comes next", () => {
     expect(nextOf(swapped)).toContain(`send {"step": 14, "change": "repeat", "over": 13}`);
   });
 
+  // Run `run-muxky54f-fadb9d03` (0034, 0036): both answers named "Close chat", a
+  // layer over the request list (`interruption`), as the loop's act.
+  it("never names a press that only cleared a layer in front of the page as the loop's act", () => {
+    const cleared = { ...act(14, "taken"), interruption: true as const };
+    for (const refusal of [{ step: 13, reason: "over_not_before" as const, over: 13 }, { step: 13, reason: "changes_nothing" as const }]) {
+      const only = nextOf(told([refusal], [...run37, cleared]));
+      expect(only).toContain("No step after step 13 does anything to a row yet");
+      expect(only).not.toContain(`"step": 14`);
+      expect(nextOf(told([refusal], [...run37, cleared, act(15, "taken")]))).toContain(`add step 15 with its act, then send {"step": 15, "change": "repeat", "over": 13}`);
+    }
+  });
+
   it("an unchanged rerun of a listing: its rows stand, do not run it again, go on to the act", () => {
     const feedback = told([{ step: 13, reason: "changes_nothing", repeated: true }]);
     const next = nextOf(feedback);
