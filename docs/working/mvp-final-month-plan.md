@@ -1,9 +1,9 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: Acceptance/cancellation, receipt/executor infrastructure and opt-in draft facade pushed; loaded-server identity and durable receipt ledger isolated; production promotion pending.
+Status detail: Acceptance/cancellation, receipt/executor infrastructure and opt-in draft facade pushed; executing Core identity pushed; loaded host identity and durable receipt restart proof underway; production promotion pending.
 Created: 2026-10-06
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 Owner: Codex senior supervisor
 Scope: Generic Core acceptance, candidate authoring/execution/promotion, cancellation and uncertain-outcome contracts required by the downstream MVP plan. Browser behavior and live qualification remain downstream.
 Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/mvp-final-month-plan.md
@@ -22,10 +22,13 @@ P0 in progress: t296 acceptance fences are integrated/pushed (6c449022);
 downstream t297 running extension identity is integrated/pushed (2c76ba48).
 t298 cancellation and reachable Stop are integrated/pushed2ee06482 after independent
 current-pair browser proofs. t300 receipt/detached-executor infrastructure is
-integrated/pushed386b4c15, not a production promotion path. Running Core identity
-remains t302. Candidate authoring/facade t299 is integrated/pushed7f9bae15
+integrated/pushed386b4c15, not a production promotion path. Executing Core identity is integrated/pushedc8501c15 after independent
+Core/routes59/59 and headed retained-service identity/runner61/61; loaded
+domain host is the additive t305 provenance slice. Candidate authoring/facade t299 is integrated/pushed7f9bae15
 after independent53/53 and package/dependent web checks; t304 durable receipt
-ledger is isolated. Accepted-topology transaction/read authority is still required.
+ledger has independent owning52/52 and package check/build/audit0 after current dev
+merge. Literal owned process termination/relaunch probes precede integration.
+Accepted-topology transaction/read authority is still required.
 
 Task t296 now requires affirmative confirmation for a build yes and refuses
 unsupported held reauthor topologies before apply/dispatch/writes. Supervisor
