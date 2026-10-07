@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { COMMAND_ANSWER_MARGIN_MS } from "../../client-gateway/service/index.ts";
+import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../../client-gateway/service/command-ledger/index.ts";
 import {
   FileRuntimeStore,
   FLUXIQ_RUNTIME_WITHHELD_VALUE,
@@ -20,6 +21,13 @@ const SUPPLIED = "synthetic-runtime-value-that-must-never-be-persisted";
 const SUPPLIED_NUMBER = 7310452;
 
 describe("RuntimeService", () => {
+  it("required context refuses a registered legacy handler before its effect", async () => {
+    const runtime = new RuntimeService(), execute = vi.fn((command: FluxIQRuntimeCommand) => ({ commandId: command.commandId!, status: "succeeded" as const })), context = ClientGatewayCommandContext.issue({ projectId: "project.1", runId: "run.1", flowId: "flow.1", invocationId: "invoke.1", attemptId: "attempt.1", effectOrdinal: 0 }), uncertain = vi.fn(async () => undefined);
+    ClientGatewayCommandOutcome.require(context, { completed: async () => undefined, uncertain });
+    runtime.registerAdapter({ adapterId: "synthetic", label: "Synthetic", transport: "direct", capabilities: () => [{ id: "synthetic.action", kind: "action", actionTypes: ["synthetic.action"] }], execute });
+    try { await runtime.dispatch({ kind: "execute_action", actionType: "synthetic.action" }, { commandContext: context }); } catch { /* the support gate may reject */ }
+    expect(execute).not.toHaveBeenCalled(); expect(uncertain).toHaveBeenCalledTimes(1);
+  });
   it("registers direct adapters and exposes their capabilities", async () => {
     const runtime = new RuntimeService({ runtimeId: "runtime.test" });
     runtime.registerAdapter({

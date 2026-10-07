@@ -9,6 +9,7 @@ import type {
   ClientGatewaySnapshot
 } from "../../../client-gateway/index.ts";
 import { ClientGatewayService } from "../../../client-gateway/index.ts";
+import { ClientGatewayCommandOutcome, type ClientGatewayDurableActionOptions, type ClientGatewayDurableDispatchResult } from "../../../client-gateway/service/command-ledger/index.ts";
 import type { JsonObject } from "../../../core/index.ts";
 import { createEnvelope, IoRegistry } from "../../../io/index.ts";
 import type { ActionChannelDescriptor, EnvironmentDescriptor, SourceDescriptor, StateSnapshot } from "../model/index.ts";
@@ -194,7 +195,16 @@ export class AutomationStudioClientGatewayBridge {
     return recording;
   }
 
-  async executeAction(sessionId: string, command: ClientGatewayActionCommand): Promise<ClientGatewayActionResult> {
+  async executeAction(sessionId: string, command: ClientGatewayActionCommand): Promise<ClientGatewayActionResult>;
+  async executeAction(sessionId: string, command: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): Promise<ClientGatewayDurableDispatchResult<ClientGatewayActionResult>>;
+  async executeAction(sessionId: string, command: ClientGatewayActionCommand, options?: ClientGatewayDurableActionOptions): Promise<ClientGatewayActionResult | ClientGatewayDurableDispatchResult<ClientGatewayActionResult>> {
+    if (arguments.length >= 3) {
+      const response = this.gateway.executeAction(sessionId, command, options!);
+      const outcome = await response.result;
+      if (outcome.status !== "completed") return outcome;
+      try { await this.appendActionResult(sessionId, command, outcome.result); } catch (error) { await ClientGatewayCommandOutcome.stop(options!.context, "bridge.capture_failed"); throw error; }
+      return outcome;
+    }
     const response = this.gateway.executeAction(sessionId, command);
     const result = await response.result;
     await this.appendActionResult(sessionId, command, result);

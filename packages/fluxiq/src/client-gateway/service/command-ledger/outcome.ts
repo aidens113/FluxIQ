@@ -12,4 +12,8 @@ export class ClientGatewayCommandOutcome {
   static observer(context: ClientGatewayCommandContext): ClientGatewayCommandOutcomeObserver | undefined {
     ClientGatewayCommandContext.owner(context); return this.observers.get(context);
   }
+  static async stop(context: ClientGatewayCommandContext, reason: string): Promise<void> {
+    const observer = this.observer(context); if (!observer) throw new Error("command_outcome.required_observer_missing");
+    await observer.uncertain(context, reason);
+  }
 }

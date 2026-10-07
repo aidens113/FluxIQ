@@ -124,6 +124,10 @@ export type AutomationStudioRepairRerunResult = {
 export async function rerunAutomationStudioSessionAfterRepair(
   input: AutomationStudioRepairRerunInput
 ): Promise<AutomationStudioRepairRerunResult | null> {
+  if (input.graphOptions?.commandRun || input.session.metadata?.commandOutcomeMode === "required") {
+    await input.graphOptions?.commandRun?.stop("command_execution.repair_unsupported");
+    throw new Error("command_execution.repair_unsupported");
+  }
   if (input.session.status !== "failed") return null;
   // Only a resumed run is rationed. A re-run of an edited Flow is not a retry
   // of the same work: the Flow changed, so the attempt count of the old one

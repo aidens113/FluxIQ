@@ -1,4 +1,5 @@
 import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../client-gateway/service/command-ledger/index.ts";
 import type {
   ClientGatewayActionCommand,
   ClientGatewayActionResult,
@@ -46,11 +47,24 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
   }
 
   async dispatch(command: FluxIQRuntimeCommand, context: FluxIQRuntimeDispatchContext = {}): Promise<FluxIQRuntimeCommandResult> {
+    const required = Object.hasOwn(context, "commandContext");
+    if (required) {
+      ClientGatewayCommandContext.owner(context.commandContext!);
+      if (!ClientGatewayCommandOutcome.observer(context.commandContext!)) throw new Error("runtime.required_context_missing");
+      if (command.kind !== "execute_action") { await ClientGatewayCommandOutcome.stop(context.commandContext!, "unsupported_command"); throw new Error("runtime.unsupported_required_command"); }
+    }
     const session = this.selectSession(command, context);
     if (!session) {
+      if (required) await ClientGatewayCommandOutcome.stop(context.commandContext!, "missing_session");
       return rejected(command, "No paired client gateway session matches the requested runtime command.");
     }
     if (command.kind === "execute_action") {
+      if (Object.hasOwn(context, "commandContext")) {
+        ClientGatewayCommandContext.owner(context.commandContext!);
+        const outcome = await this.gateway.executeAction(session.sessionId, actionCommandFromRuntime(command), { context: context.commandContext!, ...(context.signal ? { signal: context.signal } : {}) }).result;
+        if (outcome.status !== "completed") { await ClientGatewayCommandOutcome.stop(context.commandContext!, outcome.status); return { commandId: command.commandId ?? "unknown", status: "unknown", error: `Required command ${outcome.status}.` }; }
+        return outcome.result;
+      }
       const response = this.gateway.executeAction(session.sessionId, actionCommandFromRuntime(command));
       // The client is untrusted: its failure record survives only when it parses.
       const { failure: reported, clearedWait: reportedWait, ...result }: ClientGatewayActionResult = await response.result;
@@ -70,6 +84,10 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
       };
     }
     return rejected(command, `Client gateway transport cannot dispatch runtime command kind: ${command.kind}.`);
+  }
+  async dispatchWithCommandContext(command: FluxIQRuntimeCommand, context: FluxIQRuntimeDispatchContext): Promise<FluxIQRuntimeCommandResult> {
+    if (!Object.hasOwn(context, "commandContext")) throw new Error("runtime.required_context_missing");
+    return await this.dispatch(command, context);
   }
 
   onEvent(handler: FluxIQRuntimeEventHandler): () => void {

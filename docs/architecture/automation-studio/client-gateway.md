@@ -657,10 +657,20 @@ exact leased observer reference. The gateway privately issues a completion proof
 only after receipt COMMIT and parsed live result validation; copied JSON and
 receipt-only replay cannot issue it. Deadline, cancellation and close revoke the
 proof before success resolution, while owned late storage/observer work drains.
-An unwired command-run owner can privately account for that proof and consume it
-only through a trusted executor's registered post-handling witness. Project SQL
+The command-run owner privately accounts for that proof and consumes it only
+through the actual executor's registered post-handling witness. Project SQL
 checks all prior consumed receipt/history joins inside the next claim transaction;
 fresh/reconstructed runs still refuse every prior claim. Legacy explicit contexts
-without required registration retain existing semantics. Actual node-entry
-issuance, both IO/runtime paths, execution/repair fences and Flow activation remain
-separate pending integration; this contract does not attest semantic outcomes.
+without required registration retain existing semantics. Fresh project runs can opt into `commandOutcomeMode: "required"`. Actual node
+entry privately allocates invocation identity and executing graph provenance; the
+original root Flow remains the gateway wire owner. Both registered IO and Runtime
+handlers carry the authentic context outside payload JSON. Consumption follows
+configured record persistence and output/status/route handling; unknown, failed
+capture, unsupported handler and close fence continuation. Only the audited Core
+local/control implementations, policy.action and normal canonical composites are
+supported; arbitrary Code/custom/native execution refuses before entry. Required
+runs refuse existing-session upgrade, reconstruction and adaptive repair, retain
+the restrictive stored marker, and skip model diagnosis/result judging/promotion.
+Stopped runs retain/drain owned work; framework teardown drains gateway then run
+owners before project SQL closes. Structural receipt handling does not attest
+semantic completion or enable candidate promotion/native web execution.

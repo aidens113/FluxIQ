@@ -48,6 +48,7 @@ export async function resumeAutomationStudioGraph(
   onExecutedTrace?: (executed: AutomationStudioGraphExecutionTrace, saved: AutomationStudioGraphExecutionTrace) => void
 ): Promise<AutomationStudioResumeOutcome> {
   const options = request.options ?? {};
+  await options.commandRun?.checkpoint();
   const nowMs = options.now?.() ?? Date.now();
   const parked = request.trace.parked;
   if (!parked || request.trace.status !== "waiting") {

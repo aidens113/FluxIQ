@@ -5,6 +5,7 @@ import {
   type AutomationStudioFailureStage
 } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
+import type { ClientGatewayCommandContext } from "../../../client-gateway/service/command-ledger/index.ts";
 import { IoRegistry } from "../../../io/index.ts";
 import type { FluxIQRuntimeCommandStatus, FluxIQRuntimeWithheldValues, RuntimeService } from "../../../runtime/index.ts";
 import { normalizeAutomationStudioElementTarget, type AutomationStudioElementTarget, type PolicyAction } from "../model/index.ts";
@@ -22,7 +23,8 @@ export async function dispatchPolicyOutput(
   io: IoRegistry,
   domainId: string | null | undefined,
   action: PolicyOutputAction,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  commandContext?: ClientGatewayCommandContext
 ): Promise<AutomationNodeExecutionResult> {
   const outputId = action.outputId?.trim();
   if (!outputId) return missingOutputIdResult("IO runtime");
@@ -33,6 +35,7 @@ export async function dispatchPolicyOutput(
   action = prepared.action;
   const confirmation = awaitConfirmation(io, domainId, action, signal);
   const result = await io.dispatchOutput({
+    ...(commandContext ? { commandContext, ...(signal ? { signal } : {}) } : {}),
     domainId: domainId ?? null,
     outputId,
     payload: action.parameters as JsonObject,
@@ -57,7 +60,7 @@ export async function dispatchPolicyOutput(
 }
 
 export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined) {
-  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal }): Promise<AutomationNodeExecutionResult | undefined> => {
+  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; commandContext?: ClientGatewayCommandContext }): Promise<AutomationNodeExecutionResult | undefined> => {
     if (effect.type !== "policy.output.dispatch" || !effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload)) return undefined;
     const payload = effect.payload as JsonObject;
     const action = {
@@ -68,12 +71,12 @@ export function createIoPolicyEffectDispatcher(io: IoRegistry, domainId: string 
       ...(typeof payload.confirmationTimeoutMs === "number" ? { confirmationTimeoutMs: payload.confirmationTimeoutMs } : {}),
       ...(payload.metadata && typeof payload.metadata === "object" && !Array.isArray(payload.metadata) ? { metadata: payload.metadata as JsonObject } : {})
     };
-    return dispatchPolicyOutput(io, domainId, action, context?.signal);
+    return dispatchPolicyOutput(io, domainId, action, context?.signal, context?.commandContext);
   };
 }
 
 export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: string | null | undefined, runtime: RuntimeService) {
-  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; withheldValues?: FluxIQRuntimeWithheldValues }): Promise<AutomationNodeExecutionResult | undefined> => {
+  return async (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; withheldValues?: FluxIQRuntimeWithheldValues; commandContext?: ClientGatewayCommandContext }): Promise<AutomationNodeExecutionResult | undefined> => {
     if (effect.type !== "policy.output.dispatch" || !effect.payload || typeof effect.payload !== "object" || Array.isArray(effect.payload)) return undefined;
     const payload = effect.payload as JsonObject;
     let action = policyActionFromPayload(payload);
@@ -83,7 +86,7 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
     const prepared = prepareElementTargetAction(io, domainId, action);
     if (!prepared.ok) return elementTargetRejectionResult(outputId, prepared);
     action = prepared.action;
-    if (!await runtimeCanDispatchOutput(runtime, domainId, outputId)) return dispatchPolicyOutput(io, domainId, action, context?.signal);
+    if (!await runtimeCanDispatchOutput(runtime, domainId, outputId)) return dispatchPolicyOutput(io, domainId, action, context?.signal, context?.commandContext);
     const confirmation = awaitConfirmation(io, domainId, action, context?.signal);
     const result = await runtime.dispatch({
       kind: "execute_action",
@@ -94,6 +97,7 @@ export function createRuntimePolicyEffectDispatcher(io: IoRegistry, domainId: st
       ...(typeof payload.timeoutMs === "number" ? { timeoutMs: payload.timeoutMs } : {}),
       metadata: compactJsonObject({ ...(action.metadata ?? {}), ...(prepared.diagnostics ? { elementTargetResolution: prepared.diagnostics } : {}) })
     }, {
+      ...(context?.commandContext ? { commandContext: context.commandContext } : {}),
       ...(context?.signal ? { signal: context.signal } : {}),
       // The runtime withholds these from the command attempt it saves; the command still carries them.
       ...(context?.withheldValues ? { withheldValues: context.withheldValues } : {}),
