@@ -217,6 +217,8 @@ export type AutomationStudioFlowDraftDryRunGateInput = {
   endView?: ((request: { callId: string; after?: number; signal?: AbortSignal }) => Promise<AutomationStudioFlowDraftTestEndView | undefined>) | undefined;
   /** The node each step names, handed to the replay so a repeat runs once per row (`./replay-draft.ts`). */
   nodeOf?: AutomationStudioFlowDraftReplayInput["nodeOf"];
+  /** Each step's full node definition, so a read sends the record output the stored Flow's read sends (`./replay-draft.ts`). */
+  definitionOf?: AutomationStudioFlowDraftReplayInput["definitionOf"];
   signal?: AbortSignal;
 };
 
@@ -347,6 +349,7 @@ export function automationStudioFlowDraftDryRunGate(
         executeTool: input.executeTool,
         ...(lastingIds ? { lastingActs: lastingIds } : {}),
         ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
+        ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
         ...(input.signal ? { signal: input.signal } : {})
       });
     } catch {

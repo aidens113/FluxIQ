@@ -17,10 +17,12 @@
 // Core-only and dropped, on both sides, before comparing: assembly writes every
 // parameter the step left out at its definition's default onto the plan node
 // (`materialiseDefaults`, `../../../flow-bootstrap/authoring/normalise.ts`), so
-// the stored Flow's nodes carry `timeoutMs: 10000` and the list's
-// `recordOutput: null` where the step that ran named neither. A key in
-// `DEFAULTS_ASSEMBLY_WRITES` is dropped only while it holds exactly its
-// definition's default, so any other value of it is still compared. The
+// the stored Flow's nodes carry `timeoutMs: 10000` where the step that ran
+// named none. A key in `DEFAULTS_ASSEMBLY_WRITES` is dropped only while it
+// holds exactly its definition's default, so any other value of it is still
+// compared. The read's `recordOutput` is compared: assembly writes one dataset
+// per read step (read-list S1), and the walker sends the same, built from the
+// node's full definition (`definitionOf`, `../replay.ts`). The
 // declaration (`consequences`) sits beside the parameters on both sides, and
 // the walker's envelope -- `replay`, `from`, `produced`, `node` -- is not a
 // parameter; neither is compared.
@@ -208,12 +210,22 @@ async function buildTest(steps: readonly AutomationStudioFlowDraftStep[], withNo
     };
   };
   const nodeOf = automationStudioLlmNodeDescriptions({ registry, resolution }).definition;
-  const replayed = await replayAutomationStudioFlowDraft({ steps, attempt: 1, executeTool, ...(withNodes ? { nodeOf } : {}) });
+  // The full definitions, as `service.ts` passes `definitionOf`: what lets a read carry the record output assembly writes.
+  const definitionOf = (id: string) => registry.get(id, resolution);
+  const replayed = await replayAutomationStudioFlowDraft({ steps, attempt: 1, executeTool, ...(withNodes ? { nodeOf, definitionOf } : {}) });
   return { sent, ok: replayed.verdict.ok };
 }
 
 /** The parameters assembly writes in at their default when a step left them out (see the header). */
-const DEFAULTS_ASSEMBLY_WRITES = ["timeoutMs", "recordOutput"] as const;
+const DEFAULTS_ASSEMBLY_WRITES = ["timeoutMs"] as const;
+
+/** The record output assembly writes on the read, step `d2`, which named none: its own dataset, its columns (read-list S1). */
+const READ_RECORD_OUTPUT: JsonObject = {
+  datasetId: "web-output-dom-extract-list-d2",
+  label: LIST,
+  schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string" }, { id: "mutual", label: "Mutual", valueType: "string" }] },
+  writeMode: "append"
+};
 
 /** A call's parameters without a key assembly wrote in at its definition's default. */
 function withoutWrittenDefaults(node: string, parameters: JsonValue | undefined): JsonValue | undefined {
@@ -240,8 +252,8 @@ describe("the build's test and the stored Flow run one draft's loop alike", () =
     const expected: Sent[] = [
       // The Flow input on its test value, outside the loop.
       { node: TYPE, parameters: { selector: "#search", text: "blue towels" }, item: undefined },
-      // The list, once.
-      { node: LIST, parameters: { extractList: { item: ".request", fields: { name: ".name", mutual: ".mutual" } } }, item: undefined },
+      // The list, once, into its own dataset.
+      { node: LIST, parameters: { extractList: { item: ".request", fields: { name: ".name", mutual: ".mutual" } }, recordOutput: READ_RECORD_OUTPUT }, item: undefined },
       // Each span member once per row, with that row: the press takes it, the note's text is its name.
       ...ROWS.flatMap((row) => [
         { node: CLICK, parameters: { selector: ".request-confirm" }, item: row },
@@ -296,7 +308,8 @@ describe("the build's test and the stored Flow run one draft's do-while alike", 
     expect(stored.status).toBe("succeeded");
     expect(tested.ok).toBe(true);
     const page = (): Sent[] => [
-      { node: LIST, parameters: { extractList: { item: ".request", fields: { name: ".name", mutual: ".mutual" } } }, item: undefined },
+      // Every pass of the read appends to its one dataset.
+      { node: LIST, parameters: { extractList: { item: ".request", fields: { name: ".name", mutual: ".mutual" } }, recordOutput: READ_RECORD_OUTPUT }, item: undefined },
       { node: NEXT, parameters: { selector: "a.next" }, item: undefined }
     ];
     const expected: Sent[] = [

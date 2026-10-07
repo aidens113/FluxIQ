@@ -235,7 +235,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   // run again, never its test. Fixed for the whole loop, so read once (`./node-tools/loop-tools.ts`).
   // The build's lasting acts, read once, whichever of the dry run, a part run or a rerun's put-back first sends steps again (`./node-tools/replay-draft.ts`).
   let lasting: Promise<ReadonlySet<string>> | undefined; const readLasting = input.lastingActs; const lastingActs = readLasting ? () => (lasting ??= readLasting()) : undefined;
-  const toolSet = automationStudioLlmEvidenceLoopToolSet({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && input.dryRun !== false, ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}) });
+  const toolSet = automationStudioLlmEvidenceLoopToolSet({ tools: input.tools, executeTool: input.executeTool, steps: draftSteps, enabled: drafting && input.dryRun !== false, ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}) });
   if (!limits || !toolSet) return failure(draftSteps, "llm_evidence_loop.invalid_configuration", trace, accounting);
   const { runFlow, tools, toolIds, toolsById, mutableTools } = toolSet;
   const callIds = new Set<string>();
@@ -391,7 +391,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     targetMoved: () => { counters.mutationEpoch += 1; counters.attemptEpoch += 1; handling.dryRunSeen.ran = true; handling.repeats.moved(); },
     reusedClean: () => { handling.dryRunSeen.reused = true; },
     ...(input.observeTest ? { observed: input.observeTest } : {}),
-    ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
+    ...(lastingActs ? { lastingActs } : {}), ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}), ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
     ...(input.testEndView ? { endView: input.testEndView } : {}),
     ...(input.signal ? { signal: input.signal } : {})
   });

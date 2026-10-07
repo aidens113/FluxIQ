@@ -78,7 +78,7 @@
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
-import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../../nodes/index.ts";
+import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import {
   automationStudioFlowDraftHoldsBinding,
   automationStudioFlowDraftRepeatIsWhile,
@@ -145,6 +145,15 @@ export type AutomationStudioFlowDraftReplayNode = {
 
 /** The node a step names, by the step's `actionId`, or nothing for a node the caller cannot describe. */
 export type AutomationStudioFlowDraftReplayNodeOf = (nodeId: string) => AutomationStudioFlowDraftReplayNode | undefined;
+
+/**
+ * The full definition of the node a step names, by its `actionId`: what a call
+ * needs to carry the record output assembly writes on that step's node
+ * (`./replay.ts`, read-list S1), so the test's read sends what the stored
+ * Flow's read sends. The catalog entry `nodeOf` answers is what the model is
+ * shown and holds no parameter's control, so the two are looked up apart.
+ */
+export type AutomationStudioFlowDraftReplayDefinitionOf = (nodeId: string) => AutomationStudioNodeDefinition | undefined;
 
 /** One call's answer as the replay reads it; `readable: false` is a failed step, never a skipped one (`./replay-draft.ts`). */
 export type AutomationStudioFlowDraftReplayAnswer =
@@ -281,14 +290,17 @@ export function automationStudioFlowDraftReplayProduced(answer: AutomationStudio
  * `earlier`, what earlier steps produced in this test; the row under `item`
  * when the node takes it, and then no `produced`, which describes the
  * explored row. `unresolved` names the paths nothing answered; nothing is
- * sent then. Nothing at all for a step with nothing to run it with.
+ * sent then. Nothing at all for a step with nothing to run it with. With the
+ * node's full `definition`, the call carries the record output assembly writes
+ * on the step's node, as the stored Flow's does.
  */
 export function automationStudioFlowDraftReplayPassCall(
   step: AutomationStudioFlowDraftStep,
   mode: AutomationStudioFlowDraftReplayMode,
   row?: { item: JsonObject; takesRow: boolean },
   node?: AutomationStudioFlowDraftReplayNode,
-  earlier?: Record<string, JsonValue>
+  earlier?: Record<string, JsonValue>,
+  definition?: AutomationStudioNodeDefinition
 ): { value: JsonObject } | { unresolved: string[] } | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   if (step.scheduledCandidate !== undefined && (!scheduled || !node?.outputAction?.fixed)) return undefined;
@@ -300,7 +312,7 @@ export function automationStudioFlowDraftReplayPassCall(
     pass.parameters = resolved.values;
   }
   if (row?.takesRow) pass.item = row.item;
-  const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step, pass) : automationStudioNodeReplayStepCall(step, pass);
+  const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step, pass, definition) : automationStudioNodeReplayStepCall(step, pass, definition);
   if (!value) return undefined;
   if (pass.item !== undefined) delete value.produced;
   return { value };
@@ -311,6 +323,8 @@ export type AutomationStudioFlowDraftReplaySpanRunInput = {
   plan: AutomationStudioFlowDraftReplaySpanPlan;
   /** Absent only for a do-while, which is planned without one: no member then takes a row. */
   nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
+  /** Each member's full node definition, so a pass's read carries its assembled record output. */
+  definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
   modeOf(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftReplayMode;
   callIdOf(step: AutomationStudioFlowDraftStep): string;
   send(callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject): Promise<AutomationStudioFlowDraftReplayAnswer>;
@@ -365,7 +379,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
       const mode = input.modeOf(member);
       const node = input.nodeOf?.(member.actionId);
       const earlier = { ...(input.earlier ?? {}), ...automationStudioFlowDraftStepOutputsState(produced) };
-      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(node) } : undefined, node, earlier);
+      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(node) } : undefined, node, earlier, input.definitionOf?.(member.actionId));
       let answered: AutomationStudioFlowDraftReplayPass;
       if (built && "unresolved" in built) answered = { pass, status: "failed", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE };
       else {

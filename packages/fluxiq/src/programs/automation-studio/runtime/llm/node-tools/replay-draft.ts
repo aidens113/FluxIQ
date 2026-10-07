@@ -110,6 +110,7 @@ import {
   automationStudioFlowDraftReplaySpanPlan,
   automationStudioFlowDraftReplaySpanRun,
   type AutomationStudioFlowDraftReplayAnswer,
+  type AutomationStudioFlowDraftReplayDefinitionOf,
   type AutomationStudioFlowDraftReplayNodeOf,
   type AutomationStudioFlowDraftReplayObservation
 } from "./replay-span.ts";
@@ -140,6 +141,13 @@ export type AutomationStudioFlowDraftReplayInput = {
    * excused, as before t252.
    */
   nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
+  /**
+   * The full definition of the node each step names, by its `actionId`: with
+   * it a read's call carries the record output assembly writes on its node, as
+   * the stored Flow's read does (`./replay-span.ts`, read-list S1). Absent, a
+   * call carries what the step ran with.
+   */
+  definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
   signal?: AbortSignal;
 };
 
@@ -213,13 +221,14 @@ export async function replayAutomationStudioFlowDraft(input: AutomationStudioFlo
     callIdOf: (step) => `dryrun.${input.attempt}.${step.position}`,
     reanchor: true,
     ...(input.lastingActs ? { lastingActs: input.lastingActs } : {}),
-    ...(input.nodeOf ? { nodeOf: input.nodeOf } : {})
+    ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
+    ...(input.definitionOf ? { definitionOf: input.definitionOf } : {})
   });
   return { verdict: verdictOf(input, "ok", done.outcomes), observations: done.observations, ...(done.evidence ? { evidence: done.evidence } : {}) };
 }
 
 /** What a run of steps done again needs: the executor, the draft, and the steps. */
-export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal" | "lastingActs" | "nodeOf"> & {
+export type AutomationStudioFlowDraftReplayStepsInput = Pick<AutomationStudioFlowDraftReplayInput, "executeTool" | "signal" | "lastingActs" | "nodeOf" | "definitionOf"> & {
   /** The whole draft: what says which steps the Flow would not always run. */
   steps: readonly AutomationStudioFlowDraftStep[];
   /** The proposed steps to do again, in order, from where the target now stands. */
@@ -292,6 +301,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       const span = await automationStudioFlowDraftReplaySpanRun({
         plan,
         nodeOf: input.nodeOf,
+        definitionOf: input.definitionOf,
         modeOf: (member) => automationStudioFlowDraftStepReplayMode(member, input.lastingActs),
         callIdOf: input.callIdOf,
         send: (callId, member, value) => send(callId, member, value, passExcusable),
@@ -308,7 +318,7 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
       continue;
     }
     const mode = automationStudioFlowDraftStepReplayMode(step, input.lastingActs);
-    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced));
+    const built = automationStudioFlowDraftReplayPassCall(step, mode, undefined, input.nodeOf?.(step.actionId), automationStudioFlowDraftStepOutputsState(produced), input.definitionOf?.(step.actionId));
     const unresolved = built !== undefined && "unresolved" in built;
     const value = built && "value" in built ? built.value : undefined;
     const callId = input.callIdOf(step);
