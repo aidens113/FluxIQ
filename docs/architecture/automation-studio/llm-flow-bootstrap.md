@@ -6,6 +6,23 @@ in `runtime/flow-bootstrap/plan.ts` and integrated with the existing LLM harness
 the `flow_bootstrap` task. It does not execute a provider request, persist a
 proposal, or mutate a Flow by itself.
 
+## Explicit candidate authoring
+
+`runtime/flow-bootstrap/candidate/` supplies an opt-in discovery-only loop and
+`core.submit_candidate`. Discovery appends evidence without draft retention,
+automatic opener insertion or act completion. A complete submission uses the
+existing bootstrap compiler, domain parameter resolution and plan/permission
+validation. Core assigns a revision and canonical digest; refused or superseded
+submissions invalidate the earlier candidate. Completion names the latest revision
+and digest and grants static validity only.
+
+`runtime/service/candidate-drafts/` persists unverified submissions separately
+from adaptations in Core project storage. Reading a stored draft grants neither
+execution nor promotion; it must be revalidated before runtime use. The existing
+legacy authoring path remains the default. The candidate facade/API and exact
+detached execution/requirement receipt wiring are integration work in progress;
+these modules alone do not establish a runnable or accepted candidate path.
+
 ## Context boundary
 
 A bootstrap request carries the existing effective active instruction

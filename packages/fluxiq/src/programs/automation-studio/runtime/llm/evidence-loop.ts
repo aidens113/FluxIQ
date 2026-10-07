@@ -174,7 +174,7 @@ export { AUTOMATION_STUDIO_LLM_EVIDENCE_COMPLETION_FEEDBACK_TOOL_ID, type Automa
 export async function runAutomationStudioLlmEvidenceLoop(
   untraced: AutomationStudioLlmEvidenceLoopInput
 ): Promise<AutomationStudioLlmEvidenceLoopResult> {
-  const input = automationStudioLlmEvidenceLoopProgressTrace(untraced); const limits = resolveLimits(input);
+  if (untraced.discoveryOnly && untraced.draft !== false) throw new Error("Discovery-only loops require draft:false."); const input = automationStudioLlmEvidenceLoopProgressTrace(untraced); const limits = resolveLimits(input);
   const trace: AutomationStudioLlmEvidenceLoopTrace[] = [];
   // The one door every row enters the record through: it stamps each with the
   // draft its decision was shown, its progress and its moment, and remembers the
@@ -201,7 +201,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     return match ? Math.max(largest, Number(match[1])) : largest;
   }, 0);
   const draftRecord = (step: Omit<AutomationStudioFlowDraftStep, "position" | "disposition" | "id">, authored?: { add?: true | undefined; act?: string | undefined; place?: string | undefined }): boolean => {
-    draftAppended += 1;
+    if (input.discoveryOnly) return false; draftAppended += 1;
     // The step's own name, which a position stops being the moment the draft is
     // reordered. Routing statements are kept under it (`../flow-draft/routing.ts`).
     // A step that ran is `taken` -- evidence, not a step of the Flow -- unless

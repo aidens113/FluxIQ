@@ -13,6 +13,8 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
   /** The lasting consequences the person has already allowed this build's actions to have. Absent, none: each is asked about. */
   permittedConsequences?: AutomationStudioActionConsequence[];
   evidenceGuided?: true;
+  /** Opt-in explicit complete candidate submission; static validity remains unverified. */
+  authoringMode?: "candidate";
   useReusableContext?: true;
   /**
    * What this build does to the Flow. Absent, `create`: a blank Flow, written
