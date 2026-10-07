@@ -30,7 +30,10 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
     classification: "read",
     handler: (request) => {
       const payload = request.payload;
-      if (payload !== undefined && (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length !== 0)) {
+      // The web route adds `authSessionId` to a signed-in person's POST to this program, so a POST
+      // carrying only that is a request with no fields (t348: the Lab's control client reads it by POST).
+      const fields = payload && typeof payload === "object" && !Array.isArray(payload) ? Object.keys(payload).filter((key) => key !== "authSessionId") : undefined;
+      if (payload !== undefined && (fields === undefined || fields.length !== 0)) {
         return { ok: false, error: "Flow bootstrap readiness does not accept request fields." };
       }
       return { ok: true, payload: { readiness: flowBootstrapGenerationReadiness(service) } };
@@ -185,6 +188,8 @@ function flowBootstrapGenerationReadiness(service: AutomationStudioService) {
     nativeNodeRegistryConfigured: runtime.nativeNodeRegistryConfigured
   };
   readiness.supported = Object.values(readiness.runtime).every((configured) => configured === true);
+  // Whether the deployment set the candidate start hook (D1): only a service that holds one says true.
+  readiness.capabilities.candidateTrial.startReset = runtime.candidateTrial?.startReset === true;
   return readiness;
 }
 

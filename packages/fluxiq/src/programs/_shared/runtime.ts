@@ -3,7 +3,7 @@ import { ClientGatewayService, type ClientGatewayTrustedClient, type ClientGatew
 import type { JsonObject } from "../../core/index.ts";
 import type { FluxIQHostPaths } from "../../framework/index.ts";
 import { ClientGatewayRuntimeTransport, FileRuntimeStore, RuntimeService } from "../../runtime/index.ts";
-import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver, registerAutomationStudioApi } from "../automation-studio/index.ts";
+import { AutomationStudioClientGatewayBridge, automationStudioActivityHub, automationStudioCandidateStartHookFromEnvironment, AutomationStudioService, automationStudioPanelCommandKeyFromSecretKeys, createAutomationStudioDeepSeekPanelCommandModel, createAutomationStudioResultCheckProvider, createAutomationStudioSessionKeyProviderResolver, registerAutomationStudioApi } from "../automation-studio/index.ts";
 import { BackgroundTasksService, registerBackgroundTasksApi } from "../background-tasks/index.ts";
 import { ComputeControlService, registerComputeControlApi } from "../compute-control/index.ts";
 import { DatabaseManagerService, registerDatabaseManagerApi, SQLiteRepository } from "../database-manager/index.ts";
@@ -61,13 +61,20 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { m
     },
     scope: request
   });
+  // The candidate start hook (decision D1): deployment configuration, unset in
+  // every product deployment. A test facility that owns the target points it
+  // at its own reset of that target (`FLUXIQ_CANDIDATE_START_URL`, with the
+  // optional `FLUXIQ_CANDIDATE_START_TOKEN`); a half-set or malformed value
+  // refuses here, as the host starts.
+  const prepareCandidateStart = automationStudioCandidateStartHookFromEnvironment(process.env);
   const automationStudio = new AutomationStudioService(paths && storageLayoutVersion === 2
       ? {
         storageRootDir: paths.recordings,
         customNodeRootDir: path.join(paths.domainPrograms, "automation-studio", "nodes"),
-        ...(modelProvidersEnabled ? { resultCheckProviderResolver } : {})
+        ...(modelProvidersEnabled ? { resultCheckProviderResolver } : {}),
+        ...(prepareCandidateStart ? { prepareCandidateStart } : {})
       }
-    : { ...storageOptions, ...(modelProvidersEnabled ? { resultCheckProviderResolver } : {}) });
+    : { ...storageOptions, ...(modelProvidersEnabled ? { resultCheckProviderResolver } : {}), ...(prepareCandidateStart ? { prepareCandidateStart } : {}) });
   const trustedClientTtlMs = positiveNumber(process.env.FLUXIQ_CLIENT_GATEWAY_TRUST_TTL_MS);
   const clientGateway = new ClientGatewayService({
     resolveCommandLedger: context => automationStudio.commandExecution.owns(context) ? automationStudio.commandExecution.resolve(context) : automationStudio.commandContexts.resolve(context),
