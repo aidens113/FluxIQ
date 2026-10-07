@@ -42,8 +42,8 @@ export class AutomationStudioProjectGraphRepository {
   close(): Promise<void> { return this.lease.release(); }
   get sql(): AutomationStudioSqlExecutor { return this.lease.database; }
   async getFlowRevision(flowId: string): Promise<number> { const row = await this.sql.get<{ graph_revision: number }>("select graph_revision from flows where flow_id = ?", [id(flowId, "flow")]); if (!row) throw new Error(`Unknown Flow: ${flowId}`); return row.graph_revision; }
-  async upsertFlowFromArtifact(flow: AutomationStudioFlowArtifact, graphRevision = 1): Promise<void> {
-    await this.sql.run(`insert into flows (flow_id, parent_flow_id, owning_subflow_id, name, description, scope_kind, scope_id, visibility, origin, source_mode, status, graph_revision, settings_revision, created_at_ms, updated_at_ms)
+  async upsertFlowFromArtifact(flow: AutomationStudioFlowArtifact, graphRevision = 1, sql: AutomationStudioSqlExecutor = this.sql): Promise<void> {
+    await sql.run(`insert into flows (flow_id, parent_flow_id, owning_subflow_id, name, description, scope_kind, scope_id, visibility, origin, source_mode, status, graph_revision, settings_revision, created_at_ms, updated_at_ms)
       values (?, null, null, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, 1, ?, ?)
       on conflict(flow_id) do update set name = excluded.name, description = excluded.description, scope_kind = excluded.scope_kind, scope_id = excluded.scope_id, visibility = excluded.visibility, origin = excluded.origin, source_mode = excluded.source_mode, graph_revision = excluded.graph_revision, updated_at_ms = excluded.updated_at_ms`,
       [id(flow.flowId, "flow"), name(flow.name, "Flow"), flow.description ?? "", flow.scope.kind, flow.scope.kind === "domain" ? flow.scope.domainId : null, flow.visibility === "public" ? "project" : "private", flow.origin === "manual" ? "user" : flow.origin === "recorded" ? "recording" : "import", flow.source.mode, graphRevision, flow.createdAt, flow.updatedAt]);
@@ -95,29 +95,33 @@ export class AutomationStudioProjectGraphRepository {
   async operations(revisionId: string): Promise<AutomationStudioGraphOperationRecord[]> { const rows = await this.sql.all<OperationRow>("select * from graph_operations where revision_id = ? order by ordinal", [id(revisionId, "revision")]); return rows.map(operationFromRow); }
   async importMonolithicFlowGraph(flow: AutomationStudioFlowArtifact, input: { authorId?: string | null; changedAt?: number } = {}): Promise<{ status: "imported" | "already_imported"; revisionNumber: number; nodeCount: number; edgeCount: number; regionCount: number }> {
     const changedAt = input.changedAt ?? Date.now();
-    const existing = await this.sql.get<{ revision_id: string }>("select revision_id from graph_revisions where flow_id = ? and revision_number = 1", [flow.flowId]);
-    if (existing) return { status: "already_imported", revisionNumber: 1, nodeCount: flow.nodes.length, edgeCount: flow.edges.length, regionCount: flow.regions?.length ?? 0 };
-    await this.upsertFlowFromArtifact({ ...flow, updatedAt: changedAt }, 1);
-    let ordinal = 0;
-    const revisionId = graphRevisionId(flow.flowId, 1);
-    await insertRevision(this.sql, { flowId: flow.flowId, revisionNumber: 1, parentRevision: null, authorId: input.authorId ?? null, source: "legacy_import", operationCount: flow.nodes.length + flow.edges.length + (flow.regions?.length ?? 0), digest: digest({ nodes: flow.nodes, edges: flow.edges, regions: flow.regions ?? [] }), message: "Imported monolithic Flow graph", createdAt: changedAt });
-    const touchedPartitions = new Set<string>();
-    for (const node of flow.nodes) {
-      const saved = await this.upsertNode(nodeRecordFromArtifact(flow.flowId, node, changedAt), changedAt, this.sql, false);
-      if (saved.partitionId) touchedPartitions.add(saved.partitionId);
-      await insertOperation(this.sql, { revisionId, ordinal: ordinal++, operationKind: "import_node", entityKind: "node", entityId: saved.nodeId, before: null, after: saved });
-    }
-    for (const edge of flow.edges) {
-      const saved = await this.upsertEdge(edgeRecordFromArtifact(flow.flowId, edge, changedAt), changedAt, this.sql, false);
-      await insertOperation(this.sql, { revisionId, ordinal: ordinal++, operationKind: "import_edge", entityKind: "edge", entityId: saved.edgeId, before: null, after: saved });
-    }
-    for (const region of flow.regions ?? []) {
-      const bounds = boundsForRegion(region.nodeIds, flow.nodes);
-      await this.upsertRegion({ regionId: region.id, flowId: flow.flowId, name: region.name, kind: region.kind, bounds: bounds as JsonObject, metadata: region.metadata ?? {} }, this.sql, false);
-      await insertOperation(this.sql, { revisionId, ordinal: ordinal++, operationKind: "import_region", entityKind: "region", entityId: region.id, before: null, after: { regionId: region.id, bounds } });
-    }
-    await this.refreshPartitionCounts([...touchedPartitions], changedAt, this.sql);
-    return { status: "imported", revisionNumber: 1, nodeCount: flow.nodes.length, edgeCount: flow.edges.length, regionCount: flow.regions?.length ?? 0 };
+    // The decision and every graph/index write share the same lock and COMMIT.
+    // Helpers must use this executor rather than enqueue behind this transaction.
+    return this.lease.database.transaction(async sql => {
+      const existing = await sql.get<{ revision_id: string }>("select revision_id from graph_revisions where flow_id = ? and revision_number = 1", [flow.flowId]);
+      if (existing) return { status: "already_imported", revisionNumber: 1, nodeCount: flow.nodes.length, edgeCount: flow.edges.length, regionCount: flow.regions?.length ?? 0 };
+      await this.upsertFlowFromArtifact({ ...flow, updatedAt: changedAt }, 1, sql);
+      let ordinal = 0;
+      const revisionId = graphRevisionId(flow.flowId, 1);
+      await insertRevision(sql, { flowId: flow.flowId, revisionNumber: 1, parentRevision: null, authorId: input.authorId ?? null, source: "legacy_import", operationCount: flow.nodes.length + flow.edges.length + (flow.regions?.length ?? 0), digest: digest({ nodes: flow.nodes, edges: flow.edges, regions: flow.regions ?? [] }), message: "Imported monolithic Flow graph", createdAt: changedAt });
+      const touchedPartitions = new Set<string>();
+      for (const node of flow.nodes) {
+        const saved = await this.upsertNode(nodeRecordFromArtifact(flow.flowId, node, changedAt), changedAt, sql, false);
+        if (saved.partitionId) touchedPartitions.add(saved.partitionId);
+        await insertOperation(sql, { revisionId, ordinal: ordinal++, operationKind: "import_node", entityKind: "node", entityId: saved.nodeId, before: null, after: saved });
+      }
+      for (const edge of flow.edges) {
+        const saved = await this.upsertEdge(edgeRecordFromArtifact(flow.flowId, edge, changedAt), changedAt, sql, false);
+        await insertOperation(sql, { revisionId, ordinal: ordinal++, operationKind: "import_edge", entityKind: "edge", entityId: saved.edgeId, before: null, after: saved });
+      }
+      for (const region of flow.regions ?? []) {
+        const bounds = boundsForRegion(region.nodeIds, flow.nodes);
+        await this.upsertRegion({ regionId: region.id, flowId: flow.flowId, name: region.name, kind: region.kind, bounds: bounds as JsonObject, metadata: region.metadata ?? {} }, sql, false);
+        await insertOperation(sql, { revisionId, ordinal: ordinal++, operationKind: "import_region", entityKind: "region", entityId: region.id, before: null, after: { regionId: region.id, bounds } });
+      }
+      await this.refreshPartitionCounts([...touchedPartitions], changedAt, sql);
+      return { status: "imported", revisionNumber: 1, nodeCount: flow.nodes.length, edgeCount: flow.edges.length, regionCount: flow.regions?.length ?? 0 };
+    });
   }
   async applyPatch(input: { pool: AutomationStudioProjectDatabasePool; projectId: string; flowId: string; baseRevision: number; mutationId: string; operations: AutomationStudioGraphPatchOperation[]; authorId?: string | null; message?: string; changedAt?: number }): Promise<AutomationStudioIdempotentMutationResult<AutomationStudioGraphPatchResult>> {
     const unit = await AutomationStudioProjectUnitOfWork.open({ pool: input.pool, projectId: input.projectId });
