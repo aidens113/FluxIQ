@@ -59,11 +59,13 @@ describe("the argument a rerun runs with", () => {
     expect(input.description).toContain("JSON merge patch over the argument the step ran with");
     expect(input.description).toContain("Only the keys that change");
     expect(input.description).toContain("null removes a key");
-    // The schema's own words (`flow-draft/amendment/schema.ts`, not this lane's):
-    // they still say a left-out key is kept, which now holds only outside an
-    // object the model writes out again (`../rerun-input.ts`); the schema owner
-    // changes this sentence and this assertion together.
-    expect(input.description).toContain("a key left out is kept, and a new key given a left-out key's value renames it");
+    // The schema's own words (`flow-draft/amendment/schema.ts`) say what the
+    // merge does (`../rerun-input.ts`): a left-out key is kept, except in an
+    // object the model writes out again, which drops what it was shown and left
+    // out and keeps what was withheld from it (t287, W10).
+    expect(input.description).toContain("a key left out is kept, except in an object you write out again");
+    expect(input.description).toContain("drops the keys you were shown and left out, and keeps keys withheld from you");
+    expect(input.description).toContain("a new key given a left-out key's value renames it");
     // Either shape the re-author wrote is one the merge reads (t194-w39).
     expect(input.description).toContain("a node's parameters may be written without parameters around them");
   });

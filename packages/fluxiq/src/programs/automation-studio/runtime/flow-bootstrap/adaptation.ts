@@ -213,6 +213,8 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
         id: nodeIds.get(node.key)!,
         definitionId: node.definitionId,
         definitionVersion: node.definitionVersion,
+        // What its draft step did, in the domain's words: what a run's step card names it by (R3-U-12).
+        ...(node.label ? { label: node.label } : {}),
         ...(node.parameters ? { parameterValues: structuredClone(node.parameters) } : {}),
         position: { ...node.position },
         // `adaptationIds` is the neutral provenance every change stamps on the
