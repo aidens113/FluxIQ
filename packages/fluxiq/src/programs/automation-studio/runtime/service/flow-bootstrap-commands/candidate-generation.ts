@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, runAutomationStudioFlowCandidateAuthoringLoop, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapFailureStage } from "../../flow-bootstrap/index.ts";
+import { flowBootstrapEvidenceLoopFailure, flowBootstrapHarnessFailure, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapFailureStage } from "../../flow-bootstrap/index.ts";
+import { runAutomationStudioFlowCandidateAuthoringLoop } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioLlmUnusableDecisionError, type AutomationStudioLlmHarnessInput, type AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import { automationStudioActivityDecisionReason, observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import type { AutomationStudioFlowCandidateDraftRecord, AutomationStudioFlowCandidateDraftStore } from "../candidate-drafts/index.ts";

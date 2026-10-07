@@ -1,4 +1,5 @@
-import type { AutomationStudioBootstrapAccounting, AutomationStudioFlowCandidate, AutomationStudioCandidateOriginalSourceBinding, AutomationStudioCandidateOriginalSources } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioBootstrapAccounting } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioFlowCandidate, AutomationStudioCandidateOriginalSourceBinding, AutomationStudioCandidateOriginalSources } from "../../flow-bootstrap/candidate/index.ts";
 
 /** A durable unverified submission, deliberately outside the adaptation store. */
 type Draft = {

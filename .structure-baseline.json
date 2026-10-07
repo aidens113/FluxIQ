@@ -155,7 +155,6 @@
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/completed-llm-evidence.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/live-patch-target-override.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/native-node-runtime.test.ts": 1,
-      "packages/fluxiq/src/programs/automation-studio/runtime/tests/refuted-result/tests/failed-step-reauthor.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/refuted-result/tests/repair-purse-chain.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/service-adaptation/tests/judged-reauthor.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/tests/service-authoring/tests/confirm-requests-build.test.ts": 1,
