@@ -23,9 +23,12 @@ verdicts and refuse unsupported apply-before-judged repair topology; t298 isolat
 paired worktrees implement build cancellation and downstream reachable Stop.
 Downstream t297 implements running build identity independently.
 
-Current behavior still permits yes + unsure/silent as confirming success and
-applies unsupported reauthor topologies before rerun. These source findings are
-not fixed until worker edits are independently reviewed and owning tests pass.
+Task t296 now requires affirmative confirmation for a build yes and refuses
+unsupported held reauthor topologies before apply/dispatch/writes. Supervisor
+reviewed the source and independently observed 29/29 changed-owner tests passing;
+worker directory regressions passed 391 tests and fluxiq check/audit passed.
+Revalidated after integrating dev. This completes these two fences, not the entire
+P0 evidence/readiness/control gate. Start-rerun decline wording remains t298 wiring.
 Existing Flow schema, executor, signatures, validation, held promotion and graph
 storage are retained. Unknown evidence does not authorize automatic promotion.
 
@@ -40,6 +43,14 @@ user's downstream instructions. Workers never commit or merge; supervisor verifi
 and closes downstream task first, then Core under Core's own task gate.
 
 ## Work Ledger
+
+### 2026-10-06 - t296 acceptance fences verified
+- Agent: Codex supervisor; p0-acceptance worker.
+- Changed: affirmative confirmation agreement, unsupported held-topology refusal, owning tests, authored architecture; source commit 1736ba81.
+- Why: unknown/silent confirmation is insufficient proof; unsupported topology must not replace accepted graph before verification.
+- Validation: fail-first 10 failures reported; worker owning directories 391 passed, fluxiq check and audit passed; supervisor source/test review and independent 29/29 test run passed. Only docs arrived in dev integration; owning checks rerun before close. No live/provider calls.
+- Outcome: Accepted
+- Follow-up: t298 preserve decline reason; remaining P0 readiness/control/requirement receipts; t299 candidate path.
 
 ### 2026-10-06 - Implementation authorized and paired tasks assigned
 - Agent: Codex supervisor.

@@ -193,10 +193,11 @@ describe("a verification that confirms a first yes (the build-test judge)", () =
     expect(agreed.repair).toBeUndefined();
   });
 
-  it("a second call that answered unknown, or replied without an answer, leaves the first yes standing, as two calls", () => {
+  it("a second unknown or silent reply leaves a confirming yes unverified", () => {
     for (const second of [said("unknown"), silent()]) {
       const agreed = automationStudioResultVerificationAgreement({ first: said("yes"), second, confirmAnswer: true });
-      expect(agreed, second.code).toMatchObject({ verdict: "answers", basis: "model", code: "core.result.answers_request", verdicts: ["answers", "unsure"], calls: 2 });
+      expect(agreed, second.code).toMatchObject({ verdict: "unsure", basis: "model_unconfirmed", code: "core.result.refutation_unconfirmed", verdicts: ["answers", "unsure"], calls: 2 });
+      expect(agreed.failure).toBeUndefined();
       expect(agreed).not.toHaveProperty("unconfirmedReading");
     }
   });
@@ -217,6 +218,13 @@ describe("a verification that confirms a first yes (the build-test judge)", () =
       // The runtime result check, which never confirms a yes, is unchanged.
       expect(automationStudioResultVerificationAgreement({ first: said("yes"), second })).toMatchObject({ verdict: "answers", verdicts: ["answers"], calls: 1 });
     }
+  });
+
+  it("a required confirming verdict that is absent cannot preserve the first yes", () => {
+    const agreed = automationStudioResultVerificationAgreement({ first: said("yes"), confirmAnswer: true });
+    expect(agreed).toMatchObject({ verdict: "unsure", basis: "model_unconfirmed", code: "core.result.refutation_unconfirmed", verdicts: ["answers"], calls: 1 });
+    expect(agreed.failure).toBeUndefined();
+    expect(agreed.reason).toContain("confirming check was not supplied");
   });
 
   it("without the option a second verdict after a yes is ignored, as the runtime result check always has", () => {

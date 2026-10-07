@@ -1,77 +1,8 @@
-// What two checks of one result come to.
-//
-// A verification is asked once, and a first answer that the result answers the
-// request stands -- unless the verification confirms answers (`confirmAnswer`,
-// set only by the build-test judge, below). Any other answer the model actually gave -- `no`, or
-// `unknown` -- is asked once more with the same evidence, because either one
-// used to fail a run whose every step succeeded, and at temperature 0 both were
-// measured to flip. On 2026-09-18 two playbacks of one Flow stored
-// byte-identical rows, the oracle scored both 14 of 14, and one was judged to
-// answer and the other not to. On 2026-09-21 the same stored rows, verified ten
-// times, came back `yes` eight times and `unknown` twice, and a Lab run that
-// matched 14 of 14 was failed on one `unknown` (run-mublcbqf-9e815106).
-//
-//   first      second                            recorded as
-//   yes        (not asked)                       the first, as it stands
-//   no         no                                refuted, `calls: 2`
-//   no         yes                               `model_disagreed`
-//   unknown    yes                               `model_disagreed`
-//   no         unknown, silent or unavailable    `model_unconfirmed`
-//   unknown    no, unknown, silent, unavailable  `model_unconfirmed`
-//   silent or  (not asked)                       the first: fails closed
-//   unavailable
-//
-// A verification that confirms answers (`confirmAnswer`) asks a first `yes`
-// once more too, and reads the pair:
-//
-//   yes        yes                               the first, `calls: 2`
-//   yes        no                                `model_disagreed`, carrying
-//                                                the no's reading
-//   yes        unknown or silent                 the first, `calls: 2`
-//   yes        unavailable                       `model_unconfirmed`
-//
-// Only the build-test judge sets it, because its `yes` finishes a build: in live
-// run murwcmx2 two build judges (steps 0032 and 0051) were sent the same request
-// but for one step number, answered `no` and then `yes`, and that one `yes`
-// finished the build on rows the playback judge refused. A second call that
-// answered and said nothing for or against contradicts nothing: on correct
-// results a `yes` was measured to flip to `unknown`, never to `no`, so of the
-// answers only a `no` unsettles it. A second call that never answered at all --
-// refused by the build's purse, never sent, or not back usable -- is another
-// matter: the yes was then checked once, not confirmed. In live run
-// `run-mux6nxst-c9bca37c` (D3-5) the reserve judgement's first call said yes,
-// the purse refused the confirming call, and that one unconfirmed yes finished
-// the build. So it is `model_unconfirmed`, and the build cannot finish on it.
-// The runtime result check keeps the rule above; its `yes` fails nothing either
-// way.
-//
-// Only two agreeing `no`s refute. Two answers that never said `yes` and never
-// agreed on `no` are not proof that the run failed, so they leave it unverified
-// and keep the status its steps earned. A first call that gave no answer at
-// all -- a reply without the field, or a call that did not come back -- is not
-// asked again: nothing was said that a repeat could confirm or contradict, and
-// it fails closed as it always has. Core's own count-based observations never
-// reach this file: they are settled before any call.
-//
-// An unsettled outcome keeps one thing more than its verdict words: the
-// expected, observed and advice of the call that judged `no`, as one reading
-// the other call did not confirm (`unconfirmedReading`). It fails nothing; a
-// build's repair is told it.
-//
-// **Said for a person.** The two unsettled reasons are shown as they are, on
-// the check's card and in the build's repair heading, so they say it the way a
-// person reads it: checked twice, the answers, not confirmed, not failed for it.
-// They used to speak of "the model", "two checks" and "the status its steps
-// earned" (run `run-murwd8le-79e735a8`, UI review D3). The codes beside them
-// are unchanged.
-//
-// **A yes Core did not take is a no here** (live run `run-muw60j7c-bb7c9a62`,
-// C-2). A yes that did not name each row a condition alone left out that names
-// the asked item reaches this file as `does_not_answer` (`verdict.ts`), so every
-// rule above reads it as a no: asked again, two of them refute, and beside a
-// yes that did name them the pair disagrees. Its words say what it was.
-//
-// Pure: no call is made here, and nothing is read but the two verdicts.
+// Agreement between result checks. Runtime checks keep a single affirmative
+// judgement; build-test checks require an affirmative confirming judgement.
+// Unknown, silent, unavailable or absent confirmation leaves the result unsure.
+// Only two agreeing negatives refute; conflicting answers remain unverified.
+// This pure boundary preserves any negative reading for the repair controller.
 
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "./repair-directive.ts";
@@ -111,6 +42,9 @@ export function automationStudioResultVerificationAskAgain(first: AutomationStud
  */
 export function automationStudioResultVerificationAgreement(input: AutomationStudioResultVerificationAgreementInput): AutomationStudioResultVerification {
   const { first, second } = input;
+  if (!second && first.basis === "model" && first.verdict === "answers" && input.confirmAnswer === true) {
+    return { schemaVersion: first.schemaVersion, verdict: "unsure", basis: "model_unconfirmed", code: AUTOMATION_STUDIO_RESULT_VERDICT_CODES.unconfirmed, reason: `This result was checked once: the first answer was that it does what was asked, but the required confirming check was not supplied. ${UNSETTLED.model_unconfirmed.run}`, observation: first.observation, verdicts: [first.verdict], calls: 1 };
+  }
   if (!second || !automationStudioResultVerificationAskAgain(first, { confirmAnswer: input.confirmAnswer })) return { ...first, verdicts: [first.verdict], calls: 1 };
   const verdicts: AutomationStudioResultVerdict[] = [first.verdict, second.verdict];
   const codes = AUTOMATION_STUDIO_RESULT_VERDICT_CODES;
@@ -119,8 +53,10 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
     if (second.basis === "model_unavailable") {
       return unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked once: the first answer was that it does what was asked, and the second check, which confirms a yes, gave no answer, because it did not come back usable (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts);
     }
-    // Only a `no` contradicts a confirmed `yes`; a second call that answered unknown, or replied without an answer, leaves it standing.
-    if (second.verdict !== "does_not_answer") return { ...first, verdicts, calls: 2 };
+    if (second.verdict === "answers") return { ...first, verdicts, calls: 2 };
+    if (second.verdict !== "does_not_answer") {
+      return unsettled(first, second, "model_unconfirmed", codes.unconfirmed, `This result was checked twice with the same evidence: the first answer was that it does what was asked, and the confirming check gave ${said(second)} (${second.code}). ${UNSETTLED.model_unconfirmed.run}`, verdicts);
+    }
     return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts);
   }
   if (first.verdict === "does_not_answer" && second.verdict === "does_not_answer") {
