@@ -2135,3 +2135,24 @@ Successful generation opens the returned proposed Bootstrap Adaptation in the ex
 The authoring surface cannot approve or apply the proposal. The standard review endpoint, `review-flow-adaptation`, detects the Bootstrap identity and delegates only approve, reject, apply, and revert to the dedicated lifecycle; the Adaptations UI hides unsupported standard actions. Review responses re-project the new lifecycle state immediately. An applied response includes the canonical post-apply execution digest, which must match the dedicated application record. Only explicit application materializes the deterministic Core-owned Router, Subflows, and graph Flows; existing Router/Subflow mutation subscriptions then refresh Runtime Debug readiness and allow a deterministic Run.
 
 The browser request policy marks generation as an explicit mutation. No bootstrap provider request is part of ordinary preload or summary hydration.
+
+## Candidate verification and detached execution
+
+`runtime/flow-bootstrap/verification` owns revision/base/requirements-bound start,
+execution and independent observation receipts. It refuses unknown evidence,
+incomplete enumeration, unperformed commands, cancellation and stale identities.
+An explicit create requires start absence, a performed command and attribution
+to a newly produced subject; ensure may verify an already-present subject.
+
+The detached adapter revalidates the exact submitted topology, refuses silent
+compiler rewrites, routes through fresh host state and uses the normal canonical
+executor with the accepted parent's permission defaults. It writes no accepted
+graph, permits no partial run or hidden retry/LLM repair, and retains selected
+branch execution semantics. Its command list is intentionally empty until a
+trusted domain runtime supplies performed/subject acknowledgements. Successful
+node attempts alone do not certify lasting browser effects.
+
+These modules are independently tested infrastructure. The production service
+requirement interpreter, declared-start browser owner, independent oracle,
+durable receipt recovery and atomic shared promotion adapter are still required.
+No existing build or repair is automatically accepted by adding these exports.
