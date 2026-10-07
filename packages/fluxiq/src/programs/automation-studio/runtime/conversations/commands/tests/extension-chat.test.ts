@@ -358,7 +358,7 @@ describe("the extension's chat, end to end in Core", () => {
         async pendingAsks() { return []; },
         async getAsk() { return null; }
       },
-      port: { async call(endpoint: string) { calls.push(endpoint); return { ok: true, payload: { adaptation: { adaptationId: "adaptation.pending", permissionRequest: { askId: "ask.pending" } } } }; } }
+      port: { async call(endpoint: string) { calls.push(endpoint); return { ok: true, payload: { adaptation: { adaptationId: "adaptation.pending", status: "proposed", permissionRequest: { askId: "ask.pending" } } } }; } }
     }, { flowId: "flow.example" });
     expect(calls).toEqual(["generate-flow-bootstrap-adaptation"]);
     expect(result.status).toBe("failed");

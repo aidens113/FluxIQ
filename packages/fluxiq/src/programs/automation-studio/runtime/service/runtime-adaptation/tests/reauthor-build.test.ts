@@ -66,6 +66,14 @@ async function run(generate: AutomationStudioReauthorBuildDependencies["generate
 // apply it -- the dependencies carry no apply -- so the Flow on disk is the one
 // that ran until a whole run of the held edit is judged to answer.
 describe("a re-author build holds its edit", () => {
+  it("refuses an unexpected candidate draft rather than approving a fabricated adaptation", async () => {
+    const proposal = generated();
+    const draft = { projectId: proposal.projectId, flowId: proposal.flowId, status: "draft" as const, candidateId: "candidate", revision: 1, digest: "a".repeat(64), verification: "not_performed" as const, promotionAllowed: false as const, sourceInstructionIds: proposal.sourceInstructionIds, baseDependencyDigest: proposal.baseDependencyDigest, baseSettingsRevision: proposal.baseSettingsRevision, accounting: ACCOUNTING };
+    const result = await run(vi.fn().mockResolvedValue(draft));
+    expect(result.approve).not.toHaveBeenCalled();
+    expect(result.built.adaptationId).toBeUndefined();
+    expect(result.built.failure).toMatchObject({ stage: "post_provider_validation", accounting: ACCOUNTING });
+  });
   it("approves the adaptation as the repair actor and records it held, not applied", async () => {
     const generate = vi.fn<AutomationStudioReauthorBuildDependencies["generate"]>().mockResolvedValue(generated());
     const result = await run(generate);

@@ -48,8 +48,10 @@ export async function buildAutomationStudioFlowFromConversation(
     const ending = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true ? "Build stopped. The Flow was not promoted." : buildEnding(response);
     return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), kept: keptDraft(response) };
   }
-  const adaptation = (response.payload as { adaptation?: { adaptationId?: unknown; permissionRequest?: unknown } } | undefined)?.adaptation;
-  if (!adaptation || typeof adaptation.adaptationId !== "string" || !adaptation.adaptationId) {
+  const payload = response.payload as { candidate?: { status?: unknown }; adaptation?: { status?: unknown; adaptationId?: unknown; permissionRequest?: unknown } } | undefined;
+  if (payload?.candidate?.status === "draft" || payload?.adaptation?.status === "draft") return { ok: false, cause: "the build returned an unverified draft, so no change was applied", ending: "Saved a candidate draft. It still needs independent execution and verification; the Flow's steps are unchanged.", kept: true };
+  const adaptation = payload?.adaptation;
+  if (!adaptation || adaptation.status !== "proposed" || typeof adaptation.adaptationId !== "string" || !adaptation.adaptationId) {
     return { ok: false, cause: "the build answered without the change it made", kept: false };
   }
   return { ok: true, adaptationId: adaptation.adaptationId, awaitingPermission: Boolean(adaptation.permissionRequest) };

@@ -19,9 +19,29 @@ and digest and grants static validity only.
 `runtime/service/candidate-drafts/` persists unverified submissions separately
 from adaptations in Core project storage. Reading a stored draft grants neither
 execution nor promotion; it must be revalidated before runtime use. The existing
-legacy authoring path remains the default. The candidate facade/API and exact
-detached execution/requirement receipt wiring are integration work in progress;
-these modules alone do not establish a runnable or accepted candidate path.
+legacy authoring path remains the default. Explicit API requests with
+`authoringMode: "candidate"` and `evidenceGuided: true` run discovery and full
+submission through the service, then store a separate unverified draft. The API
+returns `payload.candidate` with candidate ID, revision/digest, accepted base and
+settings revision, source instruction IDs and accounting, `status: "draft"`,
+`verification: "not_performed"` and `promotionAllowed: false`. It returns no
+adaptation ID or apply action; omitted mode still returns `payload.adaptation`
+with `status: "proposed"` through the legacy path.
+
+Candidate discovery uses the same purse, tool permissions, instruction authority,
+registry/handle resolution, routing observations and build cancellation as legacy
+generation. Discovery evidence does not enter the submitted graph or persisted
+draft record. Completion stores the latest submitted revision without marking
+the creation purse ended. Current Flow/settings mismatches and cancellation
+checkpoints refuse storage. This is not an atomic base compare or cancellation
+inside the underlying OS write. Stored drafts grant no execution or promotion.
+Conversation/re-author callers require a proposed result before adaptation use;
+an unexpected draft is reported as saved and unverified with no apply.
+
+Exact detached execution, declared start reset, independent requirements/observer
+receipts, command/subject acknowledgements and durable promotion reconciliation
+remain separate integration work. Static candidate submission does not prove
+the user's requested outcome, and this facade never accepts or promotes it.
 
 ## Context boundary
 

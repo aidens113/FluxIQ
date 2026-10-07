@@ -22,6 +22,26 @@ function readyLlmApiService<T extends object>(service: T): T & { getFlowBootstra
 }
 
 describe("Automation Studio LLM execution API", () => {
+  it("routes explicit candidate authoring and exposes only a sanitized non-promotable draft", async () => {
+    const draft = { projectId: "project", flowId: "flow", status: "draft", candidateId: "candidate", revision: 2, digest: "a".repeat(64), baseDependencyDigest: "base", baseSettingsRevision: 1, sourceInstructionIds: ["instruction"], accounting: { requestId: "request", estimatedInputTokens: 10 }, verification: "not_performed", promotionAllowed: false, adaptationId: "fabricated", buildPlan: "private-plan", prompt: "private-prompt" };
+    const generate = vi.fn().mockResolvedValue(draft), registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation: generate }) as any);
+    const actor: ProgramApiActor = { sessionId: "session", userId: "user", roleId: "admin", permissions: ["flows.write"] };
+    const request = { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, scope: {}, actor, payload: { projectId: "project", flowId: "flow", authSessionId: "session", authoringMode: "candidate", evidenceGuided: true } };
+    const result = await registry.call(request);
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ authoringMode: "candidate", evidenceGuided: true }));
+    expect(result).toMatchObject({ ok: true, payload: { candidate: { status: "draft", candidateId: "candidate", revision: 2, verification: "not_performed", promotionAllowed: false } } });
+    expect(result.payload).not.toHaveProperty("adaptation");
+    expect(JSON.stringify(result)).not.toContain("fabricated"); expect(JSON.stringify(result)).not.toContain("private-");
+    generate.mockClear();
+    expect(await registry.call({ ...request, payload: { ...request.payload, evidenceGuided: undefined } })).toMatchObject({ ok: false });
+    expect(await registry.call({ ...request, payload: { ...request.payload, authoringMode: "legacy" } })).toMatchObject({ ok: false });
+    expect(generate).not.toHaveBeenCalled();
+    generate.mockResolvedValue({ ...draft, promotionAllowed: true });
+    expect(await registry.call(request)).toMatchObject({ ok: false });
+    generate.mockResolvedValue({ ...draft, status: "proposed" });
+    expect(await registry.call(request)).toMatchObject({ ok: false });
+  });
   it("runs a diagnosis_only intent for the signed-in actor, with no grant, and may name the run it continues", async () => {
     const runRuntimeSession = vi.fn().mockResolvedValue({ runId: "run.one", status: "failed" });
     const registry = new GlobalProgramApiRegistry();
