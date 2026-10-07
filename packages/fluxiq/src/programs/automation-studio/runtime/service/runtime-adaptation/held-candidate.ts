@@ -1,16 +1,6 @@
-// What the re-run of a held re-author runs (t267).
-//
-// Both re-author routes approve their extend-mode edit and hold it
-// (`./reauthor-build.ts`). A re-run from the start whose latest re-author is
-// held runs the held graph unapplied when that graph is all the edit changes: an
-// extend keeps the selected Subflow's ids and overwrites its graph under them
-// (`flow-bootstrap/adaptation.ts`), so a held topology of that one Subflow, on
-// the same graph Flow, with every router rule targeting it, is exactly what an
-// apply would store. Any other shape -- a run with no selected Subflow, a
-// second Subflow, a router that routes elsewhere -- cannot be run as one graph,
-// so it is applied first, as it was before t267, and the run says why
-// (`appliedBeforeJudged`). The run's judged end settles a held edit the pass ran
-// (`./judged-reauthor.ts`).
+// A held re-author runs unapplied only when its whole topology is the selected
+// Subflow graph. Other shapes are refused until a whole-topology candidate
+// executor exists. Refusal never changes the accepted graph or applies the edit.
 
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowSubflow } from "../../../model/index.ts";
 import type { AutomationStudioBootstrapAdaptation } from "../../flow-bootstrap/index.ts";
@@ -20,10 +10,10 @@ import type { AutomationStudioRepairRerunInput } from "./repair-rerun.ts";
  * What could not be read or done, which the re-run declines its pass for, under
  * its own codes (`./repair-rerun.ts`).
  */
-export type AutomationStudioHeldReauthorUnreadable = "heldReauthor" | "heldReauthorApply" | "subflow" | "subflowAbsent";
+export type AutomationStudioHeldReauthorUnreadable = "heldReauthor" | "subflow" | "subflowAbsent";
 
-/** Why a held re-author could not be run unapplied, and was applied before its re-run instead. */
-const APPLIED_BEFORE_JUDGED = {
+/** Why a held re-author cannot yet be executed without applying it. */
+const UNSUPPORTED_TOPOLOGY = {
   noSubflow: "no_selected_subflow",
   notOneSubflow: "not_one_subflow",
   otherSubflow: "other_subflow",
@@ -31,17 +21,11 @@ const APPLIED_BEFORE_JUDGED = {
   routesElsewhere: "router_routes_elsewhere"
 } as const;
 
-/**
- * What the re-run of a held re-author runs: the held graph, unapplied, or --
- * where the held topology is not the selected Subflow's graph alone -- nothing
- * here, once the edit has been applied as before. A held record that cannot be
- * read, or an apply that is refused, declines the pass, under the key the re-run
- * reads its code by.
- */
+/** Reads an unapplied held graph, or refuses an unsupported/unreadable edit. */
 export async function automationStudioHeldReauthorCandidate(
   input: AutomationStudioRepairRerunInput,
   adaptationId: string
-): Promise<{ flow: AutomationStudioFlowArtifact } | { appliedBeforeJudged: string } | { unreadable: AutomationStudioHeldReauthorUnreadable }> {
+): Promise<{ flow: AutomationStudioFlowArtifact } | { unsupportedTopology: string } | { unreadable: AutomationStudioHeldReauthorUnreadable }> {
   const flowId = input.adaptationContext.flowId;
   let adaptation: AutomationStudioBootstrapAdaptation | null;
   try {
@@ -50,14 +34,7 @@ export async function automationStudioHeldReauthorCandidate(
     return { unreadable: "heldReauthor" };
   }
   if (adaptation?.status !== "validated") return { unreadable: "heldReauthor" };
-  const graph = await heldGraph(input, adaptation);
-  if (!("appliedBeforeJudged" in graph)) return graph;
-  try {
-    await input.ports.applyFlowBootstrapAdaptation({ projectId: input.projectId, flowId, adaptationId, actorId: "runtime.result_repair" });
-  } catch {
-    return { unreadable: "heldReauthorApply" };
-  }
-  return graph;
+  return heldGraph(input, adaptation);
 }
 
 /**
@@ -70,13 +47,13 @@ export async function automationStudioHeldReauthorCandidate(
 async function heldGraph(
   input: AutomationStudioRepairRerunInput,
   adaptation: AutomationStudioBootstrapAdaptation
-): Promise<{ flow: AutomationStudioFlowArtifact } | { appliedBeforeJudged: string } | { unreadable: AutomationStudioHeldReauthorUnreadable }> {
+): Promise<{ flow: AutomationStudioFlowArtifact } | { unsupportedTopology: string } | { unreadable: AutomationStudioHeldReauthorUnreadable }> {
   const subflowId = input.subflowId;
-  if (!subflowId) return { appliedBeforeJudged: APPLIED_BEFORE_JUDGED.noSubflow };
+  if (!subflowId) return { unsupportedTopology: UNSUPPORTED_TOPOLOGY.noSubflow };
   const entries = adaptation.topology.subflows;
   const entry = entries[0];
-  if (entries.length !== 1 || !entry) return { appliedBeforeJudged: APPLIED_BEFORE_JUDGED.notOneSubflow };
-  if (entry.subflow.subflowId !== subflowId) return { appliedBeforeJudged: APPLIED_BEFORE_JUDGED.otherSubflow };
+  if (entries.length !== 1 || !entry) return { unsupportedTopology: UNSUPPORTED_TOPOLOGY.notOneSubflow };
+  if (entry.subflow.subflowId !== subflowId) return { unsupportedTopology: UNSUPPORTED_TOPOLOGY.otherSubflow };
   let selected: AutomationStudioFlowSubflow | null;
   try {
     selected = await input.ports.getFlowSubflow(input.projectId, input.session.flowId, subflowId);
@@ -84,11 +61,11 @@ async function heldGraph(
     return { unreadable: "subflow" };
   }
   if (!selected?.graphFlowId) return { unreadable: "subflowAbsent" };
-  if (entry.subflow.graphFlowId !== selected.graphFlowId || entry.graphFlow.flowId !== selected.graphFlowId) return { appliedBeforeJudged: APPLIED_BEFORE_JUDGED.otherGraph };
+  if (entry.subflow.graphFlowId !== selected.graphFlowId || entry.graphFlow.flowId !== selected.graphFlowId) return { unsupportedTopology: UNSUPPORTED_TOPOLOGY.otherGraph };
   const router = adaptation.topology.router;
   if (!router.rules.every((rule) => rule.target.subflowId === subflowId)
     || (router.fallback?.kind === "subflow" && router.fallback.subflowId !== subflowId)) {
-    return { appliedBeforeJudged: APPLIED_BEFORE_JUDGED.routesElsewhere };
+    return { unsupportedTopology: UNSUPPORTED_TOPOLOGY.routesElsewhere };
   }
   if (entry.graphFlow.metadata?.parentFlowId !== input.session.flowId || entry.graphFlow.metadata?.parentSubflowId !== subflowId) {
     throw new Error("Held re-author Subflow graph ownership does not match the selected parent and Subflow.");

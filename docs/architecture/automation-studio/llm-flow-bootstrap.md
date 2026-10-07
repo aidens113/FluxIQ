@@ -1271,9 +1271,10 @@ a second call with the same evidence (`result-verification/agreement.ts`). Two
 `yes` answers are a yes. A `yes` followed by a `no` is `model_disagreed`: unsure,
 carrying the `no` call's expected, observed and advice as `unconfirmedReading`,
 which the build reads as `unknown` and repairs with. A second call that answers
-`unknown`, gives no verdict, does not come back, or is refused by the build's
-purse leaves the first `yes` standing, because on correct results a `yes` was
-measured to flip to `unknown` and never to `no`. In live run `run-murwcmx2`,
+`unknown`, gives no verdict, does not come back, is absent, or is refused by the
+build's purse leaves the result `unsure` with `model_unconfirmed`. Only an
+affirmative confirming verdict can finish a build; uncertainty is not proof of
+success. In live run `run-murwcmx2`,
 build judges 0032 and 0051 were sent the same request except for one step
 number; they answered `no` and then `yes`, and that single `yes` finished the
 build on rows the playback judge refused. The runtime result check does not set
