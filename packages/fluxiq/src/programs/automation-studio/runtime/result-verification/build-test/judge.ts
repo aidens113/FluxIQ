@@ -30,7 +30,11 @@
 // also carries, in `fix`, Core's fix lines for those rows -- the condition, the
 // item and each row -- because the build's repair round is told the rows only
 // through them and `checked` (`../../flow-bootstrap/unfinished-build/judgement.ts`;
-// until t274-c25b it kept the finding code alone). Core's other fix lines are a
+// until t274-c25b it kept the finding code alone). Beside `checked` it carries
+// the rows those lines name as left out, per read and condition
+// (`checkedRows`, `../request-rows/checked-rows-named.ts`), so a repair can say
+// which of them a rerun of that read now keeps (live run
+// `run-mux6naez-6c20f26e`, R3-3). Core's other fix lines are a
 // finished run's: "add or fix the step that stores" answers a record set a test
 // never keeps, so they are not passed on, as their findings are not.
 //
@@ -60,6 +64,7 @@ import type { AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRepairDirective, type AutomationStudioRunResultSummary } from "../contracts.ts";
 import { automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
+import { automationStudioResultCheckedRowsNamed, type AutomationStudioRequestRowsNamed } from "../request-rows/index.ts";
 import {
   verifyAutomationStudioRunResult,
   type AutomationStudioResultVerificationReport,
@@ -124,6 +129,14 @@ export type AutomationStudioBuildTestVerdict =
      * Core's words, never the judge's. Absent when there are none.
      */
     checked?: string[];
+    /**
+     * The rows `checked` names as left out by one condition of one read, in
+     * structured form (`../request-rows/checked-rows-named.ts`): per read, the
+     * condition and the labels Core matched. What a repair compares a rerun of
+     * that read with (live run `run-mux6naez-6c20f26e`, R3-3). Absent when the
+     * lines name none.
+     */
+    checkedRows?: AutomationStudioRequestRowsNamed[];
     records: AutomationStudioBuildTestRecordCounts; spent: AutomationStudioBuildTestJudgeSpend;
   };
 
@@ -207,6 +220,8 @@ export function automationStudioBuildTestJudge(deps: {
     if (outcome.verdict === "answers") return { verdict: "yes", spent };
     if (outcome.verdict === "does_not_answer" && automationStudioResultVerificationFailsRun(outcome)) {
       const judgement = outcome.repair?.judgement;
+      // The same rows in structured form, read from Core's lines against the summary they were made from (R3-3).
+      const checkedRows = automationStudioResultCheckedRowsNamed(input.summary, outcome.repair?.checked ?? []);
       return {
         verdict: "no",
         ...(judgement?.expected ? { expected: judgement.expected } : {}),
@@ -217,6 +232,7 @@ export function automationStudioBuildTestJudge(deps: {
         findings: (outcome.repair?.findings ?? []).map((finding) => finding.code).filter((code) => !NOT_A_FINDING_OF_A_TEST.has(code)),
         // Which rows the judgement named are in the test's result or were left out, and which rows a yes passed over (live run `run-muw60j7c-bb7c9a62`).
         ...(outcome.repair?.checked?.length ? { checked: [...outcome.repair.checked] } : {}),
+        ...(checkedRows.length ? { checkedRows } : {}),
         ...rowFix(outcome.repair),
         // The counts the verdict was reached from, for the build to measure the next repair against (t240).
         records: { stored: wouldStore(input.summary), refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired },

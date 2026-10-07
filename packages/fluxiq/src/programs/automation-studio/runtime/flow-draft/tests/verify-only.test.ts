@@ -6,6 +6,8 @@
 // running it again. Run 21 (`run-muntufao-7b7bc04a`) is why: two dry-run
 // replays of one save press moved a person's cart lines to the saved list.
 import { describe, expect, it } from "vitest";
+// The llm barrel first, as `../../decision-context/tests/recorded-runs.ts` says why.
+import { automationStudioFlowDraftReplaySteps, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE,
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE,
@@ -16,6 +18,7 @@ import {
   automationStudioFlowDraftStepActDone,
   automationStudioFlowDraftStepMovedTarget,
   automationStudioFlowDraftStepReplayMode,
+  automationStudioFlowDraftStepWithholdsLater,
   automationStudioFlowDraftWithheldStepIds,
   type AutomationStudioFlowDraftReplayOutcome,
   type AutomationStudioFlowDraftStep
@@ -230,5 +233,85 @@ describe("a step that does one of the person's lasting acts (lane B's run)", () 
   it("is run again when the instruction's read does not say its act lasts, or without the read", () => {
     expect(automationStudioFlowDraftStepReplayMode(actStep(5, { acts: ["a4"] }), lasting)).toBe("replay");
     expect(automationStudioFlowDraftStepReplayMode(actStep(12, { acts: ["a2"] }))).toBe("replay");
+  });
+});
+
+// Live run `run-mux6pndp-16feb842` (W7 R2-C8, debug cause 2): test step 16, a
+// product link claiming lasting act a3 and declaring nothing lasting, was
+// verified (not pressed) on the claim alone. It moved the target, so it
+// excused steps 17-20 as `unreproducible` and blocked the put-back of step 17
+// on its own page, and the test read clean. A claim-only check excuses nothing
+// by moving: the next step is put back on its own page and must hold there.
+const LIST = { location: "https://store.test/s?k=towels" };
+const PRODUCT = { location: "https://store.test/p/towels" };
+
+describe("which verified steps excuse the steps after them by moving the target (R2-C8)", () => {
+  const lasting: ReadonlySet<string> = new Set(["a3"]);
+
+  it("not one verified only because it claims an instructed lasting act, though it moved the target", () => {
+    const link = actStep(16, { acts: ["a3"] }, LIST);
+    expect(automationStudioFlowDraftStepReplayMode(link, lasting)).toBe("verify");
+    expect(automationStudioFlowDraftStepMovedTarget(link, actStep(17, {}, PRODUCT))).toBe(true);
+    expect(automationStudioFlowDraftStepWithholdsLater(link, actStep(17, {}, PRODUCT))).toBe(false);
+  });
+
+  it("still one whose own declaration names something lasting, read from ranWith before input", () => {
+    expect(automationStudioFlowDraftStepWithholdsLater(actStep(16, { ranWith: { node: "web.click", parameters: {}, consequences: ["modify_existing"] } }, LIST), actStep(17, {}, PRODUCT))).toBe(true);
+    // The kept declaration wins: ranWith says nothing lasts, though the model's input said otherwise.
+    expect(automationStudioFlowDraftStepWithholdsLater(actStep(16, { acts: ["a3"], input: { node: "web.click", parameters: {}, consequences: ["modify_existing"] } }, LIST), actStep(17, {}, PRODUCT))).toBe(false);
+    // With no ranWith, the input's declaration is the step's.
+    const { ranWith: _kept, ...bare } = actStep(16, { input: { node: "web.click", parameters: {}, consequences: ["create_new"] } }, LIST);
+    expect(automationStudioFlowDraftStepWithholdsLater(bare, actStep(17, {}, PRODUCT))).toBe(true);
+  });
+
+  it("still one that declared a class a person is asked about, moved or not", () => {
+    const send = actStep(16, { acts: ["a3"], ranWith: { node: "web.click", parameters: {}, consequences: ["send_or_publish"] } }, LIST);
+    expect(automationStudioFlowDraftStepWithholdsLater(send, actStep(17, {}, LIST))).toBe(true);
+    expect(automationStudioFlowDraftStepWithholdsLater(send, actStep(17, {}, PRODUCT))).toBe(true);
+  });
+});
+
+describe("the step after a claim-only verified move, in a replay (R2-C8)", () => {
+  const lasting: ReadonlySet<string> = new Set(["a3"]);
+
+  /** A site where the step after the link finds its target only once it is put back on its own page. */
+  function site() {
+    const calls: { callId: string; value: JsonObject }[] = [];
+    const answer = (code: string, effectApplied: boolean): AutomationStudioLlmEvidenceToolExecutionResult =>
+      ({ kind: "llm_evidence_tool_execution", evidence: { said: code }, effectApplied, resultCode: code });
+    let putBack = false;
+    const executeTool = async ({ callId, value }: { callId: string; toolId: string; value: JsonObject }): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+      calls.push({ callId, value });
+      if (value.replay === "reset") { putBack = true; return answer("core.replay.replayed", true); }
+      if (value.replay === "verify") return answer("core.replay.verified", false);
+      if (value.node === "web.size") return putBack ? answer("core.replay.replayed", true) : answer("core.replay.unreproducible", false);
+      return answer("core.replay.replayed", true);
+    };
+    return { calls, executeTool };
+  }
+
+  const draft = (link: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftStep[] => [
+    link,
+    actStep(17, { actionId: "web.size", input: { node: "web.size", parameters: {} }, ranWith: { node: "web.size", parameters: {}, consequences: [] } }, PRODUCT)
+  ];
+
+  it("puts the next step back on its own page, never presses the claimed act, and the step holds there", async () => {
+    const steps = draft(actStep(16, { acts: ["a3"] }, LIST));
+    const { calls, executeTool } = site();
+    const done = await automationStudioFlowDraftReplaySteps({ executeTool, steps, run: steps, callIdOf: (each) => `t.${each.position}`, reanchor: true, lastingActs: lasting });
+    expect(calls.map((each) => each.callId)).toEqual(["t.16", "t.17", "t.17.reanchor", "t.17.again"]);
+    expect(calls[0]!.value.replay).toBe("verify");
+    expect(calls[2]!.value.from).toEqual(PRODUCT);
+    expect(done.outcomes[1]).toMatchObject({ step: 17, status: "replayed", reanchored: true });
+    expect(done.outcomes[1]).not.toHaveProperty("withheldBy");
+    expect(done.outcomes[1]).not.toHaveProperty("excused");
+  });
+
+  it("still excuses the next step as withheld after a moved step that declared something lasting", async () => {
+    const steps = draft(actStep(16, { ranWith: { node: "web.click", parameters: {}, consequences: ["modify_existing"] } }, LIST));
+    const { calls, executeTool } = site();
+    const done = await automationStudioFlowDraftReplaySteps({ executeTool, steps, run: steps, callIdOf: (each) => `t.${each.position}`, reanchor: true, lastingActs: lasting });
+    expect(calls.map((each) => each.callId)).toEqual(["t.16", "t.17"]);
+    expect(done.outcomes[1]).toMatchObject({ step: 17, status: "unreproducible", withheldBy: 16, excused: "withheld" });
   });
 });

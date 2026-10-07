@@ -208,6 +208,24 @@ describe("a build's judge", () => {
     expect(seen[0]?.context.resultSummary?.endView).toEqual({ after: 1, view: { page } });
   });
 
+  // Run `run-mux6pndp-16feb842` (line 45): both judges read "2 · $28.96" -- a
+  // soap and exploration's 3-Pack -- as the two towel packs. The test's report
+  // carries the page as it started, and the judge is shown it beside the end.
+  it("is shown the page the test started on beside the one it ended on, where the test looked", async () => {
+    const { provider, seen } = scripted();
+    const judge = automationStudioFlowBootstrapBuildJudge({
+      provider, instructions: [instruction], deniedEvidenceKeys: DENIED, projectId: "project.1", flowId: "flow.1",
+      instructionText: ASKS_FOR_A_TABLE, plan: () => undefined, observedStateKeys: ["page"]
+    });
+    const before = "PAGE \"Pickup\"\nt885 link \"2 · $28.96\" ~/cart";
+    const after = "PAGE \"Pickup\"\nt885 link \"4 · $52.90\" ~/cart";
+    judge.roundStarted();
+    judge.observeTest({ ...passed(automationStudioFlowDraftFlowSignature([read])), startView: { view: { page: before } }, endView: { after: 1, view: { page: after } } });
+    await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
+    expect(seen[0]?.context.resultSummary?.startView).toEqual({ view: { page: before } });
+    expect(seen[0]?.context.resultSummary?.endView).toEqual({ after: 1, view: { page: after } });
+  });
+
   it("is judged without a page when the test captured none", async () => {
     const { provider, seen } = scripted();
     const judge = automationStudioFlowBootstrapBuildJudge({
@@ -219,6 +237,7 @@ describe("a build's judge", () => {
     const judged = await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
     expect(judged.verdict).toBe("no");
     expect(seen[0]?.context.resultSummary).not.toHaveProperty("endView");
+    expect(seen[0]?.context.resultSummary).not.toHaveProperty("startView");
   });
 
   it("gives the test its look at the page through the build's executor, and none where the domain has no free look", async () => {

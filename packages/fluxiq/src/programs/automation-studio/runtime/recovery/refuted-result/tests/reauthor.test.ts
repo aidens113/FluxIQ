@@ -10,7 +10,7 @@
 // were permission questions asked about repairing a Flow, which is not a risky
 // act, and both are gone (t166).
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "../history.ts";
 import {
@@ -271,5 +271,42 @@ describe("holding the edit for the judged re-run", () => {
     const first = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision: routed, adaptationId: "adaptation.first", held: true, attempt: 1 });
     const failed = automationStudioRefutedResultReauthored({ detail: first, decision: routed, failure: { code: "flow_bootstrap.provider_http_error" }, attempt: 2 });
     expect(automationStudioRefutedResultFlowWasReauthored(failed)).toBe(false);
+  });
+});
+
+// W17 (live run `run-muw5zv4m-52d83027`, Stage 6 cause 2): a re-author that
+// completes its seeded draft unchanged says the Flow needs no change. Nothing
+// is approved or applied, and the run records the outcome and the reason.
+describe("a re-author that found nothing to change", () => {
+  const routedHere = automationStudioRefutedResultReauthorDecision({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), ...ROUTABLE });
+  const REASON = "Step 10 chose 12 Double Rolls and step 11 raised the quantity to 2.";
+
+  it("approves and applies nothing, and answers what it said", async () => {
+    const approve = vi.fn(async () => undefined);
+    const apply = vi.fn(async () => undefined);
+    const result = await automationStudioReauthorRefutedResult({
+      generate: async () => ({ nothingToChange: { reason: REASON }, accounting: { estimatedCostUsd: 0.0012 } }),
+      approve, apply,
+      failureCode: () => ({ code: "unused" }),
+      now: () => 7
+    });
+    expect(approve).not.toHaveBeenCalled();
+    expect(apply).not.toHaveBeenCalled();
+    expect(result).toEqual({ nothingToChange: { reason: REASON }, accounting: { estimatedCostUsd: 0.0012 }, durationMs: 0 });
+  });
+
+  it("records the distinct outcome and the reason, and the Flow is not re-run", () => {
+    const recorded = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision: routedHere, nothingToChange: { reason: REASON }, attempt: 1, durationMs: 40 });
+    expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toEqual({
+      routed: true, outcome: "nothing_to_change", reason: REASON, attempt: 1,
+      attempts: [{ attempt: 1, routed: true, outcome: "nothing_to_change", reason: REASON, durationMs: 40 }]
+    });
+    expect(automationStudioRefutedResultFlowWasReauthored(recorded)).toBe(false);
+  });
+
+  it("records a withheld reason as withheld, never as no reason", () => {
+    const recorded = automationStudioRefutedResultReauthored({ detail: detail(AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE), decision: routedHere, nothingToChange: { reasonWithheld: true }, attempt: 1 });
+    expect(recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]).toMatchObject({ routed: true, outcome: "nothing_to_change", reasonWithheld: true });
+    expect((recorded.metadata?.[AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY] as Record<string, unknown>).reason).toBeUndefined();
   });
 });

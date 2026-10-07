@@ -59,6 +59,9 @@ function repairEnding(repair: Fields | undefined, reauthor: Fields | undefined):
       return tries ? `${tries} tries at fixing it didn't help` : "fixing it didn't help";
     }
   }
+  // The re-author found the Flow already does what was asked and changed nothing (W17,
+  // `recovery/refuted-result/nothing-to-change.ts`): the check's verdict stands beside it.
+  if (reauthor?.outcome === "nothing_to_change") return "the repair found nothing in the Flow to change";
   // Not re-run, or never settled: the re-author did not get as far as a Flow to run again.
   // Its last build's recorded ending says which limit stopped it, and whether a change was ever tested.
   const ending = fields(fields(lastOf(reauthor?.attempts))?.ending);

@@ -44,6 +44,13 @@ describe("activityActionRefusal", () => {
       .toEqual({ all: false, rerun: false, because: "moving a step left a repeat unable to run, so it was taken off" });
   });
 
+  // Week report W1 (`run-mux74k5q-1c3c2127`): an act claimed on a step that did something else
+  // is refused as the claim is made; the rest of that edit landed.
+  it("says an act not recorded on a step that did something else instead", () => {
+    expect(activityActionRefusal({ resultCode: "llm_evidence_loop.draft_amendments_refused", reason: "act_not_done_there", applied: 1 }))
+      .toEqual({ all: false, rerun: false, because: "that step did something else, such as choosing one of the options, and did not do the action itself" });
+  });
+
   it("says a step asked to run again, unchanged, as not run again, whichever check refused it", () => {
     for (const record of [
       { resultCode: "llm_evidence_loop.repeat_refused", reason: "changed_nothing" },

@@ -267,3 +267,66 @@ describe("a rerun of a step that built on the press before it on the same page",
     expect(answered).toMatchObject({ pressed: "Add to cart", quantity: 2, cart: 4 });
   });
 });
+
+// Live run `run-mux6naez-6c20f26e` (lane C, R3-3): the build's test was judged
+// wrong, and Core's check said the read's condition "name" alone left out three
+// pairs of earbuds. The repair's first rerun of that read kept all three; its
+// answer said only how many rows it read, and the model reran the same read six
+// more times instead of completing. A rerun of a read in a repair whose
+// judgement names rows now answers which of them it keeps.
+describe("a rerun of the read a judged test blamed", () => {
+  const NAMED = ["Lumo Audio Drift Pro", "Aurelle Pods Fit (Ivory with Wireless Charging Case)", "Trevio T5"];
+  const OTHERS = Array.from({ length: 10 }, (_, index) => `Earbuds model ${index + 1}`);
+  const judgement = { judge: { verdict: "no", findings: [], checked: [`Step 9: the condition "name" alone left out these rows the check names: ${NAMED.join("; ")}.`], checkedRows: [{ step: 9, condition: "name", rows: NAMED.map((label) => ({ label })) }] } };
+  /** A live read's answer: its kept records, each led by its name, then an address. */
+  const records = (names: readonly string[]) => names.map((name, index) => ({ name, url: `https://shop.test/p/${index}` }));
+  function host(rerunKeeps: readonly string[]) {
+    return vi.fn(async ({ value }: { callId?: string; toolId: string; value: JsonObject }) => {
+      if (value.replay === "reset") return { kind: "llm_evidence_tool_execution", evidence: { ok: true }, effectApplied: true, resultCode: "core.replay.replayed" };
+      const kept = value.where ? rerunKeeps : OTHERS;
+      return {
+        kind: "llm_evidence_tool_execution", stateDigests: { before: "p1", after: "p1" },
+        evidence: { said: `${kept.length} records`, read: { extracted: records(kept) } }, effectApplied: true, resultCode: "web.inspect.succeeded",
+        draft: { actionId: "web.read", effect: "observe", proposes: true, replay: { from: { location: "p1" } } }
+      };
+    });
+  }
+  const repair = (decide: ReturnType<typeof vi.fn>, executeTool: ReturnType<typeof host>) => runAutomationStudioLlmEvidenceLoop({
+    tools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") },
+    // Where the domain declares a live read keeps its records (the web domain's `read.extracted`): Core names no domain's key.
+    readRowsKey: "read.extracted",
+    draft: { seed: [], resume: { revision: 2, stopped: "judged_wrong", outstandingIssueCodes: [], judgement } }
+  });
+  const decisions = () => vi.fn()
+    .mockResolvedValueOnce(read)
+    .mockResolvedValueOnce(rerun("name not contains replacement"))
+    .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+
+  it("says every row the check named is kept now, and to complete so the Flow is tested again", async () => {
+    const decide = decisions();
+    await expect(repair(decide, host([...OTHERS, ...NAMED]))).resolves.toMatchObject({ ok: true });
+    const shown = shownAt(decide, 2);
+    expect(shown.find((entry) => entry.callId === "read.1")?.value).not.toHaveProperty("checkedRowsNow");
+    const answered = shown.find((entry) => entry.callId === "rerun.1")?.value as { checkedRowsNow?: { kept: string[]; stillLeftOut: string[]; said: string } } | undefined;
+    expect(answered?.checkedRowsNow?.kept).toEqual(NAMED);
+    expect(answered?.checkedRowsNow?.stillLeftOut).toEqual([]);
+    expect(answered?.checkedRowsNow?.said).toContain("complete, so the Flow is tested again");
+  });
+
+  it("compares nothing when the domain declared no place for a live read's kept rows", async () => {
+    const decide = decisions();
+    await expect(runAutomationStudioLlmEvidenceLoop({
+      tools, decide, executeTool: host([...OTHERS, ...NAMED]), maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true, unusableDecisions: { maxConsecutive: 8, stalled: () => new Error("stalled") },
+      draft: { seed: [], resume: { revision: 2, stopped: "judged_wrong", outstandingIssueCodes: [], judgement } }
+    })).resolves.toMatchObject({ ok: true });
+    expect(shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value).not.toHaveProperty("checkedRowsNow");
+  });
+
+  it("names the row the rerun still leaves out, and does not say to complete", async () => {
+    const decide = decisions();
+    await expect(repair(decide, host([...OTHERS, ...NAMED.slice(0, 2)]))).resolves.toMatchObject({ ok: true });
+    const answered = shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value as { checkedRowsNow?: { kept: string[]; stillLeftOut: string[]; said: string } } | undefined;
+    expect(answered?.checkedRowsNow?.stillLeftOut).toEqual(["Trevio T5"]);
+    expect(answered?.checkedRowsNow?.said).not.toContain("complete");
+  });
+});

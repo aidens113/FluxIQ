@@ -173,6 +173,16 @@ export type AutomationStudioInstructedActMissingReason =
    */
   | "step_only_opens_its_choices"
   /**
+   * The step named says what it changed on its page, and nothing of that shows
+   * the act, while another step that could do the act shows it by its change
+   * -- a cart count that rose, an "Added to cart" that appeared -- and the
+   * step's words do not name the act. Run `run-muqiho5c-e830ce01` named its add
+   * on "Not now", a layer its own Add to cart opened (so not an interruption),
+   * and only that Add to cart made the cart count rise. `instead` names the
+   * step that shows it (`./act-evidence.ts`).
+   */
+  | "another_step_shows_it"
+  /**
    * The step named is marked optional, so the Flow carries on when it fails
    * and the act may never be done (`run-munnop9n-5475d593`, `./check.ts`).
    */
@@ -234,9 +244,10 @@ type AutomationStudioInstructedMissingWhy = {
   /** `step_only_chooses` only: the id of the act's own choice the step made instead. */
   chooses?: string;
   /**
-   * `step_only_chooses`, `step_only_clears_the_way`, `step_only_arrives` and
-   * `step_only_opens_its_choices`: the position of a step whose words name
-   * the act, where the draft has one (`./act-evidence.ts`).
+   * `step_only_chooses`, `step_only_clears_the_way`, `step_only_arrives`,
+   * `step_only_opens_its_choices` and `another_step_shows_it`: the position of
+   * a step whose change shows the act, else one whose words name it, where
+   * the draft has one (`./act-evidence.ts`).
    */
   instead?: number;
 };

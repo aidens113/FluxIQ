@@ -3,12 +3,18 @@
 // left-out rows that name the asked item (`left-out-naming-the-item.ts`), set on
 // the judge's copy of the summary (`summary-with-left-out-naming-the-item.ts`);
 // the ones a yes did not name (`unaccounted-rows.ts`); Core's check of the rows
-// a no names (`checked-rows.ts`); and how they are read: words
+// a no names (`checked-rows.ts`), and the rows its lines name, per read and
+// condition (`checked-rows-named.ts`, read back from a judgement value by
+// `named-of.ts`); what a rerun of a read did to those rows (`rerun-rows.ts`);
+// and how they are read: words
 // (`words.ts`), request phrases (`request-phrases.ts`), a summary's reads
 // (`summary-reads.ts`) and how a row is named (`row-naming.ts`).
 export * from "./checked-rows.ts";
+export * from "./checked-rows-named.ts";
 export * from "./left-out-naming-the-item.ts";
+export * from "./named-of.ts";
 export * from "./request-phrases.ts";
+export * from "./rerun-rows.ts";
 export * from "./row-naming.ts";
 export * from "./summary-reads.ts";
 export * from "./summary-with-left-out-naming-the-item.ts";

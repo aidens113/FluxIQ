@@ -91,7 +91,8 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // The steps already out before the edit, so a drop of one is known to change nothing (`keepOnly` below).
   const outBefore = new Set(draftSteps.filter((step) => step.disposition !== "kept").map((step) => step.position));
   amendmentMemory.before(iteration, draftSteps);
-  const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, split.now);
+  // A claim the act judge would reject is refused as it is made (`act_not_done_there`, week report W1).
+  const amended = applyAutomationStudioFlowDraftAmendments(draftSteps, split.now, { claimRefused: context.input.draft ? context.input.draft.claimRefused : undefined });
   // Edits that put the draft back exactly as it stood changed nothing about the Flow.
   const sameDraftAs = rerun.request || !amended.applied ? undefined : amendmentMemory.after(iteration, draftSteps);
   // **Every refusal of this decision on one path, the draft's and the
@@ -243,7 +244,8 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
 ): AutomationStudioLlmEvidenceRerunSettled {
   automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");
   if (held.retained) tellRetained(context, iteration, held.retained, attempt);
-  const settled = held.amendments.settle(context.draftSteps, rerun);
+  // Held claims go to the act judge too, as the decision's others did (t285 gap 1).
+  const settled = held.amendments.settle(context.draftSteps, rerun, { claimRefused: context.input.draft ? context.input.draft.claimRefused : undefined });
   const refused = settled.refused.map((refusal) => ({ ...refusal, nodeId: held.nodeId }));
   const given = context.amendmentMemory.refusals(refused);
   const refusals = [...held.refusals, ...given];
@@ -356,12 +358,25 @@ function tellRetained(context: AutomationStudioLlmEvidenceDecisionHandlerContext
  * `run-musp4h2f-72e8ed99` moved a3 this way at step 0144, by a `core.run_node`
  * write with `act a3`, and the 3-Pack press it left was pressed again in the
  * next test with no word to the model (`../evidence-loop.ts`).
+ *
+ * A claim the act judge would reject is asked first (`draft.claimRefused`,
+ * week report W1): live run `run-mux74k5q-1c3c2127` ran the press of "Spain"
+ * with add and act a1, and the claim stuck. Such a claim is not made: the step
+ * stays in the Flow without the act, and the model is told
+ * `act_not_done_there`, with the judge's sentence, under the entry an
+ * amendment refused is told under -- as a call whose add copies a step of the
+ * Flow is (`./second-copy.ts`).
  */
 export function automationStudioLlmEvidenceClaimWrittenAct(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
   step: AutomationStudioFlowDraftStep,
   act: string
 ): void {
+  const refusal = context.input.draft ? context.input.draft.claimRefused?.(context.draftSteps, step, act) : undefined;
+  if (refusal) {
+    tell(context, step.iteration, [{ step: step.position, reason: "act_not_done_there", act: refusal.act, said: refusal.said, ...(refusal.instead === undefined ? {} : { instead: refusal.instead }) }], 1, undefined, []);
+    return;
+  }
   const moved = automationStudioFlowDraftClaimAct(context.draftSteps, step, act)
     .filter((left) => automationStudioFlowDraftStepIsProposed(left) && !left.acts?.length)
     .map((left) => ({ act, from: left.position, to: step.position }));

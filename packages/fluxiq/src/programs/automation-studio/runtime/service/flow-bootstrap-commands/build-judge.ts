@@ -36,6 +36,13 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 // and "Collected" (t174-w87 Cause 7). A test that took no look is judged
 // without one, as before.
 //
+// **And the page before it (`startView`).** The test looks once more just
+// before its replay (`../../llm/node-tools/dry-run-gate.ts`): the site as
+// exploration left it, before the test went back to where the Flow starts. Run
+// `run-mux6pndp-16feb842`'s judges read "2 · $28.96" -- a soap and
+// exploration's 3-Pack -- as the two towel packs; shown both pages, a judge
+// credits only what changed.
+//
 // **Why it is its own module.** The service holds the build's state (the
 // round's last test, the accepted plan) in closures; this keeps that wiring in
 // one place the tests can read, and keeps `../../service.ts` from growing.
@@ -133,8 +140,9 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
           steps: loop.steps, report: judgedTest, nodes: planNodes(input.plan()), instructionText: input.instructionText,
           result: loop.result, startLocation: input.startLocation, arrival: input.arrival, deniedEvidenceKeys: input.deniedEvidenceKeys,
           observedStateKeys: input.observedStateKeys, rowContextKeys: input.rowContextKeys, notes: input.notes?.(),
-          // The page the test ended on, looked at as its replay passed (`../../llm/node-tools/dry-run-gate.ts`).
-          ...(judgedTest?.endView ? { endView: judgedTest.endView } : {})
+          // The pages the test started and ended on, looked at just before its replay and as it passed (`../../llm/node-tools/dry-run-gate.ts`).
+          ...(judgedTest?.endView ? { endView: judgedTest.endView } : {}),
+          ...(judgedTest?.startView ? { startView: judgedTest.startView } : {})
         }),
         budget
       }), (judged) => `verdict=${judged.verdict} calls=${judged.spent.calls} tested=${judgedTest ? 1 : 0}`));

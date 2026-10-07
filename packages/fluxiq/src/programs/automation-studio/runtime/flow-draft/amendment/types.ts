@@ -1,6 +1,7 @@
 // The shapes an amendment and its refusal travel in, shared by every module of
 // this directory and by everything that reads a decision's answer.
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../step.ts";
 import type { AutomationStudioFlowDraftAmendmentChange } from "./changes.ts";
 
 /** One edit to one step of the draft. */
@@ -62,15 +63,17 @@ export type AutomationStudioFlowDraftAmendment = {
 };
 
 /**
- * Why one amendment changed nothing -- or, for `act_on_a_read`, the one part of
- * it that was not done: the act a read cannot do, beside the rest, which was;
- * or, for `repeat_taken_off`, a repeat the decision's moves left unable to run.
+ * Why one amendment changed nothing -- or, for `act_on_a_read` and
+ * `act_not_done_there`, the one part of it that was not done: the act a read
+ * cannot do, or the act the judge says the step does not do, beside the rest,
+ * which was; or, for `repeat_taken_off`, a repeat the decision's moves left
+ * unable to run.
  */
 export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
   reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named"
     | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed" | "rerun_holds_binding" | "repeat_taken_off"
-    | "strands_a_step" | "settings_rewrite_run" | "second_copy";
+    | "strands_a_step" | "settings_rewrite_run" | "second_copy" | "act_not_done_there";
   /**
    * `over_not_before` only: the step the repeat named as `over`, so the
    * telling can say, in the draft's numbers, which step lists the rows and
@@ -112,8 +115,21 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    * acts are still to do (`../../llm/draft-amendment-feedback.ts`). Live run
    * `run-muqiojz4-04a7a8fc` named `a2.quantity` on its step five decisions
    * running while the checklist showed it done and `a3` still to do.
+   * `act_not_done_there`: the act whose claim was refused.
    */
   act?: string;
+  /**
+   * `act_not_done_there` only: the act judge's sentence for the step -- what
+   * it did instead of the act, and where to name the act -- the same sentence
+   * the checklist says as `todoSaid`
+   * (`../../flow-bootstrap/instructed-acts/claim-verdict.ts`, week report W1).
+   */
+  said?: string;
+  /**
+   * `act_not_done_there` only, when the draft has one: the step whose words
+   * name the act, where the claim belongs, in the draft's shown numbers.
+   */
+  instead?: number;
   /**
    * `bind_*` only: the dotted path of the parameter the refusal is about,
    * under the step's parameters, in the model's own key names.
@@ -162,6 +178,24 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    */
   copyOf?: number;
 };
+
+/** A claim of an act refused as it is made: the act, the judge's sentence, and the step that names the act, when there is one. */
+export type AutomationStudioFlowDraftClaimRefusal = { act: string; said: string; instead?: number | undefined };
+
+/**
+ * Asked before an act is claimed on a step: the refusal when the act judge
+ * would reject the claim, or nothing when it stands
+ * (`../../llm/harness-options/draft-acts.ts`, built on
+ * `../../flow-bootstrap/instructed-acts/claim-verdict.ts`). Week report W1:
+ * live run `run-mux74k5q-1c3c2127` put a1 on the press of "Spain", one of a1's
+ * own options, and was answered "applied". `instead` is a position in `steps`
+ * as they stand when it is asked.
+ */
+export type AutomationStudioFlowDraftClaimRefused = (
+  steps: readonly AutomationStudioFlowDraftStep[],
+  step: AutomationStudioFlowDraftStep,
+  act: string
+) => AutomationStudioFlowDraftClaimRefusal | undefined;
 
 /**
  * Not a refusal: a step of the Flow an applied decision newly left after a step

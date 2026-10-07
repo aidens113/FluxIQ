@@ -4,6 +4,9 @@
 // accessories. The pairs are flagged; the accessories, which name their excluded
 // phrase first, are not.
 import { describe, expect, it } from "vitest";
+import type { AutomationStudioFlowInstruction } from "../../../../model/index.ts";
+import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { verifyAutomationStudioRunResult } from "../../verify.ts";
 import { automationStudioResultLeftOutNamingTheItem, automationStudioResultSummaryWithLeftOutNamingTheItem } from "../index.ts";
 import {
   RUN_MUW60J7C_FILTERED_READ, RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_REQUEST,
@@ -60,5 +63,39 @@ describe("rows a condition alone left out that name the asked item", () => {
     expect(automationStudioResultSummaryWithLeftOutNamingTheItem(runMuw60j7cTestSummary(), [instruction]).leftOutNamingTheItem).toHaveLength(1);
     const { buildTest: _test, ...plain } = runMuw60j7cTestSummary();
     expect("leftOutNamingTheItem" in automationStudioResultSummaryWithLeftOutNamingTheItem(plain, [instruction])).toBe(false);
+  });
+
+  // Run `run-mux6naez-6c20f26e`: `testedLabel` decides which rows are flagged,
+  // but no judge instruction describes it, so the judge's request carries none.
+  it("run mux6naez: the judge's request carries no testedLabel, and flags exactly the name condition's pairs", async () => {
+    const summary = runMuw60j7cRunSummary();
+    const plus = summary.reads!.find((read) => read.nodeId === RUN_MUW60J7C_FILTERED_READ)!.conditions!.find((entry) => entry.condition === "plus is present")!;
+    plus.leftOutOnlyByThis = [...plus.leftOutOnlyByThis!, "Zephyrline Z1 Wireless Earbuds, Bluetooth 5.3 Headphones with 60H Playtime, Wireless Charging Case, Ear Hooks for Running, Midnight Blue"];
+    const expected = automationStudioResultLeftOutNamingTheItem(summary, RUN_MUW60J7C_REQUEST);
+    expect(expected).toEqual([
+      { nodeId: RUN_MUW60J7C_FILTERED_READ, condition: "name not contains [\"ear tips\", \"charging case\", \"eartips\"]", item: "wireless earbuds", also: ["charging cases"], rows: RUN_MUW60J7C_PAIRS_LEFT_OUT }
+    ]);
+    const instruction: AutomationStudioFlowInstruction = {
+      schemaVersion: "0.1", instructionId: "instruction.flow.goal", title: "Evidence-guided generation goal", body: RUN_MUW60J7C_REQUEST,
+      scope: { kind: "flow", projectId: "project-1", flowId: "flow-1" }, priority: 1, status: "active", requirement: "required", createdAt: 1, updatedAt: 1
+    };
+    const seen: AutomationStudioLlmTaskRequest[] = [];
+    const provider: AutomationStudioLlmProvider = {
+      metadata: { provider: "mock", model: "debug-model" },
+      runTask: async (request: AutomationStudioLlmTaskRequest) => {
+        seen.push(request);
+        const diagnosis = { answersRequest: "no", observed: "The Plus condition left out rows.", expected: "Plus pairs only." };
+        return { response: { kind: "diagnosis", summary: "no", diagnosis }, usage: { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedCostUsd: 0.001 } } as never;
+      }
+    };
+    const before = structuredClone(summary);
+    await verifyAutomationStudioRunResult({ projectId: "project-1", flowId: "flow-1", runId: "run-1", summary, instructions: [instruction], deniedEvidenceKeys: [], provider });
+    expect(seen.length).toBeGreaterThan(0);
+    for (const request of seen) {
+      expect(JSON.stringify(request)).not.toContain("testedLabel");
+      expect(request.context.resultSummary?.leftOutNamingTheItem).toEqual(expected);
+    }
+    // The run's own summary keeps it for every later reader.
+    expect(summary).toEqual(before);
   });
 });

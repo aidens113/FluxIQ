@@ -171,6 +171,8 @@ type Options = {
   replanFails?: boolean;
   /** A terminal diagnosis verdict that prevents any patch request. */
   stillAchievable?: "no";
+  /** What a refuted run produced, as a result repair hands it to the recovery. */
+  resultSummary?: Parameters<typeof annotateAutomationStudioRunDetailWithRuntimeLlm>[0]["resultSummary"];
 };
 
 export async function annotate(options: Options): Promise<AutomationStudioFlowRunDetail> {
@@ -184,7 +186,8 @@ export async function annotate(options: Options): Promise<AutomationStudioFlowRu
     detail: runDetail(),
     context: context(options, policy),
     failedTraceAttempt: failedAttempt(),
-    ...(options.costLeftUsd === undefined ? {} : { costLeftUsd: options.costLeftUsd })
+    ...(options.costLeftUsd === undefined ? {} : { costLeftUsd: options.costLeftUsd }),
+    ...(options.resultSummary ? { resultSummary: options.resultSummary } : {})
   });
 }
 

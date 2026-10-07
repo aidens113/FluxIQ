@@ -52,7 +52,9 @@
 // point.
 //
 // Codes, identifiers and counts only -- no page text, no model words -- which
-// is the same rule every evidence entry Core writes is held to.
+// is the same rule every evidence entry Core writes is held to. One exception,
+// the checklist's own sentence about a step named for an act (`todoSaid`): it
+// is Core's, and quotes only the control words the draft entry already shows.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop/index.ts";
@@ -90,9 +92,10 @@ export type AutomationStudioLlmEvidenceStallRedirectInput = {
   actsMissing?: readonly string[] | undefined;
   /**
    * The acts checklist as the draft entry carries it (`../loop-configuration.ts`,
-   * `draft.acts`): read for each missing act's `todo` and `step`, so a redirect
-   * about an act a step already names corrects that step instead of asking for
-   * a new one.
+   * `draft.acts`): read for each missing act's `todo`, `step` and `todoSaid`,
+   * so a redirect about an act a step already names corrects that step instead
+   * of asking for a new one, or says, in the checklist's own words, what that
+   * step did instead and where to name the act.
    */
   acts?: JsonValue | undefined;
 };
@@ -148,17 +151,19 @@ function actsMissing(input: AutomationStudioLlmEvidenceStallRedirectInput): stri
  * The step the checklist says names one act, and why it is not done, or
  * nothing when no step names it (`todo: no_step_added`) or the checklist is
  * absent. An act's id is matched on the act and on each of its choices.
- * Codes and positions only, as the checklist itself carries them.
+ * Codes and positions, as the checklist itself carries them, and its sentence
+ * about the step (`todoSaid`) when it is a string (week report W1).
  */
-function namedStep(acts: JsonValue | undefined, id: string): { step: number; todo: string } | undefined {
+function namedStep(acts: JsonValue | undefined, id: string): { step: number; todo: string; said?: string } | undefined {
   if (!Array.isArray(acts)) return undefined;
   const items = acts.flatMap((item) => (isObject(item) ? [item, ...(Array.isArray(item.choices) ? item.choices.filter(isObject) : [])] : []));
   const item = items.find((candidate) => candidate.id === id);
   if (!item) return undefined;
-  const { step, todo } = item;
+  const { step, todo, todoSaid } = item;
   if (typeof step !== "number" || !Number.isSafeInteger(step) || step < 1) return undefined;
   if (typeof todo !== "string" || todo === "no_step_added" || !ISSUE_CODE.test(todo)) return undefined;
-  return { step, todo };
+  const said = typeof todoSaid === "string" ? todoSaid.trim() : "";
+  return { step, todo, ...(said ? { said } : {}) };
 }
 
 function isObject(value: JsonValue | undefined): value is JsonObject {
@@ -192,7 +197,13 @@ function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, steps
     // out (E36). Except where the step named only opened the page of the act's
     // choices (run `run-mux6pndp-16feb842`): no correction of it does the act,
     // and the press after the choices is exactly another step for it.
-    const next = named?.todo === "step_only_opens_its_choices"
+    // Where the checklist says what the step did instead and where to name the
+    // act (`todoSaid`), that sentence is said in place of both (week report W1:
+    // "correct step 5 ... Do not run another step for a1" of a1 on the press of
+    // "Spain" forbade naming a1 on the Add to cart press, the step that does it).
+    const next = named?.said !== undefined
+      ? ` Step ${named.step} names ${id}, and the checklist says it is not done (${named.todo}): ${named.said}`
+      : named?.todo === "step_only_opens_its_choices"
       ? ` Step ${named.step} only opened the page where ${id}'s choices are made and does not do ${id}: on that page, after its choices, run the step that does ${id} and add it with act ${id}.`
       : named
         ? ` Step ${named.step} already names ${id}, and the checklist says it is not done because ${named.todo}: correct step ${named.step} for that reason. Do not run another step for ${id}, and never act yourself on an item your listing left out.`

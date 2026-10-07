@@ -108,6 +108,49 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): judges see the page before, and a re-author may find nothing to change (`fluxiq`)
+
+t286 (week review W4, W17, R2-C8). Read this entry if you read a run's
+`resultReauthor` marker or a result summary, or call the re-author build or the
+dry-run gate directly.
+
+**Added.**
+- `AutomationStudioRunResultSummary.startView` and
+  `AutomationStudioFlowDraftTestReport.startView`: the page before the run or
+  test did anything, screened as `endView` is; `observedStateKeys` on
+  `AutomationStudioResultVerificationPorts` (optional: absent, the end view's
+  keys are used).
+- `resultReauthor.outcome: "nothing_to_change"` with `reason` (or
+  `reasonWithheld`): a wrong-answer re-author completed its seeded draft
+  unchanged and said `nothingToChange: true` in its result (an unchanged
+  completion that does not say it, such as a wrap-up's, goes on as before);
+  nothing was approved, applied, held or re-run, and the check's
+  verdict stands (`recovery/refuted-result/nothing-to-change.ts`). The
+  service's build hands its completion check the watch
+  (`AutomationStudioReauthorEndingWatch`, the optional fifth argument of
+  `AutomationStudioReauthorBuildDependencies.generate`), and the run's ending
+  says "the repair found nothing in the Flow to change".
+- `AutomationStudioBuildTestVerdict` and a repair judgement's `judge` carry
+  `checkedRows` beside `checked`; a rerun of a read in such a repair answers
+  `checkedRowsNow` (`llm/node-tools/rerun-checked-rows.ts`), reading Core's
+  `readRows` or the binding's new `readRowsKey` (where a live read keeps its
+  records, `holder.member`; absent, a live read is not compared).
+- A repair judgement's `judge` carries `testStepIsDraftStep` where the judged
+  test numbered the round's steps otherwise than the repair seed; Core's own
+  step numbers in it (`checked`, `fix`, `checkedRows`, `untestedCarried`) are
+  the seed's (`flow-bootstrap/unfinished-build/test-step-numbers.ts`).
+- `automationStudioObservedTestTool`: the phases' test of a stopped round's
+  Flow is said in the chat as the loop's own test is.
+
+**Changed.**
+- A finished run's step changes skip a diff that reports `documentChanged`, not
+  any `locationChanged` (a diff without `documentChanged` keeps the old rule).
+- `automationStudioFlowDraftStepWithholdsLater`: a verified step that moved the
+  target excuses later steps only when its own declaration names something
+  lasting; one verified only for an instructed act claim lets the next step be
+  put back on its own page.
+- No model is shown a read condition's `testedLabel`.
+
 ### Next minor (unreleased): a read collects, a do-while repeat pages, and each dataset is processed at run end (`@fluxiq/contracts`, `fluxiq`)
 
 Read-list redesign, stages S1 and S2. A list read reads one page; a Flow

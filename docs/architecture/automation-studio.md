@@ -430,14 +430,34 @@ where it stayed, one entry per time it ran, in run order, taken from the
 session's own in-memory trace (`stateRefs.stateDiff`) and never from a
 persisted record. An entry is the domain's own `added` and `removed` view
 lines, forwarded uncapped and uninterpreted; a run of the step whose diff
-reports `locationChanged` carries none, since the later steps and the end view
-(`endView`) say what the new location shows. It is screened like the end view:
+reports `documentChanged` (a new document, not an address rewritten in place;
+a diff recorded before that word existed is read by `locationChanged`) carries
+none, since the later steps and the end view (`endView`) say what the new page
+shows. It is screened like the end view:
 nothing without a denied-keys declaration, a diff holding a denied key or a
 credential-shaped value is withheld whole, and locator-shaped runs are
 redacted, each setting the summary's `withheld`. Run `run-muw5zv4m-52d83027`'s
 judges, shown only status rows and a stale end view, refuted a playback that
 had built exactly what was asked
 (`result-verification/step-changes.ts`).
+
+Both judges -- of a finished run and of a build's test -- also get `startView`:
+the same view of the page before what they judge did anything, screened as the
+end view is. For a finished run it is read off the session's trace (the first
+attempt that saw the page: the page it left when it moved to another document,
+otherwise the page it found), cut to the domain's declared view keys or, when
+the caller names none, to the keys the end view holds. For a build's test it is
+one look just before the replay, through the hook that takes the end view
+(`llm/node-tools/dry-run-gate.ts`): the site as exploration left it. Each
+judge's instruction says what it already shows (a count, a cart line, a
+collected coupon, a chosen store) predates what is judged, and to credit an act
+only where the two views differ on it or the act's own step shows it. Runs
+`run-musp8nz1-dbd3905a`, `run-musq0b1m-0472cfa0` and `run-mux6pndp-16feb842`
+read exploration's cart and coupon as the Flow's result
+(`result-verification/result-summary.ts`, `build-test/summary.ts`). No model
+is shown a read condition's `testedLabel`, Core's own bookkeeping for which
+rows it may flag: the judge's copy and the summary a result repair hands the
+recovery model drop it (`result-verification/read-account/without-tested-label.ts`).
 
 A `does_not_answer` verdict carries
 `automation-studio.result-repair-directive.v1`: Core-authored coded findings and

@@ -58,10 +58,8 @@ import type {
 import {
   automationStudioFlowInstructionDigest,
   automationStudioFlowVersionsFromMetadata,
-  automationStudioMetadataWithFlowVersions,
   type AutomationStudioFlowGraphJudgement,
-  type AutomationStudioFlowGraphVersion,
-  type AutomationStudioJudgedFlowGraphVersion
+  type AutomationStudioFlowGraphVersion
 } from "../flow-version/index.ts";
 import type { AutomationStudioGraphExecutionTrace } from "../executor/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
@@ -79,16 +77,21 @@ import {
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerificationOutcome, type AutomationStudioRunResultSummary } from "./contracts.ts";
 import { automationStudioResultCoreObservation, automationStudioResultFailureRecord } from "./core-observation.ts";
 import { automationStudioResultVerificationWithinDeadline } from "./deadline.ts";
-import { automationStudioRecordedResultRepair } from "./repair-directive.ts";
 import {
   automationStudioResultEndViewRead,
   summarizeAutomationStudioRunResult,
   type AutomationStudioResultEndView,
   type AutomationStudioResultRecordSetInput
 } from "./result-summary.ts";
+import {
+  automationStudioResultRecordAdaptationReplays,
+  automationStudioResultRecordedCheck,
+  automationStudioResultRecordedOutcome,
+  automationStudioResultRecordFlowGraphJudgements,
+  automationStudioResultRecordOnRunDetail
+} from "./run-record.ts";
 import { automationStudioResultVerificationStatus } from "./verification-status.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_SKIP_CODES, verifyAutomationStudioRunResult } from "./verify.ts";
-import { automationStudioZeroProviderGate } from "./zero-provider-run.ts";
 import { AutomationStudioCompletedVerificationChecks } from "./completed-checks/index.ts";
 
 /**
@@ -149,6 +152,8 @@ export type AutomationStudioResultVerificationPorts = {
    * fails too, said as withheld, never as a verification that did not finish.
    */
   readEndView?: ((input: { projectId: string; runId: string; flowId: string }) => Promise<AutomationStudioResultEndView | undefined>) | undefined;
+  /** The bound domain's declared view keys, under which the page the run started on is read off its trace (`./result-summary.ts`). Absent, none is. */
+  observedStateKeys?: readonly string[] | undefined;
   /**
    * Says what this check found on the run's own conversation thread.
    *
@@ -287,13 +292,13 @@ export async function verifyAutomationStudioRuntimeSessionResult(
     : { outcome: verificationDidNotFinish(bounded.reason, bounded.error), interventions: retainedInterventions };
   const outcome = report.outcome;
   const failing = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
-  const scheduled = recordedResultCheck(input, outcome);
-  const recordedMetadata = { resultVerification: recordedOutcome(outcome), ...(scheduled ? { resultCheck: scheduled } : {}) };
+  const scheduled = automationStudioResultRecordedCheck(input, outcome);
+  const recordedMetadata = { resultVerification: automationStudioResultRecordedOutcome(outcome), ...(scheduled ? { resultCheck: scheduled } : {}) };
   const next: AutomationStudioRuntimeSession = failing
     ? { ...input.session, status: "failed", metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } }
     : { ...input.session, metadata: { ...(input.session.metadata ?? {}), ...recordedMetadata } };
   await input.ports.writeRuntimeSession(input.projectId, next);
-  const record = await recordOnRunDetail(input, next, outcome, report.interventions, flowVersions, bounded.settled);
+  const record = await automationStudioResultRecordOnRunDetail(input, next, outcome, report.interventions, flowVersions, bounded.settled);
   const recorded = record?.detail;
   // The join this module exists to make: the verdict, against the versions the
   // run executed. It is written after the run's own record, so a reader who
@@ -301,10 +306,10 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   // below, so the refutation that sent a Flow to be repaired is on record at the
   // revision it was about -- which is the revision a later rollback would return
   // to, and the one thing the repair is about to change.
-  await recordFlowGraphJudgements(input, outcome, flowVersions, report.instructionDigest ?? null, next.finishedAt ?? Date.now());
+  await automationStudioResultRecordFlowGraphJudgements(input, outcome, flowVersions, report.instructionDigest ?? null, next.finishedAt ?? Date.now());
   // A run that asked no model anything is the replay the confidence rule counts
   // (`./zero-provider-run.ts`), and it is recorded as one.
-  if (record?.askedNoModel) await recordAdaptationReplays(input, next);
+  if (record?.askedNoModel) await automationStudioResultRecordAdaptationReplays(input, next);
   // Only a run that was actually put to the question has anything to say. What
   // to say, and whether to say it at all, belongs to the schedule: this hands
   // over the facts and Core's own words, never the model's prose. It is said
@@ -325,7 +330,7 @@ export async function verifyAutomationStudioRuntimeSessionResult(
   // is keyed on a failed *attempt*, a clean run has none, and the planner
   // answered `stop`. The run is handed to the same failure entry point every
   // other failure goes through, carrying the attempt the refutation amounts to.
-  // It continues from the detail `recordOnRunDetail` just wrote, verdict and
+  // It continues from the detail `automationStudioResultRecordOnRunDetail` (`./run-record.ts`) just wrote, verdict and
   // schedule decision included, rather than re-reading the row it wrote.
   if (recorded && report.summary && input.ports.repairRefutedResult) {
     const repaired = await repairAutomationStudioRefutedRunResult({
@@ -442,25 +447,6 @@ async function settleResultRepair(input: AutomationStudioRuntimeSessionVerificat
   if (settled) await input.ports.saveFlowRunDetail(settled);
 }
 
-/**
- * The schedule's decision as the run record holds it, with the verdict this run
- * actually reached written beside it.
- *
- * `checked` is what tells a status that a check produced from a status that
- * nothing produced, and the run store keys its `result_verification_status`
- * column on exactly this: a run the schedule passed over writes null there,
- * which is a different fact from `unverified` and must stay so. `epoch` is the
- * Flow revision the run belongs to, which is what makes the count restart when
- * a repair lands.
- */
-function recordedResultCheck(
-  input: AutomationStudioRuntimeSessionVerificationInput,
-  outcome: AutomationStudioResultVerificationOutcome
-): JsonObject | undefined {
-  const scheduled = input.resultCheck;
-  if (!scheduled) return undefined;
-  return { checked: scheduled.checked, epoch: scheduled.epoch, code: scheduled.code, reason: scheduled.reason, status: automationStudioResultVerificationStatus(outcome) };
-}
 
 type AutomationStudioRuntimeSessionVerificationReport = Awaited<ReturnType<typeof verifyAutomationStudioRunResult>> & {
   /** What the run produced, when it could be read. The repair is shown it; the verification was already. */
@@ -510,8 +496,8 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(input.flow ? { flowNodes: input.flow.nodes, flowEdges: input.flow.edges } : {}),
     ...ended,
     ...(runDetail?.actionAttempts ? { actionAttempts: attemptsOfThisSession(runDetail.actionAttempts, session) } : {}),
-    // What each step changed, from this session's trace in memory (run-muw5zv4m-52d83027).
-    ...(session.trace ? { sessionAttempts: session.trace.attempts } : {}),
+    // What each step changed, and the page the run started on, from this session's trace in memory (run-muw5zv4m-52d83027, run-mux6pndp-16feb842).
+    ...(session.trace ? { sessionAttempts: session.trace.attempts, ...(input.ports.observedStateKeys ? { observedStateKeys: input.ports.observedStateKeys } : {}) } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
   });
   const datasetId = recordSets[0]?.summary.datasetId;
@@ -657,142 +643,4 @@ function unreadableResult(error: unknown): AutomationStudioResultVerificationOut
 /** The error's own name, never its message: a message can carry what the store was holding. */
 function errorName(error: unknown): string {
   return error instanceof Error && error.name ? error.name : "unknown error";
-}
-
-/**
- * The verification as a run record holds it: verdicts, codes and Core's own
- * words, led by the one word a reader of the run acts on. `status` is what
- * keeps a result nobody judged from reading as a result that was right.
- * `verdicts` and `calls` say what each model call answered and how many were
- * made, so a result judged twice reads as such; they are absent when no model
- * was asked.
- *
- * **A refutation's directive is recorded, and only Core's half of it.**
- * `findings` and `fix` are Core's arithmetic and Core's sentences, so they belong
- * on a run like the observation beside them -- and a person or a later agent
- * reading a failed run is now told what to fix rather than only that something
- * was wrong. `judgement` is the model's reading of a medium whose contents Core
- * does not store, so it is deliberately not here; it reaches the repair inside
- * the failure record, which is where a sentence written outside Core travels
- * (`core-observation.ts` says why that is the only route). `withheld` is recorded
- * because it is a fact about the directive rather than a quotation: it says
- * something the check offered was screened out.
- */
-function recordedOutcome(outcome: AutomationStudioResultVerificationOutcome): JsonObject {
-  const status = automationStudioResultVerificationStatus(outcome);
-  if (outcome.performed === false) return { status, performed: false, code: outcome.code, reason: outcome.reason, ...(outcome.failureCode ? { failureCode: outcome.failureCode } : {}) };
-  return {
-    status,
-    performed: true,
-    verdict: outcome.verdict,
-    basis: outcome.basis,
-    code: outcome.code,
-    reason: outcome.reason,
-    observation: outcome.observation,
-    ...(outcome.verdicts ? { verdicts: [...outcome.verdicts] } : {}),
-    ...(outcome.calls !== undefined ? { calls: outcome.calls } : {}),
-    ...(outcome.repair ? { repair: automationStudioRecordedResultRepair(outcome.repair) } : {}),
-    ...(outcome.failureCode ? { failureCode: outcome.failureCode } : {})
-  };
-}
-
-/**
- * The verdict, written against every version the run executed.
- *
- * Only a version with a revision number is offered. A graph Flow with no
- * revision chain -- one that existed before its graph was ever indexed -- is
- * carried on the run as `revision: null`, and null is not a version: writing it
- * as 0 would invent a predecessor nobody ever confirmed, which is exactly the
- * comparison the whole design refuses to make.
- *
- * A deployment with no store for these records nothing and says nothing. The
- * run's own detail still carries its version set, so which version a result
- * belongs to is still answerable there; only the history across runs is absent.
- */
-async function recordFlowGraphJudgements(
-  input: AutomationStudioRuntimeSessionVerificationInput,
-  outcome: AutomationStudioResultVerificationOutcome,
-  flowVersions: readonly AutomationStudioFlowGraphVersion[],
-  instructionDigest: string | null,
-  decidedAtMs: number
-): Promise<void> {
-  const record = input.ports.recordFlowGraphJudgements;
-  if (!record) return;
-  const versions = flowVersions.filter((version): version is AutomationStudioJudgedFlowGraphVersion => typeof version.revision === "number");
-  if (!versions.length) return;
-  await record({
-    projectId: input.projectId,
-    judgement: {
-      runId: input.session.runId,
-      status: automationStudioResultVerificationStatus(outcome),
-      code: outcome.code,
-      instructionDigest,
-      decidedAtMs,
-      versions
-    }
-  });
-}
-
-async function recordOnRunDetail(
-  input: AutomationStudioRuntimeSessionVerificationInput,
-  session: AutomationStudioRuntimeSession,
-  outcome: AutomationStudioResultVerificationOutcome,
-  interventions: Awaited<ReturnType<typeof verifyAutomationStudioRunResult>>["interventions"],
-  flowVersions: readonly AutomationStudioFlowGraphVersion[],
-  verificationSettled: boolean
-): Promise<{ detail: AutomationStudioFlowRunDetail; askedNoModel: boolean } | undefined> {
-  const detail = await input.ports.getFlowRunDetail(input.projectId, session.runId);
-  if (!detail) return undefined;
-  // In this save and no other, so the verdict and the run's zero cost are one write.
-  const zeroGate = automationStudioZeroProviderGate(detail, interventions, verificationSettled);
-  const failed = outcome.performed === true && automationStudioResultVerificationFailsRun(outcome);
-  const scheduled = recordedResultCheck(input, outcome);
-  // Answered as well as saved, because the repair that may follow continues
-  // from exactly this record: re-reading it would be a second read of a row
-  // this call just wrote, and a repair built from a stale one would annotate a
-  // run detail that no longer carries its own verdict.
-  const recorded: AutomationStudioFlowRunDetail = {
-    ...detail,
-    summary: {
-      ...detail.summary,
-      status: session.status,
-      updatedAt: session.finishedAt ?? detail.summary.updatedAt,
-      // On the summary as well as the detail, because the summary is what the
-      // run store writes its row from: `result_verification_status` and
-      // `result_check_epoch` are read from exactly this, and they are what the
-      // next run's schedule counts.
-      ...(scheduled ? { metadata: { ...(detail.summary.metadata ?? {}), resultCheck: scheduled } } : {})
-    },
-    ...(interventions.length ? { interventions: [...detail.interventions, ...interventions] } : {}),
-    metadata: {
-      // The version set goes beside the verdict, not somewhere else: a reader
-      // of one run has one place to look for what was judged and what it was
-      // judged about. It is written from the session rather than left to the
-      // detail's own projection, because a run whose detail was rebuilt from
-      // some other source would otherwise carry a verdict about a version it
-      // does not name.
-      ...automationStudioMetadataWithFlowVersions(detail.metadata, flowVersions),
-      resultVerification: recordedOutcome(outcome),
-      ...(scheduled ? { resultCheck: scheduled } : {}),
-      ...(failed && outcome.performed === true && outcome.failure ? { resultVerificationFailure: { category: outcome.failure.category, code: outcome.failure.code } } : {}),
-      ...(zeroGate ? { llmGate: zeroGate } : {})
-    }
-  };
-  await input.ports.saveFlowRunDetail(recorded);
-  return { detail: recorded, askedNoModel: zeroGate !== undefined };
-}
-
-/**
- * Hands a run that asked no model anything to the replay recorder the service
- * lends. Evidence about the changes the run executed, never a condition of the
- * run: the run has finished, and a store that refused the write leaves each
- * change where it stood.
- */
-async function recordAdaptationReplays(input: AutomationStudioRuntimeSessionVerificationInput, session: AutomationStudioRuntimeSession): Promise<void> {
-  if (!session.trace || !input.ports.recordAdaptationReplays) return;
-  try {
-    await input.ports.recordAdaptationReplays({ projectId: input.projectId, flowId: session.flowId, runId: session.runId, checkedAt: session.finishedAt ?? Date.now(), trace: session.trace, ...(input.subflowId !== undefined ? { subflowId: input.subflowId } : {}) });
-  } catch {
-    /* best-effort: replay evidence never fails the finished run it describes */
-  }
 }

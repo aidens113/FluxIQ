@@ -20,6 +20,7 @@ import {
   AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA,
   AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE,
   type AutomationStudioFlowDraftAmendment,
+  type AutomationStudioFlowDraftStepChange,
   type AutomationStudioFlowDraftStepReplay,
   type AutomationStudioFlowDraftStepToggle,
   automationStudioFlowDraftControlWords,
@@ -225,7 +226,7 @@ function closedCode(value: unknown): value is string {
 function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown): { draft: NonNullable<AutomationStudioLlmEvidenceToolExecutionResult["draft"]> } | { refused: AutomationStudioLlmEvidenceToolResultCheck } | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) return { refused: "draft.not_object" };
-  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption", "written", "toggle", "reads"])) return { refused: "draft.unknown_key" };
+  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption", "written", "toggle", "reads", "changed"])) return { refused: "draft.unknown_key" };
   if (value.actionId !== undefined && !validId(value.actionId)) return { refused: "draft.action_id" };
   if (value.input !== undefined && !isJsonObject(value.input)) return { refused: "draft.input" };
   if (value.ranWith !== undefined && !isJsonObject(value.ranWith)) return { refused: "draft.ran_with" };
@@ -252,6 +253,10 @@ function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown
   // The host's code for the list a read read (`../flow-draft/second-copy.ts`). Withheld,
   // never refused, when it is not a code: the call happened either way, and only a read can say it.
   const reads = value.effect === "observe" && closedCode(value.reads) ? value.reads : undefined;
+  // What a press changed on the page it stayed on (`../flow-draft/step.ts`, `changed`). Page
+  // words, so screened line by line as a control's are; a bad line is withheld, never refused,
+  // and only a statement that changed something can say it.
+  const changed = value.effect === "mutate" ? changedOf(value.changed, evidence) : undefined;
   return { draft: {
     ...(value.actionId === undefined ? {} : { actionId: value.actionId }),
     ...(value.input === undefined ? {} : { input: value.input }),
@@ -263,8 +268,31 @@ function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown
     ...(interruption ? { interruption: true as const } : {}),
     ...(written ? { written: true as const } : {}),
     ...(toggle ? { toggle } : {}),
-    ...(reads === undefined ? {} : { reads })
+    ...(reads === undefined ? {} : { reads }),
+    ...(changed === undefined ? {} : { changed })
   } };
+}
+
+/** The most lines one statement of what a press changed may hold, as the host bounds it. */
+const MOST_CHANGED_LINES = 16;
+const CHANGE_HOWS: ReadonlySet<unknown> = new Set<AutomationStudioFlowDraftStepChange["how"]>(["appeared", "went", "reads", "rose"]);
+
+/**
+ * The lines a press changed, or nothing when there are none to carry: a list
+ * of at most sixteen, each exactly `words` and `how`, its words plain and shown
+ * in the call's own evidence (`../flow-draft/control-words.ts`) and `how` one
+ * of the four. A bad line is withheld and the rest kept; a list past sixteen is
+ * no statement this reads, and is withheld whole.
+ */
+function changedOf(value: unknown, evidence: JsonValue): AutomationStudioFlowDraftStepChange[] | undefined {
+  if (!Array.isArray(value) || value.length > MOST_CHANGED_LINES) return undefined;
+  const lines: AutomationStudioFlowDraftStepChange[] = [];
+  for (const line of value) {
+    if (!isRecord(line) || !exactKeys(line, ["words", "how"]) || !CHANGE_HOWS.has(line.how)) continue;
+    const words = automationStudioFlowDraftControlWords(line.words, evidence);
+    if (words !== undefined) lines.push({ words, how: line.how as AutomationStudioFlowDraftStepChange["how"] });
+  }
+  return lines.length ? lines : undefined;
 }
 
 /**

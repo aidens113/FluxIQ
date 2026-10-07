@@ -52,7 +52,11 @@ describe("what the person is told is not done", () => {
   it.each([
     ["step_acts_on_another_object", "the step I named for it acted on a different item from the one you asked for"],
     ["quantity_is_a_repeat", "the step for how many ran once for each item of a list, not that many times on this item"],
-    ["quantity_presses_differ", "the step for how many did not add it exactly the number of times you asked"]
+    ["quantity_presses_differ", "the step for how many did not add it exactly the number of times you asked"],
+    // Week report W1: a claimed step that did something else (`../../instructed-acts/act-evidence.ts`).
+    ["step_only_chooses", "the step I tried for it only chose one of its options, and did not do it"],
+    ["step_only_clears_the_way", "the step I tried for it only closed something in the way, and did not do it"],
+    ["another_step_shows_it", "the step I named for it was not the one that did it"]
   ])("says %s in plain words of its own", (todo, words) => {
     const said = automationStudioFlowBootstrapNotDoneSaid([{ id: "a1.quantity", quote: "two packs", todo }]);
     expect(said).toBe(`"two packs": ${words}`);

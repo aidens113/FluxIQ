@@ -20,7 +20,7 @@ import type { AutomationStudioLlmEvidenceLoopBudget } from "./loop-budget.ts";
 import { automationStudioLlmEvidenceLoopBudgetValid } from "./loop-budget.ts";
 import type { AutomationStudioLlmUsageSummary } from "./harness.ts";
 import type { AutomationStudioLlmBuildPurse } from "./build-purse/index.ts";
-import type { AutomationStudioFlowDraftRoute, AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftRoute, AutomationStudioFlowDraftStep } from "../flow-draft/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../flow-draft/scheduled-candidate/index.ts";
 import type { AutomationStudioFlowDraftDryRunGateInput, AutomationStudioFlowDraftTestReport } from "./node-tools/index.ts";
 import type { AutomationStudioLlmEvidenceLoopResume } from "./evidence-loop/index.ts";
@@ -62,6 +62,8 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * empty, every result is shown whole.
    */
   observedStateKeys?: readonly string[] | undefined;
+  /** Where a list read's answer holds its kept records, as the bound domain declared it (`AutomationStudioLlmEvidenceRuntimeBinding.readRowsKey`). */
+  readRowsKey?: string | undefined;
   /** Explicit bound-domain screening authority for authored rerun path diagnostics. Absent, omit paths. */
   deniedEvidenceKeys?: readonly string[] | undefined;
   maxIterations?: number;
@@ -285,6 +287,14 @@ export type AutomationStudioLlmEvidenceLoopInput = {
     acts?: (steps: readonly AutomationStudioFlowDraftStep[]) => JsonValue | undefined;
     /** The acts not done yet, by id: what a redirect names and what authored progress counts down. */
     actsMissing?: (steps: readonly AutomationStudioFlowDraftStep[]) => readonly string[];
+    /**
+     * Asked before an act is claimed on a step, by an `amend_draft` naming
+     * `act` or a call run with `add` and `act`: the refusal when the act judge
+     * would reject the claim, which is then not made and is told
+     * `act_not_done_there` (`./harness-options/draft-acts.ts`,
+     * `../flow-draft/amendment/types.ts`; week report W1). Absent, every claim is made.
+     */
+    claimRefused?: AutomationStudioFlowDraftClaimRefused;
     /** The route the person named, or that they named none, shown with the draft once known (`./harness-options/draft-route.ts`). */
     route?: () => AutomationStudioFlowDraftRoute | undefined;
     /**

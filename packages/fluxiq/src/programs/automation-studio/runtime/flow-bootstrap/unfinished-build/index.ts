@@ -22,6 +22,7 @@ export * from "./replies-unreadable.ts";
 export * from "./reserve-judging.ts";
 export * from "./round-ending.ts";
 export * from "./seed-signature.ts";
+export * from "./test-step-numbers.ts";
 export * from "./tried.ts";
 export * from "./unchanged-complete.ts";
 export * from "./unfinished-stall.ts";

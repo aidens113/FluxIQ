@@ -32,7 +32,8 @@
 // because an under-declared lasting act that also moves the page -- a Submit, a
 // Place order -- would be pressed again, which a build never does. A last step
 // that only navigates while claiming a lasting act is therefore checked rather
-// than followed (lane B's run `run-murzln6g-11debe1d`, R2-C8, open).
+// than followed (lane B's run `run-murzln6g-11debe1d`, R2-C8; what such a
+// check excuses is below, closed by t286).
 //
 // **Why the declaration and not every change.** A press that only opens,
 // filters or navigates is what the steps after it stand on: the chooser a
@@ -92,14 +93,15 @@
 // verified step that is either one excuses every step after it that does not
 // replay:
 //
-//   - it moved the target: a submit that led to a confirmation page, a save
-//     that opened the saved list. Withheld, it leaves the steps after it on the
-//     page before the move. Core sees a move when the next proposed step found
-//     the target somewhere other than where this one did (the two
-//     `replay.from` values differ; Core compares them whole and reads
-//     neither). Only the next step: nearly every later step of a Flow stands
-//     on some other page, and comparing against any of them would let every
-//     verified step excuse everything after it.
+//   - it moved the target, and its own declaration names something lasting: a
+//     submit that led to a confirmation page, a save that opened the saved
+//     list. Withheld, it leaves the steps after it on the page before the
+//     move. Core sees a move when the next proposed step found the target
+//     somewhere other than where this one did (the two `replay.from` values
+//     differ; Core compares them whole and reads neither). Only the next step:
+//     nearly every later step of a Flow stands on some other page, and
+//     comparing against any of them would let every verified step excuse
+//     everything after it.
 //   - it declared a class a person is asked about -- moving money, deleting,
 //     sending or publishing (`../action-permissions/destructive.ts`). Such an
 //     act is never performed in a dry run, and what comes after it is what the
@@ -113,6 +115,20 @@
 // is marked `withheldBy`, so a reader sees exactly which verdicts rest on the
 // withheld effect. A verified step that is neither excuses nothing: a failure
 // after it is a failure.
+//
+// **A step checked only for its claim excuses nothing by moving (R2-C8,
+// closed by t286).** Live run `run-mux6pndp-16feb842` (debug cause 2): test
+// step 16, a product link claiming lasting act a3 and declaring nothing
+// lasting, was verified -- not pressed -- on the instruction's claim alone. It
+// moved the target, so steps 17-20 were excused `unreproducible` and the
+// put-back of step 17 on its own page (`../llm/node-tools/replay-draft.ts`,
+// which reanchors only while nothing is withheld) never ran; the test read
+// clean. Such a step's declaration says nothing lasts, so nothing its move
+// left undone is a lasting effect: the next step is put back on its own page
+// by that reanchor -- followed to its destination, the claimed act never
+// pressed again -- and must hold there. The cost: a step after a claim-only
+// verified move whose page cannot be reached again now fails the test instead
+// of being excused.
 //
 // Core knows no domain's targets. It asks; the host answers in the replay's
 // closed vocabulary, with two codes for a step that was checked and not run
@@ -247,15 +263,20 @@ export function automationStudioFlowDraftStepMovedTarget(step: AutomationStudioF
 
 /**
  * Whether a verified step's withheld effect excuses the steps after it that do
- * not replay: it moved the target (`automationStudioFlowDraftStepMovedTarget`),
- * or it declared a class a person is asked about, which a dry run never
- * performs (see the header). Read from the declaration the Flow keeps
+ * not replay: it moved the target (`automationStudioFlowDraftStepMovedTarget`)
+ * and its own declaration names something lasting
+ * (`automationStudioFlowDraftDeclaresLasting`), or it declared a class a person
+ * is asked about, which a dry run never performs (see the header). A step
+ * verified only because it claims an instructed lasting act, declaring nothing
+ * lasting, excuses nothing by moving: the step after it is put back on its own
+ * page and must hold there (R2-C8). Read from the declaration the Flow keeps
  * (`ranWith`) before what the model wrote, as the replay mode is; a shape that
- * is neither a list nor a comma string names no class and excuses nothing.
+ * is neither a list nor a comma string names no class, so it excuses only by
+ * moving.
  */
 export function automationStudioFlowDraftStepWithholdsLater(step: AutomationStudioFlowDraftStep, next: AutomationStudioFlowDraftStep | undefined): boolean {
-  if (automationStudioFlowDraftStepMovedTarget(step, next)) return true;
   const declared = step.ranWith && "consequences" in step.ranWith ? step.ranWith.consequences : step.input.consequences;
+  if (automationStudioFlowDraftDeclaresLasting(declared) && automationStudioFlowDraftStepMovedTarget(step, next)) return true;
   const words = Array.isArray(declared) ? declared : typeof declared === "string" ? declared.split(",") : [];
   return words.some((word) => typeof word === "string" && isAutomationStudioDestructiveActionConsequence(word.trim().toLowerCase()));
 }

@@ -466,6 +466,67 @@ describe("a call's statement that its press flipped the control it pressed", () 
   });
 });
 
+// The host's statement of what a press changed on the page it stayed on (t285,
+// week report W1): Core reads which step did an act from what the step did --
+// the cart count rose, "Added to cart" appeared -- and not from the model's
+// label alone. Run `run-muqiho5c-e830ce01` named its add-to-cart act on "Not now".
+const CART_PAGE: JsonValue = { ok: true, page: "t5 \"Cart (3)\"\nt7 \"Added to cart\"", outcome: { changed: ["t5 \"Cart (3)\" was \"Cart (2)\"", "t7 \"Added to cart\" appeared", "t9 \"Only 2 left\" gone"] } };
+const changing = (changed: unknown, effect: "observe" | "mutate" = "mutate", states?: { before: string; after: string }): JsonValue => ({
+  kind: "llm_evidence_tool_execution",
+  evidence: CART_PAGE,
+  effectApplied: true,
+  ...(states ? { stateDigests: states } : {}),
+  draft: { actionId: "web.output.dom-click", input: { target: { handle: "t6" } }, effect, proposes: true, ...(changed === undefined ? {} : { changed }) }
+}) as JsonValue;
+const CART_CHANGES = [{ words: "Cart (3)", how: "rose" }, { words: "Added to cart", how: "appeared" }, { words: "Only 2 left", how: "went" }];
+
+describe("a call's statement of what its press changed on the page", () => {
+  it("is carried on the parse path, in page order, when every line's words were shown in the call's evidence", () => {
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(changing(CART_CHANGES), "mutate")?.draft?.changed).toEqual(CART_CHANGES);
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(changing([{ words: "Cart (3)", how: "reads" }]), "mutate")?.draft?.changed).toEqual([{ words: "Cart (3)", how: "reads" }]);
+  });
+
+  it("withholds a bad entry, never refusing the result, and keeps the rest", () => {
+    const bad: unknown[] = [
+      { words: "Proceed to checkout", how: "appeared" }, // never shown in this call's evidence
+      { words: "Cart (3)", how: "grew" }, // not one of the four
+      { words: "Cart (3)", how: "rose", at: "t5" }, // a key too many
+      { words: "Cart (3)" }, // a key too few
+      { words: 3, how: "rose" }, "Cart (3)", null, { words: "<b>Cart (3)</b>", how: "rose" }, { words: "", how: "went" }
+    ];
+    const value = changing([...bad.slice(0, 4), CART_CHANGES[0], ...bad.slice(4), CART_CHANGES[1]]);
+    const parsed = automationStudioLlmEvidenceParseToolExecutionResult(value, "mutate");
+    expect(parsed?.effectApplied).toBe(true);
+    expect(parsed?.draft?.changed).toEqual(CART_CHANGES.slice(0, 2));
+    expect(automationStudioLlmEvidenceToolResultInvalidCode(value, "mutate")).toBeUndefined();
+  });
+
+  it("is absent when nothing is left, when it is no list, past sixteen lines, and on a statement that changed nothing", () => {
+    const cases: Array<[unknown, "observe" | "mutate"]> = [
+      [[{ words: "Proceed to checkout", how: "appeared" }], "mutate"], [[], "mutate"], [{ words: "Cart (3)", how: "rose" }, "mutate"], ["Cart (3)", "mutate"],
+      [Array.from({ length: 17 }, () => CART_CHANGES[0]), "mutate"], [CART_CHANGES, "observe"]
+    ];
+    for (const [changed, effect] of cases) {
+      const value = changing(changed, effect);
+      const parsed = automationStudioLlmEvidenceParseToolExecutionResult(value, "mutate");
+      expect(parsed?.effectApplied, JSON.stringify(changed)).toBe(true);
+      expect(parsed?.draft, JSON.stringify(changed)).not.toHaveProperty("changed");
+      expect(automationStudioLlmEvidenceToolResultInvalidCode(value, "mutate"), JSON.stringify(changed)).toBeUndefined();
+    }
+    expect(automationStudioLlmEvidenceParseToolExecutionResult(changing(Array.from({ length: 16 }, () => CART_CHANGES[0])), "mutate")?.draft?.changed).toHaveLength(16);
+  });
+
+  it("is copied onto the call's record, and onto the step the loop appends", async () => {
+    const parsed = automationStudioLlmEvidenceParseToolExecutionResult(changing(CART_CHANGES), "mutate")!;
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, parsed).changed).toEqual(CART_CHANGES);
+    expect(automationStudioLlmEvidenceCallRecord(pressTool, {}, {})).not.toHaveProperty("changed");
+    const decide = vi.fn().mockResolvedValueOnce(call(1, { add: true })).mockResolvedValueOnce(complete);
+    const executeTool = vi.fn().mockResolvedValueOnce(changing(CART_CHANGES, "mutate", { before: "s0", after: "s1" }));
+    const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 4, maxToolCalls: 2, dryRun: false, unusableDecisions: { stalled } });
+    expect(result.steps[0]).toMatchObject({ disposition: "kept", changed: CART_CHANGES });
+  });
+});
+
 // Live run `run-muqiojz4-04a7a8fc` (t193, bigbox): every press was a draft line
 // with only a handle, and the model named a "×" closing a chat overlay as its
 // add-to-cart act. The loop now keeps the domain's words for each call on its

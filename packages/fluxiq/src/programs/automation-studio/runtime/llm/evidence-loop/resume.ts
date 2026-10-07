@@ -174,6 +174,19 @@ const UNCONFIRMED_READING = "judgement.judge.unconfirmedReading is one judge cal
 const CORE_ON_ROWS = "judgement.judge.fix is Core's own fix, naming the condition and each row it left out that the judge passed over, and judgement.judge.checked is Core's check of the rows the judge names against what the test read. "
   + "Where the judge's advice rests on a row Core lists as in the result although the judge calls it left out, that advice is not followed; a condition Core lists as really leaving out a row the instruction wants is the one to correct.";
 
+// Said beside CORE_ON_ROWS when Core also gave those rows per read and
+// condition (`judge.checkedRows`): live run `run-mux6naez-6c20f26e` (R3-3)
+// reran the blamed read, kept every row the check named, and was never told,
+// so it reran the same read six more times instead of completing. A rerun of
+// such a read now says so itself (`../node-tools/rerun-checked-rows.ts`).
+const CHECKED_ROWS_NOW = "judgement.judge.checkedRows lists the same rows by read and condition; a rerun of such a read answers checkedRowsNow: which of them it keeps now and which it still leaves out, and when it keeps them all, complete so the Flow is tested again.";
+
+// Said when the test numbered the round's steps otherwise than this draft does
+// (`judge.testStepIsDraftStep`, `../../flow-bootstrap/unfinished-build/test-step-numbers.ts`):
+// the same run's repair was told its read as "Step 9" by the check and as step
+// 5 by whereToFix.
+const TEST_STEP_NUMBERS = "The judge numbered the steps as its test did, and your draft numbers them again from 1: judgement.judge.testStepIsDraftStep maps each test step number that differs to the step it is in your draft, so read the judge's own step numbers (expected, observed, advice) through it. Core's own lines, checkedRows and whereToFix already use your draft's numbers.";
+
 /** Whether the judge's account carries Core's own lines on the rows. */
 function hasCoreOnRows(judge: JsonObject): boolean {
   return [judge.fix, judge.checked].some((lines) => Array.isArray(lines) && lines.length > 0);
@@ -199,8 +212,10 @@ function judgedInstruction(judge: JsonObject, notRun: readonly number[]): string
   const named = positionsOf(judge.untestedCarried);
   // The judge's account names the carried steps its test did not run; where it names none, the judgement's own reading of the Flow does.
   const carried = named.length ? named : notRun;
-  const judged = hasCoreOnRows(judge) ? `${JUDGED_INSTRUCTION} ${CORE_ON_ROWS}` : JUDGED_INSTRUCTION;
-  const lead = judge.verdict === "no" ? judged : hasUnconfirmedReading(judge) ? `${UNJUDGED_INSTRUCTION} ${UNCONFIRMED_READING}` : UNJUDGED_INSTRUCTION;
+  const judged = hasCoreOnRows(judge) ? `${JUDGED_INSTRUCTION} ${CORE_ON_ROWS}${Array.isArray(judge.checkedRows) && judge.checkedRows.length ? ` ${CHECKED_ROWS_NOW}` : ""}` : JUDGED_INSTRUCTION;
+  const said = judge.verdict === "no" ? judged : hasUnconfirmedReading(judge) ? `${UNJUDGED_INSTRUCTION} ${UNCONFIRMED_READING}` : UNJUDGED_INSTRUCTION;
+  const numbered = judge.testStepIsDraftStep !== null && typeof judge.testStepIsDraftStep === "object" && Object.keys(judge.testStepIsDraftStep).length > 0;
+  const lead = numbered ? `${said} ${TEST_STEP_NUMBERS}` : said;
   if (!carried.length) return lead;
   return `${lead} Steps ${carried.join(", ")} were carried from the earlier Flow and not run in this build: rerun them live (amend_draft rerun), so the test runs them.`;
 }

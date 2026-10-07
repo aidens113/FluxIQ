@@ -194,6 +194,23 @@ function sentBack(refusal: Parameters<typeof automationStudioActivityCompletionR
 }
 
 /**
+ * The completion check's closing note when the check throws, which ends the
+ * build. A re-author that found the Flow already does what was asked ends that
+ * way (`../recovery/refuted-result/nothing-to-change.ts`, W17), and its note
+ * said "Checking the proposed Flow" to the end; it closes with what the run's
+ * ending says (`./wording/run-ending.ts`). Any other throw closes as stopped,
+ * its message never shown. Read by the error's name: a value import of the
+ * recovery barrel from here would close an import cycle, as the llm one would
+ * (`decisionFailed`), and `./tests/observer.test.ts` holds the name to the watch's own error.
+ */
+function checkThrew(error: unknown): Parameters<typeof emitAutomationStudioActivity>[0] {
+  const nothingToChange = (error as { name?: unknown } | null)?.name === "AutomationStudioReauthorNothingToChangeEnding";
+  return nothingToChange
+    ? { phase: "verifying", label: "The repair found nothing in the Flow to change", detail: { kind: "note", title: "Completion check", status: "succeeded" } }
+    : { phase: "verifying", label: "Checking the proposed Flow — stopped", detail: { kind: "note", title: "Completion check", status: "failed" } };
+}
+
+/**
  * The loop input with `decide`, `executeTool` and `checkCompletion` observed:
  * `thinking` as a decision is asked for; when it returns, one `thought` row
  * naming what the model chose to do (`exploring` for a tool call, `building`
@@ -277,7 +294,13 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         // check row was a "Test run · Passed" card before any step was tested
         // (D4). With no words it is the live line only; refused, a message.
         emitAutomationStudioActivity({ phase: "verifying", label: "Checking the proposed Flow", detail: { kind: "note", title: "Completion check", status: "started" } });
-        const check = await checkCompletion.call(input, result, context);
+        let check: Awaited<ReturnType<typeof checkCompletion>>;
+        try {
+          check = await checkCompletion.call(input, result, context);
+        } catch (error) {
+          emitAutomationStudioActivity(checkThrew(error));
+          throw error;
+        }
         emitAutomationStudioActivity(sentBack(check.ok ? undefined : check));
         return check;
       }, {
