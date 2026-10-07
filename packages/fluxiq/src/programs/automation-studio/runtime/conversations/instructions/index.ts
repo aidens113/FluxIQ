@@ -5,6 +5,7 @@ export * from "./decision.ts";
 export * from "./model.ts";
 export * from "./closest.ts";
 export * from "./flows.ts";
+export * from "./says-what-to-do.ts";
 export * from "./invocation.ts";
 export * from "./parse.ts";
 export * from "./prompt.ts";

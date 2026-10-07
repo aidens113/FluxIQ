@@ -8,12 +8,13 @@
 
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandOutcome } from "./command.ts";
 
-type Ids = Pick<AutomationStudioConversationCommandOutcome, "flowId" | "runId" | "adaptationId">;
+/** What the outcome carries however it ends: the ids made, and whose words an instruction it saved were. */
+type Ids = Pick<AutomationStudioConversationCommandOutcome, "flowId" | "runId" | "adaptationId" | "instructionFrom">;
 
 export type AutomationStudioConversationCommandProgress = {
   /** Records a step that landed, in words that finish "I ...". */
   landed(step: string): void;
-  /** Remembers an id the result should carry, whether it ends well or not. */
+  /** Remembers an id, or whose words were saved, for the result to carry whether it ends well or not. */
   carry(ids: Ids): void;
   succeeded(summary: string): AutomationStudioConversationCommandOutcome;
   /**

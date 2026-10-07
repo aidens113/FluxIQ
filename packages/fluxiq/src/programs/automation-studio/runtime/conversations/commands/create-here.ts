@@ -6,13 +6,16 @@
 // change. Applying is safe to do without asking because the Flow is brand new
 // and blank: there is nothing of the person's for the change to replace.
 //
+// What it should do is the person's own message, as written (`./argument.ts`,
+// t349): the chat model decides that a Flow is made, never what it is told.
+//
 // In candidate authoring mode (`./build.ts`) Core test-runs the candidate once
 // from its start. A proposal it makes from a confirmed yes is applied here as a
 // legacy one is; a candidate that stayed a draft is never applied, and the
 // answer says what its test run came to.
 
 import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
-import { automationStudioConversationCommandText } from "./argument.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS, automationStudioConversationCommandInstruction, automationStudioConversationCommandText, type AutomationStudioConversationCommandInstruction } from "./argument.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
 import { automationStudioConversationSiteName } from "../site-name.ts";
@@ -34,7 +37,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     group: "Flows",
     control: "",
     arguments: [
-      { name: "instruction", describe: "What the automation should do, in the person's own words.", required: true },
+      { name: "instruction", describe: "What the automation should do. Core saves the person's own message as written in its place; this is used only when no message from the person started the request.", required: true },
       { name: "name", describe: "What to call the new Flow. Left out, it is named from the instruction.", required: false }
     ],
     phrases: ["automate this", "automate this page", "create an automation", "make a flow for this page", "build me a flow that", "create a flow that"],
@@ -46,8 +49,9 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     : `I'll make you a new automation for this, working out its steps by trying them on ${place}. I'll say here when it is ready.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
-    const instruction = automationStudioConversationCommandText(args, "instruction");
-    if (!instruction) return progress.failed("I was not told what the automation should do");
+    const said = await automationStudioConversationCommandInstruction(context, AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE.capability, args, "instruction");
+    if (!said) return progress.failed("I was not told what the automation should do");
+    const instruction = said.text;
     const name = automationStudioConversationCommandText(args, "name") || automationStudioConversationFlowName(instruction);
 
     const created = await context.port.call("create-flow", { projectId: context.projectId, name });
@@ -58,7 +62,8 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
 
     const saved = await context.port.call("save-flow-generation-instruction", { projectId: context.projectId, flowId, authSessionId: context.sessionId, instruction });
     if (!saved.ok) return progress.failed(automationStudioConversationCallCause("saving what it should do", saved));
-    progress.landed("saved what it should do");
+    progress.carry({ instructionFrom: said.from });
+    progress.landed(said.from === "person" ? "saved what it should do" : `saved what it should do, ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`);
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "create" });
     // A build that failed leaves the Flow it was making empty, and the ending
@@ -66,7 +71,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     // Flow ... and saved what it should do", read straight after "I could not
     // build this Flow", said the opposite of what had happened (t195,
     // `run-murdouox-c5294247`, UI review).
-    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: automationStudioConversationCreateHereLeft(name, built) });
+    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: automationStudioConversationCreateHereLeft(name, built, said.from) });
     if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate)), candidate: built.candidate };
     progress.carry({ adaptationId: built.adaptationId });
     const where = automationStudioConversationSiteName(context.startLocation);
@@ -115,9 +120,13 @@ function automationStudioConversationFlowName(instruction: string): string {
  * t195 `run-musp474o-e0ed7432` (12-failure-panel): "What is left: the Flow
  * "...", with what you asked saved on it" read as a label rather than something
  * a person is told, so each variant is a sentence of its own.
+ *
+ * The instruction is "yours" only when it is the person's own message; the
+ * argument a caller with no person turn gave is said to be the request's (t349).
  */
-function automationStudioConversationCreateHereLeft(name: string, built: { ending?: string | undefined; kept: boolean }): string {
-  if (!built.kept) return `The Flow "${name}" has no steps yet, but it keeps your instruction, so you can build it again.`;
-  if (built.ending) return `The Flow "${name}" keeps your instruction.`;
-  return `The Flow "${name}" keeps your instruction, and the steps found so far were kept as a draft, so building it again carries on from them.`;
+function automationStudioConversationCreateHereLeft(name: string, built: { ending?: string | undefined; kept: boolean }, from: AutomationStudioConversationCommandInstruction["from"]): string {
+  const instruction = from === "person" ? "your instruction" : `the instruction ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`;
+  if (!built.kept) return `The Flow "${name}" has no steps yet, but it keeps ${instruction}, so you can build it again.`;
+  if (built.ending) return `The Flow "${name}" keeps ${instruction}.`;
+  return `The Flow "${name}" keeps ${instruction}, and the steps found so far were kept as a draft, so building it again carries on from them.`;
 }

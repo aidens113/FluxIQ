@@ -30,11 +30,22 @@ export type AutomationStudioConversationCommandPort = {
   call(endpoint: string, payload: Record<string, unknown>): Promise<AutomationStudioConversationCommandCallResult>;
 };
 
-/** What a command needs from the thread: to say something, and to find the ask it answers. */
+/** What a command needs from the thread: to say something, to find the ask it answers, and to read what the person said. */
 export type AutomationStudioConversationCommandHost = {
   appendAutomationTurn(input: AutomationStudioConversationAutomationTurnRequest): Promise<AutomationStudioConversationTurn>;
   pendingAsks(input: { projectId: string; conversationId: string }): Promise<AutomationStudioConversationAsk[]>;
   getAsk(input: { projectId: string; askId: string }): Promise<AutomationStudioConversationAsk | null>;
+  /**
+   * The person's own words that Core's turn `answerTurnId` answered
+   * (`../person-words.ts`), and whether they say what to do beyond asking for
+   * `capability` (`../instructions/says-what-to-do.ts`); null when no person
+   * turn comes before it. A command that saves an instruction saves these
+   * (`argument.ts`). A host without it has no person turn to offer, and such a
+   * command falls back to its argument and says so. Read through the host
+   * rather than imported: the readers import the commands, and a command that
+   * imported them back would close a module cycle.
+   */
+  personWords?(input: { projectId: string; conversationId: string; answerTurnId: string; capability: Pick<AutomationStudioPanelCapability, "title" | "phrases"> }): Promise<{ text: string; saysWhatToDo: boolean } | null>;
 };
 
 /** Everything one run of a command works with. */
@@ -67,6 +78,13 @@ export type AutomationStudioConversationCommandContext = {
    * what the Flow cost (`build.ts`). Absent, nothing is carried.
    */
   interpretationCostUsd?: number;
+  /**
+   * The turn Core wrote in answer to the person's message that started this
+   * command (`start.ts`). The person's own words are read from the turns before
+   * it (`../person-words.ts`). Absent when no person turn started the command: a
+   * granted question, a script, a test.
+   */
+  answerTurnId?: string;
 };
 
 /**
@@ -95,6 +113,12 @@ export type AutomationStudioConversationCommandOutcome = {
   candidate?: AutomationStudioCandidateAuthoringResult;
   /** Asked after the result is written, when the command's work needs a yes before it takes effect. */
   confirm?: AutomationStudioConversationCommandConfirmation;
+  /**
+   * Whose words a command that saved an instruction saved (`argument.ts`):
+   * `person` for their own message, `argument` for the fallback a caller with no
+   * person turn gets. Absent when nothing was saved.
+   */
+  instructionFrom?: "person" | "argument";
 };
 
 /** What a command's first reply is written from: what was asked, and names the person would use. */
