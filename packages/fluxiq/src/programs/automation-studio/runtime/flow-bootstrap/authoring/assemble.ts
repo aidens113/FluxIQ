@@ -33,11 +33,13 @@
 // diamond or a loop knows exactly where each port goes, where a model writing
 // prose relies on the order to say it.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type {
-  AutomationNodePort,
-  AutomationStudioNodeDefinition,
-  AutomationStudioNodeRegistry,
-  AutomationStudioNodeRegistryResolution
+import {
+  AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT,
+  type AutomationNodeParameter,
+  type AutomationNodePort,
+  type AutomationStudioNodeDefinition,
+  type AutomationStudioNodeRegistry,
+  type AutomationStudioNodeRegistryResolution
 } from "../../../nodes/index.ts";
 import type {
   AutomationStudioFlowBootstrapEdge,
@@ -57,6 +59,8 @@ import { automationStudioMatchWrittenParameterName } from "../plan/index.ts";
 import { matchAuthoringDefinition, matchAuthoringParameter, matchAuthoringParameterContaining, matchAuthoringPort } from "./matching.ts";
 import { normaliseAuthoringNodeParameters } from "./normalise.ts";
 import { authoringNestedValue, authoringParameterValue, authoringSetAtPath, isJsonObject } from "./values.ts";
+import { routeAutomationStudioFlowScriptRepeats } from "./draft-routing.ts";
+import { AUTOMATION_STUDIO_FLOW_DRAFT_INPUT_NAME, AUTOMATION_STUDIO_FLOW_DRAFT_ROW_FIELD } from "../../flow-draft/index.ts";
 
 const OUTPUT_ACTION_WORDS = new Set(["outputactionid", "outputaction", "outputid", "output", "runs"]);
 const NAME_LIMIT = AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS.maxNameLength;
@@ -92,7 +96,14 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
 }): { plan?: AutomationStudioFlowBootstrapPlan; refusedPlan?: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const definitions = input.registry.list(input.resolution);
-  const blocks = input.script.blocks;
+  // Each block's `repeat` statements become the steps that wire them, before
+  // anything else reads the block (`./draft-routing.ts`); a block with none
+  // comes through as it was.
+  const blocks = input.script.blocks.map((block) => {
+    const routed = routeAutomationStudioFlowScriptRepeats({ steps: block.steps, registry: input.registry, resolution: input.resolution });
+    issues.push(...routed.issues);
+    return routed.steps === block.steps ? block : { ...block, steps: [...routed.steps] };
+  });
   if (!blocks.length) {
     issues.push(authoringError("flow_script.no_steps", "The Flow script named no step.", "flow"));
     return { issues };
@@ -248,6 +259,11 @@ function buildSubflow(input: {
   const definitionByKey = new Map<string, AutomationStudioNodeDefinition>();
   const keyByLabel = new Map<string, string>();
   const acting = input.steps.filter((step) => !step.runsBlock);
+  // The key each labelled step's node will have, for an earlier step's output
+  // a value names by label (`scriptBinding`).
+  const labelKeys = new Map<string, string>();
+  for (const [index, step] of acting.entries()) if (step.label && !labelKeys.has(step.label)) labelKeys.set(step.label, `s${index + 1}`);
+  const bindings: AuthoringScriptBindingScope = { labelKeys, elsewhere: (label) => input.stepLabels.has(label) && input.stepLabels.get(label) !== input.blockIndex };
   for (const [index, step] of acting.entries()) {
     const nodePath = `${input.path}.nodes.${nodes.length}`;
     const found = matchAuthoringDefinition(step.node ?? step.description, input.definitions);
@@ -258,7 +274,7 @@ function buildSubflow(input: {
       continue;
     }
     const key = `s${index + 1}`;
-    const node = buildNode({ step, definition: found.definition, key, subflowKey: input.subflowKey, path: nodePath, namedColumns: input.namedColumns });
+    const node = buildNode({ step, definition: found.definition, key, subflowKey: input.subflowKey, path: nodePath, namedColumns: input.namedColumns, bindings });
     issues.push(...node.issues);
     nodes.push(node.node);
     definitionByKey.set(key, found.definition);
@@ -278,6 +294,7 @@ function buildNode(input: {
   subflowKey: string;
   path: string;
   namedColumns: readonly string[] | undefined;
+  bindings: AuthoringScriptBindingScope;
 }): { node: AutomationStudioFlowBootstrapNode; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const written: Record<string, JsonValue> = {};
@@ -327,8 +344,15 @@ function buildNode(input: {
       } else issues.push(authoringError("bootstrap.unknown_parameter", "Node parameter is not declared by its definition.", `${input.path}.parameters.${head}`));
       continue;
     }
+    // A value written as a binding -- `$row.<field>`, `$input.<name> = <test>`,
+    // `$step.<label>.<output>` -- is the state binding it names, wherever it sits.
+    const bound = scriptBinding(text, segments.length === 1 ? parameter : undefined, input.bindings);
+    if (bound && "refused" in bound) {
+      issues.push(authoringError("flow_script.invalid_binding", bound.refused, `${input.path}.parameters.${[parameter.id, ...segments.slice(1)].join(".")}`));
+      continue;
+    }
     if (segments.length === 1) {
-      const value = authoringParameterValue(text, parameter);
+      const value = bound ? bound.value : authoringParameterValue(text, parameter);
       if (value === undefined) {
         issues.push(authoringError("bootstrap.invalid_parameter_value", "Node parameter value does not satisfy its definition.", `${input.path}.parameters.${parameter.id}`));
         continue;
@@ -338,7 +362,7 @@ function buildNode(input: {
     }
     const existing = written[parameter.id];
     const base: JsonObject = isJsonObject(existing) ? existing : {};
-    authoringSetAtPath(base, segments.slice(1), authoringNestedValue(text));
+    authoringSetAtPath(base, segments.slice(1), bound ? bound.value : authoringNestedValue(text));
     written[parameter.id] = base;
   }
   const normalised = normaliseAuthoringNodeParameters({
@@ -380,6 +404,83 @@ export function derivedOutputActionId(definition: AutomationStudioNodeDefinition
   if (!contract) return undefined;
   if (contract.fixedOutputId) return contract.fixedOutputId;
   return contract.allowedOutputIds?.length === 1 ? contract.allowedOutputIds[0] : undefined;
+}
+
+/** What a value written as a binding can name: this block's labelled steps by node key, and whether a label is another block's. */
+type AuthoringScriptBindingScope = {
+  labelKeys: ReadonlyMap<string, string>;
+  elsewhere(label: string): boolean;
+};
+
+/** A row's field, as the draft's own `{"$row": ...}` form names it (`../../flow-draft/binding-forms.ts`). */
+const ROW_FORM = /^\$row\.(.*)$/u;
+/** A Flow input with the value the build tests it with, as the draft's `{"$input": ..., "test": ...}` form names one. */
+const INPUT_FORM = /^\$input\.([^\s=]*)\s*(?:=\s*([\s\S]*))?$/u;
+/** An earlier step's output: `$step.<label>.<output>[.<field>]`. */
+const STEP_FORM = /^\$step\.(.+)$/u;
+const OUTPUT_ID = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/u;
+/** The name a pass's row goes by in run state, so no input may take it. */
+const ROW_NAME = "item";
+
+/**
+ * A written value read as the binding it names, the reason it cannot be one,
+ * or nothing when it names none.
+ *
+ * Each form stores exactly what the drafted path stores for the same intent,
+ * so the plan is the same graph either way and the one checker reads both
+ * (`./draft-bindings.ts`, `./assemble-draft.ts`):
+ *
+ *   `$row.<field>`               `{"$state":{"path":"item.<field>"}}`, the field of the row a pass is on
+ *   `$input.<name> = <test>`     `{"$state":{"path":"<name>","fallback":<test>}}`, a Flow input and its test value
+ *   `$step.<label>.<output>...`  `{"$state":{"path":"$node.<key>.<output>..."}}`, an earlier step's output,
+ *                                by the key the labelled step's node has
+ *
+ * Names follow the draft's rules (`AUTOMATION_STUDIO_FLOW_DRAFT_ROW_FIELD`,
+ * `AUTOMATION_STUDIO_FLOW_DRAFT_INPUT_NAME`). Whether the graph can honour a
+ * binding -- a row outside a loop, an output read before it exists -- is the
+ * checker's question once the plan exists, never this reader's.
+ */
+function scriptBinding(text: string, parameter: AutomationNodeParameter | undefined, scope: AuthoringScriptBindingScope): { value: JsonValue } | { refused: string } | undefined {
+  const written = text.trim();
+  if (!written.startsWith("$")) return undefined;
+  const row = ROW_FORM.exec(written);
+  if (row) {
+    const field = row[1] ?? "";
+    return AUTOMATION_STUDIO_FLOW_DRAFT_ROW_FIELD.test(field)
+      ? { value: stateBinding(`${ROW_NAME}.${field}`) }
+      : { refused: `"$row.${field.slice(0, 64)}" names no field: a row's field is one name with no dot or space, \`$row.<field>\`, one of the fields the listing reads.` };
+  }
+  const input = INPUT_FORM.exec(written);
+  if (input) {
+    const name = input[1] ?? "";
+    const test = input[2]?.trim();
+    if (!AUTOMATION_STUDIO_FLOW_DRAFT_INPUT_NAME.test(name) || name === ROW_NAME) {
+      return { refused: `"$input.${name.slice(0, 32)}" is not a Flow input's name: it starts with a lower-case letter, holds only letters and digits, at most 32, and is never "${ROW_NAME}".` };
+    }
+    if (!test) return { refused: `"$input.${name}" gives no test value: write \`$input.${name} = <the value the person gave>\`, which the build tests with and a run uses when it is given none.` };
+    return { value: stateBinding(name, parameter ? authoringParameterValue(test, parameter) ?? test : authoringNestedValue(test)) };
+  }
+  const step = STEP_FORM.exec(written);
+  if (!step) return undefined;
+  const rest = step[1] ?? "";
+  const lowered = rest.toLowerCase();
+  const label = [...scope.labelKeys.keys()].filter((candidate) => lowered.startsWith(`${candidate}.`)).sort((a, b) => b.length - a.length)[0];
+  if (label === undefined) {
+    const other = lowered.split(".")[0] ?? "";
+    return { refused: scope.elsewhere(other)
+      ? `"$step.${other}" names a step in another block; a step reads the output of an earlier step in its own block.`
+      : `"$step.${rest.slice(0, 64)}" names no labelled step of this block: write \`$step.<label>.<output>\`, with the label of an earlier step and an output its node declares.` };
+  }
+  const [output, ...fields] = rest.slice(label.length + 1).split(".");
+  if (!output || !OUTPUT_ID.test(output) || fields.some((field) => !field)) {
+    return { refused: `"$step.${rest.slice(0, 64)}" names no output: write \`$step.${label}.<output>\`, or \`$step.${label}.<output>.<field>\`, with an output that step's node declares.` };
+  }
+  return { value: stateBinding([AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT, scope.labelKeys.get(label)!, output, ...fields].join(".")) };
+}
+
+/** A state binding as the executor reads one (`nodes/parameter-bindings.ts`). */
+function stateBinding(path: string, fallback?: JsonValue): JsonObject {
+  return { $state: { path, ...(fallback === undefined ? {} : { fallback }) } };
 }
 
 /** The edges the written order implies, and the ones the branches name. */

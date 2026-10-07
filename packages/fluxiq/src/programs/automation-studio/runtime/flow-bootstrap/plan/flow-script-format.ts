@@ -203,3 +203,59 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
   "  node: web.dom.wait_for_text",
   "  text: added to your basket"
 ].join("\n");
+
+/**
+ * How a candidate repeats a span and binds a value, with an example of each
+ * loop (t346): reading every page of a list and processing the rows at the end
+ * of the run (lane C's shape), and acting on each row a listing kept (lane
+ * D's). Candidate-only, beside the act example and for the same reason: the
+ * legacy completion schema carries `AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT` and
+ * stays byte for byte what the baseline ran with.
+ *
+ * Every line is the grammar `../authoring/parse.ts` reads and every loop the
+ * one a drafted repeat becomes (`../authoring/draft-routing.ts`), so the
+ * examples build the graph shape the legacy path builds for the same loop.
+ */
+export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
+  "Repetitive work is a loop, never the same steps written again. A step starts a span that repeats with lines beside its node:",
+  "`repeat over: <label>` runs the span once for each row the labelled listing step read. The listing is written before the span and runs once; it never repeats itself. A step inside the span that presses a row's control finds that row's own control on each pass.",
+  "`repeat through: <label>` names the span's last step; without it the span is the step that says repeat, alone.",
+  "`repeat while: <label>` runs the span from this step through the labelled step, then again while that step succeeds. The loop ends when that step answers ended -- a next-page step does when there is no further page -- or after `repeat most: <passes>`; a last step that cannot answer ended needs repeat most.",
+  "A span holds no `on <port>:` line and no second repeat, and no branch goes into it.",
+  "A value that changes between rows or runs is bound, never typed in: `$row.<field>` is a field the listing reads, of the row the pass is on, and only inside a repeat over that listing; `$input.<name> = <value>` is a Flow input, written with the value the person gave; `$step.<label>.<output>` is an output of an earlier step, by its label.",
+  "Rows a Flow reads are collected over the whole run; what is done with them at the end -- keep some, drop repeats, sort, limit -- is `recordOutput.process` on the reading step, over the columns `recordOutput.columns` saves.",
+  "Example, reading every page of a list:",
+  "flow: Earbuds under 50 on every page of the results",
+  "step: open the results",
+  "  node: web.browser.navigate",
+  "  url: https://shop.test/search?q=earbuds",
+  "step page: read this page",
+  "  node: web.dom.extract_list",
+  "  extractList: extraction.1",
+  "  extractList.minItems: 0",
+  "  recordOutput.columns: [\"name\", \"price\"]",
+  "  recordOutput.process: {\"where\": [{\"field\": \"price\", \"lessThan\": 50}]}",
+  "  repeat while: next",
+  "step next: go to the next page",
+  "  node: web.dom.next_page",
+  "  nextPage: extraction.1",
+  "  consequences: none",
+  "Example, acting on each row a listing kept:",
+  "flow: Confirm every friend request from a colleague",
+  "step: open the requests",
+  "  node: web.browser.navigate",
+  "  url: https://social.test/friends/requests",
+  "step requests: list the requests from colleagues",
+  "  node: web.dom.extract_list",
+  "  extractList: extraction.2",
+  "  extractList.minItems: 0",
+  "step: confirm the request",
+  "  node: web.dom.click",
+  "  target: t21",
+  "  consequences: modify_existing",
+  "  repeat over: requests",
+  "  repeat through: confirmed",
+  "step confirmed: check it was confirmed",
+  "  node: web.dom.wait_for_text",
+  "  text: $row.name"
+].join("\n");

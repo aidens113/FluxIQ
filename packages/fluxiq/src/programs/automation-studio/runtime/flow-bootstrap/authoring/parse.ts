@@ -10,11 +10,16 @@
 // fatal: a stray sentence in an otherwise complete script must not lose the
 // Flow. What the script means -- which node, which parameter, which port --
 // is decided against the registry in `./assemble.ts`, not here.
+//
+// A step's `repeat over:`, `repeat through:`, `repeat while:` and `repeat
+// most:` lines are read onto the step as written (t346); whether they make a
+// loop, and which, is `./draft-routing.ts`'s question.
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type {
   AutomationStudioFlowScript,
   AutomationStudioFlowScriptBlock,
   AutomationStudioFlowScriptEntry,
+  AutomationStudioFlowScriptRepeat,
   AutomationStudioFlowScriptStep
 } from "./contracts.ts";
 import { authoringError } from "./issue.ts";
@@ -36,6 +41,13 @@ const UNLESS_WORDS = new Set(["unless"]);
 const SUBFLOW_ROLES = new Set(["primary", "integration", "recovery", "fallback", "utility"]);
 const RUNS_BLOCK = /^(?:run|call|enter)\s+(?:the\s+)?(?:subflow|block)\s+(.+)$/iu;
 const GO_TO = /^(?:go\s*to|goto|->|=>|jump\s+to|then)\s+/iu;
+/**
+ * A step's `repeat over:`, `repeat through:`, `repeat while:` and `repeat
+ * most:` lines (`AutomationStudioFlowScriptRepeat`). Two words, so no node
+ * parameter is ever read as one: a key with a space in it names none.
+ */
+const REPEAT_WORD = "repeat";
+const REPEAT_PARTS = new Set(["over", "through", "while", "most"]);
 
 export function parseAutomationStudioFlowScript(text: string): {
   script: AutomationStudioFlowScript;
@@ -99,6 +111,7 @@ class ScriptReader {
       this.open = undefined;
       return;
     }
+    if (keyword === REPEAT_WORD && REPEAT_PARTS.has(authoringKey(rest))) return this.repeat(step, authoringKey(rest), value, line);
     const entry: AutomationStudioFlowScriptEntry = { key: head, lines: [value], line };
     step.entries.push(entry);
     this.open = entry.lines;
@@ -151,6 +164,16 @@ class ScriptReader {
     const step = this.currentStep();
     if (!step) return this.unrecognized(line);
     step.branches.push({ port, target: authoringLabel(value.replace(GO_TO, "")), line });
+    this.open = undefined;
+  }
+
+  private repeat(step: AutomationStudioFlowScriptStep, part: string, value: string, line: number): void {
+    const repeat: AutomationStudioFlowScriptRepeat = step.repeat ?? { line };
+    if (part === "most") repeat.most = value;
+    else if (part === "over") repeat.over = authoringLabel(value);
+    else if (part === "through") repeat.through = authoringLabel(value);
+    else repeat.while = authoringLabel(value);
+    step.repeat = repeat;
     this.open = undefined;
   }
 
