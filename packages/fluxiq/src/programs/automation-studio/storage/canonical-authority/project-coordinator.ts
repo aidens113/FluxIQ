@@ -1,5 +1,5 @@
 import type { JsonObject } from "../../../../core/index.ts";
-import { AutomationStudioProjectDatabasePool } from "../project/index.ts";
+import { AutomationStudioProjectDatabasePool } from "../project/database-owner/index.ts";
 import { AutomationStudioProjectAuthorityGuardStore as Guard } from "../project/authority-guard/index.ts";
 import type { AuthorityGuardCompletionCapability, AuthorityGuardLegacyRequest, AuthorityGuardCompletion } from "../project/authority-guard/index.ts";
 import type { CanonicalAuthorityCapability, CanonicalAuthorityKind, CanonicalAuthorityOperation, CanonicalAuthorityOptions } from "./contracts.ts";
