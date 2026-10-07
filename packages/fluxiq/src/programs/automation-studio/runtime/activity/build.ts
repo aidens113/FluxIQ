@@ -25,7 +25,7 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
       return built;
     } catch (error) {
       const ending = buildEndingOf(error);
-      const title = ending ? ENDING_TITLES[ending.kind] : "Build failed";
+      const title = (error as { name?: string } | null)?.name === "AbortError" ? "Build stopped" : ending ? ENDING_TITLES[ending.kind] : "Build failed";
       emitAutomationStudioActivity({ phase: "failed", label: title, detail: { kind: "step", title, status: "failed", ...(ending ? { text: ending.message } : {}) }, final: true });
       throw error;
     }

@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { IoRegistry } from "../../../../../../io/index.ts";
 import {
@@ -433,6 +433,21 @@ async function createHarness(options: {
 }
 
 describe("refuted-result service composition", () => {
+  it("persists why an unsupported held reauthor could not be rerun", { timeout: 60_000 }, async () => {
+    const harness = await createHarness({ failReauthorProvider: false });
+    const before = await harness.service.getFlow(harness.projectId, harness.flowId);
+    const declinedCode = "repair_rerun.held_reauthor_unsupported.multiple_subflows";
+    const rerunner = harness.service as unknown as { rerunAfterRepair: (request: { from?: string }) => Promise<unknown> };
+    const original = rerunner.rerunAfterRepair.bind(harness.service);
+    const declined = vi.spyOn(rerunner, "rerunAfterRepair").mockImplementation(request => request.from === "start" ? Promise.resolve({ declinedCode }) : original(request));
+    const run = await harness.service.runRuntimeSession({ projectId: harness.projectId, flowId: harness.flowId, llmExecution: { ...ACTOR, intent: "build_and_adapt" } });
+    expect(declined).toHaveBeenCalledWith(expect.objectContaining({ from: "start" }));
+    const detail = await harness.service.getFlowRunDetail(harness.projectId, run.runId);
+    expect(detail?.metadata?.adaptiveRetry).toEqual({ attempted: false, notResumableCode: declinedCode });
+    expect(run.status).toBe("failed");
+    expect(await harness.service.getFlow(harness.projectId, harness.flowId)).toEqual(before);
+    expect(detail?.metadata?.resultReauthor).not.toMatchObject({ applied: true });
+  });
   // The supervisor's ruling, 2026-09-28: repairing is the automation's own work
   // and nothing about why a run was asked for may refuse it. The wrong-answer
   // repair once never ran across five live runs because a grant's purpose

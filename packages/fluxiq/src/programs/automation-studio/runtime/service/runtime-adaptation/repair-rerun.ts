@@ -31,7 +31,7 @@
 //
 // **A held re-author runs unapplied (t267).** Both re-author routes hold their
 // approved edit (`./reauthor-build.ts`), so a `start` re-run whose latest
-// re-author is held runs the held graph as its candidate, or applies it first
+// re-author is held runs the held graph as its candidate, or refuses the pass
 // where it cannot be run alone (`./held-candidate.ts`), and names the held edit it
 // ran for the run's judged end to settle (`./judged-reauthor.ts`).
 
@@ -48,7 +48,7 @@ import type {
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor.ts";
 import type { AutomationStudioBootstrapAdaptation } from "../../flow-bootstrap/index.ts";
-import { automationStudioRefutedResultFlowWasReauthored, automationStudioRefutedResultHeldReauthor, automationStudioRefutedResultReauthorMarked } from "../../recovery/refuted-result/index.ts";
+import { automationStudioRefutedResultFlowWasReauthored, automationStudioRefutedResultHeldReauthor } from "../../recovery/refuted-result/index.ts";
 import { decideAutomationStudioAdaptiveRetry } from "../adaptations/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions } from "../../flow-version/index.ts";
 import { canonicalFlowDocument } from "../flows/index.ts";
@@ -82,7 +82,7 @@ export type AutomationStudioRepairRerunPorts = AutomationStudioJudgedPromotionPo
   saveFlowRunDetail(detail: AutomationStudioFlowRunDetail): Promise<unknown>;
   /** A held re-author's record, whose graph the re-run runs unapplied. */
   getFlowBootstrapAdaptation(projectId: string, flowId: string, adaptationId: string): Promise<AutomationStudioBootstrapAdaptation | null>;
-  /** Applies a held re-author whose graph cannot be run alone, before the re-run. */
+  /** Legacy compatibility port; re-runs never apply held re-authors before judgement. */
   applyFlowBootstrapAdaptation(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
 };
 
@@ -146,10 +146,10 @@ export async function rerunAutomationStudioSessionAfterRepair(
   const resumeNodeId = decision && !("declined" in decision) ? decision.resume.nodeId : undefined;
   const rerunStartedAt = Date.now();
   const reauthored = input.from === "start" && automationStudioRefutedResultFlowWasReauthored(input.detail);
-  // A held re-author: its graph, unapplied, or -- for a shape that cannot be
-  // run alone -- applied first, before the Flow is read back below.
+  // A held re-author runs unapplied or declines before any writes or dispatch.
   const heldId = reauthored ? automationStudioRefutedResultHeldReauthor(input.detail) : undefined;
   const held = heldId ? await automationStudioHeldReauthorCandidate(input, heldId) : undefined;
+  if (held && "unsupportedTopology" in held) return { declinedCode: `repair_rerun.held_reauthor_unsupported.${held.unsupportedTopology}` };
   if (held && "unreadable" in held) return { declinedCode: UNREADABLE[held.unreadable] };
   const found = held && "flow" in held ? held : await changedFlow(input);
   if ("declinedCode" in found) return found;
@@ -167,9 +167,7 @@ export async function rerunAutomationStudioSessionAfterRepair(
   const settled = input.from === "start"
     ? await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.adaptationContext.flowId, session: input.session, detail: input.detail, ...(reauthored ? {} : { only: "ran" as const }) })
     : input.detail;
-  const detail = heldId && held && "appliedBeforeJudged" in held
-    ? automationStudioRefutedResultReauthorMarked(settled, heldId, { applied: true, appliedBeforeJudged: held.appliedBeforeJudged })
-    : settled;
+  const detail = settled;
   const candidate = reauthored ? { flow: updatedFlow, adaptationIds: [] } : await pendingCandidate({ ...input, detail }, updatedFlow);
   if ("declinedCode" in candidate) return candidate;
   if (input.from === "start" && !reauthored && !candidate.adaptationIds.length) return { declinedCode: UNREADABLE.nothingToRerun };
@@ -358,8 +356,7 @@ const UNREADABLE = {
   nothingToRerun: "repair_rerun.nothing_to_rerun",
   candidate: "repair_rerun.candidate_unreadable",
   candidateUnwritable: "repair_rerun.candidate_unwritable",
-  heldReauthor: "repair_rerun.held_reauthor_unreadable",
-  heldReauthorApply: "repair_rerun.held_reauthor_apply_failed"
+  heldReauthor: "repair_rerun.held_reauthor_unreadable"
 } as const;
 
 /** The Flow as it now stands: the Subflow's graph where one ran, else the Flow itself. */
