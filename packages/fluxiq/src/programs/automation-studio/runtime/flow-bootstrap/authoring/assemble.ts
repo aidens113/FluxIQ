@@ -366,7 +366,9 @@ function buildNode(input: {
       ...(derived ? { outputActionId: derived } : {}),
       ...(consequences ?? normalised.consequences ? { consequences: (consequences ?? normalised.consequences)! } : {}),
       // The pages its draft step ran between; a step a model wrote has none (`./contracts.ts`).
-      ...(input.step.routeSignatures ? { routeSignatures: structuredClone(input.step.routeSignatures) } : {})
+      ...(input.step.routeSignatures ? { routeSignatures: structuredClone(input.step.routeSignatures) } : {}),
+      // What its draft step did, in the domain's words; a step a model wrote has none (`./contracts.ts`).
+      ...(input.step.nodeLabel ? { label: input.step.nodeLabel } : {})
     },
     issues
   };
