@@ -157,7 +157,7 @@ function decidedCall(decision: unknown): { callId: string; toolId: string; value
 function toolActivity(
   call: ToolCall,
   status: "started" | "succeeded" | "failed",
-  result: { code: string | undefined; reason?: string | undefined; rows?: number | undefined },
+  result: { code: string | undefined; reason?: string | undefined; rows?: number | undefined; pages?: number | undefined },
   described: AutomationStudioActivityCallWords | undefined,
   context: { start?: string; row?: string },
   excusable?: string
@@ -170,6 +170,7 @@ function toolActivity(
     result.reason ? `Reason: ${result.reason}` : "",
     excused ? `Excused: ${excused}` : "",
     result.rows !== undefined ? `Rows: ${result.rows}` : "",
+    result.rows !== undefined && result.pages !== undefined ? `Pages: ${result.pages}` : "",
     words.node ? `Node: ${words.node}` : ""
   ].filter(Boolean).join(" · ");
   emitAutomationStudioActivity({

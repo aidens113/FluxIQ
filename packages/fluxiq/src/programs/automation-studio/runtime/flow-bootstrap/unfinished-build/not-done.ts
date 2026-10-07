@@ -8,6 +8,7 @@
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS } from "../../result-verification/unsettled/index.ts";
 import type { AutomationStudioInstructedActChecklistItem, AutomationStudioInstructedActObjectTodo, AutomationStudioInstructedActTodo } from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
+import { automationStudioFlowDraftReplayOutcomeWord, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
 import type { AutomationStudioFlowBootstrapEndingRoom } from "./ending-fit.ts";
 import { automationStudioFlowBootstrapJudgeWordsSaid } from "./judge-words.ts";
@@ -89,7 +90,9 @@ const BLOCKED_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
   // Its edits to the draft, refused again and again (`../../llm/draft-amendment-feedback.ts`).
   [/^llm_evidence_loop\.draft_amendments?_(?:refused|undone)$/u, "it kept trying changes to the Flow that changed nothing"],
   // A call refused unrun, because the same call had already failed or changed nothing there (`../../llm/repeat-guard/`).
-  [/^llm_evidence_loop\.repeat_refused$/u, "it kept retrying things that had already failed or done nothing"],
+  // Not "retrying things that had already failed": live-C round 3 (R3-U-8, run-mux6naez-6c20f26e) said
+  // it beside a stack of reads that had worked, refused only as repeats of themselves.
+  [/^llm_evidence_loop\.repeat_refused$/u, "it kept asking to run steps again exactly as they had already run, which changes nothing"],
   [/plan|flow_draft|validation|node|subflow/u, "the Flow it wrote was not one that could run"]
 ];
 
@@ -139,7 +142,7 @@ function judgedTestSaid(judgement: AutomationStudioFlowBootstrapJudgement): stri
   const carried = judgement.judge?.untestedCarried ?? [];
   if (!carried.length && judgement.notRunInThisBuild?.length) return notRunTestSaid(judgement.stepsInFlow, judgement.notRunInThisBuild);
   if (carried.length) {
-    return `Step${carried.length === 1 ? "" : "s"} ${carried.slice(0, 6).join(", ")}${carried.length > 6 ? " and more" : ""} of the Flow (${steps}) came from the earlier Flow and ${carried.length === 1 ? "was" : "were"} not run when it was tested, so what ${carried.length === 1 ? "it does" : "they do"} could not be judged.`;
+    return `${carried.length === 1 ? "One step" : `${carried.length} steps`} of the Flow (${steps}) came from the earlier Flow and ${carried.length === 1 ? "was" : "were"} not run when it was tested, so what ${carried.length === 1 ? "it does" : "they do"} could not be judged.`;
   }
   if (judgement.judge?.verdict === "no") return `The Flow (${steps}) ran from its start, but what it did was judged not to be what you asked.`;
   if (judgement.tested === "not_tested") return `The Flow as it now stands (${steps}) was not run whole from its start and judged, so it was not judged to do what you asked.`;
@@ -149,7 +152,7 @@ function judgedTestSaid(judgement: AutomationStudioFlowBootstrapJudgement): stri
 /** A Flow holding steps carried from an earlier Flow and never rerun in this build, as an ending says it. */
 function notRunTestSaid(stepsInFlow: number, notRun: readonly number[]): string {
   const steps = `${stepsInFlow} step${stepsInFlow === 1 ? "" : "s"}`;
-  return `The Flow as it stands (${steps}) was never run whole from its start: ${positionsSaid(notRun)} came from the Flow being changed and ${notRun.length === 1 ? "was" : "were"} not run again in this build, so it was never tested or judged.`;
+  return `The Flow as it stands (${steps}) was never run whole from its start: ${stepsCounted(notRun.length)} came from the Flow being changed and ${notRun.length === 1 ? "was" : "were"} not run again in this build, so it was never tested or judged.`;
 }
 
 /**
@@ -159,19 +162,19 @@ function notRunTestSaid(stepsInFlow: number, notRun: readonly number[]): string 
  * them too and ran none of them, that it did not.
  */
 export function automationStudioFlowBootstrapRepairingNotRunSaid(notRun: readonly number[], ranNoneAgain: boolean): string {
-  const which = `${positionsSaid(notRun)} came from the Flow being changed and ${notRun.length === 1 ? "has" : "have"} not run in this build`;
+  const which = `${stepsCounted(notRun.length)} came from the Flow being changed and ${notRun.length === 1 ? "has" : "have"} not run in this build`;
   const again = ranNoneAgain ? ` The last round ran none of ${notRun.length === 1 ? "it" : "them"} again.` : "";
   return `The Flow could not be tested from its start: ${which}.${again} Repairing it live, running ${notRun.length === 1 ? "it" : "each"} again so the whole Flow can be tested and judged.`;
 }
 
-/** "step 3", "steps 1 and 2", "steps 1, 2 and 4": at most eight, then how many more. */
-function positionsSaid(positions: readonly number[]): string {
-  const MOST = 8;
-  if (positions.length === 1) return `step ${positions[0]}`;
-  const shown = positions.slice(0, MOST);
-  const more = positions.length - shown.length;
-  const list = more ? `${shown.join(", ")} and ${more} more` : `${shown.slice(0, -1).join(", ")} and ${shown.at(-1)}`;
-  return `steps ${list}`;
+/**
+ * "one of its steps", "4 of its steps": how many, never which. The draft's own
+ * step numbers are not the person's: "steps 1, 2, 4 and 5 came from the Flow
+ * being changed" headed five repairs in a row (R3-U-4, live run
+ * `run-mux6naez-6c20f26e`).
+ */
+function stepsCounted(count: number): string {
+  return count === 1 ? "one of its steps" : `${count} of its steps`;
 }
 
 /**
@@ -187,7 +190,7 @@ function positionsSaid(positions: readonly number[]): string {
  */
 export function automationStudioFlowBootstrapRepairingJudgedSaid(judge: NonNullable<AutomationStudioFlowBootstrapJudgement["judge"]>): string {
   const carried = judge.untestedCarried ?? [];
-  if (carried.length) return `The Flow was not judged to do what you asked: steps ${carried.join(", ")} came from the earlier Flow and were not run when it was tested. Repairing it live, running them again.`;
+  if (carried.length) return `The Flow was not judged to do what you asked: ${stepsCounted(carried.length)} came from the earlier Flow and were not run when it was tested. Repairing it live, running them again.`;
   const said = boundedReason(automationStudioFlowBootstrapUnsettledForBuild(judge.observed ?? judge.findings[0] ?? ""));
   if (judge.verdict !== "no") return `The Flow is not yet confirmed to do what you asked${said ? `: ${said}` : ""}. Repairing it live, to test it from its start and check it again.`;
   return `The Flow was tested from its start and judged not to do what you asked${said ? `: ${said}` : ""}. Repairing it live.`;
@@ -238,7 +241,7 @@ function boundedReason(reason: string): string {
  */
 export function automationStudioFlowBootstrapProgressSaid(
   checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined,
-  judgement: (Pick<AutomationStudioFlowBootstrapJudgement, "tested" | "proven"> & { judge?: { verdict: "yes" | AutomationStudioFlowBootstrapJudgedWrong["verdict"] } | undefined }) | undefined,
+  judgement: (Pick<AutomationStudioFlowBootstrapJudgement, "tested" | "proven" | "checked"> & { judge?: { verdict: "yes" | AutomationStudioFlowBootstrapJudgedWrong["verdict"] } | undefined }) | undefined,
   /** The Flow's step count, said in the run clause of a sentence that also says the Flow was not judged a success (`automationStudioFlowBootstrapProgressAndTestSaid`). */
   stepsInFlow?: number,
   /** How much of the still-to-do list is quoted (`./ending-fit.ts`). */
@@ -253,20 +256,60 @@ export function automationStudioFlowBootstrapProgressSaid(
   const verdict = judgement?.judge?.verdict;
   const judged = verdict === "no" ? ", but the Flow was judged not to do what you asked" : verdict && verdict !== "yes" ? ", but the Flow was not judged to do what you asked" : "";
   const run = judged && stepsInFlow !== undefined ? `when the Flow (${stepsInFlow} step${stepsInFlow === 1 ? "" : "s"}) was run from its start` : "when the Flow was run from its start";
+  // A judgement that says how many proven steps were only checked (`checked`) is
+  // said apart: "ran" is only for a step that ran. "6 of the 6 things you asked
+  // have a step that ran, or could run" was said while Add to cart was only
+  // checked (W24, run-mux74k5q-1c3c2127). One that does not say keeps the older words.
+  const split = judgement?.checked !== undefined;
+  const ranWords = split ? "ran" : "ran, or could run,";
   if (asked === 1) {
-    // Named, so done: the one thing has a step, which worked when run (by the judge's yes), ran without one, did not, or was never run.
+    // Named, so done: the one thing has a step, which worked when run (by the judge's yes), ran without one, was only checked, did not, or was never run.
     if (!judgement || judgement.tested === "not_tested") return "The one thing you asked has a step in the Flow, not yet shown to work by running it.";
     if ((judgement.proven ?? 0) === 0) return "The one thing you asked has a step that did not work when the Flow was run from its start.";
+    if ((judgement.checked ?? 0) > 0) return `The one thing you asked has a step that was only checked, not run, ${run}${judged}.`;
     return verdict === "yes"
       ? "The one thing you asked worked when the Flow was run from its start."
-      : `The one thing you asked has a step that ran, or could run, ${run}${judged}.`;
+      : `The one thing you asked has a step that ${ranWords} ${run}${judged}.`;
   }
   const have = (count: number): string => (count === 1 ? "has" : "have");
   if (!judgement || judgement.tested === "not_tested") return `${named} of the ${asked} things you asked ${have(named)} a step in the Flow, not yet shown to work by running it${still}.`;
   const proven = Math.min(named, judgement.proven ?? 0);
-  const rest = named > proven ? `, and ${named - proven} more ${have(named - proven)} a step that did not work in that run` : "";
-  if (verdict === "yes") return `${proven} of the ${asked} things you asked worked when the Flow was run from its start${rest}${still}.`;
-  return `${proven} of the ${asked} things you asked ${have(proven)} a step that ran, or could run, ${run}${rest}${judged}${still}.`;
+  const checked = Math.min(proven, judgement.checked ?? 0);
+  const ran = proven - checked;
+  const failed = named - proven;
+  // The parts after the first, the last joined by "and": "and 2 more have a step that was only checked, not run".
+  const parts = [
+    ...(checked ? [`${checked}${ran ? " more" : ""} ${have(checked)} a step that was only checked, not run`] : []),
+    ...(failed ? [`${failed} more ${have(failed)} a step that did not work in that run`] : [])
+  ];
+  const after = parts.map((part, index) => `, ${index === parts.length - 1 ? "and " : ""}${part}`).join("");
+  if (verdict === "yes") {
+    const head = ran ? `${ran} of the ${asked} things you asked worked when the Flow was run from its start` : `None of the ${asked} things you asked ran when the Flow was run from its start`;
+    return `${head}${after}${still}.`;
+  }
+  const head = ran || !split ? `${ran} of the ${asked} things you asked ${have(ran)} a step that ${ranWords} ${run}` : `None of the ${asked} things you asked has a step that ran ${run}`;
+  return `${head}${after}${judged}${still}.`;
+}
+
+/**
+ * How far a test of the Flow so far got, said before it is judged: "The Flow so
+ * far ran clean from its start." only when every step ran; otherwise how many
+ * ran, how many the test only checked (`verified`, `present`), and how many could
+ * not run. Run `run-mux6pndp-16feb842` (U-B3-2) announced "ran clean" while five
+ * steps were unreproducible and one only checked.
+ */
+export function automationStudioFlowBootstrapTestReachSaid(steps: readonly Pick<AutomationStudioFlowDraftStep, "replayed">[]): string {
+  const words = steps.map((step) => (step.replayed ? automationStudioFlowDraftReplayOutcomeWord(step.replayed) : "not run"));
+  const checked = words.filter((word) => word === "verified" || word === "present").length;
+  const ran = words.filter((word) => word === "replayed" || word === "remembered").length;
+  const notRun = words.length - ran - checked;
+  if (!checked && !notRun) return "The Flow so far ran clean from its start.";
+  const parts = [
+    ...(checked ? [`${checked} ${checked === 1 ? "was" : "were"} only checked, not run`] : []),
+    ...(notRun ? [`${notRun} could not run`] : [])
+  ];
+  const after = parts.length === 2 ? `${parts[0]}, and ${parts[1]}` : parts[0]!;
+  return `The test ran ${ran} of the Flow's ${words.length} step${words.length === 1 ? "" : "s"} from its start; ${after}.`;
 }
 
 /**

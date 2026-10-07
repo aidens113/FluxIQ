@@ -90,7 +90,7 @@ describe("what the person is told stopped the build", () => {
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.draft_amendments_refused"]))
       .toBe("too many attempts in a row went nowhere, because it kept trying changes to the Flow that changed nothing");
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.repeat_refused"]))
-      .toBe("too many attempts in a row went nowhere, because it kept retrying things that had already failed or done nothing");
+      .toBe("too many attempts in a row went nowhere, because it kept asking to run steps again exactly as they had already run, which changes nothing");
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["bootstrap.instructed_act_missing"]))
       .toBe("too many attempts in a row went nowhere, because the Flow did not yet do what you asked");
     // An issue with no words of its own adds nothing, and other stops are said as before.
@@ -187,6 +187,45 @@ describe("how much of what was asked the ending says is done", () => {
   });
 });
 
+// W24 of the week review (run-mux74k5q-1c3c2127, also run-mux6pndp-16feb842): the ending read "6 of
+// the 6 things you asked have a step that ran, or could run" while Add to cart was only checked
+// (`verified`) and never pressed. A step the test only checked, or found already done, is said
+// apart from one that ran, and "ran" means ran.
+describe("an ending says the acts whose step only was checked apart from those that ran", () => {
+  const six = [1, 2, 3, 4, 5, 6].map((done) => ({ id: `a${done}`, verb: "add", quote: `thing ${done}`, done }));
+
+  it("never says ran of a step the test only checked", () => {
+    const said = automationStudioFlowBootstrapProgressSaid(six, { tested: "replayed_clean", proven: 6, checked: 2, judge: { verdict: "no" } });
+    expect(said).toBe("4 of the 6 things you asked have a step that ran when the Flow was run from its start, and 2 more have a step that was only checked, not run, but the Flow was judged not to do what you asked.");
+    expect(said).not.toContain("could run");
+    expect(automationStudioFlowBootstrapProgressSaid(six, { tested: "replayed_clean", proven: 6, checked: 0 })).toBe("6 of the 6 things you asked have a step that ran when the Flow was run from its start.");
+    expect(automationStudioFlowBootstrapProgressSaid(six, { tested: "replayed_clean", proven: 2, checked: 2, judge: { verdict: "no" } }))
+      .toBe("None of the 6 things you asked has a step that ran when the Flow was run from its start, 2 have a step that was only checked, not run, and 4 more have a step that did not work in that run, but the Flow was judged not to do what you asked.");
+    expect(automationStudioFlowBootstrapProgressSaid(six, { tested: "replayed_clean", proven: 6, checked: 1, judge: { verdict: "yes" } }))
+      .toBe("5 of the 6 things you asked worked when the Flow was run from its start, and 1 more has a step that was only checked, not run.");
+    const one = [{ id: "a1", verb: "add", quote: "add the hubs", done: 1 }];
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replayed_clean", proven: 1, checked: 1 })).toBe("The one thing you asked has a step that was only checked, not run, when the Flow was run from its start.");
+    expect(automationStudioFlowBootstrapProgressSaid(one, { tested: "replayed_clean", proven: 1, checked: 0, judge: { verdict: "no" } })).toBe("The one thing you asked has a step that ran when the Flow was run from its start, but the Flow was judged not to do what you asked.");
+  });
+
+  it("the judgement counts the acts whose step the test only checked or found already done", async () => {
+    const judged = await automationStudioFlowBootstrapJudgeUnfinished({
+      round: 0, stopped: "budget", lastIssueCodes: [],
+      steps: [step(1), step(2), step(3)],
+      replayable: () => true,
+      test: async (seed) => {
+        seed[0]!.replayed = { step: 1, actionId: "web.dom.click", status: "replayed" };
+        seed[1]!.replayed = { step: 2, actionId: "web.dom.click", status: "replayed", mode: "verify", resultCode: "core.replay.verified" };
+        seed[2]!.replayed = { step: 3, actionId: "web.dom.click", status: "replayed", mode: "verify", resultCode: "core.replay.present" };
+        return undefined;
+      },
+      checklist: () => six.slice(0, 3)
+    });
+    if (judged.kind !== "judged") throw new Error("not judged");
+    expect(judged.judgement).toMatchObject({ tested: "replayed_clean", done: 3, proven: 3, checked: 2 });
+  });
+});
+
 // Run `run-murwd8le-79e735a8` (UI review D3, screenshot 00010): under a card
 // saying the result was unverified, the person read "The Flow was not judged to
 // do what you asked: The two checks of this result disagreed...".
@@ -255,7 +294,7 @@ describe("the stop as a person reads it", () => {
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.draft_amendments_refused"]))
       .toBe("too many attempts in a row went nowhere, because it kept trying changes to the Flow that changed nothing");
     expect(automationStudioFlowBootstrapStopSaid("unusable_decisions", ["llm_evidence_loop.repeat_refused"]))
-      .toBe("too many attempts in a row went nowhere, because it kept retrying things that had already failed or done nothing");
+      .toBe("too many attempts in a row went nowhere, because it kept asking to run steps again exactly as they had already run, which changes nothing");
     for (const stop of ["iterations", "tool_calls", "unusable_decisions", "repeat_without_progress", "judged_wrong"] as const) {
       expect(automationStudioFlowBootstrapStopSaid(stop)).not.toMatch(internal);
     }

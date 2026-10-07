@@ -70,7 +70,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftStepCarriedJoin } from "../../flow-draft/carried-step/index.ts";
 import { automationStudioFlowDraftCopyScheduledCandidate } from "../../flow-draft/scheduled-candidate/index.ts";
-import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplayOutcomeWord, automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioInstructedActsNotDone, type AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
 import type {
   AutomationStudioFlowBootstrapJudgeReading,
@@ -147,7 +147,7 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
   }
   // A step named for an act is a claim; the same step working when the Flow
   // ran from its start is the nearest thing to a result Core can see (`proven`).
-  const { done, todo, proven } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.replayed?.status === "replayed").map((step) => step.position)));
+  const { done, todo, proven, checked } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.replayed?.status === "replayed").map((step) => step.position)), checkedOnly(seed));
   const notRun = automationStudioFlowBootstrapStepsNotRunInThisBuild(seed);
   return {
     kind: "judged",
@@ -160,7 +160,7 @@ export async function automationStudioFlowBootstrapJudgeUnfinished(input: {
       failedSteps: failedPositions(seed),
       stepsInFlow: seed.length,
       done,
-      ...(tested === "not_tested" ? {} : { proven }),
+      ...(tested === "not_tested" ? {} : { proven, checked }),
       todo,
       lastIssueCodes: [...new Set(input.lastIssueCodes)],
       ...(notRun.length ? { notRunInThisBuild: notRun } : {}),
@@ -188,7 +188,8 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
   const seed = automationStudioFlowBootstrapRepairSeed(input.steps);
   // A repair seed carries no replays: what worked in the loop's own test is read off the round's steps, by id.
   const workedIds = new Set(input.steps.filter((step) => step.replayed?.status === "replayed" && step.id !== undefined).map((step) => step.id));
-  const { done, todo, proven } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.id !== undefined && workedIds.has(step.id)).map((step) => step.position)));
+  const checkedIds = new Set(input.steps.filter((step) => step.id !== undefined && checkedOnly([step]).size > 0).map((step) => step.id));
+  const { done, todo, proven, checked } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.id !== undefined && workedIds.has(step.id)).map((step) => step.position)), new Set(seed.filter((step) => step.id !== undefined && checkedIds.has(step.id)).map((step) => step.position)));
   const judge = judgedWrong(input.verdict);
   // A verdict that judged nothing, or another Flow's test, is no evidence this Flow ran: a `no` is always about the loop's own test.
   const testedThisFlow = input.verdict.verdict === "no" || input.verdict.flowSignature === automationStudioFlowDraftFlowSignature(input.steps);
@@ -204,7 +205,7 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
       failedSteps: [],
       stepsInFlow: seed.length,
       done,
-      ...(tested === "not_tested" ? {} : { proven }),
+      ...(tested === "not_tested" ? {} : { proven, checked }),
       todo,
       lastIssueCodes: [],
       ...(notRun.length ? { notRunInThisBuild: notRun } : {}),
@@ -278,12 +279,20 @@ function readingOf(reading: AutomationStudioFlowBootstrapJudgeReading | undefine
   return Object.keys(said).length ? said : undefined;
 }
 
-/** Acts and choices done, and the ids of those still to do, by the checklist's rule. */
-function checklistRead(checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined, worked: ReadonlySet<number>): { done: number; todo: string[]; proven: number } {
+/** Acts and choices done, and the ids of those still to do, by the checklist's rule; of the proven, those whose step was only checked. */
+function checklistRead(checklist: readonly AutomationStudioInstructedActChecklistItem[] | undefined, worked: ReadonlySet<number>, checkedPositions: ReadonlySet<number>): { done: number; todo: string[]; proven: number; checked: number } {
   const todo = automationStudioInstructedActsNotDone(checklist);
   const all = (checklist ?? []).reduce((total, item) => total + 1 + (item.choices?.length ?? 0), 0);
-  const proven = (checklist ?? []).flatMap((item) => [item.done, ...(item.choices ?? []).map((choice) => choice.done)]).filter((position) => position !== undefined && worked.has(position)).length;
-  return { done: all - todo.length, todo, proven };
+  const provenAt = (checklist ?? []).flatMap((item) => [item.done, ...(item.choices ?? []).map((choice) => choice.done)]).filter((position): position is number => position !== undefined && worked.has(position));
+  return { done: all - todo.length, todo, proven: provenAt.length, checked: provenAt.filter((position) => checkedPositions.has(position)).length };
+}
+
+/** The words of a step the test checked and did not run: it could run (`verified`), or it was already done on the site (`present`). */
+const CHECKED_WORDS: ReadonlySet<string> = new Set(["verified", "present"]);
+
+/** Positions of the steps the test checked and did not run (W24, run-mux74k5q-1c3c2127). */
+function checkedOnly(steps: readonly AutomationStudioFlowDraftStep[]): ReadonlySet<number> {
+  return new Set(steps.filter((step) => step.replayed?.status === "replayed" && CHECKED_WORDS.has(automationStudioFlowDraftReplayOutcomeWord(step.replayed))).map((step) => step.position));
 }
 
 /** The judgement as the repair's first decision reads it (`../../llm/evidence-loop/resume.ts`): codes, counts and ids, every one of them. */
