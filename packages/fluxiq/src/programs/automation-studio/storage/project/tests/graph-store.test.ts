@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createBlankAutomationStudioFlowArtifact } from "../../../model/index.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AutomationStudioProjectGraphRepository, type AutomationStudioGraphEdgeRecord, type AutomationStudioGraphNodeRecord, type AutomationStudioGraphPatchOperation, type AutomationStudioGraphPatchResult } from "../graph-store.ts";
@@ -349,3 +349,93 @@ function durable(snapshot: { nodes: AutomationStudioGraphNodeRecord[]; edges: Au
 function withoutVolatileFields(record: AutomationStudioGraphNodeRecord | AutomationStudioGraphEdgeRecord): Record<string, unknown> {
   return Object.fromEntries(Object.entries(record).filter(([key]) => key !== "revision" && key !== "updatedAt"));
 }
+
+function artifact() {
+  const flow = createBlankAutomationStudioFlowArtifact({ flowId: "flow.atomic", projectId: "project.atomic", name: "Imported", now: 1 });
+  flow.nodes = [{ id: "node.a", definitionId: "builtin.start", label: "Alpha", position: { x: 0, y: 0 } }, { id: "node.b", definitionId: "builtin.step", label: "Beta", position: { x: 300, y: 0 } }];
+  flow.edges = [{ id: "edge.ab", sourceNodeId: "node.a", targetNodeId: "node.b" }];
+  flow.regions = [{ id: "region.main", name: "Main", kind: "deterministic", nodeIds: ["node.a", "node.b"], entryPorts: [], exitPorts: [] }];
+  return flow;
+}
+const tables = ["graph_revisions", "graph_operations", "graph_nodes", "graph_edges", "flow_regions", "graph_partitions", "graph_nodes_fts", "graph_node_bounds_map", "graph_node_bounds"];
+async function counts(graph: AutomationStudioProjectGraphRepository) {
+  return Object.fromEntries(await Promise.all(tables.map(async table => [table, (await graph.sql.get<{ count: number }>(`select count(*) as count from ${table}`))!.count])));
+}
+async function complete(graph: AutomationStudioProjectGraphRepository) {
+  expect(await counts(graph)).toEqual({ graph_revisions: 1, graph_operations: 4, graph_nodes: 2, graph_edges: 1, flow_regions: 1, graph_partitions: 1, graph_nodes_fts: 2, graph_node_bounds_map: 2, graph_node_bounds: 2 });
+  expect(await graph.getFlowRevision("flow.atomic")).toBe(1);
+  expect(await graph.searchNodes({ flowId: "flow.atomic", query: "Alpha" })).toHaveLength(1);
+  const page = await graph.viewport({ flowId: "flow.atomic", bounds: { minX: -10, minY: -10, maxX: 1000, maxY: 300 } });
+  expect(page.nodes.map(node => node.nodeId)).toEqual(["node.a", "node.b"]);
+  expect(page.edges.map(edge => edge.edgeId)).toEqual(["edge.ab"]);
+}
+async function fixture(operation: (root: string, open: () => Promise<AutomationStudioProjectGraphRepository>, closeOwners: () => Promise<void>) => Promise<void>) {
+  const root = await mkdtemp(path.join(os.tmpdir(), "graph-import-atomicity-"));
+  const owners: { pool: AutomationStudioProjectDatabasePool; graph: AutomationStudioProjectGraphRepository }[] = [];
+  const closeOwners = async () => { for (const owner of owners.splice(0)) { await owner.graph.close(); await owner.pool.closeAll(); } };
+  try {
+    await operation(root, async () => {
+      const pool = new AutomationStudioProjectDatabasePool({ rootDir: root });
+      const graph = await AutomationStudioProjectGraphRepository.open({ pool, projectId: "project.atomic" });
+      owners.push({ pool, graph }); return graph;
+    }, closeOwners);
+  } finally {
+    await closeOwners();
+    const resolved = path.resolve(root);
+    if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith("graph-import-atomicity-")) throw new Error("Refusing cleanup outside owned graph-import fixture.");
+    await rm(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+}
+const failures = [
+  ["revision", "before insert on graph_revisions"],
+  ["node", "before insert on graph_nodes when new.node_id = 'node.b'"],
+  ["edge", "before insert on graph_edges"],
+  ["region", "before insert on flow_regions"],
+  ["operation", "before insert on graph_operations when new.ordinal = 1"],
+  ["partition", "before update of node_count on graph_partitions when new.node_count > 0"]
+] as const;
+
+describe("real SQLite monolithic graph import atomicity", () => {
+  it.each(failures)("rolls back %s failure including indexed rows; reopen retry imports complete graph", async (_phase, trigger) => fixture(async (_root, open, closeOwners) => {
+    let graph = await open();
+    await graph.sql.run(`create trigger injected_import_failure ${trigger} begin select raise(abort, 'injected import failure'); end`);
+    await expect(graph.importMonolithicFlowGraph(artifact(), { changedAt: 10 })).rejects.toThrow("injected import failure");
+    expect(await counts(graph)).toEqual(Object.fromEntries(tables.map(table => [table, 0])));
+    expect(await graph.sql.get("select count(*) as count from flows")).toEqual({ count: 0 });
+    await closeOwners(); graph = await open();
+    expect(await counts(graph)).toEqual(Object.fromEntries(tables.map(table => [table, 0])));
+    await graph.sql.run("drop trigger injected_import_failure");
+    expect(await graph.importMonolithicFlowGraph(artifact(), { changedAt: 11 })).toMatchObject({ status: "imported", nodeCount: 2, edgeCount: 1, regionCount: 1 });
+    await complete(graph);
+  }));
+  it("restores existing Flow metadata/revision after import fails", async () => fixture(async (_root, open) => {
+    const graph = await open(), before = artifact(); before.name = "Original";
+    await graph.upsertFlowFromArtifact(before, 7);
+    await graph.sql.run("create trigger injected_import_failure before insert on graph_nodes when new.node_id = 'node.b' begin select raise(abort, 'injected import failure'); end");
+    await expect(graph.importMonolithicFlowGraph(artifact(), { changedAt: 10 })).rejects.toThrow("injected import failure");
+    expect(await graph.sql.get("select name, graph_revision, updated_at_ms from flows where flow_id = 'flow.atomic'")).toEqual({ name: "Original", graph_revision: 7, updated_at_ms: 1 });
+    expect(await counts(graph)).toEqual(Object.fromEntries(tables.map(table => [table, 0])));
+  }));
+  it("serializes same-Flow import decisions across independent SQLite owners", async () => fixture(async (_root, open) => {
+    const first = await open(), second = await open();
+    const results = await Promise.all([first.importMonolithicFlowGraph(artifact(), { changedAt: 10 }), second.importMonolithicFlowGraph(artifact(), { changedAt: 11 })]);
+    expect(results.map(result => result.status).sort()).toEqual(["already_imported", "imported"]);
+    await complete(first); await complete(second);
+  }));
+  it("a lost COMMIT acknowledgement reopens as complete already-imported rather than claiming rollback", async () => fixture(async (root, open, closeOwners) => {
+    let graph = await open();
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir: root });
+    // A second owner does not expose the importer's connection; use its own
+    // repository below so the real transaction is intercepted, never replaced.
+    const intercepted = await AutomationStudioProjectGraphRepository.open({ pool, projectId: "project.atomic" });
+    const lease = await pool.acquire("project.atomic");
+    const transact = lease.database.transaction.bind(lease.database);
+    const spy = vi.spyOn(lease.database, "transaction").mockImplementationOnce(async operation => { await transact(operation); throw new Error("lost commit acknowledgement"); });
+    try { await expect(intercepted.importMonolithicFlowGraph(artifact(), { changedAt: 10 })).rejects.toThrow("lost commit acknowledgement"); }
+    finally { spy.mockRestore(); await intercepted.close(); await lease.release(); await pool.closeAll(); }
+    await closeOwners(); graph = await open();
+    await complete(graph);
+    expect(await graph.importMonolithicFlowGraph(artifact(), { changedAt: 11 })).toMatchObject({ status: "already_imported" });
+    await complete(graph);
+  }));
+});

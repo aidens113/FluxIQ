@@ -8,6 +8,19 @@ Automation Studio project artifacts are owned by the project file tree under
 repositories are caches used by service code and tests; they are not the source
 of truth for recordings, proposals, Flows, state assets, or runtime runs.
 
+Monolithic Flow graph import into project SQLite checks for revision 1 and
+writes the Flow, revision, nodes, edges, regions, operation history, partition
+counts and their FTS/bounds indexes in one `BEGIN IMMEDIATE` transaction.
+Every helper receives that transaction's SQL executor; it must not enqueue a
+database call behind the transaction. Concurrent import owners serialize the
+decision, and a failed write rolls back this import so a reopened owner can
+retry it. A lost COMMIT acknowledgement remains uncertain until storage is
+read again: a complete committed import returns `already_imported` on retry.
+The importer owns its transaction and must be called outside another queued
+project transaction. This does not make parent/router/subflow bootstrap writes,
+JSON documents or global projections atomic, and does not repair partial
+revision-1 imports left by an older build.
+
 The v2 scalable architecture is certified with the Phase 12 report described in
 `docs/operations/automation-studio-scale-certification.md`. Release candidates
 must attach passing evidence for the full scale matrix, 24-hour stream and
