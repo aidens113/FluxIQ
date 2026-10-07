@@ -79,13 +79,15 @@ export class ClientGatewayCommands {
     return { commandId, message, result };
   }
 
-  /** Settle the caller waiting on this command, if one still is. */
-  settle(result: ClientGatewayActionResult): void {
+  /** Bind a pending answer to its dispatched session before changing any state. */
+  settle(senderSessionId: string, result: ClientGatewayActionResult): "settled" | "unknown_command" | "wrong_session" {
     const pending = this.pending.get(result.commandId);
-    if (!pending) return;
+    if (!pending) return "unknown_command";
+    if (pending.sessionId !== senderSessionId) return "wrong_session";
     clearTimeout(pending.timeout);
     this.pending.delete(result.commandId);
     pending.resolve(result);
+    return "settled";
   }
 
   async sendPing(sessionId: string): Promise<void> {

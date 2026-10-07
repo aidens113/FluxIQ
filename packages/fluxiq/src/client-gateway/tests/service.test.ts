@@ -126,6 +126,89 @@ describe("ClientGatewayService", () => {
     await expect(response.result).resolves.toMatchObject({ commandId: response.commandId, status: "succeeded" });
   });
 
+  it("does not let another ready session settle or publish a pending command's result", async () => {
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 100 });
+    const owner = await pairClient(gateway, "extension.owner", "user.shared");
+    const other = await pairClient(gateway, "extension.other", "user.shared");
+    expect(gateway.snapshot().sessions.filter((session) => session.status === "ready")).toHaveLength(2);
+    const events: { sessionId: string; message: ClientGatewayClientMessage }[] = [];
+    const unsubscribe = gateway.onEvent((event) => {
+      if (event.type === "client.action_result") events.push({ sessionId: event.session.sessionId, message: event.message });
+    });
+    vi.useFakeTimers();
+    try {
+      const response = gateway.executeAction(owner.sessionId, { actionType: "example.action" });
+      const tracked = settledValue(response.result);
+      expect(gateway.outbound(owner.sessionId)).toContainEqual(response.message);
+      expect(gateway.outbound(other.sessionId)).not.toContainEqual(response.message);
+      await gateway.receive(other.sessionId, clientMessage("client.action_result", {
+        commandId: response.commandId, status: "succeeded", message: "counterfeit"
+      }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(tracked.value).toBeUndefined();
+      expect(events).toEqual([]);
+      await vi.advanceTimersByTimeAsync(99);
+      expect(tracked.value).toBeUndefined();
+      const authentic = { commandId: response.commandId, status: "succeeded", message: "authentic", payload: { owner: true } } as const;
+      await gateway.receive(owner.sessionId, clientMessage("client.action_result", authentic));
+      await expect(response.result).resolves.toEqual(authentic);
+      expect(events).toEqual([{ sessionId: owner.sessionId, message: expect.objectContaining({ payload: authentic }) }]);
+      await vi.advanceTimersByTimeAsync(101);
+      expect(tracked.value).toEqual(authentic);
+      expect(events).toHaveLength(1);
+    } finally {
+      await vi.runOnlyPendingTimersAsync();
+      vi.useRealTimers();
+      unsubscribe();
+    }
+  });
+
+  it("keeps the original command timeout when another ready session sends its result", async () => {
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 100 });
+    const owner = await pairClient(gateway, "extension.timeout-owner", "user.shared");
+    const other = await pairClient(gateway, "extension.timeout-other", "user.shared");
+    vi.useFakeTimers();
+    try {
+      const response = gateway.executeAction(owner.sessionId, { actionType: "example.action" });
+      const tracked = settledValue(response.result);
+      await vi.advanceTimersByTimeAsync(50);
+      await gateway.receive(other.sessionId, clientMessage("client.action_result", {
+        commandId: response.commandId, status: "succeeded", message: "counterfeit"
+      }));
+      await vi.advanceTimersByTimeAsync(49);
+      expect(tracked.value).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(response.result).resolves.toEqual({ commandId: response.commandId, status: "timed_out", message: "Client action timed out after 100ms." });
+    } finally {
+      await vi.runOnlyPendingTimersAsync();
+      vi.useRealTimers();
+    }
+  });
+
+  it("preserves unbound unknown and late action-result event compatibility", async () => {
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 100 });
+    const owner = await pairClient(gateway, "extension.late-owner", "user.shared");
+    const other = await pairClient(gateway, "extension.late-other", "user.shared");
+    const ids: string[] = [];
+    const unsubscribe = gateway.onEvent((event) => {
+      if (event.type === "client.action_result") ids.push(event.message.payload.commandId);
+    });
+    vi.useFakeTimers();
+    try {
+      await gateway.receive(other.sessionId, clientMessage("client.action_result", { commandId: "unknown-command", status: "succeeded" }));
+      const response = gateway.executeAction(owner.sessionId, { actionType: "example.action" });
+      await vi.advanceTimersByTimeAsync(100);
+      await expect(response.result).resolves.toMatchObject({ status: "timed_out" });
+      await gateway.receive(other.sessionId, clientMessage("client.action_result", { commandId: response.commandId, status: "succeeded", message: "late-unbound" }));
+      expect(ids).toEqual(["unknown-command", response.commandId]);
+      await expect(response.result).resolves.toMatchObject({ status: "timed_out" });
+    } finally {
+      await vi.runOnlyPendingTimersAsync();
+      vi.useRealTimers();
+      unsubscribe();
+    }
+  });
+
   it("sends a command's timeout unchanged, and keeps the client's own answer that arrives after it but within the answer margin", async () => {
     const gateway = new ClientGatewayService();
     const client = await pairClient(gateway, "extension.late", "user.late");
