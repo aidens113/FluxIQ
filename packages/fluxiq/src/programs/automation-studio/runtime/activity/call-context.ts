@@ -18,8 +18,11 @@
 // - **How many rows a read kept.** A test's list read answers its rows as the
 //   node's array output (`outputs`), or names them (`readRows`): "Read list ·
 //   Done" said nothing of a read the chat claimed covered every page (U-1,
-//   `run-muw60j7c-bb7c9a62`). Pages are counted nowhere a Core reader can rely
-//   on, so only rows are.
+//   `run-muw60j7c-bb7c9a62`). A build's own list read sends neither, but its
+//   evidence says what it kept (`read.extraction.recordCount`, and
+//   `pagesRead`): its card read a bare "Read list · Done" while the read said
+//   "20 records from 1 page" (F2, live-C round 3, `run-mux6naez-6c20f26e`),
+//   so that count, and its pages, are read when the answer gives no rows.
 // - **What the page calls a list a detection found.** A detection's answer
 //   names the list when the page does -- a heading or an accessible name, as
 //   `list` on its evidence (the web domain's `structure/list-name.ts`) -- so its
@@ -69,7 +72,7 @@ function draftStart(evidence: Evidence): string | undefined {
   return first ? opens(record(first.input), first.actionId) : undefined;
 }
 
-/** The rows a call's answer kept: its first array output of records, else the rows its read named. */
+/** The rows a call's answer kept: its first array output of records, else the rows its read named, else the count its read's extraction gives. */
 function rowsOf(result: unknown): number | undefined {
   const answer = record(result);
   const outputs = record(answer?.outputs);
@@ -77,9 +80,19 @@ function rowsOf(result: unknown): number | undefined {
     if (Array.isArray(value) && value.every((row) => record(row) !== undefined)) return value.length;
   }
   const named = record(record(answer?.evidence)?.[READ_ROWS]);
-  if (!Array.isArray(named?.rows)) return undefined;
+  if (!Array.isArray(named?.rows)) return extractionCount(result, "recordCount");
   const more = typeof named.rowsNotShown === "number" && Number.isSafeInteger(named.rowsNotShown) && named.rowsNotShown > 0 ? named.rowsNotShown : 0;
   return named.rows.length + more;
+}
+
+/** The member of a list read's evidence that says what it kept (the web domain's `read.extraction`). */
+const READ = "read";
+const EXTRACTION = "extraction";
+
+/** A count a list read's extraction gives (`recordCount`, `pagesRead`), when it is a whole number. */
+function extractionCount(result: unknown, key: "recordCount" | "pagesRead"): number | undefined {
+  const value = record(record(record(record(result)?.evidence)?.[READ])?.[EXTRACTION])?.[key];
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 /** The page's own name for the list a call's answer found (`evidence.list`), as a short plain label. */
@@ -103,7 +116,7 @@ function labelColumn(result: unknown): string | undefined {
 export function automationStudioActivityCallContext(): {
   decided(evidence: Evidence): void;
   sent(call: Call): { start?: string; row?: string };
-  answered(call: Call, result: unknown): { rows?: number; list?: string };
+  answered(call: Call, result: unknown): { rows?: number; pages?: number; list?: string };
   /** The address the work starts at, where it is known yet. */
   start(): string | undefined;
 } {
@@ -123,8 +136,10 @@ export function automationStudioActivityCallContext(): {
       // A read inside a pass names the pass's rows, never the list the repeat walks.
       if (!PASS.test(call.callId)) column = labelColumn(result) ?? column;
       const rows = rowsOf(result);
+      // Pages only beside rows, and only as the read's own extraction counted them.
+      const pages = rows === undefined ? undefined : extractionCount(result, "pagesRead");
       const list = listOf(result);
-      return { ...(rows !== undefined ? { rows } : {}), ...(list !== undefined ? { list } : {}) };
+      return { ...(rows !== undefined ? { rows } : {}), ...(pages !== undefined ? { pages } : {}), ...(list !== undefined ? { list } : {}) };
     },
     start: () => start
   };

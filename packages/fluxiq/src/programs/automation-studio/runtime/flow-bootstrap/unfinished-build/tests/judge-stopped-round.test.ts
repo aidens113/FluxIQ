@@ -164,3 +164,30 @@ describe("a round that stopped short with a clean test of a changed Flow (run-mu
     expect(outcome.kind).toBe("unfinished");
   });
 });
+
+// U-B3-2 of run-mux6pndp-16feb842 (moment 14; also live-C-r3 moment 14): "Judging the Flow — The
+// Flow so far ran clean from its start" was announced while six of its steps did not run (five
+// unreproducible, one only checked). The announcement says how far the test got.
+describe("the announcement before a stopped round's Flow is judged", () => {
+  it("says ran clean only when every step ran, and otherwise how many ran and how many did not", async () => {
+    for (const [outcomes, said] of [
+      [["replayed", "replayed", "replayed"], "The Flow so far ran clean from its start. Judging what the test did against what you asked."],
+      [["replayed", "verified", "unreproducible"], "The test ran 1 of the Flow's 3 steps from its start; 1 was only checked, not run, and 1 could not run. Judging what the test did against what you asked."]
+    ] as const) {
+      const announced: string[] = [];
+      await build([() => finished(firstFlow()), (request) => repeatsRefused(changed(request.repair!.seed))], [NO_WITH_ADVICE, YES], {
+        announce: ({ label, text }) => { if (label === "Judging the Flow") announced.push(text ?? ""); },
+        test: async (steps) => {
+          steps.forEach((each, index) => {
+            const word = outcomes[index] ?? "replayed";
+            each.replayed = word === "verified"
+              ? { step: each.position, actionId: each.actionId, status: "replayed", mode: "verify", resultCode: "core.replay.verified" }
+              : { step: each.position, actionId: each.actionId, status: word };
+          });
+          return undefined;
+        }
+      });
+      expect(announced.at(-1)).toBe(said);
+    }
+  });
+});

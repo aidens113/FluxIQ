@@ -207,7 +207,7 @@ import { automationStudioFlowBootstrapJudgementProgress, automationStudioFlowBoo
 import { automationStudioFlowBootstrapRepliesUnreadable } from "./replies-unreadable.ts";
 import { automationStudioFlowBootstrapJudgeAtReserve } from "./reserve-judging.ts";
 import { automationStudioFlowBootstrapProviderUnavailable } from "./provider-unavailable.ts";
-import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapRepairingNotRunSaid, automationStudioFlowBootstrapStopSaid } from "./not-done.ts";
+import { automationStudioFlowBootstrapRepairingJudgedSaid, automationStudioFlowBootstrapRepairingNotRunSaid, automationStudioFlowBootstrapStopSaid, automationStudioFlowBootstrapTestReachSaid } from "./not-done.ts";
 import { automationStudioFlowBootstrapRoundEnding } from "./round-ending.ts";
 import { automationStudioFlowBootstrapRoundFunding } from "./round-funding.ts";
 import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall.ts";
@@ -462,7 +462,7 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
         const stoppedJudging = await automationStudioFlowBootstrapJudgeAtReserve({
           stopped: !atReserve ? "short" : ending.kind === "budget" && ending.bound === "calls" ? "calls" : "cost", judgement: judged.judgement, seed: judged.seed, progress: ending.progress, accept: input.acceptStopped,
           judge: (loop) => {
-            if (!atReserve) input.announce?.({ phase: "verifying", label: "Judging the Flow", text: "The Flow so far ran clean from its start. Judging what the test did against what you asked." });
+            if (!atReserve) input.announce?.({ phase: "verifying", label: "Judging the Flow", text: `${automationStudioFlowBootstrapTestReachSaid(judged.seed)} Judging what the test did against what you asked.` });
             return judgeAccounted(input, judge, { round, loop }, spent, clock() - startedAt);
           }
         });

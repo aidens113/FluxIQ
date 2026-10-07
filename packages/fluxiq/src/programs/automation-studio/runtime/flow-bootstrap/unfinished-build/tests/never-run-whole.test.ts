@@ -14,6 +14,7 @@
 // while money and rounds allow, and an ending that comes then says the Flow as
 // it stands was never run whole.
 import { describe, expect, it } from "vitest";
+import { automationStudioFlowBootstrapRepairingNotRunSaid } from "../not-done.ts";
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplaySignature, type AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepCarried, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopResult } from "../../../llm/index.ts";
 import {
@@ -138,8 +139,8 @@ describe("a round whose Flow holds steps that never ran in this build", () => {
     expect(requests[2]!.repair!.resume.judgement).toMatchObject({ test: "not_tested", notRunInThisBuild: [1, 2] });
     // The person is told the same, and never that a test runs that does not (UI-4).
     expect(announced.filter((text) => text.startsWith("Running the Flow") || text.includes("Running the Flow as far as it got"))).toEqual([]);
-    expect(announced).toContain("The Flow could not be tested from its start: steps 1 and 2 came from the Flow being changed and have not run in this build. Repairing it live, running each again so the whole Flow can be tested and judged.");
-    expect(announced).toContain("The Flow could not be tested from its start: steps 1 and 2 came from the Flow being changed and have not run in this build. The last round ran none of them again. Repairing it live, running each again so the whole Flow can be tested and judged.");
+    expect(announced).toContain("The Flow could not be tested from its start: 2 of its steps came from the Flow being changed and have not run in this build. Repairing it live, running each again so the whole Flow can be tested and judged.");
+    expect(announced).toContain("The Flow could not be tested from its start: 2 of its steps came from the Flow being changed and have not run in this build. The last round ran none of them again. Repairing it live, running each again so the whole Flow can be tested and judged.");
   });
 
   it("does not end the build on a round that handed back the carried Flow unchanged on refused repeats", async () => {
@@ -167,7 +168,7 @@ describe("a round whose Flow holds steps that never ran in this build", () => {
     expect(outcome.kind).toBe("unfinished");
     if (outcome.kind !== "unfinished") return;
     expect(outcome.ending).toMatchObject({ kind: "budget_exhausted", bound: "rounds", tried: { tested: "not_tested", stepsInFlow: 3 } });
-    expect(outcome.ending.message).toContain("The Flow as it stands (3 steps) was never run whole from its start: steps 1 and 2 came from the Flow being changed and were not run again in this build, so it was never tested or judged.");
+    expect(outcome.ending.message).toContain("The Flow as it stands (3 steps) was never run whole from its start: 2 of its steps came from the Flow being changed and were not run again in this build, so it was never tested or judged.");
   });
 
   // Merged with t195-w37 (2026-10-03): a measured stall still ends the build, but "not finished" -- "not doable"
@@ -209,5 +210,17 @@ describe("what counts as progress for a round that could not be measured", () =>
 
   it("is never a changed Flow alone between two measured rounds", () => {
     expect(automationStudioFlowBootstrapJudgementProgress(judgement({ tested: "replay_failed", failedSteps: [2] }), judgement({ tested: "replay_failed", failedSteps: [2], flowSignature: "b" }))).toEqual([]);
+  });
+});
+
+// R3-U-4 of the live-C round-3 UI review (run-mux6naez-6c20f26e, moments 20-26): the repair's heading
+// read "steps 1, 2, 4 and 5 came from the Flow being changed", five times, in the draft's own step
+// numbers, which the person's Flow numbers its own way. It says how many.
+describe("the person is told how many steps did not run, never the draft's step numbers", () => {
+  it("counts them", () => {
+    const said = automationStudioFlowBootstrapRepairingNotRunSaid([1, 2, 4, 5], true);
+    expect(said).toBe("The Flow could not be tested from its start: 4 of its steps came from the Flow being changed and have not run in this build. The last round ran none of them again. Repairing it live, running each again so the whole Flow can be tested and judged.");
+    expect(said).not.toMatch(/steps? \d/u);
+    expect(automationStudioFlowBootstrapRepairingNotRunSaid([3], false)).toBe("The Flow could not be tested from its start: one of its steps came from the Flow being changed and has not run in this build. Repairing it live, running it again so the whole Flow can be tested and judged.");
   });
 });

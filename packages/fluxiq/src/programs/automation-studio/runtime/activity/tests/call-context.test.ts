@@ -118,3 +118,24 @@ describe("a test's repeated step names its row, and its list read its rows", () 
     expect(ended()[2]!.detail?.title).toBe("Clicking “Confirm”");
   });
 });
+
+// F2 of the week review (live-C-r3 U-read, run-mux6naez-6c20f26e moments 04, 08-12; step 0016): a
+// build's own list read answered "20 records from 1 page" in its evidence
+// (`read.extraction.recordCount`, `pagesRead`), and its card still read a bare "Read list · Done".
+describe("a build's own list read says how many rows it kept, and from how many pages", () => {
+  it("reads the count the read's evidence gives when it sends no rows", async () => {
+    const read = { node: "web.output.dom-extract_list", parameters: { extractList: { handle: "extraction.2" } } };
+    const observed = observeAutomationStudioEvidenceLoop({
+      ...loopInput(),
+      executeTool: async () => ({
+        kind: "llm_evidence_tool_execution",
+        evidence: { ok: true, node: "web.output.dom-extract_list", status: "succeeded", read: { status: "succeeded", extraction: { recordCount: 20, pagesRead: 1, truncated: true } } },
+        effectApplied: false,
+        resultCode: "web.inspect.succeeded"
+      }) as never
+    });
+    await inScope(() => observed.executeTool({ callId: "extract-results-page1", toolId: "core.run_node", value: read }));
+    expect(ended()[0]!.detail?.text).toBe("Result: web.inspect.succeeded · Rows: 20 · Pages: 1 · Node: web.output.dom-extract_list");
+    expect(activityActionOf(ended()[0]!)).toMatchObject({ kind: "read", outcome: "done", result: "20 rows from 1 page" });
+  });
+});
