@@ -130,8 +130,10 @@ async function runGraphFromSeed(
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const startedAt = seed?.startedAt ?? options.now?.() ?? Date.now();
   try {
+    await options.commandRun?.checkpoint();
     return await runGraphToTrace(flow, options, seed, onExecutedTrace);
   } catch (error) {
+    await options.commandRun?.stop("executor.graph_stopped");
     const fault = automationStudioFaultFromThrownError(error, { now: options.now?.() ?? Date.now(), aborted: options.signal?.aborted === true });
     return {
       status: "failed",
@@ -159,7 +161,10 @@ async function runGraphToTrace(
   // Recorded before the first node, so every dispatch is told to withhold it too.
   withholding.supply(options.inputs ?? {}, options.declaredInputDefaults);
   recordDeclaredStateBindings(flow, options, withholding);
-  const executed = await executeAutomationStudioGraph(flow, options, withholding, runState, seed);
+  const start = () => executeAutomationStudioGraph(flow, options, withholding, runState, seed);
+  const running = options.commandRun ? options.commandRun.own(start) : start();
+  const executed = await running;
+  await options.commandRun?.checkpoint();
   for (const attempt of executed.attempts) {
     const childWithheld = attempt.childTrace ? withheldBySavedTrace.get(attempt.childTrace) : undefined;
     if (childWithheld) withholding.include(childWithheld);
@@ -387,6 +392,7 @@ async function executeAutomationStudioGraph(
   // carry. A resumed run's first pass only leaves the parked node, which its
   // `stepsTaken` already counted, so it is not a second step either.
   for (let step = seed?.stepsTaken ?? 0; step < maxSteps; step += 1) {
+    await options.commandRun?.checkpoint();
     if (options.signal?.aborted) {
       return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
     }
@@ -395,6 +401,7 @@ async function executeAutomationStudioGraph(
     const held = options.runControl?.checkpoint({ nodeId: currentNode.id, step });
     if (held) {
       const released = await held;
+      await options.commandRun?.checkpoint();
       if (released.outcome === "stop" || options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: released.outcome === "stop" ? released.message : "Run cancelled." };
       }
@@ -425,6 +432,7 @@ async function executeAutomationStudioGraph(
       // that judged the state and found it not met asks state routing first,
       // and a way on skips the dispatch entirely (`state-routing/`).
       const readiness = await automationStudioAwaitNodeReadiness(currentNode, options, `${currentNode.id}.attempt.${nextAttemptNumber()}`);
+      await options.commandRun?.checkpoint();
       if (options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
       }
@@ -439,8 +447,9 @@ async function executeAutomationStudioGraph(
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
-          () => nodeAttemptWithAdaptationIds(currentNode!, { attemptId: `${currentNode!.id}.attempt.${nextAttemptNumber()}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } })
+          () => nodeAttemptWithAdaptationIds(currentNode!, { attemptId: `${currentNode!.id}.attempt.${nextAttemptNumber()}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } }), options.commandRun
         );
+      await options.commandRun?.checkpoint();
       // What the ladder and the recorded state contributed is stamped once, here,
       // so every attempt carries it however the node was executed.
       const attempt: AutomationStudioNodeAttemptTrace = {
@@ -499,6 +508,7 @@ async function executeAutomationStudioGraph(
           }
         });
         attempts[attemptIndex] = { ...attempts[attemptIndex]!, ask: { askId: ask.askId, kind: ask.kind, parks: ask.parks, status: "pending", ...(personNeeded ? { personNeeded: true as const } : {}) } };
+        await options.commandRun?.checkpoint();
         const undelivered = await openAutomationStudioAsk(options, ask);
         if (undelivered) {
           return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: undelivered };
@@ -508,6 +518,7 @@ async function executeAutomationStudioGraph(
           let settlement: Awaited<ReturnType<typeof settleAskInPlace>>;
           try {
             settlement = await settleAskInPlace(options, parked);
+            await options.commandRun?.checkpoint();
           } catch (error) {
             // The thread could not be read: the wait is over, and nobody answered.
             emitAutomationStudioActivityAskResolved(ask, "cancelled", "running");
@@ -583,6 +594,7 @@ async function executeAutomationStudioGraph(
         // why ("the page was busy", D8); it opens no "Recovery started" row of
         // its own (D5): the recovery thought below says what recovery chose.
         emitAutomationStudioActivityStepRecovering({ nodeId: failedNode.id, label: failedNode.label, definitionId: failedNode.definitionId, parameters: failedNode.parameterValues, failureCode: attempts[attemptIndex]!.failure?.code });
+        await options.commandRun?.checkpoint();
         const ladder = await runAutomationStudioRecoveryLadder({
           flow,
           node: failedNode,
@@ -596,6 +608,7 @@ async function executeAutomationStudioGraph(
           mayAbsorb,
           executeNode: async (interference) => {
             const cleared = await executeAutomationStudioNode(flow, interference, values, options, nextAttemptNumber(), withholding, runState);
+            await options.commandRun?.checkpoint();
             attempts.push(regionId ? { ...cleared, regionId } : cleared);
             for (const [key, value] of Object.entries(cleared.outputs)) {
               values[`${interference.id}.${key}`] = value;
@@ -623,7 +636,9 @@ async function executeAutomationStudioGraph(
           });
           recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "retried", wait.waitMs);
           pendingRetry = { attemptNumber: arrival.attempts + 1, maxAttempts: retryPolicy.maxAttempts, backoffMs: wait.waitMs, rung: ladder.rung, previousAttemptId: attempt.attemptId };
+          await options.commandRun?.checkpoint();
           await automationStudioRetryDelay(options, wait.waitMs);
+          await options.commandRun?.checkpoint();
           if (options.signal?.aborted) return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: failedNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
           continue;
         }

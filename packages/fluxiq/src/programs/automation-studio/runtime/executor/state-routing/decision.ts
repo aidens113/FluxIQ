@@ -5,7 +5,7 @@ import {
   automationStudioRouteEffectHolds,
   automationStudioSignRouteState,
   observeAutomationStudioRouteState
-} from "../../route-state/index.ts";
+} from "../../route-state/passive/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { chooseAutomationStudioEdge } from "../graph-navigation.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioStateRouteDirection, AutomationStudioStateRoutingRecord } from "../contracts.ts";

@@ -1,6 +1,8 @@
 import { bindTrustedModuleIdentity, type TrustedModuleBuildIdentity } from "../../../runtime/build-identity/modules/index.ts"; import { readCoreRuntimeBuildIdentity } from "../../../runtime/build-identity/index.ts"; import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path"; import { AutomationStudioCommandContextController } from "./service/command-context/index.ts";
+import { AutomationStudioCommandExecutionController, AutomationStudioRequiredCommandRun } from "./service/command-execution/index.ts";
+import type { AutomationStudioRuntimeSessionRunInput } from "./service/runtime-session/index.ts";
 import type { AutomationStudioSnapshot } from "../api/index.ts";
 import type { AutomationStudioHierarchyChildrenPage, AutomationStudioHierarchyNode, AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectChangeFeedPage, AutomationStudioProjectHierarchy } from "../api/contracts.ts";
 import {
@@ -369,7 +371,7 @@ export class AutomationStudioService {
   private readonly flowRunAudit: AutomationStudioFlowRunAudit;
   private readonly recordingDeletion: AutomationStudioRecordingDeletion;
   /** Run datasets (CD16, CD17), and the conversation a person and FluxIQ talk in: reached as fields so the frozen facade gains no methods (C8). */
-  readonly runDatasets: AutomationStudioRunDatasets; readonly commandContexts: AutomationStudioCommandContextController;
+  readonly runDatasets: AutomationStudioRunDatasets; readonly commandContexts: AutomationStudioCommandContextController; readonly commandExecution: AutomationStudioCommandExecutionController;
   readonly conversations: AutomationStudioConversations;
   private readonly proposalApproval: AutomationStudioProposalApproval;
   private readonly locks = new AutomationStudioServiceLocks();
@@ -444,6 +446,7 @@ export class AutomationStudioService {
     this.normalizationReview = new AutomationStudioNormalizationReview(this.recordings, automationStudioFacadePorts(this));
     this.flowRunAudit = new AutomationStudioFlowRunAudit(automationStudioFacadePorts(this));
     this.runDatasets = new AutomationStudioRunDatasets(this.projects, this.runtimeProjectDatabasePool); this.commandContexts = new AutomationStudioCommandContextController({ ...(this.projectDatabasePool ? { pool: this.projectDatabasePool } : {}), getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId) });
+    this.commandExecution = new AutomationStudioCommandExecutionController({ ...(this.projectDatabasePool ? { pool: this.projectDatabasePool } : {}), getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId) });
     this.conversations = new AutomationStudioConversations(this.runtimeProjectDatabasePool).bindDomainInstructions(() => this.llmEvidenceRuntime?.systemInstructions?.text); // The chat is told what every Flow model call is told.
     this.recordingDeletion = new AutomationStudioRecordingDeletion(this.projectPaths, this.recordingPaths, this.indexes, this.objectDocuments, this.recordings, this.repositories, automationStudioFacadePorts(this), this.objectStore, this.recordingStateIndexes);
     this.proposalApproval = new AutomationStudioProposalApproval(this.projectPaths, this.projects, this.recordings, this.repositories, this.flowSubflowMigration, automationStudioFacadePorts(this));
@@ -481,7 +484,7 @@ export class AutomationStudioService {
 
   async close(): Promise<void> {
     const errors: unknown[] = [];
-    for (const close of [() => this.commandContexts.close(), () => this.parkedRunExpiry.close(), () => this.uiCache.close(), () => this.runtimeProjectDatabasePool?.closeAll()]) try { await close(); } catch (error) { errors.push(error); }
+    for (const close of [() => this.commandExecution.close(), () => this.commandContexts.close(), () => this.parkedRunExpiry.close(), () => this.uiCache.close(), () => this.runtimeProjectDatabasePool?.closeAll()]) try { await close(); } catch (error) { errors.push(error); }
     if (errors.length) throw new AggregateError(errors, "automation_studio.close_failed");
   }
 
@@ -2484,25 +2487,9 @@ export class AutomationStudioService {
     } });
   }
 
-  async runRuntimeSession(input: {
-    projectId?: string | null;
-    runId?: string; newRunId?: string;
-    flow?: AutomationStudioFlowDocument;
-    flowId?: string;
-    inputs?: JsonObject;
-    maxSteps?: number;
-    authorizedDomainIds?: string[];
-    adaptiveMode?: AutomationStudioRuntimeInterventionMode;
-    dryRunLlm?: boolean;
-    authorizedExternalSideEffects?: boolean;
-    subflowId?: string;
-    idempotencyKey?: string;
-    /** A person asked the model into this run: who (whose key pays) and what for. Nothing is authorized by it. */
-    llmExecution?: AutomationStudioRuntimeSessionLlm;
-    /** The lasting consequences the person already allowed this run's actions to have. Anything else is asked about act by act. */
-    permittedConsequences?: AutomationStudioActionConsequence[];
-    useReusableContext?: true; /** Which of this run's result checks `llmExecution`'s caller pays for; absent is every one (`resolveAutomationStudioResultCheckProvider`). */ resultCheckCallerPays?: AutomationStudioResultCheckCallerPays;
-  }): Promise<AutomationStudioRuntimeSession> { return await withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => withAutomationStudioRunActivity({ projectId: input.projectId, flowId: input.flowId ?? input.flow?.flowId }, async () => {
+  async runRuntimeSession(input: AutomationStudioRuntimeSessionRunInput): Promise<AutomationStudioRuntimeSession> {
+    const commands = new AutomationStudioRequiredCommandRun(input, Boolean(this.projectDatabasePool)), requiredCommands = commands.required;
+    return await withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => withAutomationStudioRunActivity({ projectId: input.projectId, flowId: input.flowId ?? input.flow?.flowId }, async () => {
     // The run executes under the mode and the authorizations its caller asked
     // for. A lasting real-world consequence is gated one action at a time by
     // `permittedConsequences` and the action permission gate.
@@ -2516,16 +2503,18 @@ export class AutomationStudioService {
     if (input.projectId && idempotencyKey) {
       // A failed read refuses the run: read as "no sessions", it would start a duplicate under the same key.
       const matching = (await this.listRuntimeSessions(input.projectId)).find((candidate) => candidate.metadata?.idempotencyKey === idempotencyKey);
-      if (matching) return matching;
+      if (matching) return commands.idempotent(matching);
     }
     const existing = input.projectId && input.runId ? await this.getRuntimeSession(input.projectId, input.runId) : null;
+    commands.validateExisting(existing);
     if (existing?.status === "cancelled") return existing;
     const startInput: Parameters<AutomationStudioService["startRuntimeSession"]>[0] = {};
     for (const field of ["projectId", "flow", "flowId", "inputs", "authorizedDomainIds"] as const) if (input[field] !== undefined) Object.assign(startInput, { [field]: input[field] });
     const requestedRunId = await automationStudioRequestedRunId({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId) }, input);
     if (requestedRunId) startInput.runId = requestedRunId;
     if (idempotencyKey) startInput.metadata = { ...(startInput.metadata ?? {}), idempotencyKey };
-    const runInterventionMode = normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
+    if (requiredCommands) startInput.metadata = { ...(startInput.metadata ?? {}), commandOutcomeMode: "required" };
+    const runInterventionMode = requiredCommands ? "no_llm_intervention" : normalizeAutomationStudioRuntimeInterventionMode(input.adaptiveMode);
     const adaptiveRunRequested = runInterventionMode !== "no_llm_intervention";
     if (adaptiveRunRequested) startInput.metadata = { ...(startInput.metadata ?? {}), adaptiveRuntime: true, adaptiveMode: runInterventionMode };
     session = existing ?? await admitAutomationStudioRuntimeSession({ admissions: this.adaptiveRuntimeAdmissions, listRuntimeSessions: (projectId) => this.listRuntimeSessions(projectId), startRuntimeSession: () => this.startRuntimeSession(startInput) }, input.projectId, adaptiveRunRequested); bindAutomationStudioActivityRun(session.runId);
@@ -2570,7 +2559,7 @@ export class AutomationStudioService {
     // Strict: an unreadable canonical Flow fails the run rather than running it without its compilation check and adaptation context.
     const canonical = input.projectId && session.metadata?.canonicalFlow === true ? await this.getFlow(input.projectId, session.flowId) : undefined;
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");
-    adaptationContext = input.projectId && canonical ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input) : null;
+    adaptationContext = !requiredCommands && input.projectId && canonical ? runtimeAdaptationContextWithRunOverride(await this.resolveRuntimeAdaptationContext({ projectId: input.projectId, flow: canonical, currentRunId: session.runId }), input) : null;
     if (adaptationContext && input.llmExecution) adaptationContext = automationStudioRuntimeAdaptationContextForLlmRun(adaptationContext, input.llmExecution.intent);
     if (adaptationContext) { graphOptions.recoveryBudget = recoveryBudgetFromRuntimeAdaptationContext(adaptationContext); graphOptions.allowLlmDiagnosis = adaptationContext.behavior.invokeLlm; }
     // Decided here rather than at the verification call site because the state
@@ -2591,6 +2580,7 @@ export class AutomationStudioService {
         }
       });
     }
+    if (requiredCommands) await commands.bind(this.commandExecution, { projectId: input.projectId!, runId: session.runId, rootFlowId: session.flowId, signal: abortController.signal }, graphOptions);
     const runtimeCanonical = canonical && input.projectId ? await this.materializeRecordingDerivedFlow(input.projectId, canonical) : canonical;
     const runtimeFlow = input.projectId ? await this.materializeRecordingDerivedDocument(input.projectId, session.flow) : session.flow;
     if (input.projectId && runtimeCanonical) {
@@ -2619,7 +2609,7 @@ export class AutomationStudioService {
           && selectedFlow.metadata?.parentSubflowId === route.selectedSubflow.subflowId);
         let routedFailedTraceAttempt: AutomationStudioNodeAttemptTrace | undefined;
         const trace = route.selectedSubflow && selectedFlow && selectedFlowIsOwned
-          ? await runCanonicalAutomationStudioFlow(selectedFlow, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { routedFailedTraceAttempt = automationStudioUnresolvedFailedAttempt(executed.attempts); })
+          ? await commands.execute(async () => runCanonicalAutomationStudioFlow(selectedFlow, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { routedFailedTraceAttempt = automationStudioUnresolvedFailedAttempt(executed.attempts); }))
           : {
             status: "failed" as const,
             startedAt,
@@ -2631,6 +2621,7 @@ export class AutomationStudioService {
               ? `Router selected Subflow ${route.selectedSubflow.subflowId}, but its graph Flow ${selectedFlowId || "was not configured"} could not be loaded or did not prove matching Subflow ownership.`
               : route.diagnostics.map((diagnostic) => diagnostic.message).join(" ")
           };
+        await commands.checkpoint();
         const next: AutomationStudioRuntimeSession = {
           ...session, status: trace.status,
           startedAt: session.startedAt ?? startedAt,
@@ -2658,6 +2649,7 @@ export class AutomationStudioService {
             }
           }] : []
         }, adaptationContext);
+        if (requiredCommands) { await this.saveFlowRunDetail(routedRunDetail); return next; }
         const annotatedDetail = await annotateAutomationStudioRunDetailWithRecoveryState({ detail: routedRunDetail, recovering: Boolean(adaptationContext), saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail), annotate: (detail) => this.maybeAnnotateRunDetailWithRuntimeLlm({
           detail,
           context: adaptationContext,
@@ -2705,8 +2697,9 @@ export class AutomationStudioService {
           : "Top-level orchestration Flow has no Router-selected Subflow execution path."
       }
       : runtimeCanonical
-      ? await runCanonicalAutomationStudioFlow(runtimeCanonical, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { failedTraceAttempt = automationStudioUnresolvedFailedAttempt(executed.attempts); })
-      : await runAutomationStudioGraph(runtimeFlow, graphOptions);
+      ? await commands.execute(async () => runCanonicalAutomationStudioFlow(runtimeCanonical, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { failedTraceAttempt = automationStudioUnresolvedFailedAttempt(executed.attempts); }))
+      : await commands.execute(async () => runAutomationStudioGraph(runtimeFlow, graphOptions));
+    await commands.checkpoint();
     const next: AutomationStudioRuntimeSession = {
       ...session,
       status: trace.status,
@@ -2715,6 +2708,7 @@ export class AutomationStudioService {
       trace, metadata: { ...automationStudioMetadataWithFlowVersions(session.metadata, automationStudioRunFlowVersions([runtimeCanonical ? automationStudioFlowGraphVersion({ flow: runtimeCanonical }) : undefined])), ...(representationDiagnostic ? { compatibilityDiagnostics: [representationDiagnostic] } : {}) }
     };
     if (input.projectId) await this.writeRuntimeSession(input.projectId, next);
+    if (requiredCommands) { await this.saveFlowRunDetail(runtimeSessionToFlowRunDetail(next, input.projectId!)); return next; }
     if (input.projectId && adaptationContext) {
       const runDetail = runtimeRunDetailWithAdaptationContext(runtimeSessionToFlowRunDetail(next, input.projectId), adaptationContext);
       const annotatedDetail = await annotateAutomationStudioRunDetailWithRecoveryState({ detail: runDetail, recovering: true, saveFlowRunDetail: (detail) => this.saveFlowRunDetail(detail), annotate: (detail) => this.maybeAnnotateRunDetailWithRuntimeLlm({
@@ -2740,9 +2734,11 @@ export class AutomationStudioService {
     }
     return input.projectId ? await judged(await verifyRunResult({ ports: resultPorts, projectId: input.projectId, session: next, ...(runtimeCanonical ? { flow: canonicalFlowDocument(runtimeCanonical) } : { flow: runtimeFlow }), ...(adaptationContext ? { policy: adaptationContext.policy } : {}), ...(runResultCheck ? { resultCheck: { checked: runResultCheck.checked, epoch: runResultCheck.epoch, code: runResultCheck.code, reason: runResultCheck.reason } } : {}), signal: abortController.signal })) : next;
     } catch (error) {
+      if (requiredCommands) return await commands.endFailure({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), writeRuntimeSession: (projectId, ended) => this.writeRuntimeSession(projectId, ended) }, input.projectId, session, error);
       // A run that throws before it records an outcome is ended failed, so it neither stays active nor holds off the next adaptive run.
       if (!input.projectId || !session) throw error; await this.runDatasets.processEndedRunDatasets({ projectId: input.projectId, runId: session.runId }); /* A run that threw is processed too; processing never replaces its error. */ const ending = await endAutomationStudioRuntimeSessionAfterThrow({ getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId), writeRuntimeSession: (projectId, ended) => this.writeRuntimeSession(projectId, ended), settleAfterThrow: async (ended) => settleAutomationStudioRunJudgedPromotions({ ports: judgedPorts, projectId: ended.projectId ?? input.projectId!, flowId: ended.flowId, context: adaptationContext, session: await settleAutomationStudioRunJudgedReauthor({ ports: judgedPorts, projectId: ended.projectId ?? input.projectId!, flowId: adaptationContext?.flowId, session: ended, reason: "run_errored" }), reason: "run_errored" }) }, input.projectId, session.runId, error); if ("session" in ending) return ending.session; throw ending.error; // A run whose project store went away hands back its ended session (t258).
     } finally {
+      commands.close();
       if (input.projectId && session) { this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`); this.runControl.close(input.projectId, session.runId); }
     }
   }, { readRecord: async (ended) => (input.projectId ? (await this.getFlowRunDetail(input.projectId, ended.runId))?.metadata : undefined) /* A failed run's last row says what came back and why, from its record (`activity/run.ts`, t194 U3). */ })); }

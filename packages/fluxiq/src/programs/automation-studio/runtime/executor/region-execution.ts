@@ -1,20 +1,22 @@
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 
-export async function executeWithRegionTimeout(run: (signal: AbortSignal) => Promise<AutomationStudioNodeAttemptTrace>, timeoutMs: number, parentSignal: AbortSignal | undefined, timeoutAttempt: () => AutomationStudioNodeAttemptTrace): Promise<AutomationStudioNodeAttemptTrace> {
+export async function executeWithRegionTimeout(run: (signal: AbortSignal) => Promise<AutomationStudioNodeAttemptTrace>, timeoutMs: number, parentSignal: AbortSignal | undefined, timeoutAttempt: () => AutomationStudioNodeAttemptTrace, commandRun?: AutomationStudioGraphExecutionOptions["commandRun"]): Promise<AutomationStudioNodeAttemptTrace> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let abortListener: (() => void) | undefined;
   try {
-    const bounds = new Promise<AutomationStudioNodeAttemptTrace>((resolve) => {
-      timer = setTimeout(() => { controller.abort(new Error("Region timeout.")); resolve(timeoutAttempt()); }, timeoutMs);
+    const bounds = new Promise<AutomationStudioNodeAttemptTrace>((resolve, reject) => {
+      const stop = (attempt: AutomationStudioNodeAttemptTrace) => { controller.abort(new Error("Region stopped.")); void Promise.resolve(commandRun?.stop("executor.region_stopped")).then(() => resolve(attempt), reject); };
+      timer = setTimeout(() => stop(timeoutAttempt()), timeoutMs);
       if (parentSignal) {
-        abortListener = () => { controller.abort(parentSignal.reason); resolve({ ...timeoutAttempt(), status: "cancelled", message: "Run cancelled." }); };
+        abortListener = () => stop({ ...timeoutAttempt(), status: "cancelled", message: "Run cancelled." });
         parentSignal.addEventListener("abort", abortListener, { once: true });
         if (parentSignal.aborted) abortListener();
       }
     });
-    return await Promise.race([run(controller.signal), bounds]);
+    const start = () => run(controller.signal); const running = commandRun ? commandRun.own(start) : start();
+    return await Promise.race([running, bounds]);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     if (parentSignal && abortListener) parentSignal.removeEventListener("abort", abortListener);

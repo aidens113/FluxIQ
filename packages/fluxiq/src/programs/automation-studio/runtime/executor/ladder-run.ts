@@ -59,8 +59,10 @@ export type AutomationStudioLadderRunInput = {
  * recovery node, or the model.
  */
 export async function runAutomationStudioRecoveryLadder(input: AutomationStudioLadderRunInput): Promise<AutomationStudioLadderOutcome> {
+  await input.options.commandRun?.checkpoint();
   let attemptsForNode = input.attemptsForNode;
   for (;;) {
+    await input.options.commandRun?.checkpoint();
     const decision = chooseAutomationStudioRecovery(
       input.flow,
       input.node,
