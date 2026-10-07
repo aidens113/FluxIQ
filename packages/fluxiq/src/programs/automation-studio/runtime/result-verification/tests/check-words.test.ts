@@ -29,4 +29,19 @@ describe("the check's card for a build's test", () => {
   it("still says a finished run's rows as rows that came back", () => {
     expect(automationStudioResultCheckWords(answered("13 records stored, across 1 record set."))).toMatch(/^13 rows came back\. /u);
   });
+
+  // Lane A round 4, `run-muxkzdjw-31a13429` (moment 8): a cart Flow that reads no list was carded "Didn't
+  // pass: no rows would be stored, and no step presses "Add to cart"", and round 3's pass "Passed: no rows
+  // would be stored". A Flow that writes to no dataset has no rows to count, as a run's ending already
+  // says (`../../activity/wording/run-ending.ts`, run `run-muw5zv4m-52d83027`).
+  it("says no rows at all for a Flow that stores into no dataset, a build's test or a finished run", () => {
+    const shape = "; the Flow's steps were web.output.browser-navigate, web.output.dom-click.";
+    expect(automationStudioResultCheckWords(answered(`0 records would be stored, in 0 datasets${shape}`))).toBe("The result was judged to answer the request.");
+    expect(automationStudioResultCheckWords(answered(`0 records stored, across 0 record sets${shape}`))).toBe("The result was judged to answer the request.");
+  });
+
+  it("still says none for a Flow whose read would store into a dataset and found nothing", () => {
+    expect(automationStudioResultCheckWords(answered("0 records would be stored, in 1 dataset; the Flow's steps were web.output.dom-extract_list."))).toMatch(/^No rows would be stored\. /u);
+    expect(automationStudioResultCheckWords(answered("0 records stored, across 1 record set."))).toMatch(/^No rows came back\. /u);
+  });
 });

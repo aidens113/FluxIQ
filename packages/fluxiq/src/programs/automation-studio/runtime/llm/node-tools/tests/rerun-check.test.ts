@@ -61,7 +61,9 @@ type Steps = Array<{ input: JsonObject; ranWith?: JsonObject; acts?: string[]; d
 const stepsOf = (result: unknown): Steps => (result as { steps: Steps }).steps;
 
 describe("a rerun of a step whose act was already done while building", () => {
-  it("checks the new argument and does not press Confirm on Tom's request", async () => {
+  // Since run `run-muxkzdjw-31a13429` (C2b) a check that ran nothing no longer moves the step to Tom's Confirm either:
+  // the step keeps Amara's, as it ran, and the model is told another control is a new call.
+  it("checks the new argument, does not press Confirm on Tom's request, and keeps the step on Amara's", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(confirmAmara)
       .mockResolvedValueOnce(rerun("Confirm Tom"))
@@ -78,16 +80,17 @@ describe("a rerun of a step whose act was already done while building", () => {
     // The check is sent where the step found the page, like the dry run's.
     expect(site.executeTool.mock.calls[2]![0].value).toMatchObject({ replay: "verify", from: { location: "requests" } });
     expect([...site.accepted]).toEqual(["Amara"]);
-    // Verified: the step that does a1 now runs with the new argument, in the form the host resolved it to.
+    // Verified, but on another control: the step that does a1 keeps Amara's Confirm, as it ran.
     const actStep = stepsOf(result).find((step) => step.acts?.includes("a1"));
-    expect(actStep).toMatchObject({ input: { target: "Confirm Tom" }, ranWith: { target: "#confirm-tom" }, disposition: "kept" });
-    // And the model is told plainly why it was checked and not done.
+    expect(actStep).toMatchObject({ input: { target: "Confirm Amara" }, ranWith: { target: "#confirm-amara" }, disposition: "kept" });
+    // And the model is told plainly why it was checked, not done, and not taken.
     const answered = shownAt(decide, 2).find((entry) => entry.callId === "rerun.1")?.value;
-    expect(answered).toMatchObject({ code: "core.replay.verified", rerunCheck: { checked: true, doneAgain: false, took: true, acts: ["a1"] } });
+    expect(answered).toMatchObject({ code: "core.replay.verified", rerunCheck: { checked: true, doneAgain: false, took: false, acts: ["a1"] } });
     const detail = String((answered?.rerunCheck as JsonObject).detail);
     expect(detail).toContain("not done again");
     expect(detail).toContain("already did it once while this Flow was being built");
-    expect(detail).toContain("on each row its listing keeps");
+    expect(detail).toContain("another control");
+    expect(detail).toContain("add true");
   });
 
   it("takes the new argument on present as well, and applies the amendments held for it to that step", async () => {
@@ -123,7 +126,7 @@ describe("a rerun of a step whose act was already done while building", () => {
     expect(String((answered?.rerunCheck as JsonObject).detail)).toContain("keeps the argument it ran with");
   });
 
-  it("drops the resolved form of the old target when the check names no resolved form for the new one", async () => {
+  it("never puts Tom's name beside Amara's resolved form: a rerun onto another control leaves both as they ran", async () => {
     const decide = vi.fn()
       .mockResolvedValueOnce(confirmAmara)
       .mockResolvedValueOnce(rerun("Confirm Tom"))
@@ -133,9 +136,9 @@ describe("a rerun of a step whose act was already done while building", () => {
     const result = await loop(decide, site.executeTool).catch((error: unknown) => ({ thrown: error }));
 
     const actStep = stepsOf(result).find((step) => step.acts?.includes("a1"));
-    expect(actStep?.input).toEqual({ target: "Confirm Tom" });
     // Amara's selector under Tom's name would confirm Amara's request in every run of the Flow.
-    expect(actStep?.ranWith).toBeUndefined();
+    expect(actStep?.input).toEqual({ target: "Confirm Amara" });
+    expect(actStep?.ranWith).toEqual({ target: "#confirm-amara" });
   });
 
   it("still runs a plain call as asked: no restriction beyond permissions", async () => {
@@ -202,6 +205,84 @@ describe("a rerun refused on the page its step was put back to", () => {
   });
 });
 
+// Live run `run-muxkzdjw-31a13429` (lane A round 4, C2b). Step 13 pressed "Get
+// coupons" (t934) and did the lasting act a2. 0031 reran it onto the "+" control
+// (t965): a check that ran nothing, yet it took the new target, so the coupon act
+// sat on an unrun "+" press. 0075 reran it with `{target: t964, text: "3"}`: it took
+// again, and the click step held a `text` a click does not accept. A check runs
+// nothing, so it cannot move a step to another control or give its action a
+// parameter it never ran with: the step keeps what it ran with.
+describe("a checked rerun keeps the step as it ran (run muxkzdjw C2b)", () => {
+  const couponPress = (): AutomationStudioFlowDraftStep => ({
+    position: 13, id: "d13", iteration: 12, callId: "get.coupon.2", actionId: "web.output.dom-click", toolId: "core.run_node",
+    input: { node: "web.output.dom-click", parameters: { target: { handle: "t934" } }, consequences: [] },
+    ranWith: { node: "web.output.dom-click", parameters: { selector: "#coupon", element: { tagName: "button", accessibleName: "Get coupons" } }, consequences: [] },
+    effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", acts: ["a2"], control: "Get coupons",
+    replay: { from: { location: "item" } }
+  });
+  const verified = vi.fn(async (_request: { callId: string; toolId: string; value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, code: "core.replay.verified" }, resultCode: "core.replay.verified", effectApplied: false }));
+  const check = (step: AutomationStudioFlowDraftStep, parameters: JsonObject, words?: { target: string }) => automationStudioNodeRerunAnswer({
+    place: undefined, replaces: step, executeTool: verified, lastingActs: new Set(["a2"]), ...(words ? { words } : {}),
+    call: { callId: "rerun.13", toolId: "core.run_node", value: { node: "web.output.dom-click", parameters, consequences: [] } }
+  });
+  const noteOf = (ran: unknown): JsonObject => (ran as { evidence: JsonObject }).evidence.rerunCheck as JsonObject;
+
+  it("0031: does not move the coupon press onto the \"+\" control", async () => {
+    const step = couponPress();
+    const original = structuredClone(step);
+    const { ran, took } = await check(step, { target: { handle: "t965" } }, { target: "+" });
+    expect(took).toBe(false);
+    expect(step).toEqual(original);
+    const note = noteOf(ran);
+    expect(note).toMatchObject({ checked: true, doneAgain: false, took: false, answer: "core.replay.verified" });
+    expect(String(note.detail)).toContain("another control");
+    expect(String(note.detail)).toContain("add true");
+  });
+
+  it("0075: does not take another control with a text a click never ran with", async () => {
+    const step = couponPress();
+    const original = structuredClone(step);
+    const { took } = await check(step, { target: { handle: "t964" }, text: "3" }, { target: "Quantity" });
+    expect(took).toBe(false);
+    expect(step).toEqual(original);
+  });
+
+  it("does not take a parameter of another kind on the step's own control", async () => {
+    const step = couponPress();
+    const original = structuredClone(step);
+    const { ran, took } = await check(step, { target: { handle: "t934" }, text: "3" });
+    expect(took).toBe(false);
+    expect(step).toEqual(original);
+    expect(String(noteOf(ran).detail)).toContain("text");
+  });
+
+  it("does not take another action even when the check's answer declares one", async () => {
+    const step = couponPress();
+    const original = structuredClone(step);
+    const { took } = await automationStudioNodeRerunAnswer({
+      place: undefined, replaces: step, lastingActs: new Set(["a2"]),
+      call: { callId: "rerun.13", toolId: "core.run_node", value: { node: "web.output.dom-type", parameters: { target: { handle: "t934" }, text: "3" } } },
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, resultCode: "core.replay.verified", effectApplied: false, draft: { actionId: "web.output.dom-type", input: { node: "web.output.dom-type" } } })
+    });
+    expect(took).toBe(false);
+    expect(step).toEqual(original);
+  });
+
+  it("still takes a new value for a parameter the step ran with, on the control it ran on", async () => {
+    const step: AutomationStudioFlowDraftStep = {
+      ...couponPress(), actionId: "web.output.dom-type",
+      input: { node: "web.output.dom-type", parameters: { target: { handle: "t970" }, text: "Great hub", submit: true }, consequences: [] },
+      ranWith: { node: "web.output.dom-type", parameters: { selector: "#review", text: "Great hub", submit: true }, consequences: [] }
+    };
+    const { took } = await automationStudioNodeRerunAnswer({
+      place: undefined, replaces: step, executeTool: verified, lastingActs: new Set(["a2"]),
+      call: { callId: "rerun.13", toolId: "core.run_node", value: { node: "web.output.dom-type", parameters: { target: { handle: "t970" }, text: "Great hub, fast shipping", submit: true }, consequences: [] } }
+    });
+    expect(took).toBe(true);
+    expect(step.input).toMatchObject({ parameters: { target: { handle: "t970" }, text: "Great hub, fast shipping" } });
+  });
+});
+
 // Cause 6 for a rerun: a checked rerun that takes the new argument changes what
 // the step runs with, so how the old argument answered the last test is no
 // longer about it.
@@ -209,30 +290,46 @@ describe("a checked rerun that takes the new argument", () => {
   function performedLibraryStep(): AutomationStudioFlowDraftStep {
     return {
       position: 1, id: "d1", iteration: 0, callId: "performed", actionId: "library.press", toolId: "press",
-      input: { node: "library.press", parameters: { target: "original" } },
-      ranWith: { parameters: { target: "resolved-original" } },
+      input: { node: "library.press", parameters: { target: "original", text: "1" } },
+      ranWith: { parameters: { target: "resolved-original", text: "1" } },
       effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", acts: ["a1"]
     };
   }
 
-  it.each(["core.replay.verified", "core.replay.present"])("takes authoritative changed action and argument without performing it (%s)", async (code) => {
+  it.each(["core.replay.verified", "core.replay.present"])("takes a new value on the control the step ran on, without performing it (%s)", async (code) => {
     const step = performedLibraryStep();
     const original = structuredClone(step);
-    const declared = { node: "library.enter", parameters: { target: "candidate", text: "3" } };
-    const resolved = { parameters: { target: "resolved-candidate", text: "3" } };
+    const resolved = { parameters: { target: "resolved-original", text: "3" } };
     const executeTool = vi.fn(async (_request: { callId: string; toolId: string; value: JsonObject }) => ({
       kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: code, effectApplied: false,
-      draft: { actionId: "library.enter", input: declared, ranWith: resolved, effect: "mutate" as const, proposes: true }
+      draft: { actionId: "library.press", input: { node: "library.press", parameters: { target: "original", text: "3" } }, ranWith: resolved, effect: "mutate" as const, proposes: true }
     }));
     const result = await automationStudioNodeRerunAnswer({
-      place: undefined, replaces: step, call: { callId: "candidate", toolId: "press", value: { node: "arbitrary.claim", parameters: { target: "candidate", text: "3" } } },
+      place: undefined, replaces: step, call: { callId: "candidate", toolId: "press", value: { node: "library.press", parameters: { target: "original", text: "3" } } },
       executeTool, lastingActs: new Set(["a1"])
     });
     expect(result.took).toBe(true);
-    expect(step).toMatchObject({ actionId: "library.enter", toolId: "press", input: declared, ranWith: resolved, effectApplied: false, checkedCandidate: { callId: "candidate", code } });
+    expect(step).toMatchObject({ actionId: "library.press", toolId: "press", input: { parameters: { text: "3" } }, ranWith: resolved, effectApplied: false, checkedCandidate: { callId: "candidate", code } });
     expect(step.priorExecution).toMatchObject({ ...original, lasting: true });
     expect(step.callId).toBeUndefined();
     expect(executeTool.mock.calls).toHaveLength(1);
+    expect(executeTool.mock.calls[0]![0].value.replay).toBe("verify");
+  });
+
+  // Run `run-muxkzdjw-31a13429` (C2b): a check runs nothing, so even an action its answer declares is not shown to work.
+  it.each(["core.replay.verified", "core.replay.present"])("does not take a changed action even when the check's answer declares it (%s)", async (code) => {
+    const step = performedLibraryStep();
+    const original = structuredClone(step);
+    const executeTool = vi.fn(async (_request: { callId: string; toolId: string; value: JsonObject }) => ({
+      kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: code, effectApplied: false,
+      draft: { actionId: "library.enter", input: { node: "library.enter", parameters: { target: "original", text: "3" } }, effect: "mutate" as const, proposes: true }
+    }));
+    const result = await automationStudioNodeRerunAnswer({
+      place: undefined, replaces: step, call: { callId: "candidate", toolId: "press", value: { node: "arbitrary.claim", parameters: { target: "original", text: "3" } } },
+      executeTool, lastingActs: new Set(["a1"])
+    });
+    expect(result.took).toBe(false);
+    expect(step).toEqual(original);
     expect(executeTool.mock.calls[0]![0].value.replay).toBe("verify");
   });
 
@@ -267,7 +364,7 @@ describe("a checked rerun that takes the new argument", () => {
   });
 
   it("still takes a value naming the step's own node, or none, when the check declares no action", async () => {
-    for (const value of [{ node: "library.press", parameters: { target: "candidate" } }, { parameters: { target: "candidate" } }]) {
+    for (const value of [{ node: "library.press", parameters: { target: "original", text: "3" } }, { parameters: { target: "original", text: "3" } }]) {
       const step = performedLibraryStep();
       const { took } = await automationStudioNodeRerunAnswer({
         place: undefined, replaces: step, call: { callId: "same-node", toolId: "press", value },
@@ -284,14 +381,15 @@ describe("a checked rerun that takes the new argument", () => {
     const step = performedLibraryStep();
     step.actionId = "press";
     await automationStudioNodeRerunAnswer({
-      place: undefined, replaces: step, call: { callId: "same-action", toolId: "press", value: { target: "candidate" } },
-      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, resultCode: "core.replay.present", effectApplied: false, draft: { actionId: "press", input: { target: "normalized" } } }),
+      place: undefined, replaces: step, call: { callId: "same-action", toolId: "press", value: { target: "original", text: "3" } },
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { ok: true }, resultCode: "core.replay.present", effectApplied: false, draft: { actionId: "press", input: { target: "original", text: "3" } } }),
       lastingActs: new Set(["a1"])
     });
     expect(step.actionId).toBe("press");
     expect(step.toolId).toBeUndefined();
-    expect(step.input).toEqual({ target: "normalized" });
-    expect(step.ranWith).toBeUndefined();
+    expect(step.input).toEqual({ target: "original", text: "3" });
+    // The same control: its resolved form stays, with the new value written over the old.
+    expect(step.ranWith).toEqual({ parameters: { target: "resolved-original", text: "3" } });
     expect(step.priorExecution).toMatchObject({ actionId: "press", toolId: "press" });
   });
 
@@ -307,10 +405,10 @@ describe("a checked rerun that takes the new argument", () => {
     expect(step).toEqual(original);
   });
 
-  it("keeps the accepted action identity through the real loop while retaining original lasting execution", async () => {
+  it("keeps the step's own action and lasting execution through the real loop when a check declares another", async () => {
     const seed = performedLibraryStep();
     const decide = vi.fn()
-      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { node: "library.enter", parameters: { target: "candidate", text: "3" } } }] })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { node: "library.enter", parameters: { target: "original", text: "3" } } }] })
       .mockResolvedValueOnce({ kind: "complete", result: { done: true } });
     const executeTool = vi.fn(async ({ value }: { value: JsonObject }) => ({
       kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: "core.replay.verified", effectApplied: false,
@@ -318,18 +416,19 @@ describe("a checked rerun that takes the new argument", () => {
     }));
     const result = await runAutomationStudioLlmEvidenceLoop({ tools, decide, executeTool, draft: { seed: [seed] }, dryRun: false, lastingActs: async () => new Set(["a1"]), maxIterations: 3, maxToolCalls: 4 });
     const kept = result.steps?.find((step) => step.id === "d1");
-    expect(kept).toMatchObject({ actionId: "library.enter", toolId: "press", input: { node: "library.enter" }, effectApplied: false, priorExecution: { actionId: "library.press", lasting: true } });
+    expect(kept).toMatchObject({ actionId: "library.press", toolId: "press", input: { node: "library.press", parameters: { text: "1" } }, effectApplied: true });
+    expect(kept?.priorExecution).toBeUndefined();
     expect(executeTool.mock.calls).toHaveLength(1);
     expect(executeTool.mock.calls[0]![0].value.replay).toBe("verify");
   });
 
   it("invalidates following test marks while retaining earlier evidence", async () => {
     const seed: AutomationStudioFlowDraftStep[] = [1, 2, 3].map((position) => ({
-      position, id: `d${position}`, iteration: 1, actionId: "web.click", toolId: "press", input: { target: "Confirm Amara" },
+      position, id: `d${position}`, iteration: 1, actionId: "web.click", toolId: "press", input: { target: "Confirm Amara", note: "hi" },
       effect: "mutate", effectApplied: true, disposition: "kept", acts: ["a1"], replay: { from: { location: "requests" } },
       replayed: { step: position, actionId: "web.click", status: "replayed" }
     }));
-    const decide = vi.fn().mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { target: "Confirm Tom" } }] }).mockResolvedValueOnce({ kind: "complete", result: { done: true } });
+    const decide = vi.fn().mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 2, change: "rerun", input: { note: "hello" } }] }).mockResolvedValueOnce({ kind: "complete", result: { done: true } });
     // No put-back is needed for this fixture: it isolates dependent test marks.
     delete seed[1]!.replay;
     const executeTool = async ({ value }: { value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: value.replay === "verify" ? "core.replay.verified" : "core.replay.replayed", effectApplied: value.replay !== "verify" });
@@ -350,10 +449,13 @@ describe("a checked rerun that takes the new argument", () => {
       replay: { from: { location: "requests" }, produced: { accepted: "Amara" } }, replayed: { step: 1, actionId: "web.click", status: "replayed" }
     };
     const executeTool = vi.fn(async (_request: { callId: string; toolId: string; value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, resultCode: code, effectApplied: false }));
-    const candidate = { target: "Confirm Tom", value: { $input: "person", test: "Tom" }, row: { $row: "person" } };
+    // The same control with a new bound test value (run `run-muxkzdjw-31a13429` C2b: never another control).
+    const candidate = { target: "Confirm Amara", value: { $input: "person", test: "Tom" }, row: { $row: "person" } };
     await automationStudioNodeRerunAnswer({ place: undefined, replaces, call: { callId: "check.1", toolId: "press", value: candidate }, executeTool, lastingActs: new Set(["a1"]) });
     expect(replaces).toMatchObject({ input: candidate, effectApplied: false, checkedCandidate: { callId: "check.1", code }, priorExecution: { lasting: true, input: original, callId: "original", stateBefore: "before", stateAfter: "after", replay: { produced: { accepted: "Amara" } } } });
-    for (const key of ["stateBefore", "stateAfter", "callId", "control", "instance", "written", "replayed"]) expect(replaces).not.toHaveProperty(key);
+    for (const key of ["stateBefore", "stateAfter", "callId", "instance", "written", "replayed"]) expect(replaces).not.toHaveProperty(key);
+    // The control it ran on is still the one it names.
+    expect(replaces.control).toBe("Amara");
     expect(replaces.replay).toEqual({ from: { location: "requests" } });
     const shown = automationStudioFlowDraftEntry({ steps: [replaces], authored: true })!.value as JsonObject;
     expect((shown.steps as JsonObject[])[0]).toMatchObject({ disposition: "kept", inResult: true, changed: "no", checkedCandidate: { performed: false }, act: "a1", actEvidence: "intended" });
@@ -373,12 +475,12 @@ describe("a checked rerun that takes the new argument", () => {
     const { automationStudioNodeRerunAnswer } = await import("../rerun-check.ts");
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, code: "core.replay.verified" }, effectApplied: false, resultCode: "core.replay.verified" }));
     const replaces = {
-      position: 6, id: "d6", iteration: 2, actionId: "web.click", toolId: "press", input: { target: "Confirm Amara" }, effect: "mutate" as const, effectApplied: true, disposition: "kept" as const, acts: ["a1"],
+      position: 6, id: "d6", iteration: 2, actionId: "web.click", toolId: "press", input: { target: "Confirm Amara", note: "hi" }, effect: "mutate" as const, effectApplied: true, disposition: "kept" as const, acts: ["a1"],
       replay: { from: { location: "requests" } }, replayed: { step: 6, actionId: "web.click", status: "unreproducible" as const }
     };
-    const { took } = await automationStudioNodeRerunAnswer({ place: undefined, replaces, call: { callId: "rerun.6", toolId: "press", value: { target: "Confirm Tom" } }, executeTool, lastingActs: new Set(["a1"]) });
+    const { took } = await automationStudioNodeRerunAnswer({ place: undefined, replaces, call: { callId: "rerun.6", toolId: "press", value: { target: "Confirm Amara", note: "hello" } }, executeTool, lastingActs: new Set(["a1"]) });
     expect(took).toBe(true);
-    expect(replaces.input).toEqual({ target: "Confirm Tom" });
+    expect(replaces.input).toEqual({ target: "Confirm Amara", note: "hello" });
     expect((replaces as { replayed?: unknown }).replayed).toBeUndefined();
   });
 });

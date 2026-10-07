@@ -21,9 +21,27 @@
 //
 //   verified, present -- the step takes the new argument (and the resolved form
 //                        the host answered with, when it answered one), and the
-//                        amendments held for the rerun apply to it.
+//                        amendments held for the rerun apply to it -- only when
+//                        the argument is the step as it ran with new values
+//                        (below).
 //   anything else     -- the rerun is refused like one that did not work: the
 //                        step keeps the argument it ran with.
+//
+// **A check that ran nothing keeps the step as it ran.** It may take new values
+// for parameters the step ran with, on the control it ran on -- a corrected
+// text, a binding -- and nothing else: not another action, not another control,
+// not a parameter the step never ran with. Live run `run-muxkzdjw-31a13429`
+// (lane A round 4, C2b): step 13 pressed "Get coupons" and did the lasting act
+// a2; a rerun onto the "+" control (0031) was checked, ran nothing, and took, so
+// the coupon act sat on an unrun "+" press; a rerun with `{target: t964, text:
+// "3"}` (0075) took again and left a click holding a `text`. The lane D design
+// this replaces let a check move a done act to another row's control (run
+// `run-murwcaj0-40e56557`, R7): it never ran there, so nothing showed it would.
+// "Another control" is read from the argument itself: a target parameter
+// (`target`, `selector`, `element`) given a value the step neither was shown nor
+// ran with. A rerun patch that leaves the target out keeps it, so a value-only
+// correction still takes. Another control, or another kind of parameter, is a
+// new call with add true.
 //
 // **A check cannot change which action a step is.** Live run
 // `run-mux74k5q-1c3c2127` (lane A round 3, C2): step 12 pressed "Spain" and
@@ -63,7 +81,7 @@ import {
   type AutomationStudioFlowDraftStep,
   type AutomationStudioFlowDraftStepWords
 } from "../../flow-draft/index.ts";
-import { automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
+import { automationStudioLlmEvidenceCanonicalJson, automationStudioLlmEvidenceParseToolExecutionResult } from "../evidence-loop-decision.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import { AUTOMATION_STUDIO_NODE_REPLAY_KEY } from "./replay.ts";
 import { automationStudioNodeRerunPlaceNoted, type AutomationStudioNodeRerunPlace } from "./step-place.ts";
@@ -115,10 +133,13 @@ function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: st
   const parsed = automationStudioLlmEvidenceParseToolExecutionResult(ran, "mutate");
   const code = parsed?.resultCode;
   const answered = code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE || code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE;
-  // A value naming another node, with no action declared by the answer, is a different step: the check ran nothing, so it
-  // cannot say which action the step would run (run `run-mux74k5q-1c3c2127`, C2; see the header). Refused, never inferred.
-  const otherNode = typeof value.node === "string" && value.node !== step.actionId && parsed?.draft?.actionId === undefined ? value.node : undefined;
-  const took = answered && otherNode === undefined;
+  // A check ran nothing, so it keeps the step as it ran (see the header): another action, declared by the answer or named
+  // by the value (run `run-mux74k5q-1c3c2127`, C2), another control, or a parameter the step never ran with (run
+  // `run-muxkzdjw-31a13429`, C2b) is a different step. Refused, never inferred.
+  const otherNode = otherAction(step, value, parsed?.draft?.actionId);
+  const otherControl = otherNode === undefined && movesControl(step, value);
+  const newKinds = otherNode === undefined && !otherControl ? parametersNotRun(step, value) : [];
+  const took = answered && otherNode === undefined && !otherControl && newKinds.length === 0;
   const position = step.position;
   const acts = [...(step.acts ?? [])];
   if (took) {
@@ -127,10 +148,8 @@ function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: st
       step.priorExecution = { ...structuredClone(performed), lasting: true };
     }
     // The caller's parsed declaration is the same authority normal callRecord
-    // uses. A checked replacement can change which action a shared tool runs:
-    // carrying its arguments under the earlier action would assemble that old
-    // node with the replacement's parameters. Never infer identity from an
-    // arbitrary argument such as value.node.
+    // uses; it can only name the step's own action here (above), and a tool
+    // that is its own action carries no separate tool identity.
     const declared = parsed?.draft;
     if (declared?.actionId !== undefined) {
       step.actionId = declared.actionId;
@@ -157,13 +176,12 @@ function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: st
     delete step.written;
     if (step.replay?.from !== undefined) step.replay = { from: step.replay.from };
     else delete step.replay;
+    // The control is the one the step ran on (above), so its resolved form and its
+    // words still name it; only the values the argument changed are new.
     const resolved = parsed?.draft?.ranWith;
     if (resolved !== undefined) step.ranWith = resolved;
-    else delete step.ranWith;
+    else if (step.ranWith !== undefined) step.ranWith = withNewValues(step.ranWith, value);
     if (words) step.words = words;
-    else delete step.words;
-    // The words of the control the earlier run pressed: the old target's, not this one's.
-    delete step.control;
     // How the old argument answered the last test is not about this one (run `run-musq0b1m-0472cfa0`, Cause 6).
     delete step.replayed;
     // Any following result was measured with the old configuration before it.
@@ -176,10 +194,66 @@ function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: st
     : "The check found the step could run now with the new argument";
   const detail = took
     ? `${why} ${found}, so step ${position} now holds the new argument as a checked candidate, not performed evidence. Its act claims describe intention; the earlier execution remains tied to the original argument. When the Flow runs, the step does its act each time it runs: a repeated step does it on each row its listing keeps.`
+    : !answered
+    ? `${why} The check did not find the step able to run with the new argument on the page it started on (${code ?? "no answer"}), so nothing changed: step ${position} keeps the argument it ran with, as after a rerun that did not work.`
     : otherNode !== undefined
-    ? `${why} The new argument names ${otherNode}, a different action from the step's ${step.actionId}, and the check ran nothing (${code}), so it cannot make step ${position} that action: nothing changed, and step ${position} keeps ${step.actionId} and the argument it ran with. A different action is a different step: run it as a new call with add true.`
-    : `${why} The check did not find the step able to run with the new argument on the page it started on (${code ?? "no answer"}), so nothing changed: step ${position} keeps the argument it ran with, as after a rerun that did not work.`;
+    ? `${why} The new argument names ${otherNode}, a different action from the step's ${step.actionId}, and the check ran nothing (${code ?? "no answer"}), so it cannot make step ${position} that action: nothing changed, and step ${position} keeps ${step.actionId} and the argument it ran with. A different action is a different step: run it as a new call with add true.`
+    : otherControl
+    ? `${why} The new argument names another control than the one step ${position} ran on, and the check ran nothing (${code ?? "no answer"}), so it cannot move step ${position} there: nothing changed, and step ${position} keeps the control and the argument it ran with, and its acts. Another control is another step: run it as a new call with add true and its act. To change only a value of this step, rerun it with just the keys that change.`
+    : `${why} The new argument gives ${step.actionId} ${newKinds.map((key) => `"${key}"`).join(", ")}, which step ${position} never ran with, and the check ran nothing (${code ?? "no answer"}), so nothing changed: step ${position} keeps the argument it ran with. A different kind of step is a new call with add true and its act.`;
   return { ran: noted(ran, { checked: true, doneAgain: false, acts, ...(code ? { answer: code } : {}), took, detail }), took };
+}
+
+/** The parameter keys that name the control a step acts on. */
+const TARGET_KEYS: ReadonlySet<string> = new Set(["target", "selector", "element"]);
+
+/** The keys of a node call's argument that are not its parameters. */
+const CALL_KEYS: ReadonlySet<string> = new Set(["node", "parameters", "consequences", "write", AUTOMATION_STUDIO_NODE_REPLAY_KEY, "from"]);
+
+/** The action the answer declares or the value names, when it is not the step's own. */
+function otherAction(step: AutomationStudioFlowDraftStep, value: JsonObject, declared: string | undefined): string | undefined {
+  const named = declared ?? (typeof value.node === "string" ? value.node : undefined);
+  return named !== undefined && named !== step.actionId && named !== step.input.node ? named : undefined;
+}
+
+/** Whether the value gives a target parameter a value the step was neither shown with nor ran with. */
+function movesControl(step: AutomationStudioFlowDraftStep, value: JsonObject): boolean {
+  const ran = ranParameters(step);
+  return Object.entries(parametersOf(value) ?? {}).some(([key, given]) =>
+    TARGET_KEYS.has(key) && !ran.some((parameters) => Object.hasOwn(parameters, key) && sameJson(parameters[key]!, given)));
+}
+
+/** The parameters the value gives that the step never ran with, a target aside. */
+function parametersNotRun(step: AutomationStudioFlowDraftStep, value: JsonObject): string[] {
+  const ran = ranParameters(step);
+  return Object.keys(parametersOf(value) ?? {}).filter((key) => !TARGET_KEYS.has(key) && !ran.some((parameters) => Object.hasOwn(parameters, key)));
+}
+
+/** The parameters of what the step was shown with and of what it ran with. */
+function ranParameters(step: AutomationStudioFlowDraftStep): JsonObject[] {
+  return [parametersOf(step.input), parametersOf(step.ranWith)].filter((parameters): parameters is JsonObject => parameters !== undefined);
+}
+
+/** Where an argument keeps its parameters: under `parameters` when it nests them, else its own keys but the call's. */
+function parametersOf(argument: JsonValue | undefined): JsonObject | undefined {
+  if (!isObject(argument)) return undefined;
+  const nested = argument.parameters;
+  if (isObject(nested)) return nested;
+  return Object.fromEntries(Object.entries(argument).filter(([key]) => !CALL_KEYS.has(key)));
+}
+
+/** The resolved form with the value's new parameter values written over the ones it holds, its target left as it ran. */
+function withNewValues(ranWith: JsonObject, value: JsonObject): JsonObject {
+  const resolved = parametersOf(ranWith);
+  if (!resolved) return ranWith;
+  const changed = Object.entries(parametersOf(value) ?? {}).filter(([key]) => !TARGET_KEYS.has(key) && Object.hasOwn(resolved, key));
+  if (!changed.length) return ranWith;
+  const parameters = { ...resolved, ...Object.fromEntries(changed) };
+  return isObject(ranWith.parameters) ? { ...ranWith, parameters } : { ...ranWith, ...parameters };
+}
+
+function sameJson(left: JsonValue, right: JsonValue): boolean {
+  return automationStudioLlmEvidenceCanonicalJson(left) === automationStudioLlmEvidenceCanonicalJson(right);
 }
 
 /** The answer with the check's account written into its evidence object, as `./step-place.ts` writes `rerunPlace`. */
