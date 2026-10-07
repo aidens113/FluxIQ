@@ -199,7 +199,10 @@ describe("the build-test judge is told what a repeated step's passes and the Flo
     expect(prompt).toContain("A repeated step runs once for each row of the list it repeats over");
     expect(prompt).toContain("Judge each pass against its own row, not the row the build explored");
     expect(prompt).toContain("buildTest.inputs");
-    expect(automationStudioDiagnosisPromptInstruction("loop_verification")).not.toContain("passes");
+    // A finished run is told what a page loop's passes mean (read-list S3), but never the per-row repeat words: those are the build test's alone.
+    const finished = automationStudioDiagnosisPromptInstruction("loop_verification");
+    expect(finished).not.toContain("A repeated step runs once for each row of the list it repeats over");
+    expect(finished).not.toContain("Judge each pass against its own row");
   });
 });
 
