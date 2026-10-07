@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: P0 acceptance and cancellation tasks assigned; candidate-authoring implementation follows the readiness gate.
+Status detail: Acceptance/cancellation and receipt/detached-executor infrastructure pushed; candidate facade and actual server identity isolated; production promotion pending.
 Created: 2026-10-06
 Last updated: 2026-10-06
 Owner: Codex senior supervisor
@@ -20,9 +20,10 @@ contract state. Starting Core dev `e9b7d691`.
 
 P0 in progress: t296 acceptance fences are integrated/pushed (6c449022);
 downstream t297 running extension identity is integrated/pushed (2c76ba48).
-t298 cancellation and reachable Stop passed independent current-pair browser
-proofs and are being integrated. Running Core identity remains t302. Candidate
-authoring/facade t299 and verification/detached executor t300 remain isolated.
+t298 cancellation and reachable Stop are integrated/pushed2ee06482 after independent
+current-pair browser proofs. t300 receipt/detached-executor infrastructure is
+integrated/pushed386b4c15, not a production promotion path. Running Core identity
+remains t302 and candidate authoring/facade t299 remains isolated.
 
 Task t296 now requires affirmative confirmation for a build yes and refuses
 unsupported held reauthor topologies before apply/dispatch/writes. Supervisor
@@ -79,3 +80,10 @@ and closes downstream task first, then Core under Core's own task gate.
 - Validation: supervisor reviewed controller/receipt contracts and detached adapter; independent58/58 owning tests passed before current dev merge, post-merge narrow check pending. No provider/browser execution by this task.
 - Outcome: Partial infrastructure, not production acceptance or P2 complete.
 - Follow-up: trusted semantic interpreter/start/oracle, domain command acknowledgements and durable atomic promotion must join t299 facade. Empty commands cannot qualify create; no accepted graph writes.
+
+### 2026-10-06 - Paired infrastructure push and honest remaining scope
+- Agent: Codex supervisor.
+- Changed: Core386b4c15 and downstreamafb5f939 pushed; t30058/58 independently verified and exported, typed browser downstreamt301 integrated.
+- Validation: exact bounded receipts in paired downstream ledger; final Core typecheck/audit0 before lifecycle merge, no full suites/provider calls.
+- Outcome: Partial overall plan.
+- Follow-up: t299 draft facade, t302 immutable executing service identity, then trusted requirements/start/oracle/domaincommand acknowledgements/durable shared promotion. Existing builds/repairs do not yet use candidate receipts automatically.
