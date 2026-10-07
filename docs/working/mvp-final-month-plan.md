@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: Acceptance/cancellation and receipt/detached-executor infrastructure pushed; candidate facade and actual server identity isolated; production promotion pending.
+Status detail: Acceptance/cancellation, receipt/executor infrastructure and opt-in draft facade pushed; loaded-server identity and durable receipt ledger isolated; production promotion pending.
 Created: 2026-10-06
 Last updated: 2026-10-06
 Owner: Codex senior supervisor
@@ -23,7 +23,9 @@ downstream t297 running extension identity is integrated/pushed (2c76ba48).
 t298 cancellation and reachable Stop are integrated/pushed2ee06482 after independent
 current-pair browser proofs. t300 receipt/detached-executor infrastructure is
 integrated/pushed386b4c15, not a production promotion path. Running Core identity
-remains t302 and candidate authoring/facade t299 remains isolated.
+remains t302. Candidate authoring/facade t299 is integrated/pushed7f9bae15
+after independent53/53 and package/dependent web checks; t304 durable receipt
+ledger is isolated. Accepted-topology transaction/read authority is still required.
 
 Task t296 now requires affirmative confirmation for a build yes and refuses
 unsupported held reauthor topologies before apply/dispatch/writes. Supervisor
@@ -114,3 +116,10 @@ unsupported refusal. Global documents/config may be projections only if reader
 compatibility is migrated and recovery regenerates them after commit. Detailed
 owner/read/write migration is being recorded by the promotion worker; P2 remains
 incomplete, with no reduction in the requested atomicity or outcome proof.
+
+### 2026-10-06 - Draft facade paired push; durable ledger scope bounded
+- Agent: Codex supervisor.
+- Changed: Core7f9bae15/downstream59b61cc2 pushed; t304 next receipt ledger brief downstream, no accepting promoter yet.
+- Validation: actual facade/API/conversation/reauthor53/53, package check/build and dependent webcheck0, taskaudits0; records in paired report.
+- Outcome: Partial overall plan.
+- Follow-up: t302 immutableidentity input inventory correction; t304 truthful durable claims and create-empty-scope negative, then authoritative topology migration. Public candidate request only returns unverified draft and cannot apply. No provider/fullsuite/userpanel.
