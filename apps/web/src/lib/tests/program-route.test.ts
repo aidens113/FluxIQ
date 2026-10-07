@@ -54,6 +54,7 @@ describe("a paired client on the program route", () => {
         "answer-ask",
         "list-runtime-sessions",
         "cancel-runtime-session",
+        "cancel-flow-bootstrap",
         "list-flow-summaries",
         "list-flow-runs",
         "get-flow-run-detail",

@@ -1901,3 +1901,23 @@ Project deletion blocks deadline writes, waits for in-flight session writes, and
 Durable runtime sessions parked with `expiresAtMs` arm a deadline when written or read; overdue records encountered after restart settle immediately. Expiry persists a failed session and an expired ask before emitting the original ask's `timed_out` row. It preserves the timeout route in the attempt without executing further actions. Indefinite waits remain open. Deadline writes, cancellation, and session persistence share a per-run lock; a failed deadline write reports failure and retries without resolving the card. Closing the service removes its timers.
 
 Project deletion blocks deadline writes, waits for in-flight session writes, and persists cancellation of parked sessions before settling their asks and removing project records. If removal fails, the original error is retained, and waits already cancelled remain cancelled. Waiting records whose cancellation failed retain their deadlines.
+
+### Build cancellation and extension Stop
+
+`cancel-flow-bootstrap` is an authoring endpoint under `runtime.control`, scoped
+by project and Flow. It requests cancellation of every already-active or queued
+build of that Flow; no active build answers `cancellationRequested: false`.
+It does not revoke permission or delete a Flow. A paired browser may call this
+endpoint through the existing restricted program-route allowlist.
+
+Build controllers register before database/lock waiting. Their scoped signal
+reaches provider calls, domain tool dispatch, permission/person-needed waits and
+judging. Cancellation checkpoints refuse subsequent dispatch and a late result
+before proposing a change, including after awaited proposal validation. A
+cancelled build reports `cancelled: true`; the chat and activity say the build
+stopped, rather than saying it is ready. A run's reauthor build shares this
+controller and inherits the run's abort signal.
+
+Stop is cooperative. It prevents later dispatch/promotion but cannot undo effects
+already dispatched to an external system. Providers/tools that ignore AbortSignal
+may finish their current work; their late result cannot authorize another action.

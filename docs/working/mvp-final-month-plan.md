@@ -18,10 +18,11 @@ with continuous documentation so Claude can resume. Downstream owns the phase
 schedule, worker briefs and live qualification; this document owns generic Core
 contract state. Starting Core dev `e9b7d691`.
 
-P0 in progress: t296 isolated paired worktrees implement fail-closed confirming
-verdicts and refuse unsupported apply-before-judged repair topology; t298 isolated
-paired worktrees implement build cancellation and downstream reachable Stop.
-Downstream t297 implements running build identity independently.
+P0 in progress: t296 acceptance fences are integrated/pushed (6c449022);
+downstream t297 running extension identity is integrated/pushed (2c76ba48).
+t298 cancellation and reachable Stop passed independent current-pair browser
+proofs and are being integrated. Running Core identity remains t302. Candidate
+authoring/facade t299 and verification/detached executor t300 remain isolated.
 
 Task t296 now requires affirmative confirmation for a build yes and refuses
 unsupported held reauthor topologies before apply/dispatch/writes. Supervisor
@@ -64,3 +65,10 @@ and closes downstream task first, then Core under Core's own task gate.
 - Validation: intake trees clean; relevant audit and current Core instructions read; no product tests yet.
 - Outcome: Partial
 - Follow-up: t296/t298 reports, independent checks, downstream t297 readiness.
+
+### 2026-10-06 - t298 cancellation independently verified for integration
+- Agent: Codex supervisor.
+- Changed: scoped external build cancellation, inherited reauthor cancellation, restricted route, truthful unknown in-flight usage, durable declined held-rerun reason; paired reachable extension Stop. Source ada199b7 and 3b1a5019.
+- Validation: current dev merged both trees; supervisor owning reauthor file 9/9, Core check0, touched Core build0, current Chrome/Firefox/e2e extension artifacts22files each. Headed real extension/Core Stop build and run tests2/2 (18.1s), no subsequent node/proposal, accepted graphs unchanged. Task audits pending.
+- Outcome: Accepted bounded cancellation slice; not all P0.
+- Follow-up: integrate paired task/push both dev; t299 facade must inherit this scope. Ignoring provider late charge remains unknown, Firefox live/pairing/real provider unexercised. No paid calls or user panel.
