@@ -114,3 +114,5 @@ unsupported refusal. Global documents/config may be projections only if reader
 compatibility is migrated and recovery regenerates them after commit. Detailed
 owner/read/write migration is being recorded by the promotion worker; P2 remains
 incomplete, with no reduction in the requested atomicity or outcome proof.
+
+- Validation: Source audit only; no atomic promotion or crash-recovery success is claimed. See the paired downstream p2-promotion-design.md report for the inspected owners and migration requirements.

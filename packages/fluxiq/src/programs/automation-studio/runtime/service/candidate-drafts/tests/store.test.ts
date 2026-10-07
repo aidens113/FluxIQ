@@ -27,6 +27,12 @@ describe.each([false, true])("candidate drafts persist separately (SQLite=%s)", 
       saved.candidate.summary = "caller mutation";
       const loaded = await new AutomationStudioFlowCandidateDraftStore(paths, flows, projects).get("project.1", "flow.1");
       expect(loaded).toEqual(record());
+      const held = new AutomationStudioFlowCandidateDraftStore(paths, flows, projects);
+      await held.save(record());
+      const updated = record(); updated.candidateId = "candidate.new"; updated.candidate.revision = 2;
+      await new AutomationStudioFlowCandidateDraftStore(paths, flows, projects).save(updated);
+      expect((await held.get("project.1", "flow.1"))?.candidateId).toBe("candidate.1");
+      expect((await held.getAuthoritative("project.1", "flow.1"))?.candidateId).toBe("candidate.new");
       expect(await new AutomationStudioBootstrapAdaptationStore(paths, flows, projects).listFlowBootstrapAdaptations("project.1", "flow.1")).toEqual([]);
       expect(await new AutomationStudioFlowCandidateDraftStore(paths, flows, projects).get("project.1", "other.flow")).toBeUndefined();
     } finally { await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 }); }
