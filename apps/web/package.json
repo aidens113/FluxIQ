@@ -1,42 +1,43 @@
 {
-    "name":  "@fluxiq/web",
-    "version":  "0.1.0",
-    "private":  true,
-    "type":  "module",
-    "scripts":  {
-                    "dev":  "next dev --turbopack --hostname 127.0.0.1",
-                    "build":  "node ../../scripts/build-cache/cli.mjs web:build -- \"next build --turbopack\"",
-                    "start":  "next start --hostname 127.0.0.1",
-                    "check":  "node ../../scripts/build-cache/cli.mjs web:check -- \"tsc --noEmit\"",
-                    "test":  "vitest run --passWithNoTests",
-                    "test:e2e":  "playwright test",
-                    "test:e2e:phase8":  "playwright test phase8- --workers=1 --timeout=180000",
-                    "test:e2e:phase8:chromium":  "playwright test phase8- --workers=1 --timeout=180000 --project=desktop-chromium --project=short-tablet-chromium --project=mobile-chromium --project=zoom-200-chromium",
-                    "test:e2e:phase8:cross-browser":  "playwright test phase8- --workers=1 --timeout=180000 --project=desktop-chromium --project=desktop-edge --project=desktop-firefox",
-                    "test:e2e:phase8:performance":  "playwright test phase8-performance-certification.spec.ts --workers=1 --timeout=180000 --project=desktop-chromium",
-                    "test:e2e:headed":  "playwright test --headed",
-                    "test:e2e:report":  "playwright show-report",
-                    "fixture:e2e":  "node e2e/support/seed-fixtures.mjs",
-                    "fixture:e2e:verify":  "node e2e/support/verify-fixtures.mjs",
-                    "mock:client":  "node scripts/mock-client.mjs"
-                },
-    "dependencies":  {
-                         "@xyflow/react":  "^12.8.4",
-                         "fluxiq":  "workspace:*",
-                         "lucide-react":  "^0.468.0",
-                         "next":  "15.5.24",
-                         "react":  "^19.0.0",
-                         "react-dom":  "^19.0.0",
-                         "sqlite3":  "^6.0.1"
-                     },
-    "devDependencies":  {
-                            "@axe-core/playwright":  "^4.10.2",
-                            "@playwright/test":  "^1.51.1",
-                            "@types/react":  "^19.0.0",
-                            "@types/react-dom":  "^19.0.0",
-                            "@types/react-test-renderer":  "19.1.0",
-                            "react-test-renderer":  "19.2.8",
-                            "typescript":  "^5.7.0",
-                            "vitest":  "^2.1.0"
-                        }
+  "name": "@fluxiq/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/build-client-gateway-server.mjs && next dev --turbopack --hostname 127.0.0.1",
+    "build": "node ../../scripts/build-cache/cli.mjs web:build -- \"node scripts/build-client-gateway-server.mjs && next build --turbopack\"",
+    "start": "next start --hostname 127.0.0.1",
+    "check": "node ../../scripts/build-cache/cli.mjs web:check -- \"tsc --noEmit\"",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "playwright test",
+    "test:e2e:phase8": "playwright test phase8- --workers=1 --timeout=180000",
+    "test:e2e:phase8:chromium": "playwright test phase8- --workers=1 --timeout=180000 --project=desktop-chromium --project=short-tablet-chromium --project=mobile-chromium --project=zoom-200-chromium",
+    "test:e2e:phase8:cross-browser": "playwright test phase8- --workers=1 --timeout=180000 --project=desktop-chromium --project=desktop-edge --project=desktop-firefox",
+    "test:e2e:phase8:performance": "playwright test phase8-performance-certification.spec.ts --workers=1 --timeout=180000 --project=desktop-chromium",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report",
+    "fixture:e2e": "node e2e/support/seed-fixtures.mjs",
+    "fixture:e2e:verify": "node e2e/support/verify-fixtures.mjs",
+    "mock:client": "node scripts/mock-client.mjs",
+    "gateway:build": "node scripts/build-client-gateway-server.mjs"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.8.4",
+    "fluxiq": "workspace:*",
+    "lucide-react": "^0.468.0",
+    "next": "15.5.24",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sqlite3": "^6.0.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.51.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/react-test-renderer": "19.1.0",
+    "react-test-renderer": "19.2.8",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
 }

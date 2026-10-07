@@ -582,3 +582,11 @@ pnpm --filter @fluxiq/web mock:client
 
 The mock client will print the reference code it receives and then wait for
 approval from the web panel.
+
+## Executing web server transport provenance
+
+`ClientGatewayService` owns an additive, domain-neutral transport identity lease, separate from Automation Studio's native runtime module identities. Binding screens and freezes a generic descriptor before transport IO, retaining an immutable original anchor. Only the current lease may activate on listening or release on close/error; superseded leases cannot attest or clear a replacement. Missing, inactive, released, and legacy uninstrumented transports report null. A legacy rebind clears active provenance without allowing changed code to reuse the original anchor. This adds two gateway facade methods and does not change pairing, session, or socket wire contracts.
+
+The web app's actual server adapter lives in `apps/web/src/server/client-gateway-websocket.ts`; the `client-gateway-websocket` package is a client transport. Web startup preloads a native ESM artifact generated into `apps/web/.server-runtime/client-gateway-server.mjs`, then invokes its factory with the actual retained gateway object. This preserves ownership when Next bundles Core separately. Enabled gateway startup requires preload; the `dev` and cached `build` commands generate the artifact first. Direct Next CLI users must run `pnpm --filter @fluxiq/web gateway:build` before starting. No default production panel is started by this contract.
+
+The generator owns the companion receipt and complete server/startup/generator/cache inventory. It hashes the executing artifact while normalizing only one self-containing payload literal, including the reader's surrounding execution semantics. This is a normalized artifact digest, not a raw full-file digest. Regenerate through the driver; never edit the artifact or receipt. The existing authenticated, `programs.read` diagnostic returns the actual gateway's listening `serverTransportIdentity` separately from native `loadedModules`; it does not infer executing identity from disk or a newly loaded route. The supported registration seam does not attest arbitrary out-of-band listeners or individual socket provenance.
