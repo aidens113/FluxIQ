@@ -49,7 +49,8 @@ export function automationStudioLlmEvidenceHandleFailedCall(
     context.recordRow(step, { draftChanged });
     return end("llm_evidence_loop.tool_failed");
   }
-  const failureRecord = automationStudioLlmEvidenceToolFailure({ code, toolId: tool.toolId, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
+  const failedStep = draftChanged ? context.draftSteps.find((candidate) => candidate.callId === callId)?.position : undefined;
+  const failureRecord = automationStudioLlmEvidenceToolFailure({ code, toolId: tool.toolId, step: failedStep, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress });
   const recordBytes = context.accountEvidence(failureRecord);
   context.recordRow({ ...step, evidenceBytes: recordBytes }, { draftChanged });
   context.evidence.push({ callId, toolId: tool.toolId, value: failureRecord });

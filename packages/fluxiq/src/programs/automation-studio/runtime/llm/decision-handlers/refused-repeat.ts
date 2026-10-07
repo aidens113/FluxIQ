@@ -17,6 +17,7 @@ import {
   automationStudioLlmEvidenceRepeatRefusalNote,
   type AutomationStudioLlmEvidenceRepeatedOutcome
 } from "../repeat-guard/index.ts";
+import { automationStudioLlmEvidenceRefusedOfAKind } from "./refusal-run.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext } from "./types.ts";
 
 /** What the loop does after a refused repeat: ask again, end, or stall the round with the error its caller built. */
@@ -44,7 +45,8 @@ export function automationStudioLlmEvidenceHandleRefusedRepeat(
 }
 
 /**
- * A rerun that ran and changed nothing: it put back a step identical to the one
+ * A rerun that ran and changed nothing -- or changed its argument and found
+ * exactly what its step had found (`./rerun-result.ts`): it put back a step identical to the one
  * it replaced, with the same result, so the Flow is as it was and its new step
  * id is not the draft advancing (`./amendment.ts`, live run
  * `run-muwaobm2-882cadd9`, where each such rerun read as progress). It is a step
@@ -56,6 +58,9 @@ export function automationStudioLlmEvidenceRerunChangedNothing(
   context: AutomationStudioLlmEvidenceDecisionHandlerContext,
   iteration: number
 ): AutomationStudioLlmEvidenceLoopResult | undefined {
+  // One kind with a rerun that found what its step had found (`./rerun-result.ts`): both left the Flow's result as it was (`./refusal-run.ts`).
+  const ofAKind = automationStudioLlmEvidenceRefusedOfAKind(context, iteration, "rerun_changed_nothing", AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE);
+  if (ofAKind) return ofAKind;
   const stop = automationStudioLlmEvidenceRepeatStop(context, context.repeats.refusedAgain(iteration));
   if (stop?.kind === "stalled") {
     if (context.input.propagateDecisionErrors) throw stop.error;

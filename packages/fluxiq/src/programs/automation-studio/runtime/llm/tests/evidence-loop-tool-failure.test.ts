@@ -43,8 +43,11 @@ describe("a tool call that fails, in a loop that observes failures", () => {
     // a row of its own. The failure is in the draft too: an action that was
     // attempted and did not happen is part of the record of what was done.
     expect(shown.at(-3)).toEqual({ callId: "call.press.1", toolId: "press", value: {
-      ok: false, code: "llm_evidence_loop.tool_failed", toolId: "press", stepsWithoutProgress: 1, maxStepsWithoutProgress: 3, instruction: expect.any(String)
+      ok: false, code: "llm_evidence_loop.tool_failed", toolId: "press", step: 2, stepsWithoutProgress: 1, maxStepsWithoutProgress: 3, instruction: expect.any(String)
     } });
+    // The way out names the draft step the failed call became, and the rerun that corrects it (W2).
+    expect(shown.at(-3).value.instruction).toContain("This call is step 2 of the draft");
+    expect(shown.at(-3).value.instruction).toContain('{"step": 2, "change": "rerun", "input": {<only the keys that change>}}');
     expect(shown.at(-2)).toMatchObject({ callId: "core.evidence_history", toolId: "core.evidence_history", value: {
       rows: [[0, "look", "inspect", null, "initial.inspect", "ok"], [1, "call_failed", "press", null, "call.press.1", "llm_evidence_loop.tool_failed"]]
     } });

@@ -22,8 +22,10 @@ import {
   type AutomationStudioLlmEvidenceLoopDraftChange,
   type AutomationStudioLlmEvidenceLoopTrace
 } from "../evidence-loop/index.ts";
-import { automationStudioLlmStepLogAnswer } from "../step-log/index.ts";
+import { AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE, automationStudioLlmStepLogAnswer } from "../step-log/index.ts";
+import { automationStudioLlmEvidenceRefusedOfAKind } from "./refusal-run.ts";
 import { automationStudioLlmEvidenceRepeatStop } from "./refused-repeat.ts";
+import { automationStudioLlmEvidenceAnswerKey, automationStudioLlmEvidenceTellRerunSameResult } from "./rerun-result.ts";
 import type { AutomationStudioLlmEvidenceDecisionHandlerContext, AutomationStudioLlmEvidenceDecisionNext, AutomationStudioLlmEvidenceRerunHeld, AutomationStudioLlmEvidenceRerunSettled } from "./types.ts";
 import { automationStudioRerunArgumentNote, type AutomationStudioRerunArgumentMetadata, type AutomationStudioRerunAttempt } from "../rerun-arguments/index.ts";
 
@@ -133,6 +135,29 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // a row, all `draft_unchanged` with the same two step ids refused each
   // time, is the first half of `run-mulum3x7-18ceeb75`, so the redirection
   // is what the sixth gets rather than nothing at all.
+  // **`keep` adds nothing (live run `run-muwaq9w3-baaa4e19`, decisions 0027-0036).**
+  // Lane B sent `keep` on steps already in the Flow five rounds running, its
+  // summaries saying it was "adding the paper towel quantity" steps; each answer
+  // listed the refusals and what was owed, and never said that `keep` cannot add
+  // a step or do an act. A decision whose every amendment is a `keep` of a step
+  // that was already in the Flow, and that changed nothing, is told so, and how
+  // an owed act is done; it counts as no progress below like any decision that
+  // changed nothing.
+  // A `drop` of a step already out beside those keeps changes nothing either
+  // (`already_out`), so it does not hide them: lane B's round 3 sent exactly
+  // that and was never told (`run-mux6pndp-16feb842`, cause 6).
+  const keepOnly = !rerun.request && (!amended.applied || sameDraftAs !== undefined) && decision.amendments.some((amendment) => amendment.change === "keep")
+    && decision.amendments.every((amendment) => amendment.change === "keep" ? keptPositions.has(amendment.step) : amendment.change === "drop" && outBefore.has(amendment.step));
+  // **Refusals of one kind, three decisions in a row, end the round** (`./refusal-run.ts`,
+  // week report W2): a decision that changed nothing counts under its refusals'
+  // reasons, whichever steps they named, so `keep` on another step each time is
+  // caught as well as the identical one the repeat guard catches below.
+  // An edit that landed and put the draft back is a toggle, not a refusal: the no-progress guard below has it.
+  const reasons = [...new Set(refusals.filter((refusal) => refusal.reason !== "repeat_taken_off").map((refusal) => refusal.reason))].sort();
+  if (!rerun.request && !amended.applied && (keepOnly || reasons.length)) {
+    const ended = automationStudioLlmEvidenceRefusedOfAKind(context, iteration, keepOnly ? "keep_adds_nothing" : `amendment:${reasons.join("+")}`, AUTOMATION_STUDIO_LLM_EVIDENCE_AMENDMENTS_REFUSED_CODE);
+    if (ended) return { kind: "end", result: ended };
+  }
   // A repeat counts against the round like a refused call (`./refused-repeat.ts`): a
   // rerun refused as one, or a decision whose every amendment was refused the
   // same way before -- run 36 sent `25 keep act a1` seven times, refused each time.
@@ -173,19 +198,6 @@ export function automationStudioLlmEvidenceHandleAmendment(
   // to its page is told the same way: beside the refusals, never as one, so it
   // counts nowhere a refusal counts (`../../flow-draft/amendment/strand-check.ts`, D2-1).
   const unreached = amended.unreached ?? [];
-  // **`keep` adds nothing (live run `run-muwaq9w3-baaa4e19`, decisions 0027-0036).**
-  // Lane B sent `keep` on steps already in the Flow five rounds running, its
-  // summaries saying it was "adding the paper towel quantity" steps; each answer
-  // listed the refusals and what was owed, and never said that `keep` cannot add
-  // a step or do an act. A decision whose every amendment is a `keep` of a step
-  // that was already in the Flow, and that changed nothing, is told so, and how
-  // an owed act is done; it counts as no progress above like any decision that
-  // changed nothing.
-  // A `drop` of a step already out beside those keeps changes nothing either
-  // (`already_out`), so it does not hide them: lane B's round 3 sent exactly
-  // that and was never told (`run-mux6pndp-16feb842`, cause 6).
-  const keepOnly = !rerun.request && (!amended.applied || sameDraftAs !== undefined) && decision.amendments.some((amendment) => amendment.change === "keep")
-    && decision.amendments.every((amendment) => amendment.change === "keep" ? keptPositions.has(amendment.step) : amendment.change === "drop" && outBefore.has(amendment.step));
   if ((refused.length || sameDraftAs !== undefined || moved.length || unreached.length) && !split.held.length) tell(context, iteration, refusals, amended.applied + (rerun.request ? 1 : 0), sameDraftAs, moved, keepOnly, unreached);
   if (rerun.retainedRefusals?.length) {
     automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");
@@ -195,7 +207,7 @@ export function automationStudioLlmEvidenceHandleAmendment(
   const held: AutomationStudioLlmEvidenceRerunHeld | undefined = rerunReplaces
     ? {
       amendments: split, nodeId: rerunReplaces.actionId, applied: amended.applied, refusals: split.held.length ? refusals : [], ...(split.held.length && moved.length ? { moved } : {}), ...(split.held.length && unreached.length ? { unreached } : {}), ...(rerun.request.retained ? { retained: rerun.request.retained } : {}),
-      before: { signature, draft: draftBefore, observed: observedBy(rerunReplaces) }
+      before: { signature, draft: draftBefore, observed: observedBy(rerunReplaces), answer: automationStudioLlmEvidenceAnswerKey(context.evidence, rerunReplaces.callId) }
     }
     : undefined;
   return { kind: "rerun", decision: { kind: "tool_call", callId: rerun.request.callId, toolId: rerun.request.toolId, input: rerun.request.input }, replaces: rerunReplaces, ...(held ? { held } : {}) };
@@ -240,6 +252,10 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
   const tookItsPlace = attempt.kind === "accepted" && rerun !== undefined && automationStudioFlowDraftStepIsProposable(rerun);
   const draftAfter = automationStudioLlmEvidenceDraftKey(context.draftSteps);
   const changed = draftAfter !== held.before.draft || (tookItsPlace && observedBy(rerun) !== held.before.observed);
+  // Another argument that found exactly what the step had found (`./rerun-result.ts`, R3-2).
+  const sameResult = tookItsPlace && changed && held.before.answer !== undefined && held.before.answer === automationStudioLlmEvidenceAnswerKey(context.evidence, attempt.callId);
+  if (tookItsPlace && !changed) correctRerunRow(context, iteration, held.applied + settled.applied);
+  if (sameResult) automationStudioLlmEvidenceTellRerunSameResult(context, iteration, rerun.position);
   context.history.settleAmendment(iteration, {
     refusals: given.map((refusal) => ({ step: refusal.step, reason: refusal.reason, repeated: refusal.repeated === true })),
     applied: held.applied + settled.applied + (tookItsPlace && changed ? 1 : 0),
@@ -254,8 +270,27 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
   }
   return {
     row: held.amendments.held.length ? { amended: settled.applied, ...(refused.length ? { amendmentsRefused: refused } : {}) } : {},
-    unchanged: tookItsPlace && !changed
+    unchanged: tookItsPlace && !changed,
+    sameResult
   };
+}
+
+/**
+ * The decision's row, recorded before its rerun ran, says the rerun applied
+ * and changed the draft; a rerun that changed nothing did neither (live run
+ * `run-mux6naez-6c20f26e`, R3-2: decision 0037's answer said `applied` and
+ * `draftState: "changed"` beside a history row saying "unchanged"). The row is
+ * corrected to what landed -- `applied`, the decision's other amendments --
+ * and its answer step written again (`../step-log/answer-step.ts`).
+ */
+function correctRerunRow(context: AutomationStudioLlmEvidenceDecisionHandlerContext, iteration: number, applied: number): void {
+  const row = [...context.trace].reverse().find((candidate) => candidate.iteration === iteration && candidate.decision === "amend_draft");
+  if (!row) return;
+  row.resultReason = "rerun_changed_nothing";
+  row.amended = applied;
+  if (row.draftChange) row.draftChange = { ...row.draftChange, appliedCount: applied };
+  if (row.progress) row.progress = { ...row.progress, draftState: "unchanged" };
+  automationStudioLlmStepLogAnswer(row, process.env, AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE);
 }
 
 /**
@@ -299,7 +334,7 @@ function refusedUnrun(
     return { kind: "end", result: failure(context.draftSteps, "llm_evidence_loop.repeat_without_progress", context.trace, context.accounting) };
   }
   if (stop) return stop;
-  const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, earlier, inARow });
+  const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: AUTOMATION_STUDIO_FLOW_DRAFT_TOOL_ID, earlier, inARow, rerunStep: decision.amendments.find((amendment) => amendment.change === "rerun")?.step });
   context.accountEvidence(note);
   automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID);
   evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, value: note });

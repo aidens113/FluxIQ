@@ -70,6 +70,12 @@ const TOOL_FAILURE_INSTRUCTION = "This call failed and returned no evidence, so 
 export function automationStudioLlmEvidenceToolFailure(input: {
   code: AutomationStudioLlmEvidenceToolFailureCode;
   toolId: string;
+  /**
+   * The draft step the failed call became, where it became one: the way out
+   * names it and the rerun that corrects it (week report W2). Without it the
+   * answer says only to choose another tool or input.
+   */
+  step?: number | undefined;
   stepsWithoutProgress: number;
   maxStepsWithoutProgress: number;
 }): JsonObject {
@@ -77,8 +83,14 @@ export function automationStudioLlmEvidenceToolFailure(input: {
     ok: false,
     code: input.code,
     toolId: input.toolId,
+    ...(input.step === undefined ? {} : { step: input.step }),
     stepsWithoutProgress: input.stepsWithoutProgress,
     maxStepsWithoutProgress: input.maxStepsWithoutProgress,
-    instruction: TOOL_FAILURE_INSTRUCTION
+    instruction: input.step === undefined ? TOOL_FAILURE_INSTRUCTION : `${TOOL_FAILURE_INSTRUCTION} ${failedStep(input.step)}`
   };
+}
+
+/** What to do about the draft step a failed call became: it is out of the Flow, and a rerun corrects it. */
+function failedStep(step: number): string {
+  return `This call is step ${step} of the draft: it did not work, so it is not in the Flow. To try it again with a corrected argument, send {"step": ${step}, "change": "rerun", "input": {<only the keys that change>}}; to do something else, leave step ${step} as it is.`;
 }
