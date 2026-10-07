@@ -14,7 +14,8 @@ export function evaluateAutomationStudioCandidateRequirements(input: {
     const requested = requirement.subjects;
     const scope = requested.kind === "all" ? input.evidence.enumerations.find((entry) => entry.scopeId === requested.scopeId) : undefined;
     const subjects = requirement.subjects.kind === "explicit" ? requirement.subjects.subjectIds : scope?.subjectIds ?? [];
-    if (requirement.subjects.kind === "all" && (!scope?.complete || subjects.length < (requirement.subjects.minimumSubjects ?? (requirement.mode === "create" ? 1 : 0)))) { unknown = true; codes.add("candidate.subject_coverage_incomplete"); }
+    const minimum = requirement.subjects.kind === "all" ? Math.max(requirement.mode === "create" ? 1 : 0, requirement.subjects.minimumSubjects ?? 0) : 0;
+    if (requirement.subjects.kind === "all" && (!scope?.complete || subjects.length < minimum)) { unknown = true; codes.add("candidate.subject_coverage_incomplete"); }
     if (requirement.mode === "create" && input.execution.executedNodeCount === 0) { unknown = true; codes.add("candidate.create_not_executed"); }
     for (const subjectId of subjects) {
       const observations = input.evidence.observations.filter((entry) => entry.subjectId === subjectId);

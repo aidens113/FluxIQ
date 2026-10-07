@@ -135,3 +135,10 @@ incomplete, with no reduction in the requested atomicity or outcome proof.
 - Validation: independent generator/cache10/10, reader/diagnostic/real Next routes59/59, fluxiq check/build and webcheck0, both audits0; downstream headed Chromium retained-service identity/runner61/61 and HTTP15/15. Intended normalized artifact4f29565327f008c5bad030ebc88f2859c7178c37d32aeda3aa7c7d95868d2424; zero provider/chat dispatch.
 - Outcome: Paired task ready to integrate. Downstream reports/p0-core-runtime-identity.md preserves commands/limits.
 - Follow-up: running host-module/server-adapter identities not covered by this stamp; atomic receipt/topology authority and trusted start/oracle still pending. No full suite or user panel.
+
+### 2026-10-07 - t304 durable receipt claims and process recovery
+- Agent: Codex supervisor.
+- Changed: real project-SQL attempt/stage claims, immutable bounded receipt joins, uncached draft authority and create min0 floor. Promotion result remains explicitly unsupported; no accepting callback/service/API.
+- Validation: independent owning52/52 after current dev merge; Corecheck/build0 and webcheck0; root freshly built actual-process SIGKILL/relaunch2/2 zero skips (6.66s). Pending synthetic effect refused replay; post-COMMIT draft returned same receipt/run without another start/effect. Core audit0; downstream task gate repeats audit.
+- Outcome: Ready paired integration; production interpreter/start/browser oracle/command receipts and authoritative accepted topology still pending.
+- Follow-up: downstream p2-durable-receipts.md and p2-authority-migration-inventory.md preserve exact commands, migration/ordinary writer/publication gaps. Next graph-import atomicity primitive is distinct from whole topology acceptance. No full suite/providers/userpanel or power-loss/browser-promotion claim.
