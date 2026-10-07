@@ -9,6 +9,7 @@ import { AutomationStudioLlmUnusableDecisionError, runAutomationStudioLlmEvidenc
 import { runWithAutomationStudioActivity } from "../scope.ts";
 import { activityActionOf } from "../../../../../ui/index.ts";
 import { automationStudioLlmEvidenceCompletionAttempt } from "../../llm/evidence-loop/index.ts";
+import { automationStudioReauthorEndingWatch } from "../../recovery/refuted-result/index.ts";
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;
@@ -515,5 +516,38 @@ describe("a completion the test refused after the check passed", () => {
       printed.mockRestore();
       vi.unstubAllEnvs();
     }
+  });
+});
+
+// fix-judges group 2: a re-author that ends "nothing to change" does so by its
+// completion check throwing (`../../recovery/refuted-result/nothing-to-change.ts`),
+// and the "Checking the proposed Flow" note it had opened was never closed.
+describe("a completion check that throws", () => {
+  const seed: AutomationStudioFlowDraftStep[] = [{
+    position: 1, id: "f1", iteration: 1, actionId: "web.click", input: { node: "web.click", parameters: {} },
+    effect: "mutate", effectApplied: true, disposition: "kept", proposes: true
+  }];
+
+  it("closes the note saying the repair found nothing to change, and rethrows the ending", async () => {
+    const watch = automationStudioReauthorEndingWatch();
+    const ending = watch.completed({ seed, steps: seed, result: { nothingToChange: true, summary: "The Flow already does it." } });
+    expect(ending).toBeInstanceOf(Error);
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ checkCompletion: async () => { throw ending!; } }));
+    await expect(inScope(async () => await observed.checkCompletion!({}, { steps: seed }))).rejects.toBe(ending);
+    expect(seen.map((event) => [event.label, event.detail?.kind, event.detail?.title, event.detail?.status])).toEqual([
+      ["Checking the proposed Flow", "note", "Completion check", "started"],
+      ["The repair found nothing in the Flow to change", "note", "Completion check", "succeeded"]
+    ]);
+  });
+
+  it("closes the note as stopped for any other throw, and rethrows it unchanged", async () => {
+    const error = new Error("check broke");
+    const observed = observeAutomationStudioEvidenceLoop(loopInput({ checkCompletion: async () => { throw error; } }));
+    await expect(inScope(async () => await observed.checkCompletion!({}, { steps: [] }))).rejects.toBe(error);
+    expect(seen.map((event) => [event.label, event.detail?.status])).toEqual([
+      ["Checking the proposed Flow", "started"],
+      ["Checking the proposed Flow — stopped", "failed"]
+    ]);
+    expect(JSON.stringify(seen)).not.toContain("check broke");
   });
 });

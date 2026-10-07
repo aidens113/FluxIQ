@@ -25,11 +25,18 @@
 // decision, in the numbering the model wrote: the rerun as the step it
 // replaced, and `now`, `overNow` and `throughNow` where the decision changed
 // a number.
+//
+// A held claim of an act is put to the act judge as one applied at once is
+// (`claimRefused`, t285 gap 1), and its refusal is told in the numbers the
+// model wrote too: the judge's sentence and `instead` name steps as the draft
+// stood when the claim was judged (`../../flow-draft/amendment/said-numbers.ts`, gap 2).
 import {
   applyAutomationStudioFlowDraftAmendments,
+  automationStudioFlowDraftSaidInNumbers,
   automationStudioFlowDraftStepIsProposable,
   type AutomationStudioFlowDraftAmendment,
   type AutomationStudioFlowDraftAmendmentRefusal,
+  type AutomationStudioFlowDraftClaimRefused,
   type AutomationStudioFlowDraftStep
 } from "../../flow-draft/index.ts";
 
@@ -42,8 +49,14 @@ export type AutomationStudioLlmEvidenceHeldAmendments = {
   /**
    * What became of the held amendments, given the step the rerun appended, or
    * nothing when it never ran. Refusals name the step number the model wrote.
+   * `options.claimRefused` is the act judge the decision's other amendments
+   * were applied with.
    */
-  settle(steps: AutomationStudioFlowDraftStep[], rerun: AutomationStudioFlowDraftStep | undefined): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[] };
+  settle(
+    steps: AutomationStudioFlowDraftStep[],
+    rerun: AutomationStudioFlowDraftStep | undefined,
+    options?: { claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined }
+  ): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[] };
 };
 
 /**
@@ -65,7 +78,7 @@ export function automationStudioLlmEvidenceHeldAmendments(
   return {
     now,
     held,
-    settle(draft, rerun) {
+    settle(draft, rerun, options = {}) {
       if (!rerun || !replaced || !automationStudioFlowDraftStepIsProposable(rerun)) {
         return { applied: 0, refused: held.map((amendment) => ({ step: amendment.step, reason: "did_not_work" as const })) };
       }
@@ -86,12 +99,35 @@ export function automationStudioLlmEvidenceHeldAmendments(
           const position = amendment[key];
           if (position !== undefined) moved[key] = at(position);
         }
-        const result = applyAutomationStudioFlowDraftAmendments(draft, [moved]);
+        const result = applyAutomationStudioFlowDraftAmendments(draft, [moved], { claimRefused: options.claimRefused });
         applied += result.applied;
-        refused.push(...result.refused.map((refusal) => refusal.reason === "repeat_taken_off" ? takenOffAsWritten(refusal, shown, written) : { ...refusal, step: amendment.step }));
+        refused.push(...result.refused.map((refusal) => refusal.reason === "repeat_taken_off"
+          ? takenOffAsWritten(refusal, shown, written)
+          : refusal.reason === "act_not_done_there" ? claimAsWritten({ ...refusal, step: amendment.step }, shown, written) : { ...refusal, step: amendment.step }));
       }
       return { applied, refused };
     }
+  };
+}
+
+/**
+ * An `act_not_done_there` from a held amendment, its sentence and `instead`
+ * renumbered from the draft the amendment was applied to into the numbers the
+ * model wrote.
+ */
+function claimAsWritten(
+  refusal: AutomationStudioFlowDraftAmendmentRefusal,
+  shown: ReadonlyMap<number, AutomationStudioFlowDraftStep>,
+  written: (step: AutomationStudioFlowDraftStep) => number
+): AutomationStudioFlowDraftAmendmentRefusal {
+  const number = (position: number): number => {
+    const step = shown.get(position);
+    return step ? written(step) : position;
+  };
+  return {
+    ...refusal,
+    ...(refusal.said === undefined ? {} : { said: automationStudioFlowDraftSaidInNumbers(refusal.said, number) }),
+    ...(refusal.instead === undefined ? {} : { instead: number(refusal.instead) })
   };
 }
 
