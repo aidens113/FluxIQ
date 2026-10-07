@@ -37,6 +37,15 @@ const STORED = /(\d+)(?: records?)? stored/u;
  * that would store 30 rows, 3 of them twice.
  */
 const WOULD_STORE = /(\d+)(?: records?)? would be stored/u;
+/**
+ * How many datasets a build's Flow would write, or record sets a run wrote,
+ * right after that count (`./verdict.ts`): "…, in 0 datasets", "…, across 0
+ * record sets". None means the Flow stores nothing -- a cart, a form -- so it
+ * has no rows to count: live run `run-muxkzdjw-31a13429` (lane A round 4)
+ * carded a cart Flow "Didn't pass: no rows would be stored, and ...", as a
+ * run's ending once said "It returned no rows" (`../activity/wording/run-ending.ts`).
+ */
+const NO_SETS = /\bstored, (?:in 0 datasets|across 0 record sets)\b/u;
 
 /**
  * The card's text for a performed check: the rows that came back, or for a
@@ -58,6 +67,7 @@ export function automationStudioResultCheckWords(outcome: AutomationStudioResult
 }
 
 function rowsWords(observation: string): string[] {
+  if (NO_SETS.test(observation)) return [];
   const tested = WOULD_STORE.exec(observation);
   if (tested) {
     const count = Number(tested[1]);
