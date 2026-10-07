@@ -23,6 +23,20 @@ cutover requires separately reviewed explicit adoption and all-reader/all-writer
 participation, authorization and trusted verification; candidate promotion remains
 closed.
 
+The isolated `storage/project/authority-guard` foundation coordinates trusted legacy
+mutation owners under original project IDs. Opening creates/migrates infrastructure
+SQL; it is not a project existence or admission check. A durable pending claim
+commits before the external operation. Whole-operation digest receipts advance one
+legacy revision; replay returns receipt-only evidence and never repeats the callback.
+Pending/unknown claims never expire and prevent capture admission. Capture compares
+the full revision and unresolved claims atomically, then blocks later legacy claims.
+Release requires the exact recorded read-only capture owner and a final SQL CAS;
+caller success flags cannot unlock it. Producer result/release digests are trusted
+owner assertions, not independent semantic proof. This foundation activates no
+snapshot/head and wires no ordinary writer, capture, compiler, reader, executor or
+promotion path. All-writer instrumentation and draining older uninstrumented
+writers remain prerequisites for any original-project adoption.
+
 Monolithic Flow graph import into project SQLite checks for revision 1 and
 writes the Flow, revision, nodes, edges, regions, operation history, partition
 counts and their FTS/bounds indexes in one `BEGIN IMMEDIATE` transaction.
