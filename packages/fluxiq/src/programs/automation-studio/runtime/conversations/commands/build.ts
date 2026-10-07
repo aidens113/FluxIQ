@@ -1,3 +1,4 @@
+import { parseAutomationStudioCandidateAuthoringResult, type AutomationStudioCandidateAuthoringResult } from "../../flow-bootstrap/authoring-result/index.ts";
 // Building a Flow by exploring the site: the step create-here, explore and
 // improve share.
 //
@@ -14,12 +15,7 @@ import type { AutomationStudioConversationCommandCallResult, AutomationStudioCon
 import { automationStudioConversationCallCause } from "./progress.ts";
 
 export type AutomationStudioConversationBuildResult =
-  | {
-      ok: true;
-      adaptationId: string;
-      /** True when the build finished holding a question: the change cannot be applied until it is answered. */
-      awaitingPermission: boolean;
-    }
+  | { ok: true; status: "draft"; candidate: AutomationStudioCandidateAuthoringResult }
   /**
    * `ending` is the build's own account for the person, when it gave one; the
    * answer opens with it (`./progress.ts`). `kept` is true when the build kept
@@ -39,6 +35,7 @@ export async function buildAutomationStudioFlowFromConversation(
     flowId: input.flowId,
     authSessionId: context.sessionId,
     evidenceGuided: true,
+    authoringMode: "candidate",
     // An extend amends the Flow's own steps from where the Flow already
     // starts; the page on screen is a creation's starting point.
     ...(input.mode === "extend" ? { mode: "extend" } : context.startLocation ? { startLocation: context.startLocation } : {}),
@@ -48,13 +45,9 @@ export async function buildAutomationStudioFlowFromConversation(
     const ending = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true ? "Build stopped. The Flow was not promoted." : buildEnding(response);
     return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), kept: keptDraft(response) };
   }
-  const payload = response.payload as { candidate?: { status?: unknown }; adaptation?: { status?: unknown; adaptationId?: unknown; permissionRequest?: unknown } } | undefined;
-  if (payload?.candidate?.status === "draft" || payload?.adaptation?.status === "draft") return { ok: false, cause: "the build returned an unverified draft, so no change was applied", ending: "Saved a candidate draft. It still needs independent execution and verification; the Flow's steps are unchanged.", kept: true };
-  const adaptation = payload?.adaptation;
-  if (!adaptation || adaptation.status !== "proposed" || typeof adaptation.adaptationId !== "string" || !adaptation.adaptationId) {
-    return { ok: false, cause: "the build answered without the change it made", kept: false };
-  }
-  return { ok: true, adaptationId: adaptation.adaptationId, awaitingPermission: Boolean(adaptation.permissionRequest) };
+  const candidate = parseAutomationStudioCandidateAuthoringResult(response.payload, { projectId: context.projectId, flowId: input.flowId });
+  if (!candidate) return { ok: false, cause: "the build answered without a valid candidate draft for this Flow", kept: false };
+  return { ok: true, status: "draft", candidate };
 }
 
 /**

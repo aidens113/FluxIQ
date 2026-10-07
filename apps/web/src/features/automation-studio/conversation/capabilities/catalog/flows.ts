@@ -82,7 +82,7 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
     consequences: ["modify_existing"],
     invoke: async (context, args) => panelCapabilityResult(
       await generateFlowFromWebsiteExplorationAdaptation(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId") }),
-      "Exploring the site and building the Flow from what worked.",
+      "Saved a candidate draft. Verification pending; the Flow?s steps are unchanged.",
       "The exploration could not be started."
     )
   }),
@@ -115,7 +115,7 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
       if (!saved.ok) return panelCapabilityResult(saved, "", "What should change could not be saved, so nothing was built.");
       return panelCapabilityResult(
         await improveFlowFromWebsiteAdaptation(context.transport, { projectId, flowId }),
-        "Worked out the change on the website. It is waiting in Suggested changes for you to accept or reject.",
+        "Saved a candidate draft. Verification pending; the Flow?s steps are unchanged.",
         "The improvement could not be worked out."
       );
     }

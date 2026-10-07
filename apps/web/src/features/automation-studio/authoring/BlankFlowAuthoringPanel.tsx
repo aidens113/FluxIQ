@@ -1,4 +1,5 @@
 "use client";
+import { parseAutomationStudioCandidateAuthoringResult, type AutomationStudioCandidateAuthoringResult } from "fluxiq/automation-studio/candidate-authoring";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCE_PHRASES, parseAutomationStudioActionPermissionRequest, type AutomationStudioActionPermissionRequest } from "fluxiq/automation-studio/action-permissions";
@@ -77,6 +78,7 @@ export function BlankFlowAuthoringPanel(props: {
   const [error, setError] = useState("");
   const [instruction, setInstruction] = useState("");
   const [proposal, setProposal] = useState<{ flowId: string; adaptationId: string } | null>(null);
+  const [candidate, setCandidate] = useState<AutomationStudioCandidateAuthoringResult | null>(null);
   const [explorationPhase, setExplorationPhase] = useState<"idle" | "authorizing" | "exploring" | "review">("idle");
   const [explorationElapsedSeconds, setExplorationElapsedSeconds] = useState(0);
   const [permissionContinuation, setPermissionContinuation] = useState<PendingPermissionContinuation | null>(null);
@@ -99,6 +101,7 @@ export function BlankFlowAuthoringPanel(props: {
     setInstruction("");
     setBusy(false);
     setProposal(null);
+    setCandidate(null);
     setPermissionContinuation(null);
     setPermissionOpen(false);
   }, [props.projectId, props.flow?.flowId]);
@@ -148,7 +151,12 @@ export function BlankFlowAuthoringPanel(props: {
         ? await props.commands.generateFromWebsite({ projectId: request.payload.projectId, flowId: request.payload.flowId, ...permitted })
         : await props.commands.generateBootstrap({ projectId: request.payload.projectId, flowId: request.payload.flowId, ...permitted });
       if (!current()) return;
-      const adaptation = generated.payload?.adaptation;
+      if (mode === "explore" && generated.ok) {
+        const draft = parseAutomationStudioCandidateAuthoringResult(generated.payload, { projectId: request.payload.projectId, flowId: request.payload.flowId });
+        if (!draft) { setError("The build did not return a valid candidate draft for this Flow."); setExplorationPhase("idle"); return; }
+        setCandidate(draft); setProposal(null); setExplorationPhase("idle"); return;
+      }
+      const adaptation = (generated.payload as { adaptation?: { status?: string; adaptationId?: string; flowId?: string } } | undefined)?.adaptation;
       if (!generated.ok || adaptation?.status !== "proposed" || typeof adaptation?.adaptationId !== "string") {
         const requested = generated.payload?.diagnostic?.code === "flow_bootstrap.permission_required"
           ? parseAutomationStudioActionPermissionRequest(generated.payload?.diagnostic?.permissionRequest)
@@ -182,11 +190,12 @@ export function BlankFlowAuthoringPanel(props: {
   };
 
   return <section aria-label="Tell FluxIQ what to automate" className="automation-runtime-run-panel automation-flow-authoring-panel">
-    <header><div><strong>Tell FluxIQ what to automate</strong><span className="automation-flow-authoring-description">{explorationRequest.ok ? "Write the job in your own words. FluxIQ opens the website, tries it out, and brings back a draft for you to check. Nothing is saved until you say so." : "FluxIQ will draft this automation from the notes already written for it. Nothing is saved until you check the draft."}</span></div></header>
+    <header><div><strong>Tell FluxIQ what to automate</strong><span className="automation-flow-authoring-description">{explorationRequest.ok ? "Write the job in your own words. FluxIQ opens the website, tries it out, and brings back a draft for you to check. The candidate is saved as a draft. Verification is pending; the Flow?s steps stay unchanged." : "FluxIQ will draft this automation from the notes already written for it. Nothing is saved until you check the draft."}</span></div></header>
     {explorationRequest.ok ? <><label className="automation-flow-exploration-task"><span>Website task</span><textarea aria-describedby="website-task-help" aria-label="Website task" disabled={busy} maxLength={WEBSITE_EXPLORATION_INSTRUCTION_MAX_LENGTH} onChange={(event) => { const nextInstruction = event.target.value; if (permissionContinuation && nextInstruction.trim() !== permissionContinuation.instructionBody) { setPermissionContinuation(null); setPermissionOpen(false); } setInstruction(nextInstruction); setError(""); setExplorationPhase("idle"); }} placeholder="For example: Find a product, add it to the cart, and capture the order total." rows={4} value={instruction} /><small id="website-task-help">{instruction.length}/{WEBSITE_EXPLORATION_INSTRUCTION_MAX_LENGTH} characters. What you write here is kept with the draft so you can see what was asked for.</small></label>
-    <div className="automation-runtime-run-command"><div><small>Browser actions happen on the connected website while FluxIQ tries this out. What it writes stays a draft until you review it.</small><small>{EXPLORATION_BOUNDS_TEXT}</small></div><button className="button button-primary" disabled={busy || !instruction.trim()} onClick={() => void generate("explore")} type="button">{explorationPhase === "authorizing" ? "Preparing exploration..." : explorationPhase === "exploring" ? `${AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}...` : "Explore and create proposal"}</button></div></> : null}
+    <div className="automation-runtime-run-command"><div><small>Browser actions happen on the connected website while FluxIQ tries this out. What it writes is an unverified candidate draft; applying it is unavailable.</small><small>{EXPLORATION_BOUNDS_TEXT}</small></div><button className="button button-primary" disabled={busy || !instruction.trim()} onClick={() => void generate("explore")} type="button">{explorationPhase === "authorizing" ? "Preparing exploration..." : explorationPhase === "exploring" ? `${AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}...` : "Explore and create proposal"}</button></div></> : null}
     {explorationPhase === "authorizing" ? <div className="automation-flow-exploration-progress"><progress aria-label="Preparing website exploration" /> <span aria-atomic="true" aria-live="polite" role="status">Preparing a bounded exploration request. The generated Flow will still require review.</span></div> : null}
     {explorationPhase === "exploring" ? <div className="automation-flow-exploration-progress"><progress aria-label={AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget} /> <span aria-atomic="true" aria-live="polite" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}.</strong> Collecting bounded page evidence; {AUTOMATION_LLM_PROGRESS_LABELS.generatingProposal.toLowerCase()} follows in this request. Keep the browser and target tab connected.</span> <span aria-hidden="true">({explorationElapsedSeconds}s elapsed)</span></div> : null}
+    {candidate && candidate.projectId === props.projectId && candidate.flowId === props.flow?.flowId ? <p role="status" data-candidate-id={candidate.candidateId}>Saved candidate draft (revision {candidate.revision}). Verification pending. The Flow?s steps are unchanged.</p> : null}
     {proposal ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> No generated changes have been applied. Review the Router, Subflows, and actions before applying the Adaptation. <button className="button" disabled={busy || !props.onOpenAdaptation} onClick={() => props.onOpenAdaptation?.(proposal.flowId, proposal.adaptationId)} type="button">Review suggested change</button></p> : null}
     {permissionRequest && !permissionOpen ? <p className="automation-runtime-message" role="status"><strong>Flow action approval is still required.</strong> No proposal was created. <button className="button" disabled={busy} onClick={() => setPermissionOpen(true)} type="button">Review requested permissions</button></p> : null}
     {buildRequest.ok ? <div className="automation-runtime-run-command"><div><small>Or draft it from the notes already written for this automation, without opening a website.</small></div><button className="button" disabled={busy} onClick={() => void generate("build")} type="button">{busy && explorationPhase === "idle" ? `${AUTOMATION_LLM_PROGRESS_LABELS.generatingProposal}...` : "Build proposal from active instructions"}</button></div> : null}
