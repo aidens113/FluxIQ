@@ -75,6 +75,17 @@ export type AutomationStudioFlowDraftStepWords = { target?: string; text?: strin
  */
 export type AutomationStudioFlowDraftStepToggle = { key: string; to: "on" | "off" };
 
+/**
+ * One line a step changed on the page it stayed on, in the host's words, as
+ * the call's own result showed it: a line of text that `appeared` or `went`,
+ * one that now `reads` otherwise, or one whose words differ only in a number
+ * that `rose` ("Cart (3)" after "Cart (2)"). Page text, screened as a
+ * control's words are (`./control-words.ts`); Core reads the words for the
+ * person's acts (`../flow-bootstrap/instructed-acts/act-evidence.ts`) and
+ * nothing else.
+ */
+export type AutomationStudioFlowDraftStepChange = { words: string; how: "appeared" | "went" | "reads" | "rose" };
+
 export type AutomationStudioFlowDraftStep = {
   /** Where it is in the draft, counting from 1: what an amendment names. */
   position: number;
@@ -163,6 +174,18 @@ export type AutomationStudioFlowDraftStep = {
    * changed the page. Only the host can name the control, so it does.
    */
   toggle?: AutomationStudioFlowDraftStepToggle;
+  /**
+   * What the step changed on the page it stayed on, as the host stated it on
+   * its own call: the lines that appeared, went, now read otherwise, or rose
+   * (`AutomationStudioFlowDraftStepChange`). Absent where the host said
+   * nothing -- a look, a step that moved the page, a page it could not read.
+   *
+   * The act a step does is read from what it did, not from the model's label
+   * alone (week report W1, 23 live runs): run `run-muqiho5c-e830ce01` named its
+   * add-to-cart act on "Not now", and only the press before it made the cart
+   * count rise. Only a step whose effect is `mutate` carries it.
+   */
+  changed?: AutomationStudioFlowDraftStepChange[];
   /**
    * The host's code for the list a read reads, as the caller stated it on its
    * own call: the same for the same list on the same page for the whole build.

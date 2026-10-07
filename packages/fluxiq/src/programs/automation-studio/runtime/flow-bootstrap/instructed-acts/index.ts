@@ -22,7 +22,9 @@
 //
 // `act-evidence.ts` is published because what a claimed step did instead of
 // its act, and the step whose words name the act, are said on the checklist
-// and the verdict by the same sentence (W1).
+// and the verdict by the same sentence (W1). `claim-verdict.ts` is published
+// because the loop asks it as a claim is made, so a claim the act judge would
+// reject is refused there rather than told later.
 //
 // `choice-order.ts` is published because the choice made after its act's step
 // travels on the verdict and the checklist as information, typed by it.
@@ -35,6 +37,7 @@
 export * from "./act-evidence.ts";
 export * from "./check.ts";
 export * from "./checklist.ts";
+export * from "./claim-verdict.ts";
 export * from "./choice-order.ts";
 export * from "./contracts.ts";
 export * from "./instruction-acts.ts";

@@ -21,7 +21,12 @@ import { automationStudioFlowDraftSettingsRewriteRun } from "./settings-rewrite-
 import { automationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
 import { automationStudioFlowDraftReach } from "./reach.ts";
 import { automationStudioFlowDraftStrandCheck, type AutomationStudioFlowDraftWithdrawal } from "./strand-check.ts";
-import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal, AutomationStudioFlowDraftUnreachedStep } from "./types.ts";
+import type {
+  AutomationStudioFlowDraftAmendment,
+  AutomationStudioFlowDraftAmendmentRefusal,
+  AutomationStudioFlowDraftClaimRefused,
+  AutomationStudioFlowDraftUnreachedStep
+} from "./types.ts";
 
 /** The four changes that say when a step runs rather than whether it is kept. */
 const ROUTING_CHANGES = new Set<AutomationStudioFlowDraftAmendmentChange>(["optional", "only_if", "on_failed", "repeat"]);
@@ -69,10 +74,16 @@ const NOT_A_FLOW_STEP: AutomationStudioFlowDraftAmendmentRefusal["reason"] = "no
  * any, names each step of the Flow the decision newly left after a step that
  * does not bring it to its page: information, never a refusal
  * (`./strand-check.ts`).
+ *
+ * `options.claimRefused`, when given, is asked before an act is claimed on a
+ * step (`./types.ts`, week report W1): a claim it refuses is not made and is
+ * reported `act_not_done_there`, and the rest of that amendment still applies,
+ * as with `act_on_a_read`.
  */
 export function applyAutomationStudioFlowDraftAmendments(
   steps: AutomationStudioFlowDraftStep[],
-  amendments: readonly AutomationStudioFlowDraftAmendment[]
+  amendments: readonly AutomationStudioFlowDraftAmendment[],
+  options: { claimRefused?: AutomationStudioFlowDraftClaimRefused | undefined } = {}
 ): { applied: number; refused: AutomationStudioFlowDraftAmendmentRefusal[]; moved?: ActMove[]; unreached?: AutomationStudioFlowDraftUnreachedStep[] } {
   let applied = 0;
   const refused: AutomationStudioFlowDraftAmendmentRefusal[] = [];
@@ -206,7 +217,19 @@ export function applyAutomationStudioFlowDraftAmendments(
     // about the route (D phase 2).
     const clearsRouting = amendment.change === "keep" && amendment.act === undefined && amendment.place === undefined && step.routing !== undefined && step.routing.kind !== "repeat";
     const alreadyNamed = amendment.act !== undefined && step.acts?.includes(amendment.act) === true;
-    const act = disposition === "kept" && !actOnRead && amendment.act !== undefined && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(amendment.act) && !alreadyNamed ? amendment.act : undefined;
+    const claimed = disposition === "kept" && !actOnRead && amendment.act !== undefined && AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID.test(amendment.act) && !alreadyNamed ? amendment.act : undefined;
+    // A claim the act judge would reject -- the step chose one of the act's
+    // options, closed something in the way or went to another page -- is not
+    // made, and is said with the judge's sentence; the rest of the amendment
+    // still applies, as with an act on a read (week report W1, live run
+    // `run-mux74k5q-1c3c2127`: a1 on the press of "Spain"). Asked before the
+    // step changes, so a claim that was the amendment's only news changes nothing.
+    const claimRefusal = claimed === undefined ? undefined : options.claimRefused?.(steps, step, claimed);
+    if (claimRefusal) {
+      const instead = claimRefusal.instead === undefined ? undefined : steps.find((each) => each.position === claimRefusal.instead);
+      refused.push({ step: amendment.step, reason: "act_not_done_there", act: claimRefusal.act, said: claimRefusal.said, ...(instead ? { instead: shown.number(instead) } : {}) });
+    }
+    const act = claimRefusal ? undefined : claimed;
     // The places on the named route the step says it is on, taken wherever an
     // act is, a read included: a listing may be on the way (`../route-places/`).
     // A value outside the grammar is ignored, as a bad act id is. Whether it
@@ -226,8 +249,8 @@ export function applyAutomationStudioFlowDraftAmendments(
       // A place the step already says is plainly already so: no reason of its
       // own, so the activity and chat refusal words stay as they are.
       const reason = disposition !== "kept" ? "already_out" : alreadyNamed ? "act_already_named" : routePlace !== undefined ? "already_so" : "already_in_flow";
-      // A read whose only news was the act has already been told why.
-      if (!actOnRead) refused.push({ step: amendment.step, reason, ...(reason === "act_already_named" ? { act: amendment.act! } : {}) });
+      // A read, or a claim refused, whose only news was the act has already been told why.
+      if (!actOnRead && !claimRefusal) refused.push({ step: amendment.step, reason, ...(reason === "act_already_named" ? { act: amendment.act! } : {}) });
       continue;
     }
     const leavesFlow = disposition !== "kept" && step.disposition === "kept";

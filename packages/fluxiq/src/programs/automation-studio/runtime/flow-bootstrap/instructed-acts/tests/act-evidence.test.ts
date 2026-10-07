@@ -9,11 +9,15 @@
 //   - `run-musp4h2f-72e8ed99` (row 7): an add put on a typed search that led to
 //     the results page, and on a product link;
 //   - `run-muqiho5c-e830ce01` (1-3): the add put on "Not now", a popup's
-//     dismissal, and on the Spain choice.
+//     dismissal, and on the Spain choice. "Not now" answered a layer the run's
+//     own Add to cart opened, so the host did not mark it an interruption; only
+//     the press before it made the cart count rise (`changed`, below).
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import type { AutomationStudioInstructedAct } from "../contracts.ts";
 import {
+  automationStudioInstructedActChangeShows,
+  automationStudioInstructedActClaimVerdict,
   automationStudioInstructedActStepDidInstead,
   automationStudioInstructedActStepThatNamesIt,
   automationStudioInstructedActs,
@@ -79,7 +83,7 @@ describe("a lasting act claimed on a press of one of its own options (run mux74k
 
   it("reads a typed quantity as choosing it (a1.quantity)", () => {
     const quantity = step(6, { actionId: "web.dom.type", words: { target: "Quantity", text: "3" }, replay: { from: { location: "item" } }, acts: ["a1"] });
-    expect(automationStudioInstructedActStepDidInstead(actOf(HUB), quantity, [quantity])).toEqual({ fault: "step_only_chooses", chooses: "a1.quantity" });
+    expect(automationStudioInstructedActStepDidInstead(actOf(HUB), quantity, [quantity], automationStudioInstructedActs(HUB))).toEqual({ fault: "step_only_chooses", chooses: "a1.quantity" });
     expect(itemOf(HUB, [quantity])).toMatchObject({ todo: "step_only_chooses", step: 6, chooses: "a1.quantity" });
   });
 });
@@ -153,12 +157,12 @@ describe("a step whose record does not show it did something else", () => {
   it("judges a set act on \"Spain\" as before", () => {
     const set: AutomationStudioInstructedAct = { id: "a1", kind: "set", verb: "switch", quote: "Switch my country to Spain" };
     const spain = press(2, "home", "Spain", { acts: ["a1"] });
-    expect(automationStudioInstructedActStepDidInstead(set, spain, [spain, press(3, "store", "x")])).toBeUndefined();
+    expect(automationStudioInstructedActStepDidInstead(set, spain, [spain, press(3, "store", "x")], [set])).toBeUndefined();
   });
 
   it("does not catch an interruption whose words name the act", () => {
     const save = press(2, "item", "Save", { interruption: true, acts: ["a1"] });
-    expect(automationStudioInstructedActStepDidInstead(actOf(SAVE), save, [save])).toBeUndefined();
+    expect(automationStudioInstructedActStepDidInstead(actOf(SAVE), save, [save], automationStudioInstructedActs(SAVE))).toBeUndefined();
   });
 });
 
@@ -181,5 +185,104 @@ describe("the step that names the act", () => {
     expect(automationStudioInstructedActStepThatNamesIt(act, acts, spain, [spain, other({ effect: "observe" })])).toBeUndefined();
     expect(automationStudioInstructedActStepThatNamesIt(twoActs[0]!, twoActs, spain, [spain, other({ acts: ["a2"] })])).toBeUndefined();
     expect(automationStudioInstructedActStepThatNamesIt(act, acts, spain, [spain, other({ acts: ["a1.colour"] })])).toBe(8);
+  });
+});
+
+describe("what a step changed, read for the act (run muqiho5c: the cart count rose on the press before \"Not now\")", () => {
+  const rose = (words: string) => ({ words, how: "rose" as const });
+  const appeared = (words: string) => ({ words, how: "appeared" as const });
+  const went = (words: string) => ({ words, how: "went" as const });
+  const reads = (words: string) => ({ words, how: "reads" as const });
+  const add = (position: number, overrides: Partial<AutomationStudioFlowDraftStep> = {}) =>
+    press(position, "item", "Add to cart", { disposition: "taken", changed: [rose("Cart (1)")], ...overrides });
+  const notNow = (position: number, overrides: Partial<AutomationStudioFlowDraftStep> = {}) =>
+    press(position, "item", "Not now", { acts: ["a1"], changed: [went("Protect your purchase")], ...overrides });
+
+  it("catches \"Not now\", no interruption, when the Add to cart before it made the cart rise", () => {
+    const draft = [add(4), notNow(5)];
+    const a1 = itemOf(SEARCH, draft);
+    expect(a1).toMatchObject({ todo: "another_step_shows_it", step: 5, instead: 4 });
+    expect(a1.todoSaid).toBe('Step 5 ("Not now") changed nothing that shows a1, and does not do a1. Step 4 ("Add to cart") shows it: name a1 there with amend_draft add on step 4 with act a1.');
+    expect(a1).not.toHaveProperty("claimSaid");
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: SEARCH, result: {}, draftSteps: draft });
+    expect(verdict.ok).toBe(false);
+    if (verdict.ok) return;
+    expect(verdict.missing[0]).toMatchObject({ id: "a1", reason: "another_step_shows_it", step: "5", instead: 4 });
+    expect((verdict.missingActs.acts as Array<Record<string, unknown>>)[0]?.said).toBe(a1.todoSaid);
+    expect(verdict.instruction).toContain("A reason of another_step_shows_it");
+  });
+
+  it("is refused as the claim is made", () => {
+    const draft = [add(4), press(5, "item", "Not now", { disposition: "taken", changed: [went("Protect your purchase")] })];
+    const refused = automationStudioInstructedActClaimVerdict({ instructionText: SEARCH, steps: draft, step: draft[1]!, act: "a1" });
+    expect(refused).toMatchObject({ act: "a1", instead: 4 });
+    expect(refused?.said).toContain('Step 5 ("Not now") changed nothing that shows a1');
+  });
+
+  it("counts a press whose change shows the act, over its words, its interruption or its choice", () => {
+    const plus = press(6, "item", "＋", { acts: ["a1"], interruption: true, changed: [appeared("Added to cart")] });
+    expect(itemOf(SEARCH, [plus, press(7, "item", "Continue shopping")])).toMatchObject({ done: 6 });
+    expect(itemOf(SEARCH, [plus, press(7, "item", "Continue shopping")])).not.toHaveProperty("claimSaid");
+    const yes = press(6, "item", "Yes, continue", { acts: ["a1"], interruption: true, changed: [appeared("Added to cart"), went("Add a protection plan?")] });
+    expect(itemOf(HUB, [yes])).toMatchObject({ done: 6 });
+    const spain = press(5, "item", "Spain", { acts: ["a1"], changed: [appeared("1 item added to your basket")] });
+    expect(automationStudioInstructedActStepDidInstead(actOf(HUB), spain, [spain], automationStudioInstructedActs(HUB))).toBeUndefined();
+  });
+
+  it("keeps a size press whose change only shows the Add to cart now reads as step_only_chooses", () => {
+    const grey = press(5, "item", "Space Grey", { acts: ["a1"], changed: [reads("Add to cart")] });
+    expect(itemOf(HUB, [grey, add(7)])).toMatchObject({ todo: "step_only_chooses", step: 5, instead: 7 });
+  });
+
+  it("reads no place in a quantity or an add's own button that rose", () => {
+    const act = actOf(SEARCH);
+    expect(automationStudioInstructedActChangeShows(act, press(3, "item", "＋", { changed: [rose("Qty 2")] }))).toBe(false);
+    expect(automationStudioInstructedActChangeShows(act, press(3, "item", "＋", { changed: [rose("Add 2 to cart")] }))).toBe(false);
+    expect(automationStudioInstructedActChangeShows(act, press(3, "item", "＋", { changed: [went("Cart (1)")] }))).toBe(false);
+    expect(automationStudioInstructedActChangeShows(act, press(3, "item", "＋", { changed: [rose("Basket 3 items")] }))).toBe(true);
+    // A quantity's own "+" that rose "Qty 2" shows nothing, so "Not now" is judged as before.
+    expect(itemOf(SEARCH, [press(4, "item", "＋", { changed: [rose("Qty 2")] }), notNow(5)])).toMatchObject({ done: 5 });
+    expect(itemOf(SEARCH, [press(4, "item", "＋", { changed: [rose("Add 2 to cart")] }), notNow(5)])).toMatchObject({ done: 5 });
+  });
+
+  it("judges a step that says nothing of what it changed as before (lenient)", () => {
+    const { changed: _said, ...silent } = notNow(5);
+    expect(itemOf(SEARCH, [add(4), silent])).toMatchObject({ done: 5 });
+    expect(itemOf(SEARCH, [add(4), notNow(5, { changed: [] })])).toMatchObject({ done: 5 });
+  });
+
+  it("prefers a step whose change shows the act over one whose words only name it", () => {
+    const acts = automationStudioInstructedActs(HUB);
+    const spain = press(5, "item", "Spain", { acts: ["a1"] });
+    const plus = press(3, "item", "＋", { disposition: "taken", changed: [appeared("Added to cart")] });
+    const named = press(8, "item", "Add to cart", { disposition: "taken" });
+    expect(automationStudioInstructedActStepThatNamesIt(acts[0]!, acts, spain, [plus, spain, named])).toBe(3);
+    expect(itemOf(HUB, [plus, spain, named]).todoSaid).toContain('Step 3 ("＋") shows it: name a1 there');
+  });
+
+  describe("never offers another act's add (towels and napkins)", () => {
+    const TWO = "Add one pack of the ValueRidge Paper Towels and one pack of the ValueRidge Dinner Napkins to my cart.";
+    const acts = automationStudioInstructedActs(TWO);
+    const towelsAdd = (overrides: Partial<AutomationStudioFlowDraftStep> = {}) =>
+      add(4, { ranWith: { target: { accessibleName: "Add to cart", record: "ValueRidge Paper Towels, 6 Double Rolls" } }, ...overrides });
+    const napkinsNotNow = notNow(5, { acts: ["a2"] });
+
+    it("whose record names the towels, for the napkins act", () => {
+      const draft = [towelsAdd(), napkinsNotNow];
+      expect(automationStudioInstructedActStepDidInstead(acts[1]!, napkinsNotNow, draft, acts)).toBeUndefined();
+      expect(automationStudioInstructedActStepThatNamesIt(acts[1]!, acts, napkinsNotNow, draft)).toBeUndefined();
+      expect(itemOf(TWO, draft, "a2")).not.toHaveProperty("instead");
+    });
+
+    it("named for the towels act", () => {
+      const draft = [add(4, { acts: ["a1"] }), napkinsNotNow];
+      expect(automationStudioInstructedActStepDidInstead(acts[1]!, napkinsNotNow, draft, acts)).toBeUndefined();
+      expect(itemOf(TWO, draft, "a2")).not.toHaveProperty("instead");
+    });
+
+    it("but offers one that names no other object", () => {
+      const draft = [add(4), napkinsNotNow];
+      expect(automationStudioInstructedActStepDidInstead(acts[1]!, napkinsNotNow, draft, acts)).toEqual({ fault: "another_step_shows_it" });
+    });
   });
 });
