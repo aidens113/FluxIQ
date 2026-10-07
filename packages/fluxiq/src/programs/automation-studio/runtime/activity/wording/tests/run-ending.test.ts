@@ -50,6 +50,10 @@ describe("automationStudioActivityRunEnding", () => {
     expect(ending({ outcome: "not_rerun" }, { resultReauthor: { code: "flow_bootstrap.deadline_exceeded" } })).toMatch(/, and the fix ran out of time before it finished\.$/u);
     expect(ending({ outcome: "not_rerun" })).toMatch(/, and the fix didn't finish\.$/u);
     expect(ending({ phase: "reauthoring", outcome: undefined })).toMatch(/, and the fix didn't finish\.$/u);
+    // W17 (run `run-muw5zv4m-52d83027`): a re-author that found the Flow already does what was asked, and changed nothing.
+    const nothing = ending({ outcome: "not_rerun" }, { resultReauthor: { routed: true, outcome: "nothing_to_change", reason: "Step 11 added both packs." } });
+    expect(nothing).toMatch(/, and the repair found nothing in the Flow to change\.$/u);
+    expect(`Run failed: ${nothing}`.length).toBeLessThanOrEqual(160);
   });
 
   it("says one row and no rows as such, and a check that could not decide as unconfirmed", () => {

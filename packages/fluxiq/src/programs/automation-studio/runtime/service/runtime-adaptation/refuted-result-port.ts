@@ -90,8 +90,10 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
       return automationStudioResultRepairWithPurse(automationStudioRefutedResultReauthored({ detail: laddered.detail, decision, attempt: refuted.current.attempt }), laddered.purse);
     }
     const brief = automationStudioReauthorBrief({ projectId: decision.projectId, flowId: decision.flowId, current: refuted.current, history: refuted.history, maxAttempts: refuted.maxAttempts, now: now() });
+    // The re-author may conclude the Flow needs no change (W17, run-muw5zv4m): it then
+    // ends with no failure, so neither the ladder nor a re-run follows it below.
     const { detail: repaired, built, purse } = await automationStudioReauthorBuild({
-      deps, projectId: decision.projectId, flowId: decision.flowId, brief, purse: opened, detail: refuted.detail, now,
+      deps, projectId: decision.projectId, flowId: decision.flowId, brief, purse: opened, detail: refuted.detail, now, nothingToChange: true,
       record: (detail: AutomationStudioFlowRunDetail, attempt: AutomationStudioReauthorBuilt) => automationStudioRefutedResultReauthored({
         detail,
         decision,

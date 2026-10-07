@@ -319,6 +319,15 @@ export type AutomationStudioRunResultSummary = {
    * caller held none or it was withheld; a withheld one sets `withheld`.
    */
   endView?: AutomationStudioResultEndView;
+  /**
+   * The same view of the page before the run or test did anything, screened
+   * the same way: for a finished run, the page its first step that saw the
+   * page found, or left when it moved to another document (`./result-summary.ts`);
+   * for a build's test, one look just before it (`llm/node-tools/dry-run-gate.ts`),
+   * the site as exploration left it. What it already shows predates what is
+   * judged (run `run-mux6pndp-16feb842`: "2 · $28.96" read as the two packs).
+   */
+  startView?: AutomationStudioResultEndView;
 };
 
 /**

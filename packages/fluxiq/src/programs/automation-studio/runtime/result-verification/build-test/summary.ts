@@ -84,6 +84,11 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 // `replay.ts`), so a test whose last step passed holds none unless the caller
 // captured one.
 //
+// **And the page just before the test** (`startView`), as the caller looked at
+// it, screened the same way: the site as exploration left it. A test's reset is
+// a navigation and a lasting step is only checked, so a cart count or a
+// collected coupon there predates the test (run `run-mux6pndp-16feb842`).
+//
 // **What it does not carry.** A page view inside an observation, Core's
 // bookkeeping, or text another step already sent (`./observation.ts`,
 // t195-w28a), nor a handle or a machine-minted key among a step's words.
@@ -207,6 +212,8 @@ export function automationStudioBuildTestResultSummary(input: {
   notes?: readonly AutomationStudioBuildTestNote[] | undefined;
   /** The page the caller captured after the test, as the domain produced it. Absent, the test's last answer's view, if it carried one. */
   endView?: AutomationStudioResultEndView | undefined;
+  /** The page the caller looked at just before the test, as the domain produced it. Absent, none is sent. */
+  startView?: AutomationStudioResultEndView | undefined;
 }): AutomationStudioRunResultSummaryWithEndView {
   const denied = input.deniedEvidenceKeys;
   const observe = denied === undefined ? undefined : automationStudioBuildTestObservationReader({ deniedEvidenceKeys: denied, observedStateKeys: input.observedStateKeys });
@@ -296,6 +303,8 @@ export function automationStudioBuildTestResultSummary(input: {
   const held = input.endView ?? lastView(input.report, input.observedStateKeys);
   const ended = held ? automationStudioResultEndView(held, denied) : undefined;
   if (ended?.withheld) withheld = true;
+  const started = input.startView ? automationStudioResultEndView(input.startView, denied) : undefined;
+  if (started?.withheld) withheld = true;
   return {
     schemaVersion: "automation-studio.run-result-summary.v1",
     totalRecordCount: 0,
@@ -306,7 +315,8 @@ export function automationStudioBuildTestResultSummary(input: {
     flowShape: shape.flowShape,
     withheld: withheld || shape.withheld,
     buildTest,
-    ...(ended?.endView ? { endView: ended.endView } : {})
+    ...(ended?.endView ? { endView: ended.endView } : {}),
+    ...(started?.endView ? { startView: started.endView } : {})
   };
 }
 

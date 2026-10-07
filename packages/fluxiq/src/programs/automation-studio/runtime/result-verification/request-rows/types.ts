@@ -42,3 +42,23 @@ export type AutomationStudioRequestRowsRead = {
 
 /** A finished run's stored row: its label and every text cell, for an id a judgement names. */
 export type AutomationStudioRequestRowsStored = { label: string; cells: string[] };
+
+/**
+ * The rows Core's check of a judgement named as left out by one condition of
+ * one read (`checked-rows-named.ts`), read from Core's own `checked` lines: what
+ * a repair compares a rerun of that read against (`rerun-rows.ts`, live run
+ * `run-mux6naez-6c20f26e`, R3-3). Labels as the read gave them, and the ids the
+ * line named each row by.
+ */
+export type AutomationStudioRequestRowsNamed = {
+  /** A build test's step number, as the line says it. */
+  step?: number;
+  /** A finished run's read node, as the line says it. */
+  nodeId?: string;
+  /** The condition, as the read names it. */
+  condition: string;
+  rows: Array<{ label: string; ids?: string[] }>;
+};
+
+/** What a rerun of a read did to the rows Core's check named (`rerun-rows.ts`): the ones it keeps, the ones still left out, and Core's sentence saying so. */
+export type AutomationStudioRequestRowsAfterRerun = { kept: string[]; stillLeftOut: string[]; said: string };

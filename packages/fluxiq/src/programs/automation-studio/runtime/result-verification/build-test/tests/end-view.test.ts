@@ -42,6 +42,19 @@ describe("the page a build's test ended on", () => {
     expect(summary.endView).toEqual({ after: 2, view: { page: PAGE } });
   });
 
+  // Run `run-mux6pndp-16feb842` (line 45): both judges read "2 · $28.96" -- a
+  // soap and exploration's 3-Pack -- as the two towel packs the test added.
+  it("goes beside the page the site stood on just before the test, as the caller looked at it, screened the same way", () => {
+    const before = "PAGE \"Pickup\"\nt885 link \"2 · $28.96\" ~/cart";
+    const summary = summaryOf([[add, { ok: true, code: "core.replay.replayed", said: "the step ran again" }]], { startView: { view: { page: before } }, endView: { view: { page: PAGE }, after: 2 } });
+    expect(summary.startView).toEqual({ view: { page: before } });
+    expect(summary.endView).toEqual({ after: 2, view: { page: PAGE } });
+    const withheld = summaryOf([[add, { ok: true }]], { startView: { view: { page: before, cookies: "session=1" } } });
+    expect(withheld.startView).toBeUndefined();
+    expect(withheld.withheld).toBe(true);
+    expect(summaryOf([[add, { ok: true }]])).not.toHaveProperty("startView");
+  });
+
   it("is not carried without the domain's declared keys", () => {
     const summary = summaryOf([[add, { ok: true, page: PAGE }]], { deniedEvidenceKeys: undefined });
     expect(summary.endView).toBeUndefined();

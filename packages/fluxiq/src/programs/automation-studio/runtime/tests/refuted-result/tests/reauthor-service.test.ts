@@ -177,6 +177,8 @@ async function createHarness(options: {
   pauseReauthorProvider?: boolean;
   /** The run's intent. Absent is `build_and_adapt` with four calls; present, the resolution states no call budget of its own. */
   intent?: AutomationStudioRuntimeSessionLlmIntent;
+  /** The re-author's first decision completes its seeded draft unchanged: it says the Flow needs no change (W17). */
+  reauthorFindsNothing?: boolean;
 }): Promise<TestHarness> {
   const io = new IoRegistry();
   io.registerOutput("t240", {
@@ -257,6 +259,13 @@ async function createHarness(options: {
           );
         }
         decisions += 1;
+        if (options.reauthorFindsNothing) {
+          return jsonResponse({
+            kind: "evidence_tool_decision",
+            summary: "The run's own record shows the Flow already does what was asked.",
+            decision: { kind: "complete", result: { summary: "Step extract read every record the request asks for; the check misread the result.", nothingToChange: true } },
+          });
+        }
         // The carried extraction step first, run again as it stands, so the
         // Flow can be tested whole; then finish.
         return jsonResponse({
@@ -625,6 +634,38 @@ describe("refuted-result service composition", () => {
       ]);
       expect(detail?.metadata?.resultRepair).toMatchObject({ phase: "settled", outcome: "not_rerun" });
       expect(JSON.stringify(detail)).not.toContain(RAW_PROVIDER_DETAIL);
+    },
+  );
+
+  // W17, live run `run-muw5zv4m-52d83027`: the check refuted a cart the Flow
+  // had built exactly as asked, and the re-author spent 46 decisions trying to
+  // change a step that had done its act, because nothing let it say the Flow
+  // needs no change. Through the real service: a re-author that completes its
+  // seeded draft unchanged ends there -- no test, no judge, no second decision,
+  // nothing approved, applied or re-run -- and the run records why.
+  it(
+    "ends a re-author that completes its seeded Flow unchanged as nothing to change, applying and re-running nothing",
+    { timeout: 60_000 },
+    async () => {
+      const harness = await createHarness({ failReauthorProvider: false, reauthorFindsNothing: true });
+      const run = await harness.service.runRuntimeSession({
+        projectId: harness.projectId,
+        flowId: harness.flowId,
+        llmExecution: { ...ACTOR, intent: "build_and_adapt" },
+      });
+      // The check's two calls, then the re-author's one decision, and nothing after it.
+      expect(harness.taskKinds).toEqual(["loop_verification", "loop_verification", "evidence_tool_decision"]);
+      expect(harness.replays).toEqual([]);
+      const detail = await harness.service.getFlowRunDetail(harness.projectId, run.runId);
+      const reauthor = detail?.metadata?.resultReauthor as { adaptationId?: string; applied?: boolean; held?: boolean; attempts?: unknown[] } | undefined;
+      expect(reauthor).toMatchObject({ routed: true, outcome: "nothing_to_change", reason: "Step extract read every record the request asks for; the check misread the result." });
+      expect(reauthor?.adaptationId).toBeUndefined();
+      expect(reauthor?.applied).toBeUndefined();
+      expect(reauthor?.held).toBeUndefined();
+      expect(reauthor?.attempts).toEqual([expect.objectContaining({ attempt: 1, outcome: "nothing_to_change" })]);
+      // The check's verdict stands: the run is still the refuted one, and nothing re-ran it.
+      expect(detail?.metadata?.resultRepair).toMatchObject({ phase: "settled", outcome: "not_rerun" });
+      expect(run.status).toBe("failed");
     },
   );
 });

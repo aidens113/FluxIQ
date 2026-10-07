@@ -62,6 +62,8 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * empty, every result is shown whole.
    */
   observedStateKeys?: readonly string[] | undefined;
+  /** Where a list read's answer holds its kept records, as the bound domain declared it (`AutomationStudioLlmEvidenceRuntimeBinding.readRowsKey`). */
+  readRowsKey?: string | undefined;
   /** Explicit bound-domain screening authority for authored rerun path diagnostics. Absent, omit paths. */
   deniedEvidenceKeys?: readonly string[] | undefined;
   maxIterations?: number;

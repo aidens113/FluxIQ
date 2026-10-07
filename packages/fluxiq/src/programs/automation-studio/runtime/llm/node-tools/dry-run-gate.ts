@@ -51,6 +51,16 @@
 // live run `run-murwdp4f-35f976d2` (0071) the model answered a refusal with
 // `complete` on the unchanged draft ("the Flow replays") and was shown the
 // identical verdict with nothing saying the Flow had not changed.
+//
+// **The test's judge sees the page before it too.** A test starts on the site
+// exploration left: its reset is a navigation, and a lasting step is only
+// checked. So the gate looks once more, through the same hook, just before a
+// replay sends anything (`startView` on the report), and the judge credits
+// only what changed (run `run-mux6pndp-16feb842`: "2 · $28.96", a soap and
+// exploration's 3-Pack, read as the two towel packs). The look is taken
+// before anything says whether the replay will pass, so a refused replay has
+// one too, unused. A look that fails or times out is no start view, never a
+// failed test.
 
 import type { JsonValue } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
@@ -140,6 +150,13 @@ export type AutomationStudioFlowDraftTestReport = {
    * nothing (t174-w89; run `run-murwd8le-79e735a8` Cause 7).
    */
   endView?: AutomationStudioFlowDraftTestEndView;
+  /**
+   * The page just before the test sent anything, looked at through the same
+   * hook with no step named: the site as exploration left it, before the test
+   * went back to where the Flow starts. A reuse reports the replay's own.
+   * Absent when the caller offers no look, or it failed or saw nothing.
+   */
+  startView?: AutomationStudioFlowDraftTestEndView;
 };
 
 export type AutomationStudioFlowDraftDryRunGateInput = {
@@ -210,9 +227,10 @@ export type AutomationStudioFlowDraftDryRunGateInput = {
   /**
    * One look at the page, taken right after a replay passes and before
    * anything else moves it, for the judge of the test
-   * (`AutomationStudioFlowDraftTestReport.endView`). Asked only where the test
-   * is `observed`. A look that fails or sees nothing leaves the report without
-   * a page; it never fails the test.
+   * (`AutomationStudioFlowDraftTestReport.endView`), and once without `after`
+   * just before a replay starts (`startView`). Asked only where the test is
+   * `observed`. A look that fails or sees nothing leaves the report without
+   * that page; it never fails the test.
    */
   endView?: ((request: { callId: string; after?: number; signal?: AbortSignal }) => Promise<AutomationStudioFlowDraftTestEndView | undefined>) | undefined;
   /** The node each step names, handed to the replay so a repeat runs once per row (`./replay-draft.ts`). */
@@ -242,7 +260,7 @@ export function automationStudioFlowDraftDryRunGate(
   let cleanSignature: string | undefined;
   // What the replay that made `cleanSignature` clean passed on and observed,
   // so a reuse of it reports what that replay saw.
-  let clean: { verdict: AutomationStudioFlowDraftDryRun; observations: AutomationStudioFlowDraftTestObservation[]; endView?: AutomationStudioFlowDraftTestEndView | undefined } | undefined;
+  let clean: { verdict: AutomationStudioFlowDraftDryRun; observations: AutomationStudioFlowDraftTestObservation[]; endView?: AutomationStudioFlowDraftTestEndView | undefined; startView?: AutomationStudioFlowDraftTestEndView | undefined } | undefined;
   // Steps an earlier dry run already told the model did not replay. It marks
   // their feedback lines `again` and nothing more. It used to let an
   // unreproducible step through the second time it was reported, and live
@@ -261,20 +279,22 @@ export function automationStudioFlowDraftDryRunGate(
   // (user, 2026-10-02). Insisting changes nothing: a step that did not replay
   // blocks again (`../../flow-draft/dry-run.ts`).
   let refused: { signature: string; verdict: AutomationStudioFlowDraftDryRun; replays: number } | undefined;
-  const passed = (verdict: AutomationStudioFlowDraftDryRun, observations: AutomationStudioFlowDraftTestObservation[], reused: boolean, signature: string, endView: AutomationStudioFlowDraftTestEndView | undefined): undefined => {
-    clean = { verdict, observations, endView };
-    input.observed?.({ verdict, observations, reused, signature, ...(endView ? { endView } : {}) });
+  type Looked = AutomationStudioFlowDraftTestEndView | undefined;
+  const passed = (verdict: AutomationStudioFlowDraftDryRun, observations: AutomationStudioFlowDraftTestObservation[], reused: boolean, signature: string, endView: Looked, startView: Looked): undefined => {
+    clean = { verdict, observations, endView, startView };
+    input.observed?.({ verdict, observations, reused, signature, ...(endView ? { endView } : {}), ...(startView ? { startView } : {}) });
     return undefined;
   };
-  // The page right after a replay passed, before anything else can move it.
-  const lookedAt = async (verdict: AutomationStudioFlowDraftDryRun): Promise<AutomationStudioFlowDraftTestEndView | undefined> => {
+  // One look at the page through the caller's hook: `start_view` with no step named, `end_view` after the replay's last.
+  const look = async (name: "start_view" | "end_view", after: number | undefined): Promise<Looked> => {
     if (!input.endView || !input.observed) return undefined;
-    const after = verdict.outcomes.at(-1)?.step;
-    const looked = await input.endView({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}.end_view`, ...(after === undefined ? {} : { after }), ...(input.signal ? { signal: input.signal } : {}) })
-      .then((endView) => ({ endView }), (error: unknown) => ({ unread: error }));
-    // A look that failed is no page for the judge, and the test it followed still passed.
-    return "endView" in looked ? looked.endView : undefined;
+    const looked = await input.endView({ callId: `${AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID}.${attempts}.${name}`, ...(after === undefined ? {} : { after }), ...(input.signal ? { signal: input.signal } : {}) })
+      .then((view) => ({ view }), (error: unknown) => ({ unread: error }));
+    // A look that failed or timed out is no page for the judge, and the test still runs, and passes or not on its own.
+    return "view" in looked ? looked.view : undefined;
   };
+  // The page right after a replay passed, before anything else can move it.
+  const lookedAt = (verdict: AutomationStudioFlowDraftDryRun): Promise<Looked> => look("end_view", verdict.outcomes.at(-1)?.step);
   // The build's lasting acts, asked for once and only when a replay first needs them. An add, save,
   // claim, move or submit lasts by its kind, and an act a read did not answer is lasting, so a read
   // that fails still names those (`instructedLastingActs`); a provider that throws is a fault, and ends the build.
@@ -327,7 +347,7 @@ export function automationStudioFlowDraftDryRunGate(
     const signature = automationStudioFlowDraftFlowSignature(input.steps);
     if (signature === cleanSignature) {
       input.reusedClean?.();
-      return clean ? passed(clean.verdict, clean.observations, true, signature, clean.endView) : undefined;
+      return clean ? passed(clean.verdict, clean.observations, true, signature, clean.endView, clean.startView) : undefined;
     }
     if (refused?.signature === signature && refused.replays >= MAX_REPLAYS_OF_ONE_DRAFT) {
       // The same Flow those replays refused, so the same verdict: its steps
@@ -341,6 +361,8 @@ export function automationStudioFlowDraftDryRunGate(
     }
     attempts += 1;
     const lastingIds = await lastingActs();
+    // The page just before the test sends anything: the site as exploration left it.
+    const startView = await look("start_view", undefined);
     let replay: Awaited<ReturnType<typeof replayAutomationStudioFlowDraft>>;
     try {
       replay = await replayAutomationStudioFlowDraft({
@@ -371,7 +393,7 @@ export function automationStudioFlowDraftDryRunGate(
     if (replay.verdict.ok) {
       if (unreached.length) return refuseUnrunnable(unreached);
       cleanSignature = signature;
-      return passed(replay.verdict, replay.observations, false, signature, await lookedAt(replay.verdict));
+      return passed(replay.verdict, replay.observations, false, signature, await lookedAt(replay.verdict), startView);
     }
     // A step the replay found missing and proved the Flow did not need -- a
     // banner the site remembers having been answered -- is made optional rather
@@ -383,7 +405,7 @@ export function automationStudioFlowDraftDryRunGate(
     if (optional && unreached.length) return refuseUnrunnable(unreached);
     if (optional) {
       cleanSignature = automationStudioFlowDraftFlowSignature(input.steps);
-      return passed(optional, replay.observations, false, cleanSignature, await lookedAt(optional));
+      return passed(optional, replay.observations, false, cleanSignature, await lookedAt(optional), startView);
     }
     // A Flow the last refused test was also a test of: run again unchanged.
     const again = refused?.signature === signature;

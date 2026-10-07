@@ -62,6 +62,8 @@ import type {
   AutomationStudioRuntimeAdaptationContext
 } from "../../service.ts";
 import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+// The read-account barrel, not the result-verification one: `result-verification/run-outcome.ts` calls into recovery (`../refuted-result/brief.ts` says the same).
+import { automationStudioResultSummaryWithoutTestedLabel } from "../../result-verification/read-account/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
 import { AUTOMATION_STUDIO_RUNTIME_PATCH_SKIP_CODES, automationStudioRuntimePatchRefusalIsCheckableByExploration, type AutomationStudioRuntimeRecoveryRung } from "../diagnosis-chain.ts";
 import { summarizeAutomationStudioRuntimeRecoveryContext } from "../context-summary.ts";
@@ -260,7 +262,8 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // declaration like every other evidence slot, so a summary on a request that
   // cannot declare would not arrive with less context -- it would be refused,
   // and the repair call would never be made at all.
-  const resultSummary = ports.llmEvidenceRuntime?.deniedEvidenceKeys && input.resultSummary ? input.resultSummary : undefined;
+  // As a model is shown it: without Core's `testedLabel` bookkeeping, which no instruction describes (run-mux6naez-6c20f26e).
+  const resultSummary = ports.llmEvidenceRuntime?.deniedEvidenceKeys && input.resultSummary ? automationStudioResultSummaryWithoutTestedLabel(input.resultSummary) : undefined;
   // Read once, for both calls, and deliberately not caught. A deployment that
   // keeps no thread supplies no port and this is empty; a deployment that keeps
   // one and cannot read it has a real fault, and repairing a Flow while

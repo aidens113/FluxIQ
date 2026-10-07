@@ -10,6 +10,7 @@ import type {
   AutomationStudioLlmEvidenceLoopTrace,
   AutomationStudioLlmEvidenceLoopUnreadable
 } from "../../llm/index.ts";
+import type { AutomationStudioRequestRowsNamed } from "../../result-verification/request-rows/index.ts";
 import type { AutomationStudioFlowBootstrapBudgetBound } from "../generation-failure/index.ts";
 
 /** Why a live round stopped without the model saying the Flow was ready, where no budget was the reason. */
@@ -69,7 +70,7 @@ export type AutomationStudioFlowBootstrapJudgeSpend = { inputTokens: number; out
 export type AutomationStudioFlowBootstrapTestVerdict =
   | { verdict: "yes"; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string; confidence?: number; unconfirmedAdvice?: AutomationStudioFlowBootstrapYesAdvice }
   | { verdict: "unknown" | "not_judged"; why: string; untestedCarried?: number[]; unconfirmedReading?: AutomationStudioFlowBootstrapJudgeReading; oneCallSaidYes?: true; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string }
-  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; fix?: string[]; checked?: string[]; records?: AutomationStudioFlowBootstrapJudgedRecords; stillAchievable?: AutomationStudioFlowBootstrapStillAchievable; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
+  | { verdict: "no"; expected?: string; observed?: string; advice?: string; findings: string[]; fix?: string[]; checked?: string[]; checkedRows?: AutomationStudioRequestRowsNamed[]; records?: AutomationStudioFlowBootstrapJudgedRecords; stillAchievable?: AutomationStudioFlowBootstrapStillAchievable; spent: AutomationStudioFlowBootstrapJudgeSpend; flowSignature?: string };
 
 /**
  * Whether the judge said what was asked can still be had (its diagnosis's
@@ -121,7 +122,24 @@ export type AutomationStudioFlowBootstrapJudgedWrong = {
    */
   fix?: string[];
   checked?: string[];
+  /**
+   * A `no`'s only: the rows `checked` names as left out by one condition of one
+   * read, per read and condition, as Core matched them
+   * (`result-verification/request-rows/checked-rows-named.ts`). What a repair
+   * compares a rerun of that read with, to say which of them it now keeps (live
+   * run `run-mux6naez-6c20f26e`, R3-3). `checked` stays as it is beside it.
+   */
+  checkedRows?: AutomationStudioRequestRowsNamed[];
   untestedCarried?: number[];
+  /**
+   * Where the test numbered the round's steps otherwise than the repair seed
+   * does (exploratory steps left out, the rest numbered from 1): each changed
+   * test step number, as a string, to the draft step it now is. Core's own
+   * numbers above are already the seed's; the judge's words are not rewritten,
+   * and are read through this (`./test-step-numbers.ts`, live run
+   * `run-mux6naez-6c20f26e`: "Step 9" in `checked`, step 5 in `whereToFix`).
+   */
+  testStepIsDraftStep?: Record<string, number>;
   /**
    * An `unknown`'s only: the reading of the one judge call that said the test
    * does not do what was asked, which the other call did not confirm (live run

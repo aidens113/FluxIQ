@@ -28,6 +28,8 @@
 import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type {
+  AutomationStudioResultEndView,
+  AutomationStudioResultFlowStepSummary,
   AutomationStudioResultReadAccount,
   AutomationStudioResultRepairDirective,
   AutomationStudioResultVerificationOutcome,
@@ -80,6 +82,18 @@ export type AutomationStudioResultRepairHistoryEntry = {
    * (`run-munq5s8x-6d620cdf`).
    */
   reads?: AutomationStudioResultReadAccount[];
+  /**
+   * The run's own record, as the check was shown it (`result-verification/step-changes.ts`,
+   * `result-summary.ts`): what each step changed where it stayed, per run of it,
+   * in authored order -- only the steps with a recorded change -- and the page
+   * before the run did anything and the one it ended on. Already screened. What
+   * a re-author grounds "the Flow needs no change" in (W17, `run-muw5zv4m-52d83027`),
+   * and what it reads before it changes a step. Kept in memory with the rest of
+   * the entry; the run record never carries it.
+   */
+  changes?: Array<{ nodeId: string; definitionId: string; label?: string; changed: NonNullable<AutomationStudioResultFlowStepSummary["changed"]> }>;
+  startView?: AutomationStudioResultEndView;
+  endView?: AutomationStudioResultEndView;
   /** A stable digest of the answer: rows, columns, sampled values and findings. Equal digests are the same answer. */
   answerDigest: string;
 };
@@ -102,6 +116,9 @@ export function automationStudioResultRepairHistoryEntry(input: {
   const directive = outcome.performed === true ? outcome.repair : undefined;
   const shape = input.summary.flowShape.find((step) => step.nodeId === input.nodeId);
   const parameters = shape?.parameters ? JSON.stringify(shape.parameters) : undefined;
+  const changes = input.summary.flowShape.flatMap((step) => step.changed?.length
+    ? [{ nodeId: step.nodeId, definitionId: step.definitionId, ...(step.label ? { label: step.label } : {}), changed: step.changed }]
+    : []);
   return {
     attempt: input.attempt,
     reason: outcome.reason,
@@ -112,6 +129,9 @@ export function automationStudioResultRepairHistoryEntry(input: {
     },
     ...(shape ? { step: { nodeId: shape.nodeId, definitionId: shape.definitionId, ...(parameters ? { parameters } : {}) } } : {}),
     ...(input.summary.reads?.length ? { reads: input.summary.reads } : {}),
+    ...(changes.length ? { changes } : {}),
+    ...(input.summary.startView ? { startView: input.summary.startView } : {}),
+    ...(input.summary.endView ? { endView: input.summary.endView } : {}),
     answerDigest: answerDigest(input.summary, directive)
   };
 }
