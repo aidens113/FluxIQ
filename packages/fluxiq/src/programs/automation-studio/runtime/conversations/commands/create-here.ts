@@ -1,16 +1,9 @@
-// "Automate this": a new Flow, built from the page the person has open.
-//
-// Four registry calls, each the one the panel makes for the same step: create
-// the Flow, save what it should do as its generation instruction, explore the
-// site from the page on screen and build from what worked, and apply the
-// change. Applying is safe to do without asking because the Flow is brand new
-// and blank: there is nothing of the person's for the change to replace.
+// Creates the blank Flow and saves the original instruction, then authors an unverified candidate.
+// Successful authoring never applies topology or makes the Flow executable.
 
-import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
 import { buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
-import { automationStudioConversationSiteName } from "../site-name.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
 
 const TITLE = "Create an automation here";
@@ -21,7 +14,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
   capability: {
     id: "flow.createHere",
     title: TITLE,
-    summary: "Makes a new Flow that does what the person asks, explores the page they have open to work out the steps, and puts those steps into the Flow.",
+    summary: "Makes a new Flow that does what the person asks, explores the page they have open to work out the steps, and saves a candidate draft with verification pending.",
     group: "Flows",
     control: "",
     arguments: [
@@ -32,7 +25,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     consequences: ["create_new"],
     reauthorizes: false
   },
-  announce: ({ place }) => `I'll make you a new automation for this, working out its steps by trying them on ${place}. I'll say here when it is ready.`,
+  announce: ({ place }) => `I'll make you a new automation for this, working out its steps by trying them on ${place}. I'll say here when the draft is saved; it will still need verification.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const instruction = automationStudioConversationCommandText(args, "instruction");
@@ -56,17 +49,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     // build this Flow", said the opposite of what had happened (t195,
     // `run-murdouox-c5294247`, UI review).
     if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: automationStudioConversationCreateHereLeft(name, built) });
-    progress.carry({ adaptationId: built.adaptationId });
-    const where = automationStudioConversationSiteName(context.startLocation);
-    progress.landed(`tried the steps on ${where} and worked out which ones work`);
-    if (built.awaitingPermission) return progress.failed("the build finished still waiting for your permission for one of its steps, so its steps were not put into the Flow");
-
-    const applied = await applyAutomationStudioConversationAdaptation(context, { flowId, adaptationId: built.adaptationId });
-    if (!applied.ok) return progress.failed(applied.cause);
-    // True whether or not a run follows, and one may already be under way when
-    // this is read (the Lab starts one as soon as it is written), so it says
-    // what is so rather than telling the person to start one (UI D9).
-    return progress.succeeded(`Your automation "${name}" is ready: I tried its steps on ${where} and put the ones that worked into it.`);
+    return { ...progress.succeeded("Saved a candidate draft. Verification pending; the Flow's steps are unchanged."), candidate: built.candidate };
   }
 };
 

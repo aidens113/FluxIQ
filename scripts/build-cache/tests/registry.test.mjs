@@ -145,3 +145,11 @@ test("no step's metadata or labels name the checkout's path, even with absolute-
     for (const spelling of spellings) assert.ok(!shown.includes(spelling), `${name} fingerprints ${spelling}`);
   }
 });
+
+
+test("Fluxiq cleanup is an owning fingerprinted command while contracts retain their build scope", () => {
+  const step = resolveStep("fluxiq:build", { env: {} });
+  assert.ok(STEPS["fluxiq:build"].command.startsWith("node ../../scripts/clean-library-output.mjs && "));
+  assert.ok(coversPath(path.join(REPOSITORY_ROOT, "scripts/clean-library-output.mjs"), step));
+  assert.ok(!STEPS["contracts:build"].command.includes("clean-library-output"));
+});

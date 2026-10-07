@@ -1,3 +1,4 @@
+const draft = (flowId: string, candidateId = "candidate.one") => ({ status: "draft", projectId: "project.one", flowId, candidateId, revision: 1, digest: "a".repeat(64), sourceInstructionIds: ["instruction.one"], baseDependencyDigest: "base", baseSettingsRevision: 0, verification: "not_performed", promotionAllowed: false, accounting: { requestId: "request", estimatedInputTokens: 1 } });
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
@@ -66,7 +67,7 @@ function commands(overrides: Record<string, unknown> = {}) {
   return {
     generateBootstrap: vi.fn(async () => ({ ok: true, payload: { adaptation: { projectId: "project.one", flowId: flow.flowId, adaptationId: "adaptation.bootstrap.one", status: "proposed" } } })),
     saveGenerationInstruction: vi.fn(async () => ({ ok: true, payload: { instruction: { instructionId: "instruction.generation", status: "active" } } })),
-    generateFromWebsite: vi.fn(async () => ({ ok: true, payload: { adaptation: { projectId: "project.one", flowId: flow.flowId, adaptationId: "adaptation.exploration.one", status: "proposed" } } })),
+    generateFromWebsite: vi.fn(async () => ({ ok: true, payload: { candidate: draft(flow.flowId) } })),
     ...overrides
   } as any;
 }
@@ -168,7 +169,7 @@ describe("blank Flow instruction authoring", () => {
     await saveFlowGenerationInstruction({ post } as any, { projectId: "project.one", flowId: "flow.blank", instruction: "Complete checkout" });
     expect(post).toHaveBeenCalledWith("save-flow-generation-instruction", { projectId: "project.one", flowId: "flow.blank", instruction: "Complete checkout" });
     await generateFlowFromWebsiteExplorationAdaptation({ post } as any, { projectId: "project.one", flowId: "flow.blank", permittedConsequences: ["modify_existing"] });
-    expect(post).toHaveBeenCalledWith("generate-flow-bootstrap-adaptation", { projectId: "project.one", flowId: "flow.blank", permittedConsequences: ["modify_existing"], evidenceGuided: true }, { policy: { timeoutMs: 675_000 } });
+    expect(post).toHaveBeenCalledWith("generate-flow-bootstrap-adaptation", { projectId: "project.one", flowId: "flow.blank", permittedConsequences: ["modify_existing"], evidenceGuided: true, authoringMode: "candidate" }, { policy: { timeoutMs: 675_000 } });
   });
 
   it("waits longer than an exploration can run before giving up on its answer", () => {
@@ -176,7 +177,7 @@ describe("blank Flow instruction authoring", () => {
     expect(WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS).toBe(675_000);
   });
 
-  it("saves a bounded task before website exploration and opens review", async () => {
+  it("saves a bounded task before website exploration and saves a pending draft", async () => {
     const authoringCommands = commands();
     const onOpenAdaptation = vi.fn();
     const { renderer } = await mount(authoringCommands, onOpenAdaptation, readiness, flow);
@@ -187,9 +188,9 @@ describe("blank Flow instruction authoring", () => {
     expect(authoringCommands.saveGenerationInstruction).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.blank", instruction: "Complete checkout and capture the total." });
     expect(authoringCommands.generateFromWebsite).toHaveBeenCalledWith(buildPayload);
     expect(authoringCommands.saveGenerationInstruction.mock.invocationCallOrder[0]).toBeLessThan(authoringCommands.generateFromWebsite.mock.invocationCallOrder[0]!);
-    expect(onOpenAdaptation).toHaveBeenCalledWith("flow.blank", "adaptation.exploration.one");
-    expect(renderedText(renderer.toJSON())).toContain("Ready for review.");
-    expect(JSON.stringify(renderer.toJSON())).toContain("No generated changes have been applied.");
+    expect(onOpenAdaptation).not.toHaveBeenCalled();
+    expect(renderedText(renderer.toJSON())).toContain("Verification pending");
+    expect(JSON.stringify(renderer.toJSON())).toContain("steps are unchanged");
     expect(JSON.stringify(authoringCommands.generateFromWebsite.mock.calls)).not.toContain("authorizationPassword");
     await act(async () => renderer.unmount());
   });
@@ -363,4 +364,14 @@ describe("blank Flow instruction authoring", () => {
     expect(button(renderer, "Retry availability check")).toBeUndefined();
     await act(async () => renderer.unmount());
   });
+});
+
+it("saved exploration draft shows pending verification without opening an adaptation", async () => {
+  const { renderer, onOpenAdaptation } = await mount(commands());
+  await act(async () => renderer.root.findByProps({ "aria-label": "Website task" }).props.onChange({ target: { value: "Find products" } }));
+  await act(async () => button(renderer, "Explore and create proposal")!.props.onClick());
+  expect(renderer.root.findAllByProps({ role: "status" }).some((entry) => entry.props["data-candidate-id"] === "candidate.one")).toBe(true);
+  expect(onOpenAdaptation).not.toHaveBeenCalled();
+  expect(button(renderer, "Review proposal")).toBeUndefined();
+  await act(async () => renderer.unmount());
 });

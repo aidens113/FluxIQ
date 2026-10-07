@@ -60,10 +60,10 @@ function library(dir) {
     [`${dir}:build`]: {
       package: `packages/${dir}`,
       kind: "build",
-      command: dir === "fluxiq" ? LIBRARY_BUILD + " && node ../../scripts/runtime-build-identity.mjs" : LIBRARY_BUILD,
-      // `--clean` stays: it is what removes the output of a deleted or newly
-      // excluded source. The build info is part of the result a clean build
-      // leaves, so a restore leaves it too.
+      command: dir === "fluxiq" ? "node ../../scripts/clean-library-output.mjs && " + LIBRARY_BUILD + " && node ../../scripts/runtime-build-identity.mjs" : LIBRARY_BUILD,
+      // Fluxiq removes its entire owned output before rebuilding: TypeScript
+      // clean alone cannot remove outputs whose source was deleted/relocated.
+      // Contracts retain their existing build scope. Build info restores too.
       outputs: [{ path: "dist" }, { path: "tsconfig.build.tsbuildinfo" }],
       required: ["dist/index.js", "dist/index.d.ts", ...(dir === "fluxiq" ? ["dist/runtime-build-identity.json"] : [])],
       ...(dir === "fluxiq" ? { ignoredInputs: [{ path: "../../scripts/runtime-build-identity", match: /\.mjs$/u }] } : {}),

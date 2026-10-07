@@ -1,13 +1,5 @@
-// "It should also ...": improving a Flow that already has steps.
-//
-// The panel's `flow.improve`, run by Core. What the person said is saved as a
-// required generation instruction on the Flow (the panel's
-// `saveFlowImprovementInstruction`), because the build reads the Flow's active
-// instructions and nothing else; the Flow is then amended from the live site
-// with Core's `extend`. Unlike a build onto a blank Flow, this change replaces
-// steps the person already has, so it is not applied on their behalf: the
-// thread asks "apply this change?", and a yes applies it
-// (`confirmed.ts`, `adaptation.apply`).
+// Saves the requested improvement alongside original instructions and authors a candidate.
+// Existing steps stay unchanged; there is no apply confirmation before verification.
 
 import { automationStudioConversationCommandText } from "./argument.ts";
 import { buildAutomationStudioFlowFromConversation } from "./build.ts";
@@ -22,7 +14,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
   capability: {
     id: "flow.improve",
     title: TITLE,
-    summary: "Says what an existing Flow should do differently, then amends its steps on the real website into a change the person is asked to apply.",
+    summary: "Says what an existing Flow should do differently, then amends its steps on the real website into a candidate draft with verification pending.",
     group: "Flows",
     control: "Improve automation",
     arguments: [
@@ -34,7 +26,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
     reauthorizes: false
   },
   // An improvement is built from the Flow as it is, not from the page open now (`build.ts`), so no page is named.
-  announce: ({ flowName }) => `I'll work out the change${flowName ? ` to "${flowName}"` : ""} by trying it on the website, then ask you here whether to apply it.`,
+  announce: ({ flowName }) => `I'll work out the change${flowName ? ` to "${flowName}"` : ""} by trying it on the website, then save an unverified candidate draft.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const flowId = automationStudioConversationCommandText(args, "flowId");
@@ -49,17 +41,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "extend" });
     if (!built.ok) return progress.failed(built.cause, { ending: built.ending });
-    progress.carry({ adaptationId: built.adaptationId });
-    return {
-      ...progress.succeeded("Worked out the change on the website. It is waiting for you to say whether to apply it."),
-      confirm: {
-        text: "Apply this change to the Flow? It changes the Flow's steps from its next run. Say yes to apply it, or no to leave the Flow as it is.",
-        capabilityId: "adaptation.apply",
-        arguments: { flowId, adaptationId: built.adaptationId },
-        consequences: ["modify_existing"],
-        control: "Apply the suggested change"
-      }
-    };
+    return { ...progress.succeeded("Saved a candidate draft. Verification pending; the Flow's steps are unchanged."), candidate: built.candidate };
   }
 };
 
