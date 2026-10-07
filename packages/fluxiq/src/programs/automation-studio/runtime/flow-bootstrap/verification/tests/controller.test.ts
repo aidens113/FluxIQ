@@ -207,8 +207,15 @@ it("malformed command receipt is never sufficient execution evidence", async () 
   expect(await h.controller.verifyAndPromote()).toMatchObject({ status: "draft", code: "candidate.execution_receipt_invalid" });
 });
 
-it("an empty complete enumeration cannot prove creation", async () => {
-  const b: AutomationStudioCandidateRequirementBrief = { ...brief, requirements: [{ ...brief.requirements[0]!, mode: "create", subjects: { kind: "all", scopeId: "requested.subjects" } }] };
+it.each([undefined, 0])("an empty complete enumeration cannot prove creation (minimum=%s)", async minimumSubjects => {
+  const text = "Create a new subject in the declared scope.";
+  const b: AutomationStudioCandidateRequirementBrief = { ...brief, instructions: [{ instructionId: "instruction.original", text }], requirements: [{ ...brief.requirements[0]!, source: { instructionId: "instruction.original", start: 0, end: text.length }, mode: "create", subjects: { kind: "all", scopeId: "requested.subjects", ...(minimumSubjects !== undefined ? { minimumSubjects } : {}) } }] };
   const h = harness({ brief: b, observation: (p) => ({ ...p, observations: [], enumerations: p.enumerations.map((e) => ({ ...e, subjectIds: [] })) }) });
   expect(await h.controller.verifyAndPromote()).toMatchObject({ status: "draft", code: "candidate.requirements_unknown" });
+});
+it("an ensure brief permits complete empty scope when its declared minimum is zero", async () => {
+  const text = "Ensure desired setting on every subject in the declared scope.";
+  const b: AutomationStudioCandidateRequirementBrief = { ...brief, instructions: [{ instructionId: "instruction.original", text }], requirements: [{ ...brief.requirements[0]!, source: { instructionId: "instruction.original", start: 0, end: text.length }, mode: "ensure", subjects: { kind: "all", scopeId: "requested.subjects", minimumSubjects: 0 } }] };
+  const h = harness({ brief: b, observation: p => ({ ...p, observations: [], enumerations: p.enumerations.map(e => ({ ...e, subjectIds: [] })) }) });
+  expect((await h.controller.verifyAndPromote()).status).toBe("promoted");
 });

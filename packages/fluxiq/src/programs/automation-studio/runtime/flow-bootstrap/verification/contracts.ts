@@ -103,5 +103,5 @@ export type AutomationStudioCandidateVerificationPorts = {
   /** Independently captures required fields/coverage; builder success fields are not arguments. */
   observe(input: { identity: AutomationStudioCandidateVerificationIdentity; execution: AutomationStudioCandidateExecutionReceipt; brief: AutomationStudioCandidateRequirementBrief; start: AutomationStudioCandidateStartReceipt; signal?: AbortSignal }): Promise<AutomationStudioCandidateObservedEvidence>;
   /** MUST retain normal apply-time authorization/validation and atomically compare candidate/requirements/base, honor signal, and dedupe receiptId durably. */
-  promote(input: { expectedIdentity: AutomationStudioCandidateVerificationIdentity; expectedBaseDigest: string; idempotencyKey: string; receipt: AutomationStudioCandidateVerificationReceipt; signal?: AbortSignal }): Promise<"promoted" | "already_promoted" | "stale">;
+  promote(input: { expectedIdentity: AutomationStudioCandidateVerificationIdentity; expectedBaseDigest: string; idempotencyKey: string; receipt: AutomationStudioCandidateVerificationReceipt; signal?: AbortSignal }): Promise<"promoted" | "already_promoted" | "stale" | "unsupported_storage_authority">;
 };

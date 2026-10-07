@@ -13,6 +13,11 @@ export class AutomationStudioFlowCandidateDraftStore {
   async get(projectId: string, flowId: string): Promise<AutomationStudioFlowCandidateDraftRecord | undefined> {
     const held = this.memory.get(JSON.stringify([projectId, flowId]));
     if (held) return structuredClone(held);
+    return this.getAuthoritative(projectId, flowId);
+  }
+
+  /** Bypass cached drafts for verification freshness. Memory-only is not durable authority. */
+  async getAuthoritative(projectId: string, flowId: string): Promise<AutomationStudioFlowCandidateDraftRecord | undefined> {
     if (!this.paths.root) return undefined;
     const stored = await new ProgramJsonStore<JsonObject>(this.file(projectId, flowId), () => ({})).read();
     // This is a storage discriminator, not a compiler/verification receipt.

@@ -1,9 +1,9 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: Acceptance/cancellation, receipt/executor infrastructure and opt-in draft facade pushed; loaded-server identity and durable receipt ledger isolated; production promotion pending.
+Status detail: Acceptance/cancellation, receipt/executor infrastructure and opt-in draft facade pushed; executing Core identity pushed; loaded host identity and durable receipt restart proof underway; production promotion pending.
 Created: 2026-10-06
-Last updated: 2026-10-06
+Last updated: 2026-10-07
 Owner: Codex senior supervisor
 Scope: Generic Core acceptance, candidate authoring/execution/promotion, cancellation and uncertain-outcome contracts required by the downstream MVP plan. Browser behavior and live qualification remain downstream.
 Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/mvp-final-month-plan.md
@@ -22,10 +22,13 @@ P0 in progress: t296 acceptance fences are integrated/pushed (6c449022);
 downstream t297 running extension identity is integrated/pushed (2c76ba48).
 t298 cancellation and reachable Stop are integrated/pushed2ee06482 after independent
 current-pair browser proofs. t300 receipt/detached-executor infrastructure is
-integrated/pushed386b4c15, not a production promotion path. Running Core identity
-remains t302. Candidate authoring/facade t299 is integrated/pushed7f9bae15
+integrated/pushed386b4c15, not a production promotion path. Executing Core identity is integrated/pushedc8501c15 after independent
+Core/routes59/59 and headed retained-service identity/runner61/61; loaded
+domain host is the additive t305 provenance slice. Candidate authoring/facade t299 is integrated/pushed7f9bae15
 after independent53/53 and package/dependent web checks; t304 durable receipt
-ledger is isolated. Accepted-topology transaction/read authority is still required.
+ledger has independent owning52/52 and package check/build/audit0 after current dev
+merge. Literal owned process termination/relaunch probes precede integration.
+Accepted-topology transaction/read authority is still required.
 
 Task t296 now requires affirmative confirmation for a build yes and refuses
 unsupported held reauthor topologies before apply/dispatch/writes. Supervisor
@@ -132,3 +135,10 @@ incomplete, with no reduction in the requested atomicity or outcome proof.
 - Validation: independent generator/cache10/10, reader/diagnostic/real Next routes59/59, fluxiq check/build and webcheck0, both audits0; downstream headed Chromium retained-service identity/runner61/61 and HTTP15/15. Intended normalized artifact4f29565327f008c5bad030ebc88f2859c7178c37d32aeda3aa7c7d95868d2424; zero provider/chat dispatch.
 - Outcome: Paired task ready to integrate. Downstream reports/p0-core-runtime-identity.md preserves commands/limits.
 - Follow-up: running host-module/server-adapter identities not covered by this stamp; atomic receipt/topology authority and trusted start/oracle still pending. No full suite or user panel.
+
+### 2026-10-07 - t304 durable receipt claims and process recovery
+- Agent: Codex supervisor.
+- Changed: real project-SQL attempt/stage claims, immutable bounded receipt joins, uncached draft authority and create min0 floor. Promotion result remains explicitly unsupported; no accepting callback/service/API.
+- Validation: independent owning52/52 after current dev merge; Corecheck/build0 and webcheck0; root freshly built actual-process SIGKILL/relaunch2/2 zero skips (6.66s). Pending synthetic effect refused replay; post-COMMIT draft returned same receipt/run without another start/effect. Core audit0; downstream task gate repeats audit.
+- Outcome: Ready paired integration; production interpreter/start/browser oracle/command receipts and authoritative accepted topology still pending.
+- Follow-up: downstream p2-durable-receipts.md and p2-authority-migration-inventory.md preserve exact commands, migration/ordinary writer/publication gaps. Next graph-import atomicity primitive is distinct from whole topology acceptance. No full suite/providers/userpanel or power-loss/browser-promotion claim.

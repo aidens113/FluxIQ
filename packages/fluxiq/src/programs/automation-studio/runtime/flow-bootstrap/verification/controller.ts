@@ -54,6 +54,7 @@ export class AutomationStudioCandidateVerificationController {
       try {
       const applied = await this.input.ports.promote({ expectedIdentity: structuredClone(this.identity), expectedBaseDigest: this.identity.baseDependencyDigest, idempotencyKey: receipt.receiptId, receipt: structuredClone(receipt), ...(this.input.signal ? { signal: this.input.signal } : {}) });
       if (applied === "promoted" || applied === "already_promoted") return { status: "promoted", receipt };
+      if (applied === "unsupported_storage_authority") return draft("candidate.promotion_unsupported_storage_authority", receipt);
       return draft(applied === "stale" ? "candidate.promotion_stale" : "candidate.promotion_unconfirmed", receipt);
       } catch {
         // A lost acknowledgement may follow an applied promotion. Keep the
