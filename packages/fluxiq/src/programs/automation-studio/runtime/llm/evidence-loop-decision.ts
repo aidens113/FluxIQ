@@ -225,7 +225,7 @@ function closedCode(value: unknown): value is string {
 function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown): { draft: NonNullable<AutomationStudioLlmEvidenceToolExecutionResult["draft"]> } | { refused: AutomationStudioLlmEvidenceToolResultCheck } | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) return { refused: "draft.not_object" };
-  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption", "written", "toggle"])) return { refused: "draft.unknown_key" };
+  if (!exactKeys(value, ["actionId", "input", "ranWith", "effect", "proposes", "replay", "control", "interruption", "written", "toggle", "reads"])) return { refused: "draft.unknown_key" };
   if (value.actionId !== undefined && !validId(value.actionId)) return { refused: "draft.action_id" };
   if (value.input !== undefined && !isJsonObject(value.input)) return { refused: "draft.input" };
   if (value.ranWith !== undefined && !isJsonObject(value.ranWith)) return { refused: "draft.ran_with" };
@@ -249,6 +249,9 @@ function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown
   // (`../flow-draft/reversal.ts`). Withheld, never refused, when it is not one:
   // the call happened either way, and only a statement that changed something can say it.
   const toggle = value.effect === "mutate" ? toggleOf(value.toggle) : undefined;
+  // The host's code for the list a read read (`../flow-draft/second-copy.ts`). Withheld,
+  // never refused, when it is not a code: the call happened either way, and only a read can say it.
+  const reads = value.effect === "observe" && closedCode(value.reads) ? value.reads : undefined;
   return { draft: {
     ...(value.actionId === undefined ? {} : { actionId: value.actionId }),
     ...(value.input === undefined ? {} : { input: value.input }),
@@ -259,7 +262,8 @@ function readCallRecord(value: unknown, evidence: JsonValue, resultCode: unknown
     ...(control === undefined ? {} : { control }),
     ...(interruption ? { interruption: true as const } : {}),
     ...(written ? { written: true as const } : {}),
-    ...(toggle ? { toggle } : {})
+    ...(toggle ? { toggle } : {}),
+    ...(reads === undefined ? {} : { reads })
   } };
 }
 

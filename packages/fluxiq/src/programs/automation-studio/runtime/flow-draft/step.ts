@@ -164,6 +164,19 @@ export type AutomationStudioFlowDraftStep = {
    */
   toggle?: AutomationStudioFlowDraftStepToggle;
   /**
+   * The host's code for the list a read reads, as the caller stated it on its
+   * own call: the same for the same list on the same page for the whole build.
+   * Core compares codes for equality and reads nothing else. Only a step whose
+   * effect is `observe` carries it.
+   *
+   * Two reads of one list with no step of the Flow changing anything between
+   * them read the same rows, and a Flow that keeps both does one read twice:
+   * live run `run-muq4oaof-464f5bce` (cause 3) kept two list reads of one
+   * list. A read joining the Flow that copies a kept one is not added
+   * (`./second-copy.ts`). Only the host can name the list, so it does.
+   */
+  reads?: string;
+  /**
    * The id of the step this one undid or was undone by, set when Core took it
    * out of the Flow for that (`./reversal.ts`): both halves of a pair carry
    * each other's id, a lone reversal carries the id of the step it put back.

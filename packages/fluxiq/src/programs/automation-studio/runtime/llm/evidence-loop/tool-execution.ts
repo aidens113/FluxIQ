@@ -190,5 +190,16 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
      * it**: the key list of a statement is exact.
      */
     toggle?: AutomationStudioFlowDraftStepToggle;
+    /**
+     * The caller's code for the list the call read: an opaque code, the same
+     * for the same list on the same page for the whole build. Core compares
+     * codes for equality and reads nothing else. Carried only on a statement
+     * whose `effect` is `observe`, and only when it is a code; anything else is
+     * withheld, never refused. A read joining the Flow with the code of a kept
+     * read, and no kept step changing anything between them, is not added
+     * (`../../flow-draft/second-copy.ts`). **Learned here before any caller
+     * sends it**: the key list of a statement is exact.
+     */
+    reads?: string;
   };
 };

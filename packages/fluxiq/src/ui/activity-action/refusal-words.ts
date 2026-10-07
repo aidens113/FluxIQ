@@ -42,6 +42,8 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     strands_a_step: "that step is the only one that gets to the page a later step needs",
     // Settings that would change the control or value a step ran with (`flow-draft/amendment/settings-rewrite-run.ts`).
     settings_rewrite_run: "that would change what the step was done with, which makes it a different step",
+    // A step that copies one already in the Flow: the same press on the same page, or the same list read again (`flow-draft/second-copy.ts`).
+    second_copy: "another step in the Flow already does exactly that, and the Flow does each step once",
   } as const),
   repeated: Object.freeze({
     failed: "it was already tried exactly this way and did not work",

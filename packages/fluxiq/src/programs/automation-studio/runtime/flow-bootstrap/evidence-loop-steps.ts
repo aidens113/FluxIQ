@@ -201,7 +201,8 @@ const EVIDENCE_STEP_AMENDMENT_REFUSAL_REASONS: {
   rerun_holds_binding: true,
   repeat_taken_off: true,
   strands_a_step: true,
-  settings_rewrite_run: true
+  settings_rewrite_run: true,
+  second_copy: true
 });
 /**
  * The most refusals one step may report: the most amendments one decision may

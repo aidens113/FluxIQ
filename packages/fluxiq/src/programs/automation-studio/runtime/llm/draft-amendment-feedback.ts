@@ -169,6 +169,7 @@ const REFUSAL_REASONS: Record<AutomationStudioFlowDraftAmendmentRefusal["reason"
   rerun_holds_binding: "A bound step runs only in the Flow. Rerun patches merge: omitted bound parameters remain bound. Replace every binding with a concrete value, or null-remove an unneeded parameter where the node schema permits removal. If evidence is sufficient to author a new written step, use a new tool_call to the offered core.run_node with input.write:true and declared parameters/consequences. That does not convert or remove the old recorded step, prove an act performed, or bypass permissions and whole-Flow testing. write:true on a recorded step's rerun does not convert it to written.",
   strands_a_step: "That drop was not made: the step is the only step of the Flow that brings the page to where a step still in the Flow acted, so without it that step would run on another page. Keep it, or drop the step it brings there as well when the Flow does not need that step.",
   settings_rewrite_run: "That amendment was not made: its settings would change what the step ran with (its target, text or value), and a step is what it ran with. To act on another control or with another value, run that as a new call with add true and its act; to correct this step's own argument, rerun it.",
+  second_copy: "That step was not added to the Flow: copyOf names the step of the Flow that already does it -- the same press on the same page, or a read of the same list with nothing changed in between -- and the Flow does each step once. Leave this step out and go on from the step copyOf names; an act this step was meant for belongs on that step.",
   repeat_taken_off: "This is not an amendment of yours that changed nothing: it is a repeat Core took off after this decision's moves left it unable to run -- the step it repeated over no longer runs before it, or the step its span ran through now runs before it. That step now runs once, in order. next names the step, the step it repeated over and why; if the step should still repeat, send the repeat again with the listing before the act, in the numbers the draft now shows."
 };
 
@@ -257,6 +258,7 @@ export function automationStudioLlmEvidenceDraftAmendmentFeedback(input: {
       reason: refusal.reason,
       // A refused bind names its parameter, in the model's own key names.
       ...(refusal.parameter === undefined ? {} : { parameter: refusal.parameter }),
+      ...(refusal.copyOf === undefined ? {} : { copyOf: refusal.copyOf }),
       // What the step offers instead, from the step the bind examined (`../flow-draft/bindable/paths.ts`, run B7).
       ...(refusal.reason === "bind_new_key" && refusal.bindable ? { bindable: refusal.bindable } : {}),
       // A repeat Core took off was never sent, so it is never sent again (header).
@@ -480,6 +482,21 @@ function replacedAttempt(refusal: AutomationStudioFlowDraftAmendmentRefusal): st
 }
 
 /**
+ * What a step not added because a step of the Flow already does it is told, or
+ * nothing when the refusal is not one (`../flow-draft/second-copy.ts`, live run
+ * `run-murwdp4f-35f976d2`, C9): the step that does it, and which kind of copy
+ * it was, read off that step's effect where the draft says it.
+ */
+function secondCopy(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string | undefined {
+  if (refusal.reason !== "second_copy" || refusal.copyOf === undefined) return undefined;
+  const effect = steps.find((step) => step.position === refusal.copyOf)?.effect;
+  const what = effect === "mutate" ? "the same press on the same page"
+    : effect === undefined ? "the same press on the same page, or a read of the same list with nothing changed in between"
+      : "a read of the same list with nothing changed in between";
+  return `Step ${refusal.step} was not added to the Flow: step ${refusal.copyOf} already does this (${what}); the Flow does each step once.`;
+}
+
+/**
  * What to do instead of naming again an act the checklist already shows done,
  * or nothing when the act is still to do or there is no checklist to read.
  *
@@ -526,7 +543,7 @@ function notRunYet(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: re
  * of the four acts still to do, and bound a press's `target` four times.
  */
 function wayOut(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[], actsNotDone: readonly string[] | undefined): string {
-  const lead = reach(refusal) ?? takenOff(refusal) ?? replacedAttempt(refusal) ?? nextStep(refusal, steps) ?? actDone(refusal, actsNotDone)
+  const lead = reach(refusal) ?? takenOff(refusal) ?? replacedAttempt(refusal) ?? secondCopy(refusal, steps) ?? nextStep(refusal, steps) ?? actDone(refusal, actsNotDone)
     ?? notRunYet(refusal, steps) ?? pressBound(refusal, actsNotDone !== undefined) ?? fallback(refusal, steps, actsNotDone);
   if (actsNotDone === undefined) return lead;
   if (refusal.reason === "act_already_named" && refusal.act !== undefined && actsNotDone.includes(refusal.act)) return lead;
@@ -581,6 +598,7 @@ function fallback(refusal: AutomationStudioFlowDraftAmendmentRefusal, steps: rea
     bind_malformed: () => `Write ${key} on step ${n} again in one of the forms reasons.bind_malformed lists and send it again; to set a concrete value instead, rerun step ${n} with it: ${rerun}.`,
     rerun_holds_binding: () => `Step ${n} holds a binding, so it runs only in the Flow: rerun it with a concrete value for every bound parameter -- {"step": ${n}, "change": "rerun", "input": {<each bound key: a value>}} -- or write the step you need as a new call to core.run_node with write true.`,
     strands_a_step: () => `Step ${n} stays in the Flow: it brings the page to where a later step of the Flow acted. Leave step ${n} in, or drop that later step too if the Flow does not need it.`,
+    second_copy: () => `Step ${n} was not added to the Flow: a step of the Flow already does it, and the Flow does each step once. Leave it out and go on with what the Flow still lacks.`,
     settings_rewrite_run: () => `Step ${n} keeps what it ran with. To act on another control or with another value, run that call as a new step with add true and its act; to correct step ${n}'s own argument, rerun it: ${rerun}.`,
     repeat_taken_off: () => `Step ${n}'s repeat was taken off after this decision's moves, so it now runs once. If it should still repeat, send {"step": ${n}, "change": "repeat", "over": <the listing>} with the listing before it, in the numbers the draft now shows.`
   };
