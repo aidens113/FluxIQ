@@ -142,3 +142,10 @@ incomplete, with no reduction in the requested atomicity or outcome proof.
 - Validation: independent owning52/52 after current dev merge; Corecheck/build0 and webcheck0; root freshly built actual-process SIGKILL/relaunch2/2 zero skips (6.66s). Pending synthetic effect refused replay; post-COMMIT draft returned same receipt/run without another start/effect. Core audit0; downstream task gate repeats audit.
 - Outcome: Ready paired integration; production interpreter/start/browser oracle/command receipts and authoritative accepted topology still pending.
 - Follow-up: downstream p2-durable-receipts.md and p2-authority-migration-inventory.md preserve exact commands, migration/ordinary writer/publication gaps. Next graph-import atomicity primitive is distinct from whole topology acceptance. No full suite/providers/userpanel or power-loss/browser-promotion claim.
+
+### 2026-10-07 - t305 loaded host independently verified
+- Agent: Codex supervisor.
+- Changed: additive trusted module identity on actual native-runtime owner; active-only authenticated diagnostic, immutable original anchor even after legacy binding. Authored architecture updated.
+- Validation: root binding/diagnostic6/6, fluxiqcheck0(27.8s)/build0(39.9s)/audit0; downstream current merged host generated then actual headed built-Core/host/identity/runner55/55 zero skips9.27s, domain/runner checks and generator21/21. Retained-host route reload refusal and fresh child match; actual providers0.
+- Outcome: Narrow provenance unit verified; paired integration follows, Core taskfinish --skip-checks only after these observed narrow gates under daily full-suite limit.
+- Follow-up: external web websocket server adapter is outside this scope; project authority/semantic interpreter/independent browser oracle and paid qualification remain. Full receipt downstream reports/p0-domain-host-identity.md. No user panel management.

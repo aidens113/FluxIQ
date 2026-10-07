@@ -1,3 +1,4 @@
+import { bindTrustedModuleIdentity } from "../../../../../../runtime/build-identity/modules/index.ts";
 import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
 import type { AutomationStudioApiDependencies } from "../../dependencies.ts";
@@ -23,4 +24,15 @@ it("refuses an unavailable build, absent artifact and traversal/ambiguous normal
   for (const reachedInputs of [[], ["packages/fluxiq/dist/../../private.js"], ["packages/fluxiq/dist/runtime/build-identity/read.js"]]) {
     await expect(endpoint(identity).handler({ payload: { reachedInputs } })).rejects.toThrow();
   }
+});
+
+it("projects active trusted module identity and never a cleared legacy anchor", async () => {
+  let registered: any;
+  const service = { coreRuntimeBuildIdentity: identity };
+  const module = { schema: 1 as const, protocol: "fluxiq.module-build-identity.v1" as const, moduleId: "example/runtime", version: "1.0.0", normalization: "module-payload-v1" as const, artifactDigest: "c".repeat(64), sourceInputsDigest: "d".repeat(64) };
+  registerRuntimeIdentityEndpoint({ registry: { register: (entry: unknown) => { registered = entry; } }, service } as unknown as AutomationStudioApiDependencies);
+  bindTrustedModuleIdentity(service, module);
+  expect((await registered.handler({ payload: { reachedInputs: [file] } })).payload.loadedModules).toEqual([module]);
+  bindTrustedModuleIdentity(service);
+  expect((await registered.handler({ payload: { reachedInputs: [file] } })).payload.loadedModules).toEqual([]);
 });
