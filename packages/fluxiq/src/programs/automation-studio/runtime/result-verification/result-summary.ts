@@ -46,6 +46,11 @@
 // `run-muw5zv4m-52d83027`'s judges, shown status rows and a stale end, read one
 // "+" press as a quantity of 1 and a search as the item chosen after it.
 //
+// **And each record set says how its collected rows became its answer**
+// (`processing`, read-list design 5.2): rows collected, repeats, rows a
+// condition over stored columns or the limit left out, and each pass's rows.
+// Counts and node ids, as the store holds them.
+//
 // **And the page as it stood before the run did anything** (`startView`), by
 // the domain's declared view keys and screened exactly as the end view is. A
 // finished run starts on whatever the site already held, so run
@@ -327,7 +332,9 @@ function summarizedRecordSet(
     columns,
     columnsWithheld: false,
     ...requiredValueCheck(set),
-    ...(screened && screened.rows.length ? { sampleRows: screened.rows } : {})
+    ...(screened && screened.rows.length ? { sampleRows: screened.rows } : {}),
+    // How the collected rows became the answer, in counts and node ids (read-list design 5.2): a copy, never the store's own.
+    ...(set.summary.processing ? { processing: { ...set.summary.processing, passes: set.summary.processing.passes.map((pass) => ({ ...pass })) } } : {})
   };
   const unsent = deniedEvidenceKeys === undefined && rows.length > 0;
   return { summary, withheld: summary.truncated || unsent || (screened?.withheld ?? false) };

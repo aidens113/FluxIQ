@@ -257,3 +257,27 @@ describe("the required-value check", () => {
     expect(summary.recordSets[0]?.rowsMissingRequired).toBe(1_250);
   });
 });
+
+describe("each record set's processing account", () => {
+  // Read-list design 5.2: a record set is the answer, and says how the rows it collected became it.
+  it("carries each set's processing account, and none for a set the run did not process", () => {
+    const processing = {
+      collected: 15, duplicates: 2, filteredOut: 0, cut: 0, kept: 13,
+      passes: [{ node: "read", pass: 1, rows: 3, newRows: 3 }, { node: "read", pass: 2, rows: 4, newRows: 2 }]
+    };
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [
+        { summary: datasetSummary({ datasetId: "answer", recordCount: 13, processing }), schema: schema(["name"]), rows: rows(13) },
+        { summary: datasetSummary({ datasetId: "unprocessed", recordCount: 2 }), schema: schema(["name"]), rows: rows(2) }
+      ],
+      deniedEvidenceKeys: []
+    });
+    expect(summary.recordSets[0]?.processing).toEqual(processing);
+    expect(summary.recordSets[0]?.processing).not.toBe(processing);
+    expect(summary.recordSets[1]).not.toHaveProperty("processing");
+    const none = summarizeAutomationStudioRunResult({
+      recordSets: [{ summary: datasetSummary({ recordCount: 0, processing: { collected: 4, duplicates: 0, filteredOut: 4, cut: 0, kept: 0, keptNone: true, passes: [] } }) }]
+    });
+    expect(none.recordSets[0]?.processing).toMatchObject({ kept: 0, keptNone: true, filteredOut: 4 });
+  });
+});

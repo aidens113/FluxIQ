@@ -87,3 +87,70 @@ describe("the step count a run shows", () => {
     ]);
   });
 });
+
+// read-list S3: a list read reads one page, and a Flow pages with a do-while
+// loop -- Merge, Repeat, read, Next, and Next's `ended` leaves the loop. Each
+// step of a pass says which page it is on, and the loop's end is said once.
+describe("the words a paging loop says", () => {
+  const PAGES = 5;
+  /** type -> loop (Merge) -> Repeat.body -> read -> Next; Next.success -> loop; Next.ended and Repeat.done -> exit -> after. */
+  function paging(most?: number): AutomationStudioFlowDocument {
+    const nodes: AutomationStudioFlowNode[] = [
+      { id: "search", definitionId: "web.output.dom-type", parameterValues: { element: { label: "Search" } } },
+      { id: "loop", definitionId: "builtin.control.merge", parameterValues: { mergeMode: "first" } },
+      { id: "repeat", definitionId: "builtin.control.repeat", ...(most === undefined ? {} : { parameterValues: { most } }) },
+      { id: "read", definitionId: "web.output.dom-extract_list" },
+      { id: "next", definitionId: "web.output.dom-click", parameterValues: { element: { accessibleName: "Next" } } },
+      { id: "exit", definitionId: "builtin.control.merge", parameterValues: { mergeMode: "first" } },
+      { id: "after", definitionId: "domain.page.step", label: "Save the rows" }
+    ];
+    const edge = (source: string, port: string, target: string, targetPort = "in") => ({ id: `e.${source}.${port}`, sourceNodeId: source, sourcePortId: port, targetNodeId: target, targetPortId: targetPort });
+    const edges = [
+      edge("search", "success", "loop", "branches"), edge("loop", "success", "repeat"), edge("repeat", "body", "read"),
+      edge("read", "success", "next"), edge("next", "success", "loop", "branches"), edge("next", "ended", "exit", "branches"),
+      edge("repeat", "done", "exit", "branches"), edge("exit", "success", "after")
+    ];
+    return { schemaVersion: "0.1", flowId: "flow.paging", ownerKind: "routine", ownerId: "routine.paging", name: "Paging", createdAt: 1, updatedAt: 1, nodes, edges };
+  }
+  /** Next answers `ended` on its `endsAt`-th press, and `success` before. */
+  const pagingOptions = (endsAt: number): AutomationStudioGraphExecutionOptions => {
+    let nexts = 0;
+    return {
+      ...options,
+      nativeNodeExecutor: (request) => {
+        if (request.node.id === "next") nexts += 1;
+        return Promise.resolve({ result: { status: "success", route: request.node.id === "next" && nexts === endsAt ? "ended" : "success", outputs: {} } });
+      }
+    };
+  };
+  const said = () => seen.filter((event) => event.detail && event.detail.kind !== "thought").map((event) => event.label);
+
+  it("names the page each step of a pass is on, and says once that the list ended", async () => {
+    const trace = await inRun(() => runAutomationStudioGraph(paging(), pagingOptions(PAGES)));
+    expect(trace.status).toBe("succeeded");
+    const pass = (n: number) => [`Running step 3 of 5: Reading page ${n}`, `Running step 4 of 5: Clicking “Next” on page ${n}`];
+    expect(said()).toEqual([
+      "Running step 1 of 5: Typing into “Search”",
+      ...[1, 2, 3, 4, 5].flatMap((n) => ["Running step 2 of 5", ...pass(n)]),
+      "The list ended after 5 pages",
+      "Running step 5 of 5: Save the rows"
+    ]);
+    expect(seen.filter((event) => event.label === "The list ended after 5 pages").map((event) => event.detail)).toEqual([
+      { kind: "note", title: "The list ended after 5 pages", status: "succeeded", ref: "repeat", text: "Node: builtin.control.repeat" }
+    ]);
+    expect(JSON.stringify(said())).not.toMatch(/builtin|web\.output|paginate|repeat\b/u);
+  });
+
+  it("says the loop stopped at its most passes when the list never ends", async () => {
+    const trace = await inRun(() => runAutomationStudioGraph(paging(2), pagingOptions(99)));
+    expect(trace.status).toBe("succeeded");
+    expect(said()).toEqual([
+      "Running step 1 of 5: Typing into “Search”",
+      "Running step 2 of 5", "Running step 3 of 5: Reading page 1", "Running step 4 of 5: Clicking “Next” on page 1",
+      "Running step 2 of 5", "Running step 3 of 5: Reading page 2", "Running step 4 of 5: Clicking “Next” on page 2",
+      "Running step 2 of 5",
+      "The loop stopped at its most passes (2 pages)",
+      "Running step 5 of 5: Save the rows"
+    ]);
+  });
+});

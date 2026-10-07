@@ -360,6 +360,29 @@ describe("a do-while repeat, in the build's test", () => {
     expect(replayed.verdict.outcomes.find((outcome) => outcome.step === 2)).toMatchObject({ status: "failed", resultCode: ENDED });
     expect(replayed.verdict.ok).toBe(false);
   });
+
+  // Read-list design 5.1: the build-test judge is shown the answer the run's end
+  // makes of every pass's rows (`../../../result-verification/build-test/stores.ts`),
+  // so each pass's observation carries the rows that pass's read stored -- beside
+  // its evidence, never in it: the evidence is what a judge or a step log is sent.
+  it("carries each pass's stored rows on that pass's observation, and a straight read's on its own", async () => {
+    const pages: Record<string, JsonObject[]> = { "dryrun.1.1": [{ name: "Featured" }], "dryrun.1.2.pass.1": [ROWS[0]!], "dryrun.1.2.pass.2": [ROWS[1]!] };
+    const inner = host({ answers: { "dryrun.1.3.pass.2": ENDED } });
+    const executeTool = async (call: Call): Promise<AutomationStudioLlmEvidenceToolExecutionResult> => {
+      const answer = await inner.executeTool(call);
+      const page = pages[call.callId];
+      return page ? { ...answer, outputs: { records: page, count: page.length } } : answer;
+    };
+    const steps = [step(1, "node.list"), ...doWhileDraft().slice(1, 3)];
+    const replayed = await replayAutomationStudioFlowDraft({ steps, attempt: 1, executeTool, nodeOf });
+    expect(replayed.verdict.ok).toBe(true);
+    expect(replayed.observations.map((each) => [each.step, each.pass, each.records])).toEqual([
+      [1, undefined, [{ name: "Featured" }]],
+      [2, 1, [ROWS[0]]], [3, 1, undefined],
+      [2, 2, [ROWS[1]]], [3, 2, undefined]
+    ]);
+    for (const each of replayed.observations) expect(JSON.stringify(each.evidence)).not.toContain("Ada");
+  });
 });
 
 // t252 merged with lane B (t193 1002-M, C6 and C10): which reason excuses a

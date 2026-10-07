@@ -46,7 +46,9 @@ const CORE_NODE_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
   ["builtin.control.switch", "branch"],
   ["builtin.control.parallel", "branch"],
   ["builtin.control.for-each", "repeat"],
-  ["builtin.control.loop", "repeat"]
+  ["builtin.control.loop", "repeat"],
+  // The do-while loop's head (read-list design, section 4): it numbers and bounds a loop's passes.
+  ["builtin.control.repeat", "repeat"]
 ]);
 
 /** A result code that says the action did not happen (`programs/automation-studio/runtime/activity/observer.ts` reads codes the same way). */

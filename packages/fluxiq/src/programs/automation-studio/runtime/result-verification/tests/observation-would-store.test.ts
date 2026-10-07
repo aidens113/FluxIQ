@@ -7,7 +7,11 @@ import { automationStudioResultCheckWords } from "../check-words.ts";
 import type { AutomationStudioBuildTestStore, AutomationStudioRunResultSummary } from "../contracts.ts";
 import { automationStudioResultObservation } from "../verdict.ts";
 
-const store = (rows: number, steps: number[]): AutomationStudioBuildTestStore => ({ dataset: "web.output.dom-extract_list", writeMode: "append", steps, rows, labels: [] });
+/** A dataset whose reads collected one more row than its answer keeps: the count is the answer's. */
+const store = (rows: number, steps: number[]): AutomationStudioBuildTestStore => ({
+  dataset: "web.output.dom-extract_list", writeMode: "append", steps, passes: steps.length, collected: rows + 1,
+  answer: { rows, labels: [] }, removed: { duplicates: 1, filteredOut: 0, cut: 0 }
+});
 
 function summary(stores: AutomationStudioBuildTestStore[] | undefined): AutomationStudioRunResultSummary {
   return {

@@ -258,7 +258,7 @@ function rowFix(repair: AutomationStudioResultRepairDirective | undefined): { fi
 /** The rows the Flow would store, as the test's reads filled it; the summary's own count where it does not say. */
 function wouldStore(summary: AutomationStudioRunResultSummary): number {
   const stores = summary.buildTest?.stores;
-  return stores ? stores.reduce((total, store) => total + store.rows, 0) : summary.totalRecordCount;
+  return stores ? stores.reduce((total, store) => total + store.answer.rows, 0) : summary.totalRecordCount;
 }
 
 /** Why a judge the purse refused did not judge, in the purse's figures. */

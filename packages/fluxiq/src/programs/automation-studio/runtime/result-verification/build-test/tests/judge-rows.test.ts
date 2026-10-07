@@ -30,7 +30,7 @@ function readLabels(step: number): string[] {
 function testSummary(): AutomationStudioRunResultSummary {
   const summary = runMuw60j7cTestSummary();
   const labels = [...readLabels(9), ...readLabels(10)];
-  summary.buildTest = { ...summary.buildTest!, stores: [{ dataset: "web.output.dom-extract_list", writeMode: "append", steps: [9, 10], rows: labels.length, labels }] };
+  summary.buildTest = { ...summary.buildTest!, stores: [{ dataset: "web.output.dom-extract_list", writeMode: "append", steps: [9, 10], passes: 2, collected: labels.length, answer: { rows: labels.length, labels } }] };
   return summary;
 }
 

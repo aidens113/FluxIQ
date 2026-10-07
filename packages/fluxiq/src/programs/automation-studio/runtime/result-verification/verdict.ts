@@ -237,7 +237,7 @@ export function automationStudioResultObservation(summary: AutomationStudioRunRe
 
 /** "30 records would be stored": every row of every dataset a build's Flow would write, which the card says as rows that would be stored. */
 function wouldStore(stores: NonNullable<NonNullable<AutomationStudioRunResultSummary["buildTest"]>["stores"]>): string {
-  const rows = stores.reduce((total, store) => total + store.rows, 0);
+  const rows = stores.reduce((total, store) => total + store.answer.rows, 0);
   return `${rows} record${rows === 1 ? "" : "s"} would be stored`;
 }
 

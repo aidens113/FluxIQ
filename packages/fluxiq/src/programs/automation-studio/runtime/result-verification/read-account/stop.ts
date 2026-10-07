@@ -14,6 +14,11 @@
 // `run-muq66ff9-cb3767a1` is why this is decided once, here: a list whose Next
 // was disabled on page 5 of a 5-page bound was read by the judge as the bound,
 // and every re-author was sent to raise it.
+//
+// A read whose step ran as the passes of a loop (`keptPerPage` present) says
+// how the loop ended in Core's own words (`loop-passes.ts`): `ended`, the step
+// that moves the list on found no further page, is the list ending; `bound`,
+// the loop's Repeat reached its most passes, is the bound; `failed` is neither.
 
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
 
@@ -24,7 +29,8 @@ export type AutomationStudioResultReadStopMeaning = "list_ended" | "page_bound" 
 const LIST_ENDED: ReadonlySet<string> = new Set(["control_disabled", "no_following_page", "control_absent", "scrolled_to_end"]);
 
 /** What stopped this read's paging. */
-export function automationStudioResultReadStop(read: Pick<AutomationStudioResultReadAccount, "pagesRead" | "pageLimit" | "stop" | "truncated">): AutomationStudioResultReadStopMeaning {
+export function automationStudioResultReadStop(read: Pick<AutomationStudioResultReadAccount, "pagesRead" | "pageLimit" | "stop" | "truncated" | "keptPerPage">): AutomationStudioResultReadStopMeaning {
+  if (read.keptPerPage) return read.stop === "ended" ? "list_ended" : read.stop === "bound" ? "page_bound" : "other";
   if (read.stop === "page_limit") return "page_bound";
   if (read.stop !== undefined) return LIST_ENDED.has(read.stop) ? "list_ended" : "other";
   if (read.pageLimit === undefined) return "other";

@@ -13,6 +13,7 @@ export { emitAutomationStudioActivity } from "./emit.ts";
 export { AutomationStudioActivityHub } from "./hub.ts";
 export { automationStudioActivityInBuild } from "./in-build.ts";
 export { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "./limits.ts";
+export { automationStudioActivityLoopWords, type AutomationStudioActivityLoopPass } from "./loop/index.ts";
 export { observeAutomationStudioEvidenceLoop } from "./observer.ts";
 export { withAutomationStudioRunActivity } from "./run.ts";
 export { runWithAutomationStudioActivity } from "./scope.ts";

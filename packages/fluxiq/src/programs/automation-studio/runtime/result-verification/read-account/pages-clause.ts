@@ -1,4 +1,7 @@
 // The shared paging clause, read from the existing raw stop classification.
+// A read whose step ran as the passes of a loop (`keptPerPage`) is said by how
+// the loop ended (`loopClause`), in Core's words: no control, no setting of the
+// read's own, since the loop is what moved the list on.
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
 import { automationStudioResultReadStop } from "./stop.ts";
 
@@ -7,6 +10,7 @@ export function automationStudioResultReadPagesClause(read: AutomationStudioResu
   const pages = pageCount(read.pagesRead);
   const stop = automationStudioResultReadStop(read);
   const cut = read.truncated ? ", cut short by a limit" : "";
+  if (read.keptPerPage) return `${loopClause(read, stop)}${cut}`;
   const ended = (how: string) => `every page (${read.pagesRead}) and the list ended${how}${cut}`;
   if (stop === "list_ended") return ended(listEnd(read));
   if (stop === "page_bound") {
@@ -17,6 +21,15 @@ export function automationStudioResultReadPagesClause(read: AutomationStudioResu
   // Something other than the list or the page bound stopped it: say the word, and that the bound was not it.
   const before = read.pageLimit !== undefined && read.pagesRead < read.pageLimit ? ` before its page bound of ${read.pageLimit}` : "";
   return `${pages}${read.stop ? `, paging stopped on ${read.stop}${before}` : read.pageLimit !== undefined ? ` of at most ${read.pageLimit}` : ""}${cut}`;
+}
+
+/** A looped read's pages, and how its loop ended: the list, the loop's bound, a failed step, or unseen. */
+function loopClause(read: AutomationStudioResultReadAccount, stop: ReturnType<typeof automationStudioResultReadStop>): string {
+  if (stop === "list_ended") return `every page (${read.pagesRead}) and the list ended: the step that moves it on found no page after page ${read.pagesRead}`;
+  const passes = read.keptPerPage?.length ?? 0;
+  const over = `${pageCount(read.pagesRead)} over ${passes} ${passes === 1 ? "pass" : "passes"} of its loop`;
+  if (stop === "page_bound") return `${over}, until the loop's bound${read.pageLimit !== undefined ? ` of ${read.pageLimit} passes` : ""} stopped it`;
+  return read.stop === "failed" ? `${over}, until a step of the loop failed` : over;
 }
 
 /** How the list showed it had ended, from the read's own stop word. */

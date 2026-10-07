@@ -29,7 +29,7 @@ import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { automationStudioStopAfterNode } from "./partial-run/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
-import { automationStudioActivityAskResolution, automationStudioActivityRecoveryChoice, automationStudioActivityStepNumbers, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
+import { automationStudioActivityAskResolution, automationStudioActivityLoopWords, automationStudioActivityRecoveryChoice, automationStudioActivityStepNumbers, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -363,6 +363,8 @@ async function executeAutomationStudioGraph(
   // start, so a retry, a route back or a partial run keeps it; a Merge has none
   // and is not announced (`activity/step/numbers.ts`).
   const stepNumbers = automationStudioActivityStepNumbers(flow, (startChoice ?? chooseAutomationStudioStartNode(flow)).node?.id);
+  // A do-while pass's step names its page, and the loop's end is said once (`activity/loop/`).
+  const loopWords = automationStudioActivityLoopWords(flow);
   let maxSteps = seed ? seed.maxSteps : Math.min(AUTOMATION_STUDIO_MAX_RUN_STEPS, Math.max(1, options.maxSteps ?? 250));
   // One arrival at one node: how many times it has been attempted here, and
   // which ladder rungs that arrival has already spent. It is reset the moment
@@ -427,7 +429,7 @@ async function executeAutomationStudioGraph(
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
       }
       const stepNumber = stepNumbers.numberOf(currentNode.id);
-      if (stepNumber !== undefined) emitAutomationStudioActivityStep({ index: stepNumber, count: stepNumbers.count, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues });
+      if (stepNumber !== undefined) emitAutomationStudioActivityStep({ index: stepNumber, count: stepNumbers.count, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues, pass: loopWords.passOf(currentNode.id, attempts) });
       const notShown: AutomationStudioNodeAttemptTrace | undefined = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? automationStudioNotShownAttempt(currentNode, `${currentNode.id}.attempt.${nextAttemptNumber()}`, now()) : undefined;
       let routing: AutomationStudioStateRouteDecision | undefined = notShown ? await decideAutomationStudioStateRoute({ flow, node: currentNode, attempt: notShown, attempts, options, guard: routeGuard }) : undefined;
       const executed = notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
@@ -453,6 +455,7 @@ async function executeAutomationStudioGraph(
       const attemptIndex = attempts.length;
       attempts.push(regionId ? { ...tracedAttempt, regionId } : tracedAttempt);
       maxSteps = withIterationAllowance(maxSteps, currentNode, attempt);
+      loopWords.settled(attempt, attempts);
       for (const [key, value] of Object.entries(attempt.outputs)) {
         values[`${currentNode.id}.${key}`] = value;
         values[key] = value;

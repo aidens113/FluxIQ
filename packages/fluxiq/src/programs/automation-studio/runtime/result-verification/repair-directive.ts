@@ -33,7 +33,8 @@
 // **What Core will and will not claim.** Every finding here is a count or a
 // comparison over values Core already has: rows stored, rows refused, rows
 // lacking a value their own schema requires, a column empty in every row
-// sampled, rows identical to each other. Core does not read the request. Which
+// sampled, rows identical to each other, rows a read's conditions rejected
+// while nothing was kept. Core does not read the request. Which
 // clause of the instruction went unapplied is the judgement's to say, because the
 // judgement is the only party in this module's world that was shown the request.
 
@@ -41,6 +42,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import { automationStudioLocatorShapedText, automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/index.ts";
 import type {
   AutomationStudioResultLeftOutNamingTheItem,
+  AutomationStudioResultReadAccount,
   AutomationStudioResultRepairDirective,
   AutomationStudioResultRepairFinding,
   AutomationStudioResultRecordSetSummary,
@@ -56,6 +58,12 @@ export const AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES = Object.freeze({
   everyRowRefused: "result.every_row_refused",
   /** Nothing stored and nothing refused: the step that reads rows found none. */
   noRecordsStored: "result.no_records_stored",
+  /**
+   * Nothing kept, while the reads' own conditions rejected rows: the list was
+   * read and held rows, and a condition left every one out (read-list design
+   * 5.3). Said in place of `noRecordsStored`, whose "found none" is false then.
+   */
+  keptNoneRowsRejected: "result.kept_none_rows_rejected",
   /** Stored rows lack a value for a field the Flow's own schema declares required. */
   requiredValuesMissing: "result.required_values_missing",
   /** A column carries no value in any row sampled. */
@@ -218,7 +226,10 @@ export function automationStudioResultRepairFindings(summary: AutomationStudioRu
   } else if (summary.totalRecordCount === 0 && summary.totalRefusedCount > 0) {
     findings.push({ code: codes.everyRowRefused, detail: `${summary.totalRefusedCount} ${summary.totalRefusedCount === 1 ? "row was" : "rows were"} found and record validation refused every one, so nothing was stored.` });
   } else if (summary.totalRecordCount === 0) {
-    findings.push({ code: codes.noRecordsStored, detail: "Nothing was stored and nothing was refused, so the step that reads rows found none." });
+    const rejected = keptNoneRejection(summary.reads ?? []);
+    findings.push(rejected
+      ? keptNoneFinding(rejected, "Nothing was stored")
+      : { code: codes.noRecordsStored, detail: "Nothing was stored and nothing was refused, so the step that reads rows found none." });
   }
   if (summary.totalRowsMissingRequired > 0) {
     const columns = [...new Set(summary.recordSets.flatMap((set) => set.missingRequiredColumns))];
@@ -305,6 +316,9 @@ function recordSetFindings(set: AutomationStudioResultRecordSetSummary, summary:
       datasetId: set.datasetId
     });
   }
+  // A set whose answer kept none while the run stored rows elsewhere: said of the set, from the reads that collected it.
+  const rejected = set.processing?.keptNone && summary.totalRecordCount > 0 ? keptNoneRejection(collectingReads(set, summary.reads ?? [])) : undefined;
+  if (rejected) findings.push({ ...keptNoneFinding(rejected, "This record set's answer kept nothing"), datasetId: set.datasetId });
   if (set.truncated) {
     findings.push({
       code: codes.recordsTruncated,
@@ -313,6 +327,38 @@ function recordSetFindings(set: AutomationStudioResultRecordSetSummary, summary:
     });
   }
   return findings;
+}
+
+/** What the reads' conditions rejected over the pages they read, when they rejected anything. */
+type KeptNoneRejection = { rows: number; pages: number; itemsSeen?: number };
+
+/**
+ * The rows the given reads' conditions rejected, at least -- each read's
+ * largest single count, since a row can fail more than one condition -- with
+ * the pages they read and the items they saw. Nothing when no condition
+ * rejected a row.
+ */
+function keptNoneRejection(reads: readonly AutomationStudioResultReadAccount[]): KeptNoneRejection | undefined {
+  const rows = reads.reduce((total, read) => total + Math.max(0, ...(read.conditions ?? []).map((condition) => condition.rejected ?? 0)), 0);
+  if (rows === 0) return undefined;
+  const seen = reads.map((read) => read.itemsSeen).filter((count): count is number => count !== undefined);
+  return { rows, pages: reads.reduce((total, read) => total + read.pagesRead, 0), ...(seen.length ? { itemsSeen: seen.reduce((total, count) => total + count, 0) } : {}) };
+}
+
+/** The finding, with its counts, opening with what kept nothing. */
+function keptNoneFinding(rejected: KeptNoneRejection, what: string): AutomationStudioResultRepairFinding {
+  const rows = `at least ${rejected.rows} ${rejected.rows === 1 ? "row" : "rows"} over ${rejected.pages} ${rejected.pages === 1 ? "page" : "pages"}`;
+  const seen = rejected.itemsSeen !== undefined ? ` (of ${rejected.itemsSeen} items seen)` : "";
+  return {
+    code: AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES.keptNoneRowsRejected,
+    detail: `${what}, yet the reads' own conditions rejected ${rows}${seen}: the list was read and held rows, and the conditions left every one out.`
+  };
+}
+
+/** The reads that collected a set: those its processing names, or every read where it names none. */
+function collectingReads(set: AutomationStudioResultRecordSetSummary, reads: readonly AutomationStudioResultReadAccount[]): AutomationStudioResultReadAccount[] {
+  const nodes = new Set((set.processing?.passes ?? []).map((pass) => pass.node));
+  return nodes.size ? reads.filter((read) => nodes.has(read.nodeId)) : [...reads];
 }
 
 /**
@@ -382,6 +428,7 @@ function fixLine(finding: AutomationStudioResultRepairFinding, summary: Automati
   if (finding.code === codes.noRecordSet) return "Add or fix the step that stores what the Flow read: no record set exists, so nothing the run found was kept.";
   if (finding.code === codes.everyRowRefused) return "Make a found row storable: correct the fields the extraction reads, or stop the record schema requiring a field the page does not carry. Every row found was thrown away by validation.";
   if (finding.code === codes.noRecordsStored) return "Check that the Flow reached the page the request names, then loosen every condition on the step that reads rows before narrowing it again: it found nothing at all.";
+  if (finding.code === codes.keptNoneRowsRejected) return "Either a condition leaves out what the request asks for, or the list holds none of it: compare each condition of the read that rejected rows with the request's own words, and change the one that leaves out rows the request asks for; where every one says what the request says, the list holds none of what it asks for.";
   if (finding.code === codes.requiredValuesMissing) return `Point the required fields${columns} at what actually carries their value, or stop declaring them required. Rows were stored with nothing in them.`;
   if (finding.code === codes.columnAlwaysEmpty) return `Re-point the columns${columns} that are empty in every row sampled: what they read is not where that value is.`;
   if (finding.code === codes.rowsIdentical) return "Give the extraction the row container the request describes: it is reading one item over and over instead of each row.";

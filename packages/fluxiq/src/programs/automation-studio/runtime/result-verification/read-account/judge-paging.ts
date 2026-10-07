@@ -19,8 +19,10 @@ export function automationStudioResultSummaryWithPagingWords(summary: Automation
 
 function forJudge(read: AutomationStudioResultReadAccount): AutomationStudioResultReadAccount & { paging: string } {
   const meaning = automationStudioResultReadStop(read);
+  // A looped read's bound counts its loop's passes, not its pages.
+  const reach = read.keptPerPage?.length ?? read.pagesRead;
   const countsAgree = Number.isSafeInteger(read.pagesRead) && read.pagesRead > 0
-    && (read.pageLimit === undefined || (Number.isSafeInteger(read.pageLimit) && read.pageLimit >= read.pagesRead));
+    && (read.pageLimit === undefined || (Number.isSafeInteger(read.pageLimit) && read.pageLimit >= reach));
   // An absent stop is not an observed end. A first-page absent control can also
   // be a control that names nothing, as the shared sentence already explains.
   const observedEnd = meaning === "list_ended" && read.stop !== undefined && !read.truncated
