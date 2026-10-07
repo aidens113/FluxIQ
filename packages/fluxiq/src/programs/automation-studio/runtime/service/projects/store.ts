@@ -4,6 +4,7 @@ import type { AutomationStudioProject, AutomationStudioProjectCategory, Automati
 import { ProgramJsonStore, programDataFile } from "../../../../_shared/storage.ts";
 import type { AutomationStudioProjectPaths } from "../paths/index.ts";
 import type { AutomationStudioProjectIndex, AutomationStudioProjectRecord } from "./types.ts";
+import type { CanonicalAuthorityWholeOperation } from "../../../storage/canonical-authority/index.ts";
 
 // The project catalogue: the index that lists every project, the per-project
 // manifest and hierarchy documents, and the one-time migration off the legacy
@@ -25,12 +26,13 @@ export class AutomationStudioProjectStore {
   // forget the copy outright. An index kept in SQLite is always read.
   private indexCache: { identity: string; state: AutomationStudioProjectIndex } | undefined;
 
-  constructor(private readonly paths: AutomationStudioProjectPaths, legacyDataDir?: string) {
+  constructor(private readonly paths: AutomationStudioProjectPaths, legacyDataDir?: string, private readonly authority?: CanonicalAuthorityWholeOperation) {
     if (this.paths.root) this.indexStore = new ProgramJsonStore(path.join(this.paths.root, "index.json"), () => ({ categories: [], projects: [] }));
     if (legacyDataDir) this.legacyStore = new ProgramJsonStore(programDataFile(legacyDataDir, "automation-studio", "projects.json"), () => ({ categories: [], projects: [] }));
   }
 
   async readProjectIndex(): Promise<AutomationStudioProjectIndex> {
+    if (this.authority) return await this.authority.catalogueIndex() as unknown as AutomationStudioProjectIndex;
     await this.ensureStorageReady();
     const state = this.indexStore ? await this.readIndexFile(this.indexStore) : structuredClone(this.memoryIndex);
     return { categories: normalizeProjectCategories(state.categories ?? []), projects: state.projects ?? [] };
@@ -50,6 +52,7 @@ export class AutomationStudioProjectStore {
   }
 
   async writeProjectIndex(mutator: (state: AutomationStudioProjectIndex) => AutomationStudioProjectIndex): Promise<AutomationStudioProjectIndex> {
+    if (this.authority) throw new Error("canonical_whole.unsupported_catalogue_write");
     await this.ensureStorageReady();
     this.indexCache = undefined;
     if (!this.indexStore) {
@@ -86,6 +89,7 @@ export class AutomationStudioProjectStore {
   }
 
   async readProjectRecord(project: AutomationStudioProject): Promise<AutomationStudioProjectRecord> {
+    if (this.authority) throw new Error("canonical_whole.unsupported_project_record_read");
     if (!this.paths.root) return { ...project, customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} };
     await this.ensureProjectStructure(project.id);
     const legacyHierarchy = await new ProgramJsonStore<AutomationStudioProjectHierarchy>(this.paths.projectFile(project.id, "hierarchy", "index.json"), () => ({ customHierarchyNodes: [], deletedHierarchyIds: [], workspacePrefs: {} })).read();
@@ -101,6 +105,7 @@ export class AutomationStudioProjectStore {
   }
 
   async writeProjectRecord(project: AutomationStudioProjectRecord): Promise<void> {
+    if (this.authority) throw new Error("canonical_whole.unsupported_catalogue_write");
     if (!this.paths.root) return;
     await this.ensureProjectStructure(project.id);
     const { customHierarchyNodes, deletedHierarchyIds, workspacePrefs, ...manifest } = project;
