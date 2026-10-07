@@ -14,6 +14,15 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
   const { registry, service } = dependencies;
   const failedBuilds = automationStudioFlowBootstrapFailedBuilds<NonNullable<ReturnType<typeof parseAutomationStudioFlowBootstrapGenerationError>>>();
   registry.register({
+    programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.cancelFlowBootstrap,
+    permission: "runtime.control", classification: "authoring",
+    handler: (request) => {
+      const payload = request.payload && typeof request.payload === "object" && !Array.isArray(request.payload) ? request.payload as Record<string, unknown> : {};
+      const projectId = boundedIdentifier(payload.projectId, "Project"), flowId = boundedIdentifier(payload.flowId, "Flow");
+      return { ok: true, payload: { projectId, flowId, cancellationRequested: service.buildCancellation.cancel(projectId, flowId) } };
+    }
+  });
+  registry.register({
     programId: "automation-studio",
     endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapGenerationReadiness,
     permission: "programs.read",
@@ -105,6 +114,11 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
           permissionAskTimeoutMs: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS
         });
       } catch (error) {
+        if ((error as { name?: string } | null)?.name === "AbortError") {
+          const diagnostic = parseAutomationStudioFlowBootstrapGenerationError((error as { cause?: unknown }).cause);
+          failedBuilds.ended(projectId, flowId, diagnostic ?? undefined);
+          return { ok: false, error: "Build stopped. The Flow was not promoted.", payload: { cancelled: true, ...(diagnostic ? { diagnostic } : {}) } };
+        }
         const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
         failedBuilds.ended(projectId, flowId, diagnostic ?? undefined);
         if (diagnostic) {

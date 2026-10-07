@@ -68,6 +68,7 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "answer-ask",
     "list-runtime-sessions",
     "cancel-runtime-session",
+    "cancel-flow-bootstrap",
     // Simple Mode's Flow picker, `read`.
     "list-flow-summaries",
     // Simple Mode's run history for a Flow, `read`.

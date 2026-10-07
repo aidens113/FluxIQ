@@ -45,7 +45,7 @@ export async function buildAutomationStudioFlowFromConversation(
     ...(context.interpretationCostUsd === undefined ? {} : { interpretationCostUsd: context.interpretationCostUsd })
   });
   if (!response.ok) {
-    const ending = buildEnding(response);
+    const ending = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true ? "Build stopped. The Flow was not promoted." : buildEnding(response);
     return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), kept: keptDraft(response) };
   }
   const adaptation = (response.payload as { adaptation?: { adaptationId?: unknown; permissionRequest?: unknown } } | undefined)?.adaptation;
