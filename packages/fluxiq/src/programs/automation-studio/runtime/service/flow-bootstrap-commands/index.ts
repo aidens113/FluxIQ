@@ -15,3 +15,4 @@ export * from "./permission-hold.ts";
 export * from "./permission-outcome.ts";
 export * from "./state-digest.ts";
 export * from "./save-goal.ts";
+export * from "./candidate-generation.ts";
