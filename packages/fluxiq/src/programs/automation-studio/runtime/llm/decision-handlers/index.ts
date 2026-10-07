@@ -10,6 +10,8 @@ export * from "./answered-request.ts";
 export * from "./completion.ts";
 export * from "./failed-call.ts";
 export * from "./look-withdrawal.ts";
+export * from "./refusal-run.ts";
 export * from "./refused-repeat.ts";
+export * from "./rerun-result.ts";
 export * from "./searching.ts";
 export * from "./types.ts";

@@ -26,7 +26,7 @@ import {
   automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest,
-  automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
+  automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRefusedCallRun, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
   automationStudioLlmEvidenceHandleCompletion,
   automationStudioLlmEvidenceHandleFailedCall,
   automationStudioLlmEvidenceLookWithdrawal,
@@ -57,7 +57,7 @@ import {
   automationStudioLlmEvidenceLoopAddUsage,
   automationStudioLlmEvidenceLoopEmptyAccounting,
   automationStudioLlmEvidenceLoopFailure as failure,
-  automationStudioLlmEvidenceNoProgress,
+  automationStudioLlmEvidenceNoProgress, automationStudioLlmEvidenceRefusalRun,
   automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow, automationStudioLlmEvidenceLoopPurse,
   type AutomationStudioLlmEvidenceLoopDecision, type AutomationStudioLlmEvidenceTool,
   type AutomationStudioLlmEvidenceLoopExhaustedBound,
@@ -400,7 +400,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const handling: AutomationStudioLlmEvidenceDecisionHandlerContext = {
     input, limits, trace, accounting, draftSteps, amendmentMemory, noProgress, evidence, toolIds, toolsById, observeToolFailures, counters,
     history, draftRevision: () => rows.draftRevision, lastAction: undefined, dryRunSeen: { ran: false }, reaskedRequests: new Set(), callStates: new Map(), repeats: automationStudioLlmEvidenceRepeatGuard({ draftOf }), looks,
-    recordRow, draftRecord, accountEvidence, unusable, dryRun, authored
+    recordRow, draftRecord, accountEvidence, unusable, dryRun, authored, refusalRun: automationStudioLlmEvidenceRefusalRun()
   };
   // One call run and recorded, whoever decided it: the model's tool call, or the
   // arrival the loop makes for it before its first decision (below), recorded
@@ -486,7 +486,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       : stateBefore === stateAfter ? "unchanged" : "changed";
     recordRow(
       { iteration, decision: "tool_call", callId, toolId: decision.toolId, evidenceBytes, ...settled?.row, ...(record.effect === "mutate" ? { effectApplied } : {}), ...(resultCode ? { resultCode } : {}), ...callDiagnostic(execution), ...(decision.usage ? { usage: decision.usage } : {}) },
-      { draftChanged, pageState }
+      { draftChanged: draftChanged && settled?.unchanged !== true, pageState } // A rerun that changed nothing left the draft as it was (R3-2).
     );
     // **What the loop learned, not what it ran.** The whole rule -- the four
     // ways of learning nothing, why a refused look counts, why a repeat that
@@ -506,8 +506,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // A look asked again and run once more: the same page is a step without
     // progress whatever its bytes, and a page that moved by itself is progress.
     const reask = verifying ? automationStudioLlmEvidenceReaskOutcome(verifying, { stateAfter, refused: lookRefused }) : undefined;
-    // A step the model added to its Flow is the draft advancing, wherever the page went; a rerun that put back an identical step with the same result is not (`decision-handlers/refused-repeat.ts`).
-    if (settled?.unchanged) { const ended = automationStudioLlmEvidenceRerunChangedNothing(handling, iteration); if (ended) return ended; }
+    const refusedRun = automationStudioLlmEvidenceRefusedCallRun(handling, iteration, { refused: refusedCall, effectApplied, effect: record.effect, proposes: record.proposes, resultCode, resultReason: execution.resultReason }); if (refusedRun) return refusedRun; // Refusals of one kind in a row end the round; an added step is progress, a rerun that changed nothing or found the same is not (`decision-handlers/`).
+    if (settled?.unchanged || settled?.sameResult) { const ended = automationStudioLlmEvidenceRerunChangedNothing(handling, iteration); if (ended) return ended; }
     else if (addedToFlow || (!automationStudioLlmEvidenceNothingHappened({ evidence: value, effectApplied }) && (reask === "moved" || (reask !== "repeat" && !repeated)))) {
       // Progress: a redirect about steps without it no longer holds.
       noProgress.cleared();

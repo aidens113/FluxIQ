@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { automationStudioLlmEvidenceLoopTraceRecorder, type AutomationStudioLlmEvidenceLoopTrace } from "../../evidence-loop/index.ts";
-import { automationStudioLlmStepLogAnswer, automationStudioLlmStepLogScope } from "../index.ts";
+import { AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE, automationStudioLlmStepLogAnswer, automationStudioLlmStepLogScope } from "../index.ts";
 
 let directory: string;
 
@@ -54,6 +54,23 @@ describe("an answer step", () => {
     const index = readFileSync(path.join(directory, "index.md"), "utf8");
     expect(index).toContain("| 0001 | answer | - | amend_draft partly_applied: act_already_named | - |");
     expect(index).toContain("| 0003 | answer | core.run_node | refused llm_evidence_loop.repeat_refused (the same call before: failed) | - |");
+  });
+
+  // Live run `run-mux6naez-6c20f26e` R3-2: an identical rerun's answer said `applied` and `draftState: "changed"`
+  // beside a history row saying "unchanged". Core corrects the row once the rerun has run and writes it again.
+  it("writes a rerun row Core corrected again in place, as ignored, with what it now says", () => {
+    const row: AutomationStudioLlmEvidenceLoopTrace = { iteration: 3, decision: "amend_draft", resultCode: "llm_evidence_loop.draft_rerun", amended: 0, draftChange: { targetedStepIds: ["d1"], appliedCount: 1, refusedCount: 0, keptStepCount: 1, rerunStepId: "d1" } };
+    automationStudioLlmStepLogAnswer(row, env());
+    expect(json(path.join(directory, "0001-answer-amend_draft", "result.json"))).toMatchObject({ verdict: "applied", applied: 1 });
+    row.resultReason = "rerun_changed_nothing";
+    row.draftChange = { ...row.draftChange!, appliedCount: 0 };
+    automationStudioLlmStepLogAnswer(row, env(), AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE);
+    expect(readdirSync(directory).filter((name) => name.endsWith("amend_draft"))).toEqual(["0001-answer-amend_draft"]);
+    expect(json(path.join(directory, "0001-answer-amend_draft", "result.json"))).toMatchObject({ verdict: "ignored", applied: 0, resultReason: "rerun_changed_nothing" });
+    expect(json(path.join(directory, "0001-answer-amend_draft", "meta.json"))).toMatchObject({ verdict: "ignored", resultReason: "rerun_changed_nothing" });
+    // A row never written is not written by a rewrite.
+    automationStudioLlmStepLogAnswer({ ...row, iteration: 4 }, env(), AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE);
+    expect(readdirSync(directory).filter((name) => name.endsWith("amend_draft"))).toEqual(["0001-answer-amend_draft"]);
   });
 
   it("says an edit that changed nothing and was refused nothing was ignored, and why", () => {

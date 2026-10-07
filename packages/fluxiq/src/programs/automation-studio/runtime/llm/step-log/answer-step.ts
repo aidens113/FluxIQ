@@ -39,6 +39,16 @@ export type AutomationStudioLlmStepLogAnsweredRow = {
  * (it changed nothing and nothing was refused: an edit that put the draft back
  * as it stood, or one with nothing to do).
  */
+/**
+ * Passed as `told` to write a row already written again as it now stands,
+ * telling it nothing new: a row Core corrected after it was recorded (R3-2).
+ * A row never written is not written by it.
+ */
+export const AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE: unique symbol = Symbol("step-log answer rewrite");
+
+/** The reason a rerun row carries once Core found the rerun changed nothing (`../decision-handlers/amendment.ts`). */
+const RERUN_CHANGED_NOTHING = "rerun_changed_nothing";
+
 export type AutomationStudioLlmStepLogAnswerVerdict = "applied" | "partly_applied" | "refused" | "ignored";
 
 /**
@@ -118,11 +128,14 @@ export function automationStudioLlmStepLogAnswer(
 ): AutomationStudioLlmStepLogAnswerStep | undefined {
   const directory = automationStudioLlmStepLogDirectory(env);
   if (!directory) return undefined;
+  // A row already written is written again as it now stands: with what it was told, or -- given the rewrite
+  // word -- after Core corrected it (`../decision-handlers/amendment.ts`: a rerun that changed nothing, R3-2).
   const before = told === undefined ? undefined : written.get(row);
   if (before) {
-    before.tell(told);
+    before.tell(told === AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE ? undefined : told);
     return undefined;
   }
+  if (told === AUTOMATION_STUDIO_LLM_STEP_LOG_ANSWER_REWRITE) return undefined;
   const amendment = row.decision === "amend_draft";
   const code = typeof row.resultCode === "string" ? row.resultCode : undefined;
   const refusedDecision = row.decision === "unusable" && !(code !== undefined && automationStudioLlmProviderUnanswered([code]));
@@ -140,11 +153,14 @@ export function automationStudioLlmStepLogAnswer(
       if (automationStudioLlmStepLogFolderRefused(error)) return undefined;
       throw error;
     }
-    const amendmentsRefused = (row.amendmentsRefused ?? []).map((refusal) => ({ step: refusal.step, reason: refusal.reason, ...(refusal.nodeId ? { nodeId: refusal.nodeId } : {}) }));
-    const counted = (row.draftChange as { appliedCount?: unknown } | undefined)?.appliedCount;
-    const applied = typeof counted === "number" && Number.isSafeInteger(counted) && counted >= 0 ? counted : row.amended ?? 0;
-    const verdict: AutomationStudioLlmStepLogAnswerVerdict = refused ? "refused" : amendmentVerdict(row.resultCode, applied, amendmentsRefused.length);
-    const reason = refused ? code ?? null : verdict === "ignored" ? row.resultCode ?? null : null;
+    // Read off the row each time it is written, since a written row can be corrected and written again (above).
+    const judged = () => {
+      const amendmentsRefused = (row.amendmentsRefused ?? []).map((refusal) => ({ step: refusal.step, reason: refusal.reason, ...(refusal.nodeId ? { nodeId: refusal.nodeId } : {}) }));
+      const counted = (row.draftChange as { appliedCount?: unknown } | undefined)?.appliedCount;
+      const applied = typeof counted === "number" && Number.isSafeInteger(counted) && counted >= 0 ? counted : row.amended ?? 0;
+      const verdict: AutomationStudioLlmStepLogAnswerVerdict = refused ? "refused" : amendmentVerdict(row.resultCode, row.resultReason, applied, amendmentsRefused.length);
+      return { amendmentsRefused, applied, verdict, reason: refused ? code ?? null : verdict === "ignored" ? row.resultCode ?? null : null };
+    };
     const scope = automationStudioLlmStepLogScope.current();
     const at = new Date().toISOString();
     const files = automationStudioLlmStepLogWriter(folder.path);
@@ -153,6 +169,7 @@ export function automationStudioLlmStepLogAnswer(
     const result = (): Record<string, unknown> => {
       const entries = shownSoFar.map((entry) => ({ callId: entry.callId, toolId: entry.toolId, value: entry.value }));
       const steps = listedSteps(entries);
+      const { amendmentsRefused, applied, verdict, reason } = judged();
       return {
         iteration: row.iteration,
         decision: row.decision,
@@ -171,6 +188,7 @@ export function automationStudioLlmStepLogAnswer(
     };
     const write = (): string => {
       const steps = listedSteps(shownSoFar);
+      const { amendmentsRefused, verdict, reason } = judged();
       const summary = repeat
         ? `refused ${code}${row.resultReason ? ` (the same call before: ${row.resultReason})` : ""}`
         : refused
@@ -191,9 +209,9 @@ export function automationStudioLlmStepLogAnswer(
     if (amendment) {
       written.set(row, {
         tell: (value) => {
-          check = value;
+          if (value !== undefined) check = value;
           try {
-            files.json("result.json", result());
+            write();
           } catch {
             /* best-effort: an answer step never fails the loop */
           }
@@ -235,8 +253,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function amendmentVerdict(resultCode: string | undefined, applied: number, refused: number): AutomationStudioLlmStepLogAnswerVerdict {
-  if (resultCode === "llm_evidence_loop.draft_rerun") return refused ? "partly_applied" : "applied";
+function amendmentVerdict(resultCode: string | undefined, resultReason: string | undefined, applied: number, refused: number): AutomationStudioLlmStepLogAnswerVerdict {
+  // A rerun reads as applied until Core finds it changed nothing (`rerun_changed_nothing`), when only what else landed counts.
+  if (resultCode === "llm_evidence_loop.draft_rerun" && resultReason !== RERUN_CHANGED_NOTHING) return refused ? "partly_applied" : "applied";
   if (applied > 0 && resultCode !== "llm_evidence_loop.draft_amendment_undone") return refused ? "partly_applied" : "applied";
   return refused ? "refused" : "ignored";
 }

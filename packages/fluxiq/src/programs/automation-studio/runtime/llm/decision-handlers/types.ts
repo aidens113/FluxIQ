@@ -21,6 +21,7 @@ import type {
   AutomationStudioLlmEvidenceLoopResult,
   AutomationStudioLlmEvidenceLoopTrace,
   AutomationStudioLlmEvidenceNoProgress,
+  AutomationStudioLlmEvidenceRefusalRun,
   AutomationStudioLlmEvidenceTool
 } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceRepeatGuard } from "../repeat-guard/index.ts";
@@ -68,6 +69,8 @@ export type AutomationStudioLlmEvidenceDecisionHandlerContext = {
   draftSteps: AutomationStudioFlowDraftStep[];
   amendmentMemory: AutomationStudioLlmEvidenceAmendmentMemory;
   noProgress: AutomationStudioLlmEvidenceNoProgress;
+  /** Decisions in a row refused for one reason (`./refusal-run.ts`). */
+  refusalRun: AutomationStudioLlmEvidenceRefusalRun;
   /** Everything gathered; each decision is shown all of it. */
   evidence: AutomationStudioLlmEvidenceEntry[];
   /**
@@ -148,9 +151,9 @@ export type AutomationStudioLlmEvidenceRerunHeld = {
   /**
    * What the decision is measured against once its rerun has run (`./amendment.ts`):
    * its signature (`../decision-context/signature.ts`), the draft's key before it
-   * (`../repeat-guard/draft-key.ts`), and what the replaced step observed.
+   * (`../repeat-guard/draft-key.ts`), what the replaced step observed, and what it found (`./rerun-result.ts`).
    */
-  before: { signature: string; draft: string; observed: string };
+  before: { signature: string; draft: string; observed: string; answer?: string | undefined };
 };
 
 /**
@@ -162,6 +165,12 @@ export type AutomationStudioLlmEvidenceRerunHeld = {
 export type AutomationStudioLlmEvidenceRerunSettled = {
   row: Pick<AutomationStudioLlmEvidenceLoopTrace, "amended" | "amendmentsRefused">;
   unchanged: boolean;
+  /**
+   * The rerun took its step's place with another argument and found exactly
+   * what the step had found (`./rerun-result.ts`): the draft changed, the
+   * result did not, so it is no progress either.
+   */
+  sameResult: boolean;
 };
 
 /** What the loop does once a handler has answered: ask again, end, or run a rerun as this iteration's call. */

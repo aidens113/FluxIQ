@@ -69,11 +69,21 @@ const FAILED_AMENDMENT_INSTRUCTION = "You already sent this exact amend_draft --
   + "Do something different: rerun the step with a corrected argument, correct the step before it that left the page wrong, mark it optional or drop it, or do the next act or choice still not done on the checklist. "
   + "Decisions in a row that change nothing end this round, and the Flow so far is then tested and judged.";
 
+/**
+ * The same, naming the step the rerun was of and the rerun that corrects it
+ * (week report W2): a rerun merges its input over the step's argument, so a
+ * key it does not write stays -- including a key the refusal named.
+ */
+function failedAmendmentInstruction(rerunStep: number | undefined): string {
+  if (rerunStep === undefined) return FAILED_AMENDMENT_INSTRUCTION;
+  return `${FAILED_AMENDMENT_INSTRUCTION} To correct it, rerun step ${rerunStep} with a corrected argument, {"step": ${rerunStep}, "change": "rerun", "input": {<only the keys that change>}}, changing what then.resultCode names: a key the input does not write stays in the step's argument, so a key the refusal named has to be set to null, or its object written out again without it.`;
+}
+
 /** The instruction for one earlier outcome: a look, a part run, an amendment, a handle never shown, or any other call. */
-function instructionFor(earlier: AutomationStudioLlmEvidenceRepeatedOutcome): string {
+function instructionFor(earlier: AutomationStudioLlmEvidenceRepeatedOutcome, rerunStep?: number): string {
   if (earlier.outcome === "same_answer") return LOOK_INSTRUCTION;
   if (earlier.outcome === "same_draft") return DRAFT_INSTRUCTION;
-  if (earlier.outcome === "same_amendment") return earlier.rerunFailed ? FAILED_AMENDMENT_INSTRUCTION : AMENDMENT_INSTRUCTION;
+  if (earlier.outcome === "same_amendment") return earlier.rerunFailed ? failedAmendmentInstruction(rerunStep) : AMENDMENT_INSTRUCTION;
   return earlier.handleUnshown ? HANDLE_UNSHOWN_INSTRUCTION : INSTRUCTION;
 }
 
@@ -82,6 +92,8 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
   toolId: string;
   earlier: AutomationStudioLlmEvidenceRepeatedOutcome;
   inARow: number;
+  /** For a refused `amend_draft`, the step its rerun was of. */
+  rerunStep?: number | undefined;
 }): JsonObject {
   return {
     ok: false,
@@ -97,6 +109,6 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
     },
     refusedInARow: input.inARow,
     maxRefusedInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW,
-    instruction: instructionFor(input.earlier)
+    instruction: instructionFor(input.earlier, input.rerunStep)
   };
 }

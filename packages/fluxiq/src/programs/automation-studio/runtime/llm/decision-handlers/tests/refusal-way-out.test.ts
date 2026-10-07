@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftAmendmentRefusal } from "../../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceDraftAmendmentFeedback } from "../../index.ts";
+import { automationStudioLlmUnusableDecisionFeedback } from "../../unusable-decision.ts";
 
 // t174-w108 Cause 6 (`run-musp8nz1-dbd3905a`, steps 0027-0028): with steps 1-13
 // in the draft the model sent `{step 14, add, act a1}` for an Add to cart press
@@ -130,7 +131,7 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
     no_such_step: {}, already_so: {}, no_such_position: {}, run_by_the_loop: {}, no_step_before_it: {}, over_not_before: { over: 2 }, not_a_kept_step: {},
     did_not_work: {}, already_in_flow: {}, already_out: {}, changes_nothing: {}, act_on_a_read: {}, act_already_named: { act: "a1" },
     bind_not_a_binding: { parameter: "query" }, bind_new_key: { parameter: "query", bindable: ["text"] }, bind_row_outside_loop: { parameter: "query" }, bind_malformed: { parameter: "query" },
-    rerun_holds_binding: {}, repeat_taken_off: { over: 3, takenOff: "over_after" }, strands_a_step: { strands: 3 }
+    rerun_holds_binding: {}, repeat_taken_off: { over: 3, takenOff: "over_after" }, strands_a_step: { strands: 3 }, settings_rewrite_run: {}
   };
 
   it("gives every reason a next naming the step, without a checklist and with one", () => {
@@ -173,5 +174,15 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
     const taken = [steps[0]!, steps[1]!, { position: 3, effect: "mutate", effectApplied: true, disposition: "taken" }];
     expect(told({ step: 2, reason: "act_on_a_read" }, undefined, taken)).toContain(`{"step": 3, "change": "add", "act": <the act>}`);
     expect(told({ step: 2, reason: "act_on_a_read" }, undefined, steps.slice(0, 2))).toContain("No step after step 2 does an act yet");
+  });
+});
+
+// Week report W2: every refusal names the exact way out. `amend_not_offered` said only to "choose one of the
+// variants it does offer", without saying why editing was not offered or which decision to send instead.
+describe("an amend_draft that was not offered", () => {
+  it("says why editing was not offered and which decision to send instead", () => {
+    const feedback = JSON.stringify(automationStudioLlmUnusableDecisionFeedback({ issueCodes: ["llm_evidence_loop.amend_not_offered"], stepsWithoutProgress: 1, maxStepsWithoutProgress: 8 }));
+    expect(feedback).toContain("there is no step in the draft to edit yet");
+    expect(feedback).toContain("Run a tool call instead, with add true to put its step in the Flow");
   });
 });
