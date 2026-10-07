@@ -199,11 +199,17 @@ export class FluxIQ {
 
   close(): Promise<void> {
     this.closePromise ??= (async () => {
+      const errors: unknown[] = [];
+      try { await this.programs.clientGateway.close(); } catch (error) { errors.push(error); }
       try {
         await this.programs.automationStudio.close();
+      } catch (error) {
+        errors.push(error);
       } finally {
-        this.programs.secretKeys.close();
+        try { this.programs.secretKeys.close(); } catch (error) { errors.push(error); }
       }
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, "fluxiq.close_failed");
     })();
     return this.closePromise;
   }

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ComponentRegistry } from "../../components/index.ts";
 import { createEnvelope } from "../../io/index.ts";
 import { AutomationStudioNativeNodeRuntime, type AutomationStudioImporterSdkManifest, type AutomationStudioNodeDefinition } from "../../programs/index.ts";
@@ -52,6 +52,20 @@ afterEach(() => {
 });
 
 describe("FluxIQ", () => {
+  it.each([false, true])("closes gateway before program pool and still attempts all cleanup after gateway error=%s", async failGateway => {
+    const root = await tempRoot(), fluxiq = FluxIQ.create({ rootDir: root, loadEnv: false, modelProvidersEnabled: false }), order: string[] = [];
+    const gatewayClose = fluxiq.programs.clientGateway.close.bind(fluxiq.programs.clientGateway), studioClose = fluxiq.programs.automationStudio.close.bind(fluxiq.programs.automationStudio), secretClose = fluxiq.programs.secretKeys.close.bind(fluxiq.programs.secretKeys);
+    vi.spyOn(fluxiq.programs.clientGateway, "close").mockImplementation(async () => { order.push("gateway"); await gatewayClose(); if (failGateway) throw new Error("owned gateway error"); });
+    vi.spyOn(fluxiq.programs.automationStudio, "close").mockImplementation(async () => { order.push("studio"); await studioClose(); });
+    vi.spyOn(fluxiq.programs.secretKeys, "close").mockImplementation(() => { order.push("secrets"); secretClose(); });
+    try {
+      if (failGateway) await expect(fluxiq.close()).rejects.toThrow("owned gateway error"); else await fluxiq.close();
+      expect(order).toEqual(["gateway", "studio", "secrets"]);
+    } finally {
+      vi.restoreAllMocks(); const resolved = path.resolve(root); if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith("fluxiq-")) throw new Error("Refusing cleanup outside owned framework fixture");
+      await rm(resolved, { recursive: true, force: true });
+    }
+  });
   it("creates only the layout-v2 config for a fresh host", async () => {
     const root = await tempRoot();
     try {

@@ -1,6 +1,6 @@
 import { bindTrustedModuleIdentity, type TrustedModuleBuildIdentity } from "../../../runtime/build-identity/modules/index.ts"; import { readCoreRuntimeBuildIdentity } from "../../../runtime/build-identity/index.ts"; import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
+import path from "node:path"; import { AutomationStudioCommandContextController } from "./service/command-context/index.ts";
 import type { AutomationStudioSnapshot } from "../api/index.ts";
 import type { AutomationStudioHierarchyChildrenPage, AutomationStudioHierarchyNode, AutomationStudioProject, AutomationStudioProjectCategory, AutomationStudioProjectChangeFeedPage, AutomationStudioProjectHierarchy } from "../api/contracts.ts";
 import {
@@ -369,7 +369,7 @@ export class AutomationStudioService {
   private readonly flowRunAudit: AutomationStudioFlowRunAudit;
   private readonly recordingDeletion: AutomationStudioRecordingDeletion;
   /** Run datasets (CD16, CD17), and the conversation a person and FluxIQ talk in: reached as fields so the frozen facade gains no methods (C8). */
-  readonly runDatasets: AutomationStudioRunDatasets;
+  readonly runDatasets: AutomationStudioRunDatasets; readonly commandContexts: AutomationStudioCommandContextController;
   readonly conversations: AutomationStudioConversations;
   private readonly proposalApproval: AutomationStudioProposalApproval;
   private readonly locks = new AutomationStudioServiceLocks();
@@ -443,7 +443,7 @@ export class AutomationStudioService {
     this.projectArtifacts = new AutomationStudioProjectArtifactStore(this.projectPaths, this.projects, this.legacy, this.objectDocuments, this.repositories, this.flowWriter, automationStudioFacadePorts(this), this.objectStore);
     this.normalizationReview = new AutomationStudioNormalizationReview(this.recordings, automationStudioFacadePorts(this));
     this.flowRunAudit = new AutomationStudioFlowRunAudit(automationStudioFacadePorts(this));
-    this.runDatasets = new AutomationStudioRunDatasets(this.projects, this.runtimeProjectDatabasePool);
+    this.runDatasets = new AutomationStudioRunDatasets(this.projects, this.runtimeProjectDatabasePool); this.commandContexts = new AutomationStudioCommandContextController({ ...(this.projectDatabasePool ? { pool: this.projectDatabasePool } : {}), getRuntimeSession: (projectId, runId) => this.getRuntimeSession(projectId, runId) });
     this.conversations = new AutomationStudioConversations(this.runtimeProjectDatabasePool).bindDomainInstructions(() => this.llmEvidenceRuntime?.systemInstructions?.text); // The chat is told what every Flow model call is told.
     this.recordingDeletion = new AutomationStudioRecordingDeletion(this.projectPaths, this.recordingPaths, this.indexes, this.objectDocuments, this.recordings, this.repositories, automationStudioFacadePorts(this), this.objectStore, this.recordingStateIndexes);
     this.proposalApproval = new AutomationStudioProposalApproval(this.projectPaths, this.projects, this.recordings, this.repositories, this.flowSubflowMigration, automationStudioFacadePorts(this));
@@ -480,9 +480,9 @@ export class AutomationStudioService {
   }
 
   async close(): Promise<void> {
-    await this.parkedRunExpiry.close();
-    await this.uiCache.close();
-    await this.runtimeProjectDatabasePool?.closeAll();
+    const errors: unknown[] = [];
+    for (const close of [() => this.commandContexts.close(), () => this.parkedRunExpiry.close(), () => this.uiCache.close(), () => this.runtimeProjectDatabasePool?.closeAll()]) try { await close(); } catch (error) { errors.push(error); }
+    if (errors.length) throw new AggregateError(errors, "automation_studio.close_failed");
   }
 
   /** Connects Automation Studio policy execution to importer-registered IO. */

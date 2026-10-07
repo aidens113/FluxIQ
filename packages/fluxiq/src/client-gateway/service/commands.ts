@@ -11,12 +11,17 @@ import type { ClientGatewayConfig } from "./config.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
 import type { PendingCommand } from "./types.ts";
+import { ClientGatewayDurableDispatch, type ClientGatewayDurableActionOptions, type ClientGatewayDurableActionResponse } from "./command-ledger/index.ts";
+import type { ClientGatewayEventBus } from "./event-bus.ts";
+import type { ClientGatewayServiceOptions } from "./types.ts";
 
 type CommandCollaborators = {
   config: ClientGatewayConfig;
   sessions: ClientGatewaySessionRegistry;
   transport: ClientGatewayTransport;
   audit: ClientGatewayAuditLog;
+  events: ClientGatewayEventBus;
+  resolveCommandLedger?: ClientGatewayServiceOptions["resolveCommandLedger"];
 };
 
 /**
@@ -25,6 +30,8 @@ type CommandCollaborators = {
  */
 export class ClientGatewayCommands {
   private readonly pending = new Map<string, PendingCommand>();
+  private readonly durable: ClientGatewayDurableDispatch;
+  private closed = false;
   private readonly config: ClientGatewayConfig;
   private readonly sessions: ClientGatewaySessionRegistry;
   private readonly transport: ClientGatewayTransport;
@@ -35,6 +42,7 @@ export class ClientGatewayCommands {
     this.sessions = collaborators.sessions;
     this.transport = collaborators.transport;
     this.audit = collaborators.audit;
+    this.durable = new ClientGatewayDurableDispatch({ ...collaborators, ...(collaborators.resolveCommandLedger ? { resolve: collaborators.resolveCommandLedger } : {}) });
   }
 
   async startRecording(sessionId: string, input: { recordingId: string; projectId?: string | null; taskId?: string; domainId?: string }): Promise<void> {
@@ -59,7 +67,11 @@ export class ClientGatewayCommands {
     }, session));
   }
 
-  executeAction(sessionId: string, command: ClientGatewayActionCommand): ClientGatewayActionResponse {
+  executeAction(sessionId: string, command: ClientGatewayActionCommand): ClientGatewayActionResponse;
+  executeAction(sessionId: string, command: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): ClientGatewayDurableActionResponse;
+  executeAction(sessionId: string, command: ClientGatewayActionCommand, options?: ClientGatewayDurableActionOptions): ClientGatewayActionResponse | ClientGatewayDurableActionResponse {
+    if (this.closed) throw new Error("client_gateway.closed");
+    if (arguments.length > 2) return this.durable.execute(sessionId, command, options!);
     const session = this.sessions.requireReady(sessionId);
     const commandId = randomUUID();
     const message = this.transport.message("server.execute_action", { ...command, commandId }, session);
@@ -80,7 +92,8 @@ export class ClientGatewayCommands {
   }
 
   /** Bind a pending answer to its dispatched session before changing any state. */
-  settle(senderSessionId: string, result: ClientGatewayActionResult): "settled" | "unknown_command" | "wrong_session" {
+  async settle(senderSessionId: string, result: ClientGatewayActionResult): Promise<"settled" | "unknown_command" | "wrong_session" | "suppressed"> {
+    if (this.durable.has(result?.commandId)) return await this.durable.settle(senderSessionId, result);
     const pending = this.pending.get(result.commandId);
     if (!pending) return "unknown_command";
     if (pending.sessionId !== senderSessionId) return "wrong_session";
@@ -88,6 +101,12 @@ export class ClientGatewayCommands {
     this.pending.delete(result.commandId);
     pending.resolve(result);
     return "settled";
+  }
+  isDurableCommand(commandId: string): boolean { return this.durable.has(commandId); }
+  async close(): Promise<void> {
+    this.closed = true;
+    for (const [commandId, pending] of this.pending) { clearTimeout(pending.timeout); pending.resolve({ commandId, status: "unknown", message: "Client gateway closed before an answer." }); }
+    this.pending.clear(); await this.durable.drain();
   }
 
   async sendPing(sessionId: string): Promise<void> {

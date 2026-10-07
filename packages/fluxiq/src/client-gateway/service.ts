@@ -14,6 +14,7 @@ import type {
   ClientGatewaySnapshotView
 } from "./contracts.ts";
 import type { JsonObject } from "../core/index.ts";
+import type { ClientGatewayDurableActionOptions, ClientGatewayDurableActionResponse } from "./service/command-ledger/index.ts";
 import {
   ClientGatewayAccess,
   ClientGatewayActivityPublisher,
@@ -82,7 +83,7 @@ export class ClientGatewayService {
     };
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, facade });
     const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, facade });
-    const commands = new ClientGatewayCommands({ config, sessions, transport, audit });
+    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger });
 
     this.trustedClients = trustedClients;
     this.audit = audit;
@@ -176,9 +177,13 @@ export class ClientGatewayService {
     await this.commands.captureSnapshot(sessionId, input);
   }
 
-  executeAction(sessionId: string, command: ClientGatewayActionCommand): ClientGatewayActionResponse {
-    return this.commands.executeAction(sessionId, command);
+  executeAction(sessionId: string, command: ClientGatewayActionCommand): ClientGatewayActionResponse;
+  executeAction(sessionId: string, command: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): ClientGatewayDurableActionResponse;
+  executeAction(sessionId: string, command: ClientGatewayActionCommand, options?: ClientGatewayDurableActionOptions): ClientGatewayActionResponse | ClientGatewayDurableActionResponse {
+    return arguments.length > 2 ? this.commands.executeAction(sessionId, command, options!) : this.commands.executeAction(sessionId, command);
   }
+  /** Finish pending action accounting and leased durable ports before program storage shuts down. */
+  close(): Promise<void> { return this.commands.close(); }
 
   async sendPing(sessionId: string): Promise<void> {
     await this.commands.sendPing(sessionId);
