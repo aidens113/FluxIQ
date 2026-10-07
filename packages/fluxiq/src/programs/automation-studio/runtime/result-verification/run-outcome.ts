@@ -592,10 +592,11 @@ function costCeiling(
  * The run's stored record sets, every one, each with every stored row: the
  * store is read page by page until it says there are no more (2026-09-30, "the
  * model sees the whole page"). The same rows serve the required-value check and
- * the summary the model is shown.
+ * the summary the model is shown. Exported for the candidate trial, which
+ * judges its own run's record sets the same way (`../service/candidate-trial/`).
  */
-async function readRecordSets(
-  ports: AutomationStudioResultVerificationPorts,
+export async function readRecordSets(
+  ports: Pick<AutomationStudioResultVerificationPorts, "listRunDatasets" | "getRunDatasetPage">,
   projectId: string,
   runId: string
 ): Promise<AutomationStudioResultRecordSetInput[]> {

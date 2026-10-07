@@ -21,8 +21,9 @@ import { plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 // carries the Flow's steps -- reruns each carried step before it finishes.
 //
 // All of that is Core's default legacy authoring mode. In candidate mode
-// (`FLUXIQ_AUTHORING_MODE=candidate`, the describe at the end) a build saves an
-// unverified candidate draft and the Flow keeps no steps.
+// (`FLUXIQ_AUTHORING_MODE=candidate`, the describe at the end) the model
+// submits a candidate and asks for its test; Core runs it once from its start,
+// the judge says yes twice, and the chat applies the proposal that makes (t340).
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -155,7 +156,11 @@ async function createWorld(options: { unlocked: string | null }) {
             }
             const latest = [...(request.context.evidenceLoop?.evidence ?? [])].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
             if (request.context.evidenceLoop?.tools.some((tool) => tool.toolId === "core.submit_candidate")) {
-              const decision = latest?.digest ? { kind: "complete", result: { revision: latest.revision, digest: latest.digest } } : { kind: "tool_call", callId: "submit", toolId: "core.submit_candidate", input: { plan: plan(), summary: "Submitted draft" } };
+              // Candidate mode (t340): submit, test that exact revision, and complete only once its trial answered yes.
+              const tested = latest?.digest !== undefined && (request.context.evidenceLoop?.evidence ?? []).some((entry) => entry.toolId === "core.test_candidate" && (entry.value as { verdict?: string; digest?: string } | undefined)?.verdict === "yes" && (entry.value as { digest?: string }).digest === latest.digest);
+              const decision = !latest?.digest ? { kind: "tool_call", callId: "submit", toolId: "core.submit_candidate", input: { plan: plan(), summary: "Submitted draft" } }
+                : tested ? { kind: "complete", result: { revision: latest.revision, digest: latest.digest } }
+                : { kind: "tool_call", callId: "test", toolId: "core.test_candidate", input: { revision: latest.revision, digest: latest.digest } };
               return { response: { kind: "evidence_tool_decision", summary: "Draft authoring", decision }, usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150, estimatedCostUsd: 0.001 } };
             }
             const decision = buildDecisions.shift() ?? { kind: "complete", result: { summary: "Search the catalog." } };
@@ -482,28 +487,25 @@ describe("the extension's chat, end to end in Core", () => {
   describe("in candidate authoring mode", () => {
     beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate"); });
 
-    it("actual registry chat creation saves a draft and leaves accepted topology unchanged", async () => {
+    it("actual registry chat creation tests the candidate, applies its proposal and says the automation is ready", async () => {
       world = await createWorld({ unlocked: UNLOCKED_SESSION });
       await world.say("Create a flow that finds products", { do: "flow.createHere", with: { instruction: "Find products", name: "Draft" } });
       await automationStudioConversationCommandWork.idle();
       const flow = await onlyFlow(world.service, world.project.id);
-      expect(await world.service.getFlowRouter(world.project.id, flow.flowId)).toBeNull();
-      expect((await world.service.getFlow(world.project.id, flow.flowId)).nodes).toEqual([]);
-      expect((await world.service.listFlowAdaptationSummaries({ projectId: world.project.id, flowId: flow.flowId, limit: 50 })).adaptations).toEqual([]);
+      // The trial was judged by the build-test judge, asked twice (t296), before anything was proposed.
+      expect(world.buildRequests.filter((request) => request.taskKind === "loop_verification")).toHaveLength(2);
+      expect(world.judgeAppliedCounts).toEqual([0, 0]);
+      // Its proposal was approved and applied as a legacy one is: the Flow now has the tested steps.
+      expect(await world.service.getFlowRouter(world.project.id, flow.flowId)).not.toBeNull();
+      expect((await world.service.listFlowAdaptationSummaries({ projectId: world.project.id, flowId: flow.flowId, limit: 50 })).adaptations.map((entry) => entry.status)).toEqual(["applied"]);
       const turns = (await world.thread()).turns;
       expect(turns.filter((turn) => turn.ask)).toEqual([]);
-      expect(turns.some((turn) => turn.attachment?.kind === "candidate-draft")).toBe(true);
-      expect(turns.map((turn) => turn.text).join(" ")).toContain("Verification pending");
-      expect(world.buildRequests.some((request) => request.taskKind === "loop_verification")).toBe(false);
-      const original = await world.service.getFlowInstructionSet({ projectId: world.project.id, flowId: flow.flowId });
-      const flowCount = (await world.service.listFlows(world.project.id)).length;
-      await world.say("Continue building it", { do: "flow.explore", with: { flowId: flow.flowId } });
-      await automationStudioConversationCommandWork.idle();
-      expect((await world.service.listFlows(world.project.id)).length).toBe(flowCount);
-      expect(await world.service.getFlowInstructionSet({ projectId: world.project.id, flowId: flow.flowId })).toEqual(original);
-      expect(await world.service.getFlowRouter(world.project.id, flow.flowId)).toBeNull();
-      expect((await world.thread()).turns.filter((turn) => turn.attachment?.kind === "candidate-draft")).toHaveLength(2);
-
+      expect(turns.some((turn) => turn.attachment?.kind === "candidate-draft")).toBe(false);
+      const text = turns.map((turn) => turn.text).join(" ");
+      expect(text).toContain("is ready"); expect(text).toContain("judged, twice, to do what you asked");
+      // The trial ran in a session of its own, marked as a candidate trial.
+      const trials = (await world.service.listRuntimeSessions(world.project.id)).filter((session) => (session.metadata as { candidateTrial?: unknown } | undefined)?.candidateTrial !== undefined);
+      expect(trials.map((session) => session.status)).toEqual(["succeeded"]);
     }, 60_000);
 
     it.each([PAGE, "http://127.0.0.1:4100/private?token=sensitive"])("candidate announcement masks address %s", async (page) => {
@@ -513,7 +515,7 @@ describe("the extension's chat, end to end in Core", () => {
       const text = (await world.thread()).turns.filter((turn) => turn.author === "automation").map((turn) => turn.text).join(" ");
       expect(text).not.toContain(page); expect(text).not.toContain("token=sensitive");
       expect(text).toContain(page === PAGE ? "shop.example.test" : "the page you had open");
-      expect(text).toContain("Verification pending");
+      expect(text).toContain("test-running the whole Flow once from the start");
     }, 60_000);
   });
 });

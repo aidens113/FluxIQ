@@ -1,5 +1,6 @@
 import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../action-permissions/index.ts";
 import type { AutomationStudioBootstrapAdaptation, AutomationStudioBootstrapAdaptationMode } from "../../flow-bootstrap/index.ts";
+import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioLlmModelCaller } from "../../llm/index.ts";
 
 // What a caller asks for when it generates a Flow Bootstrap adaptation, and
@@ -87,21 +88,49 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationProposal = {
    * the next build with the classes it lists as `missing` permitted.
    */
   permissionRequest?: AutomationStudioActionPermissionRequest;
+  /**
+   * Candidate mode only: the candidate and the trial whose confirmed yes made
+   * this proposal (t340). A legacy build's proposal never carries it.
+   */
+  candidate?: AutomationStudioGeneratedCandidateTrial;
+};
+
+/** Which candidate, at which revision and digest, and which trial run's confirmed yes produced a proposal. */
+export type AutomationStudioGeneratedCandidateTrial = {
+  candidateId: string;
+  revision: number;
+  digest: string;
+  trial: { runId: string; verdict: "yes"; calls: number };
+};
+
+/**
+ * Why a candidate stayed a draft: the standing trial verdict for its latest
+ * revision (`not_tested` when none ran), the trial run behind it, and Core's
+ * codes (`candidate.trial_judged_no`, `FLOW_BOOTSTRAP_STALE`, ...).
+ */
+export type AutomationStudioCandidateDraftTrial = {
+  verdict: AutomationStudioCandidateTrialVerdict | "not_tested";
+  runId?: string;
+  codes: string[];
 };
 
 export type AutomationStudioGenerateFlowBootstrapAdaptationResult = AutomationStudioGenerateFlowBootstrapAdaptationProposal | (
-  Omit<AutomationStudioGenerateFlowBootstrapAdaptationProposal, "status" | "adaptationId" | "riskLevel" | "permissionRequest"> & {
+  Omit<AutomationStudioGenerateFlowBootstrapAdaptationProposal, "status" | "adaptationId" | "riskLevel" | "permissionRequest" | "candidate"> & {
     status: "draft";
     candidateId: string;
     revision: number;
     digest: string;
     verification: "not_performed";
     promotionAllowed: false;
+    /** Present when a trial runner was available: why nothing was promoted. */
+    trial?: AutomationStudioCandidateDraftTrial;
   }
 );
 
-/** Only an absent flag is statically legacy; a broadly typed flag keeps the full union. */
+/**
+ * Only an absent flag is statically legacy. Candidate mode ends as a draft or,
+ * after a confirmed trial yes, as a proposal carrying `candidate` (t340).
+ */
 export type AutomationStudioGenerateFlowBootstrapAdaptationResultFor<Input extends AutomationStudioGenerateFlowBootstrapAdaptationInput> =
-  Input extends { authoringMode: "candidate" } ? Extract<AutomationStudioGenerateFlowBootstrapAdaptationResult, { status: "draft" }>
-  : "authoringMode" extends keyof Input ? AutomationStudioGenerateFlowBootstrapAdaptationResult
+  "authoringMode" extends keyof Input ? AutomationStudioGenerateFlowBootstrapAdaptationResult
   : AutomationStudioGenerateFlowBootstrapAdaptationProposal;

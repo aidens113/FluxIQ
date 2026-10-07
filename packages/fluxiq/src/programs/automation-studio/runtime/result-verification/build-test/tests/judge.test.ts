@@ -331,11 +331,14 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     expect(unconfirmed).not.toHaveProperty("oneCallSaidYes");
   });
 
-  it("yes, then unknown or a reply without an answer, leaves the yes standing", async () => {
+  // t296 (`../../agreement.ts`): a build-finishing yes needs a confirming yes. An unknown or a reply without an
+  // answer confirms nothing, so the yes does not stand: the verdict is unknown and the build does not finish on it.
+  it("yes, then unknown or a reply without an answer, is unknown -- the yes is not confirmed", async () => {
     for (const second of [{ answersRequest: "unknown" }, {}]) {
       const { provider } = answering({ answersRequest: "yes" }, second);
       const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-      expect(verdict).toMatchObject({ verdict: "yes", spent: { calls: 2 } });
+      expect(verdict).toMatchObject({ verdict: "unknown", spent: { calls: 2 } });
+      expect(verdict).not.toHaveProperty("oneCallSaidYes");
     }
   });
 

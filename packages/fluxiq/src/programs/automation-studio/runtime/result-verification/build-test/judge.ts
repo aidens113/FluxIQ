@@ -10,7 +10,9 @@
 // number, answered no and then yes, and the one yes finished the build on rows
 // the playback judge refused. And its outcome is read as a build's verdict:
 //
-//   answers, then answers, unknown or a silent reply  -> yes
+//   answers, then answers                             -> yes
+//   answers, then unknown or a silent reply           -> unknown, unconfirmed (t296:
+//                                                         a yes needs a confirming yes)
 //   answers, then does_not_answer                     -> unknown, with the second
 //                                                         call's reading, unconfirmed
 //   answers, then a call not back usable              -> unknown, unconfirmed (not_judged
