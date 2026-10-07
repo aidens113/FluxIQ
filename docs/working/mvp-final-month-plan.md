@@ -44,6 +44,11 @@ and closes downstream task first, then Core under Core's own task gate.
 
 ## Work Ledger
 
+### 2026-10-06 - t296 integrated and paired dev push
+- Core merge `6c449022`; downstream merge `62ceaac8`, both pushed to dev.
+- Supervisor gates: changed agreement/held-candidate tests 29/29 after integration, fluxiq typecheck exit 0, structure audit exit 0; downstream integration audit passed.
+- P0 remains open for sufficient requirement receipts, identity and real cancel proof; t298 control and t299 candidate work remain isolated. No paid live run or release/main push.
+
 ### 2026-10-06 - t296 acceptance fences verified
 - Agent: Codex supervisor; p0-acceptance worker.
 - Changed: affirmative confirmation agreement, unsupported held-topology refusal, owning tests, authored architecture; source commit 1736ba81.
