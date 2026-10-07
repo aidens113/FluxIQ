@@ -173,3 +173,10 @@ incomplete, with no reduction in the requested atomicity or outcome proof.
 - Validation: root37/37 zero skips, fluxiqcheck0 actual38.432s/build0 actual46.106s, Coreaudit0; paired downstream integration audit follows. Root required fail-first borrowed owner/operation/snapshot generation fixes; receipt in downstream reports/p2-staged-authority-foundation.md.
 - Outcome: Staged-only consistency verified; production activation/reader/writer/capture/compiler/promotion unsupported. No OS-kill/power-loss/browser/provider/panel claim.
 - Follow-up: all-writer/read cutover proposal reviewed separately; actual server adapter provenance t310. Core taskfinish --skip-checks only after observed narrow gates under daily full-suite limit.
+
+### 2026-10-07 - t313 command receipt foundation independently verified
+- Agent: Codex supervisor.
+- Changed: generic strict bounded claim/receipt controller and actual project SQL0027 receipt-only journal; no production dispatch/executor wiring. Existing project data/checksums remain preserved by owning regression.
+- Validation: root26/26 before current dev; literal current-built child termination/restart2/2 zero skips5.96s; exact tsc noEmit incrementalfalse0, actual owning build44.966s. After t310 merge, owning30/30 including loaded transport owner passed18.07s; merged typecheck0 actual26.285s/build0 actual43.451s and Coreaudit0 (281warnings/349baseline). Full commands/limitations in paired downstream report.
+- Outcome: one durable claim precedes callback; receipt precedes usable live result; pending/unknown and committed receipt-only restart never send again or fabricate result. Not production Flow authority or semantic verification.
+- Follow-up: reviewed actual gateway-only composition unit first, then both runtime paths and sticky unknown/retry/resume fences. Conservative reconstructed same-run restriction documented; no provider/panel/full-suite run. Core finish --skip-checks only after merged narrow gates observed.
