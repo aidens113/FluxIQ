@@ -50,7 +50,8 @@ const TODO_WORDS: Readonly<Record<Todo, string>> = Object.freeze({
   // A claimed step that did something else, read from its own record (week report W1, `../instructed-acts/act-evidence.ts`).
   step_only_chooses: "the step I tried for it only chose one of its options, and did not do it",
   step_only_clears_the_way: "the step I tried for it only closed something in the way, and did not do it",
-  another_step_shows_it: "the step I named for it was not the one that did it"
+  another_step_shows_it: "the step I named for it was not the one that did it",
+  step_changed_nothing_seen: "the press I named for it changed nothing on the page, so it did not do it"
 });
 
 /** Why each round stopped, as a clause that finishes "The build stopped because ...". */

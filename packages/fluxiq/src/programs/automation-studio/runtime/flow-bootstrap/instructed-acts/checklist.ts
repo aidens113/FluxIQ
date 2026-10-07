@@ -124,12 +124,13 @@ export type AutomationStudioInstructedActObjectTodo = "step_acts_on_another_obje
 /**
  * Why an act is not done, read from what the step claimed for it did instead
  * (`./act-evidence.ts`): it made one of the act's own choices, only cleared a
- * layer in front of the page, or changed nothing that shows the act while
- * another step's change does. Held apart from the two unions above, so a
+ * layer in front of the page, changed nothing that shows the act while
+ * another step's change does, or changed nothing anyone could see (run
+ * `run-muxkyfxz-446c3a4e`). Held apart from the two unions above, so a
  * reader typed over those falls back safely. Information on the checklist; a
  * claim is refused for it only as it is made (`./claim-verdict.ts`).
  */
-export type AutomationStudioInstructedActEvidenceTodo = "step_only_chooses" | "step_only_clears_the_way" | "another_step_shows_it";
+export type AutomationStudioInstructedActEvidenceTodo = "step_only_chooses" | "step_only_clears_the_way" | "another_step_shows_it" | "step_changed_nothing_seen";
 
 /** Every reason an act or choice on the checklist is not done. */
 type Todo = AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo | AutomationStudioInstructedActEvidenceTodo;
