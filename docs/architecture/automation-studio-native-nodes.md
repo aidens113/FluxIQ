@@ -277,6 +277,9 @@ save as a dataset, and `timeoutMs`, the time the recorded action is given.
 `metadata.recordsPath`, and never assumes a path of its own. Core clones the
 value, parses it with `parseAutomationStudioRecordOutput`, and stores the parsed
 result, its path resolved, on the proposal's `RecordingFlowActionCandidate`.
+The parse keeps an optional `process` declaration
+([record outputs and run-end processing](#record-outputs-and-run-end-processing))
+and refuses a key the contract does not name (`record_output.unknown_key`).
 `null` means no record output. Any other value that does not parse rejects the
 candidate, and the proposal run reports the reason as a mapping issue. That
 includes a record output with no `recordsPath` either way, and one with a field
@@ -307,6 +310,66 @@ These fields are additive. A mapper that ignores `following` and proposes no
 and such a candidate becomes the same node as before. A host whose mapper
 proposes `expectedState` and that binds an expectation evaluator should expect
 those recorded actions to fail wherever the evaluator rejects the state.
+
+### Record outputs and run-end processing
+
+Read-list redesign, stage S1. A node that carries a `recordOutput` stores the
+rows its output returns as a batch of a run dataset
+(`storage/project/run-dataset-store.ts`, `appendBatch`). With `writeMode:
+"append"`, the default assembly writes, each batch continues after the last
+stored row, so every pass of a repeated read -- a new attempt -- adds its rows
+to the same dataset in capture order: pass order, then the page's own order.
+A retried attempt replaces only its own batch. `replace` clears the dataset
+first. `maxRecords` caps one capture, not the dataset. One dataset keeps one
+schema and one `process` declaration for the whole run: a batch carrying a
+different schema or declaration is refused at capture. A model-built Flow's
+reads each write a dataset of their own: assembly always gives an extraction
+node a `recordOutput`, its id the slug of the step's words then the step's
+stable id (`runtime/flow-bootstrap/authoring/assembled-record-output.ts`,
+`record-output.ts`). A Flow that reaches a domain with no `recordOutput`
+(recorded or hand-built) keeps whatever dataset the domain derives.
+
+**The answer.** When the graph run ends -- succeeded, failed, cancelled, or
+thrown -- and before its result is verified, Core processes every dataset
+the run wrote (`runDatasets.processEndedRunDatasets`,
+`runtime/service/datasets/run-datasets.ts`, called from `runtime/service.ts`),
+declared or not. Processing is the one pure function
+`processAutomationStudioRecordRows` (`@fluxiq/contracts`,
+`packages/contracts/src/record-sets/process/`). It applies, in order:
+
+1. `where`: conditions over stored columns;
+2. `dedupe`: absent, the whole row is the key -- every stored field, or the
+   answer's `columns` when it names them -- compared with layout and case
+   ignored, the first row seen kept; `{by: [...]}` narrows the key; `false`
+   keeps repeats. A row whose key fields are all empty is never a duplicate;
+3. `sort`: at most four keys, each `asc` or `desc`, read `as` `auto`,
+   `number`, `date` or `text`;
+4. `limit`: 1 to 10,000;
+5. `columns`: the stored columns the answer keeps, in order.
+
+`minRows` (default 1) is reported, never a failure. Every field named must be
+a stored field of the schema and none an excluded one
+(`parseAutomationStudioRecordProcessing`, issues `record_output.process_*`).
+The answer is stored beside the collected rows (`run_dataset_answer_rows`),
+with the account on `run_datasets.processing_json` and `processed_at_ms`.
+From then on every reader reads the answer: dataset pages, export streams,
+the run-time result judges' record sets, and the summaries' record counts. A
+later append makes the answer stale until the dataset is processed again, and
+processing again always starts from the collected rows, which stay as
+evidence. Processing never fails a run or replaces its error; a dataset left
+unprocessed reads as its collected rows, as every dataset did before.
+
+**The account** (`AutomationStudioRecordProcessingAccount`, on a dataset
+summary's `processing`): `collected` (= `filteredOut` + `duplicates` + `cut`
++ `kept`), `keptNone` when the answer is empty, `belowMinRows` when it fell
+short, and `passes`: one entry per batch with its node, its pass number per
+node, its rows and its `newRows` (rows that repeat no earlier collected row).
+
+**Not yet.** The build's test does not process: `buildTest.stores` still
+counts every row each pass of a read returned
+([the build's test](automation-studio/llm-flow-bootstrap.md#generation-command)
+describes it). Stage S3 changes it to report the processed answer and its
+account.
 
 Approved recording-derived definitions retain a fixed registered output ID and
 are materialized to the built-in policy action at execution. Private definitions
