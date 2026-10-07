@@ -108,6 +108,28 @@ The bridge converts client messages into canonical Studio artifacts:
   context-free path: executor-issued invocation propagation, same-run durable
   admission/recovery/resume fences and candidate performed-subject evidence
   are separate unfinished joins. Child Flow context issuance is not enabled.
+
+    The separate, unwired CLOSED command-run foundation reserves only one command
+    per registered root-session scope. Storage-issued admissions authenticate
+    against the exact store lease; informational observations never authorize
+    continuation. Admission scans the project in deterministic pages of128,
+    bounded to4096 claims,4096 receipts,4096 unknown rows and12288 mutation
+    proofs, validating complete historical joins and orphan inventories.
+    Corruption or overflow anywhere in that project conservatively refuses;
+    the bounded scan can still be costly and is not an indexed run projection.
+    The trusted UoW admission check runs in the same transaction before replay
+    or insertion, so separate owners cannot both claim distinct first commands.
+    Fresh or reconstructed same-run scopes refuse any prior claim, including
+    committed receipt-only claims. A live scope can reconcile its exact first
+    command after cancellation, but success, receipt JSON and reconciliation
+    cannot authorize a second command or clear its sticky continuation block.
+    Each controller retains its run reservation through scoped close and failed
+    opens, so replacing a handle cannot clear private uncertainty before a claim
+    was persisted; that controller cannot reopen the identical project/run.
+    Close invalidates admission and waits owned operations before releasing
+    storage. This is not wired to gateway, executor, Runtime or domain paths;
+    actual invocation issuance, outcome consumption and every progression,
+    recovery and resume fence remain required before Flow durability is enabled.
 - `server.start_recording` and `server.stop_recording` are mirrored to the
   client while the canonical `RecordingSession` remains owned by FluxIQ.
   `server.start_recording` also acknowledges a start the client asked for, as
@@ -616,3 +638,29 @@ approval from the web panel.
 The web app's actual server adapter lives in `apps/web/src/server/client-gateway-websocket.ts`; the `client-gateway-websocket` package is a client transport. Web startup preloads a native ESM artifact generated into `apps/web/.server-runtime/client-gateway-server.mjs`, then invokes its factory with the actual retained gateway object. This preserves ownership when Next bundles Core separately. Enabled gateway startup requires preload; the `dev` and cached `build` commands generate the artifact first. Direct Next CLI users must run `pnpm --filter @fluxiq/web gateway:build` before starting. No default production panel is started by this contract.
 
 The generator owns the companion receipt and complete server/startup/generator/cache inventory. It hashes the executing artifact while normalizing only one self-containing payload literal, including the reader's surrounding execution semantics. This is a normalized artifact digest, not a raw full-file digest. Regenerate through the driver; never edit the artifact or receipt. The existing authenticated, `programs.read` diagnostic returns the actual gateway's listening `serverTransportIdentity` separately from native `loadedModules`; it does not infer executing identity from disk or a newly loaded route. The supported registration seam does not attest arbitrary out-of-band listeners or individual socket provenance.
+
+
+## Runtime completion authority
+
+Generic ClientGatewayRuntimeTransport forwards client lifecycle, state, snapshot,
+recording and error observations. Compatibility client.action_result messages stay
+available as gateway diagnostics, including unknown IDs and late results; they do
+not emit authoritative runtime command.result. RuntimeService emits that result
+only after its dispatch promise settles, preserving validated failure and cleared
+wait fields. Public transport observers receive fewer duplicate/out-of-band
+completion events. This boundary does not by itself enable durable Flow dispatch
+or prove semantic outcomes; trusted run admission, executor consumption and both
+production IO paths require their separate integration.
+
+Required command outcomes use server-only authentic context registration and an
+exact leased observer reference. The gateway privately issues a completion proof
+only after receipt COMMIT and parsed live result validation; copied JSON and
+receipt-only replay cannot issue it. Deadline, cancellation and close revoke the
+proof before success resolution, while owned late storage/observer work drains.
+An unwired command-run owner can privately account for that proof and consume it
+only through a trusted executor's registered post-handling witness. Project SQL
+checks all prior consumed receipt/history joins inside the next claim transaction;
+fresh/reconstructed runs still refuse every prior claim. Legacy explicit contexts
+without required registration retain existing semantics. Actual node-entry
+issuance, both IO/runtime paths, execution/repair fences and Flow activation remain
+separate pending integration; this contract does not attest semantic outcomes.

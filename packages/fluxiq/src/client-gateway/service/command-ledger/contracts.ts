@@ -44,7 +44,17 @@ export type ClientGatewayDurableDispatchResult<TResult> =
   | { status: "result_unavailable"; receipt: ClientGatewayCommandReceipt }
   | { status: "outcome_unknown" };
 
-export type ClientGatewayCommandLedgerLease = { ledger: ClientGatewayCommandLedgerPort; close(): Promise<void> };
+export type ClientGatewayCommandOutcomeObserver = {
+  completed(proof: object): Promise<void>;
+  uncertain(context: import("./context.ts").ClientGatewayCommandContext, disposition: string): Promise<void>;
+};
+export type ClientGatewayCommandCompletion = {
+  readonly context: import("./context.ts").ClientGatewayCommandContext;
+  readonly claim: ClientGatewayCommandClaim;
+  readonly receipt: ClientGatewayCommandReceipt;
+  readonly result: import("@fluxiq/contracts/client-gateway").ClientGatewayActionResult;
+};
+export type ClientGatewayCommandLedgerLease = { ledger: ClientGatewayCommandLedgerPort; outcomeObserver?: ClientGatewayCommandOutcomeObserver; close(): Promise<void> };
 export type ClientGatewayDurableActionOptions = { context: import("./context.ts").ClientGatewayCommandContext; signal?: AbortSignal };
 export type ClientGatewayDurableActionResponse = {
   commandId: string;

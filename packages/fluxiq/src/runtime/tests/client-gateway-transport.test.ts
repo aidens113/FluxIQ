@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CLIENT_GATEWAY_PROTOCOL_VERSION, ClientGatewayService, type ClientGatewayClientMessage } from "../../client-gateway/index.ts";
-import { ClientGatewayRuntimeTransport } from "../index.ts";
+import { RuntimeService, ClientGatewayRuntimeTransport } from "../index.ts";
 
 describe("ClientGatewayRuntimeTransport", () => {
   it("projects paired gateway sessions as runtime clients", async () => {
@@ -56,7 +56,7 @@ describe("ClientGatewayRuntimeTransport", () => {
     });
   });
 
-  it("forwards gateway state and action-result events as runtime events", async () => {
+  it("forwards state while compatibility action results stay diagnostic", async () => {
     const gateway = new ClientGatewayService();
     const paired = await pairGatewayClient(gateway, "extension.events", "user.web");
     const transport = new ClientGatewayRuntimeTransport({ gateway });
@@ -75,7 +75,7 @@ describe("ClientGatewayRuntimeTransport", () => {
       error: "boom"
     }));
 
-    expect(events).toEqual(["state.update", "command.result"]);
+    expect(events).toEqual(["state.update"]);
   });
 
   it("keeps a client-reported failure through dispatch and drops a malformed one", async () => {
@@ -104,25 +104,43 @@ describe("ClientGatewayRuntimeTransport", () => {
     expect(dropped).not.toHaveProperty("failure");
   });
 
-  it("carries a client-reported failure onto the command.result runtime event", async () => {
+  it("keeps unsolicited result failures and duplicates out of authoritative runtime events", async () => {
     const gateway = new ClientGatewayService();
     const paired = await pairGatewayClient(gateway, "extension.failure-event", "user.web");
     const transport = new ClientGatewayRuntimeTransport({ gateway });
     const results: unknown[] = [];
-    transport.onEvent((event) => {
-      if (event.type === "command.result") results.push(event.result);
-    });
+    const diagnostics: unknown[] = [];
+    transport.onEvent(event => { if (event.type === "command.result") results.push(event.result); });
+    gateway.onEvent(event => { if (event.type === "client.action_result") diagnostics.push(event.message.payload); });
     const failure = { category: "auth_required", code: "web.auth.login_page", retryable: false } as const;
-
-    await gateway.receive(paired.sessionId, clientMessage("client.action_result", { commandId: "command.external", status: "failed", error: "Login required", failure }));
-    await gateway.receive(paired.sessionId, clientMessage("client.action_result", { commandId: "command.malformed", status: "failed", failure: { ...failure, retryable: true } }));
-
-    expect(results).toEqual([
-      { commandId: "command.external", status: "failed", error: "Login required", failure },
-      { commandId: "command.malformed", status: "failed" }
-    ]);
+    for (const commandId of ["command.external", "command.external", "command.late"]) {
+      await gateway.receive(paired.sessionId, clientMessage("client.action_result", { commandId, status: "failed", error: "Login required", failure }));
+    }
+    expect(diagnostics).toHaveLength(3);
+    expect(results).toEqual([]);
   });
-  it("screens generic cleared waits through failed dispatch and result events without reading domain payloads", async () => {
+
+  it("emits exactly one RuntimeService completion from the awaited dispatch despite duplicate and late compatibility results", async () => {
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 1000 });
+    const paired = await pairGatewayClient(gateway, "extension.authority", "user.web");
+    const runtime = new RuntimeService();
+    runtime.registerTransport(new ClientGatewayRuntimeTransport({ gateway }));
+    const results: unknown[] = [];
+    runtime.onEvent(event => { if (event.type === "command.result") results.push(event.result); });
+    const pending = runtime.dispatch({ commandId: "command.authoritative", kind: "execute_action", domainId: "web-automation", actionType: "web.dom.click" });
+    let commandId = "";
+    await expect.poll(() => (commandId = lastExecuteCommandId(gateway, paired.sessionId))).not.toBe("");
+    const failure = { category: "auth_required", code: "web.auth.login_page", retryable: false } as const;
+    await gateway.receive(paired.sessionId, clientMessage("client.action_result", { commandId, status: "failed", error: "Login required", failure, clearedWait: { waitedMs: 12 } }));
+    await expect(pending).resolves.toMatchObject({ status: "failed", failure, clearedWait: { waitedMs: 12 } });
+    for (const lateId of [commandId, "command.external"]) {
+      await gateway.receive(paired.sessionId, clientMessage("client.action_result", { commandId: lateId, status: "succeeded", message: "late" }));
+    }
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ status: "failed", failure, clearedWait: { waitedMs: 12 } });
+    await gateway.close();
+  });
+  it("screens generic cleared waits in awaited dispatch without compatibility completion events", async () => {
     const gateway = new ClientGatewayService();
     const paired = await pairGatewayClient(gateway, "extension.cleared", "user.web");
     const transport = new ClientGatewayRuntimeTransport({ gateway });
@@ -136,10 +154,10 @@ describe("ClientGatewayRuntimeTransport", () => {
       const result = await dispatched;
       if (clearedWait && typeof clearedWait.waitedMs === "number" && clearedWait.waitedMs === 12) {
         expect(result.clearedWait).toEqual({ waitedMs: 12 });
-        expect(results.at(-1)).toHaveProperty("clearedWait", { waitedMs: 12 });
+        expect(results).toEqual([]);
       } else {
         expect(result).not.toHaveProperty("clearedWait");
-        expect(results.at(-1)).not.toHaveProperty("clearedWait");
+        expect(results).toEqual([]);
       }
     }
   });

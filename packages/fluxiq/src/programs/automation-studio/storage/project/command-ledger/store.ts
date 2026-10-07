@@ -3,14 +3,19 @@ import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administ
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
 import { AutomationStudioProjectUnitOfWork } from "../unit-of-work.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
-import type { AutomationStudioCommandLedgerMutationProof, AutomationStudioCommandLedgerOperation } from "./contracts.ts";
+import { AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT as SCAN_LIMIT, AUTOMATION_STUDIO_COMMAND_SCAN_PAGE as SCAN_PAGE, type AutomationStudioCommandRunObservation, type AutomationStudioCommandLedgerMutationProof, type AutomationStudioCommandLedgerOperation, type AutomationStudioCommandConsumptionOwner } from "./contracts.ts";
+import { AutomationStudioCommandRunAdmission } from "./admission.ts";
 import { AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION } from "./migration.ts";
 
 type ClaimRow = { command_id: string; claim_json: string; proof_digest: string; claimed_at_ms: number };
 type ReceiptRow = { command_id: string; receipt_json: string; proof_digest: string; committed_at_ms: number };
 type UnknownRow = { command_id: string; reason: ClientGatewayCommandUnknownReason; proof_digest: string };
-/** Internal receipt-only infrastructure; no production gateway currently injects this port. */
+/** Receipt-only project storage; closed run admission is not wired to Flow execution. */
 export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayCommandLedgerPort {
+  private readonly admissions = new WeakMap<AutomationStudioCommandRunAdmission, { runId: string; first: ClientGatewayCommandClaim | null; owner?: AutomationStudioCommandConsumptionOwner; consumed: Map<string, { ticket: object; claim: ClientGatewayCommandClaim; receipt: ClientGatewayCommandReceipt }> }>();
+  private readonly pipelines = new Set<Promise<unknown>>();
+  private closed = false;
+  private closing?: Promise<void>;
   private constructor(private readonly lease: AutomationStudioProjectDatabaseLease, private readonly unitOfWork: AutomationStudioProjectUnitOfWork) {}
   static async open(input: { pool: AutomationStudioProjectDatabasePool; projectId: string }): Promise<AutomationStudioProjectCommandLedgerStore> {
     const lease = await input.pool.acquire(input.projectId);
@@ -21,10 +26,56 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
       return new AutomationStudioProjectCommandLedgerStore(lease, unitOfWork);
     } catch (error) { await unitOfWork?.close(); await lease.release(); throw error; }
   }
-  async close(): Promise<void> { try { await this.unitOfWork.close(); } finally { await this.lease.release(); } }
-  async claim(input: ClientGatewayCommandClaim): Promise<{ sendAllowed: boolean; record: ClientGatewayCommandRecord }> {
+  close(): Promise<void> {
+    this.closed = true;
+    this.closing ??= (async () => { await Promise.allSettled([...this.pipelines]); const errors: unknown[] = []; try { await this.unitOfWork.close(); } catch (error) { errors.push(error); } try { await this.lease.release(); } catch (error) { errors.push(error); } if (errors.length) throw new AggregateError(errors, "command_ledger.close_failed"); })();
+    return this.closing;
+  }
+  readRun(runId: string): Promise<AutomationStudioCommandRunObservation> {
+    this.runId(runId);
+    return this.pipeline(() => this.lease.database.transaction(sql => this.scanRun(sql, runId)));
+  }
+  openRunAdmission(runId: string, owner?: AutomationStudioCommandConsumptionOwner): Promise<AutomationStudioCommandRunAdmission> {
+    this.runId(runId);
+    if (owner !== undefined && (!owner || typeof owner.resolveConsumed !== "function")) throw new Error("command_ledger.invalid_consumption_owner");
+    return this.pipeline(async () => {
+      const observed = await this.lease.database.transaction(sql => this.scanRun(sql, runId));
+      if (observed.records.length) throw new Error("command_ledger.prior_run_claim");
+      if (this.closed) throw new Error("command_ledger.closed");
+      const admission = AutomationStudioCommandRunAdmission.create(); this.admissions.set(admission, { runId, first: null, ...(owner ? { owner } : {}), consumed: new Map() }); return admission;
+    });
+  }
+  claimForRun(input: ClientGatewayCommandClaim, admission: AutomationStudioCommandRunAdmission): Promise<{ sendAllowed: boolean; record: ClientGatewayCommandRecord }> {
+    const claim = this.prepare(input), registered = this.admissions.get(admission);
+    if (!registered || claim.binding.runId !== registered.runId) throw new Error("command_ledger.foreign_admission");
+    if (registered.first && Rules.digest(registered.first) !== Rules.digest(claim) && (!registered.owner || !registered.consumed.has(registered.first.binding.commandId))) throw new Error("command_ledger.first_command_only");
+    registered.first = this.freeze(structuredClone(claim));
+    return this.pipeline(() => this.claimStored(claim, async sql => {
+      const observed = await this.scanRun(sql, registered.runId);
+      for (const record of observed.records) {
+        if (Rules.digest(record.claim) === Rules.digest(claim)) continue;
+        const consumed = registered.consumed.get(record.claim.binding.commandId), original = consumed && registered.owner?.resolveConsumed(consumed.ticket);
+        if (!consumed || !original || Rules.digest(original) !== Rules.digest({ claim: consumed.claim, receipt: consumed.receipt }) || Rules.digest(record.claim) !== Rules.digest(consumed.claim) || Rules.digest(record.receipt) !== Rules.digest(consumed.receipt) || record.state !== "committed" || observed.historicalUnknownCommandIds.includes(record.claim.binding.commandId)) throw new Error("command_ledger.run_claim_conflict");
+      }
+    }));
+  }
+  consumeForRun(admission: AutomationStudioCommandRunAdmission, ticket: object): Promise<void> {
+    const registered = this.admissions.get(admission), resolved = registered?.owner?.resolveConsumed(ticket);
+    if (!registered || !resolved) throw new Error("command_ledger.foreign_consumption");
+    const value = this.freeze(structuredClone(resolved)), claim = this.prepare(value.claim); Rules.validateReceipt(claim, value.receipt);
+    if (claim.binding.runId !== registered.runId || !registered.first || Rules.digest(registered.first) !== Rules.digest(claim) || registered.consumed.has(claim.binding.commandId)) throw new Error("command_ledger.consumption_conflict");
+    return this.pipeline(() => this.lease.database.transaction(async sql => {
+      const observed = await this.scanRun(sql, registered.runId), record = observed.records.find(item => item.claim.binding.commandId === claim.binding.commandId);
+      if (!record || record.state !== "committed" || Rules.digest(record.claim) !== Rules.digest(claim) || Rules.digest(record.receipt) !== Rules.digest(value.receipt) || observed.historicalUnknownCommandIds.includes(claim.binding.commandId)) throw new Error("command_ledger.unavailable_consumption");
+      const still = registered.owner!.resolveConsumed(ticket);
+      if (this.closed || !still || Rules.digest(still) !== Rules.digest(value) || registered.consumed.has(claim.binding.commandId)) throw new Error("command_ledger.consumption_conflict");
+      registered.consumed.set(claim.binding.commandId, { ticket, claim: value.claim, receipt: value.receipt });
+    }));
+  }
+  async claim(input: ClientGatewayCommandClaim): Promise<{ sendAllowed: boolean; record: ClientGatewayCommandRecord }> { const claim = this.prepare(input); return await this.pipeline(() => this.claimStored(claim)); }
+  private async claimStored(input: ClientGatewayCommandClaim, validateAdmission?: (sql: AutomationStudioSqlExecutor) => Promise<void>): Promise<{ sendAllowed: boolean; record: ClientGatewayCommandRecord }> {
     const claim = this.prepare(input), commandId = claim.binding.commandId;
-    const outcome = await this.unitOfWork.runIdempotent(this.mutation(claim, "claim", claim), async context => {
+    const outcome = await this.unitOfWork.runIdempotent({ ...this.mutation(claim, "claim", claim), ...(validateAdmission ? { validateAdmission } : {}) }, async context => {
       const claimedAt = context.changedAt, proofDigest = Rules.digest({ claim, claimedAt });
       await context.sql.run("insert into gateway_command_claims(command_id,claim_json,proof_digest,claimed_at_ms) values(?,?,?,?)", [commandId, JSON.stringify(claim), proofDigest, claimedAt]);
       return { commandId, operation: "claim" as const, proofDigest };
@@ -33,7 +84,8 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     await this.verifyReturned(claim, "claim", outcome.response);
     return { sendAllowed: !outcome.replayed && record.state === "pending", record };
   }
-  async commitReceipt(input: ClientGatewayCommandClaim, inputReceipt: ClientGatewayCommandReceipt): Promise<ClientGatewayCommandRecord> {
+  async commitReceipt(input: ClientGatewayCommandClaim, inputReceipt: ClientGatewayCommandReceipt): Promise<ClientGatewayCommandRecord> { const claim = this.prepare(input), receipt = structuredClone(inputReceipt); return await this.pipeline(() => this.commitStored(claim, receipt)); }
+  private async commitStored(input: ClientGatewayCommandClaim, inputReceipt: ClientGatewayCommandReceipt): Promise<ClientGatewayCommandRecord> {
     const claim = this.prepare(input), receipt = structuredClone(inputReceipt);
     Rules.validateReceipt(claim, receipt);
     const outcome = await this.unitOfWork.runIdempotent(this.mutation(claim, "receipt", { claim, receipt }), async context => {
@@ -49,7 +101,8 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     await this.verifyReturned(claim, "receipt", outcome.response);
     return record;
   }
-  async markUnknown(input: ClientGatewayCommandClaim, reason: ClientGatewayCommandUnknownReason): Promise<ClientGatewayCommandRecord> {
+  async markUnknown(input: ClientGatewayCommandClaim, reason: ClientGatewayCommandUnknownReason): Promise<ClientGatewayCommandRecord> { const claim = this.prepare(input); return await this.pipeline(() => this.unknownStored(claim, reason)); }
+  private async unknownStored(input: ClientGatewayCommandClaim, reason: ClientGatewayCommandUnknownReason): Promise<ClientGatewayCommandRecord> {
     const claim = this.prepare(input);
     if (!Rules.unknownReason(reason)) throw new Error("command_ledger.invalid_unknown_reason");
     // A committed receipt always wins; never downgrade or overwrite it on timeout/cancel.
@@ -68,7 +121,7 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
   }
   read(input: ClientGatewayCommandClaim): Promise<ClientGatewayCommandRecord | null> {
     const claim = this.prepare(input);
-    return this.lease.database.transaction(sql => this.readChecked(claim, sql));
+    return this.pipeline(() => this.lease.database.transaction(sql => this.readChecked(claim, sql)));
   }
   private prepare(input: ClientGatewayCommandClaim): ClientGatewayCommandClaim {
     Rules.validateClaim(input);
@@ -79,7 +132,7 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     return { mutationId: `${claim.binding.commandId}.${operation}`, operationKind: `gateway_command.${operation}`, ownerKind: "gateway_command", ownerId: claim.binding.commandId, requestDigest: Rules.digest(request) };
   }
   private async required(claim: ClientGatewayCommandClaim): Promise<ClientGatewayCommandRecord> {
-    const record = await this.read(claim); if (!record) throw new Error("command_ledger.missing_claim"); return record;
+    const record = await this.lease.database.transaction(sql => this.readChecked(claim, sql)); if (!record) throw new Error("command_ledger.missing_claim"); return record;
   }
   private async verifyReturned(claim: ClientGatewayCommandClaim, operation: AutomationStudioCommandLedgerOperation, response: AutomationStudioCommandLedgerMutationProof): Promise<void> {
     const record = await this.unitOfWork.getMutation(`${claim.binding.commandId}.${operation}`);
@@ -125,4 +178,45 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     if (row?.status === "committed") throw new Error("command_ledger.missing_historical_join");
   }
   private decode<T>(json: string): T { if (typeof json !== "string" || Buffer.byteLength(json, "utf8") > 8192) throw new Error("command_ledger.invalid_record_size"); return JSON.parse(json) as T; }
+  private runId(value: string): void { for (const id of [value, this.lease.projectId]) if (typeof id !== "string" || !/^[A-Za-z0-9._:-]{1,200}$/.test(id)) throw new Error("command_ledger.invalid_run_id"); }
+  private pipeline<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.closed) throw new Error("command_ledger.closed");
+    const promise = operation(); this.pipelines.add(promise);
+    void promise.finally(() => this.pipelines.delete(promise)).catch(/* best-effort: caller owns the original pipeline rejection */ () => undefined);
+    return promise;
+  }
+  private freeze<T>(value: T): T { if (value && typeof value === "object") { for (const nested of Object.values(value)) this.freeze(nested); Object.freeze(value); } return value; }
+  private async inventory(sql: AutomationStudioSqlExecutor, table: string, key: string, where = "", limit = SCAN_LIMIT): Promise<Record<string, unknown>[]> {
+    const rows: Record<string, unknown>[] = []; let cursor: string | null = null;
+    for (let page = 0; page <= Math.ceil(limit / SCAN_PAGE); page++) {
+      const found: Record<string, unknown>[] = await sql.all<Record<string, unknown>>(`select * from ${table} where (? is null or ${key}>? collate binary) ${where} order by ${key} collate binary limit ?`, [cursor, cursor, SCAN_PAGE]);
+      if (!found.length) return rows;
+      for (const row of found) { const id = row[key]; if (typeof id !== "string" || !id || cursor !== null && id <= cursor) throw new Error("command_ledger.invalid_inventory_key"); rows.push(row); if (rows.length > limit) throw new Error("command_ledger.scan_limit"); cursor = id; }
+      if (found.length < SCAN_PAGE) return rows;
+    }
+    throw new Error("command_ledger.scan_exhausted");
+  }
+  private async scanRun(sql: AutomationStudioSqlExecutor, runId: string): Promise<AutomationStudioCommandRunObservation> {
+    const rows = await this.inventory(sql, "gateway_command_claims", "command_id"), claims = new Map<string, ClientGatewayCommandClaim>(), records: ClientGatewayCommandRecord[] = [];
+    for (const row of rows) {
+      const claim = this.decode<ClientGatewayCommandClaim>(row.claim_json as string); this.prepare(claim);
+      if (row.command_id !== claim.binding.commandId) throw new Error("command_ledger.corrupt_claim_key");
+      const record = await this.readChecked(claim, sql); if (!record) throw new Error("command_ledger.missing_claim"); claims.set(claim.binding.commandId, claim);
+      if (claim.binding.runId === runId) records.push(record);
+    }
+    const historicalUnknownCommandIds: string[] = [];
+    for (const table of ["gateway_command_receipts", "gateway_command_unknowns"]) {
+      for (const row of await this.inventory(sql, table, "command_id")) {
+        const claim = claims.get(row.command_id as string); if (!claim) throw new Error("command_ledger.orphan_history");
+        if (table === "gateway_command_unknowns" && claim.binding.runId === runId) historicalUnknownCommandIds.push(claim.binding.commandId);
+      }
+    }
+    for (const row of await this.inventory(sql, "mutation_records", "mutation_id", "and (owner_kind='gateway_command' or operation_kind like 'gateway_command.%' or mutation_id like 'command.%')", SCAN_LIMIT * 3)) {
+      const mutationId = row.mutation_id as string, match = /^(command\.[a-f0-9]{64})\.(claim|receipt|unknown)$/.exec(mutationId);
+      if (!match || row.owner_kind !== "gateway_command" || row.owner_id !== match[1] || row.operation_kind !== `gateway_command.${match[2]}` || typeof row.request_digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(row.request_digest)) throw new Error("command_ledger.invalid_mutation_inventory");
+      if (row.status === "committed") { if (!claims.has(match[1]!)) throw new Error("command_ledger.orphan_mutation"); }
+      else if (row.status !== "failed" || row.response_json !== null || typeof row.error_json !== "string" || Buffer.byteLength(row.error_json, "utf8") > 8192) throw new Error("command_ledger.invalid_mutation_status");
+    }
+    return this.freeze({ projectId: this.lease.projectId, runId, records, historicalUnknownCommandIds });
+  }
 }
