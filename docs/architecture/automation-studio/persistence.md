@@ -8,6 +8,21 @@ Automation Studio project artifacts are owned by the project file tree under
 repositories are caches used by service code and tests; they are not the source
 of truth for recordings, proposals, Flows, state assets, or runtime runs.
 
+The isolated `storage/project/accepted-state` foundation stores explicitly supplied
+complete visual-project snapshots in project SQLite. Its immutable snapshot and
+staged/tombstoned head are written with the existing unit-of-work mutation result
+in one transaction. Full epoch/generation/content bindings provide CAS; an
+idempotent replay returns its recorded binding, which may precede the current
+head. Strict joined reads and reconciliation refuse corrupt or uncertain state.
+Opening creates no head and never captures, adopts, repairs or changes legacy
+documents, graph rows or execution state. Every result retains unsupported
+production authority. JSON, code-source, global/cross-project dependencies and
+all publication-dependent scope are unsupported. Snapshot/request payloads are
+bounded to 32 MiB canonical UTF8; no truncation or history pruning occurs. Production
+cutover requires separately reviewed explicit adoption and all-reader/all-writer
+participation, authorization and trusted verification; candidate promotion remains
+closed.
+
 Monolithic Flow graph import into project SQLite checks for revision 1 and
 writes the Flow, revision, nodes, edges, regions, operation history, partition
 counts and their FTS/bounds indexes in one `BEGIN IMMEDIATE` transaction.
