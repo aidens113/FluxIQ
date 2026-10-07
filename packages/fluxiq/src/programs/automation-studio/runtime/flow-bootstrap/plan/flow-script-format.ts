@@ -84,6 +84,18 @@
 // step runs, and the steps outside every block are what runs when none holds.
 // The paths a condition may read, and the values exploration saw for them,
 // arrive beside the format under `routing`.
+//
+// The act-on-one-item example at the end of this file was added on 2026-10-07
+// (t339), when candidate mode began showing this text on
+// `core.submit_candidate`. Every example in the format navigates, renames,
+// narrows or reads, and the Flows the creation lanes need choose options, set
+// a quantity and press a control that changes something. Its press declares
+// `modify_existing`, not `none`: adding to a basket changes it, and an example
+// that called a lasting press harmless would teach exactly the
+// under-declaration four live builds already showed. It is a second constant,
+// not more lines of the format, so the legacy completion schema -- which
+// carries the format and is held under a byte ratchet -- does not change while
+// legacy is the default and the baseline candidate mode is measured against.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 
@@ -157,4 +169,37 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "step: read the orders",
   "  node: web.dom.extract_list",
   "  extractList: extraction.1"
+].join("\n");
+
+/**
+ * The act-on-one-item example, shown after the format wherever candidate mode
+ * shows it (`../candidate/authoring-loop.ts`). Kept beside the format rather
+ * than in it, so the legacy completion schema the default build sends stays
+ * byte for byte what the live baseline ran with.
+ */
+export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
+  "Example, acting on one item:",
+  "flow: Put two medium blue shirts in the basket",
+  "step: open the shirt's page",
+  "  node: web.browser.navigate",
+  "  url: https://shop.test/shirts/oxford",
+  "step: choose the colour",
+  "  node: web.dom.select",
+  "  target: t3",
+  "  value: blue",
+  "step: choose the size",
+  "  node: web.dom.select",
+  "  target: t6",
+  "  value: M",
+  "step: set the quantity",
+  "  node: web.dom.type",
+  "  target: t8",
+  "  text: 2",
+  "step: add it to the basket",
+  "  node: web.dom.click",
+  "  target: t11",
+  "  consequences: modify_existing",
+  "step: check the basket took it",
+  "  node: web.dom.wait_for_text",
+  "  text: added to your basket"
 ].join("\n");

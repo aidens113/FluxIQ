@@ -3,7 +3,7 @@ import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permissio
 import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
 import { automationStudioPlanStepConsequences } from "../../../llm/harness-options/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult } from "../../authoring/index.ts";
-import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT } from "../index.ts";
+import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT } from "../index.ts";
 import { webDomainNodeDefinitionsFixture } from "./index.ts";
 
 // What the model is told about the run its Flow will have. The only Flow the
@@ -146,5 +146,32 @@ describe("the Flow script format's consequence declaration", () => {
     const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow }, registry, resolution });
 
     expect(accepted.ok && accepted.plan.subflows[0]?.nodes[0]?.consequences).toBeUndefined();
+  });
+});
+
+// The act-on-one-item example (t339). Candidate mode shows it after the format
+// on `core.submit_candidate`, and the Flows the creation lanes need choose
+// options, set a quantity and press a control that changes something -- a shape
+// no example in the format shows. A model copies the example, so it must build
+// as written and its lasting press must declare what it changes.
+describe("the Flow script act-on-one-item example", () => {
+  const registry = new AutomationStudioNodeRegistry(webDomainNodeDefinitionsFixture());
+  const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+  const example = AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE.split("\n").slice(1).join("\n");
+
+  it("stays out of the format, so the legacy completion schema does not change", () => {
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE.startsWith("Example, acting on one item:\n")).toBe(true);
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).not.toContain("acting on one item");
+    expect(String(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA.description)).not.toContain("acting on one item");
+  });
+
+  it("builds as written: choose, choose, type, a press that declares modify_existing, then a check", () => {
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: example }, registry, resolution });
+    expect(accepted.ok).toBe(true);
+    const nodes = accepted.ok ? accepted.plan.subflows[0]?.nodes ?? [] : [];
+    expect(nodes).toHaveLength(6);
+    const presses = nodes.filter((node) => node.definitionId === "web.output.dom-click");
+    expect(presses).toHaveLength(1);
+    expect(presses[0]?.consequences).toEqual(["modify_existing"]);
   });
 });
