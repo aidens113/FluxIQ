@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
-import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT } from "../plan/index.ts";
+import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialPort } from "./contracts.ts";
 import { AutomationStudioFlowCandidateSubmissionController } from "./submission.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
@@ -26,7 +26,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
     toolId: submitId, effect: "observe",
     description: `Submit a complete Flow, written as a Flow script under "flow" (its description gives the format and examples), or an existing canonical JSON plan under "plan". Discovery calls are evidence only and never enter the Flow. Static validity returns a draft revision/digest, never semantic acceptance. Correct all diagnostics and resubmit the entire candidate. Then test that exact revision with ${testId}, and complete with the latest revision and digest only after its trial answers yes.`,
     // The format rides on the input schema, as the legacy completion schema carries it: a tool description is bounded at 2,000 characters.
-    inputSchema: { type: "object", properties: { flow: { type: "string", description: `The whole Flow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
+    inputSchema: { type: "object", properties: { flow: { type: "string", description: `The whole Flow as a script. ${AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE}\n${AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT}` }, plan: { type: "object" }, summary: { type: "string" } }, additionalProperties: false }
   };
   const loop = await runAutomationStudioLlmEvidenceLoop({
     ...input.loop, ...(signal ? { signal } : {}), draft: false, dryRun: false, discoveryOnly: true,
