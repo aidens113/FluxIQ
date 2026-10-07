@@ -9,7 +9,10 @@ import { normalizeAutomationStudioFlowBuildPlan } from "../adaptation.ts";
 import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import type { AutomationStudioCandidateExecutionReceipt, AutomationStudioCandidateStartReceipt, AutomationStudioCandidateVerificationIdentity } from "./contracts.ts";
 
-/** Runs only a trusted owner's submitted topology; never reads or changes accepted graphs. */
+/**
+ * Runs only a trusted owner's submitted topology; never reads or changes accepted graphs.
+ * `graph` is the selected graph that ran, never stored, so a caller can say what each of its steps did.
+ */
 export async function runAutomationStudioDetachedCandidate(input: {
   identity: AutomationStudioCandidateVerificationIdentity;
   candidate: { revision: number; digest: string; baseDependencyDigest: string; buildPlan: AutomationStudioFlowBuildPlan };
@@ -24,13 +27,13 @@ export async function runAutomationStudioDetachedCandidate(input: {
   start: AutomationStudioCandidateStartReceipt;
   options?: AutomationStudioGraphExecutionOptions;
   signal?: AbortSignal;
-}): Promise<{ receipt: AutomationStudioCandidateExecutionReceipt; code?: string; trace?: AutomationStudioGraphExecutionTrace; route?: AutomationStudioRouterExecutionResult }> {
+}): Promise<{ receipt: AutomationStudioCandidateExecutionReceipt; code?: string; trace?: AutomationStudioGraphExecutionTrace; route?: AutomationStudioRouterExecutionResult; graph?: AutomationStudioFlowArtifact }> {
   // Clone owner-controlled artifacts before the first await; a mutable builder cannot swap graphs during routing.
   const identity = structuredClone(input.identity), candidate = structuredClone(input.candidate), parent = structuredClone(input.parentFlow);
   const snapshots = structuredClone(input.snapshots), start = structuredClone(input.start), options = { ...input.options };
   if (options.inputs) options.inputs = structuredClone(options.inputs);
   const signal = input.signal ?? options.signal, now = options.now ?? Date.now, startedAt = now();
-  let returnedTrace: AutomationStudioGraphExecutionTrace | undefined, returnedRoute: AutomationStudioRouterExecutionResult | undefined;
+  let returnedTrace: AutomationStudioGraphExecutionTrace | undefined, returnedRoute: AutomationStudioRouterExecutionResult | undefined, returnedGraph: AutomationStudioFlowArtifact | undefined;
   const receipt = (status: AutomationStudioCandidateExecutionReceipt["status"], trace?: AutomationStudioGraphExecutionTrace): AutomationStudioCandidateExecutionReceipt => ({
     identity, runId: input.runId, startReceiptId: start.receiptId, startedAt, finishedAt: Math.max(startedAt, now()), status,
     executedNodeCount: trace?.attempts.length ?? 0,
@@ -67,6 +70,7 @@ export async function runAutomationStudioDetachedCandidate(input: {
       || graph.flowId !== selected.subflow.graphFlowId || graph.metadata?.parentFlowId !== identity.flowId
       || graph.metadata?.parentSubflowId !== selected.subflow.subflowId || graph.metadata?.subflowGraph !== true) return { ...refused("candidate.execution_graph_not_owned"), route };
     if (parent.executionDefaults) graph.executionDefaults = structuredClone(parent.executionDefaults);
+    returnedGraph = structuredClone(graph);
     const trace = await runCanonicalAutomationStudioFlow(graph, snapshots, { ...options, ...(signal ? { signal } : {}), currentSubflowId: selected.subflow.subflowId,
       allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [], retryPolicy: { maxAttempts: 1, backoffMs: [] },
       recoveryBudget: { maxRetriesPerAction: 0, maxRecoveryAttemptsPerSubflow: 0, maxReroutesPerRun: 0, maxAdaptationOrLlmAttemptsPerRun: 0 }
@@ -75,10 +79,10 @@ export async function runAutomationStudioDetachedCandidate(input: {
     const stillFresh = await fresh();
     const status = signal?.aborted || trace.status === "cancelled" ? "cancelled"
       : stillFresh && trace.status === "succeeded" && !trace.stopReason && trace.attempts.length > 0 ? "succeeded" : "failed";
-    return { receipt: receipt(status, trace), trace, route, ...(status === "succeeded" ? {} : { code: signal?.aborted ? "candidate.execution_cancelled" : !stillFresh ? "candidate.execution_stale" : "candidate.execution_incomplete" }) };
+    return { receipt: receipt(status, trace), trace, route, graph: returnedGraph, ...(status === "succeeded" ? {} : { code: signal?.aborted ? "candidate.execution_cancelled" : !stillFresh ? "candidate.execution_stale" : "candidate.execution_incomplete" }) };
   } catch {
     // Native failures can contain private command/page data. Keep them out of the diagnostic code.
     return { receipt: receipt(signal?.aborted ? "cancelled" : "failed", returnedTrace), code: signal?.aborted ? "candidate.execution_cancelled" : "candidate.execution_error",
-      ...(returnedTrace ? { trace: returnedTrace } : {}), ...(returnedRoute ? { route: returnedRoute } : {}) };
+      ...(returnedTrace ? { trace: returnedTrace } : {}), ...(returnedRoute ? { route: returnedRoute } : {}), ...(returnedTrace && returnedGraph ? { graph: returnedGraph } : {}) };
   }
 }

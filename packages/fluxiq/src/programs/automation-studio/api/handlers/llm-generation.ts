@@ -7,7 +7,7 @@
 import { resolveAutomationStudioAuthoringMode } from "../../model/authoring-mode/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowBootstrapFailedBuilds, automationStudioFlowStartLocation, parseAutomationStudioFlowBootstrapGenerationError, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioService } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowBootstrapFailedBuilds, automationStudioFlowStartLocation, parseAutomationStudioFlowBootstrapGenerationError, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioCandidateDraftTrial, type AutomationStudioGeneratedCandidateTrial, type AutomationStudioService } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
@@ -141,7 +141,9 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
         return { ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.unclassified_failure)." };
       }
       failedBuilds.ended(projectId, flowId, undefined);
-      if (candidateAuthoring !== (generated.status === "draft")) return { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
+      // Candidate mode ends as a draft or, after a trial judged yes twice, as a proposal naming that candidate and trial (t340); legacy mode only ever proposes, and never names a candidate.
+      const consistent = candidateAuthoring ? generated.status === "draft" || generated.candidate !== undefined : generated.status === "proposed" && generated.candidate === undefined;
+      if (!consistent) return { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
       const sanitized = sanitizedFlowBootstrapGeneration(generated);
       return { ok: true, payload: sanitized.status === "draft" ? { candidate: sanitized } : { adaptation: sanitized } };
     }
@@ -218,7 +220,7 @@ function sanitizedFlowBootstrapGeneration(value: GenerateFlowBootstrapAdaptation
   };
   if (value.status === "draft") {
     if (value.verification !== "not_performed" || value.promotionAllowed !== false || !Number.isSafeInteger(value.revision) || value.revision < 1 || typeof value.digest !== "string" || !/^[a-f0-9]{64}$/.test(value.digest)) throw new Error("Flow candidate draft returned invalid verification or identity.");
-    return { ...common, status: "draft", candidateId: boundedIdentifier(value.candidateId, "Candidate"), revision: value.revision, digest: value.digest, verification: "not_performed", promotionAllowed: false };
+    return { ...common, status: "draft", candidateId: boundedIdentifier(value.candidateId, "Candidate"), revision: value.revision, digest: value.digest, verification: "not_performed", promotionAllowed: false, ...(value.trial ? { trial: sanitizedDraftTrial(value.trial) } : {}) };
   }
   return {
     ...common, status: "proposed", adaptationId: boundedIdentifier(value.adaptationId, "Adaptation"), riskLevel: value.riskLevel,
@@ -227,8 +229,25 @@ function sanitizedFlowBootstrapGeneration(value: GenerateFlowBootstrapAdaptation
     // a field-by-field copy here would be a second place to keep in step with
     // the request type. A build that finished carrying one cannot be applied
     // until it is answered, so the caller has to be able to show it.
-    ...(value.permissionRequest ? { permissionRequest: value.permissionRequest } : {})
+    ...(value.permissionRequest ? { permissionRequest: value.permissionRequest } : {}),
+    // Which candidate and trial run's confirmed yes made a candidate-mode proposal (t340); the chat applies a candidate's proposal only with it.
+    ...(value.candidate ? { candidate: sanitizedProposalCandidate(value.candidate) } : {})
   };
+}
+
+const DRAFT_TRIAL_VERDICTS: ReadonlySet<string> = new Set(["yes", "no", "unsure", "not_judged", "execution_failed", "not_tested"]);
+
+/** A draft's trial block, field by field: a known verdict, a bounded run id and at most twenty bounded codes. */
+function sanitizedDraftTrial(trial: AutomationStudioCandidateDraftTrial): AutomationStudioCandidateDraftTrial {
+  if (!DRAFT_TRIAL_VERDICTS.has(trial.verdict) || !Array.isArray(trial.codes) || trial.codes.length > 20) throw new Error("Flow candidate draft returned an invalid trial outcome.");
+  return { verdict: trial.verdict, ...(trial.runId !== undefined ? { runId: boundedIdentifier(trial.runId, "Trial run") } : {}), codes: trial.codes.map((code) => boundedIdentifier(code, "Trial code")) };
+}
+
+/** A proposal's candidate block, field by field; a yes stands only after a confirming call, so two calls at least (t296). */
+function sanitizedProposalCandidate(candidate: AutomationStudioGeneratedCandidateTrial): AutomationStudioGeneratedCandidateTrial {
+  if (!Number.isSafeInteger(candidate.revision) || candidate.revision < 1 || typeof candidate.digest !== "string" || !/^[a-f0-9]{64}$/.test(candidate.digest)
+    || candidate.trial?.verdict !== "yes" || !Number.isSafeInteger(candidate.trial.calls) || candidate.trial.calls < 2) throw new Error("Flow candidate proposal returned an invalid candidate trial.");
+  return { candidateId: boundedIdentifier(candidate.candidateId, "Candidate"), revision: candidate.revision, digest: candidate.digest, trial: { runId: boundedIdentifier(candidate.trial.runId, "Trial run"), verdict: "yes", calls: candidate.trial.calls } };
 }
 
 function boundedIdentifier(value: unknown, label: string): string {

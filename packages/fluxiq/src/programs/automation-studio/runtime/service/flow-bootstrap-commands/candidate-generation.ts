@@ -6,12 +6,18 @@ import type { AutomationStudioFlowCandidateDraftRecord, AutomationStudioFlowCand
 import type { AutomationStudioInstructionAuthorityUsage } from "../index.ts";
 import { AutomationStudioCandidateSource as Source } from "../candidate-drafts/index.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioCandidateOriginalSourceBinding } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioCandidateOriginalSourceBinding, AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 
 type AuthoringInput = Parameters<typeof runAutomationStudioFlowCandidateAuthoringLoop>[0];
 type Decide = AuthoringInput["loop"]["decide"];
 
-/** Discovery/submission ends in a durable unverified draft, never an adaptation. */
+/**
+ * Discovery/submission ends in a durable unverified draft, never an adaptation.
+ * With a trial port (t340) the model can test its candidate and completes only
+ * on a yes for its exact latest revision and digest; the draft is saved either
+ * way, under the candidate id minted before the loop, and the standing verdict
+ * is returned for the caller to promote or not. This never promotes.
+ */
 export async function generateAutomationStudioFlowCandidateDraft(input: {
   submission: AuthoringInput["submission"];
   loop: Omit<AuthoringInput["loop"], "decide">;
@@ -27,7 +33,15 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   currentBinding(): Promise<{ executionDigest: string; settingsRevision: number }>;
   store: Pick<AutomationStudioFlowCandidateDraftStore, "save">;
   originalSource?: AutomationStudioCandidateOriginalSourceBinding;
-}): Promise<AutomationStudioFlowCandidateDraftRecord> {
+  /** The candidate's id, minted before the loop because every trial request names it. Required with `trial`. */
+  candidateId?: string;
+  /** The service's trial runner; absent, completion ends as an unverified draft as before. */
+  trial?: AutomationStudioCandidateTrialPort;
+  /** What the trials' judges have spent so far, counted into the build's accounting. */
+  trialSpend?: () => { inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number };
+}): Promise<{ record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined }> {
+  if (input.trial && (typeof input.candidateId !== "string" || !input.candidateId)) throw new Error("candidate.trial_candidate_id_required");
+  const candidateId = input.candidateId ?? `candidate.${randomUUID()}`;
   const descriptor = Object.getOwnPropertyDescriptor(input, "originalSource");
   if (descriptor && (!Object.hasOwn(descriptor, "value") || descriptor.value === undefined)) throw new Error("candidate.original_binding_invalid");
   const originalSource = descriptor ? Source.validate(descriptor.value as AutomationStudioCandidateOriginalSourceBinding) : undefined;
@@ -44,12 +58,13 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   } else if (Object.hasOwn(input.submission, "originalSource")) throw new Error("candidate.original_binding_mismatch");
   let estimatedInputTokens = 0;
   const requestId = `candidate.${randomUUID()}`, observedUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
-  const accounted = (spent: typeof observedUsage) => sanitizedBootstrapAccounting({ requestId, estimatedInputTokens: estimatedInputTokens + input.authorityUsage.estimatedInputTokens,
+  // The trials' judges are provider calls of this build too, made outside the loop's own decisions.
+  const accounted = (spent: typeof observedUsage) => { const judged = input.trialSpend?.() ?? { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 }; return sanitizedBootstrapAccounting({ requestId, estimatedInputTokens: estimatedInputTokens + input.authorityUsage.estimatedInputTokens,
     provider: input.harness.provider.metadata.provider, model: input.harness.provider.metadata.model,
-    inputTokens: spent.inputTokens + input.authorityUsage.inputTokens, outputTokens: spent.outputTokens + input.authorityUsage.outputTokens,
-    totalTokens: spent.totalTokens + input.authorityUsage.totalTokens, estimatedCostUsd: spent.estimatedCostUsd + input.authorityUsage.estimatedCostUsd });
+    inputTokens: spent.inputTokens + input.authorityUsage.inputTokens + judged.inputTokens, outputTokens: spent.outputTokens + input.authorityUsage.outputTokens + judged.outputTokens,
+    totalTokens: spent.totalTokens + input.authorityUsage.totalTokens + judged.totalTokens, estimatedCostUsd: spent.estimatedCostUsd + input.authorityUsage.estimatedCostUsd + judged.estimatedCostUsd }); };
   const authored = await runAutomationStudioFlowCandidateAuthoringLoop({
-    submission: input.submission,
+    submission: input.submission, ...(input.trial ? { trial: { candidateId, port: input.trial } } : {}),
     loop: observeAutomationStudioEvidenceLoop({ ...input.loop, decide: input.wrapDecision(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
       input.beforeDecision();
       input.progress(accounted(observedUsage), "provider_request");
@@ -76,11 +91,11 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   input.loop.signal?.throwIfAborted(); input.submission.signal?.throwIfAborted();
   input.progress(accounting, "persistence");
   const common = { kind: "flow_candidate_draft" as const, status: "draft" as const, verification: "not_performed" as const,
-    candidateId: `candidate.${randomUUID()}`, projectId, flowId, sourceInstructionIds: [...sourceInstructionIds], instructionText,
+    candidateId, projectId, flowId, sourceInstructionIds: [...sourceInstructionIds], instructionText,
     baseSettingsRevision, accounting, createdAt: Date.now() };
   const record: AutomationStudioFlowCandidateDraftRecord = originalSource
     ? { ...common, schemaVersion: 2, originalSources: originalSource.originalSources, originalInstructionsDigest: originalSource.originalInstructionsDigest,
         candidate: { ...authored.candidate, fingerprintVersion: "candidate.plan+original_sources.v2", originalInstructionsDigest: originalSource.originalInstructionsDigest } }
     : { ...common, schemaVersion: 1, candidate: authored.candidate };
-  return await input.store.save(record, input.loop.signal);
+  return { record: await input.store.save(record, input.loop.signal), trial: authored.trial };
 }

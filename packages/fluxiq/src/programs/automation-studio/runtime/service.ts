@@ -93,7 +93,7 @@ import { automationStudioFlowDraftPlanNodeIds, automationStudioLlmEvidenceLoopRo
 import { sayAutomationStudioResultCheck } from "./result-check-schedule/index.ts";
 import { automationStudioActivityDecisionReason, bindAutomationStudioActivityRun, emitAutomationStudioActivity, observeAutomationStudioEvidenceLoop, withAutomationStudioBuildActivity, withAutomationStudioRunActivity } from "./activity/index.ts";
 import { automationStudioFlowGraphVersion, automationStudioMetadataWithFlowVersions, automationStudioRunFlowVersions, type AutomationStudioFlowGraphJudgement } from "./flow-version/index.ts";
-import { automationStudioResultVerificationProvider, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts, type AutomationStudioResultVerificationStatus } from "./result-verification/index.ts";
+import { automationStudioBuildTestJudge, automationStudioResultVerificationProvider, readRecordSets, verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts, type AutomationStudioResultVerificationStatus } from "./result-verification/index.ts";
 import { automationStudioFlowDraftReplayable } from "./flow-draft/index.ts";
 import { automationStudioFlowBootstrapGenerationCatch, AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapSeedSignature, automationStudioFlowBootstrapFailureDiagnosticOf, automationStudioFlowBootstrapIncompleteDraftContinuation, automationStudioFlowBootstrapIncompleteDraftKeeper, automationStudioInstructedActsChecklist, flowBootstrapEvidenceCompletionFailure, flowBootstrapHarnessFailure, runAutomationStudioFlowBootstrapBuildPhases, automationStudioFlowBootstrapUnchangedCompleteRefusal, automationStudioFlowBootstrapFinishingVerdictDetail, type AutomationStudioFlowBootstrapFinishingVerdict, type AutomationStudioFlowBootstrapRoundRequest, flowBootstrapPhaseFailure, type AutomationStudioFlowBootstrapFailureStage, type AutomationStudioFlowBootstrapPhaseFailureCode, automationStudioInstructedActs } from "./flow-bootstrap/index.ts";
 import { parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence } from "./action-permissions/index.ts";
@@ -219,13 +219,13 @@ import { AutomationStudioConversations } from "./conversations/index.ts";
 import { AutomationStudioRunControlRegistry, automationStudioMarkRunAdapting } from "./run-control/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
 import { automationStudioRunEndViewReader } from "./service/end-view/index.ts";
-import { AutomationStudioParkedRunExpiry, admitAutomationStudioRuntimeSession, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
+import { AutomationStudioParkedRunExpiry, admitAutomationStudioRuntimeSession, automationStudioRunGraphOptions, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { IoRegistry } from "../../../io/index.ts";
 import type { RuntimeService } from "../../../runtime/index.ts";
-import { createIoPolicyEffectDispatcher, createRuntimePolicyEffectDispatcher } from "./io-policy.ts";
+import { automationStudioCandidateTrialPort, promoteAutomationStudioCandidateTrial, type AutomationStudioPrepareCandidateStart } from "./service/candidate-trial/index.ts";
 import {
   type CanonicalAutomationStudioRepositories,
   createCanonicalAutomationStudioMemoryRepositories,
@@ -281,7 +281,7 @@ import { reusableLlmContextSummary, type AutomationStudioReusableLlmContextFeatu
 import { automationStudioAdaptationReplayRecorder, automationStudioResultRepairPorts, automationStudioRepairedRunResultCheck, automationStudioRunResultCheck, resolveAutomationStudioResultCheckProvider, resolveAutomationStudioUnattendedRepairAuthority, resolveAutomationStudioRuntimeAdaptationContext, type AutomationStudioResultCheckCallerPays, type AutomationStudioResultCheckProviderRequest, type AutomationStudioResultCheckProviderResolution, type AutomationStudioRunResultCheck, normalizeAutomationStudioRuntimeInterventionMode, promoteAutomationStudioRuntimeAdaptation, recoveryBudgetFromRuntimeAdaptationContext, runtimeAdaptationContextDiagnostics, runtimeAdaptationContextWithRunOverride, rerunAutomationStudioSessionAfterRepair, runtimeRunDetailWithAdaptationContext, settleAutomationStudioRunJudgedPromotions, settleAutomationStudioRunJudgedReauthor, runtimeTrainingBudgetStateFromSummaries, type AutomationStudioRuntimeAdaptationContext, type AutomationStudioRuntimeInterventionMode } from "./service/runtime-adaptation/index.ts";
 import { clampNumber, normalizePositiveInteger } from "./service/scalar-readings/index.ts";
 export type { AutomationStudioChangeProposalSummaryPage, ReviewFlowAdaptationInput } from "./service/adaptation-projections/index.ts";
-export type { AutomationStudioGenerateFlowBootstrapAdaptationInput, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
+export type { AutomationStudioCandidateDraftTrial, AutomationStudioGeneratedCandidateTrial, AutomationStudioGenerateFlowBootstrapAdaptationInput, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
 export type { AutomationStudioRouterRoutePage, AutomationStudioRouterTargetReferenceBatch, AutomationStudioSubflowTargetPage, UpsertFlowMapRouteGroupInput, UpsertFlowMapRouteInput } from "./service/flow-map-routes/index.ts";
 export type { AutomationStudioFlowMigrationInspection } from "./service/legacy/index.ts";
 export type { AutomationStudioProblemPage } from "./service/problems/index.ts";
@@ -301,6 +301,8 @@ export type AutomationStudioServiceOptions = {
   /** The model a Flow's standing result-check authorization buys, for a run with no actor session. The host resolves it because the credential is the host's; it is handed only the key the person authorized and the ceiling for this one call, and it is asked only once the schedule has said this run is checked and the authorization has been redeemed for `loop_verification`. */
   resultCheckProviderResolver?: (input: AutomationStudioResultCheckProviderRequest) => Promise<AutomationStudioResultCheckProviderResolution | undefined> | AutomationStudioResultCheckProviderResolution | undefined;
   hostRuntime?: AutomationStudioHostRuntimeBoundary;
+  /** D1 (2026-10-07): puts the target back at a candidate's declared start before each candidate trial. The Lab sets it to its fixture reset; unset, each trial records `not_reset` (`service/candidate-trial/`). */
+  prepareCandidateStart?: AutomationStudioPrepareCandidateStart;
   uiCacheStore?: AutomationStudioUiCacheStore;
   seedFixture?: boolean;
   reusableLlmContext?: AutomationStudioReusableLlmContextOption;
@@ -384,7 +386,7 @@ export class AutomationStudioService {
   private runtimeService?: RuntimeService;
   private llmProviderResolver?: AutomationStudioServiceOptions["llmProviderResolver"];
   private llmEvidenceRuntime?: AutomationStudioServiceOptions["llmEvidenceRuntime"];
-  private resultCheckProviderResolver?: AutomationStudioServiceOptions["resultCheckProviderResolver"];
+  private resultCheckProviderResolver?: AutomationStudioServiceOptions["resultCheckProviderResolver"]; private readonly prepareCandidateStart?: AutomationStudioPrepareCandidateStart;
   private readonly runtimeAbortControllers = new Map<string, AbortController>(); readonly buildCancellation = new AutomationStudioBuildCancellation(); readonly coreRuntimeBuildIdentity = readCoreRuntimeBuildIdentity();
   /** Live runs a person can pause, take over and resume; read by the run-control endpoints. */
   readonly runControl = new AutomationStudioRunControlRegistry();
@@ -403,7 +405,7 @@ export class AutomationStudioService {
     this.llmProviderResolver = automationStudioLlmResolverWithDomainInstructions(options.llmProviderResolver, () => this.llmEvidenceRuntime); // Every provider resolved stamps the bound domain's instructions (`llm/domain-instructions/`).
     this.llmEvidenceRuntime = automationStudioLlmEvidenceRuntimeBindingChecked(options.llmEvidenceRuntime); // A bad `systemInstructions` fails here, at bind, not mid-build.
     this.resultCheckProviderResolver = automationStudioLlmResolverWithDomainInstructions(options.resultCheckProviderResolver, () => this.llmEvidenceRuntime);
-    this.hostRuntime = options.hostRuntime;
+    this.hostRuntime = options.hostRuntime; if (options.prepareCandidateStart) this.prepareCandidateStart = options.prepareCandidateStart;
     this.reusableLlmContextEnabled = options.reusableLlmContext?.enabled === true;
     this.reusableLlmContextContentProtection = options.reusableLlmContext?.contentProtection;
     this.reusableLlmContextFreshEvidenceSelector = options.reusableLlmContext?.selectForFreshEvidence;
@@ -1441,7 +1443,7 @@ export class AutomationStudioService {
   }
 
   getFlowBootstrapGenerationRuntimeReadiness(): AutomationStudioFlowBootstrapGenerationReadiness {
-    return automationStudioFlowBootstrapGenerationReadiness({ providerResolverConfigured: typeof this.llmProviderResolver === "function", ...(this.nativeNodeRuntime ? { nativeNodeRuntime: this.nativeNodeRuntime } : {}), ...(this.llmEvidenceRuntime ? { llmEvidenceRuntime: this.llmEvidenceRuntime } : {}) }); }
+    return automationStudioFlowBootstrapGenerationReadiness({ providerResolverConfigured: typeof this.llmProviderResolver === "function", candidateStartPrepared: this.prepareCandidateStart !== undefined, ...(this.nativeNodeRuntime ? { nativeNodeRuntime: this.nativeNodeRuntime } : {}), ...(this.llmEvidenceRuntime ? { llmEvidenceRuntime: this.llmEvidenceRuntime } : {}) }); }
 
   async getLlmExecutionBinding(projectId: string, flowId: string): Promise<{ executionDigest: string; settingsRevision: number }> {
     const [flow, executionDigest] = await Promise.all([
@@ -1552,8 +1554,13 @@ export class AutomationStudioService {
         if (authoringMode === "candidate") {
           if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
           const signal = AbortSignal.any([creation.signal(permissions.signal), personNeeded.signal, ...(this.buildCancellation.signal() ? [this.buildCancellation.signal()!] : [])]);
-          const draft = await generateAutomationStudioFlowCandidateDraft({
-            ...(candidateSource ? { originalSource: candidateSource } : {}),
+          // The trial runner (t340): each trial runs the exact submitted candidate once, from its declared start (D1's hook first, when set), in a session of its own (`metadata.candidateTrial`) under a run's executor options, and the build-test judge sees only that run (`service/candidate-trial/`). The candidate id is minted here because every trial names it.
+          const candidateId = `candidate.${randomUUID()}`, judge = automationStudioBuildTestJudge({ provider: unresolvedProvider.provider, instructions, deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys, projectId, flowId, signal });
+          const trials = automationStudioCandidateTrialPort(candidateId, { projectId, flowId, sourceInstructionIds: resolvedInstructions.instructionIds, startLocation, registry, resolution, parentFlow: () => this.getFlow(projectId, flowId), currentBaseDigest: () => this.getLlmExecutionDependencyDigest(projectId, flowId), snapshots: () => this.catalogue.listPublishedFlowSnapshots(), deprecatedPublicationIds: async () => (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`),
+            openSession: ({ runId, metadata }) => this.startRuntimeSession({ projectId, flowId, runId, metadata }), writeSession: (session) => this.writeRuntimeSession(projectId, session), graphOptions: ({ runId, signal: trialSignal }) => automationStudioRunGraphOptions({ signal: trialSignal, io: this.ioRuntime, runtimeService: this.runtimeService, authorizedDomainIds: [], nativeNodeRuntime: this.nativeNodeRuntime, hostRuntime: this.hostRuntime, ...(this.runDatasets.available ? { onRecordBatch: this.runDatasets.recordBatchHandler(projectId, runId) } : {}), ...(this.conversations.available ? { parking: this.conversations.parkingPort({ projectId, subject: { kind: "run", id: runId } }) } : {}) }),
+            processDatasets: (runId) => this.runDatasets.processEndedRunDatasets({ projectId, runId }), recordSets: (runId) => readRecordSets(this.runDatasets.available ? { listRunDatasets: (request) => this.runDatasets.listRunDatasets(request), getRunDatasetPage: (request) => this.runDatasets.getRunDatasetPage(request) } : {}, projectId, runId), readEndView: ({ runId }) => automationStudioRunEndViewReader(this.llmEvidenceRuntime)?.({ projectId, runId, flowId }) ?? Promise.resolve(undefined), actionAttempts: (session) => runtimeSessionToFlowRunDetail(session, projectId).actionAttempts, observedStateKeys: harnessOptions.observedStateKeys, deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys, prepareStart: this.prepareCandidateStart, judge });
+          const generated = await generateAutomationStudioFlowCandidateDraft({
+            ...(candidateSource ? { originalSource: candidateSource } : {}), candidateId, trial: trials.port, trialSpend: trials.spent,
             submission: { projectId, flowId, registry, resolution, size, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, instructionText: bootstrapInstructionText, baseDependencyDigest: binding.executionDigest, signal, ...(candidateSource ? { originalSource: candidateSource } : {}), ...(startLocation === undefined ? {} : { startLocation }) },
             loop: { ...bootstrapLoopLimits.loop, tools: harnessOptions.tools, observedStateKeys: harnessOptions.observedStateKeys, deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys, purse: creation.purse, signal, propagateDecisionErrors: true, executeTool: routing.recording(personNeeded.executeTool), nodeOf: nodeDescriptions.definition, definitionOf: (id) => registry.get(id, resolution) },
             harness: { projectId, flowId, ...promptInstructions, provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}), ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}), flowBootstrap: { registry, resolution, size, ...(startLocation === undefined ? {} : { startLocation }) } },
@@ -1567,7 +1574,11 @@ export class AutomationStudioService {
             progress: (spent, stage) => { failureAccounting = spent; failureStage = stage; failureCode = stage === "persistence" ? "flow_bootstrap.persistence_failed" : stage === "post_provider_validation" ? "flow_bootstrap.post_provider_validation_failed" : stage === "provider_output_validation" ? "flow_bootstrap.provider_output_validation_failed" : "flow_bootstrap.provider_request_failed"; },
             ending: (loop, spent) => permissions.endedOnRequest(loop, spent) ?? personNeeded.endedOnIntervention(loop, spent), store: { save: async (record, saveSignal) => { this.buildCancellation.checkpoint(); return await this.candidateDrafts.save(record, saveSignal); } }
           });
-          return { projectId, flowId, status: "draft", candidateId: draft.candidateId, revision: draft.candidate.revision, digest: draft.candidate.digest, sourceInstructionIds: [...draft.sourceInstructionIds], baseDependencyDigest: draft.candidate.baseDependencyDigest, baseSettingsRevision: draft.baseSettingsRevision, accounting: structuredClone(draft.accounting), verification: "not_performed", promotionAllowed: false };
+          // Saved as a draft whatever the verdict; only a standing yes for its exact revision and digest is proposed, through the legacy create path and its base-digest check (D2), and the chat approves and applies it as a legacy proposal (`service/candidate-trial/promotion.ts`).
+          const draft = generated.record, promoted = await promoteAutomationStudioCandidateTrial({ record: draft, standing: generated.trial, trials: trials.records(), readAuthoritative: () => this.candidateDrafts.getAuthoritative(projectId, flowId), currentBinding: () => this.getLlmExecutionBinding(projectId, flowId), signal,
+            propose: async (proposal) => { failureStage = "persistence"; failureCode = "flow_bootstrap.persistence_failed"; const outcome = await automationStudioBootstrapPermissionOutcome(permissions, () => authority.usage.calls); this.buildCancellation.checkpoint(); return await this.createFlowBootstrapAdaptation({ projectId, flowId, ...proposal, accounting: draft.accounting, ...outcome, actorId: caller.actorUserId }); } });
+          if (promoted.status === "proposed") { creation.ended(); return { projectId, flowId, adaptationId: promoted.adaptation.adaptationId, status: "proposed", riskLevel: promoted.adaptation.riskLevel, sourceInstructionIds: [...promoted.adaptation.sourceInstructionIds], baseDependencyDigest: promoted.adaptation.baseDependencyDigest, baseSettingsRevision: promoted.adaptation.baseSettingsRevision, accounting: structuredClone(draft.accounting), ...(promoted.adaptation.permissionRequest ? { permissionRequest: structuredClone(promoted.adaptation.permissionRequest) } : {}), candidate: promoted.candidate }; }
+          return { projectId, flowId, status: "draft", candidateId: draft.candidateId, revision: draft.candidate.revision, digest: draft.candidate.digest, sourceInstructionIds: [...draft.sourceInstructionIds], baseDependencyDigest: draft.candidate.baseDependencyDigest, baseSettingsRevision: draft.baseSettingsRevision, accounting: structuredClone(draft.accounting), verification: "not_performed", promotionAllowed: false, trial: promoted.trial };
         }
         if (input.evidenceGuided) {
           if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
@@ -1720,7 +1731,7 @@ export class AutomationStudioService {
     buildPlan: AutomationStudioFlowBuildPlan;
     accounting?: AutomationStudioBootstrapAccounting;
     evidenceTrace?: AutomationStudioLlmEvidenceLoopTrace[]; buildJudged?: AutomationStudioFlowBootstrapFinishingVerdict; // The judged yes the build finished on: recorded on the `created` audit event as `buildJudged`, a record only.
-    reusableContext?: JsonObject;
+    reusableContext?: JsonObject; candidateTrial?: JsonObject; // Which candidate and trial run's confirmed yes produced a candidate-mode proposal (t340): recorded on the `created` audit event, a record only.
     // What this change is to the Flow, and the ids an `extend` keeps so it edits rather than replaces (`flow-bootstrap/extend.ts`).
     mode?: AutomationStudioBootstrapAdaptationMode;
     origin?: AutomationStudioBootstrapAdaptationOrigin;
@@ -1793,7 +1804,7 @@ export class AutomationStudioService {
         status: "proposed",
         createdAt: now,
         updatedAt: now,
-        auditEvents: [bootstrapAdaptationAuditEvent({ adaptationId, eventType: "created", actorId: input.actorId ?? null, fromStatus: null, toStatus: "proposed", createdAt: now, ...((input.evidenceTrace || input.reusableContext || input.buildJudged) ? { detail: { ...(input.evidenceTrace ? evidenceTraceAuditDetail(input.evidenceTrace, input.additionalProviderCalls ?? 0) : {}), ...(input.buildJudged ? { buildJudged: automationStudioFlowBootstrapFinishingVerdictDetail(input.buildJudged) } : {}), ...(input.reusableContext ? { reusableContext: structuredClone(input.reusableContext) } : {}) } } : {}) })]
+        auditEvents: [bootstrapAdaptationAuditEvent({ adaptationId, eventType: "created", actorId: input.actorId ?? null, fromStatus: null, toStatus: "proposed", createdAt: now, ...((input.evidenceTrace || input.reusableContext || input.buildJudged || input.candidateTrial) ? { detail: { ...(input.candidateTrial ? { candidateTrial: structuredClone(input.candidateTrial) } : {}), ...(input.evidenceTrace ? evidenceTraceAuditDetail(input.evidenceTrace, input.additionalProviderCalls ?? 0) : {}), ...(input.buildJudged ? { buildJudged: automationStudioFlowBootstrapFinishingVerdictDetail(input.buildJudged) } : {}), ...(input.reusableContext ? { reusableContext: structuredClone(input.reusableContext) } : {}) } } : {}) })]
       };
       this.buildCancellation.checkpoint(); await this.bootstrapAdaptations.saveFlowBootstrapAdaptation(adaptation);
       await this.appendBootstrapAdaptationChangeFeed(adaptation, "create");
@@ -2541,25 +2552,9 @@ export class AutomationStudioService {
       generate: (request, brief, costLeftUsd, startPages, ending) => this.buildCancellation.run(request.projectId, request.flowId, () => this.generateFlowBootstrapAdaptationInternal(request, brief, costLeftUsd, startPages, ending), abortController.signal),
       approve: (review) => this.reviewFlowBootstrapAdaptation({ ...review, action: "approve" }), reject: (review) => this.reviewFlowBootstrapAdaptation({ ...review, action: "reject" }) }) }; // Approved and held, never applied here: the judged end applies it (`judged` below); a held edit a later attempt replaces is rejected.
     const judged = async (verified: AutomationStudioRuntimeSession) => await settleAutomationStudioRunJudgedPromotions({ ports: judgedPorts, projectId: input.projectId!, flowId: adaptationContext?.flowId, context: adaptationContext, session: await settleAutomationStudioRunJudgedReauthor({ ports: judgedPorts, projectId: input.projectId!, flowId: adaptationContext?.flowId, session: verified }) }); const verifyRunResult = async (request: Parameters<typeof verifyAutomationStudioRuntimeSessionResult>[0]) => { await this.runDatasets.processEndedRunDatasets({ projectId: request.projectId, runId: request.session.runId }); return await verifyAutomationStudioRuntimeSessionResult(request); }; // The run's datasets become their answers once its graph run ends, succeeded, failed or cancelled, and before its result is verified, so the check and every reader see the answer (read-list design P1).
-    const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = {
-      inputs: (input.inputs ?? {}) as Record<string, any>,
-      signal: abortController.signal
-    };
-    if (this.ioRuntime) {
-      graphOptions.effectDispatcher = this.runtimeService
-        ? createRuntimePolicyEffectDispatcher(this.ioRuntime.io, this.ioRuntime.domainId, this.runtimeService)
-        : createIoPolicyEffectDispatcher(this.ioRuntime.io, this.ioRuntime.domainId);
-      graphOptions.runtimeCapabilities = ["policy-output", "io"];
-      // A run a person asked the model into keeps the domains it was authorized for, like any other run.
-      const requestedDomainIds = uniqueStrings(input.authorizedDomainIds ?? asStringArray(session.metadata?.authorizedDomainIds));
-      if (this.ioRuntime.domainId) graphOptions.authorizedDomainIds = requestedDomainIds.filter((domainId) => domainId === this.ioRuntime!.domainId);
-    }
-    if (this.nativeNodeRuntime) { graphOptions.runtimeCapabilities = [...new Set([...(graphOptions.runtimeCapabilities ?? []), ...this.nativeNodeRuntime.getRuntimeCapabilities()])]; graphOptions.nativeNodeExecutor = ({ node, inputs, signal, hostContext }) => this.nativeNodeRuntime!.execute(node, inputs, signal, hostContext); }
-    if (this.hostRuntime) graphOptions.hostRuntime = this.hostRuntime;
-    if (input.maxSteps !== undefined) graphOptions.maxSteps = input.maxSteps;
-    // The run's captured rows reach the project's store under this run id, and a question it raises reaches the run's own thread, where its answer comes back from. A retry or live patch reuses these options and this session, so both land under the same run (K4c). Without project storage there is nowhere for a thread to live, and a run that asks still parks with nobody told.
-    if (input.projectId && this.runDatasets.available) graphOptions.onRecordBatch = this.runDatasets.recordBatchHandler(input.projectId, session.runId);
-    if (input.projectId && this.conversations.available) graphOptions.parking = this.conversations.parkingPort({ projectId: input.projectId, subject: { kind: "run", id: session.runId } });
+    // The options every run of a Flow gets, built where the candidate trial builds its own, so a trial runs under the same gate (`service/runtime-session/graph-options.ts`). A run a person asked the model into keeps the domains it was authorized for, like any other run. The run's captured rows reach the project's store under this run id, and a question it raises reaches the run's own thread, where its answer comes back from. A retry or live patch reuses these options and this session, so both land under the same run (K4c). Without project storage there is nowhere for a thread to live, and a run that asks still parks with nobody told.
+    const graphOptions: Parameters<typeof runAutomationStudioGraph>[1] = automationStudioRunGraphOptions({ inputs: (input.inputs ?? {}) as Record<string, any>, signal: abortController.signal, io: this.ioRuntime, runtimeService: this.runtimeService, authorizedDomainIds: uniqueStrings(input.authorizedDomainIds ?? asStringArray(session.metadata?.authorizedDomainIds)), nativeNodeRuntime: this.nativeNodeRuntime, hostRuntime: this.hostRuntime, maxSteps: input.maxSteps,
+      ...(input.projectId && this.runDatasets.available ? { onRecordBatch: this.runDatasets.recordBatchHandler(input.projectId, session.runId) } : {}), ...(input.projectId && this.conversations.available ? { parking: this.conversations.parkingPort({ projectId: input.projectId, subject: { kind: "run", id: session.runId } }) } : {}) });
     // Strict: an unreadable canonical Flow fails the run rather than running it without its compilation check and adaptation context.
     const canonical = input.projectId && session.metadata?.canonicalFlow === true ? await this.getFlow(input.projectId, session.flowId) : undefined;
     if (canonical?.source.mode === "code" && !verifyCodeOwnedFlowCompilation(canonical)) throw new Error("Code-owned Flow compilation is stale or invalid; execution refused.");

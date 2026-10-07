@@ -9,12 +9,13 @@
 // thread asks "apply this change?", and a yes applies it
 // (`confirmed.ts`, `adaptation.apply`).
 //
-// In candidate authoring mode (`./build.ts`) the build saves an
-// unverified candidate draft instead: the existing steps stay unchanged and
-// there is nothing to ask about applying before it is verified.
+// In candidate authoring mode (`./build.ts`) Core test-runs the amended Flow
+// once from its start. A proposal it makes from a confirmed yes is asked about
+// exactly as a legacy one; a draft leaves the steps unchanged, asks nothing,
+// and the answer says what its test run came to.
 
 import { automationStudioConversationCommandText } from "./argument.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED, automationStudioConversationAuthorsCandidates, buildAutomationStudioFlowFromConversation } from "./build.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
 
@@ -28,7 +29,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
     title: TITLE,
     get summary() {
       return automationStudioConversationAuthorsCandidates()
-        ? "Says what an existing Flow should do differently, then amends its steps on the real website into a candidate draft with verification pending."
+        ? "Says what an existing Flow should do differently, amends its steps on the real website, test-runs the amended Flow once from its start, and asks the person whether to apply the change only when that test is judged to do what was asked."
         : "Says what an existing Flow should do differently, then amends its steps on the real website into a change the person is asked to apply.";
     },
     group: "Flows",
@@ -42,7 +43,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
     reauthorizes: false
   },
   // An improvement is built from the Flow as it is, not from the page open now (`build.ts`), so no page is named.
-  announce: ({ flowName }) => `I'll work out the change${flowName ? ` to "${flowName}"` : ""} by trying it on the website, then ${automationStudioConversationAuthorsCandidates() ? "save an unverified candidate draft" : "ask you here whether to apply it"}.`,
+  announce: ({ flowName }) => `I'll work out the change${flowName ? ` to "${flowName}"` : ""} by trying it on the website, then ${automationStudioConversationAuthorsCandidates() ? "test-run the changed Flow once from its start and ask you here whether to apply it" : "ask you here whether to apply it"}.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const flowId = automationStudioConversationCommandText(args, "flowId");
@@ -57,10 +58,10 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "extend" });
     if (!built.ok) return progress.failed(built.cause, { ending: built.ending });
-    if (built.status === "draft") return { ...progress.succeeded(AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED), candidate: built.candidate };
+    if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate)), candidate: built.candidate };
     progress.carry({ adaptationId: built.adaptationId });
     return {
-      ...progress.succeeded("Worked out the change on the website. It is waiting for you to say whether to apply it."),
+      ...progress.succeeded(`Worked out the change on the website.${built.trial ? ` ${AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED}` : ""} It is waiting for you to say whether to apply it.`),
       confirm: {
         text: "Apply this change to the Flow? It changes the Flow's steps from its next run. Say yes to apply it, or no to leave the Flow as it is.",
         capabilityId: "adaptation.apply",

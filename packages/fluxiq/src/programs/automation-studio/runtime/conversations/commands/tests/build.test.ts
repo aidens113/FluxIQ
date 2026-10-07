@@ -50,3 +50,29 @@ describe("candidate authoring mode", () => {
     expect(requests.map((request) => request.payload)).toEqual([expect.objectContaining({ evidenceGuided: true, authoringMode: "candidate", authSessionId: "session" })]);
   });
 });
+
+describe("candidate authoring mode with a trial runner (t340)", () => {
+  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate"); });
+  const PROPOSAL = { status: "proposed", projectId: "project", flowId: "flow", adaptationId: "adaptation.candidate", riskLevel: "low", sourceInstructionIds: ["instruction"], baseDependencyDigest: "base", baseSettingsRevision: 0, accounting: { requestId: "request", estimatedInputTokens: 1 },
+    candidate: { candidateId: "candidate", revision: 2, digest: "a".repeat(64), trial: { runId: "trial.1", verdict: "yes", calls: 2 } } };
+
+  it("answers a tested candidate's proposal as a proposal carrying its trial", async () => {
+    const { context } = recording({ ok: true, payload: { adaptation: PROPOSAL } });
+    expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" })).toEqual({ ok: true, status: "proposed", adaptationId: "adaptation.candidate", awaitingPermission: false, trial: { runId: "trial.1", calls: 2 } });
+  });
+
+  it("refuses a proposal for another Flow or with an unconfirmed trial", async () => {
+    for (const adaptation of [{ ...PROPOSAL, flowId: "other" }, { ...PROPOSAL, candidate: { ...PROPOSAL.candidate, trial: { runId: "trial.1", verdict: "yes", calls: 1 } } }]) {
+      const { context } = recording({ ok: true, payload: { adaptation } });
+      expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: false, kept: false });
+    }
+  });
+
+  it("keeps a draft's trial block, and refuses a draft that claims it may be promoted", async () => {
+    const trial = { verdict: "no", runId: "trial.1", codes: ["candidate.trial_judged_no"] };
+    const { context } = recording({ ok: true, payload: { candidate: { ...CANDIDATE, trial } } });
+    expect(await buildAutomationStudioFlowFromConversation(context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: true, status: "draft", candidate: { trial } });
+    const claimed = recording({ ok: true, payload: { candidate: { ...CANDIDATE, promotionAllowed: true, trial } } });
+    expect(await buildAutomationStudioFlowFromConversation(claimed.context, { flowId: "flow", mode: "create" })).toMatchObject({ ok: false });
+  });
+});
