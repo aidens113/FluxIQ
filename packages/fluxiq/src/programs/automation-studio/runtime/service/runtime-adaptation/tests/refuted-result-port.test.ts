@@ -17,6 +17,7 @@ import {
 } from "../../../recovery/refuted-result/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
 import { automationStudioRefutedResultRepairPort, type AutomationStudioRefutedResultRepairPortDependencies } from "../refuted-result-port.ts";
+import { automationStudioReauthorProposed } from "./reauthor-proposal.ts";
 
 const summary: AutomationStudioRunResultSummary = {
   schemaVersion: "automation-studio.run-result-summary.v1",
@@ -54,7 +55,7 @@ function deps(overrides: Partial<AutomationStudioRefutedResultRepairPortDependen
     flowId: () => "flow.one",
     caller,
     annotate: vi.fn(async (refuted) => ({ ...refuted.detail, metadata: { ...(refuted.detail.metadata ?? {}), ladder: "annotated" } })),
-    generate: async () => ({ adaptationId: "adaptation.one", accounting: {} }) as never,
+    generate: async () => automationStudioReauthorProposed("adaptation.one", {}) as never,
     approve: async () => undefined,
     now: () => 0,
     ...overrides
@@ -70,7 +71,7 @@ describe("the caller a re-author builds for", () => {
   // the caller permitted; nothing else is asked of it. The edit is approved and
   // held (t267): the re-run runs it unapplied, and its judged end applies it.
   it("builds for the run's caller, approves and holds the edit, and leaves the run ready to re-run", async () => {
-    const generate = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", {}));
     const approve = vi.fn(async () => undefined);
     const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never, approve, permittedConsequences: ["create_new"] }))(request);
     expect(generate).toHaveBeenCalledTimes(1);
@@ -88,7 +89,7 @@ describe("the caller a re-author builds for", () => {
 // build is handed where each node's first attempt started, read off the run.
 describe("where the refuted run's nodes started", () => {
   it("hands the build each node's first-attempt start page, as the host stated it", async () => {
-    const generate = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", {}));
     const started = (location: string) => ({ stateRefs: { beforeAction: { stateSnapshotId: "s", stateRef: "r", capturedAt: 1, from: { location } } } });
     const withAttempts = {
       ...detail,
@@ -103,7 +104,7 @@ describe("where the refuted run's nodes started", () => {
   });
 
   it("hands the build no start pages when the run's host recorded none", async () => {
-    const generate = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", {}));
     await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))(request);
     expect((generate.mock.calls[0] as unknown[])[3]).toEqual({});
   });
@@ -137,7 +138,7 @@ describe("a re-author whose build fails", () => {
     const generate = vi.fn(async () => {
       calls += 1;
       if (calls === 1) throw flowBootstrapPhaseFailure("provider_request", undefined, "flow_bootstrap.provider_timeout");
-      return { adaptationId: "adaptation.two", accounting: {} };
+      return automationStudioReauthorProposed("adaptation.two", {});
     });
     const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))(request);
     expect(generate).toHaveBeenCalledTimes(2);
@@ -192,7 +193,7 @@ describe("the repair's one purse", () => {
     const generate = vi.fn(async () => {
       calls += 1;
       if (calls === 1) throw rateLimited(usd(CEILING * 0.8));
-      return { adaptationId: "adaptation.two", accounting: { requestId: "request.two", estimatedInputTokens: 10, estimatedCostUsd: usd(CEILING * 0.16) } };
+      return automationStudioReauthorProposed("adaptation.two", { requestId: "request.two", estimatedInputTokens: 10, estimatedCostUsd: usd(CEILING * 0.16) });
     });
     const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))(request);
 
@@ -265,17 +266,17 @@ describe("the repair's one purse", () => {
   // narrow the default, so one set above the default is honoured -- up to the
   // server maximum, and never past a test-scoped (Lab) ceiling.
   it("is set by a Flow's own limit above the default, up to the server maximum", async () => {
-    const generate = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", {}));
     await automationStudioRefutedResultRepairPort(deps({ generate: generate as never, maxCostUsd: () => 1 }))(request);
     expect((generate.mock.calls as unknown[][])[0]![2]).toBe(automationStudioLlmRunCostCeilingUsd(1));
-    const capped = vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: {} }));
+    const capped = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", {}));
     await automationStudioRefutedResultRepairPort(deps({ generate: capped as never, maxCostUsd: () => 11 }))(request);
     expect((capped.mock.calls as unknown[][])[0]![2]).toBe(automationStudioLlmRunCostCeilingUsd(11));
     expect((capped.mock.calls as unknown[][])[0]![2]).toBeLessThanOrEqual(10);
   });
 
   it("opens where the run's earlier passes left it, so a re-run refuted again spends from the same total", async () => {
-    const generate = vi.fn(async () => ({ adaptationId: "adaptation.three", accounting: { requestId: "request.three", estimatedInputTokens: 10, estimatedCostUsd: usd(CEILING * 0.04) } }));
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.three", { requestId: "request.three", estimatedInputTokens: 10, estimatedCostUsd: usd(CEILING * 0.04) }));
     const earlier = { ...detail, metadata: { ...(detail.metadata ?? {}), [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: { routed: true, applied: true, purse: { limitUsd: CEILING, spentUsd: usd(CEILING * 0.72), leftUsd: usd(CEILING * 0.28) } } } } as AutomationStudioFlowRunDetail;
     const result = await automationStudioRefutedResultRepairPort(deps({ generate: generate as never }))({ ...request, detail: earlier });
 
@@ -435,7 +436,7 @@ describe("a re-author that concludes the Flow needs no change", () => {
       } catch (error) {
         throw automationStudioFlowBootstrapGenerationCatch(error, "provider_output_validation", undefined, "flow_bootstrap.provider_output_validation_failed", 3);
       }
-      return { adaptationId: "adaptation.fixed", accounting: { estimatedCostUsd: 0.004 } };
+      return automationStudioReauthorProposed("adaptation.fixed", { estimatedCostUsd: 0.004 });
     });
   }
 

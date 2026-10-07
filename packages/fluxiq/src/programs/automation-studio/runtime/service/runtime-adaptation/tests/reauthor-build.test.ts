@@ -73,6 +73,8 @@ describe("a re-author build holds its edit", () => {
     expect(result.approve).not.toHaveBeenCalled();
     expect(result.built.adaptationId).toBeUndefined();
     expect(result.built.failure).toMatchObject({ stage: "post_provider_validation", accounting: ACCOUNTING });
+    // The refused draft still asked the model, so the repair's purse pays for it.
+    expect(result.purse.spentUsd).toBeCloseTo(ACCOUNTING.estimatedCostUsd, 9);
   });
   it("approves the adaptation as the repair actor and records it held, not applied", async () => {
     const generate = vi.fn<AutomationStudioReauthorBuildDependencies["generate"]>().mockResolvedValue(generated());

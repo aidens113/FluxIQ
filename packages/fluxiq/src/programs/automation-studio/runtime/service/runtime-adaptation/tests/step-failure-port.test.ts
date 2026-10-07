@@ -9,6 +9,7 @@ import { flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, automationStudioStepFailureReauthorDecision } from "../../../recovery/refuted-result/index.ts";
 import { automationStudioStepFailureRepairPort, type AutomationStudioStepFailureRepairPortDependencies } from "../step-failure-port.ts";
+import { automationStudioReauthorProposed } from "./reauthor-proposal.ts";
 
 const caller = { actorUserId: "user.one", actorSessionId: "session.one" };
 
@@ -52,7 +53,7 @@ function deps(overrides: Partial<AutomationStudioStepFailureRepairPortDependenci
     projectId: "project.one",
     flowId: () => "flow.one",
     caller,
-    generate: vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: { estimatedCostUsd: 0.02 } })),
+    generate: vi.fn(async () => automationStudioReauthorProposed("adaptation.one", { estimatedCostUsd: 0.02 })),
     approve: vi.fn(async () => undefined),
     apply: vi.fn(async () => undefined),
     now: () => 0,
@@ -186,7 +187,7 @@ describe("what the re-author may spend", () => {
   const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
 
   it("hands the build only what the ladder left of the ceiling", async () => {
-    const port = deps({ generate: vi.fn(async () => ({ adaptationId: "adaptation.one", accounting: { estimatedCostUsd: CEILING * 0.08 } })) as never });
+    const port = deps({ generate: vi.fn(async () => automationStudioReauthorProposed("adaptation.one", { estimatedCostUsd: CEILING * 0.08 })) as never });
     const result = await repair(port, failedDetail({ ...GOAL_GONE, costAccounting: { calls: 10, estimatedCostUsd: CEILING * 0.8 } }));
     expect(port.generate).toHaveBeenCalledTimes(1);
     expect((port.generate.mock.calls[0] as unknown[])[2]).toBeCloseTo(CEILING * 0.2, 9);
