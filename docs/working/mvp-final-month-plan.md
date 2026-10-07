@@ -31,7 +31,7 @@ ledger has independent owning52/52 and package check/build/audit0 after current 
 merge. Literal owned process termination/relaunch probes passed2/2 independently;
 ledger integrated/pushed04b51050. New graph import t307 has root19/19 after
 current paired dev merge; types/build pass, integration follows.
-Accepted-topology transaction/read authority is still required.
+t310 executing native gateway server adapter identity is integrated/pushedf0a5f747; production Next proof remains held pending explicit panel management authorization. t313 journal integrated/pushed6712b950. t317 explicit gateway production seam independently verified57/57, nonincremental Core types0, domain source/test types0 and audit0; integration pending. It does not enable Flow invocation propagation or sticky unknown-run fencing. Accepted-topology transaction/read authority is still required.
 
 Task t296 now requires affirmative confirmation for a build yes and refuses
 unsupported held reauthor topologies before apply/dispatch/writes. Supervisor
@@ -180,3 +180,8 @@ incomplete, with no reduction in the requested atomicity or outcome proof.
 - Validation: root26/26 before current dev; literal current-built child termination/restart2/2 zero skips5.96s; exact tsc noEmit incrementalfalse0, actual owning build44.966s. After t310 merge, owning30/30 including loaded transport owner passed18.07s; merged typecheck0 actual26.285s/build0 actual43.451s and Coreaudit0 (281warnings/349baseline). Full commands/limitations in paired downstream report.
 - Outcome: one durable claim precedes callback; receipt precedes usable live result; pending/unknown and committed receipt-only restart never send again or fabricate result. Not production Flow authority or semantic verification.
 - Follow-up: reviewed actual gateway-only composition unit first, then both runtime paths and sticky unknown/retry/resume fences. Conservative reconstructed same-run restriction documented; no provider/panel/full-suite run. Core finish --skip-checks only after merged narrow gates observed.
+
+### 2026-10-07 - t317 explicit gateway receipt seam independently verified
+- Changed: opaque stored-root-session broker/private project SQL lease, strict claim-before-checked-socket-send and receipt-before-public-result/event; typed explicit overload, malformed context never downgrades. Gateway shutdown drains durable pipelines before program pool close and preserves cleanup errors.
+- Validation: supervisor six owning files57/57 zero skips27.96s, actual nonincremental package tsc0, downstream domain source/test tsconfigs0, direct Core audit0 281warnings/349baseline. Worker actual owning build74.371s observed in report; source froze before independent review. Current dev merge already up to date; combined downstream integration audit follows.
+- Limits: explicit trusted server capability only, no Flow/runtime/domain propagation, same-run atomic fence, child invocation, semantic effect proof or promotion. Receipt-only restart returns result_unavailable; unknown never authorizes resend. Actual cancellation during lease opening failed first then corrected. No provider/panel/full suite.
