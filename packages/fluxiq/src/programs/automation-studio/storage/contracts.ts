@@ -2,6 +2,9 @@ import type { AutomationRecording, AutomationTask, DynamicPolicyArtifact } from 
 import type { LearnedTaskModel } from "../learning/index.ts";
 import type { NormalizedTimeline } from "../normalization/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowMigrationLedger, AutomationStudioFlowPublicationRecord, PolicyGraph, RecordingSession, SignalRegistry } from "../model/index.ts";
+import type { CanonicalAuthorityOptions } from "./canonical-authority/index.ts";
+
+export type CanonicalAutomationStudioSQLiteOptions = { canonicalRouting?: CanonicalAuthorityOptions };
 
 export type AutomationStudioRepository<TDocument> = {
   list(domainId?: string | null): Promise<TDocument[]>;

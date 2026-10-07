@@ -1,4 +1,5 @@
 export * from "./contracts.ts";
+export type { CanonicalAuthorityOptions } from "./canonical-authority/index.ts";
 export * from "./ids.ts";
 export * from "./memory-repository.ts";
 export * from "./sqlite-repository.ts";

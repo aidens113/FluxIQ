@@ -966,3 +966,35 @@ writes that row again.
 Domain scope is part of the document identity. Raw recordings read it from the
 recording environment; derived artifacts carry it in metadata until richer
 project/task ownership records exist.
+
+## Opted-in canonical owner infrastructure
+
+The canonical SQLite factory accepts an optional `canonicalRouting` with fixed
+server-owned `projectRootDir` and `projectDatabaseRootDir` (the former must be
+the latter's `projects` child). Default legacy behavior remains available until
+durable routing mode or a binding exists. The mode check and legacy mutation
+share one global transaction, including for objects opened before opt-in.
+Flow/publication bindings, permanent tombstones, bounded claims and effect
+receipts share the existing canonical `global.sqlite`; canonical documents
+retain their IDs, physical tables and `data.document` envelopes. Replacement
+`put` cannot allocate an unbound ID. No public allocation, seeding or adoption
+API is provided; actual creator, SQL/file/repair/policy/lifecycle writers and
+accepted-generation readers remain integration prerequisites.
+
+The internal coordinator commits a global claim before an original-project
+guard claim, then commits canonical effect and owner revision together. Project
+completion and global completion are separate. Partial joins remain unresolved
+and block a coordinated global-before-project capture fence. Deferred own-operation
+effects remain pending; joining an existing whole Flow save/publish/delete
+operation is not implemented. This fence is infrastructure, not an accepted
+snapshot or production authority. Reconciliation reads actual participant
+receipts and never reconstructs a lost pending completion capability.
+
+Project existence uses actual catalogue and manifest through existing-only
+reads, without migration or fallback. File observations are repeated and do
+not establish atomic lifecycle stability. SQLite existing-only reads support
+rollback-journal databases and refuse WAL headers before opening: the node
+SQLite readonly open was observed creating WAL/SHM sidecars. Normal WAL
+catalogue integration is therefore held; immutable/copy substitutes are not
+used. Custom/memory repositories, old process drain, offline legacy seeding and
+recovery remain unsupported for this infrastructure.
