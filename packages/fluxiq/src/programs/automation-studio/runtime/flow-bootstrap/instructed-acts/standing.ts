@@ -60,16 +60,27 @@
 // what was left hid the act. After the choices rule above, a step claimed for
 // an act of adding, saving, claiming, submitting or moving whose words do not
 // name the act is judged by what its record shows it did instead
-// (`./act-evidence.ts`): `step_only_clears_the_way`, `step_only_arrives`, or
+// (`./act-evidence.ts`): `step_only_clears_the_way`, `step_only_arrives`,
 // `step_only_chooses` with `chooses` naming the act's choice it made (which
-// that step still makes). For those three and `step_only_opens_its_choices`,
-// the standing carries `instead`: a step whose words name the act, where the
-// draft has one, so the model is told where to move the claim. Nothing is
-// refused (t195).
+// that step still makes), or -- where the step says what it changed and none
+// of it shows the act, while another step's change does -- `another_step_shows_it`
+// (the add named on "Not now", a layer the run's own Add to cart opened, while
+// only that Add to cart made the cart count rise). A step whose change shows
+// the act is never caught, by these rules or by `step_only_opens_its_choices`:
+// what it changed is the act's own evidence. For these four and
+// `step_only_opens_its_choices`, the standing carries `instead`: a step whose
+// change shows the act, else one whose words name it, where the draft has one,
+// so the model is told where to move the claim. Nothing is refused here
+// (t195); a claim is refused as it is made (`./claim-verdict.ts`).
 //
 // Nothing here calls a provider or reads a page; it is the draft and the claims.
 import { automationStudioFlowDraftStepMovedTarget, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import { automationStudioInstructedActIsEvidenceFault, automationStudioInstructedActStepDidInstead, automationStudioInstructedActStepThatNamesIt } from "./act-evidence.ts";
+import {
+  automationStudioInstructedActChangeShows,
+  automationStudioInstructedActIsEvidenceFault,
+  automationStudioInstructedActStepDidInstead,
+  automationStudioInstructedActStepThatNamesIt
+} from "./act-evidence.ts";
 import { automationStudioInstructedChoiceSetBy } from "./choice-evidence.ts";
 import { automationStudioInstructedActClaimDoubt } from "./claim-doubt.ts";
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedActMissingReason } from "./contracts.ts";
@@ -89,7 +100,7 @@ type Judged = { fault: Fault; actsOn?: string; presses?: number[]; chooses?: str
  * and `reads` -- the positions of every step named for it -- when each of them
  * only reads the page; `actsOn` for `step_acts_on_another_object`,
  * `presses` for `quantity_presses_differ`, `chooses` for `step_only_chooses`,
- * and `instead` -- a step whose words name the act -- for the faults
+ * and `instead` -- a step whose change shows the act or whose words name it -- for the faults
  * `./act-evidence.ts` words, where the draft has one.
  */
 export type AutomationStudioInstructedStanding =
@@ -151,7 +162,8 @@ export function automationStudioInstructedActsStanding(input: {
   // one of the act's own choices acted at a different place: it only opened
   // the page of those choices (see the header, `run-mux6pndp-16feb842`).
   const opensItsChoices = (act: AutomationStudioInstructedAct, step: Step): boolean => {
-    if (!act.requires?.length || automationStudioInstructedActClaimDoubt(act, step, input.steps) === undefined) return false;
+    if (!act.requires?.length || automationStudioInstructedActChangeShows(act, step)) return false;
+    if (automationStudioInstructedActClaimDoubt(act, step, input.steps) === undefined) return false;
     return act.requires.some((choice) => (named.get(choice.id) ?? []).some((made) =>
       made.disposition === "kept" && made.position > step.position && automationStudioFlowDraftStepMovedTarget(step, made)));
   };
@@ -161,7 +173,7 @@ export function automationStudioInstructedActsStanding(input: {
       if (fault) return { fault };
       if (opensItsChoices(act, step)) return { fault: "step_only_opens_its_choices" };
       // What the step's own record shows it did instead (see the header, W1).
-      const instead = automationStudioInstructedActStepDidInstead(act, step, input.steps);
+      const instead = automationStudioInstructedActStepDidInstead(act, step, input.steps, input.acts);
       if (instead) return instead;
       return another(act, step) ?? (used.has(step) ? { fault: "step_claimed_twice" } : undefined);
     });

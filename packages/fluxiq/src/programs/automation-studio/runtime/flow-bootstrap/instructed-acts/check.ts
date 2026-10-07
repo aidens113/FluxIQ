@@ -97,10 +97,14 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 // claiming, submitting or moving claimed on a step whose words do not name it
 // is judged by what that step's record shows it did (`./act-evidence.ts`): it
 // chose one of the act's options (`step_only_chooses`, `chooses`), only
-// cleared a layer in front of the page (`step_only_clears_the_way`), or went to
-// another page (`step_only_arrives`). Each such entry, and one
+// cleared a layer in front of the page (`step_only_clears_the_way`), went to
+// another page (`step_only_arrives`), or changed nothing that shows the act
+// while another step's change does (`another_step_shows_it`, run
+// `run-muqiho5c-e830ce01`: the add on "Not now", the cart count risen by the
+// Add to cart before it). Each such entry, and one
 // `step_only_opens_its_choices`, carries `said` -- the checklist's `todoSaid`
-// -- and `instead`, a step whose words name the act, where the draft has one.
+// -- and `instead`, a step whose change shows the act or whose words name it,
+// where the draft has one.
 //
 // **Only a draft is checked.** A plan the model wrote as a script has no steps
 // to name, so it is left where it stood before this check existed.
@@ -150,6 +154,10 @@ const CHOOSES_INSTRUCTION = " A reason of step_only_chooses means the step named
 /** Said only when a claim named a step that answered a layer in front of the page (`./act-evidence.ts`, run muqiho5c). */
 const CLEARS_INSTRUCTION = " A reason of step_only_clears_the_way means the step named only closed something in front of the page, such as a popup's \"Not now\" or a consent wall, and does not do the act. "
   + "Leave that step as it is, and name the act on the press whose words name it (instead, where the draft has one).";
+
+/** Said only when a claim named a step whose change shows nothing of the act while another step's does (`./act-evidence.ts`, run muqiho5c). */
+const ANOTHER_SHOWS_INSTRUCTION = " A reason of another_step_shows_it means what the step named changed on its page shows nothing of the act, and its words do not name it, while another step's change does show it -- a cart count that rose, an \"Added to cart\" that appeared: "
+  + "leave the step named as it is, and name the act on the step that shows it (instead).";
 
 /** Said only when a claim named a step that only opened the page of the act's choices (`./standing.ts`, run mux6pndp). */
 const OPENS_CHOICES_INSTRUCTION = " A reason of step_only_opens_its_choices means the step named only opened the page where the act's own choices are made, and its control does not name the act: it prepares the act and does not do it. "
@@ -347,6 +355,7 @@ const REASON_INSTRUCTIONS: ReadonlyArray<readonly [AutomationStudioInstructedAct
   ["step_only_opens_its_choices", OPENS_CHOICES_INSTRUCTION],
   ["step_only_chooses", CHOOSES_INSTRUCTION],
   ["step_only_clears_the_way", CLEARS_INSTRUCTION],
+  ["another_step_shows_it", ANOTHER_SHOWS_INSTRUCTION],
   ["step_is_optional", OPTIONAL_INSTRUCTION],
   ["act_needs_repeat", REPEAT_INSTRUCTION],
   ["span_stops_short", SPAN_INSTRUCTION],

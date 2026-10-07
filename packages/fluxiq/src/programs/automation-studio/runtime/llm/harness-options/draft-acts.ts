@@ -40,10 +40,11 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./index.ts";
 // read. Never both: a column no read gives wins.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposable } from "../../flow-draft/index.ts";
 import {
   automationStudioFlowBootstrapDraftUnreadColumnsSentence,
+  automationStudioInstructedActClaimVerdict,
   automationStudioInstructedActsChecklist,
   automationStudioInstructedActsChecklistValue,
   automationStudioInstructedActsNotDone,
@@ -53,7 +54,12 @@ import { automationStudioRepeatSuggestion } from "./repeat-suggestion.ts";
 import { automationStudioFlowBootstrapDraftRoute } from "./draft-route.ts";
 import { automationStudioFlowBootstrapDraftStepIsWritable } from "../node-tools/index.ts";
 
-/** The loop's two act callbacks for one build's instruction and start location. */
+/**
+ * The loop's act callbacks for one build's instruction and start location: the
+ * checklist, the acts not done, and whether a claim stands as it is made
+ * (`claimRefused`, week report W1: a claim the act judge would reject is
+ * refused there, with the checklist's own sentence, rather than told later).
+ */
 export function automationStudioFlowBootstrapDraftActs(input: {
   instructionText?: string | undefined;
   startLocation?: string | undefined;
@@ -67,6 +73,7 @@ export function automationStudioFlowBootstrapDraftActs(input: {
 }): {
   acts(steps: readonly AutomationStudioFlowDraftStep[]): JsonValue | undefined;
   actsMissing(steps: readonly AutomationStudioFlowDraftStep[]): readonly string[];
+  claimRefused: AutomationStudioFlowDraftClaimRefused;
 } & ReturnType<typeof automationStudioFlowBootstrapDraftRoute> {
   const checklist = (steps: readonly AutomationStudioFlowDraftStep[]) =>
     automationStudioInstructedActsChecklist({ instructionText: input.instructionText, draftSteps: steps, startLocation: input.startLocation, arrival: input.arrival });
@@ -77,6 +84,7 @@ export function automationStudioFlowBootstrapDraftActs(input: {
       return notes.length ? [...(value ?? []), ...notes] : value;
     },
     actsMissing: (steps) => automationStudioInstructedActsNotDone(checklist(steps)),
+    claimRefused: (steps, step, act) => automationStudioInstructedActClaimVerdict({ instructionText: input.instructionText, startLocation: input.startLocation, arrival: input.arrival, steps, step, act }),
     ...automationStudioFlowBootstrapDraftRoute({ route: input.route, activeInstructions: input.activeInstructions, startLocation: input.startLocation, arrival: input.arrival })
   };
 }

@@ -7,7 +7,7 @@
 // calls cannot answer for any of them.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "./tool.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "./tool-execution.ts";
 import { automationStudioLlmEvidenceDiagnostic } from "../evidence-diagnostic/index.ts";
@@ -43,7 +43,7 @@ export function automationStudioLlmEvidenceCallRecord(
   tool: AutomationStudioLlmEvidenceTool,
   input: JsonObject,
   execution?: { draft?: AutomationStudioLlmEvidenceToolExecutionResult["draft"] }
-): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true; written?: true; toggle?: AutomationStudioFlowDraftStepToggle; reads?: string } {
+): { actionId: string; toolId?: string; input: JsonObject; ranWith?: JsonObject; effect: "observe" | "mutate"; proposes?: boolean; replay?: AutomationStudioFlowDraftStepReplay; control?: string; interruption?: true; written?: true; toggle?: AutomationStudioFlowDraftStepToggle; reads?: string; changed?: AutomationStudioFlowDraftStepChange[] } {
   const declared = execution?.draft;
   const actionId = declared?.actionId ?? tool.toolId;
   return {
@@ -68,6 +68,9 @@ export function automationStudioLlmEvidenceCallRecord(
     ...(declared?.toggle === undefined ? {} : { toggle: { key: declared.toggle.key, to: declared.toggle.to } }),
     // The list a read read, already read on the parse path; a second read of it with nothing kept
     // changing it between is not added to the Flow (`../../flow-draft/second-copy.ts`).
-    ...(declared?.reads === undefined ? {} : { reads: declared.reads })
+    ...(declared?.reads === undefined ? {} : { reads: declared.reads }),
+    // What the press changed on the page it stayed on, already screened on the parse path;
+    // Core reads which step did an act from it (`../../flow-draft/step.ts`, week report W1).
+    ...(declared?.changed === undefined ? {} : { changed: declared.changed.map((line) => ({ words: line.words, how: line.how })) })
   };
 }

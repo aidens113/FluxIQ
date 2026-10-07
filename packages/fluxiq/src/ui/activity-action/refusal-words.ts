@@ -44,6 +44,9 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     settings_rewrite_run: "that would change what the step was done with, which makes it a different step",
     // A step that copies one already in the Flow: the same press on the same page, or the same list read again (`flow-draft/second-copy.ts`).
     second_copy: "another step in the Flow already does exactly that, and the Flow does each step once",
+    // An act claimed on a step that did something else -- chose an option, closed something in the
+    // way, went to another page -- is not recorded there (`flow-draft/amendment/apply.ts`, week report W1).
+    act_not_done_there: "that step did something else, such as choosing one of the options, and did not do the action itself",
   } as const),
   repeated: Object.freeze({
     failed: "it was already tried exactly this way and did not work",

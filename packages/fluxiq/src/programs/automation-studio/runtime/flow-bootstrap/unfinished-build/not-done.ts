@@ -6,7 +6,12 @@
 // checklist's reason put into a plain clause. Nothing here is page content.
 // Its own directory, not the `result-verification` barrel: that directory reads this one through its barrel, so the barrel here would be a load cycle.
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS } from "../../result-verification/unsettled/index.ts";
-import type { AutomationStudioInstructedActChecklistItem, AutomationStudioInstructedActObjectTodo, AutomationStudioInstructedActTodo } from "../instructed-acts/index.ts";
+import type {
+  AutomationStudioInstructedActChecklistItem,
+  AutomationStudioInstructedActEvidenceTodo,
+  AutomationStudioInstructedActObjectTodo,
+  AutomationStudioInstructedActTodo
+} from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapBuildEnding } from "../generation-failure/index.ts";
 import { automationStudioFlowDraftReplayOutcomeWord, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioFlowBootstrapJudgedWrong, AutomationStudioFlowBootstrapJudgement, AutomationStudioFlowBootstrapUnfinishedStop } from "./contracts.ts";
@@ -22,8 +27,11 @@ const MAX_SAID = 4;
 /** The longest reason a repair heading quotes. */
 const MAX_REASON = 160;
 
+/** Every reason the checklist can give an act or choice not done. */
+type Todo = AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo | AutomationStudioInstructedActEvidenceTodo;
+
 /** Each reason, as a clause that finishes "... : <quote> -- ". Every reason the checklist gives has its own. */
-const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo, string>> = Object.freeze({
+const TODO_WORDS: Readonly<Record<Todo, string>> = Object.freeze({
   no_step_added: "nothing I tried did it",
   step_not_kept: "the step I tried for it is not in the Flow",
   step_changed_nothing: "the step I tried for it changed nothing",
@@ -38,7 +46,11 @@ const TODO_WORDS: Readonly<Record<AutomationStudioInstructedActTodo | Automation
   step_claimed_twice: "the step I tried for it already does something else",
   step_acts_on_another_object: "the step I named for it acted on a different item from the one you asked for",
   quantity_is_a_repeat: "the step for how many ran once for each item of a list, not that many times on this item",
-  quantity_presses_differ: "the step for how many did not add it exactly the number of times you asked"
+  quantity_presses_differ: "the step for how many did not add it exactly the number of times you asked",
+  // A claimed step that did something else, read from its own record (week report W1, `../instructed-acts/act-evidence.ts`).
+  step_only_chooses: "the step I tried for it only chose one of its options, and did not do it",
+  step_only_clears_the_way: "the step I tried for it only closed something in the way, and did not do it",
+  another_step_shows_it: "the step I named for it was not the one that did it"
 });
 
 /** Why each round stopped, as a clause that finishes "The build stopped because ...". */
@@ -73,7 +85,7 @@ export function automationStudioFlowBootstrapNotDone(checklist: readonly Automat
  */
 export function automationStudioFlowBootstrapNotDoneSaid(notDone: AutomationStudioFlowBootstrapBuildEnding["notDone"], room: QuoteRoom = { most: MAX_SAID, quote: MAX_SAID_QUOTE }): string {
   const most = Math.max(1, room.most);
-  const said = notDone.slice(0, most).map((item) => `"${boundedAtWord(item.quote, room.quote)}": ${TODO_WORDS[item.todo as AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo] ?? "nothing I tried did it"}`);
+  const said = notDone.slice(0, most).map((item) => `"${boundedAtWord(item.quote, room.quote)}": ${TODO_WORDS[item.todo as Todo] ?? "nothing I tried did it"}`);
   const more = notDone.length > most ? `; and ${notDone.length - most} more` : "";
   return `${said.join("; ")}${more}`;
 }
