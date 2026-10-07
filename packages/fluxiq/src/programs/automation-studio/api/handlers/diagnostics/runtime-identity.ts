@@ -1,3 +1,4 @@
+import { readTrustedModuleIdentities } from "../../../../../runtime/build-identity/modules/index.ts";
 import { createHash } from "node:crypto";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
 import type { AutomationStudioApiDependencies } from "../dependencies.ts";
@@ -15,7 +16,7 @@ export function registerRuntimeIdentityEndpoint({ registry, service }: Automatio
       if (keys.includes("packages/fluxiq/dist/runtime/build-identity/read.js")) throw new Error("The normalized identity reader is not a raw reached contract input.");
       if (keys.some(key => !identity.artifacts[key])) return { ok: false, error: "Executing Core runtime lacks a reached artifact." };
       return { ok: true, payload: { identity: { schema: identity.schema, protocol: identity.protocol, version: identity.version, normalization: identity.normalization, artifactDigest: identity.artifactDigest },
-        reachedInputsDigest: createHash("sha256").update(JSON.stringify(keys.map(key => [`../!FluxIQ/${key}`, identity.artifacts[key]]))).digest("hex") } };
+        loadedModules: readTrustedModuleIdentities(service), reachedInputsDigest: createHash("sha256").update(JSON.stringify(keys.map(key => [`../!FluxIQ/${key}`, identity.artifacts[key]]))).digest("hex") } };
     }
   });
 }
