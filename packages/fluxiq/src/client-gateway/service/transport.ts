@@ -33,6 +33,13 @@ export class ClientGatewayTransport {
     session.outbound.push(message);
     await session.socket?.send(JSON.stringify(message));
   }
+  /** Durable admission: a real ready owner/socket is required before any enqueue or send. */
+  async sendChecked(sessionId: string, clientId: string, message: ClientGatewayServerMessage): Promise<void> {
+    const session = this.sessions.requireReady(sessionId);
+    if (session.clientId !== clientId || !session.socket) throw new Error("durable_command.socket_unavailable");
+    session.outbound.push(message);
+    await session.socket.send(JSON.stringify(message));
+  }
 
   /**
    * Sends straight to the session's socket without entering `outbound`, which

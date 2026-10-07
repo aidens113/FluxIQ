@@ -80,8 +80,34 @@ The bridge converts client messages into canonical Studio artifacts:
   and pending command intact and emits no action-result event. Results for
   unknown or expired command IDs retain the existing event behavior, but those
   events are unbound client reports, not authoritative performed-command
-  receipts. Pending commands are in memory; durable reconciliation and binding
-  of late acknowledgements across restart remain separate requirements.
+  receipts. Context-free commands keep their in-memory compatibility path.
+  An explicit third argument to `executeAction` selects the durable path:
+  `{ context, signal? }` must contain an opaque context issued by the local
+  Automation Studio `commandContexts` collaborator for an actual stored live
+  queued/running/waiting project session and its root Flow. JSON, copied
+  prototypes, client fields and model metadata cannot issue one. The production
+  gateway resolver opens a lease from the program's existing private project
+  pool; missing storage, foreign issuers, changed session/Flow or malformed
+  supplied options refuse without falling back to context-free dispatch.
+  It freezes and hashes the complete original bounded JSON request, commits
+  the selected real client/session command claim before any queue/socket send,
+  and rechecks readiness and cancellation before a checked socket send.
+  A matching closed, bounded result is privately reserved; a receipt containing
+  only owner/status/hash/server-time fields commits and is read back before
+  public completion or its bound action-result event. No raw parameters,
+  result payload, page data or tokens are stored in this ledger. Result hashing
+  covers the parsed live acknowledgement but does not independently establish
+  that an untrusted client performed the requested effect or semantic outcome.
+  Unknown, cancelled or timed-out client results, missing answers, disconnects
+  and uncertain sends remain `outcome_unknown`. Same-key pending/unknown
+  reconciliation never resends; a committed receipt with no persisted usable
+  payload returns `result_unavailable`, not a fabricated extraction result.
+  `close()` stops action admission, drains pending durable accounting and
+  closes leases before host teardown closes the program SQL pool, preserving
+  cleanup failures. Existing Flow/domain/runtime dispatchers still use the
+  context-free path: executor-issued invocation propagation, same-run durable
+  admission/recovery/resume fences and candidate performed-subject evidence
+  are separate unfinished joins. Child Flow context issuance is not enabled.
 - `server.start_recording` and `server.stop_recording` are mirrored to the
   client while the canonical `RecordingSession` remains owned by FluxIQ.
   `server.start_recording` also acknowledges a start the client asked for, as

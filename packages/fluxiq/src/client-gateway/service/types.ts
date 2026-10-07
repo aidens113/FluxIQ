@@ -24,6 +24,7 @@ export type ClientGatewayServiceOptions = {
   trustedClientStore?: ClientGatewayTrustedClientStore;
   createToken?: () => string;
   now?: () => number;
+  resolveCommandLedger?: (context: import("./command-ledger/index.ts").ClientGatewayCommandContext) => Promise<import("./command-ledger/index.ts").ClientGatewayCommandLedgerLease>;
 };
 
 /**

@@ -15,3 +15,4 @@ export * from "./transport.ts";
 export * from "./trusted-clients.ts";
 export * from "./types.ts";
 export * from "./views.ts";
+export * from "./command-ledger/index.ts";

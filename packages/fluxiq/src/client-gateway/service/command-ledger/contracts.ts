@@ -43,3 +43,11 @@ export type ClientGatewayDurableDispatchResult<TResult> =
   | { status: "completed"; result: TResult; receipt: ClientGatewayCommandReceipt }
   | { status: "result_unavailable"; receipt: ClientGatewayCommandReceipt }
   | { status: "outcome_unknown" };
+
+export type ClientGatewayCommandLedgerLease = { ledger: ClientGatewayCommandLedgerPort; close(): Promise<void> };
+export type ClientGatewayDurableActionOptions = { context: import("./context.ts").ClientGatewayCommandContext; signal?: AbortSignal };
+export type ClientGatewayDurableActionResponse = {
+  commandId: string;
+  message: import("@fluxiq/contracts/client-gateway").ClientGatewayServerMessage;
+  result: Promise<ClientGatewayDurableDispatchResult<import("@fluxiq/contracts/client-gateway").ClientGatewayActionResult>>;
+};
