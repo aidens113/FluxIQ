@@ -28,11 +28,17 @@ export type AutomationStudioFlowBootstrapGenerationReadiness = {
      * judge with a confirming second yes, then proposed as a bootstrap
      * adaptation. Absent from a Core without the trial runner, which the Lab
      * refuses for a candidate-mode creation (U4).
+     *
+     * `startReset` says whether this deployment set the start hook (decision
+     * D1, `FLUXIQ_CANDIDATE_START_URL`) that puts the target back to its start
+     * before each trial. False in every product deployment; the Lab admits a
+     * candidate-mode creation only when it is true (t348).
      */
     candidateTrial: {
       version: "automation-studio.candidate-trial.v1";
       judge: "build_test_confirmed_yes";
       promotion: "bootstrap_adaptation";
+      startReset: boolean;
     };
   };
 };
@@ -58,7 +64,7 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS: AutomationSt
       providerResponseStates: ["not_received", "received", "unknown"],
       accountingFields: ["requestId", "estimatedInputTokens", "provider", "model", "providerStatus", "inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd"]
     },
-    candidateTrial: { version: "automation-studio.candidate-trial.v1", judge: "build_test_confirmed_yes", promotion: "bootstrap_adaptation" }
+    candidateTrial: { version: "automation-studio.candidate-trial.v1", judge: "build_test_confirmed_yes", promotion: "bootstrap_adaptation", startReset: false }
   }
 };
 
@@ -77,8 +83,9 @@ export function parseAutomationStudioFlowBootstrapGenerationReadiness(
   if (value.supported !== [value.runtime.providerResolverConfigured, value.runtime.nativeNodeRegistryConfigured].every((item) => item === true)) return null;
   if (!readinessRecord(value.capabilities) || !readinessExactKeys(value.capabilities, ["taskKind", "expectedOutput", "requiresNativeNodeRegistryContext", "structuredFailureDiagnostics", "candidateTrial"])) return null;
   const trial = value.capabilities.candidateTrial, expectedTrial = expected.capabilities.candidateTrial;
-  if (!readinessRecord(trial) || !readinessExactKeys(trial, ["version", "judge", "promotion"])
-    || trial.version !== expectedTrial.version || trial.judge !== expectedTrial.judge || trial.promotion !== expectedTrial.promotion) return null;
+  if (!readinessRecord(trial) || !readinessExactKeys(trial, ["version", "judge", "promotion", "startReset"])
+    || trial.version !== expectedTrial.version || trial.judge !== expectedTrial.judge || trial.promotion !== expectedTrial.promotion
+    || typeof trial.startReset !== "boolean") return null;
   const expectedCapabilities = expected.capabilities;
   if (value.capabilities.taskKind !== expectedCapabilities.taskKind
     || value.capabilities.expectedOutput !== expectedCapabilities.expectedOutput

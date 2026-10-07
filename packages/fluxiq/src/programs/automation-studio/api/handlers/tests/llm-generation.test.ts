@@ -214,10 +214,13 @@ describe("Automation Studio LLM execution API", () => {
     expect(parseAutomationStudioFlowBootstrapGenerationReadiness(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS)).toEqual(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS);
     expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, contractVersion: "automation-studio.flow-bootstrap-generation-readiness.v1" })).toBeNull();
     // A Core with the candidate trial runner says so (t340); a reader refuses a readiness without it or with another one.
-    expect(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS.capabilities.candidateTrial).toEqual({ version: "automation-studio.candidate-trial.v1", judge: "build_test_confirmed_yes", promotion: "bootstrap_adaptation" });
+    expect(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS.capabilities.candidateTrial).toEqual({ version: "automation-studio.candidate-trial.v1", judge: "build_test_confirmed_yes", promotion: "bootstrap_adaptation", startReset: false });
     const { candidateTrial: _trial, ...withoutTrial } = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS.capabilities;
     expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, capabilities: withoutTrial })).toBeNull();
-    expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, capabilities: { ...withoutTrial, candidateTrial: { version: "automation-studio.candidate-trial.v1", judge: "single_yes", promotion: "bootstrap_adaptation" } } })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, capabilities: { ...withoutTrial, candidateTrial: { version: "automation-studio.candidate-trial.v1", judge: "single_yes", promotion: "bootstrap_adaptation", startReset: false } } })).toBeNull();
+    // Whether the start hook is set (t348) is part of the record: a reader refuses one without it or with a non-boolean.
+    expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, capabilities: { ...withoutTrial, candidateTrial: { version: "automation-studio.candidate-trial.v1", judge: "build_test_confirmed_yes", promotion: "bootstrap_adaptation" } } })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, capabilities: { ...withoutTrial, candidateTrial: { version: "automation-studio.candidate-trial.v1", judge: "build_test_confirmed_yes", promotion: "bootstrap_adaptation", startReset: "yes" } } })).toBeNull();
     // The grant-era readiness is not this contract: its preflight and issue
     // endpoints are gone, and a reader holding it must not believe they exist.
     expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, preflightEndpoint: "preflight-llm-execution", issueGrantEndpoint: "issue-llm-execution-grant" })).toBeNull();
@@ -227,6 +230,26 @@ describe("Automation Studio LLM execution API", () => {
     expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, runtime: { ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS.runtime, providerResolverConfigured: "yes" } })).toBeNull();
     expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, runtime: { ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS.runtime, providerResolverConfigured: false } })).toBeNull();
     expect(JSON.stringify(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS)).not.toMatch(/keyId|secret|credential|password|pin|cookie|session/i);
+  });
+  it("reports whether the deployment set the candidate start hook, and only from the service (t348)", async () => {
+    const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["programs.read"] };
+    const readinessWith = async (candidateTrial: { runner: true; startReset: boolean }) => {
+      const registry = new GlobalProgramApiRegistry();
+      registerAutomationStudioApi(registry, { getFlowBootstrapGenerationRuntimeReadiness: vi.fn().mockReturnValue({ providerResolverConfigured: true, nativeNodeRegistryConfigured: true, candidateTrial }) } as any);
+      const answer = await registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapGenerationReadiness, scope: {}, actor, payload: {} });
+      return parseAutomationStudioFlowBootstrapGenerationReadiness((answer as { payload: { readiness: unknown } }).payload.readiness);
+    };
+    expect((await readinessWith({ runner: true, startReset: true }))?.capabilities.candidateTrial.startReset).toBe(true);
+    expect((await readinessWith({ runner: true, startReset: false }))?.capabilities.candidateTrial.startReset).toBe(false);
+    // The shared record itself never says a hook is set.
+    expect(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS.capabilities.candidateTrial.startReset).toBe(false);
+    // A signed-in person's POST arrives with the route's `authSessionId` and nothing else: still a request with no fields.
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { getFlowBootstrapGenerationRuntimeReadiness: vi.fn().mockReturnValue({ providerResolverConfigured: true, nativeNodeRegistryConfigured: true, candidateTrial: { runner: true, startReset: true } }) } as any);
+    const call = (payload: unknown) => registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowBootstrapGenerationReadiness, scope: {}, actor, payload });
+    await expect(call({ authSessionId: "session.one" })).resolves.toMatchObject({ ok: true, payload: { readiness: { capabilities: { candidateTrial: { startReset: true } } } } });
+    await expect(call({ authSessionId: "session.one", projectId: "not-accepted" })).resolves.toEqual({ ok: false, error: "Flow bootstrap readiness does not accept request fields." });
+    await expect(call(null)).resolves.toEqual({ ok: false, error: "Flow bootstrap readiness does not accept request fields." });
   });
   it("blocks an incompatible build before the service is asked for anything", async () => {
     const generateFlowBootstrapAdaptation = vi.fn();
