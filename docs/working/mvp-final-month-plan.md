@@ -159,3 +159,10 @@ incomplete, with no reduction in the requested atomicity or outcome proof.
 - Validation: root graph-store19/19 zero skips8.10s, check0(36.4s)/build0(72.7s), current audit follows; real rollback/reopen retry/concurrent owners/lost COMMIT acknowledgement. Full downstream report preserves commands/owners/limits.
 - Outcome: Narrow atomic import verified; paired integration follows. Old partial revision1 imports not repaired; no full topology/source/settings authority or accepting promoter.
 - Follow-up: staged complete-project contract foundation then coherent reader/all-writer/adoption cutover; actual executing web server adapter provenance. Core taskfinish --skip-checks only after observed narrow gates under full-suite limit; no user panel/providers.
+
+### 2026-10-07 - t311 command sender independently verified
+- Agent: Codex supervisor.
+- Changed: known pending command settlement checks sender session before map/timer/resolve; inbound suppresses wrong-session result publication. No protocol or server-identity changes.
+- Validation: root real paired-service/runtime23/23 zero skips1.85s; Coretypes/build validated matching current stamps (cached0); root Core/downstreamaudits0 after correcting downstream archived relative links. Full downstream report preserves fail-first/commands/limits.
+- Outcome: Narrow sender binding verified; paired integration follows. Unknown/late event attribution and durable command journal remain absent.
+- Follow-up: candidate receipts cannot trust unknown late events; no browser/restart/provider/panel proof claimed. Core taskfinish --skip-checks follows observed narrow gates under daily sweep limit.

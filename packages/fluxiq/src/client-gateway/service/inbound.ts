@@ -89,7 +89,8 @@ export class ClientGatewayInbound {
       return;
     }
     if (message.type === "client.action_result") {
-      this.commands.settle(message.payload);
+      const disposition = this.commands.settle(sessionId, message.payload);
+      if (disposition === "wrong_session") return;
       await this.events.emit({ type: "client.action_result", session: this.sessions.toPublic(session), message });
       return;
     }
