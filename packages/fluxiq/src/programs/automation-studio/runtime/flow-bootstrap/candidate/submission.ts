@@ -1,14 +1,28 @@
-import { createHash } from "node:crypto";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion } from "../../llm/harness-options/index.ts";
-import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
+import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
+import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
 
 /** Session-local candidates, separate from discovery and the accepted Flow store. */
 export class AutomationStudioFlowCandidateSubmissionController {
   private revision = 0;
   private current: AutomationStudioFlowCandidate | undefined;
   private previous: AutomationStudioFlowCandidate | undefined;
-  constructor(private readonly input: Omit<Parameters<typeof checkAutomationStudioFlowBootstrapCompletion>[0], "result" | "draftSteps" | "routeSignaturesOf"> & { baseDependencyDigest: string; signal?: AbortSignal }) {}
+  private readonly originalSource: AutomationStudioCandidateOriginalSourceBinding | undefined;
+  constructor(private readonly input: Omit<Parameters<typeof checkAutomationStudioFlowBootstrapCompletion>[0], "result" | "draftSteps" | "routeSignaturesOf"> & { baseDependencyDigest: string; signal?: AbortSignal; originalSource?: AutomationStudioCandidateOriginalSourceBinding }) {
+    const descriptor = Object.getOwnPropertyDescriptor(input, "originalSource");
+    if (!descriptor) return;
+    if (!Object.hasOwn(descriptor, "value") || descriptor.value === undefined) throw new Error("candidate.original_binding_invalid");
+    const binding = fingerprint.snapshot(descriptor.value as AutomationStudioCandidateOriginalSourceBinding);
+    const source = binding.originalSources;
+    if (Object.keys(binding).length !== 2 || !source || source.schemaVersion !== "candidate.original_sources.v1" || source.projectId !== input.projectId || source.flowId !== input.flowId
+      || binding.originalInstructionsDigest !== fingerprint.source(source) || source.effectiveInstructionIds.map(id => {
+        const item = source.instructions.find(instruction => instruction.instructionId === id); if (!item) throw new Error("candidate.original_binding_invalid");
+        return `${item.title}\n${item.body}`;
+      }).join("\n") !== (input.instructionText ?? "")) throw new Error("candidate.original_binding_mismatch");
+    this.originalSource = binding;
+    this.input = Object.freeze({ ...input, originalSource: binding, resolution: fingerprint.snapshot(input.resolution) });
+  }
 
   latest(): AutomationStudioFlowCandidate | undefined { return !this.input.signal?.aborted && this.current ? structuredClone(this.current) : undefined; }
 
@@ -26,11 +40,12 @@ export class AutomationStudioFlowCandidateSubmissionController {
     if (!verdict.ok) return { ok: false, revision, check: verdict.check };
     if (revision !== this.revision) return { ok: false, revision, check: { ok: false, issueCodes: ["candidate.superseded_submission"], feedback: { code: "candidate.superseded_submission" } } };
     const plan = structuredClone(verdict.buildPlan);
-    const fingerprint = canonical({ plan: plan.plan as unknown as JsonValue, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "" });
     const candidate: AutomationStudioFlowCandidate = {
-      revision, digest: createHash("sha256").update(fingerprint).digest("hex"), baseDependencyDigest: this.input.baseDependencyDigest,
+      revision, digest: fingerprint.candidate({ buildPlan: plan, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "",
+        ...(this.originalSource ? { originalInstructionsDigest: this.originalSource.originalInstructionsDigest } : {}) }), baseDependencyDigest: this.input.baseDependencyDigest,
       status: "draft", summary: verdict.summary, buildPlan: plan,
-      changedPaths: changedPaths(this.previous?.buildPlan.plan as unknown as JsonValue, plan.plan as unknown as JsonValue)
+      changedPaths: changedPaths(this.previous?.buildPlan.plan as unknown as JsonValue, plan.plan as unknown as JsonValue),
+      ...(this.originalSource ? { fingerprintVersion: "candidate.plan+original_sources.v2" as const, originalInstructionsDigest: this.originalSource.originalInstructionsDigest } : {})
     };
     this.current = structuredClone(candidate);
     this.previous = structuredClone(candidate);

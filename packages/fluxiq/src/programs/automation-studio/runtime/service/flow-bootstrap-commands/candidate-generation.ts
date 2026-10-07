@@ -4,6 +4,9 @@ import { automationStudioLlmUnusableDecisionError, type AutomationStudioLlmHarne
 import { automationStudioActivityDecisionReason, observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
 import type { AutomationStudioFlowCandidateDraftRecord, AutomationStudioFlowCandidateDraftStore } from "../candidate-drafts/index.ts";
 import type { AutomationStudioInstructionAuthorityUsage } from "../index.ts";
+import { AutomationStudioCandidateSource as Source } from "../candidate-drafts/index.ts";
+import { automationStudioCandidateFingerprint as fingerprint } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioCandidateOriginalSourceBinding } from "../../flow-bootstrap/candidate/index.ts";
 
 type AuthoringInput = Parameters<typeof runAutomationStudioFlowCandidateAuthoringLoop>[0];
 type Decide = AuthoringInput["loop"]["decide"];
@@ -23,7 +26,22 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   baseSettingsRevision: number;
   currentBinding(): Promise<{ executionDigest: string; settingsRevision: number }>;
   store: Pick<AutomationStudioFlowCandidateDraftStore, "save">;
+  originalSource?: AutomationStudioCandidateOriginalSourceBinding;
 }): Promise<AutomationStudioFlowCandidateDraftRecord> {
+  const descriptor = Object.getOwnPropertyDescriptor(input, "originalSource");
+  if (descriptor && (!Object.hasOwn(descriptor, "value") || descriptor.value === undefined)) throw new Error("candidate.original_binding_invalid");
+  const originalSource = descriptor ? Source.validate(descriptor.value as AutomationStudioCandidateOriginalSourceBinding) : undefined;
+  const projectId = input.submission.projectId, flowId = input.submission.flowId, instructionText = input.submission.instructionText ?? "";
+  const sourceInstructionIds = originalSource ? fingerprint.snapshot(input.sourceInstructionIds) : structuredClone(input.sourceInstructionIds), baseSettingsRevision = input.baseSettingsRevision;
+  if (originalSource) {
+    const submittedDescriptor = Object.getOwnPropertyDescriptor(input.submission, "originalSource");
+    if (!submittedDescriptor || !Object.hasOwn(submittedDescriptor, "value")) throw new Error("candidate.original_binding_invalid");
+    const submitted = Source.validate(submittedDescriptor.value as AutomationStudioCandidateOriginalSourceBinding);
+    if (originalSource.originalSources.projectId !== projectId || originalSource.originalSources.flowId !== flowId
+      || submitted.originalInstructionsDigest !== originalSource.originalInstructionsDigest
+      || JSON.stringify(sourceInstructionIds) !== JSON.stringify(originalSource.originalSources.effectiveInstructionIds) || instructionText !== Source.text(originalSource)) throw new Error("candidate.original_binding_mismatch");
+    fingerprint.snapshot({ originalSources: originalSource.originalSources, instructionText });
+  } else if (Object.hasOwn(input.submission, "originalSource")) throw new Error("candidate.original_binding_mismatch");
   let estimatedInputTokens = 0;
   const requestId = `candidate.${randomUUID()}`, observedUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 };
   const accounted = (spent: typeof observedUsage) => sanitizedBootstrapAccounting({ requestId, estimatedInputTokens: estimatedInputTokens + input.authorityUsage.estimatedInputTokens,
@@ -53,13 +71,16 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   if (!authored.candidate) throw new Error("FLOW_CANDIDATE_MISSING: No latest submitted candidate.");
   input.loop.signal?.throwIfAborted(); input.submission.signal?.throwIfAborted();
   const current = await input.currentBinding();
-  if (current.executionDigest !== authored.candidate.baseDependencyDigest || current.settingsRevision !== input.baseSettingsRevision) throw new Error("FLOW_BOOTSTRAP_STALE: Flow or settings changed during candidate generation.");
+  if (current.executionDigest !== authored.candidate.baseDependencyDigest || current.settingsRevision !== baseSettingsRevision) throw new Error("FLOW_BOOTSTRAP_STALE: Flow or settings changed during candidate generation.");
+  if (originalSource && (authored.candidate.fingerprintVersion !== "candidate.plan+original_sources.v2" || authored.candidate.originalInstructionsDigest !== originalSource.originalInstructionsDigest)) throw new Error("candidate.original_binding_mismatch");
   input.loop.signal?.throwIfAborted(); input.submission.signal?.throwIfAborted();
   input.progress(accounting, "persistence");
-  return await input.store.save({
-    kind: "flow_candidate_draft", schemaVersion: 1, status: "draft", verification: "not_performed",
-    candidateId: `candidate.${randomUUID()}`, projectId: input.submission.projectId, flowId: input.submission.flowId,
-    sourceInstructionIds: [...input.sourceInstructionIds], instructionText: input.submission.instructionText ?? "",
-    baseSettingsRevision: input.baseSettingsRevision, candidate: authored.candidate, accounting, createdAt: Date.now()
-  }, input.loop.signal);
+  const common = { kind: "flow_candidate_draft" as const, status: "draft" as const, verification: "not_performed" as const,
+    candidateId: `candidate.${randomUUID()}`, projectId, flowId, sourceInstructionIds: [...sourceInstructionIds], instructionText,
+    baseSettingsRevision, accounting, createdAt: Date.now() };
+  const record: AutomationStudioFlowCandidateDraftRecord = originalSource
+    ? { ...common, schemaVersion: 2, originalSources: originalSource.originalSources, originalInstructionsDigest: originalSource.originalInstructionsDigest,
+        candidate: { ...authored.candidate, fingerprintVersion: "candidate.plan+original_sources.v2", originalInstructionsDigest: originalSource.originalInstructionsDigest } }
+    : { ...common, schemaVersion: 1, candidate: authored.candidate };
+  return await input.store.save(record, input.loop.signal);
 }

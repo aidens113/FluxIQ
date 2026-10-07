@@ -268,7 +268,7 @@ import {
   encodeAutomationStudioPageCursor
 } from "../storage/index.ts";
 import { adaptationApprovalModeForStore, adaptationEvidenceForStore, adaptationFromTypedStoreDetail, adaptationPolicySummaryFromPolicy, adaptationSummaryFromAdaptation, changeProposalSummaryFromProposal, type AutomationStudioChangeProposalSummaryPage, type ReviewFlowAdaptationInput } from "./service/adaptation-projections/index.ts";
-import { automationStudioFlowBootstrapGenerationContext, generateAutomationStudioFlowCandidateDraft, AutomationStudioBuildCancellation, saveAutomationStudioFlowGenerationGoal, assertAutomationStudioBootstrapPermissionAnswered, automationStudioFlowBootstrapBuildJudge, automationStudioFlowBootstrapBuiltLoop, automationStudioFlowBootstrapCreationPurse, assertAutomationStudioBootstrapTarget, assertExactObjectFields, automationStudioBootstrapPermissionOutcome, automationStudioBootstrapStateDigestHook, automationStudioFlowBootstrapExtendSubject, automationStudioFlowBootstrapGenerationReadiness, automationStudioObservedTestTool, bootstrapAdaptationAuditEvent, bootstrapHarnessAccounting, evidenceTraceAuditDetail, readAutomationStudioFlowBootstrapGenerationRequest, requiredBootstrapCommandId, requiredBootstrapDigest, requiredBootstrapSettingsRevision, sanitizeEvidenceLoopTrace, type AutomationStudioBootstrapPermissionOutcome, type AutomationStudioFlowBootstrapGenerationReadiness, type AutomationStudioGenerateFlowBootstrapAdaptationInput, type AutomationStudioGenerateFlowBootstrapAdaptationResultFor, type AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
+import { AutomationStudioBootstrapInstructionInventory, automationStudioFlowBootstrapGenerationContext, generateAutomationStudioFlowCandidateDraft, AutomationStudioBuildCancellation, saveAutomationStudioFlowGenerationGoal, assertAutomationStudioBootstrapPermissionAnswered, automationStudioFlowBootstrapBuildJudge, automationStudioFlowBootstrapBuiltLoop, automationStudioFlowBootstrapCreationPurse, assertAutomationStudioBootstrapTarget, assertExactObjectFields, automationStudioBootstrapPermissionOutcome, automationStudioBootstrapStateDigestHook, automationStudioFlowBootstrapExtendSubject, automationStudioFlowBootstrapGenerationReadiness, automationStudioObservedTestTool, bootstrapAdaptationAuditEvent, bootstrapHarnessAccounting, evidenceTraceAuditDetail, readAutomationStudioFlowBootstrapGenerationRequest, requiredBootstrapCommandId, requiredBootstrapDigest, requiredBootstrapSettingsRevision, sanitizeEvidenceLoopTrace, type AutomationStudioBootstrapPermissionOutcome, type AutomationStudioFlowBootstrapGenerationReadiness, type AutomationStudioGenerateFlowBootstrapAdaptationInput, type AutomationStudioGenerateFlowBootstrapAdaptationResultFor, type AutomationStudioGenerateFlowBootstrapAdaptationResult } from "./service/flow-bootstrap-commands/index.ts";
 import { flowMapExpansionStatus, nextRouteGroupOrder, nextRouteOrder, removeUndefinedRouteRuleFields, routeConditionFromInput, routeRuleMetadataWithGroup, routeRuleMetadataWithoutGroup, sqlRouterGroupToFlowGroup, sqlRouterRouteToFlowRule, withFlowMapRouteGroups, type AutomationStudioRouterRoutePage, type AutomationStudioRouterTargetReferenceBatch, type AutomationStudioSubflowTargetPage, type UpsertFlowMapRouteGroupInput, type UpsertFlowMapRouteInput } from "./service/flow-map-routes/index.ts";
 import { adaptationPolicyFromFlowMetadata, automationStudioFlowSettingsFingerprint, mergedFlowSettingsMetadata, trainingModeSettingsFromMetadata } from "./service/flow-settings/index.ts";
 import { normalizeCustomHierarchyNode, requiredHierarchyId } from "./service/hierarchy-nodes/index.ts";
@@ -375,6 +375,7 @@ export class AutomationStudioService {
   readonly conversations: AutomationStudioConversations;
   private readonly proposalApproval: AutomationStudioProposalApproval;
   private readonly locks = new AutomationStudioServiceLocks();
+  private readonly bootstrapInstructionInventory = new AutomationStudioBootstrapInstructionInventory({ list: input => this.listFlowInstructionSummaries(input), get: (project, id) => this.getFlowInstruction(project, id) });
   private readonly repairedRecordingStateIndexReads = new Set<string>();
   private readonly ready: Promise<void>;
   private ioRuntime?: { io: IoRegistry; domainId: string | null };
@@ -1495,13 +1496,15 @@ export class AutomationStudioService {
           .find((adaptation) => adaptation.status === "proposed" || adaptation.status === "validated");
         if (pending) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.pending_adaptation_exists");
         failureCode = "flow_bootstrap.instruction_resolution_failed";
-        const instructions = await this.getAllFlowInstructionsForBootstrap(projectId, flowId);
+        const inventory = await this.bootstrapInstructionInventory.read(projectId, flowId, authoringMode === "candidate"), instructions = inventory.instructions;
         // A repair's brief rides beside the Flow's own instructions on every call the model sees, and nowhere else: not in the authority, the permission gate or the stored adaptation (`recovery/refuted-result/brief.ts`).
         const promptInstructions = repairBrief ? { instructions: [...instructions, repairBrief] } : { instructions }; // Whole: no instruction token budget (2026-09-30).
         failureCode = "flow_bootstrap.bootstrap_context_failed";
         const registry = this.nativeNodeRuntime?.sdk.nodes ?? new AutomationStudioNodeRegistry();
         const resolution = this.nativeNodeRuntime?.getRegistryResolution(parent.scope) ?? { scope: parent.scope, runtimeCapabilities: [], permissions: [] };
-        const { resolvedInstructions, size, bootstrapInstructionText, bootstrapContext } = automationStudioFlowBootstrapGenerationContext({ projectId, flowId, instructions, parent, registry, resolution });
+        const { resolvedInstructions, size, bootstrapInstructionText, bootstrapContext, originalSource } = automationStudioFlowBootstrapGenerationContext({ projectId, flowId, instructions, parent, registry, resolution, ...(authoringMode === "candidate" ? { originalInstructionInventory: { instructionIds: inventory.instructionIds } } : {}) });
+        const candidateSource = originalSource.status === "bound" ? originalSource.binding : undefined;
+        if (authoringMode === "candidate" && !candidateSource) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.active_instructions_required");
         failureStage = "provider_resolution";
         failureCode = "flow_bootstrap.provider_resolver_unavailable";
         if (!this.llmProviderResolver) throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolver_unavailable");
@@ -1550,7 +1553,8 @@ export class AutomationStudioService {
           if (!this.llmEvidenceRuntime?.tools.length) throw flowBootstrapPhaseFailure("pre_provider_validation", undefined, "flow_bootstrap.evidence_runtime_unavailable");
           const signal = AbortSignal.any([creation.signal(permissions.signal), personNeeded.signal, ...(this.buildCancellation.signal() ? [this.buildCancellation.signal()!] : [])]);
           const draft = await generateAutomationStudioFlowCandidateDraft({
-            submission: { projectId, flowId, registry, resolution, size, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, instructionText: bootstrapInstructionText, baseDependencyDigest: binding.executionDigest, signal, ...(startLocation === undefined ? {} : { startLocation }) },
+            ...(candidateSource ? { originalSource: candidateSource } : {}),
+            submission: { projectId, flowId, registry, resolution, size, binding: this.llmEvidenceRuntime, permissionFor: permissions.planStep, instructionText: bootstrapInstructionText, baseDependencyDigest: binding.executionDigest, signal, ...(candidateSource ? { originalSource: candidateSource } : {}), ...(startLocation === undefined ? {} : { startLocation }) },
             loop: { ...bootstrapLoopLimits.loop, tools: harnessOptions.tools, observedStateKeys: harnessOptions.observedStateKeys, deniedEvidenceKeys: this.llmEvidenceRuntime.deniedEvidenceKeys, purse: creation.purse, signal, propagateDecisionErrors: true, executeTool: routing.recording(personNeeded.executeTool), nodeOf: nodeDescriptions.definition, definitionOf: (id) => registry.get(id, resolution) },
             harness: { projectId, flowId, ...promptInstructions, provider: unresolvedProvider.provider, ...(unresolvedProvider.tokenLimits ? { tokenLimits: unresolvedProvider.tokenLimits } : {}), ...(unresolvedProvider.timeoutMs !== undefined ? { timeoutMs: unresolvedProvider.timeoutMs } : {}), flowBootstrap: { registry, resolution, size, ...(startLocation === undefined ? {} : { startLocation }) } },
             runHarness: async (request) => {
@@ -3397,20 +3401,7 @@ export class AutomationStudioService {
   }
 
   private async getAllFlowInstructionsForBootstrap(projectId: string, flowId: string): Promise<AutomationStudioFlowInstruction[]> {
-    const instructionIds = new Set<string>();
-    for (let offset = 0; ; offset += 100) {
-      const page = await this.listFlowInstructionSummaries({
-        projectId,
-        flowId,
-        status: "active",
-        limit: 100,
-        offset
-      });
-      for (const instruction of page.instructions) instructionIds.add(instruction.instructionId);
-      if (offset + page.instructions.length >= page.total || page.instructions.length === 0) break;
-    }
-    return (await Promise.all([...instructionIds].sort().map((instructionId) => this.getFlowInstruction(projectId, instructionId))))
-      .filter((instruction): instruction is AutomationStudioFlowInstruction => instruction?.status === "active");
+    return (await this.bootstrapInstructionInventory.read(projectId, flowId)).instructions;
   }
 
   private async transitionFlowBootstrapAdaptation(

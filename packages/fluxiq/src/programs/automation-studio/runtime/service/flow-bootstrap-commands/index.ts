@@ -18,3 +18,4 @@ export * from "./state-digest.ts";
 export * from "./save-goal.ts";
 export * from "./candidate-generation.ts";
 export * from "./generation-context.ts";
+export * from "./instruction-inventory.ts";
