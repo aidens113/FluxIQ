@@ -87,11 +87,11 @@ export const STEPS = Object.freeze({
   "web:build": {
     package: "apps/web",
     kind: "build",
-    command: "next build --turbopack",
+    command: "node scripts/build-client-gateway-server.mjs && next build --turbopack",
     // `.next/cache` is Next's own compile and fetch cache, not the build: it
     // survives a build, is never restored and never digested.
-    outputs: [{ path: ".next", exclude: ["cache"] }],
-    required: [".next/BUILD_ID"],
+    outputs: [{ path: ".next", exclude: ["cache"] }, { path: ".server-runtime" }],
+    required: [".next/BUILD_ID", ".server-runtime/client-gateway-server.mjs", ".server-runtime/client-gateway-server.mjs.identity.json"],
     // next build type-checks the app with this project.
     tsconfigs: ["tsconfig.json"],
     // Next loads apps/web/.env* into the build; all but .env.example are

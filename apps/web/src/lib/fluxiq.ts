@@ -1,8 +1,9 @@
+import { gatewayServerRuntime } from "../server/gateway-runtime";
 import { FluxIQ } from "fluxiq";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { parseAllowedOrigins, startClientGatewayWebSocketServer, type ClientGatewayWebSocketServerHandle } from "../server/client-gateway-websocket";
+import { parseAllowedOrigins, type ClientGatewayWebSocketServerHandle } from "../server/client-gateway-websocket";
 import { resolveAutomationStudioContext, resolveClientRecordingProject, setAutomationStudioContext, type AutomationStudioWebContext } from "./automation-studio-context";
 import { resolveFluxIQModelProvidersEnabled } from "./model-provider-admission";
 
@@ -31,6 +32,7 @@ export function getFluxIQ(): FluxIQ {
 }
 
 export async function initializeFluxIQWebRuntime(): Promise<FluxIQ> {
+  if (process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false") await gatewayServerRuntime.load();
   await loadFluxIQHostModule();
   const state = getWebRuntimeState();
   await initializeFluxIQWebRuntimeState(state);
@@ -258,6 +260,8 @@ function startSharedClientGateway(state: NonNullable<FluxIQWebGlobal["__fluxiqWe
   const publicHost = host === "0.0.0.0" ? "127.0.0.1" : host;
   process.env.FLUXIQ_PUBLIC_CLIENT_WS_URL ??= `ws://${publicHost}:${port}${gatewayPath.startsWith("/") ? gatewayPath : `/${gatewayPath}`}`;
   const allowedOrigins = parseAllowedOrigins(process.env.FLUXIQ_CLIENT_GATEWAY_ALLOWED_ORIGINS);
+  const { startClientGatewayWebSocketServer } = gatewayServerRuntime.read();
+  state.instance.programs.clientGateway.bindTransportBuildIdentity(); // Legacy replacement clears active provenance, never its anchor.
   state.clientGatewayServer = startClientGatewayWebSocketServer(allowedOrigins
     ? { gateway: state.instance.programs.clientGateway, host, port, path: gatewayPath, allowedOrigins }
     : { gateway: state.instance.programs.clientGateway, host, port, path: gatewayPath });

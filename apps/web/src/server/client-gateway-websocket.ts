@@ -1,3 +1,4 @@
+import { readServerBuildIdentity } from "./build-identity";
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { randomUUID, createHash } from "node:crypto";
@@ -33,6 +34,8 @@ export function startClientGatewayWebSocketServer(options: ClientGatewayWebSocke
   const publicHost = host === "0.0.0.0" ? "127.0.0.1" : host;
   const publicUrl = `ws://${publicHost}:${port}${path}`;
   const status: ClientGatewayWebSocketServerHandle["status"] = { listening: false };
+  // Capture the original immutable anchor before listener or socket IO.
+  const lease = options.gateway.bindTransportBuildIdentity(readServerBuildIdentity());
   const server = createServer((request, response) => {
     const requestPath = request.url ? new URL(request.url, "http://localhost").pathname : "/";
     response.setHeader("content-type", "application/json");
@@ -63,7 +66,9 @@ export function startClientGatewayWebSocketServer(options: ClientGatewayWebSocke
     }
     acceptClientGatewaySocket({ gateway: options.gateway, request, socket, head });
   });
+  server.on("close", () => { status.listening = false; lease.release(); });
   server.on("error", (error: NodeJS.ErrnoException) => {
+    lease.release();
     status.listening = false;
     status.error = error.code === "EADDRINUSE"
       ? `Port ${port} is already in use. Stop the old FluxIQ dev server or change FLUXIQ_CLIENT_GATEWAY_PORT.`
@@ -71,11 +76,12 @@ export function startClientGatewayWebSocketServer(options: ClientGatewayWebSocke
     console.warn(`[FluxIQ] Client gateway WebSocket server error: ${error.message}`);
   });
   server.on("listening", () => {
+    lease.activate();
     status.listening = true;
     delete status.error;
   });
 
-  server.listen(port, host);
+  try { server.listen(port, host); } catch (error) { lease.release(); throw error; }
 
   return {
     server,

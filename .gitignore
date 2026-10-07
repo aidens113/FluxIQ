@@ -30,3 +30,6 @@ packages/*/pipeline/
 # Dev-server logs written beside the app rather than into a run directory.
 *-dev.stdout.log
 *-dev.stderr.log
+
+# Owning native web gateway executable and identity companion.
+apps/web/.server-runtime/
