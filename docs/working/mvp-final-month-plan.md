@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: Acceptance/cancellation and receipt/detached-executor infrastructure pushed; candidate facade and actual server identity isolated; production promotion pending.
+Status detail: Acceptance/cancellation, receipt/executor infrastructure and opt-in draft facade pushed; loaded-server identity and durable receipt ledger isolated; production promotion pending.
 Created: 2026-10-06
 Last updated: 2026-10-06
 Owner: Codex senior supervisor
@@ -23,7 +23,9 @@ downstream t297 running extension identity is integrated/pushed (2c76ba48).
 t298 cancellation and reachable Stop are integrated/pushed2ee06482 after independent
 current-pair browser proofs. t300 receipt/detached-executor infrastructure is
 integrated/pushed386b4c15, not a production promotion path. Running Core identity
-remains t302 and candidate authoring/facade t299 remains isolated.
+remains t302. Candidate authoring/facade t299 is integrated/pushed7f9bae15
+after independent53/53 and package/dependent web checks; t304 durable receipt
+ledger is isolated. Accepted-topology transaction/read authority is still required.
 
 Task t296 now requires affirmative confirmation for a build yes and refuses
 unsupported held reauthor topologies before apply/dispatch/writes. Supervisor
@@ -116,3 +118,17 @@ owner/read/write migration is being recorded by the promotion worker; P2 remains
 incomplete, with no reduction in the requested atomicity or outcome proof.
 
 - Validation: Source audit only; no atomic promotion or crash-recovery success is claimed. See the paired downstream p2-promotion-design.md report for the inspected owners and migration requirements.
+
+### 2026-10-06 - Draft facade paired push; durable ledger scope bounded
+- Agent: Codex supervisor.
+- Changed: Core7f9bae15/downstream59b61cc2 pushed; t304 next receipt ledger brief downstream, no accepting promoter yet.
+- Validation: actual facade/API/conversation/reauthor53/53, package check/build and dependent webcheck0, taskaudits0; records in paired report.
+- Outcome: Partial overall plan.
+- Follow-up: t302 immutableidentity input inventory correction; t304 truthful durable claims and create-empty-scope negative, then authoritative topology migration. Public candidate request only returns unverified draft and cannot apply. No provider/fullsuite/userpanel.
+
+### 2026-10-07 - t302 executing Core identity verified
+- Agent: Codex supervisor.
+- Changed: owning generator/immutable reader snapshot at service construction; bounded authenticated diagnostic. Latest dev integrated preserving cancellation/facade.
+- Validation: independent generator/cache10/10, reader/diagnostic/real Next routes59/59, fluxiq check/build and webcheck0, both audits0; downstream headed Chromium retained-service identity/runner61/61 and HTTP15/15. Intended normalized artifact4f29565327f008c5bad030ebc88f2859c7178c37d32aeda3aa7c7d95868d2424; zero provider/chat dispatch.
+- Outcome: Paired task ready to integrate. Downstream reports/p0-core-runtime-identity.md preserves commands/limits.
+- Follow-up: running host-module/server-adapter identities not covered by this stamp; atomic receipt/topology authority and trusted start/oracle still pending. No full suite or user panel.
