@@ -45,6 +45,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import {
   AUTOMATION_NODE_OUTPUT_REFERENCE_ROOT,
+  automationNodeOutputReference,
   rewriteAutomationNodeStatePaths,
   type AutomationStudioNodeRegistry,
   type AutomationStudioNodeRegistryResolution
@@ -60,10 +61,10 @@ import {
 } from "../../flow-draft/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
-import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
+import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { assembleAutomationStudioFlowScriptPlan } from "./assemble.ts";
 import type { AutomationStudioFlowScript, AutomationStudioFlowScriptStep } from "./contracts.ts";
-import { authoringDraftBindingIssues } from "./draft-bindings.ts";
+import { authoringDraftBindingIssues, authoringPlanGraph } from "./draft-bindings.ts";
 import { routeAutomationStudioFlowDraftSteps, type AutomationStudioFlowDraftRoutedStep } from "./draft-routing.ts";
 import { authoringError } from "./issue.ts";
 
@@ -242,7 +243,6 @@ function earlierOutputIssues(
   stepIdByKey: Readonly<Record<string, string>>,
   positionById: ReadonlyMap<string, number>
 ): AutomationStudioFlowBootstrapIssue[] {
-  const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const nodes = plan.subflows[0]?.nodes ?? [];
   const indexById = new Map<string, number>();
   for (const [index, node] of nodes.entries()) {
@@ -251,42 +251,143 @@ function earlierOutputIssues(
   }
   const reasons = automationStudioFlowDraftConditionalStepReasons(input.steps);
   const spans = repeatSpans(input.steps);
-  for (const [index, node] of nodes.entries()) {
-    const readerId = stepIdByKey[node.key];
-    const position = readerId === undefined ? undefined : positionById.get(readerId);
-    const who = position === undefined ? `The node "${node.key}"` : `Step ${position}`;
-    const at = position === undefined ? `plan.subflows.0.nodes.${index}` : `draft.steps.${position}`;
+  const idAt = (index: number): string | undefined => {
+    const node = nodes[index];
+    return node ? stepIdByKey[node.key] : undefined;
+  };
+  return earlierOutputBindingIssues({
+    nodes,
+    reader: (index) => {
+      const readerId = idAt(index);
+      const position = readerId === undefined ? undefined : positionById.get(readerId);
+      return position === undefined
+        ? { who: `The node "${nodes[index]!.key}"`, at: `plan.subflows.0.nodes.${index}` }
+        : { who: `Step ${position}`, at: `draft.steps.${position}` };
+    },
+    source: (path) => {
+      const binding = automationStudioFlowDraftStoredBindingKind({ $state: { path } });
+      const index = binding?.kind === "step" ? indexById.get(binding.step) : undefined;
+      if (binding?.kind !== "step" || index === undefined) return undefined;
+      return { index, output: binding.output, name: `step ${positionById.get(binding.step) ?? "?"}` };
+    },
+    runsBefore: (source, reader) => source < reader,
+    alwaysRuns: (source) => {
+      const reason = reasons.get(idAt(source) ?? "");
+      return reason === undefined || !UNRELIABLE_SOURCE.has(reason);
+    },
+    repeatsApart: (source, reader) => {
+      const id = idAt(source);
+      const span = id === undefined ? undefined : spans.find((members) => members.has(id));
+      const readerId = idAt(reader);
+      return span !== undefined && (readerId === undefined || !span.has(readerId));
+    }
+  }, input.registry, input.resolution);
+}
+
+/**
+ * What the earlier-output checks ask of one Subflow, answered from a draft
+ * (`earlierOutputIssues`) or from the graph of a plan written whole
+ * (`automationStudioFlowBootstrapWrittenPlanBindingIssues`). The questions,
+ * their order and their refusals are one; only where each answer comes from
+ * differs, so a drafted Flow and a written one are held to the same rule.
+ */
+type EarlierOutputSubject = {
+  nodes: readonly AutomationStudioFlowBootstrapNode[];
+  /** Who reads, in a refusal's words, and the path the refusal names. */
+  reader(index: number): { who: string; at: string };
+  /** The node a binding's path reads, by index, its output, and its name in a refusal; nothing when it names no node of the plan. */
+  source(path: string): { index: number; output: string; name: string } | undefined;
+  /** Whether the source runs before the reader. */
+  runsBefore(source: number, reader: number): boolean;
+  /** Whether the Flow always runs the source on the way to the reader. */
+  alwaysRuns(source: number, reader: number): boolean;
+  /** Whether the source repeats in a loop the reader is outside. */
+  repeatsApart(source: number, reader: number): boolean;
+};
+
+/** The one earlier-output checker (see the header and `EarlierOutputSubject`). */
+function earlierOutputBindingIssues(
+  subject: EarlierOutputSubject,
+  registry: AutomationStudioNodeRegistry,
+  resolution: AutomationStudioNodeRegistryResolution
+): AutomationStudioFlowBootstrapIssue[] {
+  const issues: AutomationStudioFlowBootstrapIssue[] = [];
+  for (const [index, node] of subject.nodes.entries()) {
+    const { who, at } = subject.reader(index);
     const refuse = (code: string, message: string): void => {
       if (!issues.some((issue) => issue.code === code && issue.path === at)) issues.push(authoringError(code, `${who} ${message}`, at));
     };
     for (const path of earlierOutputPaths(node.parameters)) {
-      const binding = automationStudioFlowDraftStoredBindingKind({ $state: { path } });
-      const sourceIndex = binding?.kind === "step" ? indexById.get(binding.step) : undefined;
-      if (binding?.kind !== "step" || sourceIndex === undefined) {
+      const found = subject.source(path);
+      if (!found) {
         refuse("flow_draft.step_binding_source_missing", "reads an output of a step that is not in the Flow, so the Flow would have nothing to give it. Put that step back in the Flow, or give the value itself.");
         continue;
       }
-      const source = `step ${positionById.get(binding.step) ?? "?"}`;
-      if (sourceIndex >= index) {
+      const source = found.name;
+      if (!subject.runsBefore(found.index, index)) {
         refuse("flow_draft.step_binding_not_earlier", `reads an output of ${source}, which does not run before it, so the value does not exist yet when it runs. Move ${source} before it, or read a step that runs earlier.`);
         continue;
       }
-      const sourceNode = nodes[sourceIndex]!;
-      const outputs = input.registry.get(sourceNode.definitionId, input.resolution)?.outputs ?? [];
-      if (!outputs.some((port) => port.id === binding.output)) {
-        refuse("flow_draft.step_binding_unknown_output", `reads the output "${binding.output}" of ${source}, and its node "${sourceNode.definitionId}" declares no output by that name. Read an output that node declares.`);
+      const sourceNode = subject.nodes[found.index]!;
+      const outputs = registry.get(sourceNode.definitionId, resolution)?.outputs ?? [];
+      if (!outputs.some((port) => port.id === found.output)) {
+        refuse("flow_draft.step_binding_unknown_output", `reads the output "${found.output}" of ${source}, and its node "${sourceNode.definitionId}" declares no output by that name. Read an output that node declares.`);
         continue;
       }
-      const reason = reasons.get(binding.step);
-      if (reason !== undefined && UNRELIABLE_SOURCE.has(reason)) {
+      if (!subject.alwaysRuns(found.index, index)) {
         refuse("flow_draft.step_binding_conditional_source", `reads an output of ${source}, which the Flow does not always run, so a run that skips it would have nothing to read. Read a step that always runs, or give the value itself.`);
         continue;
       }
-      const span = spans.find((members) => members.has(binding.step));
-      if (span && (readerId === undefined || !span.has(readerId))) {
+      if (subject.repeatsApart(found.index, index)) {
         refuse("flow_draft.step_binding_repeated_source", `reads an output of ${source}, which repeats, from outside that repeat, so it would read whichever pass ran last. Make it part of the same repeat, or read a step that does not repeat.`);
       }
     }
+  }
+  return issues;
+}
+
+/**
+ * The issues the bindings of a plan written whole raise -- a candidate
+ * submission's script or JSON plan, which no draft stands behind (t346).
+ *
+ * The same checks a drafted plan meets, asked of the graph instead of the
+ * draft: a row read outside a loop over a list, or a field its listing does
+ * not read; an input an output would overwrite; a cycle nothing bounds
+ * (`./draft-bindings.ts`); and an earlier step's output, by `$node.<key>`, that
+ * names no node, is read before it runs, names an output the node does not
+ * declare, is not always run on the way, or repeats in a loop the reader is
+ * outside (`earlierOutputBindingIssues`). Each issue names the node, and the
+ * parameter where it can.
+ */
+export function automationStudioFlowBootstrapWrittenPlanBindingIssues(input: {
+  plan: AutomationStudioFlowBootstrapPlan;
+  registry: AutomationStudioNodeRegistry;
+  resolution: AutomationStudioNodeRegistryResolution;
+}): AutomationStudioFlowBootstrapIssue[] {
+  const issues = authoringDraftBindingIssues({ plan: input.plan, stepPositionOf: () => undefined, registry: input.registry, resolution: input.resolution, written: true });
+  for (const [subflowIndex, subflow] of input.plan.subflows.entries()) {
+    const graph = authoringPlanGraph(subflow);
+    const nodes = subflow.nodes;
+    const keyAt = (index: number): string => nodes[index]?.key ?? "";
+    const repeatsApart = (source: number, reader: number): boolean => {
+      const loop = graph.loopOf(keyAt(source));
+      return loop !== undefined && loop !== graph.loopOf(keyAt(reader));
+    };
+    issues.push(...earlierOutputBindingIssues({
+      nodes,
+      reader: (index) => ({ who: `The node "${keyAt(index)}"`, at: `plan.subflows.${subflowIndex}.nodes.${index}` }),
+      source: (path) => {
+        const reference = automationNodeOutputReference(path);
+        const index = reference ? nodes.findIndex((node) => node.key === reference.key) : -1;
+        if (!reference || index < 0) return undefined;
+        return { index, output: reference.rest.split(".")[0] ?? "", name: `the node "${reference.key}"` };
+      },
+      runsBefore: (source, reader) => graph.precedes(keyAt(source), keyAt(reader)),
+      // A step repeating in a loop the reader is outside is said as that, not
+      // as merely not always run, which it also is.
+      alwaysRuns: (source, reader) => graph.dominates(keyAt(source), keyAt(reader)) || repeatsApart(source, reader),
+      repeatsApart
+    }, input.registry, input.resolution));
   }
   return issues;
 }

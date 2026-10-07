@@ -93,7 +93,18 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   "flow_script.branch_to_next_step",
   "flow_script.invalid_condition",
   "flow_script.route_condition_missing",
-  "flow_script.subflow_unreachable"
+  "flow_script.subflow_unreachable",
+  // The repeat forms (`../authoring/draft-routing.ts`): each sentence is Core's
+  // own and names only the labels, lines, node ids and pass counts the model
+  // wrote, as the script codes above do.
+  "flow_script.repeat_unavailable",
+  "flow_script.repeat_invalid",
+  "flow_script.repeat_span_unknown",
+  "flow_script.repeat_body_is_routed",
+  "flow_script.repeat_body_branches",
+  "flow_script.branch_into_repeat",
+  "flow_script.repeat_while_never_ends",
+  "flow_script.repeat_not_after_its_source"
 ]);
 
 const ROUTE_CODES: ReadonlySet<string> = new Set([

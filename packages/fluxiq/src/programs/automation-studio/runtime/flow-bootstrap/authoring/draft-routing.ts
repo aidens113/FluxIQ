@@ -41,6 +41,13 @@
 // is not obvious from the statement, and a wrong edge is a Flow that does the
 // wrong thing quietly. Each refusal names the amendment that fixes it.
 //
+// **A written script says the same about a loop (t346).** A script step's
+// `repeat over:` / `repeat while:` lines are the drafted `repeat` statement in
+// a script's words, and `routeAutomationStudioFlowScriptRepeats` wires them
+// with the very functions a draft's repeat is wired with, so the candidate
+// path, which submits scripts and never a draft, builds the loops the legacy
+// path builds, node for node and edge for edge.
+//
 // **A step the host says answered an interruption is optional here** when it
 // does none of the person's acts and says nothing else about when it runs
 // (`runtime/flow-draft/sometimes-present.ts`): a consent wall or popup the
@@ -187,6 +194,165 @@ export function routeAutomationStudioFlowDraftSteps(input: {
 }
 
 /**
+ * Labels the steps below add, which no written label can equal: a written one
+ * ends at its line's first colon (`./parse.ts`), so it never holds one.
+ */
+const SCRIPT_DERIVED = ":";
+
+/**
+ * One block of a written script with each `repeat` statement made into the
+ * steps, ports and edges it means, or the issues that refused it.
+ *
+ * A step's `repeat over:` / `repeat through:` / `repeat while:` / `repeat
+ * most:` lines (`./contracts.ts`) say what a drafted step's `repeat` routing
+ * says, and are wired by the same code (`emitRepeatOver`, `emitRepeatWhile`),
+ * so a loop a model wrote and a loop a build drafted are one graph shape. Only
+ * the reading differs: a script names steps by label and lines, a draft by
+ * position and amendment, so each refusal is said in the script's words and
+ * names the line.
+ *
+ * A block with no `repeat` line comes back as it was, the same array.
+ */
+export function routeAutomationStudioFlowScriptRepeats(input: {
+  steps: readonly AutomationStudioFlowScriptStep[];
+  registry: AutomationStudioNodeRegistry;
+  resolution: AutomationStudioNodeRegistryResolution;
+}): { steps: readonly AutomationStudioFlowScriptStep[]; issues: AutomationStudioFlowBootstrapIssue[] } {
+  if (!input.steps.some((step) => step.repeat)) return { steps: input.steps, issues: [] };
+  const issues: AutomationStudioFlowBootstrapIssue[] = [];
+  const whiles = input.steps.some((step) => step.repeat?.while !== undefined);
+  for (const id of [MERGE_NODE_ID, FOR_EACH_NODE_ID, ...(whiles ? [REPEAT_NODE_ID] : [])]) {
+    if (input.registry.get(id, input.resolution)) continue;
+    issues.push(authoringError("flow_script.repeat_unavailable", `A Flow that repeats needs "${id}", which this library does not offer.`, "flow"));
+    return { steps: input.steps, issues };
+  }
+  // Every step is labelled, so a span's first step and each step taking the
+  // row can be pointed at; a step the model left unlabelled takes its line.
+  const steps = input.steps.map((written) => {
+    const step = { ...written, branches: [...written.branches], label: written.label ?? `${SCRIPT_DERIVED}line${written.line}` };
+    delete step.repeat;
+    return step;
+  });
+  const indexOf = new Map<string, number>();
+  for (const [index, step] of steps.entries()) if (!indexOf.has(step.label)) indexOf.set(step.label, index);
+  let derived = 0;
+  const nextDerived = (kind: string): string => `${SCRIPT_DERIVED}${kind}${(derived += 1)}`;
+  const emitted: AutomationStudioFlowScriptStep[] = [];
+  const consumed = new Set<number>();
+  for (const [index, step] of steps.entries()) {
+    if (consumed.has(index)) continue;
+    const repeat = input.steps[index]!.repeat;
+    if (!repeat) {
+      emitted.push(step);
+      continue;
+    }
+    const span = scriptSpan({ steps, written: input.steps, index, repeat, indexOf, emitted, consumed, registry: input.registry, resolution: input.resolution });
+    if ("refusal" in span) {
+      issues.push(authoringError(span.refusal.code, span.refusal.message, span.refusal.path ?? `flow.line.${repeat.line}`));
+      emitted.push(step);
+      continue;
+    }
+    for (let member = index; member <= span.end; member += 1) consumed.add(member);
+    const body = steps.slice(index, span.end + 1);
+    if (span.kind === "over") {
+      const loop = nextDerived("loop");
+      const exit = nextDerived("exit");
+      emitRepeatOver({
+        emitted, source: span.source, head: span.head, rows: span.rows, loop, exit, first: step.label, nextDerived,
+        body: body.map((member) => ({ step: member, takesRow: takesRow(member, input.registry, input.resolution) }))
+      });
+    } else {
+      const loop = nextDerived("loop");
+      const pass = nextDerived("pass");
+      const exit = nextDerived("exit");
+      emitRepeatWhile({ emitted, head: span.head, loop, pass, exit, first: step.label, endings: span.endings, ...(span.most === undefined ? {} : { most: span.most }), body });
+    }
+  }
+  return { steps: emitted, issues };
+}
+
+type ScriptSpanRefusal = { refusal: { code: string; message: string; path?: string } };
+type ScriptSpan =
+  | { kind: "over"; end: number; source: AutomationStudioFlowScriptStep; head: AutomationStudioFlowScriptStep; rows: string | undefined }
+  | { kind: "while"; end: number; head: AutomationStudioFlowScriptStep; endings: string[]; most?: string };
+
+/**
+ * What one written `repeat` statement spans and repeats on, or why it cannot
+ * be wired. The refusals are the drafted repeat's (`repeat`, `repeatWhile`),
+ * in the script's words, plus the two a script can say and a draft cannot: a
+ * branch written inside the span, which the loop's own edges would replace,
+ * and a branch from outside into it, which would enter the loop past its head.
+ */
+function scriptSpan(input: {
+  steps: readonly (AutomationStudioFlowScriptStep & { label: string })[];
+  written: readonly AutomationStudioFlowScriptStep[];
+  index: number;
+  repeat: NonNullable<AutomationStudioFlowScriptStep["repeat"]>;
+  indexOf: ReadonlyMap<string, number>;
+  emitted: readonly AutomationStudioFlowScriptStep[];
+  /** The steps an earlier span already took into its loop, by index. */
+  consumed: ReadonlySet<number>;
+  registry: AutomationStudioNodeRegistry;
+  resolution: AutomationStudioNodeRegistryResolution;
+}): ScriptSpan | ScriptSpanRefusal {
+  const { repeat, steps, index } = input;
+  const at = `The step at line ${steps[index]!.line}`;
+  const refuse = (code: string, message: string, path?: string): ScriptSpanRefusal => ({ refusal: { code, message, ...(path ? { path } : {}) } });
+  const HOW = "Write `repeat over: <the listing step's label>` to do the span once for each row that step read, or `repeat while: <the span's last step>` to do it again while that step succeeds.";
+  if (repeat.over === undefined && repeat.while === undefined) return refuse("flow_script.repeat_invalid", `${at} says repeat, but not what repeats it. ${HOW}`);
+  if (repeat.over !== undefined && repeat.while !== undefined) return refuse("flow_script.repeat_invalid", `${at} says both repeat over and repeat while; a span repeats one way. ${HOW}`);
+  if (repeat.over !== undefined && repeat.most !== undefined) return refuse("flow_script.repeat_invalid", `${at} says repeat most beside repeat over. A repeat over runs once for each row its listing read; repeat most bounds a repeat while.`);
+  if (repeat.while !== undefined && repeat.through !== undefined && repeat.through !== repeat.while) {
+    return refuse("flow_script.repeat_invalid", `${at} repeats through one step while another succeeds; the span ends at the step whose success repeats it. Write only \`repeat while: <the span's last step>\`.`);
+  }
+  const endLabel = repeat.while ?? repeat.through ?? steps[index]!.label;
+  const end = input.indexOf.get(endLabel);
+  if (end === undefined) return refuse("flow_script.repeat_span_unknown", `${at} names "${endLabel}" as the last step of its span, and no step in this block has that label.`);
+  if (end < index) return refuse("flow_script.repeat_span_unknown", `${at} names "${endLabel}" as the last step of its span, and that step comes before it. A span runs from the step that says repeat through a step written at or after it.`);
+  const members = new Set<string>();
+  for (let member = index; member <= end; member += 1) {
+    const step = steps[member]!;
+    members.add(step.label);
+    if (member > index && input.written[member]!.repeat) return refuse("flow_script.repeat_body_is_routed", `The step at line ${step.line} says repeat inside the span that starts at line ${steps[index]!.line}. A repeat inside a repeat is not supported: say repeat once, on the first step of the span.`);
+    if (step.branches.length) return refuse("flow_script.repeat_body_branches", `The step at line ${step.line} is inside the span that starts at line ${steps[index]!.line} and branches with \`on ${step.branches[0]!.port}:\`. A step inside a repeat runs in order, and where each pass goes is the repeat's: take the branch out, or end the span before this step.`, `flow.line.${step.branches[0]!.line}`);
+    if (step.runsBlock) return refuse("flow_script.repeat_body_branches", `The step at line ${step.line} is inside the span that starts at line ${steps[index]!.line} and runs a block. A step inside a repeat runs a node.`, `flow.line.${step.line}`);
+  }
+  for (const [other, step] of steps.entries()) {
+    if (other >= index && other <= end) continue;
+    const into = step.branches.find((written) => members.has(written.target));
+    if (into) return refuse("flow_script.branch_into_repeat", `The branch at line ${into.line} goes to "${into.target}", which is inside the span that starts at line ${steps[index]!.line}. A repeat is entered only from the step before it: branch to a step outside the span.`, `flow.line.${into.line}`);
+  }
+  const head = input.emitted[input.emitted.length - 1];
+  if (repeat.while !== undefined) {
+    const last = steps[end]!;
+    const endings = repeatEndings(last, input.registry, input.resolution);
+    let most: string | undefined;
+    if (repeat.most !== undefined) {
+      const bounds = input.registry.get(REPEAT_NODE_ID, input.resolution)?.parameters.find((parameter) => parameter.id === "most")?.constraints;
+      const passes = Number(repeat.most.trim());
+      if (!repeat.most.trim() || !Number.isInteger(passes) || passes < (bounds?.minimum ?? 1) || (bounds?.maximum !== undefined && passes > bounds.maximum)) {
+        return refuse("flow_script.repeat_invalid", `${at} says repeat most: ${JSON.stringify(repeat.most.slice(0, 40))}, and repeat most is a whole number of passes from ${bounds?.minimum ?? 1}${bounds?.maximum === undefined ? "" : ` to ${bounds.maximum}`}.`);
+      }
+      most = String(passes);
+    }
+    if (!endings.length && most === undefined) {
+      return refuse("flow_script.repeat_while_never_ends", `${at} repeats while the step at line ${last.line} succeeds, and that step has no way to say the loop is done, so it would end only by failing or ${repeatDefaultPasses(input.registry, input.resolution)}. Repeat while a step that answers ended when there is nothing more, or add \`repeat most: <passes>\` to bound it.`);
+    }
+    if (!head) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats from the very start of the block, so a run would have nowhere to begin. Keep the step that opens the page before it.`);
+    return { kind: "while", end, head, endings, ...(most === undefined ? {} : { most }) };
+  }
+  const overLabel = repeat.over!;
+  const overAt = input.indexOf.get(overLabel);
+  if (overAt === undefined) return refuse("flow_script.repeat_span_unknown", `${at} repeats over "${overLabel}", and no step in this block has that label. Label the step that reads the rows, \`step <label>: ...\`, and name it.`);
+  if (overAt >= index) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats over "${overLabel}", which is written at or after it. The listing a span walks runs once, before the span: write it first.`);
+  const source = input.consumed.has(overAt) ? undefined : input.emitted.find((candidate) => candidate.label === overLabel);
+  if (!source || !head) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats over "${overLabel}", which is inside another repeat, so the Flow does not reach it on its own line. Name a listing the Flow runs once, before this span.`);
+  const rows = listPort(source, input.registry, input.resolution);
+  if (!rows && source !== head) return refuse("flow_script.repeat_not_after_its_source", `${at} repeats over "${overLabel}", which reads no list, so it is a check asked again before every pass, and it has to be the step written just before the span.`);
+  return { kind: "over", end, source, head, rows };
+}
+
+/**
  * The steps as the Flow is written from them: each one the host says answered
  * an interruption, with no act and no routing of its own, routed `optional`.
  * A copy; the draft's own steps are left as the model authored them.
@@ -259,11 +425,42 @@ function repeat(input: {
   if (!source || !head) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats over step ${over.step.position}, which another step already runs inside its own branch or loop, so the Flow does not reach it on its own line. Name a list step the Flow runs on its own line before step ${entry.step.position}.` };
   const loop = input.nextDerived("loop");
   const exit = input.nextDerived("exit");
-  const rows = listPort(over, input.registry, input.resolution);
+  const rows = listPort(over.written, input.registry, input.resolution);
   const first = input.label(automationStudioFlowDraftStepId(body[0]!.step));
   // A check is asked again on every pass, so it is lifted into the loop
   // (below); lifting it over steps written after it would run them before it.
   if (!rows && source !== head) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${entry.step.position} repeats while step ${over.step.position} succeeds, and that check is asked again on every pass, so it has to be the step immediately before the span. Move step ${over.step.position} there with an amend_draft reorder.` };
+  for (const member of body) input.consumed.add(automationStudioFlowDraftStepId(member.step));
+  emitRepeatOver({
+    emitted, source, head, rows, loop, exit, first, nextDerived: input.nextDerived,
+    body: body.map((member) => ({ step: scriptStep(member, input.label(automationStudioFlowDraftStepId(member.step))), takesRow: takesRow(member.written, input.registry, input.resolution) }))
+  });
+  return undefined;
+}
+
+/**
+ * The steps a span repeated over `source` becomes, appended to `emitted`,
+ * whose last step is `head`: the one wiring a drafted repeat and a written one
+ * share (`routeAutomationStudioFlowScriptRepeats`), so the two cannot come to
+ * build different loops. Every refusal has been made by the caller.
+ */
+function emitRepeatOver(input: {
+  emitted: AutomationStudioFlowScriptStep[];
+  /** The step whose rows are walked, or the check asked before each pass. */
+  source: AutomationStudioFlowScriptStep;
+  /** The last step before the span, which the loop is entered from. */
+  head: AutomationStudioFlowScriptStep;
+  /** The port `source` puts its rows on; absent, `source` is a check. */
+  rows: string | undefined;
+  loop: string;
+  exit: string;
+  /** The label of the span's first step. */
+  first: string;
+  /** The span's steps in order, each labelled, and whether its node takes the row. */
+  body: readonly { step: AutomationStudioFlowScriptStep; takesRow: boolean }[];
+  nextDerived: (kind: string) => string;
+}): void {
+  const { emitted, source, head, rows, loop, exit, first } = input;
   if (rows) {
     // A list is read once and walked. The rows go into For Each's own list
     // port by name: taking whichever way in was free would wire the rows as
@@ -280,9 +477,9 @@ function repeat(input: {
     // is on rather than the same fixed element every time (live run
     // run-munnyvbr-11c28a0f). A step that declares none is left alone: its
     // node would have nowhere to put the row.
-    const rowed = body
-      .filter((member) => takesRow(member, input.registry, input.resolution))
-      .map((member) => branch(ROW_PORT, input.label(automationStudioFlowDraftStepId(member.step)), ROW_PORT));
+    const rowed = input.body
+      .filter((member) => member.takesRow && member.step.label !== undefined)
+      .map((member) => branch(ROW_PORT, member.step.label!, ROW_PORT));
     emitted.push(mergeStep(loop, "each pass of the loop starts here"));
     emitted.push({ label: each, description: "run the span once for each row", node: FOR_EACH_NODE_ID, entries: [], branches: [branch("body", first), branch("done", exit), ...rowed], routed: true, line: 0 });
   } else {
@@ -293,19 +490,16 @@ function repeat(input: {
     emitted.push(mergeStep(loop, "each pass of the loop starts here"));
     emitted.push({ ...head, branches: [...head.branches, branch("success", first), branch("failed", exit)], routed: true });
   }
-  for (const [offset, member] of body.entries()) {
-    const memberId = automationStudioFlowDraftStepId(member.step);
-    input.consumed.add(memberId);
-    const last = offset === body.length - 1;
+  for (const [offset, member] of input.body.entries()) {
+    const last = offset === input.body.length - 1;
     emitted.push({
-      ...scriptStep(member, input.label(memberId)),
+      ...member.step,
       // The last step of the span goes back to the head rather than on: the
       // join is where several paths may arrive, so the loop closes there.
-      ...(last ? { branches: [branch("success", loop, "branches")], routed: true } : {})
+      ...(last ? { branches: [branch("success", loop, "branches")], routed: true as const } : {})
     });
   }
   emitted.push(mergeStep(exit, "the Flow carries on from here when the loop is done"));
-  return undefined;
 }
 
 /**
@@ -349,12 +543,9 @@ function repeatWhile(input: {
     return { code: "flow_draft.repeat_body_is_routed", message: `Step ${at} repeats a span in which another step also says when it runs. Say it once, on the first step of the span.` };
   }
   const last = body[body.length - 1]!;
-  const endings = writtenDefinition(last, input.registry, input.resolution)?.outputs.filter((port) => port.role === "branch").map((port) => port.id) ?? [];
+  const endings = repeatEndings(last.written, input.registry, input.resolution);
   if (!endings.length && routing.most === undefined) {
-    // The bound the Repeat node would apply, read from it rather than restated.
-    const bound = input.registry.get(REPEAT_NODE_ID, input.resolution)?.parameters.find((parameter) => parameter.id === "most")?.defaultValue;
-    const passes = typeof bound === "number" ? `after ${bound} passes` : "at its most passes";
-    return { code: "flow_draft.repeat_while_never_ends", message: `Step ${at} repeats while step ${last.step.position} succeeds, and step ${last.step.position} has no way to say the loop is done, so it would end only by failing or ${passes}. Repeat while a step that answers ended when there is nothing more, or send amend_draft repeat on step ${at} again with most set to the passes it should take.` };
+    return { code: "flow_draft.repeat_while_never_ends", message: `Step ${at} repeats while step ${last.step.position} succeeds, and step ${last.step.position} has no way to say the loop is done, so it would end only by failing or ${repeatDefaultPasses(input.registry, input.resolution)}. Repeat while a step that answers ended when there is nothing more, or send amend_draft repeat on step ${at} again with most set to the passes it should take.` };
   }
   // A Flow that starts with the loop would have no node without a way in --
   // the head Merge has the back edge -- so no run could begin.
@@ -364,6 +555,34 @@ function repeatWhile(input: {
   const pass = input.nextDerived("pass");
   const exit = input.nextDerived("exit");
   const first = input.label(automationStudioFlowDraftStepId(body[0]!.step));
+  for (const member of body) input.consumed.add(automationStudioFlowDraftStepId(member.step));
+  emitRepeatWhile({
+    emitted, head, loop, pass, exit, first, endings,
+    ...(routing.most === undefined ? {} : { most: String(routing.most) }),
+    body: body.map((member) => scriptStep(member, input.label(automationStudioFlowDraftStepId(member.step))))
+  });
+  return undefined;
+}
+
+/**
+ * The steps a span repeated while its last step succeeds becomes, appended to
+ * `emitted`, whose last step is `head`: shared by a drafted repeat and a
+ * written one, as `emitRepeatOver` is. Every refusal has been made by the caller.
+ */
+function emitRepeatWhile(input: {
+  emitted: AutomationStudioFlowScriptStep[];
+  head: AutomationStudioFlowScriptStep;
+  loop: string;
+  pass: string;
+  exit: string;
+  first: string;
+  /** The routes the span's last step answers when there is nothing more (`repeatEndings`). */
+  endings: readonly string[];
+  /** The Repeat node's `most`, as written; absent, its own default stands. */
+  most?: string;
+  body: readonly AutomationStudioFlowScriptStep[];
+}): void {
+  const { emitted, head, loop, pass, exit, first } = input;
   head.branches = [...head.branches, branch("success", loop, "branches")];
   head.routed = true;
   emitted.push(mergeStep(loop, "each pass of the loop starts here"));
@@ -371,24 +590,32 @@ function repeatWhile(input: {
     label: pass,
     description: "run the span again, up to its most passes",
     node: REPEAT_NODE_ID,
-    entries: routing.most === undefined ? [] : [{ key: "most", lines: [String(routing.most)], line: 0 }],
+    entries: input.most === undefined ? [] : [{ key: "most", lines: [input.most], line: 0 }],
     branches: [branch("body", first), branch("done", exit, "branches")],
     routed: true,
     line: 0
   });
-  for (const [offset, member] of body.entries()) {
-    const memberId = automationStudioFlowDraftStepId(member.step);
-    input.consumed.add(memberId);
-    const closes = offset === body.length - 1;
+  for (const [offset, member] of input.body.entries()) {
+    const closes = offset === input.body.length - 1;
     emitted.push({
-      ...scriptStep(member, input.label(memberId)),
+      ...member,
       // Success goes back to the head for another pass; each route the step
       // answers when there is nothing more to do leaves the loop.
-      ...(closes ? { branches: [branch("success", loop, "branches"), ...endings.map((port) => branch(port, exit, "branches"))], routed: true } : {})
+      ...(closes ? { branches: [branch("success", loop, "branches"), ...input.endings.map((port) => branch(port, exit, "branches"))], routed: true as const } : {})
     });
   }
   emitted.push(mergeStep(exit, "the Flow carries on from here when the loop is done"));
-  return undefined;
+}
+
+/** The routes a span's last step answers when there is nothing more to do: its node's `branch` outputs (next-page's `ended`). */
+function repeatEndings(written: WrittenStep, registry: AutomationStudioNodeRegistry, resolution: AutomationStudioNodeRegistryResolution): string[] {
+  return writtenDefinition(written, registry, resolution)?.outputs.filter((port) => port.role === "branch").map((port) => port.id) ?? [];
+}
+
+/** The bound the Repeat node would apply, read from it rather than restated, as a phrase. */
+function repeatDefaultPasses(registry: AutomationStudioNodeRegistry, resolution: AutomationStudioNodeRegistryResolution): string {
+  const bound = registry.get(REPEAT_NODE_ID, resolution)?.parameters.find((parameter) => parameter.id === "most")?.defaultValue;
+  return typeof bound === "number" ? `after ${bound} passes` : "at its most passes";
 }
 
 /**
@@ -424,10 +651,10 @@ function overAfterSpan(
     const by = walkedBy.step.position;
     return `${said}, and step ${at} is itself the listing step ${by} repeats over. ${once} ${takeRepeatOff(at)}; step ${by}'s repeat over step ${at} then stands as it is.`;
   }
-  if (listPort(input.entry, input.registry, input.resolution)) {
+  if (listPort(input.entry.written, input.registry, input.resolution)) {
     return `${said}, and step ${at} is a listing. ${once} ${takeRepeatOff(at)}, and repeat the act over it instead: {"step": <the act>, "change": "repeat", "over": ${at}}.`;
   }
-  if (listPort(over, input.registry, input.resolution)) {
+  if (listPort(over.written, input.registry, input.resolution)) {
     return `${said}. The listing a span walks runs before the span: move it ahead of the act with amend_draft {"step": ${to}, "change": "reorder", "to": ${at}}; the act is then step ${at + 1} and keeps its repeat over the listing.`;
   }
   return `${said}, and a span repeats over a step that runs before it. If step ${at} should run once, take the repeat off with amend_draft {"step": ${at}, "change": "unrepeat"}; if it should run while step ${to} succeeds, move step ${to} just ahead of it with amend_draft {"step": ${to}, "change": "reorder", "to": ${at}}.`;
@@ -451,7 +678,7 @@ function heldJoin(
   if (!next || next.step.routing !== undefined) return undefined;
   const id = automationStudioFlowDraftStepId(next.step);
   if (consumed.has(id)) return undefined;
-  return writtenDefinition(next, registry, resolution)?.id === MERGE_NODE_ID ? id : undefined;
+  return writtenDefinition(next.written, registry, resolution)?.id === MERGE_NODE_ID ? id : undefined;
 }
 
 /**
@@ -463,30 +690,32 @@ function heldJoin(
  * answer "no list" for a node that has one and quietly build the wrong loop.
  */
 function listPort(
-  entry: AutomationStudioFlowDraftRoutedStep,
+  written: WrittenStep,
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution
 ): string | undefined {
-  return writtenDefinition(entry, registry, resolution)?.outputs.find((port) => port.valueType === "array")?.id;
+  return writtenDefinition(written, registry, resolution)?.outputs.find((port) => port.valueType === "array")?.id;
 }
 
 /** Whether a step's node declares the input a loop hands the current row to. */
 function takesRow(
-  entry: AutomationStudioFlowDraftRoutedStep,
+  written: WrittenStep,
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution
 ): boolean {
-  return writtenDefinition(entry, registry, resolution)?.inputs.some((port) => port.id === ROW_PORT) === true;
+  return writtenDefinition(written, registry, resolution)?.inputs.some((port) => port.id === ROW_PORT) === true;
 }
+
+/** What names a step's node: a drafted step's written form, or a written step itself. */
+type WrittenStep = Pick<AutomationStudioFlowScriptStep, "description" | "node">;
 
 /** The definition a step names, matched the way the assembler will match it. */
 function writtenDefinition(
-  entry: AutomationStudioFlowDraftRoutedStep,
+  written: WrittenStep,
   registry: AutomationStudioNodeRegistry,
   resolution: AutomationStudioNodeRegistryResolution
 ): AutomationStudioNodeDefinition | undefined {
-  const written = entry.written.node ?? entry.written.description;
-  return matchAuthoringDefinition(written, registry.list(resolution)).definition;
+  return matchAuthoringDefinition(written.node ?? written.description, registry.list(resolution)).definition;
 }
 
 function scriptStep(entry: AutomationStudioFlowDraftRoutedStep, label: string | undefined): AutomationStudioFlowScriptStep {

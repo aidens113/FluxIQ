@@ -81,6 +81,32 @@ export type AutomationStudioFlowScriptStep = {
    * became; a join or a loop routing adds has none.
    */
   nodeLabel?: string;
+  /**
+   * The span this step starts and what repeats it, from its `repeat over:`,
+   * `repeat through:`, `repeat while:` and `repeat most:` lines. The same
+   * statement a draft step's `repeat` routing makes, and lowered into the same
+   * steps (`./draft-routing.ts`), so a written loop and a drafted one are one
+   * graph shape.
+   */
+  repeat?: AutomationStudioFlowScriptRepeat;
+  line: number;
+};
+
+/**
+ * What a step's `repeat ...:` lines said, as written: each label already
+ * reduced the way a branch target is (`./keys.ts`), `most` as its text. Which
+ * combinations mean something is the router's question, not the parser's.
+ */
+export type AutomationStudioFlowScriptRepeat = {
+  /** The listing whose rows the span walks, once each. */
+  over?: string;
+  /** The last step of the span; absent, the span is this step alone. */
+  through?: string;
+  /** The last step of a span that runs again while that step succeeds. */
+  while?: string;
+  /** The most passes a `while` span takes. */
+  most?: string;
+  /** The first `repeat` line, for a refusal that names one. */
   line: number;
 };
 

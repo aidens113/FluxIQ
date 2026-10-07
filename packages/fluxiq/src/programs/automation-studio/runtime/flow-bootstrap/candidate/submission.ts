@@ -1,5 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion } from "../../llm/harness-options/index.ts";
+import { automationStudioFlowBootstrapWrittenPlanBindingIssues } from "../authoring/index.ts";
+import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
 
@@ -39,6 +41,11 @@ export class AutomationStudioFlowCandidateSubmissionController {
     this.input.signal?.throwIfAborted();
     if (!verdict.ok) return { ok: false, revision, check: verdict.check };
     if (revision !== this.revision) return { ok: false, revision, check: { ok: false, issueCodes: ["candidate.superseded_submission"], feedback: { code: "candidate.superseded_submission" } } };
+    // No draft stands behind a candidate, so the checks a drafted plan meets
+    // statement by statement are asked of the submitted graph (t346).
+    const bindings = automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: verdict.buildPlan.plan, registry: this.input.registry, resolution: this.input.resolution })
+      .filter((issue) => issue.severity === "error");
+    if (bindings.length) return { ok: false, revision, check: bindingRefusal(bindings) };
     const plan = structuredClone(verdict.buildPlan);
     const candidate: AutomationStudioFlowCandidate = {
       revision, digest: fingerprint.candidate({ buildPlan: plan, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "",
@@ -51,6 +58,24 @@ export class AutomationStudioFlowCandidateSubmissionController {
     this.previous = structuredClone(candidate);
     return { ok: true, candidate };
   }
+}
+
+/**
+ * A candidate refused for its loops or bindings. Every sentence is Core's own
+ * (`../authoring/`) and quotes only node keys, labels, field names and output
+ * ids the model wrote, so each travels whole with its code and path.
+ */
+function bindingRefusal(issues: readonly AutomationStudioFlowBootstrapIssue[]): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] {
+  return {
+    ok: false,
+    issueCodes: [...new Set(issues.map((issue) => issue.code))],
+    feedback: {
+      ok: false,
+      code: "candidate.loop_or_binding_refused",
+      issues: issues.map((issue) => ({ code: issue.code, ...(issue.path ? { path: issue.path } : {}), message: issue.message })),
+      instruction: "Each issue names the node and parameter it is about. Correct every one and resubmit the entire candidate."
+    }
+  };
 }
 
 function changedPaths(before: JsonValue | undefined, after: JsonValue, path = "plan"): string[] {
