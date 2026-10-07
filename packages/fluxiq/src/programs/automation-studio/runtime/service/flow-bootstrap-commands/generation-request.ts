@@ -18,7 +18,7 @@ import type { AutomationStudioLlmModelCaller } from "../../llm/index.ts";
 import { assertExactObjectFields, requiredBootstrapCommandId } from "./field-readings.ts";
 
 /** The fields a generation request may carry, and the fields its caller may carry. */
-const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd"] as const;
+const REQUEST_FIELDS = ["projectId", "flowId", "caller", "permittedConsequences", "evidenceGuided", "authoringMode", "useReusableContext", "startLocation", "permissionAskTimeoutMs", "mode", "interpretationCostUsd"] as const;
 const CALLER_FIELDS = ["actorUserId", "actorSessionId"] as const;
 
 /** A generation request, read. `startLocation` is absent when the caller named none. */
@@ -29,6 +29,7 @@ export type AutomationStudioFlowBootstrapGenerationRequest = {
   permittedConsequences: AutomationStudioActionConsequence[];
   /** Whether this build writes the Flow or adds to the one already there. */
   mode: AutomationStudioBootstrapAdaptationMode;
+  authoringMode?: "candidate";
   startLocation?: string;
   /** What the chat's reading of the message cost, carried into the creation purse. Absent when none was sent. */
   interpretationCostUsd?: number;
@@ -47,6 +48,7 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
   if (unsafeInput.useReusableContext !== undefined && unsafeInput.useReusableContext !== true) throw new Error("Reusable-context generation flag is invalid.");
   if (unsafeInput.useReusableContext === true && unsafeInput.evidenceGuided !== true) throw new Error("Reusable context requires evidence-guided generation with a fresh inspection.");
   if (unsafeInput.mode !== undefined && unsafeInput.mode !== "create" && unsafeInput.mode !== "extend") throw new Error("Flow Bootstrap generation mode is invalid.");
+  if (unsafeInput.authoringMode !== undefined && (unsafeInput.authoringMode !== "candidate" || unsafeInput.evidenceGuided !== true)) throw new Error("Candidate authoring requires evidence-guided generation.");
   const mode: AutomationStudioBootstrapAdaptationMode = unsafeInput.mode === "extend" ? "extend" : "create";
   const unsafeCaller = unsafeInput.caller;
   if (!unsafeCaller || typeof unsafeCaller !== "object" || Array.isArray(unsafeCaller)) throw new Error("Flow Bootstrap generation requires the caller it is made for.");
@@ -64,6 +66,7 @@ export function readAutomationStudioFlowBootstrapGenerationRequest(unsafeInput: 
     projectId: requiredBootstrapCommandId(unsafeInput.projectId, "project"),
     flowId: requiredBootstrapCommandId(unsafeInput.flowId, "Flow"),
     mode,
+    ...(unsafeInput.authoringMode === "candidate" ? { authoringMode: "candidate" as const } : {}),
     ...(startLocation === undefined ? {} : { startLocation }),
     ...(interpretationCostUsd === undefined ? {} : { interpretationCostUsd }),
     caller: {

@@ -138,6 +138,7 @@ export async function automationStudioReauthorBuild(input: {
           const spent = automationStudioRefutedResultFailureOf(automationStudioFlowBootstrapFailureDiagnosticOf(error, "provider_output_validation")).accounting;
           return { nothingToChange: said, ...(spent ? { accounting: spent } : {}) };
         }
+        if (generated.status !== "proposed") throw flowBootstrapPhaseFailure("post_provider_validation", generated.accounting, "flow_bootstrap.post_provider_validation_failed");
         return { adaptationId: generated.adaptationId, accounting: { ...generated.accounting } };
       },
       approve: (adaptationId) => deps.approve({ projectId, flowId, adaptationId, actorId: REPAIR_ACTOR }),

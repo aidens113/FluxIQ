@@ -65,6 +65,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       const unknownField = Object.keys(payload).find((key) => !FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS.has(key));
       if (unknownField) return { ok: false, error: "Flow bootstrap generation request contains unsupported fields." };
       if (payload.evidenceGuided !== undefined && payload.evidenceGuided !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid evidence-guided flag." };
+      if (payload.authoringMode !== undefined && (payload.authoringMode !== "candidate" || payload.evidenceGuided !== true)) return { ok: false, error: "Candidate authoring requires evidence-guided generation." };
       if (payload.useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid reusable-context flag." };
       // `extend` improves the Flow as it stands instead of writing one from
       // nothing. Only the two words Core knows pass; absent is `create`, which
@@ -101,6 +102,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
           // permits nothing lasting.
           permittedConsequences,
           ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
+          ...(payload.authoringMode === "candidate" ? { authoringMode: "candidate" as const } : {}),
           ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {}),
           ...(payload.mode === "extend" ? { mode: "extend" as const } : {}),
           // Where the Flow starts, when the caller named one. Validated above,
@@ -131,7 +133,9 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
         return { ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.unclassified_failure)." };
       }
       failedBuilds.ended(projectId, flowId, undefined);
-      return { ok: true, payload: { adaptation: sanitizedFlowBootstrapGeneration(generated) } };
+      if ((payload.authoringMode === "candidate") !== (generated.status === "draft")) return { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
+      const sanitized = sanitizedFlowBootstrapGeneration(generated);
+      return { ok: true, payload: sanitized.status === "draft" ? { candidate: sanitized } : { adaptation: sanitized } };
     }
   });
   // The diagnostic of a Flow's latest build that failed, as the request above
@@ -156,6 +160,7 @@ const FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS = new Set([
   "authSessionId",
   "permittedConsequences",
   "evidenceGuided",
+  "authoringMode",
   "useReusableContext",
   "startLocation",
   "mode",
@@ -179,8 +184,8 @@ function flowBootstrapRuntimeUnavailable(readiness: ReturnType<typeof flowBootst
 
 function sanitizedFlowBootstrapGeneration(value: GenerateFlowBootstrapAdaptationResponse): GenerateFlowBootstrapAdaptationResponse {
   const status = value.status;
-  if (status !== "proposed") throw new Error("Flow bootstrap generation returned an invalid status.");
-  if (!["low", "medium", "high", "destructive"].includes(value.riskLevel)) throw new Error("Flow bootstrap generation returned an invalid risk level.");
+  if (status !== "proposed" && status !== "draft") throw new Error("Flow bootstrap generation returned an invalid status.");
+  if (status === "proposed" && !["low", "medium", "high", "destructive"].includes(value.riskLevel)) throw new Error("Flow bootstrap generation returned an invalid risk level.");
   if (!Array.isArray(value.sourceInstructionIds) || value.sourceInstructionIds.length > 100) throw new Error("Flow bootstrap generation returned invalid instruction references.");
   const sourceInstructionIds = value.sourceInstructionIds.map((id) => boundedIdentifier(id, "Instruction"));
   const accounting = value.accounting;
@@ -195,16 +200,20 @@ function sanitizedFlowBootstrapGeneration(value: GenerateFlowBootstrapAdaptation
     ...(accounting.totalTokens !== undefined ? { totalTokens: boundedAccountingInteger(accounting.totalTokens, "total tokens") } : {}),
     ...(accounting.estimatedCostUsd !== undefined ? { estimatedCostUsd: boundedAccountingCost(accounting.estimatedCostUsd) } : {})
   };
-  return {
+  const common = {
     projectId: boundedIdentifier(value.projectId, "Project"),
     flowId: boundedIdentifier(value.flowId, "Flow"),
-    adaptationId: boundedIdentifier(value.adaptationId, "Adaptation"),
-    status,
-    riskLevel: value.riskLevel,
     sourceInstructionIds,
     baseDependencyDigest: boundedIdentifier(value.baseDependencyDigest, "Dependency digest"),
     baseSettingsRevision: boundedWholeNumber(value.baseSettingsRevision, 0, Number.MAX_SAFE_INTEGER),
-    accounting: sanitizedAccounting,
+    accounting: sanitizedAccounting
+  };
+  if (value.status === "draft") {
+    if (value.verification !== "not_performed" || value.promotionAllowed !== false || !Number.isSafeInteger(value.revision) || value.revision < 1 || typeof value.digest !== "string" || !/^[a-f0-9]{64}$/.test(value.digest)) throw new Error("Flow candidate draft returned invalid verification or identity.");
+    return { ...common, status: "draft", candidateId: boundedIdentifier(value.candidateId, "Candidate"), revision: value.revision, digest: value.digest, verification: "not_performed", promotionAllowed: false };
+  }
+  return {
+    ...common, status: "proposed", adaptationId: boundedIdentifier(value.adaptationId, "Adaptation"), riskLevel: value.riskLevel,
     // Carried whole, like the same request on the failure diagnostic beside it:
     // it is Core's own object, built by Core's gate from Core's own words, and
     // a field-by-field copy here would be a second place to keep in step with

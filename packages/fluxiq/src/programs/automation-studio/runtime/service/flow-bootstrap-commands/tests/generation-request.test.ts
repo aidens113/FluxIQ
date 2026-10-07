@@ -40,3 +40,10 @@ describe("a Flow Bootstrap generation request", () => {
     }
   });
 });
+
+it("candidate authoring is opt-in and requires evidence-guided generation", () => {
+  expect(readAutomationStudioFlowBootstrapGenerationRequest(input())).not.toHaveProperty("authoringMode");
+  expect(readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "candidate" }))).toMatchObject({ authoringMode: "candidate" });
+  expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "candidate", evidenceGuided: undefined }))).toThrow(/Candidate authoring/);
+  expect(() => readAutomationStudioFlowBootstrapGenerationRequest(input({ authoringMode: "other" }))).toThrow(/Candidate authoring/);
+});

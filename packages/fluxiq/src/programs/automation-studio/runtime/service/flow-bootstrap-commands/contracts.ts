@@ -13,6 +13,8 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
   /** The lasting consequences the person has already allowed this build's actions to have. Absent, none: each is asked about. */
   permittedConsequences?: AutomationStudioActionConsequence[];
   evidenceGuided?: true;
+  /** Opt-in explicit complete candidate submission; static validity remains unverified. */
+  authoringMode?: "candidate";
   useReusableContext?: true;
   /**
    * What this build does to the Flow. Absent, `create`: a blank Flow, written
@@ -59,7 +61,7 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationInput = {
   interpretationCostUsd?: number;
 };
 
-export type AutomationStudioGenerateFlowBootstrapAdaptationResult = {
+export type AutomationStudioGenerateFlowBootstrapAdaptationProposal = {
   projectId: string;
   flowId: string;
   adaptationId: string;
@@ -86,3 +88,20 @@ export type AutomationStudioGenerateFlowBootstrapAdaptationResult = {
    */
   permissionRequest?: AutomationStudioActionPermissionRequest;
 };
+
+export type AutomationStudioGenerateFlowBootstrapAdaptationResult = AutomationStudioGenerateFlowBootstrapAdaptationProposal | (
+  Omit<AutomationStudioGenerateFlowBootstrapAdaptationProposal, "status" | "adaptationId" | "riskLevel" | "permissionRequest"> & {
+    status: "draft";
+    candidateId: string;
+    revision: number;
+    digest: string;
+    verification: "not_performed";
+    promotionAllowed: false;
+  }
+);
+
+/** Only an absent flag is statically legacy; a broadly typed flag keeps the full union. */
+export type AutomationStudioGenerateFlowBootstrapAdaptationResultFor<Input extends AutomationStudioGenerateFlowBootstrapAdaptationInput> =
+  Input extends { authoringMode: "candidate" } ? Extract<AutomationStudioGenerateFlowBootstrapAdaptationResult, { status: "draft" }>
+  : "authoringMode" extends keyof Input ? AutomationStudioGenerateFlowBootstrapAdaptationResult
+  : AutomationStudioGenerateFlowBootstrapAdaptationProposal;
