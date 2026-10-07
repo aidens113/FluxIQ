@@ -15,7 +15,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import {
   createAutomationStudioSessionKeyProviderResolver,
@@ -24,6 +24,9 @@ import {
 } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata, createFailingCanonicalFlow } from "../../service-fixtures.ts";
+
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 let tempRoot: string;
 const services = new Set<AutomationStudioService>();

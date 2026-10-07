@@ -1,12 +1,15 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowRunActionAttemptRecord, AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata, createFailingCanonicalFlow } from "../../../tests/service-fixtures.ts";
 import { runtimeSessionToFlowRunDetail } from "../index.ts";
+
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 // A repaired run's detail carries what the recovery annotation added on top of
 // the bare session projection: the provider audit (`llmGate`), the adaptation

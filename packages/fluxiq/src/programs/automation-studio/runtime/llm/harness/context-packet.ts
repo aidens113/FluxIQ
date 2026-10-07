@@ -313,7 +313,12 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
  * absent while there are none). `nodeCatalog`, `catalogTruncated` and
  * `catalogSelection` stay as they were, because the readers that check a
  * packet read them; only the wire leaves them out
- * (`../deepseek/request-body.ts`).
+ * (`../deepseek/request-body.ts`). `describedNodes` holds every described
+ * node; the wire shows each on the window entry whose result names it under
+ * `describedNodes` (the call that described it) and keeps in the head only
+ * those no entry names, so a describe never changes the bytes in front of the
+ * window (t289-G, W11). The packet's evidence keeps the ids, so the checks
+ * that read it never see catalog text.
  */
 function withNamesAndDescribed(context: AutomationStudioFlowBootstrapContext, describedNodeIds: readonly string[]): AutomationStudioFlowBootstrapContext {
   const byId = new Map(context.nodeCatalog.map((entry) => [entry.id, entry] as const));

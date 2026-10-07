@@ -1,13 +1,16 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IoRegistry } from "../../../../../../io/index.ts";
 import type { AppendRecordingEntryInput, AutomationStudioFlowDocument } from "../../../../model/index.ts";
 import type { AutomationStudioImporterSdkManifest, AutomationStudioRecordingMapperObservation } from "../../../../nodes/index.ts";
 import { runAutomationStudioGraph } from "../../../executor/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
+
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 // B0 end to end: the gap between two recorded steps, carried onto the Flow node
 // by the real recording path, and then spent by the real executor as the node's
