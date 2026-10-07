@@ -69,6 +69,39 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
     return (await ProgramJsonStore.readExistingReadOnlyMany([this.filePath]))[0] as T | null;
   }
 
+  /** Closed layout identity only; never opens SQLite or initializes missing state. */
+  static async existingOwningLayout(filePath: string): Promise<Readonly<{ layoutVersion: 2; rootDir: string; kind: "automation.state" | "program.state"; documentId: string }> | null> {
+    if (typeof filePath !== "string" || !path.isAbsolute(filePath) || filePath.length > 4096 || filePath.includes("\0")) throw new Error("program_state.owning_path");
+    const resolved = path.resolve(filePath); let current = path.dirname(resolved);
+    while (true) {
+      let handle: Awaited<ReturnType<typeof openFile>>;
+      try { handle = await openFile(path.join(current, "config.json"), "r"); }
+      catch (error) {
+        if (!isNodeError(error, "ENOENT")) throw error;
+        const parent = path.dirname(current); if (parent === current) return null; current = parent; continue;
+      }
+      let text: string;
+      try {
+        const before = await handle.stat(); if (!before.isFile() || before.size > 8192) throw new Error("program_state.owning_config_size");
+        const bytes = Buffer.alloc(8193); let used = 0;
+        while (used < bytes.length) { const observed = await handle.read(bytes, used, bytes.length - used, used); if (!observed.bytesRead) break; used += observed.bytesRead; }
+        if (used > 8192) throw new Error("program_state.owning_config_size");
+        const after = await handle.stat(); if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) throw new Error("program_state.owning_layout_changed");
+        text = bytes.subarray(0, used).toString("utf8");
+      } finally { await handle.close(); }
+      const config: unknown = JSON.parse(text);
+      if (!isJsonObject(config) || ![1, 2].includes(Number(config.layoutVersion))) throw new Error("program_state.owning_layout");
+      if (config.layoutVersion === 1) return null;
+      if (config.layoutVersion !== 2) throw new Error("program_state.owning_layout");
+      const relative = path.relative(current, resolved).replaceAll("\\", "/");
+      const prefix = relative.startsWith("artifacts/automation-studio/") ? "artifacts/automation-studio/" : relative.startsWith("programs/") ? "programs/" : null;
+      if (!prefix) throw new Error("program_state.owning_path");
+      const documentId = relative.slice(prefix.length).replace(/\.json$/i, "");
+      if (!documentId || documentId.length > 1024 || documentId.includes("\0")) throw new Error("program_state.owning_path");
+      return Object.freeze({ layoutVersion: 2 as const, rootDir: current, kind: prefix === "programs/" ? "program.state" as const : "automation.state" as const, documentId });
+    }
+  }
+
   /** Existing documents from one owning SQL snapshot, or bounded file observations. */
   static async readExistingReadOnlyMany(filePaths: readonly string[]): Promise<Array<JsonObject | null>> {
     if (!Array.isArray(filePaths) || filePaths.length < 1 || filePaths.length > 256 || filePaths.some(value => typeof value !== "string" || !path.isAbsolute(value))) throw new Error("program_state.readonly_paths");

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AutomationStudioProjectFlowResourceRepository } from "../flow-resource-repository.ts";
 import { AutomationStudioProjectFlowResourceMutations } from "../flow-resource-mutations.ts";
+import { CanonicalAuthorityWholeSql, type CanonicalWholeSqlCapability } from "../../canonical-authority/index.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once
@@ -16,6 +17,18 @@ describe("AutomationStudioProjectFlowResourceRepository", () => {
     rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-flow-resource-test-"));
   });
   afterEach(async () => rm(rootDir, { recursive: true, force: true }));
+
+  it("refuses routed SQL metadata without a real parent capability before the first row effect", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir }), repository = await AutomationStudioProjectFlowResourceRepository.open({ pool, projectId: "project.routed" }), lease = await pool.acquire("project.routed");
+    const input = { flowId: "flow.refused", parentFlowId: null, owningSubflowId: null, name: "Refused", description: "", scopeKind: "global" as const, scopeId: null, visibility: "private" as const, origin: "user" as const, sourceMode: "visual" as const, status: "draft" as const, compiledRevision: null };
+    try {
+      // A permanent routed receipt schema is enough to require admission, never proof of an accepted project.
+      await lease.database.run(CanonicalAuthorityWholeSql.schema);
+      await expect(repository.upsertFlow(input)).rejects.toThrow("canonical_whole.sql_capability_required");
+      await expect(repository.upsertFlow(input, undefined, {} as CanonicalWholeSqlCapability)).rejects.toThrow("canonical_whole.sql_capability");
+      expect(await repository.getFlow(input.flowId)).toBeNull();
+    } finally { await lease.release(); await repository.close(); await pool.closeAll(); }
+  });
 
   it("owns Flow metadata, settings, interface, variables, and errors in project SQL", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });

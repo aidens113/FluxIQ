@@ -4,6 +4,7 @@ import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "./administr
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
 import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "../schema-migrations.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
+import { CanonicalAuthorityWholeSql, type CanonicalWholeSqlCapability } from "../canonical-authority/index.ts";
 
 export type AutomationStudioFlowResourcePage<T> = { items: T[]; nextCursor: string | null; hasMore: boolean; limit: number };
 export type AutomationStudioFlowResourceOffsetPage<T> = { items: T[]; total: number; limit: number; offset: number };
@@ -68,9 +69,10 @@ export class AutomationStudioProjectFlowResourceRepository {
 
   close(): Promise<void> { return this.lease.release(); }
 
-  async upsertFlow(input: Omit<AutomationStudioSqlFlowRecord, "graphRevision" | "settingsRevision" | "createdAt" | "updatedAt" | "deletedAt"> & { graphRevision?: number; settingsRevision?: number; createdAt?: number; updatedAt?: number; deletedAt?: number | null; settings?: Partial<Omit<AutomationStudioSqlFlowSettings, "revision" | "updatedAt">>; inputs?: Array<Omit<AutomationStudioSqlFlowPort, "direction" | "revision">>; outputs?: Array<Omit<AutomationStudioSqlFlowPort, "direction" | "revision">>; variables?: Array<Omit<AutomationStudioSqlFlowVariable, "revision">>; errors?: Array<Omit<AutomationStudioSqlFlowError, "revision">> }, expectedSettingsRevision?: number): Promise<AutomationStudioSqlFlowDetail> {
+  async upsertFlow(input: Omit<AutomationStudioSqlFlowRecord, "graphRevision" | "settingsRevision" | "createdAt" | "updatedAt" | "deletedAt"> & { graphRevision?: number; settingsRevision?: number; createdAt?: number; updatedAt?: number; deletedAt?: number | null; settings?: Partial<Omit<AutomationStudioSqlFlowSettings, "revision" | "updatedAt">>; inputs?: Array<Omit<AutomationStudioSqlFlowPort, "direction" | "revision">>; outputs?: Array<Omit<AutomationStudioSqlFlowPort, "direction" | "revision">>; variables?: Array<Omit<AutomationStudioSqlFlowVariable, "revision">>; errors?: Array<Omit<AutomationStudioSqlFlowError, "revision">> }, expectedSettingsRevision?: number, wholeCapability?: CanonicalWholeSqlCapability): Promise<AutomationStudioSqlFlowDetail> {
     const now = input.updatedAt ?? Date.now();
     return this.lease.database.transaction(async (sql) => {
+      await CanonicalAuthorityWholeSql.validate(wholeCapability, this.lease.database, sql, "sql_flow_metadata", input.flowId, input);
       const existing = await sql.get<FlowRow>("select * from flows where flow_id = ?", [requiredId(input.flowId, "Flow")]);
       const settings = existing ? await sql.get<FlowSettingsRow>("select * from flow_settings where flow_id = ?", [input.flowId]) : undefined;
       if (expectedSettingsRevision !== undefined && settings?.revision !== expectedSettingsRevision) throw new Error(`Flow ${input.flowId} settings revision conflict.`);
@@ -81,7 +83,9 @@ export class AutomationStudioProjectFlowResourceRepository {
       if (input.inputs || input.outputs) await replacePorts(sql, input.flowId, input.inputs ?? [], input.outputs ?? []);
       if (input.variables) await replaceVariables(sql, input.flowId, input.variables);
       if (input.errors) await replaceErrors(sql, input.flowId, input.errors);
-      return readFlow(sql, input.flowId);
+      const actual = await readFlow(sql, input.flowId);
+      await CanonicalAuthorityWholeSql.receipt(wholeCapability, this.lease.database, sql, actual);
+      return actual;
     });
   }
 

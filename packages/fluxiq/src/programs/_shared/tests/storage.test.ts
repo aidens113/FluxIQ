@@ -13,6 +13,19 @@ afterEach(async () => {
 });
 
 describe("ProgramJsonStore layout-v2 transactions", () => {
+  it("resolves the actual owning catalogue layout without opening or repairing storage", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-owning-layout-")); roots.push(root);
+    const fluxiqRoot = path.join(root, ".fluxiq");
+    await mkdir(fluxiqRoot); await writeFile(path.join(fluxiqRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }));
+    const catalogue = path.join(fluxiqRoot, "artifacts", "automation-studio", "projects", "index.json");
+    const resolver = ProgramJsonStore as unknown as { existingOwningLayout(filePath: string): Promise<unknown> };
+    expect(await resolver.existingOwningLayout(catalogue)).toEqual({ layoutVersion: 2, rootDir: fluxiqRoot, kind: "automation.state", documentId: "projects/index" });
+    await expect(readFile(path.join(fluxiqRoot, "global.sqlite"))).rejects.toMatchObject({ code: "ENOENT" });
+    await writeFile(path.join(fluxiqRoot, "config.json"), JSON.stringify({ layoutVersion: 99 }));
+    await expect(resolver.existingOwningLayout(catalogue)).rejects.toThrow("program_state.owning_layout");
+    await writeFile(path.join(fluxiqRoot, "config.json"), " ".repeat(8193));
+    await expect(resolver.existingOwningLayout(catalogue)).rejects.toThrow("program_state.owning_config_size");
+  });
   it("rolls back a multi-document Automation Studio mutation", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-program-store-"));
     roots.push(root);

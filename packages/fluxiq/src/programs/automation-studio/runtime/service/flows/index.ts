@@ -1,5 +1,6 @@
 export * from "./canonical-digest.ts";
 export * from "./canonical-document.ts";
+export * from "./creation.ts";
 export * from "./graph-patch.ts";
 export * from "./hierarchy-subflows.ts";
 export * from "./mapping.ts";

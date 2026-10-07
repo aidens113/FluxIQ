@@ -1,4 +1,6 @@
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "./database.ts";
+import { AutomationStudioProjectDatabase } from "./database.ts";
+import { CanonicalAuthorityWholeSql, type CanonicalWholeSqlCapability } from "../canonical-authority/index.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADAPTATION_EVIDENCE_MIGRATION, AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION, AUTOMATION_STUDIO_PROJECT_COMPILED_RUNTIME_ISOLATION_MIGRATION, AUTOMATION_STUDIO_PROJECT_CONVERSATION_MIGRATION, AUTOMATION_STUDIO_PROJECT_RESULT_CHECK_MIGRATION, AUTOMATION_STUDIO_PROJECT_FLOW_GRAPH_JUDGEMENT_MIGRATION, AUTOMATION_STUDIO_PROJECT_DOMAIN_RESOURCE_MIGRATION, AUTOMATION_STUDIO_PROJECT_EVENT_CURSOR_MIGRATION, AUTOMATION_STUDIO_PROJECT_FAST_UI_QUERY_INDEX_MIGRATION, AUTOMATION_STUDIO_PROJECT_INTERVENTION_MODE_MIGRATION, AUTOMATION_STUDIO_PROJECT_MUTATION_MIGRATION, AUTOMATION_STUDIO_PROJECT_RELATION_INDEX_MIGRATION, AUTOMATION_STUDIO_PROJECT_RETENTION_MIGRATION, AUTOMATION_STUDIO_PROJECT_REUSABLE_LLM_CONTEXT_AUDIT_MIGRATION, AUTOMATION_STUDIO_PROJECT_REUSABLE_LLM_CONTEXT_MIGRATION, AUTOMATION_STUDIO_PROJECT_REUSABLE_LLM_CONTEXT_VALIDATION_MIGRATION, AUTOMATION_STUDIO_PROJECT_ROUTER_RUNTIME_SCALING_MIGRATION, AUTOMATION_STUDIO_PROJECT_ROUTER_RUNTIME_SUMMARY_DETAIL_MIGRATION, AUTOMATION_STUDIO_PROJECT_ROUTER_TARGET_REFERENCE_MIGRATION, AUTOMATION_STUDIO_PROJECT_RUNTIME_SUMMARY_ENVELOPE_MIGRATION, AUTOMATION_STUDIO_PROJECT_RUN_DATASET_ANSWER_MIGRATION, AUTOMATION_STUDIO_PROJECT_RUN_DATASET_MIGRATION, AUTOMATION_STUDIO_PROJECT_STREAM_SPOOL_MIGRATION } from "./schema.ts";
 import { AutomationStudioSchemaMigrationRunner, type AutomationStudioSchemaMigration } from "../schema-migrations.ts";
 
@@ -218,7 +220,18 @@ export class AutomationStudioProjectMetaRepository {
 export class AutomationStudioChangeFeedRepository {
   constructor(private readonly database: AutomationStudioSqlExecutor & { projectId?: string }) {}
 
-  async append(input: Omit<AutomationStudioChangeFeedEvent, "projectId" | "sequence" | "changedAt"> & { changedAt?: number }): Promise<AutomationStudioChangeFeedEvent> {
+  async append(input: Omit<AutomationStudioChangeFeedEvent, "projectId" | "sequence" | "changedAt"> & { changedAt?: number }, wholeCapability?: CanonicalWholeSqlCapability): Promise<AutomationStudioChangeFeedEvent> {
+    if (wholeCapability) {
+      if (!(this.database instanceof AutomationStudioProjectDatabase)) throw new Error("canonical_whole.sql_database");
+      const database = this.database;
+      return database.transaction(async sql => {
+        await CanonicalAuthorityWholeSql.validate(wholeCapability, database, sql, "project_change_feed", input.entityId, input);
+        const changedAt = input.changedAt ?? Date.now(), result = await sql.run("insert into change_feed (transaction_id,entity_kind,entity_id,operation,revision,changed_at_ms) values(?,?,?,?,?,?)", [requiredId(input.transactionId, "transaction"), requiredKind(input.entityKind, "entity kind"), requiredId(input.entityId, "entity"), input.operation, positiveRevision(input.revision), changedAt]);
+        const actual = { ...input, projectId: database.projectId, sequence: result.lastID, changedAt };
+        await CanonicalAuthorityWholeSql.receipt(wholeCapability, database, sql, actual); return actual;
+      });
+    }
+    if (this.database instanceof AutomationStudioProjectDatabase) await CanonicalAuthorityWholeSql.validate(undefined, this.database, this.database, "project_change_feed", input.entityId, input);
     const changedAt = input.changedAt ?? Date.now();
     const result = await this.database.run(
       `insert into change_feed (transaction_id, entity_kind, entity_id, operation, revision, changed_at_ms)

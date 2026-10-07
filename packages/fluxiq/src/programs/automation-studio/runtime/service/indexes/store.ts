@@ -4,6 +4,7 @@ import { emptyPipelineIndex, type PipelineIndex } from "../../pipeline-model.ts"
 import type { AutomationStudioProjectPaths } from "../paths/index.ts";
 import type { AutomationStudioProjectStore } from "../projects/index.ts";
 import type { FlowAdaptationIndex, FlowAdaptationPolicyIndex, FlowChangeProposalIndex, FlowInstructionIndex, FlowRouterIndex, FlowRunIndex, FlowSubflowIndex, RecordingIndex, RuntimeIndex } from "./types.ts";
+import { CanonicalAuthorityValidation as V, type CanonicalAuthorityWholeOperation } from "../../../storage/canonical-authority/index.ts";
 
 // Every JSON index a project keeps beside its documents. Each call resolves the
 // project first, exactly as the monolithic service did, so an unknown project
@@ -11,7 +12,8 @@ import type { FlowAdaptationIndex, FlowAdaptationPolicyIndex, FlowChangeProposal
 export class AutomationStudioServiceIndexes {
   constructor(
     private readonly paths: AutomationStudioProjectPaths,
-    private readonly projects: AutomationStudioProjectStore
+    private readonly projects: AutomationStudioProjectStore,
+    private readonly authority?: CanonicalAuthorityWholeOperation
   ) {}
 
   async readFlowIndex(projectId: string): Promise<AutomationStudioFlowSummaryIndex> {
@@ -21,7 +23,13 @@ export class AutomationStudioServiceIndexes {
 
   async writeFlowIndex(projectId: string, mutator: (index: AutomationStudioFlowSummaryIndex) => AutomationStudioFlowSummaryIndex): Promise<AutomationStudioFlowSummaryIndex> {
     await this.projects.requireProject(projectId);
-    return await new ProgramJsonStore<AutomationStudioFlowSummaryIndex>(this.paths.projectFile(projectId, "indexes", "flows.json"), emptyFlowSummaryIndex).update(mutator);
+    const store = new ProgramJsonStore<AutomationStudioFlowSummaryIndex>(this.paths.projectFile(projectId, "indexes", "flows.json"), emptyFlowSummaryIndex);
+    if (!this.authority) return store.update(mutator);
+    const previous = await store.read(), next = mutator(previous);
+    const flowId = this.authority.currentFlowId();
+    if (next.flows.filter(flow => flow.flowId === flowId).length !== 1 || V.digest(next.flows.filter(flow => flow.flowId !== flowId)) !== V.digest(previous.flows.filter(flow => flow.flowId !== flowId))) throw new Error("canonical_whole.flow_membership");
+    await store.write(next); const actual = await store.read();
+    await this.authority.fileEffect("flow_membership", flowId, next, actual); return actual;
   }
 
   async readRecordingIndex(projectId: string): Promise<RecordingIndex> {
