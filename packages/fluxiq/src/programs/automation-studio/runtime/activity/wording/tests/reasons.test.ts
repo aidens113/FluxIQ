@@ -125,7 +125,7 @@ describe("automationStudioActivityDraftEditCard for a bound step", () => {
   // U2 (`run-muw60unq-591e23bd`): "Edit the Flow · Done" said nothing of an edit that dropped Add to cart.
   it("carries what an edit changed last on its record, in words, and the card shows it as its result", () => {
     const landed = automationStudioActivityDraftEditCard({ kind: "landed" }, "removed step 9, Add to cart");
-    expect(landed).toMatchObject({ label: "Editing the Flow — done: removed step 9, Add to cart", detail: { status: "succeeded", text: "Changed: removed step 9, Add to cart" } });
+    expect(landed).toMatchObject({ label: "Changing the Flow — done: removed step 9, Add to cart", detail: { status: "succeeded", text: "Changed: removed step 9, Add to cart" } });
     expect(activityActionOf(landed)).toMatchObject({ kind: "draft", outcome: "done", result: "removed step 9, Add to cart" });
     const partly = automationStudioActivityDraftEditCard({ kind: "refused", reasons: ["already_so"], applied: 1 }, "added step 11, Spain");
     expect(partly.detail?.text).toBe("Result: llm_evidence_loop.draft_amendments_refused · Reason: already_so · Applied: 1 · Changed: added step 11, Spain");
@@ -133,7 +133,7 @@ describe("automationStudioActivityDraftEditCard for a bound step", () => {
     // An edit that changed nothing says no change, whatever it is handed.
     const refused = automationStudioActivityDraftEditCard({ kind: "refused", reasons: ["already_out"], applied: 0 }, "removed step 9, Add to cart");
     expect(refused.detail?.text).not.toContain("Changed");
-    expect(refused.label).toBe("Not done: editing the Flow — that step is already out of the Flow");
+    expect(refused.label).toBe("Not done: changing the Flow — that step is already out of the Flow");
     expect(activityActionOf(refused)).not.toHaveProperty("result");
   });
 });

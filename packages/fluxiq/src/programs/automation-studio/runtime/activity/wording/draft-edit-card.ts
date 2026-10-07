@@ -48,8 +48,10 @@ const hasWords = (reason: string): boolean => Object.prototype.hasOwnProperty.ca
 
 /**
  * The edit's card, as an activity row: a tool row of the draft tool, so every
- * client draws it as the "Edit the Flow" card, under the decision it answers.
- * Its title says what was asked -- "Editing the Flow", or "Running the step
+ * client draws it as the "Change the Flow" card, under the decision it answers.
+ * Its title says what was asked -- "Changing the Flow", the decision's own
+ * heading, so the chat and the overlay say one word for the act (D12 of the
+ * t342 round 2 UI review: "Changing", "Editing" and "Updating"), or "Running the step
  * again" for a step asked to run again that was not -- and its status line
  * adds "done" or "partly done", with what changed when `changed` says it
  * (`../decision-answer/edit-words.ts`: 'removed "Add to cart"'). An edit
@@ -65,7 +67,7 @@ const hasWords = (reason: string): boolean => Object.prototype.hasOwnProperty.ca
  */
 export function automationStudioActivityDraftEditCard(answer: Answer, changed?: string | undefined): AutomationStudioActivityEmission {
   const rerun = answer.kind === "repeated" || (answer.kind === "refused" && answer.reasons.length > 0 && answer.reasons.every((reason) => RERUN_REASONS.has(reason)));
-  const title = rerun ? "Running the step again" : "Editing the Flow";
+  const title = rerun ? "Running the step again" : "Changing the Flow";
   const outcome = answer.kind === "landed" ? "done" : answer.kind === "refused" && answer.applied > 0 ? "partly done" : "not done";
   const words = outcome !== "not done" && changed?.trim() ? changed.replace(/\s+/gu, " ").trim() : undefined;
   const text = [recordOf(answer), words ? `Changed: ${words}` : ""].filter(Boolean).join(" · ");

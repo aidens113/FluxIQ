@@ -13,6 +13,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import type { AutomationStudioProjectDatabasePool } from "../../storage/index.ts";
+import type { AutomationStudioPanelCapability } from "../panel-capabilities/index.ts";
 import { automationStudioConversationParkingPort, type AutomationStudioParkingPort } from "../parking/index.ts";
 import type { AutomationStudioConversationAnswerKind, AutomationStudioConversationAsk } from "./ask.ts";
 import { AutomationStudioProjectConversationStore } from "./store.ts";
@@ -27,6 +28,7 @@ import type { AutomationStudioConversationAttachment, AutomationStudioConversati
 import {
   interpretAutomationStudioConversationTurn,
   respondToAutomationStudioConversationTurn,
+  automationStudioConversationSaysWhatToDo,
   automationStudioConversationModelTranscript,
   type AutomationStudioConversationInstructionAnswer,
   type AutomationStudioConversationInstructionRequest,
@@ -41,6 +43,7 @@ import {
   type AutomationStudioConversationWriter
 } from "./writer.ts";
 import { automationStudioConversationWholeThread } from "./whole-thread.ts";
+import { automationStudioConversationPersonWords } from "./person-words.ts";
 
 const STORAGE_UNAVAILABLE = "Conversations require project storage.";
 /** How far back a thread is searched for asks still waiting. */
@@ -183,6 +186,18 @@ export class AutomationStudioConversations {
         limit: input.limit
       })
     );
+  }
+
+  /**
+   * The person's own words that Core's turn `answerTurnId` answered, whole and
+   * as written (`person-words.ts`), and whether they say what to do beyond
+   * asking for `capability` (`instructions/says-what-to-do.ts`); null when no
+   * person turn comes before it. What a command started from a chat message
+   * saves as its instruction (t349).
+   */
+  async personWords(input: { projectId: string; conversationId: string; answerTurnId: string; capability: Pick<AutomationStudioPanelCapability, "title" | "phrases"> }): Promise<{ text: string; saysWhatToDo: boolean } | null> {
+    const text = await this.withStore(input.projectId, (store) => automationStudioConversationPersonWords((page) => store.getConversation(page), input.conversationId, input.answerTurnId));
+    return text === null ? null : { text, saysWhatToDo: automationStudioConversationSaysWhatToDo(input.capability, text) };
   }
 
   /** One ask by id, or null when the project holds no such ask. */

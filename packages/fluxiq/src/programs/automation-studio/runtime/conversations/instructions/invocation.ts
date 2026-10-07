@@ -19,13 +19,14 @@
 
 import { AUTOMATION_STUDIO_DESTRUCTIVE_ACTION_CONSEQUENCES } from "../../action-permissions/client/index.ts";
 import type { AutomationStudioPanelCapability } from "../../panel-capabilities/index.ts";
-import { automationStudioClosestName, automationStudioNameWords } from "./closest.ts";
+import { automationStudioClosestName } from "./closest.ts";
 import type {
   AutomationStudioConversationDecision,
   AutomationStudioConversationFlowReference,
   AutomationStudioConversationOnScreen
 } from "./decision.ts";
 import { automationStudioConversationFlowNamed } from "./flows.ts";
+import { automationStudioConversationSaysWhatToDo } from "./says-what-to-do.ts";
 
 /** What Core knows while deciding: the panel's vocabulary, the project's Flows, and what is on screen. */
 export type AutomationStudioConversationDecisionContext = {
@@ -49,8 +50,6 @@ const ON_SCREEN_ARGUMENTS = ["subflowId", "runId", "recordingId"] as const;
 const LISTED_FLOWS = 8;
 /** The argument that holds what an automation should do, in the person's own words. */
 const INSTRUCTION_ARGUMENT = "instruction";
-/** A message with fewer words than this once the capability's own name and phrases are set aside asks to start something, and does not say what. */
-const INSTRUCTION_MIN_WORDS = 3;
 
 type MappedArguments = {
   values: Record<string, unknown>;
@@ -263,8 +262,7 @@ function fillInstructionFromMessage(
   if (typeof given === "string" ? given.trim() !== "" : given !== undefined && given !== null) return;
   const message = context.message?.trim();
   if (!message) return;
-  const named = new Set([capability.title, ...capability.phrases].flatMap(automationStudioNameWords));
-  if (automationStudioNameWords(message).filter((word) => !named.has(word)).length < INSTRUCTION_MIN_WORDS) return;
+  if (!automationStudioConversationSaysWhatToDo(capability, message)) return;
   values[INSTRUCTION_ARGUMENT] = message;
 }
 

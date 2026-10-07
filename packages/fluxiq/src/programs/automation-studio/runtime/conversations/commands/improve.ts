@@ -1,7 +1,8 @@
 // "It should also ...": improving a Flow that already has steps.
 //
-// The panel's `flow.improve`, run by Core. What the person said is saved as a
-// required generation instruction on the Flow (the panel's
+// The panel's `flow.improve`, run by Core. What the person said -- their own
+// message, as written, never the chat model's rewording (`./argument.ts`,
+// t349) -- is saved as a required generation instruction on the Flow (the panel's
 // `saveFlowImprovementInstruction`), because the build reads the Flow's active
 // instructions and nothing else; the Flow is then amended from the live site
 // with Core's `extend`. Unlike a build onto a blank Flow, this change replaces
@@ -14,7 +15,7 @@
 // exactly as a legacy one; a draft leaves the steps unchanged, asks nothing,
 // and the answer says what its test run came to.
 
-import { automationStudioConversationCommandText } from "./argument.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS, automationStudioConversationCommandInstruction, automationStudioConversationCommandText } from "./argument.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
@@ -36,7 +37,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
     control: "Improve automation",
     arguments: [
       { name: "flowId", describe: "The Flow it is about.", required: true },
-      { name: "change", describe: "What the Flow should do differently, in plain words.", required: true }
+      { name: "change", describe: "What the Flow should do differently. Core saves the person's own message as written in its place; this is used only when no message from the person started the request.", required: true }
     ],
     phrases: ["improve the flow", "change what it does", "make it also handle", "it should also", "fix it so that", "teach it to"],
     consequences: ["modify_existing"],
@@ -47,14 +48,15 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const flowId = automationStudioConversationCommandText(args, "flowId");
-    const change = automationStudioConversationCommandText(args, "change");
     if (!flowId) return progress.failed("I could not tell which Flow it is about");
-    if (!change) return progress.failed("I was not told what should change");
+    const said = await automationStudioConversationCommandInstruction(context, AUTOMATION_STUDIO_CONVERSATION_IMPROVE.capability, args, "change");
+    if (!said) return progress.failed("I was not told what should change");
     progress.carry({ flowId });
 
-    const saved = await context.port.call("save-flow-instruction", { projectId: context.projectId, flowId, ...automationStudioImprovementInstruction(change) });
+    const saved = await context.port.call("save-flow-instruction", { projectId: context.projectId, flowId, ...automationStudioImprovementInstruction(said.text) });
     if (!saved.ok) return progress.failed(automationStudioConversationCallCause("saving what should change", saved));
-    progress.landed("saved what should change as an instruction on the Flow");
+    progress.carry({ instructionFrom: said.from });
+    progress.landed(said.from === "person" ? "saved what should change as an instruction on the Flow" : `saved what should change as an instruction on the Flow, ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`);
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "extend" });
     if (!built.ok) return progress.failed(built.cause, { ending: built.ending });
