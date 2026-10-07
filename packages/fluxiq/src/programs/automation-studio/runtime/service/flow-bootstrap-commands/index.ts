@@ -19,3 +19,5 @@ export * from "./save-goal.ts";
 export * from "./candidate-generation.ts";
 export * from "./generation-context.ts";
 export * from "./instruction-inventory.ts";
+export * from "./unusable-decisions.ts";
+export * from "./failure-spend.ts";
