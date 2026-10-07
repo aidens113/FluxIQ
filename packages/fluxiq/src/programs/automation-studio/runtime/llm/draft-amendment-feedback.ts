@@ -450,9 +450,11 @@ function unreachedNote(entry: AutomationStudioFlowDraftUnreachedStep): string {
  * when the entry is not one (header, `run-musr9pv3-f4bf6256`): the step, the
  * step it repeated over -- and the one its span ran through when that broke
  * -- in the numbers the model wrote, with the numbers the draft now shows
- * where the moves changed them.
+ * where the moves changed them. A repeat that ran again while its last step
+ * succeeded was over no step, and is told by that step (`takenOffWhile`).
  */
 function takenOff(refusal: AutomationStudioFlowDraftAmendmentRefusal): string | undefined {
+  if (refusal.reason === "repeat_taken_off" && refusal.over === undefined) return takenOffWhile(refusal);
   if (refusal.reason !== "repeat_taken_off" || refusal.over === undefined || refusal.takenOff === undefined) return undefined;
   const step = refusal.step;
   const over = refusal.over;
@@ -467,6 +469,24 @@ function takenOff(refusal: AutomationStudioFlowDraftAmendmentRefusal): string | 
   ].filter((part): part is string => part !== undefined);
   const renumbered = now.length ? ` In the draft you read next, ${now.join(", and ")}.` : "";
   return `Step ${step}'s repeat over step ${over}${span === undefined ? "" : `, through step ${span},`} was taken off: ${why}. It now runs once, in order.${renumbered} If it should still repeat, send the repeat again with the listing before the act, in the numbers the draft now shows.`;
+}
+
+/**
+ * What a repeat that ran its span again while its last step succeeded was,
+ * once a decision's moves broke its span (read-list design, S2): the step and
+ * the last step it ran while, which now runs before it, with the numbers the
+ * draft now shows where the moves changed them.
+ */
+function takenOffWhile(refusal: AutomationStudioFlowDraftAmendmentRefusal): string | undefined {
+  if (refusal.takenOff !== "span_broken" || refusal.through === undefined) return undefined;
+  const step = refusal.step;
+  const last = refusal.through;
+  const now = [
+    refusal.now === undefined ? undefined : `step ${step} is now step ${refusal.now}`,
+    refusal.throughNow === undefined ? undefined : `step ${last} is now step ${refusal.throughNow}`
+  ].filter((part): part is string => part !== undefined);
+  const renumbered = now.length ? ` In the draft you read next, ${now.join(", and ")}.` : "";
+  return `Step ${step}'s repeat while step ${last} succeeds was taken off: after this decision's moves step ${last} runs before step ${step}, so the span from step ${step} through step ${last} no longer holds together. It now runs once, in order.${renumbered} If it should still repeat, send the repeat again on the span's first step with while naming its last step, in the numbers the draft now shows.`;
 }
 
 /**

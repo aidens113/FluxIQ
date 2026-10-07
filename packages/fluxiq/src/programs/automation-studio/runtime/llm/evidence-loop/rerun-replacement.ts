@@ -32,6 +32,7 @@
 // and an amendment naming it is told to change that step instead.
 import {
   applyAutomationStudioFlowDraftAmendments,
+  automationStudioFlowDraftRepeatIsWhile,
   automationStudioFlowDraftStepId,
   automationStudioFlowDraftStepIsProposable,
   type AutomationStudioFlowDraftStep,
@@ -104,6 +105,8 @@ function renamed(routing: AutomationStudioFlowDraftStepRouting, from: string, to
   const swap = (id: string): string => (id === from ? to : id);
   if (routing.kind === "only_if") return { ...routing, check: swap(routing.check) };
   if (routing.kind === "on_failed") return { ...routing, to: swap(routing.to) };
+  // A repeat while its last step succeeds names that step twice, as through and as while.
+  if (automationStudioFlowDraftRepeatIsWhile(routing)) return { ...routing, through: swap(routing.through), while: swap(routing.while) };
   if (routing.kind === "repeat") return { ...routing, through: swap(routing.through), over: swap(routing.over) };
   return routing;
 }

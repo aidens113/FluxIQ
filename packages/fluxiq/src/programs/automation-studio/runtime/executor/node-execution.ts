@@ -1,7 +1,7 @@
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
-import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator } from "../../nodes/index.ts";
+import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator, AutomationNodePort } from "../../nodes/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 import { AUTOMATION_STUDIO_ASK_EFFECT } from "../parking/index.ts";
@@ -166,7 +166,8 @@ async function executeNodeAttempt(
       }
     });
     if (native) {
-      const result = await dispatchAutomationStudioEffects(native.result, options, withholding, { runState, nodeId: node.id, attemptId });
+      // An importer's definition is the native runtime's, so it says which routes the node declares.
+      const result = await dispatchAutomationStudioEffects(native.result, options, withholding, { runState, nodeId: node.id, attemptId }, declaredBranchRoutes(definition?.outputs ?? native.declaredOutputs));
       return await finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
     }
     const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options: callFlowChildOptions(options, attemptId) });
@@ -207,7 +208,7 @@ async function executeNodeAttempt(
       ...(expectationEvaluator ? { expectationEvaluator } : {})
     };
     let result = await definition.execute(context);
-    result = await dispatchAutomationStudioEffects(result, options, withholding, { runState, nodeId: node.id, attemptId });
+    result = await dispatchAutomationStudioEffects(result, options, withholding, { runState, nodeId: node.id, attemptId }, declaredBranchRoutes(definition.outputs));
     return await finishAttempt(executionNode, nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
   } catch (error) {
     // The one place a node's throw becomes an attempt, and therefore the one
@@ -244,7 +245,13 @@ const RECORDS_WRITE_EFFECT = "records.write";
 // host's own dispatcher -- meet only here, so rows are captured here. A
 // `records.write` effect is captured here too, from the effect itself, with or
 // without a dispatcher.
-async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding, target: RecordCaptureTarget): Promise<AutomationNodeExecutionResult> {
+//
+// A successful dispatch may answer a route of its own (`../io-policy.ts`). It
+// is taken only when the node's definition declares a branch output of that
+// id, so a dispatch can choose among the routes its node was authored with and
+// never invent one, or send the run down a data port's edge; otherwise the
+// node's own route stands.
+async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionResult, options: AutomationStudioGraphExecutionOptions, withholding: AutomationStudioTraceWithholding, target: RecordCaptureTarget, branchRoutes: ReadonlySet<string>): Promise<AutomationNodeExecutionResult> {
   let result = initial;
   for (const [index, effect] of (initial.effects ?? []).entries()) {
     // A question for a person is the executor's to raise, not a domain's to
@@ -280,9 +287,15 @@ async function dispatchAutomationStudioEffects(initial: AutomationNodeExecutionR
       };
       break;
     }
-    result = { ...result, outputs, ...targetResolution };
+    const route = dispatched.route && branchRoutes.has(dispatched.route) ? { route: dispatched.route } : {};
+    result = { ...result, outputs, ...targetResolution, ...route };
   }
   return result;
+}
+
+/** The ids of the branch outputs a node's definition declares: the only routes a dispatch may answer for it. */
+function declaredBranchRoutes(outputs: readonly AutomationNodePort[] | undefined): ReadonlySet<string> {
+  return new Set((outputs ?? []).filter((port) => port.role === "branch").map((port) => port.id));
 }
 
 // One card per node attempt, keyed under the Call Flow attempts it runs inside

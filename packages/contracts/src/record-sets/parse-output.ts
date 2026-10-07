@@ -5,6 +5,7 @@ import {
   type AutomationStudioRecordOutput,
   type AutomationStudioRecordWriteMode
 } from "./output.ts";
+import { parseAutomationStudioRecordProcessing } from "./process/index.ts";
 import { parseAutomationStudioRecordSchema, type AutomationStudioRecordParseOptions } from "./parse-schema.ts";
 import { parseAutomationStudioRecordsPath } from "./records-path.ts";
 
@@ -12,7 +13,7 @@ export type AutomationStudioRecordOutputParseResult =
   | { ok: true; output: AutomationStudioRecordOutput }
   | { ok: false; issues: string[] };
 
-const OUTPUT_KEYS: ReadonlySet<string> = new Set(["datasetId", "label", "recordsPath", "schema", "writeMode", "maxRecords"]);
+const OUTPUT_KEYS: ReadonlySet<string> = new Set(["datasetId", "label", "recordsPath", "schema", "writeMode", "maxRecords", "process"]);
 const WRITE_MODES: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_RECORD_WRITE_MODES);
 
 /**
@@ -21,7 +22,10 @@ const WRITE_MODES: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_RECORD_WRITE_
  * Exact fields, as for the schema. Issues are stable codes prefixed
  * `record_output.`, each listed once; the nested schema's issues keep their
  * `record_schema.` codes, so `record_schema.encrypt_unavailable` reaches the
- * caller unchanged. `recordsPath` is required.
+ * caller unchanged. `recordsPath` is required. `process` is read against the
+ * parsed schema, with issues prefixed `record_output.process_`
+ * (`parseAutomationStudioRecordProcessing`); it is not read while the schema is
+ * invalid, since its field ids could not be checked.
  */
 export function parseAutomationStudioRecordOutput(value: unknown, options: AutomationStudioRecordParseOptions = {}): AutomationStudioRecordOutputParseResult {
   const issues = new Set<string>();
@@ -42,7 +46,7 @@ function parseOutput(value: unknown, options: AutomationStudioRecordParseOptions
     return null;
   }
   if (!Object.keys(value).every((key) => OUTPUT_KEYS.has(key))) issues.add("record_output.unknown_key");
-  const { datasetId, label, recordsPath, schema, writeMode, maxRecords } = value;
+  const { datasetId, label, recordsPath, schema, writeMode, maxRecords, process } = value;
   if (!isDatasetId(datasetId)) issues.add("record_output.invalid_dataset_id");
   if (label !== undefined && !isLabel(label)) issues.add("record_output.invalid_label");
   if (recordsPath === undefined) issues.add("record_output.missing_records_path");
@@ -54,10 +58,13 @@ function parseOutput(value: unknown, options: AutomationStudioRecordParseOptions
   }
   const parsedSchema = parseAutomationStudioRecordSchema(schema, options);
   if (!parsedSchema.ok) for (const issue of parsedSchema.issues) issues.add(issue);
+  const parsedProcess = process === undefined || !parsedSchema.ok ? undefined : parseAutomationStudioRecordProcessing(process, parsedSchema.schema);
+  if (parsedProcess !== undefined && !parsedProcess.ok) for (const issue of parsedProcess.issues) issues.add(issue);
   if (issues.size > 0 || !parsedSchema.ok || !isDatasetId(datasetId) || typeof recordsPath !== "string" || !isWriteMode(writeMode)) return null;
   const output: AutomationStudioRecordOutput = { datasetId, recordsPath, schema: parsedSchema.schema, writeMode };
   if (typeof label === "string") output.label = label;
   if (typeof maxRecords === "number") output.maxRecords = maxRecords;
+  if (parsedProcess?.ok === true) output.process = parsedProcess.processing;
   return output;
 }
 

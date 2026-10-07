@@ -155,6 +155,7 @@ function recordBatch(request: Pick<AutomationStudioRecordCaptureRequest, "nodeId
     truncated: validated.truncated
   };
   if (output.label !== undefined) batch.label = output.label;
+  if (output.process !== undefined) batch.process = output.process;
   return batch;
 }
 

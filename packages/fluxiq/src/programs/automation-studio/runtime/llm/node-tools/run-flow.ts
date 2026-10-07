@@ -26,7 +26,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import { runAutomationStudioFlowDraftPart } from "./run-flow-part.ts";
-import type { AutomationStudioFlowDraftReplayNodeOf } from "./replay-span.ts";
+import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayNodeOf } from "./replay-span.ts";
 
 /** The tool that runs part of the Flow. */
 export const AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID = "core.run_flow";
@@ -72,6 +72,8 @@ type RunFlowLoop = {
   lastingActs?: (() => Promise<ReadonlySet<string>>) | undefined;
   /** The node each step names, so a repeat whose list is in the range runs once per row (`./run-flow-part.ts`). */
   nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
+  /** Each step's full node definition, so a read in the range sends its assembled record output (`./run-flow-part.ts`). */
+  definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
 };
 
 /**
@@ -94,7 +96,7 @@ export function automationStudioLlmRunFlowBinding(loop: RunFlowLoop): {
     tools: adds ? [...tools, automationStudioLlmRunFlowTool()] : tools,
     executeTool: adds
       ? async (input) => input.toolId === AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID
-        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}) })
+        ? runAutomationStudioFlowDraftPart({ steps, value: input.value, callId: input.callId, executeTool, signal: input.signal, ...(loop.lastingActs ? { lastingActs: await loop.lastingActs() } : {}), ...(loop.nodeOf ? { nodeOf: loop.nodeOf } : {}), ...(loop.definitionOf ? { definitionOf: loop.definitionOf } : {}) })
         : executeTool(input)
       : executeTool,
     offered: (tool) => !adds || tool.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID

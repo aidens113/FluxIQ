@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -21,6 +21,33 @@ const flow: AutomationStudioFlowDocument = {
   nodes: [{ id: "output", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", parameters: { elementId: "confirm" } } }],
   edges: []
 };
+// A node whose definition answers a route of its own: `ended` is a declared
+// branch, `rows` a data port. Only the registry lookup is replaced; every other
+// definition is the real one.
+const { PAGED_DEFINITION_ID } = vi.hoisted(() => ({ PAGED_DEFINITION_ID: "test.paged-output" }));
+vi.mock("../../../nodes/index.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../nodes/index.ts")>();
+  const paged: import("../../../nodes/index.ts").AutomationNodeDefinition = {
+    id: PAGED_DEFINITION_ID,
+    label: "Paged output",
+    description: "Dispatches one output and may answer that the list has ended.",
+    class: "policy",
+    scope: "both",
+    origin: "builtin",
+    implementationKey: PAGED_DEFINITION_ID,
+    inputs: [{ id: "in", label: "In", valueType: "any", role: "control" }],
+    outputs: [
+      { id: "success", label: "Success", valueType: "any", role: "success" },
+      { id: "failed", label: "Failed", valueType: "any", role: "failure" },
+      { id: "ended", label: "Ended", valueType: "any", role: "branch" },
+      { id: "rows", label: "Rows", valueType: "array", role: "data" }
+    ],
+    parameters: [],
+    execute: () => ({ status: "success", route: "success", outputs: {}, effects: [{ type: "policy.output.dispatch", payload: { outputId: "next-page", parameters: {} } }] })
+  };
+  return { ...original, getAutomationNodeDefinition: (id: string) => id === PAGED_DEFINITION_ID ? paged : original.getAutomationNodeDefinition(id) };
+});
+
 const matched = { status: "matched", candidateCount: 1, minimumConfidence: 0.5, candidateId: "confirm", confidence: 1 } as const;
 
 describe("effect dispatch results in the attempt trace", () => {
@@ -52,6 +79,47 @@ describe("effect dispatch results in the attempt trace", () => {
     expect(trace.attempts[0]).not.toHaveProperty("targetResolution");
     expect(trace.attempts[0]).not.toHaveProperty("message");
     expect(trace.attempts[0]?.transitionComparison?.status).toBe("action_failed");
+  });
+});
+
+describe("a route a successful dispatch answers", () => {
+  const pagedFlow: AutomationStudioFlowDocument = {
+    ...flow,
+    flowId: "flow.dispatched-route",
+    nodes: [
+      { id: "paged", definitionId: PAGED_DEFINITION_ID },
+      { id: "more", definitionId: "builtin.control.end" },
+      { id: "exit", definitionId: "builtin.control.end" }
+    ],
+    edges: [
+      { id: "paged.success", sourceNodeId: "paged", sourcePortId: "success", targetNodeId: "more", targetPortId: "in" },
+      { id: "paged.ended", sourceNodeId: "paged", sourcePortId: "ended", targetNodeId: "exit", targetPortId: "in" }
+    ]
+  };
+  const runAnswering = (route: string) => runAutomationStudioGraph(pagedFlow, { effectDispatcher: () => ({ status: "success", route, outputs: { ok: true } }) });
+  const visited = (trace: AutomationStudioGraphExecutionTrace) => trace.attempts.map((attempt) => [attempt.nodeId, attempt.status, attempt.route]);
+
+  it("is kept when the node declares a branch output of that id, and the run follows that edge", async () => {
+    const trace = await runAnswering("ended");
+    expect(trace.status).toBe("succeeded");
+    expect(visited(trace)).toEqual([["paged", "succeeded", "ended"], ["exit", "succeeded", "end"]]);
+  });
+
+  it("is ignored when the node declares no output of that id", async () => {
+    const trace = await runAnswering("elsewhere");
+    expect(visited(trace)[0]).toEqual(["paged", "succeeded", "success"]);
+    expect(trace.attempts[1]?.nodeId).toBe("more");
+  });
+
+  it("is ignored when it names a data port", async () => {
+    const trace = await runAnswering("rows");
+    expect(visited(trace)[0]).toEqual(["paged", "succeeded", "success"]);
+    expect(trace.attempts[1]?.nodeId).toBe("more");
+  });
+
+  it("is ignored on a node whose definition declares no output of that id at all", async () => {
+    const trace = await runAutomationStudioGraph(flow, { effectDispatcher: () => ({ status: "success", route: "ended", outputs: { ok: true } }) });
+    expect(trace.attempts[0]).toMatchObject({ status: "succeeded", route: "success" });
   });
 });
 

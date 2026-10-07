@@ -160,6 +160,8 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
     expect(told({ step: 2, reason: "bind_row_outside_loop", parameter: "query" })).toContain(`{"step": 2, "change": "repeat", "over": <the listing>}`);
     expect(told({ step: 2, reason: "repeat_taken_off" })).toContain(`{"step": 2, "change": "repeat", "over": <the listing>}`);
     expect(told({ step: 2, reason: "strands_a_step" })).toContain("Step 2 stays in the Flow");
+    expect(told({ step: 2, reason: "settings_rewrite_run" })).toContain("Step 2 keeps what it ran with");
+    expect(told({ step: 2, reason: "settings_rewrite_run" })).toContain(`{"step": 2, "change": "rerun", "input": {`);
   });
 
   it("tells a step that is not in the Flow apart from a look, and from a routed step that is not", () => {

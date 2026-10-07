@@ -365,6 +365,12 @@ export type AutomationStudioLlmEvidenceLoopInput = {
    * build explored and excused.
    */
   nodeOf?: AutomationStudioFlowDraftDryRunGateInput["nodeOf"];
+  /**
+   * The full definition of the node each step names, for the same places: what
+   * lets a read sent again carry the record output assembly writes on its node,
+   * as the stored Flow's read does (`node-tools/replay.ts`, read-list S1).
+   */
+  definitionOf?: AutomationStudioFlowDraftDryRunGateInput["definitionOf"];
   signal?: AbortSignal;
 };
 

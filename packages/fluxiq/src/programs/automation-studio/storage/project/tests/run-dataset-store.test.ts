@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, type AutomationStudioRecordSchema, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
+import { AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS, type AutomationStudioRecordProcessing, type AutomationStudioRecordSchema, type AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS, AutomationStudioProjectAdministration } from "../administration.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
@@ -29,6 +29,7 @@ const OTHER_SCHEMA: AutomationStudioRecordSchema = { schemaVersion: "0.1", field
 type RunSeed = { runId: string; flowId: string; status?: string; startedAt?: number };
 type Fixture = { pool: AutomationStudioProjectDatabasePool; store: AutomationStudioProjectRunDatasetStore };
 type BatchCounts = { batch_key: string; attempt_id: string; row_count: number; invalid_count: number; truncated: number };
+type AnswerRow = { ordinal: number; attempt_id: string; batch_key: string; row_json: string };
 
 let fixture: Fixture | undefined;
 
@@ -59,7 +60,7 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
 
     const legacyPool = new AutomationStudioProjectDatabasePool({ rootDir: path.join(rootDir, "legacy") });
     const lease = await legacyPool.acquire("project.legacy");
-    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id !== "0019_run_datasets") }).migrate();
+    await new AutomationStudioSchemaMigrationRunner({ database: lease.database, migrations: AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.filter((migration) => migration.id !== "0019_run_datasets" && migration.id !== "0024_run_dataset_answers") }).migrate();
     await expect(lease.database.get("select name from sqlite_master where name = 'run_datasets'")).resolves.toBeUndefined();
     const legacyStore = await AutomationStudioProjectRunDatasetStore.open({ pool: legacyPool, projectId: "project.legacy" });
     await expect(lease.database.get("select migration_id from automation_schema_migrations where migration_id = '0019_run_datasets'")).resolves.toEqual({ migration_id: "0019_run_datasets" });
@@ -373,12 +374,133 @@ describe("AutomationStudioProjectRunDatasetStore", () => {
       await lease.release();
     }
   });
+
+  it("installs migration 0024's answer table and nullable processing columns", async () => {
+    const { pool } = await openFixture([]);
+    const answerColumns = await query<{ name: string }>(pool, "pragma table_info(run_dataset_answer_rows)");
+    expect(answerColumns.map((column) => column.name)).toEqual(["run_id", "dataset_id", "ordinal", "attempt_id", "batch_key", "row_json"]);
+    const datasetColumns = await query<{ name: string; notnull: number }>(pool, "pragma table_info(run_datasets)");
+    expect(datasetColumns.slice(-3)).toEqual([
+      expect.objectContaining({ name: "process_json", notnull: 0 }),
+      expect.objectContaining({ name: "processing_json", notnull: 0 }),
+      expect.objectContaining({ name: "processed_at_ms", notnull: 0 })
+    ]);
+  });
+
+  it("processes two passes of one node into the answer, and every reader reads it", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a", status: "succeeded" }]);
+    await store.appendBatch(batch({ label: "Listings", rows: lettered("A", "B", "C") }));
+    await store.appendBatch(batch({ attemptId: "attempt.2", rows: lettered("C", "D"), now: 2_000 }));
+
+    const processing = { collected: 5, duplicates: 1, filteredOut: 0, cut: 0, kept: 4, passes: [{ node: "node.extract", pass: 1, rows: 3, newRows: 3 }, { node: "node.extract", pass: 2, rows: 2, newRows: 1 }] };
+    const expected: AutomationStudioRunDatasetSummary = { runId: "run.a", datasetId: "listings", label: "Listings", nodeIds: ["node.extract"], schemaDigest: "sha256:schema-a", recordCount: 4, truncated: false, invalidCount: 0, updatedAt: 2_000, processing };
+    await expect(store.processRunDatasets("run.a", { now: 5_000 })).resolves.toEqual([expected]);
+
+    const answer = lettered("A", "B", "C", "D");
+    await expect(store.readRows({ runId: "run.a", datasetId: "listings" })).resolves.toEqual({ rows: answer, lastOrdinal: 4, hasMore: false });
+    const page = await store.getPage({ runId: "run.a", datasetId: "listings" });
+    expect(page).toEqual({ summary: expected, schema: SCHEMA, rows: answer, nextCursor: null });
+    await expect(store.listDatasets("run.a")).resolves.toEqual([expected]);
+    expect((await store.listDatasetRuns({ flowId: "flow.a", datasetId: "listings" })).runs).toEqual([{ ...expected, flowId: "flow.a", runStatus: "succeeded", runStartedAt: 10 }]);
+    expect((await store.listProjectDatasets()).datasets[0]).toMatchObject({ latestRunId: "run.a", latestRecordCount: 4 });
+    // The answer keeps each row's source attempt and batch; the collected rows stay as captured.
+    expect((await answerRows(pool, "run.a", "listings")).map(({ ordinal, batch_key }) => [ordinal, batch_key])).toEqual([[1, "attempt.1"], [2, "attempt.1"], [3, "attempt.1"], [4, "attempt.2"]]);
+    expect(await storedOrdinals(pool, "run.a", "listings")).toEqual([1, 2, 3, 4, 5]);
+    await expect(query(pool, "select processed_at_ms from run_datasets where run_id = 'run.a'")).resolves.toEqual([{ processed_at_ms: 5_000 }]);
+
+    // Processing again gives the same answer and account.
+    await expect(store.processRunDatasets("run.a", { now: 6_000 })).resolves.toEqual([expected]);
+    expect((await answerRows(pool, "run.a", "listings")).map((row) => JSON.parse(row.row_json))).toEqual(answer);
+  });
+
+  it("reads the collected rows again after an append, until the dataset is processed again", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    await store.appendBatch(batch({ rows: lettered("A", "B", "C") }));
+    await store.appendBatch(batch({ attemptId: "attempt.2", rows: lettered("C", "D") }));
+    await store.processRunDatasets("run.a");
+
+    const appended = await store.appendBatch(batch({ attemptId: "attempt.3", rows: lettered("E") }));
+    expect(appended).toMatchObject({ recordCount: 6 });
+    expect(appended.processing).toBeUndefined();
+    await expect(answerRows(pool, "run.a", "listings")).resolves.toEqual([]);
+    await expect(query(pool, "select processing_json, processed_at_ms from run_datasets")).resolves.toEqual([{ processing_json: null, processed_at_ms: null }]);
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["A", "B", "C", "C", "D", "E"]);
+    expect((await store.getPage({ runId: "run.a", datasetId: "listings" }))?.rows).toHaveLength(6);
+    expect((await store.listProjectDatasets()).datasets[0]).toMatchObject({ latestRecordCount: 6 });
+
+    const [processed] = await store.processRunDatasets("run.a");
+    expect(processed).toMatchObject({ recordCount: 5, processing: { collected: 6, kept: 5, duplicates: 1 } });
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["A", "B", "C", "D", "E"]);
+  });
+
+  it("refuses a processing declaration that changes within one run and writes nothing", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    const process: AutomationStudioRecordProcessing = { sort: [{ field: "price", order: "desc" }], limit: 3 };
+    await store.appendBatch(batch({ rows: lettered("A", "B"), process }));
+    // The same declaration with its keys in another order is the same declaration.
+    await expect(store.appendBatch(batch({ attemptId: "attempt.2", rows: lettered("C"), process: { limit: 3, sort: [{ order: "desc", field: "price" }] } }))).resolves.toMatchObject({ recordCount: 3 });
+    await expect(store.appendBatch(batch({ attemptId: "attempt.3", rows: lettered("D"), process: { ...process, limit: 2 } }))).rejects.toThrow("Run dataset processing changed within one run.");
+    await expect(store.appendBatch(batch({ attemptId: "attempt.3", rows: lettered("D") }))).rejects.toThrow("Run dataset processing changed within one run.");
+    await expect(store.appendBatch(batch({ attemptId: "attempt.3", writeMode: "replace", rows: lettered("D") }))).rejects.toThrow("Run dataset processing changed within one run.");
+    expect(await storedOrdinals(pool, "run.a", "listings")).toEqual([1, 2, 3]);
+
+    // A dataset first written with no declaration refuses one later.
+    await store.appendBatch(batch({ datasetId: "plain", rows: lettered("A") }));
+    await expect(store.appendBatch(batch({ datasetId: "plain", attemptId: "attempt.2", rows: lettered("B"), process }))).rejects.toThrow("Run dataset processing changed within one run.");
+    await expect(store.appendBatch(batch({ datasetId: "other", process: { columns: ["missing"] } }))).rejects.toThrow("Invalid run dataset processing.");
+
+    const summaries = await store.processRunDatasets("run.a");
+    expect(summaries.find((summary) => summary.datasetId === "listings")).toMatchObject({ recordCount: 3 });
+    expect((await store.readRows({ runId: "run.a", datasetId: "listings" })).rows.map((row) => row.title)).toEqual(["C", "B", "A"]);
+  });
+
+  it("projects the answer and its page schema to the declared columns, in order", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    const process: AutomationStudioRecordProcessing = { sort: [{ field: "price", order: "desc" }], limit: 2, columns: ["title"] };
+    await store.appendBatch(batch({ rows: lettered("A", "B", "C"), process }));
+    await store.appendBatch(batch({ attemptId: "attempt.2", rows: lettered("C", "D"), process }));
+    const [summary] = await store.processRunDatasets("run.a");
+    expect(summary?.processing).toEqual({ collected: 5, duplicates: 1, filteredOut: 0, cut: 2, kept: 2, passes: [{ node: "node.extract", pass: 1, rows: 3, newRows: 3 }, { node: "node.extract", pass: 2, rows: 2, newRows: 1 }] });
+    const page = await store.getPage({ runId: "run.a", datasetId: "listings" });
+    expect(page?.schema).toEqual({ schemaVersion: "0.1", fields: [{ id: "title", label: "Title", valueType: "string", required: true }] });
+    expect(page?.rows).toEqual([{ title: "D" }, { title: "C" }]);
+    expect((await answerRows(pool, "run.a", "listings")).map(({ attempt_id, batch_key }) => [attempt_id, batch_key])).toEqual([["attempt.2", "attempt.2"], ["attempt.1", "attempt.1"]]);
+
+    const reordered: AutomationStudioRecordProcessing = { columns: ["price", "title"] };
+    await store.appendBatch(batch({ datasetId: "reordered", rows: lettered("A"), process: reordered }));
+    await store.processRunDatasets("run.a");
+    const reorderedPage = await store.getPage({ runId: "run.a", datasetId: "reordered" });
+    expect(reorderedPage?.schema.fields.map((field) => field.id)).toEqual(["price", "title"]);
+    expect(Object.keys(reorderedPage?.rows[0] ?? {})).toEqual(["price", "title"]);
+  });
+
+  it("deletes a processed dataset's answer rows with its collected rows", async () => {
+    const { pool, store } = await openFixture([{ runId: "run.a", flowId: "flow.a" }]);
+    await store.appendBatch(batch({ rows: lettered("A", "B", "B") }));
+    await store.appendBatch(batch({ datasetId: "prices", rows: lettered("A") }));
+    await store.processRunDatasets("run.a");
+    await expect(store.deleteRunDatasets("run.a", { datasetId: "listings" })).resolves.toEqual({ datasetCount: 1, rowCount: 3 });
+    await expect(answerRows(pool, "run.a", "listings")).resolves.toEqual([]);
+    await expect(answerRows(pool, "run.a", "prices")).resolves.toHaveLength(1);
+    await store.deleteRunDatasets("run.a");
+    await expect(query(pool, "select * from run_dataset_answer_rows")).resolves.toEqual([]);
+    await expect(store.processRunDatasets("run.a")).resolves.toEqual([]);
+  });
 });
 
 // Each batch is keyed by its attempt id unless a test sets `batchKey`, as the executor does outside a Call Flow.
 function batch(overrides: Partial<AutomationStudioRunDatasetBatch> = {}): AutomationStudioRunDatasetBatch {
   const attemptId = overrides.attemptId ?? "attempt.1";
   return { runId: "run.a", datasetId: "listings", nodeId: "node.extract", attemptId, batchKey: attemptId, schema: SCHEMA, schemaDigest: "sha256:schema-a", writeMode: "append", rows: items(3), invalidCount: 0, truncated: false, now: 1_000, ...overrides };
+}
+
+// Rows titled by letter, each priced by its letter's place in the alphabet.
+function lettered(...titles: string[]): AutomationStudioRunDatasetRow[] {
+  return titles.map((title) => ({ title, price: title.charCodeAt(0) - 64 }));
+}
+
+function answerRows(pool: AutomationStudioProjectDatabasePool, runId: string, datasetId: string): Promise<AnswerRow[]> {
+  return query<AnswerRow>(pool, "select ordinal, attempt_id, batch_key, row_json from run_dataset_answer_rows where run_id = ? and dataset_id = ? order by ordinal", [runId, datasetId]);
 }
 
 function items(count: number, prefix = "item"): AutomationStudioRunDatasetRow[] {

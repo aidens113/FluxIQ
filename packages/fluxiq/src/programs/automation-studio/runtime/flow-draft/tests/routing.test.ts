@@ -5,7 +5,12 @@ import { describe, expect, it } from "vitest";
 import { applyAutomationStudioFlowDraftAmendments } from "../amendment/index.ts";
 import { automationStudioFlowDraftDryRunVerdict } from "../dry-run.ts";
 import { automationStudioFlowDraftEntry } from "../entry.ts";
-import { automationStudioFlowDraftConditionalStepIds, automationStudioFlowDraftRepeatOrderProblem } from "../routing.ts";
+import {
+  automationStudioFlowDraftConditionalStepIds,
+  automationStudioFlowDraftConditionalStepReasons,
+  automationStudioFlowDraftRepeatOrderProblem,
+  automationStudioFlowDraftRoutingReferences
+} from "../routing.ts";
 import type { AutomationStudioFlowDraftStep } from "../step.ts";
 
 function steps(count = 4): AutomationStudioFlowDraftStep[] {
@@ -214,5 +219,51 @@ describe("whether a repeat can run where its steps stand", () => {
     expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(2), { kind: "repeat", through: "d2", over: "d1" })).toBe("span_broken");
     // A name that names no step is the assembler's to report.
     expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(2), { kind: "repeat", through: "d3", over: "gone" })).toBeUndefined();
+  });
+});
+
+// Read-list design (S2): "read the list, press Next, repeat while Next is
+// there" is a span that runs at least once and again while its last step
+// succeeds -- the do-while. Its check is the span's own last step, so it can
+// never stand before the span, and every member always runs once.
+describe("a repeat that runs again while its last step succeeds", () => {
+  it("is written with its through as its while, the most passes when given, and refused only as other repeats are", () => {
+    const draft = steps(4);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", while: 3, most: 20 }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[1]!.routing).toEqual({ kind: "repeat", through: "d3", while: "d3", most: 20 });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", while: 3, most: 20 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "already_so" }] });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", through: 3, while: 3 }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[1]!.routing).toEqual({ kind: "repeat", through: "d3", while: "d3" });
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", while: 9 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "no_such_step" }] });
+    draft[3]!.disposition = "dropped";
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", while: 4 }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "not_a_kept_step" }] });
+    // The first step has nothing before it, and a do-while needs nothing there.
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 1, change: "repeat", while: 1 }])).toEqual({ applied: 1, refused: [] });
+    expect(draft[0]!.routing).toEqual({ kind: "repeat", through: "d1", while: "d1" });
+  });
+
+  it("names its through and its while, and leaves its members unconditional: the span always runs once", () => {
+    const draft = steps(4);
+    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", while: 3 }]);
+    expect(automationStudioFlowDraftRoutingReferences(draft[1]!.routing!)).toEqual(["d3", "d3"]);
+    expect([...automationStudioFlowDraftConditionalStepReasons(draft).keys()]).toEqual([]);
+  });
+
+  it("is never over_after, and span_broken when its while runs before its step", () => {
+    const draft = steps(4);
+    const at = (index: number) => draft[index]!;
+    expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(1), { kind: "repeat", through: "d3", while: "d3" })).toBeUndefined();
+    expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(1), { kind: "repeat", through: "d2", while: "d2" })).toBeUndefined();
+    expect(automationStudioFlowDraftRepeatOrderProblem(draft, at(2), { kind: "repeat", through: "d1", while: "d1", most: 5 })).toBe("span_broken");
+  });
+
+  it("is refused as a position there is not when its while is before it, and taken off, through and no over, when a move breaks it", () => {
+    const draft = steps(4);
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "repeat", while: 1 }])).toEqual({ applied: 0, refused: [{ step: 3, reason: "no_such_position" }] });
+    expect(draft[2]!.routing).toBeUndefined();
+    applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "repeat", while: 3 }]);
+    const report = applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "reorder", to: 1 }]);
+    expect(report.refused).toEqual([{ step: 2, reason: "repeat_taken_off", takenOff: "span_broken", through: 3, now: 3, throughNow: 1 }]);
+    expect(draft.find((step) => step.id === "d2")!.routing).toBeUndefined();
   });
 });

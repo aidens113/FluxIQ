@@ -684,6 +684,13 @@ describe("a repeat taken off after a decision's moves", () => {
     expect(next).toContain("step 17 runs before step 16");
   });
 
+  // Read-list design (S2): a repeat-while repeats over no step, and is told by the step it ran while.
+  it("says which step's repeat-while was taken off and why, with no over to name", () => {
+    const next = nextOf(feedbackOf([{ step: 16, reason: "repeat_taken_off", through: 17, takenOff: "span_broken", now: 17, throughNow: 16 }]));
+    for (const words of ["Step 16's repeat while step 17 succeeds was taken off", "step 17 runs before step 16", "step 16 is now step 17", "step 17 is now step 16"]) expect(next).toContain(words);
+    expect(next).not.toContain("over step");
+  });
+
   it("is never marked repeated, since the model did not send it", () => {
     const feedback = automationStudioLlmEvidenceDraftAmendmentFeedback({
       refusals: [{ step: 15, reason: "repeat_taken_off", over: 16, takenOff: "over_after", repeated: true }],

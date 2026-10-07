@@ -175,6 +175,8 @@ describe("what a replay's answers make of a draft", () => {
     ]);
     const instruction = String(automationStudioFlowDraftDryRunFeedback(verdict).instruction);
     expect(instruction).toContain("once for each item");
+    // Read-list redesign S2: a do-while's span runs once per pass.
+    expect(instruction).toContain("with while, once per pass, until its last step answered that it ended or the loop reached its most passes");
     expect(instruction).toContain("loop_bound");
     expect(instruction).toContain("unresolved_binding");
   });

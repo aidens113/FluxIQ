@@ -61,7 +61,28 @@ export type AutomationStudioFlowDraftStepRouting =
    * read off `over`'s own node definition, because a node that declares a list
    * output is a list and one that does not is a check.
    */
-  | { kind: "repeat"; through: string; over: string };
+  | { kind: "repeat"; through: string; over: string; while?: never; most?: never }
+  /**
+   * This step through `through` run, then run again while the span's last
+   * step -- `while`, always the same step as `through` -- succeeds, at most
+   * `most` passes (the Repeat node's default when absent). The span runs at
+   * least once, and the last step's `ended` answer leaves the loop: the shape
+   * of "read the list, press Next, repeat while Next is there", which no
+   * repeat over an earlier step can state, since its check would have to run
+   * before the read (read-list design, section 4).
+   */
+  | { kind: "repeat"; through: string; while: string; most?: number; over?: never };
+
+/** A repeat over a list or a check before the span. */
+export type AutomationStudioFlowDraftRepeatOverRouting = Extract<AutomationStudioFlowDraftStepRouting, { over: string }>;
+
+/** A repeat that runs its span, then again while the span's last step succeeds. */
+export type AutomationStudioFlowDraftRepeatWhileRouting = Extract<AutomationStudioFlowDraftStepRouting, { while: string }>;
+
+/** Whether a repeat runs while its own last step succeeds, rather than over an earlier step. */
+export function automationStudioFlowDraftRepeatIsWhile(routing: AutomationStudioFlowDraftStepRouting | undefined): routing is AutomationStudioFlowDraftRepeatWhileRouting {
+  return routing?.kind === "repeat" && typeof routing.while === "string";
+}
 
 /**
  * A step's stable name.
@@ -87,6 +108,7 @@ export function automationStudioFlowDraftStepById(
 export function automationStudioFlowDraftRoutingReferences(routing: AutomationStudioFlowDraftStepRouting): string[] {
   if (routing.kind === "only_if") return [routing.check];
   if (routing.kind === "on_failed") return [routing.to];
+  if (automationStudioFlowDraftRepeatIsWhile(routing)) return [routing.through, routing.while];
   if (routing.kind === "repeat") return [routing.through, routing.over];
   return [];
 }
@@ -158,7 +180,10 @@ export function automationStudioFlowDraftConditionalStepReasons(
       add(routing.check, "check");
     }
     if (routing.kind === "on_failed") add(routing.to, "fallback");
-    if (routing.kind === "repeat") for (const member of repeatedSpan(steps, step, routing.through)) add(member, "repeat");
+    // A span that runs again while its last step succeeds always runs once,
+    // so a failure of one of its steps is a failure of the Flow (read-list
+    // design, S2): its members are not excused.
+    if (routing.kind === "repeat" && !automationStudioFlowDraftRepeatIsWhile(routing)) for (const member of repeatedSpan(steps, step, routing.through)) add(member, "repeat");
   }
   return reasons;
 }
@@ -182,6 +207,10 @@ function repeatedSpan(steps: readonly AutomationStudioFlowDraftStep[], first: Au
  * over it. Live run `run-musr9pv3-f4bf6256` carried such a repeat from decision
  * 0056 on; a decision that moves a step now checks every repeat with this and
  * takes off the ones that cannot run (`./amendment/repeat-revalidation.ts`).
+ *
+ * A repeat that runs again while its last step succeeds repeats over no
+ * earlier step, so it is never `over_after`; its `while` is its `through`, and
+ * a `while` before its step is `span_broken`.
  */
 export function automationStudioFlowDraftRepeatOrderProblem(
   steps: readonly AutomationStudioFlowDraftStep[],
@@ -189,8 +218,13 @@ export function automationStudioFlowDraftRepeatOrderProblem(
   routing: Extract<AutomationStudioFlowDraftStepRouting, { kind: "repeat" }>
 ): "over_after" | "span_broken" | undefined {
   const start = steps.indexOf(step);
-  const over = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === routing.over);
-  const through = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === routing.through);
+  const indexOf = (id: string): number => steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === id);
+  const through = indexOf(routing.through);
+  if (automationStudioFlowDraftRepeatIsWhile(routing)) {
+    if (start < 0 || through < 0) return undefined;
+    return through < start ? "span_broken" : undefined;
+  }
+  const over = indexOf(routing.over);
   if (start < 0 || over < 0 || through < 0) return undefined;
   if (over >= start) return "over_after";
   if (through < start) return "span_broken";

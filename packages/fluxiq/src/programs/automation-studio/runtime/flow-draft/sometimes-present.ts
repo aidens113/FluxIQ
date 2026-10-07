@@ -48,9 +48,9 @@
 import type { AutomationStudioFlowDraftDryRun } from "./dry-run.ts";
 import { automationStudioFlowDraftReplayOutcomeBlocks } from "./dry-run.ts";
 import { automationStudioFlowDraftStepAnsweredInterruption } from "./interruption.ts";
-import { automationStudioFlowDraftConditionalStepIds, automationStudioFlowDraftStepById, automationStudioFlowDraftStepId } from "./routing.ts";
+import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepId } from "./routing.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
-import { automationStudioFlowDraftWithheldStepIds } from "./verify-only.ts";
+import { automationStudioFlowDraftExemptStepIds } from "./excused.ts";
 
 /**
  * The ids of the steps one replay proved are only sometimes there, by the rules
@@ -63,7 +63,7 @@ export function automationStudioFlowDraftSometimesPresentStepIds(input: {
 }): ReadonlySet<string> {
   const found = new Set<string>();
   if (input.verdict.reset !== "ok") return found;
-  const excused = new Set([...automationStudioFlowDraftConditionalStepIds(input.steps), ...automationStudioFlowDraftWithheldStepIds(input.verdict.outcomes)]);
+  const excused = automationStudioFlowDraftExemptStepIds(input.steps, input.verdict.outcomes);
   // Read from the last step back, so what the later steps did is known by the
   // time a step is reached. The first later step that did not pass ends it.
   let laterPassed = true;

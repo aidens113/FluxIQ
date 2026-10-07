@@ -27,7 +27,8 @@ export function automationStudioBuildTestSpanRows(
 ): Map<string, readonly string[]> {
   const rows = new Map<string, readonly string[]>();
   for (const step of steps) {
-    if (step.routing?.kind !== "repeat") continue;
+    // A repeat while its last step succeeds is over no listing: its passes carry numbers only.
+    if (step.routing?.kind !== "repeat" || step.routing.over === undefined) continue;
     const labels = rowLabels(observedOf(step.routing.over));
     if (!labels) continue;
     for (const member of spanMembers(steps, step, step.routing.through)) if (!rows.has(member)) rows.set(member, labels);

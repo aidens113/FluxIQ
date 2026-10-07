@@ -1,4 +1,5 @@
 import type { JsonObject } from "../core.ts";
+import type { AutomationStudioRecordProcessingAccount } from "./process/index.ts";
 import type { AutomationStudioRecordSchema } from "./schema.ts";
 
 /** Formats a run dataset can be exported as. */
@@ -25,6 +26,7 @@ export type AutomationStudioRunDatasetSummary = {
   nodeIds: string[];
   /** Digest of the stored schema (`storedAutomationStudioRecordSchema`). */
   schemaDigest: string;
+  /** Rows a reader gets: the answer's when the dataset is processed (`processing.kept`), else the collected rows'. */
   recordCount: number;
   /** True when rows past `maxRowsPerDatasetPerRun` were dropped. */
   truncated: boolean;
@@ -32,6 +34,8 @@ export type AutomationStudioRunDatasetSummary = {
   invalidCount: number;
   /** Epoch milliseconds. */
   updatedAt: number;
+  /** Set once the dataset is processed: how its collected rows became its answer. Absent while unprocessed. */
+  processing?: AutomationStudioRecordProcessingAccount;
 };
 
 /** One page of a run dataset's rows. `schema` is the stored schema, so no `exclude` field appears. */
