@@ -8,7 +8,7 @@ import { flow, rerun } from "./repair-rerun-harness.ts";
 // start whose latest re-author is held runs the held graph unapplied -- an
 // extend overwrites the selected Subflow's graph under the same ids -- and says
 // which held edit it ran, for the run's judged end to apply or not. A topology
-// that is not that one graph is applied first, as before, and the marker says so.
+// that is not that one graph is refused without applying or dispatching.
 describe("a re-run of a held re-author", () => {
   const HELD_ID = "adaptation.bootstrap.held";
   const SUBFLOW = { subflowId: "subflow.primary", graphFlowId: "flow.rerun.graph" };
@@ -21,7 +21,7 @@ describe("a re-run of a held re-author", () => {
     nodes: flow.nodes.map((node) => node.id === "read" ? { ...node, parameterValues: { outputId: "activate-element", parameters: { elementId: "results-v2" } } } : node)
   };
   function held(overrides: { status?: AutomationStudioBootstrapAdaptation["status"]; ruleTarget?: string; subflows?: number } = {}): AutomationStudioBootstrapAdaptation {
-    const entry = { subflow: { subflowId: SUBFLOW.subflowId, graphFlowId: SUBFLOW.graphFlowId }, graphFlow: heldGraphFlow };
+    const entry = { subflow: { subflowId: SUBFLOW.subflowId, graphFlowId: SUBFLOW.graphFlowId }, graphFlow: structuredClone(heldGraphFlow) };
     return {
       adaptationId: HELD_ID,
       status: overrides.status ?? "validated",
@@ -60,16 +60,29 @@ describe("a re-run of a held re-author", () => {
   it.each([
     ["no Subflow was selected", "none", "no_selected_subflow"],
     ["the router also routes elsewhere", "elsewhere", "router_routes_elsewhere"],
-    ["the held topology has more than one Subflow", "two", "not_one_subflow"]
-  ] as const)("applies the held edit first, as before, and says why, when %s", async (_case, shape, code) => {
-    const bootstrap = shape === "elsewhere" ? held({ ruleTarget: "subflow.other" }) : shape === "two" ? held({ subflows: 2 }) : held();
-    const { context, result, written, saved, bootstrapApplied } = await rerun({ reauthorMarker: heldMarker, bootstrap, ...(shape === "none" ? {} : { subflow: SUBFLOW }) });
+    ["the fallback routes elsewhere", "fallback", "router_routes_elsewhere"],
+    ["the held topology has no Subflow", "empty", "not_one_subflow"],
+    ["the held topology has more than one Subflow", "two", "not_one_subflow"],
+    ["the held topology selects another Subflow", "other", "other_subflow"],
+    ["the held topology points to another graph", "graph", "other_graph"],
+    ["the held graph has another identity", "identity", "other_graph"]
+  ] as const)("declines without applying, dispatching or writing when %s", async (_case, shape, code) => {
+    const bootstrap = shape === "elsewhere" ? held({ ruleTarget: "subflow.other" }) : held({ subflows: shape === "two" ? 2 : shape === "empty" ? 0 : 1 });
+    if (shape === "other") bootstrap.topology.subflows[0]!.subflow.subflowId = "subflow.other";
+    if (shape === "graph") bootstrap.topology.subflows[0]!.subflow.graphFlowId = "flow.other";
+    if (shape === "identity") bootstrap.topology.subflows[0]!.graphFlow = { ...heldGraphFlow, flowId: "flow.other" };
+    if (shape === "fallback") bootstrap.topology.router.fallback = { kind: "subflow", subflowId: "subflow.other" };
+    const before = structuredClone(flow);
+    const dispatched: unknown[] = [];
+    const { result, written, saved, bootstrapApplied, stored } = await rerun({ dispatcher: (effect) => { dispatched.push(effect); return { status: "success", route: "success" }; }, reauthorMarker: heldMarker, bootstrap, ...(shape === "none" ? {} : { subflow: SUBFLOW }) });
 
-    expect(bootstrapApplied).toEqual([{ flowId: context.flowId, adaptationId: HELD_ID, actorId: "runtime.result_repair" }]);
-    expect(result?.session).toBeDefined();
-    expect(written.at(-1)?.metadata).not.toHaveProperty("heldReauthorAdaptationId");
-    const marker = (saved.at(-1)?.metadata as Record<string, any> | undefined)?.resultReauthor;
-    expect(marker).toMatchObject({ applied: true, appliedBeforeJudged: code, attempts: [{ adaptationId: HELD_ID, applied: true, appliedBeforeJudged: code }] });
+    expect(result).toEqual({ declinedCode: `repair_rerun.held_reauthor_unsupported.${code}` });
+    expect(bootstrapApplied).toEqual([]);
+    expect(dispatched).toEqual([]);
+    expect(written).toEqual([]);
+    expect(saved).toEqual([]);
+    expect(stored).toEqual(before);
+    expect(bootstrap.status).toBe("validated");
   });
 
   it("declines the pass when the held record cannot be read or is no longer validated", async () => {

@@ -249,8 +249,9 @@ the Flow, and an extend cannot be reverted. Read this entry if you read a run's
   later build of the Flow.
 - The re-run from the start runs the held graph as an unapplied candidate when
   the held topology is exactly the selected Subflow, on the same graph Flow,
-  with every router rule targeting it. Any other shape is applied before the
-  re-run, as before, and the marker says why in `appliedBeforeJudged`. A pass
+  with every router rule targeting it. Other shapes are refused with
+  `repair_rerun.held_reauthor_unsupported.<reason>` before applying, dispatching
+  or writing anything. The accepted graph remains unchanged. A pass
   that ran a held edit names it in `heldReauthorAdaptationId` on the session and
   on the detail's `repairedRerun`.
 - A later re-author attempt in the same run first rejects an earlier held edit
@@ -267,8 +268,9 @@ the Flow, and an extend cannot be reverted. Read this entry if you read a run's
   `automationStudioRefutedResultWaitingReauthors` and
   `automationStudioRefutedResultReauthorMarked` (`recovery/refuted-result/held-reauthor.ts`).
 - `automationStudioHeldReauthorCandidate` (`service/runtime-adaptation/held-candidate.ts`),
-  and two new re-run `declinedCode`s: `repair_rerun.held_reauthor_unreadable`
-  and `repair_rerun.held_reauthor_apply_failed`.
+  and re-run `declinedCode`s for an unreadable record
+  (`repair_rerun.held_reauthor_unreadable`) or unsupported unapplied topology
+  (`repair_rerun.held_reauthor_unsupported.<reason>`).
 - `hold: true` on `automationStudioReauthorRefutedResult`, and `held` on
   `automationStudioRefutedResultReauthored`.
 
