@@ -163,8 +163,15 @@ export type AutomationStudioFlowDraftReplayAnswer =
 /**
  * What one call of the test answered, for a judge of what the build did. A
  * pass of a repeat says which, of how many (`pass`, `of`).
+ *
+ * `records` are the rows a read stored in this test, its answer's
+ * `outputs.records` (see `automationStudioFlowDraftReplayStoredRecords`): Core's
+ * own, for the answer the build-test judge is shown
+ * (`../../result-verification/build-test/stores.ts`, read-list design 5.1).
+ * Never evidence: nothing a model or a step log is sent reads them, and every
+ * reader of an observation that sends anything sends its `evidence` alone.
  */
-export type AutomationStudioFlowDraftReplayObservation = { step: number; stepId?: string; resultCode?: string; evidence: JsonValue; pass?: number; of?: number };
+export type AutomationStudioFlowDraftReplayObservation = { step: number; stepId?: string; resultCode?: string; evidence: JsonValue; pass?: number; of?: number; records?: JsonObject[] };
 
 /**
  * A repeat the test runs as the Flow would: over the list's rows, while its
@@ -285,6 +292,18 @@ export function automationStudioFlowDraftReplayProduced(answer: AutomationStudio
 }
 
 /**
+ * The rows a read stored in this test: its answer's `outputs.records`, where
+ * Core's capture writes a read's rows (`../../executor/record-capture.ts`) and
+ * a domain's replay sends them, checked against the read's schema. Only from a
+ * step asked to run that ran, as `automationStudioFlowDraftReplayProduced`;
+ * nothing for rows that are not records.
+ */
+export function automationStudioFlowDraftReplayStoredRecords(answer: AutomationStudioFlowDraftReplayAnswer, mode: AutomationStudioFlowDraftReplayMode): JsonObject[] | undefined {
+  const records = automationStudioFlowDraftReplayProduced(answer, mode)?.records;
+  return Array.isArray(records) && records.every(isRecord) ? records : undefined;
+}
+
+/**
  * The call one step is sent with: its bindings resolved against `{item: row}`
  * on a pass of a list, so an input takes its test value, and against
  * `earlier`, what earlier steps produced in this test; the row under `item`
@@ -354,9 +373,11 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
   let stopped = false;
   let overBound = false;
   let count = 0;
-  const observe = (step: AutomationStudioFlowDraftStep, callId: string, answer: AutomationStudioFlowDraftReplayAnswer, status: AutomationStudioFlowDraftReplayPass["status"], pass: number): void => {
+  const observe = (step: AutomationStudioFlowDraftStep, callId: string, answer: AutomationStudioFlowDraftReplayAnswer, status: AutomationStudioFlowDraftReplayPass["status"], pass: number, mode: AutomationStudioFlowDraftReplayMode): void => {
     if (!answer.readable) return;
-    observations.push({ step: step.position, stepId: automationStudioFlowDraftStepId(step), ...(answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}), evidence: answer.result.evidence, pass });
+    // The rows this pass's read stored, beside its evidence and never in it (see the observation's type).
+    const records = automationStudioFlowDraftReplayStoredRecords(answer, mode);
+    observations.push({ step: step.position, stepId: automationStudioFlowDraftStepId(step), ...(answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}), evidence: answer.result.evidence, pass, ...(records ? { records } : {}) });
     if (status !== "replayed" && !evidence) evidence = { callId, toolId: automationStudioNodeReplayToolId(step), value: answer.result.evidence };
   };
   // A call of pass `pass`, sent inside its step-log pass scope (see the header).
@@ -390,7 +411,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
         if (ends) ended = true;
         const status = ends ? "replayed" : answer.readable ? automationStudioNodeReplayStatus(answer.result.resultCode, mode) : "failed";
         answered = { pass, status, ...(answer.readable && answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}) };
-        observe(member, callId, answer, status, pass);
+        observe(member, callId, answer, status, pass, mode);
         const outputs = automationStudioFlowDraftReplayProduced(answer, mode);
         if (outputs) produced.set(automationStudioFlowDraftStepId(member), outputs);
       }
@@ -436,7 +457,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
       const answer = await sendPass(count + 1, callId, plan.over, built.value);
       holds = answer.readable && automationStudioNodeReplayStatus(answer.result.resultCode, checkMode) === "replayed";
       // The answer that ends the loop is the loop ending, not a step failing.
-      observe(plan.over, callId, answer, "replayed", count + 1);
+      observe(plan.over, callId, answer, "replayed", count + 1, checkMode);
     }
   }
   for (const observation of observations) observation.of = count;

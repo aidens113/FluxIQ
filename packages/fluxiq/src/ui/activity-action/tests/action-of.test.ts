@@ -25,7 +25,8 @@ describe("activityActionOf: the Flow's own control steps (U-A2)", () => {
     ["builtin.control.switch", "branch"],
     ["builtin.control.parallel", "branch"],
     ["builtin.control.for-each", "repeat"],
-    ["builtin.control.loop", "repeat"]
+    ["builtin.control.loop", "repeat"],
+    ["builtin.control.repeat", "repeat"]
   ])("reads %s as a %s step, acting on no control", (definition, kind) => {
     expect(outputsOf(activityActionOf(step(definition)))).toEqual([kind, "", "working", ""]);
   });

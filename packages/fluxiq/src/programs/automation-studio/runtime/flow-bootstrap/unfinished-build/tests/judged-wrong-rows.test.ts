@@ -32,7 +32,7 @@ const provider: AutomationStudioLlmProvider = {
 function testSummary(): AutomationStudioRunResultSummary {
   const summary = runMuw60j7cTestSummary();
   const labels = RUN_MUW60J7C_TEST_READS.flatMap((read) => (read.observed as { readRows?: { rows?: string[] } }).readRows?.rows ?? []);
-  summary.buildTest = { ...summary.buildTest!, stores: [{ dataset: "web.output.dom-extract_list", writeMode: "append", steps: [9, 10], rows: labels.length, labels }] };
+  summary.buildTest = { ...summary.buildTest!, stores: [{ dataset: "web.output.dom-extract_list", writeMode: "append", steps: [9, 10], passes: 2, collected: labels.length, answer: { rows: labels.length, labels } }] };
   return summary;
 }
 

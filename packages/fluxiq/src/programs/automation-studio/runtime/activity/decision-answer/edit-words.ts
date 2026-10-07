@@ -25,7 +25,7 @@ import { automationStudioActivityAction, automationStudioActivityHumanLabel } fr
 type Evidence = ReadonlyArray<{ callId: string; toolId: string; value: unknown }>;
 
 /** One amendment as the decision carries it (`../../flow-draft/amendment/types.ts`), read by shape. */
-type Amendment = { step: number; change: string; to?: number; check?: number; through?: number; over?: number };
+type Amendment = { step: number; change: string; to?: number; check?: number; through?: number; over?: number; while?: number; most?: number };
 
 /** The draft's entry, read as a plain string so this module does not reach into the draft. */
 const DRAFT_ENTRY = "core.flow_draft";
@@ -46,7 +46,7 @@ function amendmentsOf(value: unknown): Amendment[] {
     const step = position(entry?.step);
     if (!entry || step === undefined || typeof entry.change !== "string") return [];
     const at = (key: string): { [key: string]: number } => { const found = position(entry[key]); return found === undefined ? {} : { [key]: found }; };
-    return [{ step, change: entry.change, ...at("to"), ...at("check"), ...at("through"), ...at("over") }];
+    return [{ step, change: entry.change, ...at("to"), ...at("check"), ...at("through"), ...at("over"), ...at("while"), ...at("most") }];
   });
 }
 
@@ -111,6 +111,9 @@ function sentence(amendment: Amendment, lines: Map<number, Record<string, unknow
     case "on_failed":
       return amendment.to !== undefined ? `made ${called(amendment.to, lines)} run when ${step} fails` : undefined;
     case "repeat": {
+      // A do-while (`while`, never `over`): the span runs again while its last
+      // step works, so it repeats over no step before it (read-list S3).
+      if (amendment.while !== undefined && amendment.over === undefined) return whileSentence(amendment, step, lines);
       const over = called(amendment.over ?? amendment.step - 1, lines);
       return amendment.through !== undefined && amendment.through !== amendment.step
         ? `made ${step} through ${called(amendment.through, lines)} repeat over ${over}`
@@ -123,6 +126,19 @@ function sentence(amendment: Amendment, lines: Map<number, Record<string, unknow
     default:
       return undefined;
   }
+}
+
+/**
+ * A do-while amendment in words: the span from its first step through the
+ * `while` step repeats while that step works ('made "Read" through "Next"
+ * repeat while "Next" works'), with its bound when the amendment set one.
+ */
+function whileSentence(amendment: Amendment, step: string, lines: Map<number, Record<string, unknown>>): string {
+  const last = amendment.while!;
+  const bound = amendment.most !== undefined ? `, at most ${amendment.most} ${amendment.most === 1 ? "time" : "times"}` : "";
+  if (last === amendment.step) return `made ${step} repeat while it works${bound}`;
+  const through = called(last, lines);
+  return `made ${step} through ${through} repeat while ${through} works${bound}`;
 }
 
 /**

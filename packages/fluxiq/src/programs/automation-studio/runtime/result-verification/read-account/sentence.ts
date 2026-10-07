@@ -29,14 +29,17 @@ import { automationStudioResultReadPageBoundSentence, automationStudioResultRead
 /** Core's sentence for how one read went. */
 export function automationStudioResultReadSentence(read: AutomationStudioResultReadAccount, length: "brief" | "full"): string {
   const seen = read.itemsSeen !== undefined ? ` of ${read.itemsSeen} items seen` : "";
-  const attempts = read.attempts ? ` (the last of ${read.attempts} reads of this step)` : "";
+  const attempts = read.keptPerPage
+    ? ` (${read.keptPerPage.join(", ")} by page, one pass of its loop each)`
+    : read.attempts ? ` (the last of ${read.attempts} reads of this step)` : "";
   const head = `step ${read.nodeId} read ${automationStudioResultReadPagesClause(read)} and kept ${read.kept}${seen}${attempts}`;
   return length === "brief" ? `${head}${briefTail(read)}` : `${capitalized(head)}.${fullTail(read)}`;
 }
 
 function briefTail(read: AutomationStudioResultReadAccount): string {
   const parts: string[] = [];
-  if (read.paginates === true) parts.push("it pages");
+  if (read.keptPerPage) parts.push("it reads a page a pass of a loop");
+  else if (read.paginates === true) parts.push("it pages");
   if (read.dedupes === true) parts.push(read.dedupeBy?.length ? `keeps one row per ${read.dedupeBy.join(" + ")}` : "dedupes");
   if (read.dropsEarlierPageRepeats) {
     const repeats = read.earlierPageRepeats;
@@ -55,7 +58,11 @@ function briefTail(read: AutomationStudioResultReadAccount): string {
 function fullTail(read: AutomationStudioResultReadAccount): string {
   const lines: string[] = [];
   const stop = automationStudioResultReadStop(read);
-  if (read.paginates === true) {
+  if (read.keptPerPage) {
+    lines.push(stop === "list_ended"
+      ? "It already runs in a loop that reads a page a pass, and read to the end of the list, so more passes would read nothing more; do not add another loop around it."
+      : "It already runs in a loop that reads a page a pass; do not add another loop around it.");
+  } else if (read.paginates === true) {
     lines.push(stop === "list_ended"
       ? "It already follows pages and read to the end of the list, so a higher page bound would read nothing more; do not add a paging step around it."
       : "It already follows pages; do not add a paging step around it -- change its own paging setting if more pages are needed.");

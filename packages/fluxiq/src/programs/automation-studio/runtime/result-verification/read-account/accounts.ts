@@ -56,6 +56,8 @@ import type { AutomationStudioResultReadAccount } from "../contracts.ts";
 import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadConditionText } from "./condition.ts";
 import { automationStudioResultReadDedupe } from "./dedupe.ts";
+import { automationStudioResultReadLoopedAccount } from "./looped-account.ts";
+import { automationStudioResultReadLoopPasses } from "./loop-passes.ts";
 
 /** The members that mark an object as a read's own parameters. */
 const READ_PARAMETER_KEYS = ["where", "paginate", "dedupe", "fields"];
@@ -75,12 +77,17 @@ export type AutomationStudioResultReadAccountsInput = {
   deniedEvidenceKeys?: readonly string[] | undefined;
 };
 
-/** One account per step that reported a read, in the order each first read: every one of them. */
+/**
+ * One account per step that reported a read, in the order each first read:
+ * every one of them. A step outside a loop speaks with its last successful
+ * read; one that ran as the passes of a loop, with every pass added up.
+ */
 export function automationStudioResultReadAccounts(input: AutomationStudioResultReadAccountsInput): { reads: AutomationStudioResultReadAccount[] } {
   const latest = new Map<string, { attempt: AutomationStudioFlowRunActionAttemptRecord; extraction: JsonObject; attempts: number }>();
-  for (const attempt of input.actionAttempts ?? []) {
-    const extraction = attempt.metadata?.extraction;
-    if (!isRecord(extraction) || count(extraction.recordCount) === undefined || count(extraction.pagesRead) === undefined) continue;
+  const run = input.actionAttempts ?? [];
+  for (const attempt of run) {
+    const extraction = readExtraction(attempt);
+    if (!extraction) continue;
     const previous = latest.get(attempt.nodeId);
     const attempts = (previous?.attempts ?? 0) + 1;
     // The last read that succeeded speaks for the step; a failed one only until a later one succeeds.
@@ -88,9 +95,30 @@ export function automationStudioResultReadAccounts(input: AutomationStudioResult
     latest.set(attempt.nodeId, replaces ? { attempt, extraction, attempts } : { ...previous, attempts });
   }
   const nodes = new Map((input.flowNodes ?? []).map((node) => [node.id, node]));
-  const reads = [...latest.values()].map(({ attempt, extraction, attempts }) =>
-    account(attempt, extraction, attempts, nodes.get(attempt.nodeId), input.deniedEvidenceKeys));
+  const reads = [...latest.values()].map(({ attempt, extraction, attempts }) => {
+    const node = nodes.get(attempt.nodeId);
+    // A step that ran as the passes of a loop speaks with every pass (`loop-passes.ts`, `looped-account.ts`).
+    const loop = automationStudioResultReadLoopPasses(run, (candidate) => candidate.nodeId === attempt.nodeId && readExtraction(candidate) !== undefined);
+    if (!loop) return account(attempt, extraction, attempts, node, input.deniedEvidenceKeys);
+    const passes = loop.passes.map((tries) => {
+      const speaking = [...tries].reverse().find((tried) => tried.status === "succeeded") ?? tries[tries.length - 1]!;
+      return account(speaking, readExtraction(speaking)!, 1, node, input.deniedEvidenceKeys);
+    });
+    return automationStudioResultReadLoopedAccount({ passes, attempts, stop: loop.stop, pageLimit: mostPasses(nodes.get(loop.repeatNodeId)) });
+  });
   return { reads };
+}
+
+/** The read's own account of itself on an attempt, when it reported one. */
+function readExtraction(attempt: AutomationStudioFlowRunActionAttemptRecord): JsonObject | undefined {
+  const extraction = attempt.metadata?.extraction;
+  return isRecord(extraction) && count(extraction.recordCount) !== undefined && count(extraction.pagesRead) !== undefined ? extraction : undefined;
+}
+
+/** The most passes a loop's Repeat was authored with, when it states a count. */
+function mostPasses(repeat: AutomationStudioFlowNode | undefined): number | undefined {
+  const most = count(repeat?.parameterValues?.most);
+  return most !== undefined && most > 0 ? most : undefined;
 }
 
 function account(

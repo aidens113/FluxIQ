@@ -109,6 +109,7 @@ import {
   automationStudioFlowDraftReplayProduced,
   automationStudioFlowDraftReplaySpanPlan,
   automationStudioFlowDraftReplaySpanRun,
+  automationStudioFlowDraftReplayStoredRecords,
   type AutomationStudioFlowDraftReplayAnswer,
   type AutomationStudioFlowDraftReplayDefinitionOf,
   type AutomationStudioFlowDraftReplayNodeOf,
@@ -360,11 +361,14 @@ export async function automationStudioFlowDraftReplaySteps(input: AutomationStud
     };
     outcomes.push(outcome);
     if (ran.readable) {
+      // The rows a read stored, beside its evidence and never in it (`./replay-span.ts`, the observation's type).
+      const records = value ? automationStudioFlowDraftReplayStoredRecords(ran, mode) : undefined;
       observations.push({
         step: step.position,
         stepId,
         ...(ran.result.resultCode ? { resultCode: ran.result.resultCode } : {}),
-        evidence: ran.result.evidence
+        evidence: ran.result.evidence,
+        ...(records ? { records } : {})
       });
     }
     if (withheldBy === undefined && automationStudioFlowDraftReplayOutcomeVerified(outcome) && automationStudioFlowDraftStepWithholdsLater(step, proposed.slice(index + 1).find((next) => !automationStudioFlowDraftStepCarriedJoin(next)))) {

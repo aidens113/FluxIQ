@@ -16,7 +16,7 @@
 // is what any medium's extraction produces -- and nothing in this file knows
 // where the values came from.
 
-import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import type { AutomationStudioFailureRecord, AutomationStudioRecordProcessingAccount } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 // The bounds live in `runtime/loop-limits/`, which neither this directory nor
 // the harness owns. This file used to re-export them so a reader of the contract
@@ -97,6 +97,14 @@ export type AutomationStudioResultRecordSetSummary = {
   missingRequiredColumns: string[];
   /** A few stored rows, each value bounded. Absent when the set stored none. */
   sampleRows?: JsonObject[];
+  /**
+   * What the run's end made of the rows the set collected (read-list design
+   * 5.2): the rows above are its answer, and this says how many were
+   * collected, how many repeated an earlier row, were left out by a condition
+   * over stored columns or past its limit, and each pass's rows. Absent for a
+   * set the run did not process.
+   */
+  processing?: AutomationStudioRecordProcessingAccount;
 };
 
 /**
@@ -224,8 +232,22 @@ export type AutomationStudioResultReadAccount = {
   conditions?: Array<{ condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[]; testedLabel?: true }>;
   /** True when every row failed the conditions and the read answered with the unfiltered rows instead. */
   unfiltered?: boolean;
-  /** How many attempts of this step reported a read. Absent when one did; the account is the last one's. */
+  /**
+   * How many attempts of this step reported a read. Absent when one did. Outside
+   * a loop the account is the last one's; inside one it is every pass's.
+   */
   attempts?: number;
+  /**
+   * The rows the read kept on each page, in page order, when its step ran as a
+   * pass of a loop (a repeat through the step that moves the list on; read-list
+   * design 5.2). Then `pagesRead` counts every pass's pages, `kept`, `itemsSeen`
+   * and each condition's counts add up every pass, `stop` is how the loop ended
+   * (`ended`: the step that moves the list on answered there was no further
+   * page; `bound`: the loop ran its most passes, which `pageLimit` gives where
+   * the Flow states it; `failed`: a step of the loop failed), and `paginates` is
+   * true. Absent outside a loop.
+   */
+  keptPerPage?: number[];
 };
 
 /**
@@ -462,11 +484,30 @@ export type AutomationStudioBuildTestStore = {
   writeMode: string;
   /** The steps that write it, by their number in `steps`, in Flow order. */
   steps: number[];
-  /** The rows it would hold: every row those steps' reads returned in this test, rows a read did not list included, less any a later `replace` clears. */
-  rows: number;
-  /** Those rows' labels, in the order they would be stored, screened as a read's `readRows` are; a row a read did not list has none. */
-  labels: string[];
-  /** The labels that occur more than once in `labels`, each once, in the order first seen. Absent when none does. */
+  /** How many answers of those steps' reads filled it in this test: one per pass of a repeated read, so one per page a loop read. */
+  passes: number;
+  /** The rows those reads returned in this test, every page's, rows a read did not list included, less any a later `replace` clears: what the run collects before its end makes the answer. */
+  collected: number;
+  /**
+   * What the Flow would store: the collected rows made into the answer as a
+   * run's end makes it (read-list design 5.1; `processAutomationStudioRecordRows`):
+   * each row once (the whole row is its identity unless the read names a
+   * dedupe key), then the read's own sort and limit. `rows` counts them;
+   * `labels` names them in answer order, screened as a read's `readRows` are; a
+   * row a read did not list counts and has no label.
+   */
+  answer: { rows: number; labels: string[] };
+  /**
+   * The collected rows the answer leaves out: repeats of an earlier row,
+   * rows a condition over stored columns left out, rows past the limit.
+   * Absent when the test could not make the answer -- its reads named their
+   * rows by label only, and labels alone cannot tell two rows apart -- and
+   * then `answer` is the collected rows as they came.
+   */
+  removed?: { duplicates: number; filteredOut: number; cut: number };
+  /** True when the reads collected rows and the answer keeps none of them. */
+  keptNone?: true;
+  /** The labels that occur more than once in `answer.labels`, each once, in the order first seen. Absent when none does. */
   repeated?: string[];
 };
 

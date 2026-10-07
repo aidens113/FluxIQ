@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultRecordSetSummary, AutomationStudioRunResultSummary } from "../contracts.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES,
   automationStudioResultRepairDirective,
@@ -251,5 +251,53 @@ describe("the judgement's own words, read forgivingly", () => {
     });
     expect(directive.judgement?.advice).toBe("filter the rows in [locator withheld] before storing them");
     expect(directive.withheld).toBe(true);
+  });
+});
+
+// Read-list design 5.3 (C5): a filtered read in a Flow run answers the rows it
+// kept, even none, so a run can store nothing because its conditions rejected
+// every row it saw. "Found none" is then false: the list was read, and held rows.
+describe("a result that kept nothing while its reads' conditions rejected rows", () => {
+  const read = (overrides: Partial<AutomationStudioResultReadAccount> = {}): AutomationStudioResultReadAccount => ({
+    nodeId: "read", definitionId: "opaque.read", pagesRead: 5, stop: "ended", truncated: false, itemsSeen: 40, kept: 0, paginates: true,
+    conditions: [{ condition: "rating atLeast 4", rejected: 31 }, { condition: "price lessThan 50", rejected: 22 }], keptPerPage: [0, 0, 0, 0, 0], ...overrides
+  });
+  const keptNothing = (reads: AutomationStudioResultReadAccount[]) =>
+    result({ totalRecordCount: 0, recordSets: [recordSet({ recordCount: 0, rowsChecked: 0 })], reads });
+
+  it("says the conditions left every row out, with the counts, instead of saying the read found none", () => {
+    const directive = automationStudioResultRepairDirective({ summary: keptNothing([read(), read({ nodeId: "other", pagesRead: 1, itemsSeen: 6, conditions: [{ rejected: 6 }], keptPerPage: [0] })]) });
+    expect(directive.findings.map((finding) => finding.code)).toEqual([codes.keptNoneRowsRejected]);
+    expect(codes.keptNoneRowsRejected).toBe("result.kept_none_rows_rejected");
+    const detail = directive.findings[0]!.detail;
+    expect(detail).toContain("at least 37 rows over 6 pages");
+    expect(detail).toContain("46 items seen");
+    expect(detail).not.toContain("found none");
+    expect(directive.fix[0]).toContain("a condition leaves out what the request asks for, or the list holds none of it");
+    expect(directive.fix.join(" ")).not.toContain("loosen every condition");
+  });
+
+  it("keeps the found-none finding where no condition rejected a row", () => {
+    expect(codesOf(keptNothing([read({ itemsSeen: 0, conditions: [{ condition: "rating atLeast 4", rejected: 0 }] })]))).toEqual([codes.noRecordsStored]);
+    const { conditions: _conditions, ...unconditioned } = read();
+    expect(codesOf(keptNothing([unconditioned]))).toEqual([codes.noRecordsStored]);
+  });
+
+  it("says it of a set whose processing kept none while another set stored rows, from the reads that collected it", () => {
+    const empty = recordSet({
+      datasetId: "answer", recordCount: 0, rowsChecked: 0,
+      processing: { collected: 0, duplicates: 0, filteredOut: 0, cut: 0, kept: 0, keptNone: true, passes: [{ node: "read", pass: 1, rows: 0, newRows: 0 }] }
+    });
+    const findings = automationStudioResultRepairFindings(result({
+      totalRecordCount: 4, recordSetCount: 2, recordSets: [recordSet(), empty],
+      reads: [read({ pagesRead: 2, keptPerPage: [0, 0] }), read({ nodeId: "unrelated", conditions: [{ rejected: 99 }] })]
+    }));
+    const kept = findings.filter((finding) => finding.code === codes.keptNoneRowsRejected);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({ datasetId: "answer" });
+    expect(kept[0]!.detail).toContain("at least 31 rows over 2 pages");
+    // A set that kept none from reads that rejected nothing is not this finding.
+    const quiet = automationStudioResultRepairFindings(result({ totalRecordCount: 4, recordSetCount: 2, recordSets: [recordSet(), empty], reads: [read({ conditions: [] })] }));
+    expect(quiet.map((finding) => finding.code)).not.toContain(codes.keptNoneRowsRejected);
   });
 });

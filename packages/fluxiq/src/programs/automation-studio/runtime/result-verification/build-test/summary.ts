@@ -67,8 +67,11 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 //   - `inputs`, once: the Flow's parameters at the values the test ran on
 //     (t252 D4, `./test-inputs.ts`).
 //   - `stores`, once: what the Flow would store, per dataset, as the test's
-//     reads filled it -- the steps that write it, its rows and their labels in
-//     order, and the labels stored twice (t274-c3, `./stores.ts`). The test
+//     reads filled it -- the steps that write it, the rows they collected, and
+//     the answer the run's end would make of them with its labels in order and
+//     the labels it would store twice (t274-c3, read-list design 5.1,
+//     `./stores.ts`), from the rows each read stored (an observation's
+//     `records`, which nothing here sends), else its labels. The test
 //     stores nothing, and run `run-muw60j7c-bb7c9a62`'s judge read that as an
 //     empty result while two reads appended 30 rows into one dataset, 3 of them
 //     twice (C-3). Only when the test ran and the Flow's nodes are known: with
@@ -144,8 +147,12 @@ import { automationStudioBuildTestInputs } from "./test-inputs.ts";
  */
 export type AutomationStudioBuildTestReportInput = {
   verdict: { outcomes: readonly AutomationStudioFlowDraftReplayOutcome[] };
-  /** `pass` and `of` (1-based pass, pass count) on an answer from a repeated span (t252 D6); absent elsewhere. */
-  observations: readonly { step: number; stepId?: string | undefined; resultCode?: string | undefined; evidence: JsonValue; pass?: number | undefined; of?: number | undefined }[];
+  /**
+   * `pass` and `of` (1-based pass, pass count) on an answer from a repeated
+   * span (t252 D6); absent elsewhere. `records`, the rows a read stored, feed
+   * `stores` only and are never sent (`./stores.ts`).
+   */
+  observations: readonly { step: number; stepId?: string | undefined; resultCode?: string | undefined; evidence: JsonValue; pass?: number | undefined; of?: number | undefined; records?: readonly JsonObject[] | undefined }[];
   reused: boolean;
 };
 
@@ -286,7 +293,10 @@ export function automationStudioBuildTestResultSummary(input: {
   const report = input.report;
   const stored = denied === undefined || !report || !input.nodes.length ? undefined : automationStudioBuildTestStores({
     steps: proposed, nodes: input.nodes, deniedEvidenceKeys: denied,
-    answers: (step) => observationsOf(step, report.observations).map((observation) => observation.evidence)
+    // Each answer with its place among the test's, so the rows are collected in capture order.
+    answers: (step) => report.observations.flatMap((observation, at) => observes(step, observation)
+      ? [{ at, evidence: observation.evidence, ...(observation.records ? { records: observation.records } : {}) }]
+      : [])
   });
   if (stored?.withheld) withheld = true;
   const buildTest: AutomationStudioBuildTestAccount = {
@@ -375,9 +385,12 @@ const OUTCOME_WORDS: ReadonlySet<string> = new Set(["replayed", "verified", "pre
 
 /** What the test observed of this step, each answer as it came with its pass; the reader makes one a value, several a list. */
 function observationsOf(step: AutomationStudioFlowDraftStep, observations: AutomationStudioBuildTestReportInput["observations"]): Array<{ pass?: number | undefined; evidence: JsonValue }> {
-  return observations.filter((observation) => step.id !== undefined && observation.stepId !== undefined
-    ? observation.stepId === step.id
-    : observation.step === step.position).map((observation) => ({ pass: observation.pass, evidence: observation.evidence }));
+  return observations.filter((observation) => observes(step, observation)).map((observation) => ({ pass: observation.pass, evidence: observation.evidence }));
+}
+
+/** Whether an observation is of this step: by its id, or by its position where either side has none. */
+function observes(step: AutomationStudioFlowDraftStep, observation: AutomationStudioBuildTestReportInput["observations"][number]): boolean {
+  return step.id !== undefined && observation.stepId !== undefined ? observation.stepId === step.id : observation.step === step.position;
 }
 
 /**
