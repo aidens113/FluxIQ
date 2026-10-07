@@ -97,13 +97,15 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     expect(instance.getFlowBootstrapGenerationRuntimeReadiness()).toEqual({
       providerResolverConfigured: true,
       nativeNodeRegistryConfigured: false,
-      llmEvidenceRuntime: { bound: false, toolCount: 0 }
+      llmEvidenceRuntime: { bound: false, toolCount: 0 },
+      candidateTrial: { runner: true, startReset: false }
     });
     (instance as any).nativeNodeRuntime = new AutomationStudioNativeNodeRuntime();
     expect(instance.getFlowBootstrapGenerationRuntimeReadiness()).toEqual({
       providerResolverConfigured: true,
       nativeNodeRegistryConfigured: false,
-      llmEvidenceRuntime: { bound: false, toolCount: 0 }
+      llmEvidenceRuntime: { bound: false, toolCount: 0 },
+      candidateTrial: { runner: true, startReset: false }
     });
   });
 

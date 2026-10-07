@@ -42,6 +42,38 @@ describe("Automation Studio LLM execution API", () => {
     generate.mockResolvedValue({ ...draft, status: "proposed" });
     expect(await registry.call(request)).toMatchObject({ ok: false });
   });
+
+  // t340: a candidate whose trial was judged yes twice is proposed, naming the candidate and trial; a draft says why it stayed one.
+  it("carries a candidate's trial block on its proposal and on its draft, and refuses a mismatched one", async () => {
+    const common = { projectId: "project", flowId: "flow", baseDependencyDigest: "base", baseSettingsRevision: 1, sourceInstructionIds: ["instruction"], accounting: { requestId: "request", estimatedInputTokens: 10 } };
+    const candidate = { candidateId: "candidate", revision: 2, digest: "a".repeat(64), trial: { runId: "trial.1", verdict: "yes", calls: 2 } };
+    const proposal = { ...common, status: "proposed", adaptationId: "adaptation.candidate", riskLevel: "low", candidate };
+    const draft = { ...common, status: "draft", candidateId: "candidate", revision: 2, digest: "a".repeat(64), verification: "not_performed", promotionAllowed: false, trial: { verdict: "yes", runId: "trial.1", codes: ["FLOW_BOOTSTRAP_STALE"] } };
+    const generate = vi.fn(), registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation: generate }) as any);
+    const actor: ProgramApiActor = { sessionId: "session", userId: "user", roleId: "admin", permissions: ["flows.write"] };
+    const candidateRequest = { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, scope: {}, actor, payload: { projectId: "project", flowId: "flow", authSessionId: "session", authoringMode: "candidate", evidenceGuided: true } };
+    const legacyRequest = { ...candidateRequest, payload: { projectId: "project", flowId: "flow", authSessionId: "session", evidenceGuided: true } };
+
+    generate.mockResolvedValue({ ...proposal, buildPlan: "private-plan" });
+    const proposed = await registry.call(candidateRequest);
+    expect(proposed).toEqual({ ok: true, payload: { adaptation: { ...proposal } } });
+    generate.mockResolvedValue(draft);
+    expect(await registry.call(candidateRequest)).toEqual({ ok: true, payload: { candidate: draft } });
+
+    // A candidate-mode proposal must name its trial; a legacy one must not; neither may carry a yes nobody confirmed.
+    for (const [request, answer] of [
+      [candidateRequest, { ...proposal, candidate: undefined }],
+      [legacyRequest, proposal],
+      [candidateRequest, { ...proposal, candidate: { ...candidate, trial: { ...candidate.trial, calls: 1 } } }],
+      [candidateRequest, { ...proposal, candidate: { ...candidate, trial: { ...candidate.trial, verdict: "unsure" } } }],
+      [candidateRequest, { ...draft, trial: { verdict: "maybe", codes: [] } }],
+      [candidateRequest, { ...draft, promotionAllowed: true }]
+    ] as const) {
+      generate.mockResolvedValue(answer);
+      expect(await registry.call(request)).toMatchObject({ ok: false });
+    }
+  });
   it("resolves a configured authoring mode from Core's setting: legacy proposes, candidate drafts", async () => {
     const draft = { projectId: "project", flowId: "flow", status: "draft", candidateId: "candidate", revision: 1, digest: "a".repeat(64), baseDependencyDigest: "base", baseSettingsRevision: 1, sourceInstructionIds: ["instruction"], accounting: { requestId: "request", estimatedInputTokens: 10 }, verification: "not_performed", promotionAllowed: false };
     const proposed = { projectId: "project", flowId: "flow", adaptationId: "adaptation", status: "proposed", riskLevel: "low", baseDependencyDigest: "base", baseSettingsRevision: 1, sourceInstructionIds: ["instruction"], accounting: { requestId: "request", estimatedInputTokens: 10 } };
@@ -181,6 +213,11 @@ describe("Automation Studio LLM execution API", () => {
     })).resolves.toEqual({ ok: false, error: "Flow bootstrap readiness does not accept request fields." });
     expect(parseAutomationStudioFlowBootstrapGenerationReadiness(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS)).toEqual(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS);
     expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, contractVersion: "automation-studio.flow-bootstrap-generation-readiness.v1" })).toBeNull();
+    // A Core with the candidate trial runner says so (t340); a reader refuses a readiness without it or with another one.
+    expect(AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS.capabilities.candidateTrial).toEqual({ version: "automation-studio.candidate-trial.v1", judge: "build_test_confirmed_yes", promotion: "bootstrap_adaptation" });
+    const { candidateTrial: _trial, ...withoutTrial } = AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS.capabilities;
+    expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, capabilities: withoutTrial })).toBeNull();
+    expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, capabilities: { ...withoutTrial, candidateTrial: { version: "automation-studio.candidate-trial.v1", judge: "single_yes", promotion: "bootstrap_adaptation" } } })).toBeNull();
     // The grant-era readiness is not this contract: its preflight and issue
     // endpoints are gone, and a reader holding it must not believe they exist.
     expect(parseAutomationStudioFlowBootstrapGenerationReadiness({ ...AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, preflightEndpoint: "preflight-llm-execution", issueGrantEndpoint: "issue-llm-execution-grant" })).toBeNull();

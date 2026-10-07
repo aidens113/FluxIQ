@@ -22,6 +22,18 @@ export type AutomationStudioFlowBootstrapGenerationReadiness = {
       providerResponseStates: readonly ["not_received", "received", "unknown"];
       accountingFields: readonly ["requestId", "estimatedInputTokens", "provider", "model", "providerStatus", "inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd"];
     };
+    /**
+     * Candidate authoring tests a submitted candidate before it is proposed
+     * (t340): one trial through the normal runtime, judged by the build-test
+     * judge with a confirming second yes, then proposed as a bootstrap
+     * adaptation. Absent from a Core without the trial runner, which the Lab
+     * refuses for a candidate-mode creation (U4).
+     */
+    candidateTrial: {
+      version: "automation-studio.candidate-trial.v1";
+      judge: "build_test_confirmed_yes";
+      promotion: "bootstrap_adaptation";
+    };
   };
 };
 
@@ -45,7 +57,8 @@ export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS: AutomationSt
       providerInvocationStates: ["not_attempted", "attempted"],
       providerResponseStates: ["not_received", "received", "unknown"],
       accountingFields: ["requestId", "estimatedInputTokens", "provider", "model", "providerStatus", "inputTokens", "outputTokens", "totalTokens", "estimatedCostUsd"]
-    }
+    },
+    candidateTrial: { version: "automation-studio.candidate-trial.v1", judge: "build_test_confirmed_yes", promotion: "bootstrap_adaptation" }
   }
 };
 
@@ -62,7 +75,10 @@ export function parseAutomationStudioFlowBootstrapGenerationReadiness(
   if (!readinessRecord(value.runtime) || !readinessExactKeys(value.runtime, ["providerResolverConfigured", "nativeNodeRegistryConfigured"])) return null;
   if (![value.runtime.providerResolverConfigured, value.runtime.nativeNodeRegistryConfigured].every((item) => typeof item === "boolean")) return null;
   if (value.supported !== [value.runtime.providerResolverConfigured, value.runtime.nativeNodeRegistryConfigured].every((item) => item === true)) return null;
-  if (!readinessRecord(value.capabilities) || !readinessExactKeys(value.capabilities, ["taskKind", "expectedOutput", "requiresNativeNodeRegistryContext", "structuredFailureDiagnostics"])) return null;
+  if (!readinessRecord(value.capabilities) || !readinessExactKeys(value.capabilities, ["taskKind", "expectedOutput", "requiresNativeNodeRegistryContext", "structuredFailureDiagnostics", "candidateTrial"])) return null;
+  const trial = value.capabilities.candidateTrial, expectedTrial = expected.capabilities.candidateTrial;
+  if (!readinessRecord(trial) || !readinessExactKeys(trial, ["version", "judge", "promotion"])
+    || trial.version !== expectedTrial.version || trial.judge !== expectedTrial.judge || trial.promotion !== expectedTrial.promotion) return null;
   const expectedCapabilities = expected.capabilities;
   if (value.capabilities.taskKind !== expectedCapabilities.taskKind
     || value.capabilities.expectedOutput !== expectedCapabilities.expectedOutput

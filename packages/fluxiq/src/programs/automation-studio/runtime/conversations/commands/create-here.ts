@@ -6,13 +6,14 @@
 // change. Applying is safe to do without asking because the Flow is brand new
 // and blank: there is nothing of the person's for the change to replace.
 //
-// In candidate authoring mode (`./build.ts`) the build saves an
-// unverified candidate draft instead, and nothing is applied: the Flow keeps
-// no steps until a candidate can be verified and promoted.
+// In candidate authoring mode (`./build.ts`) Core test-runs the candidate once
+// from its start. A proposal it makes from a confirmed yes is applied here as a
+// legacy one is; a candidate that stayed a draft is never applied, and the
+// answer says what its test run came to.
 
 import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED, automationStudioConversationAuthorsCandidates, buildAutomationStudioFlowFromConversation } from "./build.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
 import { automationStudioConversationSiteName } from "../site-name.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
@@ -27,7 +28,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     title: TITLE,
     get summary() {
       return automationStudioConversationAuthorsCandidates()
-        ? "Makes a new Flow that does what the person asks, explores the page they have open to work out the steps, and saves a candidate draft with verification pending."
+        ? "Makes a new Flow that does what the person asks, explores the page they have open to work out the steps, test-runs the whole Flow once from its start, and puts the steps into the Flow only when that test is judged to do what was asked."
         : "Makes a new Flow that does what the person asks, explores the page they have open to work out the steps, and puts those steps into the Flow.";
     },
     group: "Flows",
@@ -41,7 +42,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     reauthorizes: false
   },
   announce: ({ place }) => automationStudioConversationAuthorsCandidates()
-    ? `I'll make you a new automation for this, working out its steps by trying them on ${place}. I'll say here when the draft is saved; it will still need verification.`
+    ? `I'll make you a new automation for this, working out its steps by trying them on ${place} and then test-running the whole Flow once from the start. I'll say here when it is ready, or why it is not.`
     : `I'll make you a new automation for this, working out its steps by trying them on ${place}. I'll say here when it is ready.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
@@ -66,7 +67,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     // build this Flow", said the opposite of what had happened (t195,
     // `run-murdouox-c5294247`, UI review).
     if (!built.ok) return progress.failed(built.cause, { ending: built.ending, left: automationStudioConversationCreateHereLeft(name, built) });
-    if (built.status === "draft") return { ...progress.succeeded(AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED), candidate: built.candidate };
+    if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate)), candidate: built.candidate };
     progress.carry({ adaptationId: built.adaptationId });
     const where = automationStudioConversationSiteName(context.startLocation);
     progress.landed(`tried the steps on ${where} and worked out which ones work`);
@@ -77,7 +78,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE: AutomationStudioConvers
     // True whether or not a run follows, and one may already be under way when
     // this is read (the Lab starts one as soon as it is written), so it says
     // what is so rather than telling the person to start one (UI D9).
-    return progress.succeeded(`Your automation "${name}" is ready: I tried its steps on ${where} and put the ones that worked into it.`);
+    return progress.succeeded(`Your automation "${name}" is ready: I tried its steps on ${where} and put the ones that worked into it.${built.trial ? ` ${AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED}` : ""}`);
   }
 };
 

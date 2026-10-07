@@ -17,6 +17,13 @@ export type AutomationStudioFlowBootstrapGenerationReadiness = {
   nativeNodeRegistryConfigured: boolean;
   /** Whether a host bound the evidence tools that evidence-guided generation needs, and how many. */
   llmEvidenceRuntime: { bound: boolean; toolCount: number };
+  /**
+   * Candidate authoring can test a submitted candidate (t340): `runner` is true
+   * in every Core that has the trial runner, and `startReset` says whether the
+   * deployment set the start hook (D1) that resets the target before each trial.
+   * The Lab checks it before it starts a candidate-mode creation (U4).
+   */
+  candidateTrial: { runner: true; startReset: boolean };
 };
 
 /** The two nodes a registry must hold before anything it holds can be wired into a Flow. */
@@ -30,6 +37,8 @@ export function automationStudioFlowBootstrapGenerationReadiness(input: {
   } | undefined;
   providerResolverConfigured: boolean;
   llmEvidenceRuntime?: { tools: readonly unknown[] } | undefined;
+  /** Whether the deployment set `prepareCandidateStart`. */
+  candidateStartPrepared?: boolean | undefined;
 }): AutomationStudioFlowBootstrapGenerationReadiness {
   const native = input.nativeNodeRuntime;
   const hasControlFoundation = CONTROL_FOUNDATION.every((definitionId) => Boolean(native?.sdk.nodes.get(definitionId)));
@@ -38,6 +47,7 @@ export function automationStudioFlowBootstrapGenerationReadiness(input: {
   return {
     providerResolverConfigured: input.providerResolverConfigured,
     nativeNodeRegistryConfigured: hasControlFoundation && hasExecutableDomainNode,
-    llmEvidenceRuntime: { bound: input.llmEvidenceRuntime !== undefined, toolCount: input.llmEvidenceRuntime?.tools.length ?? 0 }
+    llmEvidenceRuntime: { bound: input.llmEvidenceRuntime !== undefined, toolCount: input.llmEvidenceRuntime?.tools.length ?? 0 },
+    candidateTrial: { runner: true, startReset: input.candidateStartPrepared === true }
   };
 }

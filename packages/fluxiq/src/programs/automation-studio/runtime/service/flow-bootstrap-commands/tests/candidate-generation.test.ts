@@ -4,25 +4,30 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioFlowCandidateDraftStore, type AutomationStudioFlowCandidateDraftRecord } from "../../candidate-drafts/index.ts";
-import { blankFixture, caller, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
+import { blankFixture, caller, judgeReply, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 function draftStore(service: AutomationStudioService) { return (service as unknown as { candidateDrafts: AutomationStudioFlowCandidateDraftStore }).candidateDrafts; }
 
 describe("candidate facade uses the actual service", () => {
-  it.each(["draft", "stale", "cancel", "save_failure"] as const)("discovery and full submissions end as %s without proposing or applying", async (ending) => {
+  // With the service's trial port (t340) the model tests its latest revision before it completes:
+  // explore, submit twice, test revision 2 (the judge asked twice), complete.
+  it.each(["proposed", "stale", "cancel", "save_failure"] as const)("discovery, full submissions and a judged trial end as %s", async (ending) => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-candidate-facade-"));
     let calls = 0, discoveries = 0, stale = false;
     let service!: AutomationStudioService, projectId = "", flowId = "";
     const requests: string[] = [];
     const provider = mockProvider(async (request) => {
-      requests.push(request.taskKind); calls++;
+      requests.push(request.taskKind);
+      if (request.taskKind === "loop_verification") return judgeReply("yes");
+      calls++;
       expect(request.taskKind).toBe("evidence_tool_decision");
       const evidence = request.context.evidenceLoop?.evidence ?? [];
       const latest = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
       const decision = calls === 1 ? { kind: "tool_call", callId: "wrong-turn", toolId: "inspect", input: { area: "wrong" } }
         : calls < 4 ? { kind: "tool_call", callId: `submit-${calls}`, toolId: "core.submit_candidate", input: { summary: `complete revision ${calls - 1}`, plan: plan() } }
+        : calls === 4 ? { kind: "tool_call", callId: "test-2", toolId: "core.test_candidate", input: { revision: latest?.revision, digest: latest?.digest } }
         : { kind: "complete", result: { revision: latest?.revision, digest: latest?.digest } };
-      if (calls === 4) { stale = ending === "stale"; if (ending === "cancel") service.buildCancellation.cancel(projectId, flowId); }
+      if (calls === 5) { stale = ending === "stale"; if (ending === "cancel") service.buildCancellation.cancel(projectId, flowId); }
       return { response: { kind: "evidence_tool_decision", summary: "Scripted candidate authoring", decision }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.001 } };
     });
     service = new AutomationStudioService({ dataDir, llmProviderResolver: () => ({ provider, maxCallsPerRun: 12, maxEstimatedCostUsd: 0.1 }),
@@ -38,33 +43,40 @@ describe("candidate facade uses the actual service", () => {
       vi.spyOn(service, "getLlmExecutionBinding").mockImplementation(async (p, f) => { const binding = await readBinding(p, f); return stale ? { ...binding, settingsRevision: binding.settingsRevision + 1 } : binding; });
       if (ending === "save_failure") vi.spyOn(draftStore(service), "save").mockRejectedValue(new Error("synthetic disk failure"));
       const building = service.generateFlowBootstrapAdaptation({ projectId, flowId, caller: caller(), evidenceGuided: true, authoringMode: "candidate" });
-      if (ending === "draft") {
+      // Five decisions at $0.001 and two judge calls at $0.0005.
+      const spent = { estimatedCostUsd: expect.closeTo(0.006, 6), totalTokens: 515 };
+      if (ending === "proposed") {
         const result = await building;
-        expect(result).toMatchObject({ status: "draft", revision: 2, verification: "not_performed", promotionAllowed: false, accounting: { inputTokens: 40, outputTokens: 20, totalTokens: 60, estimatedCostUsd: 0.004 } });
-        expect(result).not.toHaveProperty("adaptationId");
+        if (result.status !== "proposed") throw new Error(`expected a proposal, got ${result.status}`);
         const saved = await draftStore(service).get(projectId, flowId);
-        expect(saved).toMatchObject({ candidateId: result.candidateId, sourceInstructionIds: ["instruction.build"], instructionText: "Build a primary path\nCreate a deterministic Start to End Flow.", candidate: { revision: 2, digest: result.digest, status: "draft" } });
+        expect(result).toMatchObject({ status: "proposed", accounting: { inputTokens: 450, outputTokens: 65, ...spent }, candidate: { candidateId: saved?.candidateId, revision: 2, digest: saved?.candidate.digest, trial: { verdict: "yes", calls: 2 } } });
+        // The draft is kept beside the proposal, as the record of what was tried.
+        expect(saved).toMatchObject({ sourceInstructionIds: ["instruction.build"], instructionText: "Build a primary path\nCreate a deterministic Start to End Flow.", candidate: { revision: 2, status: "draft" } });
         expect(saved?.candidate.buildPlan.subflows[0]?.nodes.map((node) => node.definitionId)).toEqual(["builtin.control.start", "builtin.control.end"]);
-        expect(saved?.schemaVersion).toBe(2);
         if (saved?.schemaVersion !== 2) throw new Error("Actual facade did not retain original sources");
         expect(saved.originalSources.instructions).toEqual([originalInstruction]);
-        expect(saved.originalSources.inventoryInstructionIds).toEqual(["instruction.build"]);
-        expect(saved.candidate.originalInstructionsDigest).toBe(saved.originalInstructionsDigest);
         expect(JSON.stringify(saved)).not.toContain("unrelated"); expect(JSON.stringify(saved)).not.toContain("wrong-turn");
-        const spend = await (service as any).creationSpends.get(projectId, flowId); expect(spend).toMatchObject({ builds: 1, spentUsd: 0.004 });
-        const restarted = new AutomationStudioService({ dataDir });
-        try { expect(await draftStore(restarted).get(projectId, flowId)).toEqual(saved); } finally { await restarted.close(); }
+        expect(proposed).toHaveBeenCalledTimes(1);
+        const adaptations = await (service as any).bootstrapAdaptations.listFlowBootstrapAdaptations(projectId, flowId);
+        expect(adaptations).toHaveLength(1);
+        expect(adaptations[0]).toMatchObject({ adaptationId: result.adaptationId, status: "proposed", baseDependencyDigest: saved.candidate.baseDependencyDigest, buildPlan: { plan: saved.candidate.buildPlan.plan } });
+        expect(adaptations[0].auditEvents[0].detail.candidateTrial).toMatchObject({ candidateId: saved.candidateId, revision: 2, digest: saved.candidate.digest, trial: { runId: result.candidate!.trial.runId, verdict: "yes", calls: 2, start: "not_reset" }, trials: 1 });
+        // Proposed, not applied: the chat approves and applies it as a legacy proposal (U3).
+        expect(await service.getFlowRouter(projectId, flowId)).toBeNull();
+        expect(requests.filter((kind) => kind === "loop_verification")).toHaveLength(2);
       } else if (ending === "cancel") {
-        await expect(building).rejects.toMatchObject({ name: "AbortError", cause: { diagnostic: { accounting: { estimatedCostUsd: 0.004, totalTokens: 60 } } } });
+        await expect(building).rejects.toMatchObject({ name: "AbortError", cause: { diagnostic: { accounting: spent } } });
       } else {
-        await expect(building).rejects.toMatchObject({ diagnostic: { stage: ending === "stale" ? "post_provider_validation" : "persistence", accounting: { estimatedCostUsd: 0.004, totalTokens: 60 } } });
+        await expect(building).rejects.toMatchObject({ diagnostic: { stage: ending === "stale" ? "post_provider_validation" : "persistence", accounting: spent } });
       }
-      if (ending !== "draft") expect(await draftStore(service).get(projectId, flowId)).toBeUndefined();
-      expect(calls).toBe(4); expect(discoveries).toBe(1); expect(proposed).not.toHaveBeenCalled();
-      expect(await (service as any).bootstrapAdaptations.listFlowBootstrapAdaptations(projectId, flowId)).toEqual([]);
+      if (ending !== "proposed") {
+        expect(await draftStore(service).get(projectId, flowId)).toBeUndefined();
+        expect(proposed).not.toHaveBeenCalled();
+        expect(await (service as any).bootstrapAdaptations.listFlowBootstrapAdaptations(projectId, flowId)).toEqual([]);
+        expect(await service.getFlowRouter(projectId, flowId)).toBeNull();
+      }
+      expect(calls).toBe(5); expect(discoveries).toBe(1);
       expect(await service.getFlow(projectId, flowId)).toEqual(before);
-      expect(await service.getFlowRouter(projectId, flowId)).toBeNull();
-      expect(requests).not.toContain("loop_verification");
     } finally { await service.close(); await rm(dataDir, { recursive: true, force: true }); }
   }, 60_000);
 });
@@ -113,7 +125,9 @@ it("actual context/submission/generator persist original v2 fields and survive a
     const paths = new AutomationStudioProjectPaths(path.join(root, "programs", "automation-studio", "projects")), flows = new AutomationStudioFlowPaths(paths);
     const projects = { ensureProjectStructure: async () => undefined } as unknown as AutomationStudioProjectStore;
     const store = new AutomationStudioFlowCandidateDraftStore(paths, flows, projects), build = boundGeneration(store);
-    const record = await generateAutomationStudioFlowCandidateDraft(build.input);
+    const generated = await generateAutomationStudioFlowCandidateDraft(build.input), record = generated.record;
+    // No trial port: the latest valid submission ends as an unverified draft, with no standing verdict.
+    expect(generated.trial).toBeUndefined();
     expect(record.schemaVersion).toBe(2);
     expect(record.candidate).toMatchObject({ fingerprintVersion: "candidate.plan+original_sources.v2", originalInstructionsDigest: build.input.originalSource!.originalInstructionsDigest });
     if (record.schemaVersion !== 2) throw new Error("Unexpected legacy record");
@@ -140,6 +154,13 @@ it.each(["digest", "ids", "submission", "undefined", "getter"] as const)("suppli
   if (kind === "getter") Object.defineProperty(build.input, "originalSource", { get: () => { getters++; return sourceFixture.binding(); } });
   await expect(generateAutomationStudioFlowCandidateDraft(build.input)).rejects.toThrow();
   expect(build.calls()).toBe(0); expect(save).not.toHaveBeenCalled(); expect(getters).toBe(0);
+});
+
+it("a trial port needs the candidate id it is bound to, minted before the loop and kept on the saved draft", async () => {
+  const save = vi.fn(async (record: AutomationStudioFlowCandidateDraftRecord) => record), build = boundGeneration({ save });
+  const port = vi.fn(async (request: { revision: number; digest: string }) => ({ revision: request.revision, digest: request.digest, verdict: "yes" as const, feedback: {}, trialRunId: "trial.1" }));
+  await expect(generateAutomationStudioFlowCandidateDraft({ ...build.input, trial: port })).rejects.toThrow("candidate.trial_candidate_id_required");
+  expect(build.calls()).toBe(0);
 });
 
 

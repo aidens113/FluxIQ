@@ -528,13 +528,70 @@ describe("conversation commands", () => {
       expect(calls.some((call) => call.endpoint === "review-flow-adaptation")).toBe(false);
     });
 
-    it("describes and announces the draft, not an applied change", () => {
+    it("describes and announces the test run that decides whether the steps go in", () => {
       const view = { args: {}, flowName: "Kettles", place: "shop.example" };
-      expect(command("flow.createHere").capability.summary).toContain("candidate draft");
-      expect(command("flow.createHere").announce?.(view)).toContain("still need verification");
-      expect(command("flow.explore").announce?.(view)).toContain("unverified candidate draft");
-      expect(command("flow.improve").announce?.(view)).toContain("unverified candidate draft");
-      expect(command("flow.improve").capability.summary).not.toContain("asked to apply");
+      expect(command("flow.createHere").capability.summary).toContain("test-runs the whole Flow once from its start");
+      expect(command("flow.createHere").announce?.(view)).toContain("test-running the whole Flow once from the start");
+      expect(command("flow.explore").announce?.(view)).toContain("test-run the whole Flow once from the start");
+      expect(command("flow.improve").announce?.(view)).toContain("ask you here whether to apply it");
+      expect(command("flow.improve").capability.summary).toContain("asks the person whether to apply the change only when that test is judged");
+    });
+
+    // t340: a candidate whose test run was judged yes twice comes back as a proposal naming it.
+    const CANDIDATE_PROPOSED: Handler = (payload) => ({ ok: true, payload: { adaptation: { status: "proposed", projectId: payload.projectId, flowId: payload.flowId, adaptationId: "adaptation.candidate", riskLevel: "low", sourceInstructionIds: ["instruction.1"], baseDependencyDigest: "base", baseSettingsRevision: 0, accounting: { requestId: "request", estimatedInputTokens: 10 },
+      candidate: { candidateId: "candidate.1", revision: 2, digest: "a".repeat(64), trial: { runId: "trial.1", verdict: "yes", calls: 2 } } } } });
+    const handlers = (build: Handler): Record<string, Handler> => ({ "create-flow": () => ({ ok: true, payload: { flow: { flowId: "flow.draft" } } }), "save-flow-generation-instruction": () => ({ ok: true }), "save-flow-instruction": () => ({ ok: true }), "generate-flow-bootstrap-adaptation": build, "review-flow-adaptation": REVIEW_OK });
+    const run = async (id: string, build: Handler) => {
+      const conversations = openConversations(), conversationId = await chat(conversations);
+      const { port, calls } = fakePort(handlers(build));
+      await executeAutomationStudioConversationCommand({ command: command(id), context: contextFor(conversations, conversationId, port), arguments: { flowId: "flow.draft", instruction: "Find products", change: "Find products", name: "Draft" } });
+      await automationStudioConversationCommandWork.idle();
+      const turns = await turnsOf(conversations, conversationId);
+      return { calls, turns, text: turns.map((turn) => turn.text).join(" ") };
+    };
+
+    it.each(["flow.createHere", "flow.explore"])("%s approves and applies a tested candidate's proposal and says the steps are in", async (id) => {
+      const { calls, text } = await run(id, CANDIDATE_PROPOSED);
+      expect(calls.filter((call) => call.endpoint === "review-flow-adaptation").map((call) => call.payload)).toEqual([
+        { projectId: PROJECT, flowId: "flow.draft", adaptationId: "adaptation.candidate", action: "approve" },
+        { projectId: PROJECT, flowId: "flow.draft", adaptationId: "adaptation.candidate", action: "apply" }
+      ]);
+      expect(text).toContain(id === "flow.createHere" ? "is ready" : "steps are in");
+      expect(text).toContain("judged, twice, to do what you asked");
+    });
+
+    it("flow.improve asks before applying a tested candidate's proposal", async () => {
+      const { calls, turns, text } = await run("flow.improve", CANDIDATE_PROPOSED);
+      expect(calls.some((call) => call.endpoint === "review-flow-adaptation")).toBe(false);
+      expect(turns.find((turn) => turn.ask)?.ask).toMatchObject({ kind: "confirm", consequences: ["modify_existing"] });
+      expect(text).toContain("judged, twice, to do what you asked");
+    });
+
+    it.each(["flow.createHere", "flow.explore", "flow.improve"])("%s never applies a proposal that names no candidate trial", async (id) => {
+      const { calls, turns } = await run(id, BUILD_OK);
+      expect(calls.some((call) => call.endpoint === "review-flow-adaptation")).toBe(false);
+      expect(turns.filter((turn) => turn.ask)).toEqual([]);
+    });
+
+    it.each([
+      ["yes", ["FLOW_BOOTSTRAP_STALE"], "changed before the change could be made"],
+      ["yes", ["candidate.promotion_digest_mismatch"], "no longer matched the one that was tested"],
+      ["no", ["candidate.trial_judged_no"], "judged not to do what you asked"],
+      ["unsure", ["candidate.trial_unconfirmed"], "could not confirm"],
+      ["execution_failed", ["candidate.execution_incomplete"], "did not get to the end"],
+      ["not_tested", ["candidate.trial_not_run"], "never test-run"]
+    ] as const)("a draft whose trial was %s (%j) is never applied and says so plainly", async (verdict, codes, said) => {
+      const withTrial: Handler = (payload) => {
+        const answer = CANDIDATE_BUILD_OK(payload) as { ok: true; payload: { candidate: Record<string, unknown> } };
+        return { ok: true, payload: { candidate: { ...answer.payload.candidate, trial: { verdict, runId: "trial.1", codes: [...codes] } } } };
+      };
+      for (const id of ["flow.createHere", "flow.explore", "flow.improve"]) {
+        const { calls, turns, text } = await run(id, withTrial);
+        expect(calls.some((call) => call.endpoint === "review-flow-adaptation")).toBe(false);
+        expect(turns.filter((turn) => turn.ask)).toEqual([]);
+        expect(text).toContain(said); expect(text).toContain("nothing was put into the Flow");
+        expect(text).not.toContain("is ready");
+      }
     });
   });
 

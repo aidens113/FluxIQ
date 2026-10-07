@@ -40,6 +40,15 @@ describe("detached candidate normal execution", () => {
     expect(again.trace?.attempts.map((attempt) => attempt.nodeId)).toEqual(result.trace?.attempts.map((attempt) => attempt.nodeId));
   });
 
+  it("returns the selected graph that ran, so a trial can say what each step did, and none when nothing ran", async () => {
+    const { input } = fixture();
+    const result = await runAutomationStudioDetachedCandidate(input);
+    expect(result.graph?.nodes.map((node) => node.id)).toEqual(result.trace?.attempts.map((attempt) => attempt.nodeId));
+    expect(result.graph?.metadata).toMatchObject({ parentFlowId: "parent", subflowGraph: true });
+    input.candidate.revision = 2;
+    expect(await runAutomationStudioDetachedCandidate(input)).not.toHaveProperty("graph");
+  });
+
   it("routes only the selected submitted subflow and never requires unselected branch outputs", async () => {
     const { input, plan, recompile } = fixture();
     plan.subflows.push({ key: "alternate", name: "Alternate", role: "fallback", nodes: [{ key: "alt", definitionId: "builtin.data.constant", definitionVersion: "1.0.0", parameters: { value: "alternate" } }], edges: [] });
