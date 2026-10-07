@@ -638,3 +638,16 @@ approval from the web panel.
 The web app's actual server adapter lives in `apps/web/src/server/client-gateway-websocket.ts`; the `client-gateway-websocket` package is a client transport. Web startup preloads a native ESM artifact generated into `apps/web/.server-runtime/client-gateway-server.mjs`, then invokes its factory with the actual retained gateway object. This preserves ownership when Next bundles Core separately. Enabled gateway startup requires preload; the `dev` and cached `build` commands generate the artifact first. Direct Next CLI users must run `pnpm --filter @fluxiq/web gateway:build` before starting. No default production panel is started by this contract.
 
 The generator owns the companion receipt and complete server/startup/generator/cache inventory. It hashes the executing artifact while normalizing only one self-containing payload literal, including the reader's surrounding execution semantics. This is a normalized artifact digest, not a raw full-file digest. Regenerate through the driver; never edit the artifact or receipt. The existing authenticated, `programs.read` diagnostic returns the actual gateway's listening `serverTransportIdentity` separately from native `loadedModules`; it does not infer executing identity from disk or a newly loaded route. The supported registration seam does not attest arbitrary out-of-band listeners or individual socket provenance.
+
+
+## Runtime completion authority
+
+Generic ClientGatewayRuntimeTransport forwards client lifecycle, state, snapshot,
+recording and error observations. Compatibility client.action_result messages stay
+available as gateway diagnostics, including unknown IDs and late results; they do
+not emit authoritative runtime command.result. RuntimeService emits that result
+only after its dispatch promise settles, preserving validated failure and cleared
+wait fields. Public transport observers receive fewer duplicate/out-of-band
+completion events. This boundary does not by itself enable durable Flow dispatch
+or prove semantic outcomes; trusted run admission, executor consumption and both
+production IO paths require their separate integration.

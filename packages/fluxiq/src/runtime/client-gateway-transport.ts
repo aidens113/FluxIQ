@@ -95,22 +95,9 @@ export class ClientGatewayRuntimeTransport implements FluxIQRuntimeTransport {
     else if (event.type === "client.state_update") await this.emit({ type: "state.update", client, payload: event.message.payload as unknown as JsonObject });
     else if (event.type === "client.snapshot") await this.emit({ type: "snapshot", client, payload: event.message.payload as unknown as JsonObject });
     else if (event.type === "client.recording_event") await this.emit({ type: "recording.event", client, payload: event.message.payload as unknown as JsonObject });
-    else if (event.type === "client.action_result") {
-      const failure = parseAutomationStudioFailureRecord(event.message.payload.failure);
-      const clearedWait = readableClearedWait(event.message.payload.clearedWait);
-      await this.emit({
-        type: "command.result",
-        result: {
-          commandId: event.message.payload.commandId,
-          status: event.message.payload.status,
-          ...(event.message.payload.message ? { message: event.message.payload.message } : {}),
-          ...(event.message.payload.payload ? { payload: event.message.payload.payload } : {}),
-          ...(event.message.payload.error ? { error: event.message.payload.error } : {}),
-          ...(failure ? { failure } : {}),
-          ...(clearedWait ? { clearedWait } : {})
-        }
-      });
-    } else if (event.type === "client.error") {
+    // Compatibility action results remain gateway diagnostics. Only the awaited
+    // dispatch result can become RuntimeService's authoritative completion.
+    else if (event.type === "client.error") {
       await this.emit({
         type: "runtime.error",
         message: event.message.payload.message,
