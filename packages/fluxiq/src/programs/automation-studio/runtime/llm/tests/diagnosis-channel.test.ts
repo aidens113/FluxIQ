@@ -212,9 +212,36 @@ describe("the build-test judge is told the page kept what exploration did, and w
     const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
     expect(prompt).toContain("The test started from a page that kept what the build did while it explored");
     expect(prompt).toContain("is exploration's doing, not proof the Flow does it");
+    expect(prompt).not.toContain("may predate the test");
     expect(prompt).toContain("for a changing step run again, what it changed or what the page answered");
     expect(prompt).toContain("observed.changed gives the lines about its own control first, then text that now reads otherwise");
     expect(automationStudioDiagnosisPromptInstruction("loop_verification")).not.toContain("kept what the build did while it explored");
+  });
+});
+
+// The page before the run or test did anything (`startView`): run
+// `run-mux6pndp-16feb842`'s judges both read "2 · $28.96" -- a soap and
+// exploration's 3-Pack -- as the two towel packs; runs `run-musp8nz1-dbd3905a`
+// and `run-musq0b1m-0472cfa0` read exploration's cart count and a collected
+// coupon as the Flow's result. Each judge's request now says what startView is
+// and to credit only what changed.
+describe("each judge is told the page before it is not the Flow's doing, and to credit only what changed", () => {
+  const FINISHED = "resultSummary.startView, where present, is the same view of the page before the run did anything: what it already shows -- a count, an item in a cart, a collected coupon, a chosen store -- predates the run and is not its doing; credit an act only where startView and endView differ on it or the act's own step shows it.";
+  const TEST = "resultSummary.startView, where present, is that page just before the test did anything: what it already shows -- a count, an item in a cart, a collected coupon, a chosen store -- predates the test and is not its doing, so credit an act only where startView and endView differ on it or the act's own step shows it";
+  // What the system prompt says for a post-run check, and for a build's test (`deepseek/system-prompt.ts` picks by `resultSummary.buildTest`).
+  const judged = (buildTest: boolean) => automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest });
+
+  it("tells the post-run check, and reconciles the end view's sentence with it", () => {
+    const finished = judged(false);
+    expect(finished).toContain(FINISHED);
+    expect(finished).toContain("do not suppose a step left undone what the view shows done and startView did not already show");
+    expect(finished).not.toContain(TEST);
+  });
+
+  it("tells the judge of a build's test that startView is the page exploration left", () => {
+    const test = judged(true);
+    expect(test).toContain(TEST);
+    expect(test).toContain(FINISHED);
   });
 });
 

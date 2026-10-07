@@ -3,14 +3,17 @@
 // call, recorded `flow_bootstrap.unexpected_error`, and did nothing more.
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
-import { AutomationStudioFlowBootstrapGenerationError, flowBootstrapBuildEndingFailure, flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
+import { AutomationStudioFlowBootstrapGenerationError, automationStudioFlowBootstrapGenerationCatch, flowBootstrapBuildEndingFailure, flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
+import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD, AutomationStudioLlmRequestRefusedError, automationStudioLlmRunCostCeilingUsd } from "../../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID,
   AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY,
   AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY,
   AUTOMATION_STUDIO_RESULT_WRONG_ANSWER_CODE,
-  automationStudioResultRepairHistoryEntry
+  automationStudioRefutedResultRerunsFlow,
+  automationStudioResultRepairHistoryEntry,
+  type AutomationStudioReauthorEndingWatch
 } from "../../../recovery/refuted-result/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
 import { automationStudioRefutedResultRepairPort, type AutomationStudioRefutedResultRepairPortDependencies } from "../refuted-result-port.ts";
@@ -403,5 +406,65 @@ describe("a re-author that ended not doable", () => {
       }
     });
     expect(JSON.stringify(marker(result))).not.toContain("kettle");
+  });
+});
+
+// W17 (live run `run-muw5zv4m-52d83027`, Stage 6 cause 2): the check refuted a
+// correct cart and the re-author spent 46 decisions trying to change step 9,
+// because nothing let it conclude the Flow already did what was asked. A
+// re-author that completes its seeded draft unchanged now ends saying so.
+describe("a re-author that concludes the Flow needs no change", () => {
+  const REASON = "Step 10 chose 12 Double Rolls and step 11 raised the quantity to 2: the cart line reads 12 Double Rolls, Qty 2.";
+  const carried = (position: number): AutomationStudioFlowDraftStep => ({
+    position, id: `f${position}`, iteration: 0, callId: `seed.${position}`, toolId: "core.run_node", actionId: "web.dom.click", input: { target: `t${position}` }, effect: "mutate", effectApplied: true, disposition: "kept", ranWith: { target: `t${position}` }
+  });
+  const seeded = Array.from({ length: 11 }, (_, index) => carried(index + 1));
+  const fixed = seeded.map((step) => step.position === 9 ? { ...step, input: { target: "t-other" }, ranWith: { target: "t-other" } } : step);
+
+  /**
+   * The service's build, as far as this route reaches it: its completion check
+   * asks the watch it was handed before anything is checked or tested, throws
+   * what the watch answers, and the build's catch wraps that throw as it wraps
+   * every other (`runtime/service.ts`).
+   */
+  function serviceBuild(completedWith: readonly AutomationStudioFlowDraftStep[]) {
+    return vi.fn(async (_request: unknown, _brief: unknown, _costLeftUsd: number, _startPages: unknown, watch?: AutomationStudioReauthorEndingWatch) => {
+      try {
+        const ended = watch?.completed({ seed: seeded, steps: completedWith, result: { summary: REASON } });
+        if (ended) throw ended;
+      } catch (error) {
+        throw automationStudioFlowBootstrapGenerationCatch(error, "provider_output_validation", undefined, "flow_bootstrap.provider_output_validation_failed", 3);
+      }
+      return { adaptationId: "adaptation.fixed", accounting: { estimatedCostUsd: 0.004 } };
+    });
+  }
+
+  it("ends with no second build, approves and applies nothing, runs no patch ladder, and records the outcome and reason", async () => {
+    const generate = serviceBuild(seeded);
+    const approve = vi.fn(async () => undefined);
+    const port = deps({ generate: generate as never, approve });
+    const result = await automationStudioRefutedResultRepairPort(port)(request);
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(approve).not.toHaveBeenCalled();
+    expect(port.annotate).not.toHaveBeenCalled();
+    expect(marker(result)).toMatchObject({ routed: true, outcome: "nothing_to_change", reason: REASON, attempt: 1 });
+    expect(marker(result).attempts).toEqual([expect.objectContaining({ attempt: 1, routed: true, outcome: "nothing_to_change", reason: REASON })]);
+    for (const key of ["adaptationId", "held", "applied", "code", "degraded"]) expect(marker(result)[key]).toBeUndefined();
+    // Nothing is held or applied, so nothing is run again from the start.
+    expect(automationStudioRefutedResultRerunsFlow(result!)).toBe(false);
+  });
+
+  it("with a real fix, builds, approves and holds the edit exactly as before", async () => {
+    const generate = serviceBuild(fixed);
+    const approve = vi.fn(async () => undefined);
+    const port = deps({ generate: generate as never, approve });
+    const result = await automationStudioRefutedResultRepairPort(port)(request);
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(approve).toHaveBeenCalledWith({ projectId: "project.one", flowId: "flow.one", adaptationId: "adaptation.fixed", actorId: "runtime.result_repair" });
+    expect(marker(result)).toMatchObject({ routed: true, adaptationId: "adaptation.fixed", held: true });
+    expect(marker(result).outcome).toBeUndefined();
+    expect(automationStudioRefutedResultRerunsFlow(result!)).toBe(true);
   });
 });

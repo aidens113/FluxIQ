@@ -15,10 +15,19 @@
 // **What is carried.** For each attempt of this session, in the order it ran,
 // the diff's `added` and `removed` -- the domain's own view lines, joined as
 // the domain joined them -- and nothing else of it: no refs, no locations, no
-// counts. Core reads three of the diff's words and interprets none of its
-// lines. A diff that says its location changed is not carried at all: the
+// counts. Core reads four of the diff's words and interprets none of its
+// lines. A diff that says its document changed is not carried at all: the
 // whole page changed, and the steps after it and the end view say what it
 // became. No line is capped.
+//
+// **A page move is a new document, not a new address.** A page can rewrite its
+// address in place (`history.replaceState`): in the same run the fixture's size
+// buttons did, so a diff that said only `locationChanged` dropped the very
+// choice the judges needed. The domain now says `documentChanged` (the page's
+// own document identity) beside `locationChanged`, and a diff is skipped when
+// `documentChanged` is true. A diff recorded before the domain said it has no
+// `documentChanged`, and keeps the old rule: skipped when `locationChanged` is
+// true.
 //
 // **Screened like the end view** (`result-summary.ts`,
 // `automationStudioResultEndView`): nothing without a declaration of the
@@ -44,7 +53,7 @@ export function automationStudioResultStepChanges(
   let withheld = false;
   for (const attempt of attempts ?? []) {
     const diff = attempt.stateRefs?.stateDiff;
-    if (!diff || diff.locationChanged === true) continue;
+    if (!diff || movedPage(diff)) continue;
     const added = lines(diff.added);
     const removed = lines(diff.removed);
     if (added === undefined && removed === undefined) continue;
@@ -62,6 +71,11 @@ export function automationStudioResultStepChanges(
     byNode.set(attempt.nodeId, [...(byNode.get(attempt.nodeId) ?? []), change]);
   }
   return { byNode, withheld };
+}
+
+/** Whether the diff is of a new document; one recorded before `documentChanged` existed is judged by its address. */
+function movedPage(diff: JsonObject): boolean {
+  return diff.documentChanged === undefined ? diff.locationChanged === true : diff.documentChanged === true;
 }
 
 /** The domain's lines as it wrote them, when it wrote any. */

@@ -37,12 +37,19 @@
 //
 // Every refusal is recorded on the run under one key with one code, so "this
 // was not re-authored" is always a stated reason rather than a silence.
+//
+// **A routed re-author may also conclude there is nothing to change (W17).**
+// It completes its seeded draft unchanged, and the build ends there
+// (`./nothing-to-change.ts`): nothing is approved, applied or held, so nothing
+// is re-run, and the run records `outcome: "nothing_to_change"` and the
+// screened reason. The check's verdict stands; the reason sits beside it.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "../../result-verification/index.ts";
 import { automationStudioRunHasUntriedPatch } from "../../durable-behavior/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_METADATA_KEY } from "./history.ts";
+import { AUTOMATION_STUDIO_REAUTHOR_NOTHING_TO_CHANGE, type AutomationStudioReauthorNothingToChange } from "./nothing-to-change.ts";
 
 /**
  * Core's code for the verdict this routes on.
@@ -134,9 +141,11 @@ function automationStudioRefutedResultCode(detail: AutomationStudioFlowRunDetail
 export async function automationStudioReauthorRefutedResult(input: {
   /**
    * Builds the extend-mode adaptation and answers its id, or its id and what
-   * the build spent, which is then recorded on the run beside the attempt.
+   * the build spent, which is then recorded on the run beside the attempt --
+   * or that the build found nothing to change (`./nothing-to-change.ts`), for
+   * which nothing is approved, applied or held.
    */
-  generate(): Promise<string | AutomationStudioRefutedResultGenerated>;
+  generate(): Promise<string | AutomationStudioRefutedResultGenerated | AutomationStudioRefutedResultFoundNothing>;
   approve(adaptationId: string): Promise<unknown>;
   /**
    * The caller's own reading of a thrown value; codes, flags and counts only,
@@ -156,13 +165,17 @@ export async function automationStudioReauthorRefutedResult(input: {
   /** Approve and stop: the edit waits, approved and unapplied, for the judged whole run that runs it. */
   | { hold: true; apply?: undefined }
   | { hold?: undefined; apply(adaptationId: string): Promise<unknown> }
-)): Promise<{ adaptationId?: string; applied?: true; held?: true; failure?: AutomationStudioRefutedResultFailure; accounting?: JsonObject; durationMs: number }> {
+)): Promise<{ adaptationId?: string; applied?: true; held?: true; nothingToChange?: AutomationStudioReauthorNothingToChange; failure?: AutomationStudioRefutedResultFailure; accounting?: JsonObject; durationMs: number }> {
   const now = input.now ?? Date.now;
   const started = now();
   let adaptationId: string;
   let accounting: JsonObject | undefined;
   try {
     const generated = await input.generate();
+    // The Flow needs no change: there is no edit to approve, apply or hold.
+    if (typeof generated !== "string" && "nothingToChange" in generated) {
+      return { nothingToChange: generated.nothingToChange, ...(generated.accounting ? { accounting: generated.accounting } : {}), durationMs: now() - started };
+    }
     adaptationId = typeof generated === "string" ? generated : generated.adaptationId;
     accounting = typeof generated === "string" ? undefined : generated.accounting;
   } catch (error) {
@@ -182,6 +195,9 @@ export async function automationStudioReauthorRefutedResult(input: {
 
 /** What a successful re-author build answers: its adaptation, and what it spent (`generateFlowBootstrapAdaptation`'s accounting). */
 export type AutomationStudioRefutedResultGenerated = { adaptationId: string; accounting?: JsonObject };
+
+/** What a re-author build that found the Flow needs no change answers: what it said, and what it spent where that was reported. */
+export type AutomationStudioRefutedResultFoundNothing = { nothingToChange: AutomationStudioReauthorNothingToChange; accounting?: JsonObject };
 
 /**
  * The run, carrying what became of the route.
@@ -208,6 +224,8 @@ export function automationStudioRefutedResultReauthored(input: {
   applied?: true | undefined;
   /** Approved and held for the judged whole run that runs it: `applied` is written only once that run answers. */
   held?: true | undefined;
+  /** The re-author ended saying the Flow needs no change (`./nothing-to-change.ts`): recorded as its outcome, with its reason. */
+  nothingToChange?: AutomationStudioReauthorNothingToChange | undefined;
   failure?: AutomationStudioRefutedResultFailure | undefined;
   /** Which repair of this run this was: 1 for the first. */
   attempt?: number | undefined;
@@ -223,6 +241,14 @@ export function automationStudioRefutedResultReauthored(input: {
         ...(input.adaptationId ? { adaptationId: input.adaptationId } : {}),
         ...(input.applied ? { applied: true } : {}),
         ...(input.held ? { held: true } : {}),
+        // A distinct outcome, not a failure code: the re-author concluded, and
+        // its reason -- the model's own words, screened -- is kept beside the
+        // check's verdict, which stands.
+        ...(input.nothingToChange ? {
+          outcome: AUTOMATION_STUDIO_REAUTHOR_NOTHING_TO_CHANGE,
+          ...(input.nothingToChange.reason ? { reason: input.nothingToChange.reason } : {}),
+          ...(input.nothingToChange.reasonWithheld ? { reasonWithheld: true } : {})
+        } : {}),
         ...(failure ? { code: failure.code } : {}),
         // Everything the diagnostic knew that a reader can act on. Each is
         // absent when the caller could not read it, so "not recorded" and

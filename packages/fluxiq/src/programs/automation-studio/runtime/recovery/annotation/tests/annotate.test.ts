@@ -492,3 +492,22 @@ describe("a recovery that is part of a repair whose purse is spent", () => {
     expect(taskKinds.at(0)).toBe("runtime_diagnosis");
   });
 });
+
+// Live run `run-mux6naez-6c20f26e`: a read condition's `testedLabel` is Core's
+// own bookkeeping for which rows it may flag, and no model instruction
+// describes it. The result judge's copy drops it; the summary a refuted run's
+// repair hands the recovery model drops it too, and keeps the condition.
+describe("the summary a result repair hands the recovery model", () => {
+  it("carries each read condition without Core's testedLabel", async () => {
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    const resultSummary = {
+      schemaVersion: "automation-studio.run-result-summary.v1" as const, totalRecordCount: 1, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 0, recordSets: [], flowShape: [], withheld: false,
+      reads: [{ nodeId: "read", definitionId: "opaque.read", pagesRead: 1, stop: "control_absent", truncated: false, kept: 1, conditions: [{ condition: "name not contains case", leftOutOnlyByThis: ["Pods"], testedLabel: true as const }] }]
+    };
+    await annotate({ executed: [], requests, resultSummary });
+    const sent = requests.at(0)?.context.resultSummary;
+    expect(sent?.reads?.[0]?.conditions?.[0]).toMatchObject({ condition: "name not contains case" });
+    expect(JSON.stringify(sent)).not.toContain("testedLabel");
+    expect(resultSummary.reads[0]?.conditions[0]?.testedLabel).toBe(true);
+  });
+});

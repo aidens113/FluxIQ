@@ -64,3 +64,32 @@ describe("a build test's yes Core did not take, as the build's no", () => {
     expect(verdict.checked?.join("\n")).toContain(RUN_MUW60J7C_PAIRS_LEFT_OUT[0]);
   });
 });
+
+// The rows the check named, in structured form beside its lines (live run
+// `run-mux6naez-6c20f26e`, R3-3): what the repair compares a rerun of the read with.
+describe("a build test's no carries the rows Core's check named, per read and condition", () => {
+  const named = [{ step: 10, condition: "name", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }];
+
+  it("from a yes Core did not take", async () => {
+    const verdict = await judged();
+    if (verdict.verdict !== "no") throw new Error(`expected no, got ${verdict.verdict}`);
+    expect(verdict.checkedRows).toEqual(named);
+  });
+
+  it("from a no whose judgement names the rows, beside its checked lines", async () => {
+    const sayingNo: AutomationStudioLlmProvider = {
+      metadata: { provider: "mock", model: "debug-model" },
+      runTask: async (_request: AutomationStudioLlmTaskRequest) => ({
+        response: {
+          kind: "diagnosis", summary: "The name condition is too broad.",
+          diagnosis: { ...RUN_MUW60J7C_TEST_JUDGE.diagnosis, answersRequest: "no", observed: `The name condition alone left out earbuds, not accessories: ${RUN_MUW60J7C_PAIRS_LEFT_OUT.join("; ")}.`, changed: "Narrow the name exclusion." }
+        },
+        usage: USAGE
+      }) as never
+    };
+    const verdict = await automationStudioBuildTestJudge({ instructions: [instruction], deniedEvidenceKeys: [], projectId: "project-1", flowId: "flow-1", provider: sayingNo })({ summary: testSummary(), budget: { maxCostUsd: 0.2 } });
+    if (verdict.verdict !== "no") throw new Error(`expected no, got ${verdict.verdict}`);
+    expect(verdict.checked?.join("\n")).toContain(`Step 10: the condition "name" alone left out these rows the check names: ${RUN_MUW60J7C_PAIRS_LEFT_OUT[0]}`);
+    expect(verdict.checkedRows).toEqual(named);
+  });
+});

@@ -149,6 +149,8 @@ export type AutomationStudioResultVerificationPorts = {
    * fails too, said as withheld, never as a verification that did not finish.
    */
   readEndView?: ((input: { projectId: string; runId: string; flowId: string }) => Promise<AutomationStudioResultEndView | undefined>) | undefined;
+  /** The bound domain's declared view keys, under which the page the run started on is read off its trace (`./result-summary.ts`). Absent, none is. */
+  observedStateKeys?: readonly string[] | undefined;
   /**
    * Says what this check found on the run's own conversation thread.
    *
@@ -510,8 +512,8 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
     ...(input.flow ? { flowNodes: input.flow.nodes, flowEdges: input.flow.edges } : {}),
     ...ended,
     ...(runDetail?.actionAttempts ? { actionAttempts: attemptsOfThisSession(runDetail.actionAttempts, session) } : {}),
-    // What each step changed, from this session's trace in memory (run-muw5zv4m-52d83027).
-    ...(session.trace ? { sessionAttempts: session.trace.attempts } : {}),
+    // What each step changed, and the page the run started on, from this session's trace in memory (run-muw5zv4m-52d83027, run-mux6pndp-16feb842).
+    ...(session.trace ? { sessionAttempts: session.trace.attempts, ...(input.ports.observedStateKeys ? { observedStateKeys: input.ports.observedStateKeys } : {}) } : {}),
     ...(input.ports.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.ports.deniedEvidenceKeys } : {})
   });
   const datasetId = recordSets[0]?.summary.datasetId;

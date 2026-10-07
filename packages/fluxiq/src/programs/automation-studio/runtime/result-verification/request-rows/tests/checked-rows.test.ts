@@ -4,8 +4,8 @@
 // B0J5MCMBAY ... B07Z1RZGJG". Both are in the stored result, and the re-author
 // followed that reading and threw away the answer it held.
 import { describe, expect, it } from "vitest";
-import { automationStudioResultCheckedRows } from "../index.ts";
-import { RUN_MUW60J7C_RESULT_JUDGE, runMuw60j7cRunSummary } from "./run-muw60j7c.ts";
+import { automationStudioResultCheckedRows, automationStudioResultCheckedRowsNamed } from "../index.ts";
+import { RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_RESULT_JUDGE, runMuw60j7cRunSummary, runMuw60j7cTestSummary } from "./run-muw60j7c.ts";
 
 const judged = (): string => {
   const { summary, diagnosis } = RUN_MUW60J7C_RESULT_JUDGE;
@@ -49,5 +49,47 @@ describe("the rows a judgement names, checked against what the run holds", () =>
 
   it("does not call a duplicated row left out (B0PXHP88KT appears twice)", () => {
     expect(checked.join("\n")).not.toContain("B0PXHP88KT");
+  });
+});
+
+// The same rows in structured form beside the lines (live run
+// `run-mux6naez-6c20f26e`, R3-3): what a repair compares a rerun of the read with.
+describe("the rows the checked lines name, per read and condition", () => {
+  /** A line's rows as it lists them, less the ids and "also in the result" it adds. */
+  const listed = (line: string): string[] => line.slice(line.indexOf("the check names: ") + "the check names: ".length).replace(/\.$/u, "").split("; ")
+    .map((row) => row.replace(/ \(also in the result\)$/u, "").replace(/ \([A-Z0-9, ]+\)$/u, ""));
+
+  it("agree with the lines: one entry per line that says a condition alone left rows out, with exactly its rows and ids", () => {
+    const summary = runMuw60j7cRunSummary();
+    const lines = automationStudioResultCheckedRows(summary, judged());
+    const named = automationStudioResultCheckedRowsNamed(summary, lines);
+    const alone = lines.filter((line) => line.includes("alone left out"));
+    expect(alone.length).toBeGreaterThan(0);
+    expect(named).toHaveLength(alone.length);
+    for (const line of alone) {
+      const entry = named.find((candidate) => line.startsWith(`Read ${candidate.nodeId}: the condition "${candidate.condition}"`));
+      expect(entry, line).toBeDefined();
+      expect(entry!.rows.map((row) => row.label)).toEqual(listed(line));
+      for (const row of entry!.rows) for (const id of row.ids ?? []) expect(line).toContain(`${row.label} (${id}`);
+    }
+    const sponsored = named.find((entry) => entry.condition === "sponsored is absent");
+    expect(sponsored?.rows.flatMap((row) => row.ids ?? [])).toEqual(expect.arrayContaining(["B0DPN4ANC7", "B0KRUNHK42"]));
+    // A row the lines call misread is named by no condition.
+    expect(JSON.stringify(named)).not.toContain("B0J5MCMBAY");
+  });
+
+  it("name a build test's read by its step, with the rows its name condition left out", () => {
+    const summary = runMuw60j7cTestSummary();
+    const lines = automationStudioResultCheckedRows(summary, `The name condition alone excluded genuine earbuds: ${RUN_MUW60J7C_PAIRS_LEFT_OUT.join("; ")}.`);
+    expect(lines.join("\n")).toContain("Step 10: the condition \"name\"");
+    expect(automationStudioResultCheckedRowsNamed(summary, lines)).toEqual([{ step: 10, condition: "name", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }]);
+  });
+
+  it("are none for no lines, and never a label that only starts a listed one", () => {
+    const summary = runMuw60j7cTestSummary();
+    expect(automationStudioResultCheckedRowsNamed(summary, [])).toEqual([]);
+    const cut = RUN_MUW60J7C_PAIRS_LEFT_OUT[1]!.replace(" with Wireless Charging Case", "");
+    const line = `Step 10: the condition "name" alone left out this row the check names: ${cut} with Wireless Charging Case, Gift Box.`;
+    expect(automationStudioResultCheckedRowsNamed(summary, [line])).toEqual([]);
   });
 });

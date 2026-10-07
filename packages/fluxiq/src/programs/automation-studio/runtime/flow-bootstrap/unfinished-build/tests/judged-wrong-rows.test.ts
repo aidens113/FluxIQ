@@ -64,6 +64,8 @@ describe("a downgraded build-test yes, as the next round reads it", () => {
       expect(fix).toContain(row);
       expect(checked).toContain(row);
     }
+    // The same rows in structured form, per read and condition (live run `run-mux6naez-6c20f26e`, R3-3): what a rerun of the read is compared with.
+    expect(judge.checkedRows).toEqual([{ step: 10, condition: "name", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }]);
     // What the Flow would store, which the next repair's progress is measured against (`../progress.ts`).
     expect(records).toEqual({ stored: 30, refused: 0, missingRequired: 0 });
   });

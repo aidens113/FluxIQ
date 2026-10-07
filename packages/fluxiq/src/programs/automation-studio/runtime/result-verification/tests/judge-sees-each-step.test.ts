@@ -33,13 +33,14 @@ const flow: AutomationStudioFlowDocument = {
 };
 
 /** The web domain's diff shape (`state-diff.ts` downstream), as the trace carries it. */
-const diff = (fields: { added?: string; removed?: string; locationChanged?: boolean; extra?: JsonObject }): JsonObject => ({
+const diff = (fields: { added?: string; removed?: string; locationChanged?: boolean; documentChanged?: boolean; extra?: JsonObject }): JsonObject => ({
   schemaVersion: "web.state-diff.v1",
   beforeStateRef: "state-1",
   afterStateRef: "state-2",
   beforeLocation: "https://shop.example/search",
   afterLocation: fields.locationChanged ? "https://shop.example/item/12" : "https://shop.example/search",
   locationChanged: fields.locationChanged === true,
+  ...(fields.documentChanged === undefined ? {} : { documentChanged: fields.documentChanged }),
   titleChanged: false,
   beforeLineCount: 40,
   afterLineCount: 40,
@@ -130,5 +131,28 @@ describe("the post-run check is shown what each step changed in this run", () =>
     });
     expect(changedOf(summary, "s10")).toEqual([{ added: "t912 [locator withheld] \"2\"" }]);
     expect(summary.withheld).toBe(true);
+  });
+
+  // The fixture's size buttons rewrite the address in place
+  // (`history.replaceState`): the address differs, the document does not, so
+  // the step's lines are carried. Only a new document is a page move. A diff
+  // recorded before the domain said `documentChanged` keeps the old rule.
+  it("carries a step that rewrote the address in the same document, and none for a new document", () => {
+    const rewritten = { added: "t912 option \"12 Double Rolls\" (chosen)", removed: "t912 option \"12 Double Rolls\"" };
+    const summary = summarizeAutomationStudioRunResult({
+      recordSets: [],
+      flowNodes: nodes,
+      deniedEvidenceKeys: DENIED,
+      sessionAttempts: [
+        attempt("s9", diff({ ...rewritten, locationChanged: true, documentChanged: false })),
+        attempt("s10", diff({ ...S10, locationChanged: false, documentChanged: true })),
+        attempt("s11", diff({ ...S11_FIRST, locationChanged: true })),
+        attempt("s12", diff({ ...S11_SECOND, locationChanged: false }))
+      ]
+    });
+    expect(changedOf(summary, "s9")).toEqual([rewritten]);
+    expect(changedOf(summary, "s10")).toBeUndefined();
+    expect(changedOf(summary, "s11")).toBeUndefined();
+    expect(changedOf(summary, "s12")).toEqual([S11_SECOND]);
   });
 });

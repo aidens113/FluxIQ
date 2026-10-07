@@ -8,6 +8,7 @@ export * from "./conversation.ts";
 export * from "./held-reauthor.ts";
 export * from "./history.ts";
 export * from "./ladder-skip.ts";
+export * from "./nothing-to-change.ts";
 export * from "./purse.ts";
 export * from "./reauthor.ts";
 export * from "./repair.ts";

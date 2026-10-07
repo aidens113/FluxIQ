@@ -191,11 +191,13 @@ async function askOnce(
   // And the rows a condition alone left out that name the asked item
   // (`request-rows/`, live run `run-muw60j7c-bb7c9a62`, C-2), on both kinds of
   // judge's copy: the verdict is read with the same rows, so a yes is held to
-  // the rows the judge was shown.
-  const judged = automationStudioResultSummaryWithLeftOutNamingTheItem(
-    automationStudioResultSummaryWithPagingWords(automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions)),
+  // the rows the judge was shown. The rows are flagged before the paging words:
+  // the paging copy drops each condition's `testedLabel`, which the flagging
+  // reads and the judge is never shown (`run-mux6naez-6c20f26e`).
+  const judged = automationStudioResultSummaryWithPagingWords(automationStudioResultSummaryWithLeftOutNamingTheItem(
+    automationStudioResultSummaryWithUnreadColumns(request.summary, request.instructions),
     request.instructions
-  );
+  ));
   const result = await runAutomationStudioLlmHarness({
     taskKind: "loop_verification",
     projectId: request.projectId,

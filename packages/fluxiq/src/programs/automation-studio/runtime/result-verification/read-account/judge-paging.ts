@@ -1,12 +1,20 @@
 // Paging wording on the judge's copy only. Raw read accounts, including their
 // authored limits and contradictory observations, remain available unchanged.
+//
+// The judge's copy also drops each condition's `testedLabel` (live run
+// `run-mux6naez-6c20f26e`, `./without-tested-label.ts`): it is Core's own
+// bookkeeping for which rows `../request-rows/` may flag, and no judge
+// instruction describes it. So the flagged rows are found before this copy is
+// made (`../verify.ts`).
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts.ts";
 import { automationStudioResultReadPageBoundSentence, automationStudioResultReadPagesClause, automationStudioResultReadStop } from "./index.ts";
+import { automationStudioResultSummaryWithoutTestedLabel } from "./without-tested-label.ts";
 
-/** Add paging words without turning uncertain stop evidence into completeness. */
+/** Add paging words without turning uncertain stop evidence into completeness, and drop each condition's `testedLabel`. */
 export function automationStudioResultSummaryWithPagingWords(summary: AutomationStudioRunResultSummary): AutomationStudioRunResultSummary {
   if (!summary.reads?.length) return summary;
-  return { ...summary, reads: summary.reads.map(forJudge) };
+  const shown = automationStudioResultSummaryWithoutTestedLabel(summary);
+  return { ...shown, reads: (shown.reads ?? []).map(forJudge) };
 }
 
 function forJudge(read: AutomationStudioResultReadAccount): AutomationStudioResultReadAccount & { paging: string } {

@@ -99,11 +99,53 @@ describe("the repair brief", () => {
 
   it("sorts after the person's own instruction and never pushes it out of the budget", () => {
     const brief = automationStudioReauthorBrief({ projectId: "p", flowId: "f", current: entry(3), history: [entry(1), entry(2)], maxAttempts: 3, now: 5 });
-    expect(brief.body.length).toBeLessThanOrEqual(6_000);
+    // 7,000 since W17 added "When the Flow needs no change" (about 900 characters); the
+    // resolution below, within 4,000 tokens and with no conflict, is what this guards.
+    expect(brief.body.length).toBeLessThanOrEqual(7_000);
     const person = { ...brief, instructionId: "instruction.goal", title: "Goal", body: "Find remote Rust roles in the UK paying at least 90,000, newest first.", priority: 0 };
     const resolved = resolveAutomationStudioLlmInstructions({ instructions: [brief, person], projectId: "p", flowId: "f", tokenBudget: 4_000 });
     expect(resolved.instructionIds).toEqual(["instruction.goal", AUTOMATION_STUDIO_REAUTHOR_BRIEF_INSTRUCTION_ID]);
     // A required instruction pair that says both "always" and "never" is refused as a conflict; the brief says neither.
     expect(resolved.diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+  });
+});
+
+// W17 (live run `run-muw5zv4m-52d83027`, Stage 6 cause 2): the check refuted a
+// correct cart, the brief said only "change the Flow", and the re-author spent
+// its whole allowance changing a step that had done what was asked.
+describe("the repair brief, on a Flow that needs no change", () => {
+  it("says the ending exists, when it is the right one, how to take it, and that it is not a way out of a fix", () => {
+    const body = automationStudioReauthorBrief({ projectId: "p", flowId: "f", current: entry(1), history: [], maxAttempts: 3, now: 5 }).body;
+    // The opening no longer orders a change whatever the evidence says.
+    expect(body).toContain("unless the run's own record shows it already does (see \"When the Flow needs no change\" below)");
+    const section = body.slice(body.indexOf("When the Flow needs no change:"));
+    expect(body.indexOf("When the Flow needs no change:")).toBeGreaterThan(body.indexOf("What to do:"));
+    expect(section).toContain("The check reads the run and can be wrong.");
+    expect(section).toContain("complete with your draft exactly as it was seeded: amend nothing and rerun nothing");
+    expect(section).toContain("Your completion summary is your reason");
+    expect(section).toContain("Core then changes nothing, tests nothing and ends this repair");
+    expect(section).toContain("the check's verdict, which stands");
+    expect(section).toContain("This is not a way out of a fix.");
+  });
+
+  it("carries the run's own record: what each step changed, and the page before and after the run", () => {
+    const recorded: AutomationStudioRunResultSummary = {
+      ...summary(),
+      flowShape: [
+        { nodeId: "node.s1", definitionId: "web.dom.click", label: "Open the listing" },
+        { nodeId: "node.s2", definitionId: "web.dom.click", label: "Raise the quantity", changed: [{ added: "Qty 2", removed: "Qty 1" }, { added: "Added to cart" }] },
+        { nodeId: "node.s3", definitionId: "domain.read_list", parameters: { fields: { title: "col.1@href" } } }
+      ],
+      startView: { view: { header: "Cart 0" } },
+      endView: { after: "node.s3", view: { header: "Cart 2" } }
+    };
+    const current = automationStudioResultRepairHistoryEntry({ attempt: 1, outcome, summary: recorded, nodeId: "node.s3" });
+    const body = automationStudioReauthorBrief({ projectId: "p", flowId: "f", current, history: [], maxAttempts: 3, now: 5 }).body;
+    expect(body).toContain("What the run itself recorded (Core's record of the page, not the check's reading):");
+    expect(body).toContain("- Before the run did anything, the page showed: {\"header\":\"Cart 0\"}");
+    expect(body).toContain("- Step node.s2 (web.dom.click, \"Raise the quantity\") changed the page: run 1 added \"Qty 2\" and removed \"Qty 1\"; run 2 added \"Added to cart\"");
+    expect(body).toContain("- The run ended (after node.s3) on: {\"header\":\"Cart 2\"}");
+    // A step with no recorded change is not listed as one.
+    expect(body).not.toContain("Step node.s1 (");
   });
 });

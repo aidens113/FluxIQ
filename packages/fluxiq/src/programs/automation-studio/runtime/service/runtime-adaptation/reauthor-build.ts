@@ -20,6 +20,7 @@ import type { AutomationStudioActionConsequence } from "../../action-permissions
 import { automationStudioRunNodeStartPages, type AutomationStudioLlmModelCaller } from "../../llm/index.ts";
 import {
   AUTOMATION_STUDIO_RESULT_REPAIR_COST_BOUND_CODE,
+  automationStudioReauthorEndingWatch,
   automationStudioReauthorRefutedResult,
   automationStudioRefutedResultReauthorMarked,
   automationStudioRefutedResultWaitingReauthors,
@@ -27,6 +28,7 @@ import {
   automationStudioResultRepairPurseCharged,
   automationStudioResultRepairPurseLeftUsd,
   automationStudioResultRepairPurseRefused,
+  type AutomationStudioReauthorEndingWatch,
   type AutomationStudioRefutedResultFailure,
   type AutomationStudioResultRepairPurse
 } from "../../recovery/refuted-result/index.ts";
@@ -49,8 +51,13 @@ export type AutomationStudioReauthorBuildDependencies = {
    * a rerun of a step carried from the Flow is put back there before it runs,
    * not run wherever the run left the target (t194 cause C-D, `run-murwcmx2`).
    * Empty when the run's host recorded none.
+   *
+   * `ending`, handed only by the wrong-answer route, is asked by the build's
+   * completion check before anything is checked or tested, and the check
+   * throws what it answers: a completion of the seeded draft unchanged ends
+   * the build as "nothing to change" (`recovery/refuted-result/nothing-to-change.ts`).
    */
-  generate(request: AutomationStudioGenerateFlowBootstrapAdaptationInput, brief: AutomationStudioFlowInstruction, costLeftUsd: number, startPages: Readonly<Record<string, JsonObject>>): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult>;
+  generate(request: AutomationStudioGenerateFlowBootstrapAdaptationInput, brief: AutomationStudioFlowInstruction, costLeftUsd: number, startPages: Readonly<Record<string, JsonObject>>, ending?: AutomationStudioReauthorEndingWatch): Promise<AutomationStudioGenerateFlowBootstrapAdaptationResult>;
   /** Approves the adaptation. Nothing here applies it: the judged re-run does (`./judged-reauthor.ts`). */
   approve(input: { projectId: string; flowId: string; adaptationId: string; actorId: string }): Promise<unknown>;
   /** Rejects a held edit an earlier attempt of this run left waiting, which this attempt replaces. */
@@ -90,6 +97,8 @@ export async function automationStudioReauthorBuild(input: {
   detail: AutomationStudioFlowRunDetail;
   /** The run, carrying this attempt. */
   record(detail: AutomationStudioFlowRunDetail, built: AutomationStudioReauthorBuilt): AutomationStudioFlowRunDetail;
+  /** Whether the build may end saying the Flow needs no change: the wrong-answer route only. */
+  nothingToChange?: true | undefined;
   now: () => number;
 }): Promise<{ detail: AutomationStudioFlowRunDetail; built: AutomationStudioReauthorBuilt; purse: AutomationStudioResultRepairPurse }> {
   const { deps, projectId, flowId, brief, now } = input;
@@ -111,11 +120,24 @@ export async function automationStudioReauthorBuild(input: {
         // plainly.
         const caller = deps.caller;
         if (!caller) throw flowBootstrapPhaseFailure("provider_resolution", undefined, "flow_bootstrap.provider_resolution_failed");
-        const generated = await deps.generate({
-          projectId, flowId, mode: "extend", evidenceGuided: true,
-          caller: { actorUserId: caller.actorUserId, actorSessionId: caller.actorSessionId },
-          ...(deps.permittedConsequences?.length ? { permittedConsequences: [...deps.permittedConsequences] } : {})
-        }, brief, costLeftUsd, startPages);
+        // A fresh watch per build: a retried build has said nothing yet.
+        const ending = input.nothingToChange ? automationStudioReauthorEndingWatch() : undefined;
+        let generated: AutomationStudioGenerateFlowBootstrapAdaptationResult;
+        try {
+          generated = await deps.generate({
+            projectId, flowId, mode: "extend", evidenceGuided: true,
+            caller: { actorUserId: caller.actorUserId, actorSessionId: caller.actorSessionId },
+            ...(deps.permittedConsequences?.length ? { permittedConsequences: [...deps.permittedConsequences] } : {})
+          }, brief, costLeftUsd, startPages, ...(ending ? [ending] : []));
+        } catch (error) {
+          // The build ended where its completion check threw for the watch: not
+          // a failure, the re-author's conclusion. What the build's catch kept
+          // of its spend travels with it.
+          const said = ending?.said();
+          if (!said) throw error;
+          const spent = automationStudioRefutedResultFailureOf(automationStudioFlowBootstrapFailureDiagnosticOf(error, "provider_output_validation")).accounting;
+          return { nothingToChange: said, ...(spent ? { accounting: spent } : {}) };
+        }
         return { adaptationId: generated.adaptationId, accounting: { ...generated.accounting } };
       },
       approve: (adaptationId) => deps.approve({ projectId, flowId, adaptationId, actorId: REPAIR_ACTOR }),
@@ -128,7 +150,8 @@ export async function automationStudioReauthorBuild(input: {
     purse = automationStudioResultRepairPurseCharged(purse, {
       costUsd: (built.accounting ?? built.failure?.accounting)?.estimatedCostUsd,
       calls: built.failure?.evidenceLoop?.decisionCount,
-      reachedProvider: built.adaptationId !== undefined || (built.failure?.providerInvocation !== undefined && built.failure.providerInvocation !== "not_attempted")
+      // A build that ended "nothing to change" was ended by a decision, so it asked the model.
+      reachedProvider: built.adaptationId !== undefined || built.nothingToChange !== undefined || (built.failure?.providerInvocation !== undefined && built.failure.providerInvocation !== "not_attempted")
     });
     return built;
   };

@@ -5,11 +5,18 @@
 // in lexical node order -- s1, s10, s11, s12, s13, s14, s2 ... s9 -- so Add to
 // cart read before the search, and with no page: not `Cart (3)`, not the
 // coupon's "Collected". 0071 then invented a quantity that was never committed.
+//
+// And the page it started on (`startView`; run `run-mux6pndp-16feb842`): both
+// judges read the header's "2 · $28.96" -- a soap and exploration's 3-Pack,
+// already in the cart -- as the two towel packs the run was asked to add.
 import { describe, expect, it } from "vitest";
-import type { JsonValue } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../model/index.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import { summarizeAutomationStudioRunResult, type AutomationStudioRunResultSummaryWithEndView } from "../result-summary.ts";
-import { harness, verify } from "./run-outcome-harness.ts";
+import { harness, session, verify } from "./run-outcome-harness.ts";
+// After the modules under test: loaded first, the llm barrel is met mid-cycle and arrives without its screens.
+import { automationStudioLlmRequestEvidenceRefusal } from "../../llm/index.ts";
 
 const DENIED = ["html", "cookies", "selector"];
 
@@ -99,5 +106,67 @@ describe("the page the run ended on", () => {
     // A failed read is said as something withheld, never as a page with nothing on it.
     expect(failing.requests[0]?.context.resultSummary?.withheld).toBe(true);
     expect(next.metadata?.resultVerification).toMatchObject({ status: "confirmed" });
+  });
+});
+
+describe("the page the run started on", () => {
+  const BLANK = "PAGE \"New Tab\"";
+  const START = "PAGE \"Pickup\"\nt885 link \"2 · $28.96\" ~/cart";
+  const LATER = "PAGE \"Towels 2-Pack\"\nt885 link \"4 · $52.90\" ~/cart";
+  /** The web domain's snapshot summary: its compact view, with keys beside it that are not the view. */
+  const snapshot = (page: string) => ({ stateSnapshotId: "web.state.1", stateRef: "web.state.1@a:before_action", capturedAt: 1, summary: { schemaVersion: "web-llm-page.v3", trust: "untrusted_page_content", page, documentTimeOrigin: 17 } });
+  const step = (nodeId: string, stateRefs?: { before?: string; after?: string; diff?: JsonObject }): AutomationStudioNodeAttemptTrace => ({
+    attemptId: `a.${nodeId}`, nodeId, definitionId: `step.${nodeId}`, startedAt: 1, status: "succeeded", inputs: {}, outputs: {}, effects: [],
+    ...(stateRefs ? { stateRefs: { ...(stateRefs.before ? { beforeAction: snapshot(stateRefs.before) } : {}), ...(stateRefs.after ? { afterAction: snapshot(stateRefs.after) } : {}), ...(stateRefs.diff ? { stateDiff: stateRefs.diff } : {}) } } : {})
+  });
+  /** An LLM step that never touched the page, then a step that opens the store, then an add. */
+  const opened = (diff: JsonObject): AutomationStudioNodeAttemptTrace[] => [
+    step("s0"),
+    step("s1", { before: BLANK, after: START, diff }),
+    step("s2", { before: START, after: LATER, diff: { documentChanged: false, locationChanged: false, added: "t885 link \"4 · $52.90\"", removed: "t885 link \"2 · $28.96\"" } })
+  ];
+  const started = (attempts: AutomationStudioNodeAttemptTrace[], fields: { observedStateKeys?: readonly string[]; deniedEvidenceKeys?: readonly string[] } = { observedStateKeys: ["page"], deniedEvidenceKeys: DENIED }) =>
+    summarizeAutomationStudioRunResult({ recordSets: [], sessionAttempts: attempts, ...fields });
+
+  it("is the page the first step that saw the page left, when that step moved to another document, by the declared view keys", () => {
+    const summary = started(opened({ documentChanged: true, locationChanged: true }));
+    expect(summary.startView).toEqual({ view: { page: START } });
+    expect(summary.withheld).toBe(false);
+  });
+
+  it("is the page that step found when it stayed on its document, even where its address changed; a diff without documentChanged is judged by its address", () => {
+    expect(started(opened({ documentChanged: false, locationChanged: true })).startView).toEqual({ view: { page: BLANK } });
+    expect(started(opened({ locationChanged: true })).startView).toEqual({ view: { page: START } });
+    expect(started(opened({ locationChanged: false })).startView).toEqual({ view: { page: BLANK } });
+  });
+
+  it("is none when nothing was captured, or the domain declared no view keys", () => {
+    expect(started([step("s0"), step("s1")]).startView).toBeUndefined();
+    expect(started([]).startView).toBeUndefined();
+    expect(started(opened({ documentChanged: true }), { deniedEvidenceKeys: DENIED }).startView).toBeUndefined();
+  });
+
+  it("is cut to the keys the end view holds when the caller names no view keys (the post-run check's ports carry none)", () => {
+    const attempts = opened({ documentChanged: true });
+    const summary = summarizeAutomationStudioRunResult({ recordSets: [], sessionAttempts: attempts, deniedEvidenceKeys: DENIED, endView: { after: "s2", view: { page: LATER } } });
+    expect(summary.startView).toEqual({ view: { page: START } });
+    expect(summarizeAutomationStudioRunResult({ recordSets: [], sessionAttempts: attempts, deniedEvidenceKeys: DENIED }).startView).toBeUndefined();
+  });
+
+  it("is screened as the end view is: none without a declaration of denied keys, or holding a credential, and either says withheld", () => {
+    const undeclared = started(opened({ documentChanged: true }), { observedStateKeys: ["page"] });
+    expect(undeclared.startView).toBeUndefined();
+    expect(undeclared.withheld).toBe(true);
+    const secret = started([step("s1", { before: `${START}\nt990 "sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c"` })]);
+    expect(secret.startView).toBeUndefined();
+    expect(secret.withheld).toBe(true);
+  });
+
+  it("reaches the post-run check from the session's own trace, under the domain's declared view keys, and the request still leaves", async () => {
+    const context = harness({ answer: "yes" });
+    const trace = { status: "succeeded" as const, startedAt: 1, attempts: opened({ documentChanged: true, locationChanged: true }), values: {}, effects: [] };
+    await verify(context, { session: session({ trace }), ports: { ...context.ports, deniedEvidenceKeys: DENIED, observedStateKeys: ["page"] } });
+    expect(context.requests[0]?.context.resultSummary?.startView).toEqual({ view: { page: START } });
+    expect(automationStudioLlmRequestEvidenceRefusal(context.requests[0]!)).toBeUndefined();
   });
 });

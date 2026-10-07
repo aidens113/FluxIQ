@@ -108,6 +108,38 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): judges see the page before, and a re-author may find nothing to change (`fluxiq`)
+
+t286 (week review W4, W17, R2-C8). Read this entry if you read a run's
+`resultReauthor` marker or a result summary, or call the re-author build or the
+dry-run gate directly.
+
+**Added.**
+- `AutomationStudioRunResultSummary.startView` and
+  `AutomationStudioFlowDraftTestReport.startView`: the page before the run or
+  test did anything, screened as `endView` is; `observedStateKeys` on
+  `AutomationStudioResultVerificationPorts` (optional: absent, the end view's
+  keys are used).
+- `resultReauthor.outcome: "nothing_to_change"` with `reason` (or
+  `reasonWithheld`): a wrong-answer re-author completed its seeded draft
+  unchanged; nothing was approved, applied, held or re-run, and the check's
+  verdict stands (`recovery/refuted-result/nothing-to-change.ts`). The build
+  ends there only where its completion check asks the watch
+  (`AutomationStudioReauthorEndingWatch`, the optional fifth argument of
+  `AutomationStudioReauthorBuildDependencies.generate`).
+- `AutomationStudioBuildTestVerdict` and a repair judgement's `judge` carry
+  `checkedRows` beside `checked`; `automationStudioRequestRowsAfterRerun` says
+  which of them a rerun of the read keeps.
+
+**Changed.**
+- A finished run's step changes skip a diff that reports `documentChanged`, not
+  any `locationChanged` (a diff without `documentChanged` keeps the old rule).
+- `automationStudioFlowDraftStepWithholdsLater`: a verified step that moved the
+  target excuses later steps only when its own declaration names something
+  lasting; one verified only for an instructed act claim lets the next step be
+  put back on its own page.
+- No model is shown a read condition's `testedLabel`.
+
 ### Next minor (unreleased): a paired client's run pays only for the checks that judge a repair (`fluxiq`)
 
 MVP item 23. A run a person asked the model into has its result judged with

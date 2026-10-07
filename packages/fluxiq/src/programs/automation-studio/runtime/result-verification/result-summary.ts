@@ -45,6 +45,17 @@
 // session's own trace, `./step-changes.ts`), screened the same way: run
 // `run-muw5zv4m-52d83027`'s judges, shown status rows and a stale end, read one
 // "+" press as a quantity of 1 and a search as the item chosen after it.
+//
+// **And the page as it stood before the run did anything** (`startView`), by
+// the domain's declared view keys and screened exactly as the end view is. A
+// finished run starts on whatever the site already held, so run
+// `run-mux6pndp-16feb842`'s judges read the header's "2 · $28.96" -- a soap
+// and an earlier 3-Pack -- as the two towel packs asked for. It is read off the
+// session's own trace: the first attempt that saw the page, and the page it
+// found -- or, when that step moved to another document (the diff's
+// `documentChanged`; one recorded before that word, `locationChanged`), the
+// page it left, which is the site before any act. A step before it that saw no
+// page (a model or code step) did not change it. Nothing captured, no start.
 
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
@@ -62,6 +73,12 @@ import { automationStudioResultStepChanges } from "./step-changes.ts";
 
 /** Stands in, in a row, for a value shaped like a credential or carrying a denied key. */
 const WITHHELD_VALUE = "[withheld]";
+
+/** One traced attempt, as far as this reads it: its diff, and the domain's view of the page before and after it. */
+type TracedAttempt = {
+  nodeId: string;
+  stateRefs?: { stateDiff?: JsonObject; beforeAction?: { summary?: JsonObject | undefined }; afterAction?: { summary?: JsonObject | undefined } } | undefined;
+};
 
 // `AutomationStudioResultEndView` and the summary's `endView` live in
 // `./contracts.ts`; re-exported here for the callers that read them from here.
@@ -101,9 +118,17 @@ export type AutomationStudioRunResultSummaryInput = {
   actionAttempts?: readonly AutomationStudioFlowRunActionAttemptRecord[] | undefined;
   /**
    * This session's traced attempts, in the order they ran, for what each step
-   * changed (`./step-changes.ts`). Absent, no step says what it changed.
+   * changed (`./step-changes.ts`) and the page the run started on. Absent, no
+   * step says what it changed and there is no start.
    */
-  sessionAttempts?: Parameters<typeof automationStudioResultStepChanges>[0];
+  sessionAttempts?: readonly TracedAttempt[] | undefined;
+  /**
+   * The domain's declared view keys: the start page is its snapshot under
+   * these keys only. Absent, the keys the end view holds, which the end-view
+   * reader already cut to the declared ones, so the two pages are cut alike;
+   * with neither, there is no start.
+   */
+  observedStateKeys?: readonly string[] | undefined;
   /**
    * The bound domain's declared denied keys, exactly as declared. Absent means
    * no declaration was made, and no row is carried at all.
@@ -137,6 +162,9 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
   });
   const ended = input.endView ? automationStudioResultEndView(input.endView, input.deniedEvidenceKeys) : undefined;
   if (ended?.withheld || input.endViewUnreadable !== undefined) withheld = true;
+  const begun = startedOn(input.sessionAttempts, input.observedStateKeys ?? viewKeysOf(input.endView));
+  const started = begun ? automationStudioResultEndView(begun, input.deniedEvidenceKeys) : undefined;
+  if (started?.withheld) withheld = true;
   // How each list read went (`read-account/`): pages, why paging stopped, and
   // what each condition rejected, so a judge is not shown a step's name alone.
   const accounted = automationStudioResultReadAccounts({ actionAttempts: input.actionAttempts, flowNodes, deniedEvidenceKeys: input.deniedEvidenceKeys });
@@ -150,8 +178,33 @@ export function summarizeAutomationStudioRunResult(input: AutomationStudioRunRes
     ...(accounted.reads.length ? { reads: accounted.reads } : {}),
     flowShape,
     withheld,
-    ...(ended?.endView ? { endView: ended.endView } : {})
+    ...(ended?.endView ? { endView: ended.endView } : {}),
+    ...(started?.endView ? { startView: started.endView } : {})
   };
+}
+
+/**
+ * The page the run started on, as the domain's snapshot showed it, under its
+ * declared top-level view keys (as `../service/end-view/look.ts` keeps them):
+ * the first attempt that saw the page, and the page it found, or the page it
+ * left when it moved to another document. None without a snapshot on that side.
+ */
+function startedOn(attempts: readonly TracedAttempt[] | undefined, viewKeys: readonly string[] | undefined): AutomationStudioResultEndView | undefined {
+  const keys = (viewKeys ?? []).filter((key) => !key.includes("."));
+  const first = attempts?.find((attempt) => attempt.stateRefs?.beforeAction?.summary !== undefined || attempt.stateRefs?.afterAction?.summary !== undefined);
+  if (!keys.length || !first?.stateRefs) return undefined;
+  const { stateDiff: diff, beforeAction, afterAction } = first.stateRefs;
+  const moved = diff !== undefined && (diff.documentChanged === undefined ? diff.locationChanged === true : diff.documentChanged === true);
+  const seen = moved ? afterAction?.summary : beforeAction?.summary;
+  if (!seen) return undefined;
+  const view = Object.fromEntries(keys.filter((key) => Object.hasOwn(seen, key)).map((key) => [key, seen[key]!]));
+  return Object.keys(view).length ? { view } : undefined;
+}
+
+/** The keys an end view holds, which the end-view reader already cut to the domain's declared ones; none when it holds no object. */
+function viewKeysOf(endView: AutomationStudioResultEndView | undefined): string[] | undefined {
+  const view = endView?.view;
+  return view !== null && typeof view === "object" && !Array.isArray(view) ? Object.keys(view) : undefined;
 }
 
 /**

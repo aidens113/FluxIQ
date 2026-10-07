@@ -62,4 +62,21 @@ describe("the judge's paging evidence copy", () => {
     const original = summary();
     expect(automationStudioResultSummaryWithPagingWords(original)).toBe(original);
   });
+
+  // Run `run-mux6naez-6c20f26e` (lane C, round 3): `testedLabel` is Core's own
+  // bookkeeping for `request-rows/`; no judge instruction describes it.
+  it("carries no condition's testedLabel, and leaves the original's untouched", () => {
+    const conditions = [
+      { condition: "name not contains [\"charging case\"]", rejected: 2, leftOutOnlyByThis: ["Case A"], testedLabel: true as const },
+      { condition: "plus is present", rejected: 1, leftOutOnlyByThis: ["Pair B"] }
+    ];
+    const original = summary([read({ conditions }), read({ nodeId: "second", stop: "page_limit", truncated: true, conditions: [{ ...conditions[0]! }] })]);
+    const before = structuredClone(original);
+    const next = automationStudioResultSummaryWithPagingWords(original);
+    expect(JSON.stringify(next)).not.toContain("testedLabel");
+    expect(next.reads?.map((entry) => entry.conditions?.map((condition) => condition.condition))).toEqual([conditions.map((condition) => condition.condition), [conditions[0]!.condition]]);
+    expect(next.reads?.[0]?.conditions?.[0]?.leftOutOnlyByThis).toEqual(["Case A"]);
+    expect(original).toEqual(before);
+    expect(original.reads?.[0]?.conditions?.[0]?.testedLabel).toBe(true);
+  });
 });

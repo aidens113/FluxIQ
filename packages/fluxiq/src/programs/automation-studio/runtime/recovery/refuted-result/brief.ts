@@ -57,6 +57,17 @@
 // condition, a page or a column is called in the bound domain, so the brief
 // speaks of "the step that reads the items" and "its own parameters", and the
 // catalog entry the model is already shown supplies the names.
+//
+// **And it says a Flow can need no change (W17).** Live run
+// `run-muw5zv4m-52d83027`: the check refuted a cart the Flow had built exactly
+// as asked, the brief said only "change the Flow", and the re-author spent 46
+// decisions changing a step that had done what was asked. The brief now
+// carries the run's own record -- what each step changed, and the page before
+// and after the run, as the check was shown them -- and a last section: where
+// that record contradicts the check, complete the seeded draft unchanged with
+// the reason as the summary, and Core ends the repair there
+// (`./nothing-to-change.ts`). It is said as the exception it is: a fix the
+// record supports is still made.
 
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 // Type-only, for the same cycle: the literal below is held to Core's code by the compiler.
@@ -117,6 +128,18 @@ const NOT_RUN_LINES: readonly string[] = [
 ];
 
 /**
+ * The ending for a Flow that already does what was asked, said after what to
+ * do: when it is right, how it is taken -- the seeded draft completed
+ * unchanged, the summary its reason -- and that it is no way out of a fix the
+ * record supports (`./nothing-to-change.ts`).
+ */
+const NOTHING_TO_CHANGE_LINES: readonly string[] = [
+  "When the Flow needs no change:",
+  "The check reads the run and can be wrong. If what the run itself recorded above -- each step's change, and the page before and after -- shows the Flow did every act the request asks for, with the item, option, size and quantity it names, and that what the check calls wrong did not happen, the Flow needs no change. Then complete with your draft exactly as it was seeded: amend nothing and rerun nothing. Your completion summary is your reason: name the steps and what each changed that shows it. Core then changes nothing, tests nothing and ends this repair, recording your reason beside the check's verdict, which stands.",
+  "This is not a way out of a fix. Where the record shows a step did something else, does not show an act was done, or does not settle what the check says, make the fix as above. An unchanged completion ends the repair this way."
+];
+
+/**
  * The brief for one repair build.
  *
  * `current` is the refutation this build answers; `history` the ones before it,
@@ -133,16 +156,19 @@ export function automationStudioReauthorBrief(input: {
   now: number;
 }): AutomationStudioFlowInstruction {
   const lines: string[] = [
-    `This build is repair attempt ${input.current.attempt} of at most ${input.maxAttempts}. The Flow you start from (your draft) has already run, and its answer was judged NOT to answer the request. Change the Flow so that it does. Rebuilding the same Flow will produce the same answer and be judged wrong again.`,
+    `This build is repair attempt ${input.current.attempt} of at most ${input.maxAttempts}. The Flow you start from (your draft) has already run, and its answer was judged NOT to answer the request. Change the Flow so that it does, unless the run's own record shows it already does (see "When the Flow needs no change" below). Rebuilding the same Flow will produce the same answer and be judged wrong again.`,
     "",
     ...NOT_RUN_LINES,
     "",
     "What the last run produced and why it was judged wrong:",
     ...refutationLines(input.current),
+    ...recordSection(input.current),
     ...historySection(input.history, input.current),
     "",
     "What to do:",
-    ...(readsNothing(input.current) ? ACT_STEPS : READ_STEPS)
+    ...(readsNothing(input.current) ? ACT_STEPS : READ_STEPS),
+    "",
+    ...NOTHING_TO_CHANGE_LINES
   ];
   // Whole: no character cap on the brief or on any earlier attempt in it.
   const body = lines.join("\n");
@@ -187,6 +213,25 @@ function refutationLines(entry: AutomationStudioResultRepairHistoryEntry): strin
   if (judgement?.observed) lines.push(`- The check saw instead: ${judgement.observed}`);
   if (judgement?.advice) lines.push(`- The check's advice: ${judgement.advice}`);
   return lines;
+}
+
+/**
+ * What the refuted run itself recorded, as the check was shown it: the page
+ * before the run did anything, each step's change where it stayed, per run of
+ * it, and the page it ended on. Absent when the summary carried none of them.
+ */
+function recordSection(entry: AutomationStudioResultRepairHistoryEntry): string[] {
+  const lines: string[] = [];
+  if (entry.startView) lines.push(`- Before the run did anything, the page showed: ${JSON.stringify(entry.startView.view)}`);
+  for (const step of entry.changes ?? []) {
+    const runs = step.changed.map((change, index) => `run ${index + 1} ${[
+      ...(change.added ? [`added ${JSON.stringify(change.added)}`] : []),
+      ...(change.removed ? [`removed ${JSON.stringify(change.removed)}`] : [])
+    ].join(" and ")}`);
+    lines.push(`- Step ${step.nodeId} (${step.definitionId}${step.label ? `, ${JSON.stringify(step.label)}` : ""}) changed the page: ${runs.join("; ")}`);
+  }
+  if (entry.endView) lines.push(`- The run ended${entry.endView.after === undefined ? "" : ` (after ${entry.endView.after})`} on: ${JSON.stringify(entry.endView.view)}`);
+  return lines.length ? ["", "What the run itself recorded (Core's record of the page, not the check's reading):", ...lines] : [];
 }
 
 function historySection(history: readonly AutomationStudioResultRepairHistoryEntry[], current: AutomationStudioResultRepairHistoryEntry): string[] {
