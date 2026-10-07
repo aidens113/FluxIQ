@@ -432,7 +432,7 @@ describe("activityActionOf: what a finished action came to (result)", () => {
   });
 
   it("says what an edit changed, from its record's words, only when it changed something", () => {
-    const edit = (text: string, status: "succeeded" | "failed" = "succeeded") => activityActionOf(tool("Editing the Flow", text, status, "core.flow_draft", "building"));
+    const edit = (text: string, status: "succeeded" | "failed" = "succeeded") => activityActionOf(tool("Changing the Flow", text, status, "core.flow_draft", "building"));
     expect(edit("Changed: removed step 9, Add to cart")).toMatchObject({ kind: "draft", outcome: "done", result: "removed step 9, Add to cart" });
     expect(edit("Result: llm_evidence_loop.draft_amendments_refused · Reason: already_out", "failed")).not.toHaveProperty("result");
   });

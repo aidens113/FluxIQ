@@ -10,7 +10,7 @@ import { activityActionRefusal } from "../refusal.ts";
 
 const edit = (text: string | undefined, status: "succeeded" | "failed" = "failed"): ActivityActionEvent => ({
   phase: "building",
-  detail: { kind: "tool", title: "Editing the Flow", status, ref: "core.flow_draft", ...(text === undefined ? {} : { text }) }
+  detail: { kind: "tool", title: "Changing the Flow", status, ref: "core.flow_draft", ...(text === undefined ? {} : { text }) }
 });
 
 describe("activityActionRecordOf: how many of an edit's changes landed", () => {
@@ -83,7 +83,7 @@ describe("activityActionOf: a refused edit is a card", () => {
   it("names what was asked in Core's words, and says it was not done and why", () => {
     const action = activityActionOf(edit("Result: llm_evidence_loop.draft_amendments_refused · Reason: already_in_flow"));
     expect(action).toMatchObject({ kind: "draft", target: null, outcome: "failed", why: "that step is already in the Flow", refused: { all: true, because: "that step is already in the Flow" } });
-    expect(ACTIVITY_ACTION_NAMES.draft).toBe("Edit the Flow");
+    expect(ACTIVITY_ACTION_NAMES.draft).toBe("Change the Flow");
   });
 
   it("names a step asked to run again as that", () => {

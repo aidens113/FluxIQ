@@ -56,7 +56,7 @@ describe("a decision's heading", () => {
 });
 
 // t264: lane B's F6 (t193 C13/C14) already answers every edit with a card of
-// Core's own -- "Editing the Flow — done / partly done / not done" -- under the
+// Core's own -- "Changing the Flow — done / partly done / not done" -- under the
 // decision, so D18's "Changed the Flow" line is not ported. What D18 still asks
 // of the decision's own heading is ported: "Changing the Flow", never "draft
 // Flow", and an edit whose reason is screened out is still said, by its card.
@@ -74,7 +74,7 @@ describe("an edit to the draft (D18)", () => {
       await observed.decide(request(2));
     });
     expect(thoughts()).toEqual([["Changing the Flow", REORDER, "succeeded"]]);
-    expect(cards()).toEqual([["Editing the Flow — done", "succeeded"]]);
+    expect(cards()).toEqual([["Changing the Flow — done", "succeeded"]]);
     expect(JSON.stringify(seen)).not.toContain("draft Flow");
   });
 
@@ -87,7 +87,7 @@ describe("an edit to the draft (D18)", () => {
       await observed.decide(request(2));
     });
     expect(thoughts()).toEqual([]);
-    expect(cards()).toEqual([["Editing the Flow — done", "succeeded"]]);
+    expect(cards()).toEqual([["Changing the Flow — done", "succeeded"]]);
     expect(JSON.stringify(seen)).not.toMatch(/unreproducible|retest/u);
   });
 
@@ -101,7 +101,7 @@ describe("an edit to the draft (D18)", () => {
       await observed.decide(request(3));
     });
     expect(seen.filter((event) => event.detail?.status !== "started").map((event) => event.label)).toEqual([
-      "Changing the Flow", "Editing the Flow — done", "Changing the Flow", "Editing the Flow — done"
+      "Changing the Flow", "Changing the Flow — done", "Changing the Flow", "Changing the Flow — done"
     ]);
   });
 });
