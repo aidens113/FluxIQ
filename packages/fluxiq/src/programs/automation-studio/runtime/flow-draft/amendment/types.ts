@@ -33,6 +33,14 @@ export type AutomationStudioFlowDraftAmendment = {
   /** `repeat` only: the step whose rows, or whose success, the span repeats on. Defaults to the step before it. */
   over?: number;
   /**
+   * `repeat` only, never with `over`: the span's last step, which runs on
+   * every pass; the span runs again while it succeeds (`../routing.ts`). It is
+   * `through`, which defaults to it.
+   */
+  while?: number;
+  /** `repeat` with `while` only: the most passes, 1 to 500; the Repeat node's default when absent. */
+  most?: number;
+  /**
    * `add` or `keep` only: the instructed act (`a1`, `a2` ...) this step does,
    * as the checklist beside the draft names it. Recorded on the step, and read
    * as the model's claim when it completes (`../step.ts`, `acts`). Only a step
@@ -62,14 +70,15 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
   reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named"
     | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed" | "rerun_holds_binding" | "repeat_taken_off"
-    | "strands_a_step" | "settings_rewrite_run";
+    | "strands_a_step" | "settings_rewrite_run" | "second_copy";
   /**
    * `over_not_before` only: the step the repeat named as `over`, so the
    * telling can say, in the draft's numbers, which step lists the rows and
    * what a loop over them still needs (`../../llm/draft-amendment-feedback.ts`).
    * Live run 37 (`run-muq5v4zg-39182b58`) sent `13 repeat over 13` on its
    * filtered listing with no press after it, and was told the rule in general.
-   * `repeat_taken_off`: the step the repeat taken off was over.
+   * `repeat_taken_off`: the step the repeat taken off was over; absent for a
+   * repeat while its last step succeeds, which is over no step.
    */
   over?: number;
   /**
@@ -144,6 +153,14 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    * `run-muwao5n4-44977b2a`, D2-1).
    */
   strands?: number;
+  /**
+   * `second_copy` only: an `add` or `keep` refused because the step it would
+   * bring into the Flow copies a step already in it -- the same press on the
+   * same page, or a read of the same list with nothing changed in between --
+   * and this is that step, in the draft's shown numbers (`../second-copy.ts`,
+   * live run `run-murwdp4f-35f976d2`, C9).
+   */
+  copyOf?: number;
 };
 
 /**

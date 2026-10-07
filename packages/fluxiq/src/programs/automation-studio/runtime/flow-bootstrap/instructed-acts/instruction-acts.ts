@@ -47,7 +47,18 @@
 // a guest ..." asks for one transaction, and read as two submits it wanted two
 // steps for one press of Place order (pickup audit #5, `run-muny5y17-a927214b`).
 // So a check-out act after an order, buy or purchase in the same instruction is
-// not read again; a check-out asked alone is still an act.
+// not read again; a check-out asked alone is still an act. What the dropped
+// check-out's own clause asks of the transaction is not dropped with it: its
+// fulfilment and time ("Check out as a guest ..., take the earliest pickup time
+// on offer") are the order's choices (`munovwp3` cause 6, causes-early row 34,
+// where the run chose 3pm-4pm with 2pm-3pm open). Never its quantity or
+// variant, which the order's own object names, and never a second choice with
+// an id the order already has: the bias stays towards the order's own words.
+//
+// **A booking chooses its time.** "Book an annual boiler service ... in the
+// earliest weekday morning slot" asks for a slot as surely as for the booking;
+// a book or reserve act reads only that (`./instruction-choices.ts`), since
+// its object names a service, not an item with sizes or counts.
 //
 // **An act carries the class its verb names** (`./act-consequence.ts`), so the
 // check can hold the steps that do it to declaring it.
@@ -96,6 +107,9 @@ const PLURAL_KINDS: ReadonlySet<AutomationStudioInstructedActKind> = new Set(["s
  * putting it somewhere, or buying it. Saving it, or submitting anything else, chooses nothing.
  */
 const CHOOSING_BUYS = /^(?:buy|purchase|order)$/u;
+
+/** A booking, whose only choice is its time: "in the earliest weekday morning slot". */
+const BOOKING = /^(?:book|reserve)$/u;
 
 /** A check-out, which after one of `CHOOSING_BUYS` is that same transaction. */
 const CHECKING_OUT = /^check\s*out$/u;
@@ -188,11 +202,19 @@ export function automationStudioInstructedActs(instructionText: string): Automat
   const read = found
     .filter((act) => !(titleEnd >= 0 && act.at < titleEnd && body.some((other) => other.kind === act.kind)))
     .sort((left, right) => left.at - right.at);
+  // A check-out after an order is that order: it is not read again, and the
+  // fulfilment and time its own clause asks for are the order's choices.
+  const orderOf = (act: (typeof read)[number]): (typeof read)[number] | undefined =>
+    act.kind === "submit" && CHECKING_OUT.test(act.verb) ? read.filter((other) => other.at < act.at && other.kind === "submit" && CHOOSING_BUYS.test(other.verb)).at(-1) : undefined;
   return read
-    .filter((act) => !(act.kind === "submit" && CHECKING_OUT.test(act.verb) && read.some((other) => other.at < act.at && other.kind === "submit" && CHOOSING_BUYS.test(other.verb))))
+    .filter((act) => !orderOf(act))
     .map((act, index) => {
       const id = `a${index + 1}`;
-      const requires = choosesItem(act.kind, act.verb) ? automationStudioInstructedChoices(id, act.object) : [];
+      const own = choosesItem(act.kind, act.verb) ? automationStudioInstructedChoices(id, act.object) : act.kind === "submit" && BOOKING.test(act.verb) ? automationStudioInstructedChoices(id, act.object, "booking") : [];
+      const requires = read
+        .filter((other) => orderOf(other) === act)
+        .flatMap((checkOut) => automationStudioInstructedChoices(id, checkOut.object, "check-out"))
+        .reduce((all, choice) => (all.some((held) => held.id === choice.id) ? all : [...all, choice]), own);
       const consequence = automationStudioInstructedActImpliedConsequence(act.verb);
       return { id, kind: act.kind, verb: act.verb, quote: act.quote, ...(act.source ? { source: act.source } : {}), ...(act.plural ? { plural: act.plural } : {}), ...(requires.length ? { requires } : {}), ...(consequence ? { consequence } : {}) };
     });

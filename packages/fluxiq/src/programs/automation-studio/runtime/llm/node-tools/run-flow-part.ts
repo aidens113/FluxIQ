@@ -50,7 +50,7 @@ import {
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import { automationStudioNodeReplayStepCall } from "./replay.ts";
 import { automationStudioFlowDraftReplaySteps } from "./replay-draft.ts";
-import type { AutomationStudioFlowDraftReplayNodeOf } from "./replay-span.ts";
+import type { AutomationStudioFlowDraftReplayDefinitionOf, AutomationStudioFlowDraftReplayNodeOf } from "./replay-span.ts";
 
 /** What a part run needs: the draft, the model's argument, its call id and the loop's executor. */
 export type AutomationStudioFlowDraftPartRunInput = {
@@ -64,6 +64,8 @@ export type AutomationStudioFlowDraftPartRunInput = {
   lastingActs?: ReadonlySet<string> | undefined;
   /** The node each step names, as the dry run is given it (`./replay-draft.ts`): what lets a repeat run once per row. */
   nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
+  /** Each step's full node definition, as the dry run is given it: a read sends its assembled record output. */
+  definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
   signal?: AbortSignal | undefined;
 };
 
@@ -95,6 +97,7 @@ export async function runAutomationStudioFlowDraftPart(input: AutomationStudioFl
     reanchor: false,
     ...(input.lastingActs ? { lastingActs: input.lastingActs } : {}),
     ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
+    ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
     // A step the Flow does not always run goes on, as the Flow would; one with
     // nothing to run it with stops the run whatever it says about when it runs.
     stopsAt: (step, excused) => !excused || unrunnable(step),

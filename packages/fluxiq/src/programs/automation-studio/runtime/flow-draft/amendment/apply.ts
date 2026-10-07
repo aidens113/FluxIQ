@@ -4,6 +4,7 @@ import { automationStudioFlowDraftClaimAct } from "../act-claim.ts";
 import { automationStudioFlowDraftKeepOpeners } from "../opener.ts";
 import { automationStudioFlowDraftDropReversals } from "../reversal.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ROUTE_PLACE_VALUE, automationStudioFlowDraftSetRoutePlaces } from "../route-places/index.ts";
+import { automationStudioFlowDraftSecondCopy } from "../second-copy.ts";
 import { automationStudioFlowDraftStepIsAction, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../step.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_ACT_ID } from "./act-id.ts";
 import { automationStudioFlowDraftAmendmentBind } from "./bind.ts";
@@ -144,6 +145,16 @@ export function applyAutomationStudioFlowDraftAmendments(
       refused.push({ step: amendment.step, reason: "settings_rewrite_run" });
       continue;
     }
+    // A step brought into the Flow that copies a step already in it -- the same
+    // press on the same page, or a read of the same list with nothing changed in
+    // between -- is refused whole, before anything about it changes: the Flow
+    // does each step once. Live run `run-murwdp4f-35f976d2` (C9, 0046) added a
+    // second press of step 18's 3-Pack link from the same page (`../second-copy.ts`).
+    const copyOf = (amendment.change === "add" || amendment.change === "keep") && step.disposition !== "kept" ? automationStudioFlowDraftSecondCopy(steps, step) : undefined;
+    if (copyOf) {
+      refused.push({ step: amendment.step, reason: "second_copy", copyOf: shown.number(copyOf) });
+      continue;
+    }
     // An act is something done: a step that only reads -- a listing a Flow may
     // hold, as much as the look above -- does none, whatever the model calls it.
     // Live run 36 (`run-muq3uozx-3153564b`, E11) sent `10 add act a1` about a
@@ -231,10 +242,9 @@ export function applyAutomationStudioFlowDraftAmendments(
     if (changesPlaces) automationStudioFlowDraftSetRoutePlaces(step, routePlace!);
     if (moves && automationStudioFlowDraftAmendmentMove(steps, step, place, undefined)) movedStep = true;
     // A press a later press of the same control undid leaves the Flow with it, once the
-    // step, its openers, its act and its place are settled (`../reversal.ts`). A drop,
-    // or a mark as exploratory, of a kept step as well: a kept half whose partner just
-    // left the Flow would flip the control the wrong way (live run `run-mux6n7m4-8273e7a0`, rule b).
-    if (disposition === "kept" || leavesFlow) automationStudioFlowDraftDropReversals(steps);
+    // step, its openers, its act and its place are settled (`../reversal.ts`). A drop or
+    // exploratory of a kept step runs it after the strand check, below.
+    if (disposition === "kept") automationStudioFlowDraftDropReversals(steps);
     if (amendment.settings) step.settings = { ...(step.settings ?? {}), ...amendment.settings };
     applied += 1;
   }
@@ -249,6 +259,11 @@ export function applyAutomationStudioFlowDraftAmendments(
   const reach = automationStudioFlowDraftStrandCheck(steps, reachBefore, withdrawn, shown);
   applied -= reach.takenBack;
   refused.push(...reach.refused);
+  // A kept half whose partner really left the Flow -- dropped or marked exploratory,
+  // and not put back by the strand check -- would flip the control the wrong way
+  // (live run `run-mux6n7m4-8273e7a0`, rule b). Run only once the check is done, so
+  // a drop put back never takes its partner out with it (`../reversal.ts`).
+  if (withdrawn.some((entry) => entry.step.disposition !== "kept")) automationStudioFlowDraftDropReversals(steps);
   const moved = movedActs(claims);
   return { applied, refused, ...(moved.length ? { moved } : {}), ...(reach.unreached.length ? { unreached: reach.unreached } : {}) };
 }

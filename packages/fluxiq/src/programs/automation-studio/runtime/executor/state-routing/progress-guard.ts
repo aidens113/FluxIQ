@@ -8,12 +8,13 @@ import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
  */
 export const AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT = 3;
 
-/** The node whose body passes count as progress; keyed by definition id, as `graph-run.ts` keys it. */
-const FOR_EACH_DEFINITION_ID = "builtin.control.for-each";
+/** The nodes whose body passes count as progress -- For Each and Repeat; keyed by definition id, as `graph-run.ts` keys them. */
+const LOOP_DEFINITION_IDS: ReadonlySet<string> = new Set(["builtin.control.for-each", "builtin.control.repeat"]);
 
 /**
  * The run's progress mark: the distinct nodes that acted successfully (that
- * succeeded and were not skipped), plus every For Each pass into a body.
+ * succeeded and were not skipped), plus every For Each or Repeat pass into a
+ * body.
  * It only ever grows, so a mark that has not moved between two routes into
  * one node means nothing new happened in between.
  */
@@ -23,7 +24,7 @@ export function automationStudioRunProgressMark(attempts: readonly AutomationStu
   for (const attempt of attempts) {
     if (attempt.status !== "succeeded" || attempt.skipped) continue;
     acted.add(attempt.nodeId);
-    if (attempt.definitionId === FOR_EACH_DEFINITION_ID && attempt.route === "body") passes += 1;
+    if (LOOP_DEFINITION_IDS.has(attempt.definitionId) && attempt.route === "body") passes += 1;
   }
   return acted.size + passes;
 }

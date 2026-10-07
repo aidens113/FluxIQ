@@ -337,6 +337,36 @@ describe("For Each in a graph run", () => {
     expect(trace.values["recall.value"]).toEqual(items);
   });
 
+  it("grants each Repeat pass into its body the same allowance, so 300 passes run past the default 250 steps", async () => {
+    const flow: AutomationStudioFlowDocument = {
+      ...authoredFlow,
+      flowId: "flow.repeat-300",
+      nodes: [
+        { id: "start", definitionId: "builtin.control.start" },
+        { id: "again", definitionId: "builtin.control.repeat", parameterValues: { most: 300 } },
+        { id: "remember", definitionId: "builtin.data.set-variable", parameterValues: { name: "seen", writeMode: "append-list" } },
+        { id: "recall", definitionId: "builtin.data.get-variable", parameterValues: { name: "seen" } },
+        { id: "end", definitionId: "builtin.control.end" }
+      ],
+      edges: [
+        edge("start", "success", "again"),
+        edge("again", "body", "remember"),
+        edge("again", "pass", "remember", "value"),
+        edge("remember", "success", "recall"),
+        edge("recall", "success", "again"),
+        edge("again", "done", "end")
+      ]
+    };
+
+    const trace = await runAutomationStudioGraph(flow);
+    const passes = trace.attempts.filter((attempt) => attempt.nodeId === "again");
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts).toHaveLength(1 + 301 + 600 + 1);
+    expect(passes.map((attempt) => attempt.route)).toEqual([...Array.from({ length: 300 }, () => "body"), "done"]);
+    expect(trace.values["recall.value"]).toEqual(Array.from({ length: 300 }, (_, index) => index + 1));
+  });
+
   it("keeps each For Each node's place its own, so a nested pair runs every pairing", async () => {
     const flow: AutomationStudioFlowDocument = {
       ...authoredFlow,

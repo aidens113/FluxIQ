@@ -220,21 +220,25 @@ function seedRunState(runState: AutomationStudioRunState, seed: AutomationStudio
   for (const [nodeId, iteration] of Object.entries(seed.loops)) runState.loops.set(nodeId, { items: [...iteration.items], index: iteration.index });
 }
 
-/** The most steps one graph run takes, whatever its caller asks and however many steps its For Each nodes grant. */
+/** The most steps one graph run takes, whatever its caller asks and however many steps its loop nodes grant. */
 const AUTOMATION_STUDIO_MAX_RUN_STEPS = 100_000;
 
-/** The node whose body passes are granted steps of their own; keyed by definition id, as `graph-navigation.ts` keys Start. */
-const FOR_EACH_DEFINITION_ID = "builtin.control.for-each";
+/**
+ * The nodes whose body passes are granted steps of their own -- For Each and
+ * Repeat -- keyed by definition id, as `graph-navigation.ts` keys Start and as
+ * `state-routing/progress-guard.ts` keys the same two.
+ */
+const LOOP_DEFINITION_IDS: ReadonlySet<string> = new Set(["builtin.control.for-each", "builtin.control.repeat"]);
 
 /**
- * Each For Each pass that routes into its body grants the body
+ * Each For Each or Repeat pass that routes into its body grants the body
  * `maxStepsPerIteration` more steps, up to the whole-run ceiling, so how long a
- * list may run is bounded per item rather than by the run's own limit. Without
+ * loop may run is bounded per pass rather than by the run's own limit. Without
  * the allowance, 100 items through a three-node body need 400 steps, past the
  * default 250.
  */
 function withIterationAllowance(maxSteps: number, node: AutomationStudioFlowNode, attempt: AutomationStudioNodeAttemptTrace): number {
-  if (node.definitionId !== FOR_EACH_DEFINITION_ID || attempt.status !== "succeeded" || attempt.route !== "body") return maxSteps;
+  if (!LOOP_DEFINITION_IDS.has(node.definitionId) || attempt.status !== "succeeded" || attempt.route !== "body") return maxSteps;
   return Math.min(AUTOMATION_STUDIO_MAX_RUN_STEPS, maxSteps + stepsPerIteration(node));
 }
 

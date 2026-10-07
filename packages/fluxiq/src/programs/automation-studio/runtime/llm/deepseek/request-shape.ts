@@ -74,7 +74,8 @@ export type AutomationStudioDeepSeekRequestShape = {
    * The node catalog a build was shown, measured rather than quoted, as it was
    * sent: `whole` entries for a one-shot build, and for an evidence decision
    * the `names` list (entries are its lines) plus the nodes it had described in
-   * full (`./request-body.ts`).
+   * full (`./request-body.ts`), each sent once -- on the window entry that
+   * described it, or in the head when no entry names it (t289-G).
    */
   catalog: {
     form: "whole" | "names";

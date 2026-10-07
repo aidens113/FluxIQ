@@ -22,8 +22,8 @@
 // object merges into the object there, any other value -- a list, a string, a
 // number -- replaces what is there whole, and `null` removes the key. A model
 // that still sends the whole argument gets exactly that argument for every key
-// it wrote; what it left out is kept rather than dropped, which is the safe
-// direction: a key it forgot to write is not a key it meant to remove.
+// it wrote. What a patch leaves out is kept -- a key it did not write is not a
+// key it meant to remove -- except inside an object it wrote out again, below.
 //
 // **Two ways a patch lost what the model meant (t194-w39, `run-muq66ff9-cb3767a1`).**
 //
@@ -96,7 +96,34 @@
 // model was never shown. A number or a flag is no name (`maxScrolls: 3` beside a
 // stored `maxPages: 3` is a second bound), and a value several left-out keys could
 // be renames none. This cannot remove a withheld key: the model cannot write the
-// value of one it never saw. Leaving a key out still keeps it; `null` removes it.
+// value of one it never saw.
+//
+// **An object the model writes out again drops what it saw and left out
+// (`run-murdouox-c5294247` R3, `run-mustvzvg-99695308` C3).** A merge keeps
+// every key a patch leaves out, so a map the model restated could never lose an
+// entry: 0051 of the first run rewrote its columns as `{name, mutualFriends}`
+// without `confirm`, and the call kept `confirm` and was refused as the failed
+// call again. The second run's read wrote `maxPages: 10` beside `paginate`, and
+// the domain refused that key; every later rerun of the refused attempt restated
+// the whole `extractList` with the bound moved under `paginate`, and each merged
+// the stray key back and was refused naming it again (0063, 0070, 0073). The
+// draft step keeps only the domain's result code, never the keys its refusal
+// named, so Core cannot drop those; and it should not need to, because what the
+// model wrote already says it.
+//
+// So an object the patch writes over a stored object *restates* it when it says
+// more of it unchanged than it leaves out: the entries it repeats, as the model
+// was shown them, and the entries it renames, outnumber the stored keys it does
+// not write. An entry it changes is a patch's entry and counts for neither side,
+// so a repeated handle beside one or two changes is still a patch. Of a
+// restatement, a key the model was shown and left out is dropped; a key the
+// screen withheld (the domain's denied evidence keys, `../harness/draft-screen.ts`)
+// is kept, since the model never saw it -- a re-author's column keeps its
+// selector. The patch itself, and a node's parameters, are never a restatement:
+// they are the patch, and leaving a parameter out of them keeps it. Without the
+// domain's denied keys Core cannot tell a key the model saw from one it was
+// never shown, so nothing is dropped this way. Outside a restatement, leaving a
+// key out keeps it; `null` removes it anywhere.
 //
 // **A patch that changes the step's `node` drops the old node's parameters
 // (`run-muwaobm2-882cadd9`, draft step 14).** The same rule as a column's `kind`,
@@ -112,6 +139,7 @@
 // writes none. Every other top-level key merges as before. Where the node stays,
 // nothing changes -- withheld keys are kept as described above.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
+import { automationStudioEvidenceKey } from "../harness/index.ts";
 import { automationStudioRerunPatchPlacement } from "../rerun-arguments/index.ts";
 
 /** The key an object names what it is by. */
@@ -120,12 +148,21 @@ const KIND_KEY = "kind";
 const NODE_KEY = "node";
 const PARAMETERS_KEY = "parameters";
 
-/** The argument a rerun runs with: `patch` merged over `previous` (RFC 7386). */
-export function automationStudioLlmEvidenceRerunInput(previous: JsonObject | undefined, patch: JsonObject): JsonObject {
+/**
+ * The argument a rerun runs with: `patch` merged over `previous` (RFC 7386).
+ *
+ * `deniedKeys` are the bound domain's denied evidence keys, the ones the draft
+ * the model reads has withheld (`../harness/draft-screen.ts`). Given, an object
+ * the patch writes out again drops what the model saw and left out of it, and
+ * keeps what it was never shown; absent, nothing the patch leaves out is
+ * dropped, because Core cannot tell what the model was shown (see the header).
+ */
+export function automationStudioLlmEvidenceRerunInput(previous: JsonObject | undefined, patch: JsonObject, deniedKeys?: readonly string[]): JsonObject {
   const target = structuredClone(previous ?? {});
   const placed = automationStudioRerunPatchPlacement(target, patch);
   if (changesNode(target, placed)) delete target[PARAMETERS_KEY];
-  return mergePatch(target, placed);
+  const withheld = deniedKeys === undefined ? undefined : new Set(deniedKeys.map(automationStudioEvidenceKey));
+  return mergePatch(target, placed, withheld, true);
 }
 
 /** Whether the patch names a node other than the one the step ran: the stored parameters are that node's, not this one's. */
@@ -135,12 +172,18 @@ function changesNode(target: JsonObject, patch: JsonObject): boolean {
   return typeof was === "string" && typeof becomes === "string" && was !== becomes;
 }
 
-function mergePatch(target: JsonObject, patch: JsonObject): JsonObject {
+/**
+ * `withheld` is the set of normalised denied keys, or none when the domain
+ * declared none; `root` marks the patch itself and a node's parameters, which
+ * are the patch and never a restatement of anything.
+ */
+function mergePatch(target: JsonObject, patch: JsonObject, withheld: ReadonlySet<string> | undefined, root: boolean): JsonObject {
   const merged: JsonObject = { ...target };
   const leaving = oldKindMember(target, patch);
   if (leaving !== undefined) delete merged[leaving];
   const renamed = renamedKeys(target, patch);
   for (const from of renamed.values()) delete merged[from];
+  if (!root && withheld !== undefined) for (const left of leftOutOfRestatement(target, patch, renamed, withheld)) delete merged[left];
   for (const [key, value] of Object.entries(patch)) {
     if (value === null) {
       delete merged[key];
@@ -148,7 +191,8 @@ function mergePatch(target: JsonObject, patch: JsonObject): JsonObject {
     }
     const from = renamed.get(key);
     const current = from === undefined ? merged[key] : target[from];
-    merged[key] = isObject(value) ? mergePatch(isObject(current) ? current : {}, value) : structuredClone(value);
+    const parameters = root && key === PARAMETERS_KEY && typeof target[NODE_KEY] === "string";
+    merged[key] = isObject(value) ? mergePatch(isObject(current) ? current : {}, value, withheld, parameters) : structuredClone(value);
   }
   // After every key is merged, so a list item is read against its maps as they
   // now stand: a column the same patch changed is the column it means.
@@ -175,6 +219,42 @@ function renamedKeys(target: JsonObject, patch: JsonObject): Map<string, string>
     if (from !== undefined && ![...renamed.values()].includes(from)) renamed.set(key, from);
   }
   return renamed;
+}
+
+/**
+ * The keys of `target` the model saw and left out of an object it wrote out
+ * again, or none when the object is a patch (see the header): a restatement
+ * says more of the stored object unchanged -- entries it repeats as the model
+ * was shown them, and entries it renames -- than it leaves out. An entry it
+ * changes is a patch's entry and counts for neither side. A key the screen
+ * withheld is never left out: the model could not have written it.
+ */
+function leftOutOfRestatement(target: JsonObject, patch: JsonObject, renamed: ReadonlyMap<string, string>, withheld: ReadonlySet<string>): string[] {
+  const sources = new Set(renamed.values());
+  const leftOut = Object.keys(target).filter((key) => !Object.hasOwn(patch, key) && !sources.has(key) && !withheld.has(automationStudioEvidenceKey(key)));
+  if (leftOut.length === 0) return [];
+  const repeated = Object.keys(patch).filter((key) => Object.hasOwn(target, key) && patch[key] !== null && sameJson(patch[key]!, shownAs(target[key]!, withheld))).length;
+  return repeated + renamed.size > leftOut.length ? leftOut : [];
+}
+
+/** A stored value as the draft showed it: every withheld key removed, at any depth. */
+function shownAs(value: JsonValue, withheld: ReadonlySet<string>): JsonValue {
+  if (Array.isArray(value)) return value.map((item) => shownAs(item, withheld));
+  if (!isObject(value)) return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !withheld.has(automationStudioEvidenceKey(key))).map(([key, item]) => [key, shownAs(item, withheld)]));
+}
+
+/** Whether two values are the same JSON, whatever order their keys were written in. */
+function sameJson(left: JsonValue, right: JsonValue): boolean {
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((item, index) => sameJson(item, right[index]!));
+  }
+  if (isObject(left) || isObject(right)) {
+    if (!isObject(left) || !isObject(right)) return false;
+    const keys = Object.keys(left);
+    return keys.length === Object.keys(right).length && keys.every((key) => Object.hasOwn(right, key) && sameJson(left[key]!, right[key]!));
+  }
+  return left === right;
 }
 
 /**

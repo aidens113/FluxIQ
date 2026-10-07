@@ -1,11 +1,14 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAutomationStudioFlowExpansionFixture, createCallFlowNode } from "../../../../model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioProjectDatabasePool, AutomationStudioProjectGraphRepository } from "../../../../storage/index.ts";
 import { installPrimaryRouter } from "../../service-fixtures.ts";
+
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 let tempRoot: string;
 

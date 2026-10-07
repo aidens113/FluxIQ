@@ -36,7 +36,10 @@ const KEY_SYNONYMS: ReadonlyMap<string, string> = new Map([
   ["recordspath", "recordsPath"], ["path", "recordsPath"], ["records", "recordsPath"], ["rowspath", "recordsPath"],
   ["schema", "schema"], ["fields", "schema"], ["columns", "schema"],
   ["writemode", "writeMode"], ["mode", "writeMode"], ["write", "writeMode"],
-  ["maxrecords", "maxRecords"], ["max", "maxRecords"], ["limit", "maxRecords"], ["maxrows", "maxRecords"]
+  ["maxrecords", "maxRecords"], ["max", "maxRecords"], ["limit", "maxRecords"], ["maxrows", "maxRecords"],
+  // What is done to the collected rows before they are answered. Its shape is
+  // the contract's to check, so it is carried exactly as written.
+  ["process", "process"], ["processing", "process"]
 ]);
 
 const WRITE_MODE_SYNONYMS: ReadonlyMap<string, string> = new Map([
@@ -65,6 +68,18 @@ export function normaliseAuthoringRecordOutput(input: {
   columns: readonly (string | { id: string; label: string })[];
   /** What the dataset is called when the model named it nothing usable. */
   fallbackName: string;
+  /**
+   * The step's stable id, appended to every dataset id this derives (never to
+   * one the model wrote), so two steps that read under one name -- or under
+   * none -- never share a dataset by accident. Absent, the id is derived
+   * from the name alone, as before.
+   */
+  stepId?: string | undefined;
+  /**
+   * Label a derived output with `fallbackName` when the model wrote none: the
+   * output was written here, not by the model, so its list is named for the step.
+   */
+  labelFromFallback?: boolean | undefined;
   path: string;
 }): {
   value: JsonValue | undefined;
@@ -85,9 +100,11 @@ export function normaliseAuthoringRecordOutput(input: {
     }
     if (output[canonical] === undefined) output[canonical] = value;
   }
-  const label = typeof output.label === "string" ? output.label : undefined;
+  const fallbackLabel = input.labelFromFallback ? listLabel(input.fallbackName) : undefined;
+  const label = typeof output.label === "string" ? output.label : fallbackLabel;
+  if (label !== undefined) output.label = label;
   const datasetId = typeof output.datasetId === "string" ? authoringDatasetId(output.datasetId) : undefined;
-  output.datasetId = datasetId ?? authoringDatasetId(label ?? "") ?? authoringDatasetId(input.fallbackName) ?? "records";
+  output.datasetId = datasetId ?? derivedDatasetId(label ?? input.fallbackName, input.stepId);
   const schemaDerived = fieldList(output.schema) === undefined;
   const schema = normaliseSchema(output.schema, input.columns);
   if (!schema) {
@@ -190,3 +207,21 @@ function asObject(value: JsonValue): JsonObject | undefined {
   return undefined;
 }
 
+
+/**
+ * A dataset id the model did not write: the name's slug, then the step's id.
+ * Without a step id this is the id the name alone gave before.
+ */
+function derivedDatasetId(name: string, stepId: string | undefined): string {
+  const suffix = stepId === undefined ? undefined : authoringDatasetId(stepId);
+  if (suffix === undefined) return authoringDatasetId(name) ?? "records";
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 80).replace(/-+$/u, "");
+  const id = `${slug || "records"}-${suffix}`;
+  return id.length <= 200 ? id : `${slug.slice(0, Math.max(1, 199 - suffix.length))}-${suffix}`.slice(0, 200);
+}
+
+/** A step's words as the name of the list it reads, within the record-set label limit, or `undefined`. */
+function listLabel(name: string): string | undefined {
+  const label = name.trim().replace(/\s+/gu, " ").slice(0, 200).trim();
+  return label || undefined;
+}

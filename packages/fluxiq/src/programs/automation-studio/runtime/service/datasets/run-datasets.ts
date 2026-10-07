@@ -75,6 +75,7 @@ export class AutomationStudioRunDatasets {
           schema: batch.schema,
           schemaDigest: automationStudioRecordSchemaDigest(batch.schema),
           writeMode: batch.writeMode,
+          process: batch.process,
           rows: batch.rows,
           invalidCount: batch.invalidCount,
           truncated: batch.truncated
@@ -83,6 +84,40 @@ export class AutomationStudioRunDatasets {
         await store.close();
       }
     };
+  }
+
+  /**
+   * Turns each dataset the run stored into its answer, from its collected rows
+   * and its `process` declaration, and returns the run's summaries, most
+   * recently written first. Called when the run's graph run ends, before its
+   * result is verified (read-list design P1); processing again starts from the
+   * collected rows, so a repair re-run that appends under the run is processed
+   * again the same way. Without a pool there is nothing to process and it
+   * returns `[]`. It throws when the store cannot be opened or refuses; the
+   * caller decides what that means for the run.
+   */
+  async processRunDatasets(input: AutomationStudioRunDatasetsRunRequest): Promise<AutomationStudioRunDatasetSummary[]> {
+    if (!this.pool) return [];
+    const store = await this.openStore(input.projectId);
+    try {
+      return await store.processRunDatasets(input.runId);
+    } finally {
+      await store.close();
+    }
+  }
+
+  /**
+   * `processRunDatasets` as the end of a run calls it: once the graph run has
+   * ended, whether it succeeded, failed or was cancelled, and before its result
+   * is verified. Processing never fails the run or replaces its error, and
+   * nothing of its failure is kept, since the error may quote stored values.
+   */
+  async processEndedRunDatasets(input: AutomationStudioRunDatasetsRunRequest): Promise<void> {
+    try {
+      await this.processRunDatasets(input);
+    } catch {
+      /* best-effort: an unprocessed dataset reads as its collected rows, so readers and the run's own outcome stand */
+    }
   }
 
   /** Every dataset the run stored, most recently written first. */

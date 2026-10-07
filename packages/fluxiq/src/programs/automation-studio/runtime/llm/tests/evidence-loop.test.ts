@@ -566,6 +566,22 @@ describe("the routing words of an amendment", () => {
     expect(automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", through: "two" }] })).toBeUndefined();
   });
 
+  // Read-list design (S2): the do-while, `{"step": <read>, "change": "repeat",
+  // "while": <next page>, "most"?: n}`. A shape that says two loops at once, or
+  // a bound with no loop, is left out rather than read as one of them.
+  it("reads a repeat while its last step succeeds, and leaves out one that says two things at once", () => {
+    const read = (amendment: Record<string, unknown>) => automationStudioLlmEvidenceParseDecision({ kind: "amend_draft", amendments: [amendment] });
+    expect(read({ step: 2, change: "repeat", while: 3, most: 20 })).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", while: 3, most: 20 }] });
+    expect(read({ step: 2, change: "repeat", while: 3, through: 3 })).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", through: 3, while: 3 }] });
+    expect(read({ step: 2, change: "repeat", while: 3, most: 500 })).toEqual({ kind: "amend_draft", amendments: [{ step: 2, change: "repeat", while: 3, most: 500 }] });
+    expect(read({ step: 2, change: "repeat", while: 0 })).toBeUndefined();
+    expect(read({ step: 2, change: "repeat", while: 3, over: 1 })).toBeUndefined();
+    expect(read({ step: 2, change: "repeat", most: 5 })).toBeUndefined();
+    expect(read({ step: 2, change: "repeat", over: 1, most: 5 })).toBeUndefined();
+    for (const most of [0, 501, 2.5, "5", -1]) expect(read({ step: 2, change: "repeat", while: 3, most })).toBeUndefined();
+    expect(read({ step: 2, change: "repeat", while: 3, through: 4 })).toBeUndefined();
+  });
+
   it("offers every one of them in the schema the model answers in", () => {
     const schema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, { type: "object" }, true, true) as {
       oneOf: Array<{ properties: { kind: { const: string }; amendments?: { items: { properties: { change: { enum: string[] } } } } } }>;

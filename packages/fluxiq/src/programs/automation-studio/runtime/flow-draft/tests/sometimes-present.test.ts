@@ -97,6 +97,18 @@ describe("a missing step that is still refused", () => {
   });
 });
 
+// The check a span repeats while, whose first ask did not hold (read-list
+// design S2, 4.2(e)): the Flow runs the span zero times, and the walk excused
+// the check `check`. Made optional, it would stand between the check and its
+// span, where the assembler refuses a while loop.
+describe("a check a repeat runs while, excused because its first ask did not hold", () => {
+  it("is not made optional: the test already passed over it", () => {
+    const steps = [step(2), step(3), step(4, { routing: { kind: "repeat", through: "d4", over: "d3" } }), step(5)];
+    const outcomes = [outcome(2, "replayed"), outcome(3, "unreproducible", { excused: "check" }), outcome(4, "failed", { excused: "repeat" }), outcome(5, "replayed")];
+    expect(ids(steps, outcomes)).toEqual([]);
+  });
+});
+
 // A press the host says answered a layer that was gone after it (t174-w60,
 // case 2): optional from the moment it is drafted, so playback skips it when
 // the layer is not there, without the model having to say so.

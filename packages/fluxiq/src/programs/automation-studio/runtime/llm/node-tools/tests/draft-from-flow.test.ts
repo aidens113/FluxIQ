@@ -432,3 +432,81 @@ describe("a saved Flow's earlier-output reference read back as a step binding", 
     expect(automationStudioFlowDraftSeedFromFlow(flow).steps[1]!.input.parameters).toEqual({ selector: "#copy", text: reference("$node.s1.records") });
   });
 });
+
+// S2 (t283, C4/C7): a stored do-while -- read the list, press Next, again while
+// Next found a page -- came back with its Repeat node as a plain step, which the
+// completion check refuses, so a stored do-while Flow could not be repaired.
+describe("a Flow's do-while read back as the repeat it was written from", () => {
+  const MERGE = "builtin.control.merge";
+  const REPEAT = "builtin.control.repeat";
+  const NAVIGATE = "web.output.browser-navigate";
+  const EXTRACT = "web.output.dom-extract_list";
+  const NEXT = "web.output.dom-next_page";
+  const TYPE = "web.output.dom-type";
+  const at = (id: string, definitionId: string, parameterValues: NonNullable<AutomationStudioFlowNode["parameterValues"]> = {}): AutomationStudioFlowNode => ({ id, definitionId, parameterValues });
+  const wire = (id: string, source: string, sourcePortId: string, target: string, targetPortId: string): AutomationStudioFlowEdge =>
+    ({ id, sourceNodeId: source, targetNodeId: target, sourcePortId, targetPortId });
+
+  /** start -> open -> loop -> pass.body -> read -> next; next.success -> loop; next.ended -> exit; pass.done -> exit -> summary -> end. */
+  function drawn(most?: number): { nodes: AutomationStudioFlowNode[]; edges: AutomationStudioFlowEdge[] } {
+    return {
+      nodes: [
+        at("start", "builtin.control.start"),
+        at("open", NAVIGATE, { url: "https://shop.test/results" }),
+        at("loop", MERGE),
+        at("pass", REPEAT, most === undefined ? {} : { most }),
+        at("read", EXTRACT, { extractList: { item: "li.row", fields: { name: ".name" } } }),
+        at("next", NEXT, { selector: "a.next" }),
+        at("exit", MERGE),
+        at("summary", TYPE, { selector: "#message", text: "done" }),
+        at("end", "builtin.control.end", { status: "success" })
+      ],
+      // The exits listed before the body, so the walk has to put the body first.
+      edges: [
+        wire("e0", "pass", "done", "exit", "branches"), wire("e1", "next", "ended", "exit", "branches"),
+        wire("e2", "start", "success", "open", "in"), wire("e3", "open", "success", "loop", "branches"),
+        wire("e4", "loop", "success", "pass", "in"), wire("e5", "pass", "body", "read", "in"),
+        wire("e6", "read", "success", "next", "in"), wire("e7", "next", "success", "loop", "branches"),
+        wire("e8", "exit", "success", "summary", "in"), wire("e9", "summary", "success", "end", "in")
+      ]
+    };
+  }
+
+  it("seeds the body with the do-while on its first step, and leaves the Repeat and both Merges as framing", () => {
+    const seed = automationStudioFlowDraftSeedFromFlow(drawn());
+    expect(seed.steps.map((step) => seed.nodeIdByStepId[step.id!])).toEqual(["open", "read", "next", "summary"]);
+    expect(seed.steps.map((step) => step.routing ?? null)).toEqual([null, { kind: "repeat", through: "f3", while: "f3" }, null, null]);
+    expect(seed.steps.some((step) => [MERGE, REPEAT].includes(step.actionId))).toBe(false);
+  });
+
+  it("reads the Repeat's default most as no most at all", () => {
+    expect(automationStudioFlowDraftSeedFromFlow(drawn(50)).steps[1]!.routing).toEqual({ kind: "repeat", through: "f3", while: "f3" });
+  });
+
+  it("carries an authored most", () => {
+    expect(automationStudioFlowDraftSeedFromFlow(drawn(7)).steps[1]!.routing).toEqual({ kind: "repeat", through: "f3", while: "f3", most: 7 });
+  });
+
+  it("reads anything but the assembler's shape as before, the Repeat as a plain step", () => {
+    const plain = (flow: { nodes: AutomationStudioFlowNode[]; edges: AutomationStudioFlowEdge[] }) => {
+      const seed = automationStudioFlowDraftSeedFromFlow(flow);
+      return { pass: seed.steps.some((step) => step.actionId === REPEAT), repeats: seed.steps.some((step) => step.routing?.kind === "repeat") };
+    };
+    const branching = drawn();
+    branching.edges.push(wire("e10", "read", "failed", "summary", "in"));
+    const strayRepeat = drawn();
+    strayRepeat.edges.push(wire("e11", "pass", "pass", "summary", "text"));
+    const failedExit = drawn();
+    failedExit.edges.push(wire("e12", "next", "failed", "exit", "branches"));
+    const otherSetting = drawn();
+    otherSetting.nodes = otherSetting.nodes.map((item) => item.id === "pass" ? { ...item, parameterValues: { maxStepsPerIteration: 9 } } : item);
+    const noExit = drawn();
+    noExit.edges = noExit.edges.filter((item) => item.id !== "e0");
+    const nested = drawn();
+    nested.nodes.push(at("inner", REPEAT));
+    nested.edges = nested.edges.map((item) => item.id === "e6" ? { ...item, targetNodeId: "inner" } : item);
+    nested.edges.push(wire("e13", "inner", "body", "next", "in"));
+    for (const flow of [branching, strayRepeat, failedExit, otherSetting, noExit, nested]) expect(plain(flow)).toEqual({ pass: true, repeats: false });
+    expect(plain(drawn())).toEqual({ pass: false, repeats: true });
+  });
+});

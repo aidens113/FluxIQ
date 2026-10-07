@@ -177,7 +177,7 @@ describe("a repeat on a listing, run 37", () => {
     const change = (AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { description: string }>).change!.description;
     expect(change).not.toContain("first rerun the listing");
     expect(change).toContain("never to run it again as it stands");
-    expect(change).toContain("The repeat goes on the act, never on the listing itself");
+    expect(change).toContain("A repeat over a listing goes on the act, never on the listing itself");
     expect(change).toContain("that row's own control");
   });
 });
@@ -250,6 +250,17 @@ describe("binding a step's arguments", () => {
     expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 2, change: "bind", input: { query: { $row: "name" } } }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "bind_row_outside_loop", parameter: "query" }] });
     expect(draft[1]?.ranWith?.parameters).toMatchObject({ query: "blue towels" });
     expect(draft[1]?.instance).toBeUndefined();
+  });
+
+  // Read-list design (S2): a do-while runs its span again while its last step
+  // succeeds, over no listing, so it has no row for a field to come from.
+  it("refuses a row field inside a span that repeats while its last step succeeds", () => {
+    const draft = loopDraft();
+    draft[2]!.routing = { kind: "repeat", through: "d3", while: "d3" };
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "bind", input: { note: { $row: "name" } } }])).toEqual({ applied: 0, refused: [{ step: 3, reason: "bind_row_outside_loop", parameter: "note" }] });
+    // Inside a repeat over a listing as well, the row is that listing's.
+    draft[1]!.routing = { kind: "repeat", through: "d3", over: "d1" };
+    expect(applyAutomationStudioFlowDraftAmendments(draft, [{ step: 3, change: "bind", input: { note: { $row: "name" } } }])).toEqual({ applied: 1, refused: [] });
   });
 
   it("refuses a leaf that is not a binding, a key the step does not have, and a malformed form, changing nothing", () => {
@@ -678,5 +689,32 @@ describe("places on the named route", () => {
     expect(place?.pattern).toBe("^(none|r[1-9][0-9]?(,r[1-9][0-9]?){0,19})$");
     expect(place?.description).toMatch(/r1,r2/u);
     expect(place?.description).toMatch(/none/u);
+  });
+});
+
+// Read-list redesign S2 (contract C2): a list that continues is gone through
+// by a repeat on its read that runs again while the step that moves it on
+// succeeds. The model is shown `while` and `most` with their bounds, and the
+// rule that a repeat goes on the act is said of a repeat over a listing only.
+describe("the do-while repeat the schema teaches", () => {
+  const properties = AUTOMATION_STUDIO_FLOW_DRAFT_AMENDMENT_SCHEMA.properties as Record<string, { type?: string; minimum?: number; maximum?: number; description: string }>;
+
+  it("declares while and most with their bounds", () => {
+    expect(properties.while).toMatchObject({ type: "integer", minimum: 1 });
+    expect(properties.while!.maximum).toBeUndefined();
+    expect(properties.while!.description).toContain("never with over");
+    expect(properties.while!.description).toContain("through defaults to it");
+    expect(properties.most).toMatchObject({ type: "integer", minimum: 1, maximum: 500 });
+    expect(properties.most!.description).toContain("default 50");
+  });
+
+  it("says the continuing list's form beside the list form, in generic words", () => {
+    const change = properties.change!.description;
+    expect(change).toContain("A repeat over a listing goes on the act, never on the listing itself");
+    expect(change).toContain("To go through a list that continues -- the step that reads it, then the step that moves it on -- repeat on the read with while naming that step");
+    expect(change).toContain("each pass reads once, and the Flow keeps each row once");
+    for (const description of [change, properties.while!.description, properties.most!.description]) {
+      for (const word of ["page", "Next", "pagination", "scroll"]) expect(description).not.toMatch(new RegExp(`\b${word}`));
+    }
   });
 });
