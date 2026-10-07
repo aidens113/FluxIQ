@@ -1,4 +1,5 @@
 import { mkdirSync, readdirSync } from "node:fs";
+import { open as openFile, stat } from "node:fs/promises";
 import path from "node:path";
 import sqlite3 from "sqlite3";
 import type { JsonObject } from "../../../core/index.ts";
@@ -66,6 +67,53 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
       const row = await get<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} where id = ?`, [id]);
       return row ? rowToRecord<T>(row, normalizedScope) : null;
     });
+  }
+
+  /** Reads existing storage only. An absent database returns null; invalid schema refuses. */
+  async getExistingReadOnly(id: string, scope: RepositoryScope = {}): Promise<RecordEnvelope<T> | null> {
+    return (await this.getExistingReadOnlyMany([id], scope))[0]!;
+  }
+
+  /** A bounded record-only snapshot. No executable SQL or database creation is exposed. */
+  async getExistingReadOnlyMany(ids: readonly string[], scope: RepositoryScope = {}): Promise<Array<RecordEnvelope<T> | null>> {
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > 256 || ids.some(id => typeof id !== "string" || !id || id.length > 1024)) throw new Error("repository.readonly_ids");
+    const requested = [...ids], normalized = normalizeScope(scope), filePath = this.databasePath(normalized);
+    let identity: string;
+    try {
+      const info = await stat(filePath, { bigint: true });
+      if (!info.isFile()) throw new Error("repository.readonly_database");
+      identity = `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}`;
+    }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return requested.map(() => null); throw error; }
+    const handle = await openFile(filePath, "r");
+    try {
+      const header = Buffer.alloc(100); const { bytesRead } = await handle.read(header, 0, 100, 0);
+      // WAL reads can create or modify sidecars despite OPEN_READONLY. Never open that layout.
+      if (bytesRead !== 100 || header.subarray(0, 16).toString("binary") !== "SQLite format 3\0" || header[18] !== 1 || header[19] !== 1) throw new Error("repository.readonly_journal_unsupported");
+    } finally { await handle.close(); }
+    const db = await new Promise<sqlite3.Database>((resolve, reject) => {
+      const connection = new sqlite3.Database(filePath, sqlite3.OPEN_READONLY | sqlite3.OPEN_FULLMUTEX, error => error ? reject(error) : resolve(connection));
+      connection.configure("busyTimeout", 10_000);
+    });
+    try {
+      await run(db, "begin");
+      const records = []; let observedBytes = 0;
+      for (const id of requested) {
+        const remaining = Math.min(4 * 1024 * 1024, 8 * 1024 * 1024 - observedBytes);
+        const row = await get<SQLiteRecordRow & { dataBytes: number }>(db, `select id,kind,case when length(cast(data as blob))<=? then data else null end as data,length(cast(data as blob)) as dataBytes,created_at_ms as createdAtMs,updated_at_ms as updatedAtMs from ${this.tableName} where id=?`, [remaining, id]);
+        if (row && (!Number.isSafeInteger(row.dataBytes) || row.dataBytes < 0 || row.dataBytes > remaining || typeof row.data !== "string")) throw new Error("repository.observation_size");
+        observedBytes += row?.dataBytes ?? 0;
+        if (row && (row.kind !== this.kind || row.id !== id || !Number.isSafeInteger(row.createdAtMs) || row.createdAtMs < 0 || !Number.isSafeInteger(row.updatedAtMs) || row.updatedAtMs < 0)) throw new Error("repository.readonly_record");
+        const record = row ? rowToRecord<T>(row, normalized) : null;
+        if (record && (!record.data || typeof record.data !== "object" || Array.isArray(record.data))) throw new Error("repository.readonly_data");
+        records.push(record);
+      }
+      await run(db, "commit");
+      const after = await stat(filePath, { bigint: true });
+      if (`${after.dev}:${after.ino}:${after.size}:${after.mtimeNs}` !== identity) throw new Error("repository.readonly_database_changed");
+      return records;
+    } catch (error) { await run(db, "rollback").catch(/* best-effort: retain the original readonly failure */ () => undefined); throw error; }
+    finally { await close(db); }
   }
 
   async put(record: RecordEnvelope<T>): Promise<RecordEnvelope<T>> {
