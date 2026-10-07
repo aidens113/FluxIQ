@@ -16,6 +16,28 @@ async function fixture(operation: (first: Store, second: Store, pool: Automation
   try { await operation(first, second, pool); } finally { await first.close(); await second.close(); await pool.closeAll(); await otherPool.closeAll(); const owned = path.resolve(root); if (path.dirname(owned) !== path.resolve(os.tmpdir()) || !path.basename(owned).startsWith("gateway-run-fence-")) throw new Error("Refusing nonowned fixture cleanup"); await rm(owned, { recursive: true, force: true }); }
 }
 describe("closed actual project SQL run admission", () => {
+  it("atomic consumed continuation still authorizes only one of two next-command contenders", async () => fixture(async (first, second) => {
+    const tickets = new WeakMap<object, { claim: ClientGatewayCommandClaim; receipt: ReturnType<typeof receipt> }>(), owner = { resolveConsumed: (ticket: object) => tickets.get(ticket) ?? null }, admission = await first.openRunAdmission("run.1", owner), competitor = await second.openRunAdmission("run.1", owner), initial = claim("invoke.1");
+    await first.claimForRun(initial, admission); const ack = receipt(initial); await first.commitReceipt(initial, ack); const ticket = {}; tickets.set(ticket, { claim: initial, receipt: ack }); await first.consumeForRun(admission, ticket);
+    const sends: string[] = [], send = async (store: Store, cap: AutomationStudioCommandRunAdmission, id: string) => { const result = await store.claimForRun(claim(id), cap); if (result.sendAllowed) sends.push(id); };
+    const outcomes = await Promise.allSettled([send(first, admission, "invoke.2"), send(second, competitor, "invoke.3")]); expect(sends).toEqual(["invoke.2"]); expect(outcomes.filter(result => result.status === "rejected")).toHaveLength(1);
+  }));
+  it("allows continuation only for private consumed ticket and revalidates every historical join in its claim transaction", async () => fixture(async (first, second, pool) => {
+    const tickets = new WeakMap<object, { claim: ClientGatewayCommandClaim; receipt: ReturnType<typeof receipt> }>(), owner = { resolveConsumed: (ticket: object) => tickets.get(ticket) ?? null }, admission = await first.openRunAdmission("run.1", owner), input = claim("invoke.1");
+    await first.claimForRun(input, admission); const ack = receipt(input); await first.commitReceipt(input, ack);
+    expect(() => first.consumeForRun(admission, { claim: input, receipt: ack })).toThrow("foreign_consumption"); expect(() => first.claimForRun(claim("invoke.2"), admission)).toThrow("first_command_only");
+    const ticket = Object.freeze({}); tickets.set(ticket, { claim: input, receipt: ack }); await first.consumeForRun(admission, ticket);
+    expect((await first.claimForRun(claim("invoke.2"), admission)).sendAllowed).toBe(true); await expect(second.openRunAdmission("run.1", owner)).rejects.toThrow("prior_run_claim");
+    const lease = await pool.acquire("project.1"); try { await lease.database.run("update mutation_records set owner_id='borrowed.owner' where mutation_id=?", [`${input.binding.commandId}.receipt`]); } finally { await lease.release(); }
+    await expect(first.claimForRun(claim("invoke.2"), admission)).rejects.toThrow("corrupt_mutation_join");
+  }));
+  it.each(["unknown", "borrowed_receipt", "revoked_ticket"])("%s cannot authorize continuation", async kind => fixture(async (first) => {
+    const tickets = new WeakMap<object, { claim: ClientGatewayCommandClaim; receipt: ReturnType<typeof receipt> }>(), owner = { resolveConsumed: (ticket: object) => tickets.get(ticket) ?? null }, admission = await first.openRunAdmission("run.1", owner), input = claim("invoke.1"), ticket = Object.freeze({});
+    await first.claimForRun(input, admission); if (kind === "unknown") await first.markUnknown(input, "send_uncertain"); const ack = receipt(input); await first.commitReceipt(input, ack);
+    tickets.set(ticket, { claim: input, receipt: kind === "borrowed_receipt" ? { ...ack, resultDigest: Rules.digest({ borrowed: true }) } : ack });
+    if (kind === "revoked_ticket") { await first.consumeForRun(admission, ticket); tickets.delete(ticket); await expect(first.claimForRun(claim("invoke.2"), admission)).rejects.toThrow("run_claim_conflict"); }
+    else await expect(first.consumeForRun(admission, ticket)).rejects.toThrow("unavailable_consumption");
+  }));
   it("allows exactly one competing owner to claim and send a different command in the same run", async () => fixture(async (first, second) => {
     const admissions = await Promise.all([first.openRunAdmission("run.1"), second.openRunAdmission("run.1")]);
     const sends: string[] = [];

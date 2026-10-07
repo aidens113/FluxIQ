@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ClientGatewayService, CLIENT_GATEWAY_PROTOCOL_VERSION, type ClientGatewayActionResult, type ClientGatewayClientMessage } from "../../../index.ts";
-import { ClientGatewayCommandContext as Context, ClientGatewayCommandLedgerController as Rules, type ClientGatewayCommandLedgerLease, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../index.ts";
+import { ClientGatewayCommandContext as Context, ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandOutcome as Outcome, ClientGatewayDurableDispatch as Dispatch, type ClientGatewayCommandLedgerLease, type ClientGatewayCommandLedgerPort, type ClientGatewayCommandRecord } from "../index.ts";
 
 const owner = { projectId: "project.1", runId: "run.1", flowId: "flow.1", invocationId: "invoke.1", attemptId: "node.attempt.1", effectOrdinal: 0 };
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(yes => { resolve = yes; }); return { promise, resolve }; }
@@ -24,6 +24,46 @@ function ack(commandId: string, fields: Partial<ClientGatewayActionResult> = {})
 }
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 describe("actual gateway explicit durable dispatch boundary", () => {
+  it("authenticates only the exact live dispatch proof, never equal JSON or an expired/copied proof", async () => {
+    const ledger = memory(), context = Context.issue(owner); let saved!: object;
+    const observer = { completed: vi.fn(async (proof: object) => { saved = proof; const value = Dispatch.readCompletionProof(proof, context, observer); expect(Rules.digest(value.result)).toBe(value.receipt.resultDigest); expect(Object.isFrozen(value.result.payload)).toBe(true); const stored = await ledger.read(value.claim); expect(stored?.receipt).toEqual(value.receipt); for (const forged of [JSON.parse(JSON.stringify(proof)), { ...value }, structuredClone(value.receipt)]) expect(() => Dispatch.readCompletionProof(forged, context, observer)).toThrow("foreign_completion_proof"); expect(() => Dispatch.readCompletionProof(proof, Context.issue(owner), observer)).toThrow("foreign_completion_proof"); expect(() => Dispatch.readCompletionProof(proof, context, { ...observer })).toThrow("foreign_completion_proof"); }), uncertain: vi.fn(async () => undefined) };
+    Outcome.require(context, observer); const gateway = new ClientGatewayService({ resolveCommandLedger: async () => ({ ledger, outcomeObserver: observer, close: async () => undefined }) }), sessionId = await paired(gateway, () => undefined);
+    const response = gateway.executeAction(sessionId, { actionType: "synthetic.action" }, { context }); await tick(); await gateway.receive(sessionId, ack(response.commandId)); expect((await response.result).status).toBe("completed"); expect(() => Dispatch.readCompletionProof(saved, context, observer)).toThrow("foreign_completion_proof"); await gateway.close();
+  });
+  it.each(["abort", "timeout", "close"])("required %s revokes proof before unknown resolution and drains the late observer", async cause => {
+    const ledger = memory(), context = Context.issue(owner), entered = deferred<void>(), gate = deferred<void>(), abort = new AbortController(); let proof!: object;
+    const observer = { completed: vi.fn(async (received: object) => { proof = received; entered.resolve(); await gate.promise; expect(() => Dispatch.readCompletionProof(proof, context, observer)).toThrow("foreign_completion_proof"); }), uncertain: vi.fn(async () => undefined) };
+    Outcome.require(context, observer); const close = vi.fn(async () => undefined), gateway = new ClientGatewayService({ commandTimeoutMs: 30, resolveCommandLedger: async () => ({ ledger, outcomeObserver: observer, close }) }), sessionId = await paired(gateway, () => undefined);
+    const response = gateway.executeAction(sessionId, { actionType: "synthetic.action" }, { context, signal: abort.signal }); await tick(); const receive = gateway.receive(sessionId, ack(response.commandId)); await entered.promise;
+    let closed = false; let closing: Promise<void> | undefined;
+    if (cause === "abort") abort.abort(); if (cause === "close") closing = gateway.close().then(() => { closed = true; });
+    expect(await response.result).toEqual({ status: "outcome_unknown" }); expect(observer.uncertain).toHaveBeenCalledTimes(1); expect(() => Dispatch.readCompletionProof(proof, context, observer)).toThrow("foreign_completion_proof"); expect(close).not.toHaveBeenCalled(); expect(closed).toBe(false);
+    gate.resolve(); await receive; await (closing ?? gateway.close()); expect(close).toHaveBeenCalledTimes(1);
+  });
+  it("failed observer or uncertainty notification cannot publish successful completion", async () => {
+    const context = Context.issue(owner), observer = { completed: vi.fn(async () => { throw new Error("capture failed"); }), uncertain: vi.fn(async () => { throw new Error("stop notification failed"); }) };
+    Outcome.require(context, observer); const gateway = new ClientGatewayService({ resolveCommandLedger: async () => ({ ledger: memory(), outcomeObserver: observer, close: async () => undefined }) }), sessionId = await paired(gateway, () => undefined);
+    const response = gateway.executeAction(sessionId, { actionType: "synthetic.action" }, { context }); const result = expect(response.result).rejects.toThrow("stop notification failed"); await tick(); await expect(gateway.receive(sessionId, ack(response.commandId))).rejects.toThrow("stop notification failed"); await result; expect(observer.uncertain).toHaveBeenCalledTimes(1); await gateway.close();
+  });
+  it("required completion observer prevents public success until its post-COMMIT gate completes", async () => {
+    const ledger = memory(), gate = deferred<void>(), entered = deferred<void>(), context = Context.issue(owner);
+    const observer = { completed: vi.fn(async (_proof: object) => { expect((await ledger.read(expect.anything()))?.state).toBe("committed"); entered.resolve(); await gate.promise; }), uncertain: vi.fn(async () => undefined) };
+    Outcome.require(context, observer);
+    const gateway = new ClientGatewayService({ resolveCommandLedger: async () => ({ ledger, outcomeObserver: observer, close: async () => undefined }) });
+    const sessionId = await paired(gateway, () => undefined), response = gateway.executeAction(sessionId, { actionType: "synthetic.action" }, { context });
+    let resolved = false; void response.result.then(() => { resolved = true; }); await tick();
+    const receive = gateway.receive(sessionId, ack(response.commandId)); await tick();
+    try { expect(observer.completed).toHaveBeenCalledTimes(1); expect(resolved).toBe(false); } finally { gate.resolve(); await receive; await gateway.close(); }
+    expect(await response.result).toMatchObject({ status: "completed" });
+  });
+  it("registered required context cannot silently use a lease without its exact observer", async () => {
+    const context = Context.issue(owner), observer = { completed: vi.fn(async () => undefined), uncertain: vi.fn(async () => undefined) }, sends: number[] = [];
+    Outcome.require(context, observer);
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 10, resolveCommandLedger: async () => ({ ledger: memory(), close: async () => undefined }) });
+    const sessionId = await paired(gateway, raw => { if (JSON.parse(raw).type === "server.execute_action") sends.push(1); });
+    const response = gateway.executeAction(sessionId, { actionType: "synthetic.action" }, { context });
+    try { await response.result.catch(() => undefined); expect(sends).toHaveLength(0); expect(observer.uncertain).toHaveBeenCalledTimes(1); } finally { await gateway.close(); }
+  });
   it("delays all enqueue/send until claim and all public resolution/events until receipt commit", async () => {
     const ledger = memory(), claimGate = deferred<void>(), receiptGate = deferred<void>(), close = vi.fn(async () => undefined);
     const originalClaim = ledger.claim, originalReceipt = ledger.commitReceipt;

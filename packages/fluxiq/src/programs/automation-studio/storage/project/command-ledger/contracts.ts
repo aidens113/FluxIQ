@@ -9,3 +9,7 @@ export type AutomationStudioCommandRunObservation = {
 };
 export const AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT = 4096;
 export const AUTOMATION_STUDIO_COMMAND_SCAN_PAGE = 128;
+/** Injected trusted owner resolves only privately registered, same-incarnation tickets. */
+export type AutomationStudioCommandConsumptionOwner = {
+  resolveConsumed(ticket: object): { claim: import("../../../../../client-gateway/service/command-ledger/index.ts").ClientGatewayCommandClaim; receipt: import("../../../../../client-gateway/service/command-ledger/index.ts").ClientGatewayCommandReceipt } | null;
+};

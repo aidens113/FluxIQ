@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, open as openFile, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { JsonObject, JsonValue } from "../../core/index.ts";
@@ -62,6 +62,51 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
       if (error instanceof ProgramStateReadError) throw error;
       throw new ProgramStateReadError(this.filePath, error, true);
     }
+  }
+
+  /** No empty default, repair, schema creation or fallback from an owning SQLite layout. */
+  async readExistingReadOnly(): Promise<T | null> {
+    return (await ProgramJsonStore.readExistingReadOnlyMany([this.filePath]))[0] as T | null;
+  }
+
+  /** Existing documents from one owning SQL snapshot, or bounded file observations. */
+  static async readExistingReadOnlyMany(filePaths: readonly string[]): Promise<Array<JsonObject | null>> {
+    if (!Array.isArray(filePaths) || filePaths.length < 1 || filePaths.length > 256 || filePaths.some(value => typeof value !== "string" || !path.isAbsolute(value))) throw new Error("program_state.readonly_paths");
+    const paths = filePaths.map(value => path.resolve(value));
+    const states = paths.map(value => sqliteStateForPath(value, true));
+    const first = states[0];
+    if (first) {
+      if (states.some(state => !state || state.rootDir !== first.rootDir || state.kind !== first.kind)) throw new Error("program_state.readonly_mixed_layout");
+      const records = await first.repository.getExistingReadOnlyMany(states.map(state => state!.id));
+      // Resolve again after the asynchronous read; a changed owning layout cannot supply proof.
+      if (paths.some((value, index) => { const current = sqliteStateForPath(value, true); return !current || current.rootDir !== first.rootDir || current.kind !== first.kind || current.id !== states[index]!.id; })) throw new Error("program_state.readonly_layout_changed");
+      return records.map(record => {
+        if (!record) return null;
+        if (!isJsonObject(record.data)) throw new Error("program_state.readonly_data");
+        return record.data;
+      });
+    }
+    if (states.some(Boolean)) throw new Error("program_state.readonly_mixed_layout");
+    const documents: Array<JsonObject | null> = []; let observedBytes = 0;
+    for (const filePath of paths) {
+      try {
+        const limit = Math.min(4 * 1024 * 1024, 8 * 1024 * 1024 - observedBytes), handle = await openFile(filePath, "r");
+        let text: string;
+        try {
+          const info = await handle.stat(); if (!info.isFile() || info.size > limit) throw new Error("program_state.observation_size");
+          const bytes = Buffer.alloc(limit + 1); let used = 0;
+          while (used < bytes.length) { const read = await handle.read(bytes, used, bytes.length - used, used); if (!read.bytesRead) break; used += read.bytesRead; }
+          if (used > limit) throw new Error("program_state.observation_size"); observedBytes += used;
+          const after = await handle.stat(); if (after.size !== info.size || after.mtimeMs !== info.mtimeMs) throw new Error("program_state.readonly_file_changed");
+          text = bytes.subarray(0, used).toString("utf8");
+        } finally { await handle.close(); }
+        const payload: unknown = JSON.parse(text);
+        if (!isJsonObject(payload) || payload.version !== 1 || !isJsonObject(payload.data)) throw new Error("program_state.readonly_envelope");
+        documents.push(payload.data);
+      } catch (error) { if (isNodeError(error, "ENOENT")) documents.push(null); else throw error; }
+    }
+    if (paths.some(value => sqliteStateForPath(value, true))) throw new Error("program_state.readonly_layout_changed");
+    return documents;
   }
 
   async recoverMalformedState(nowMs = Date.now()): Promise<{ backupPath: string; data: T }> {
@@ -229,7 +274,7 @@ export class ProgramDocumentTransaction {
   }
 }
 
-function sqliteStateForPath(targetPath: string): { repository: SQLiteRepository<JsonObject>; id: string; rootDir: string; kind: string } | null {
+function sqliteStateForPath(targetPath: string, strict = false): { repository: SQLiteRepository<JsonObject>; id: string; rootDir: string; kind: string } | null {
   const resolved = path.resolve(targetPath);
   let current = path.dirname(resolved);
   while (true) {
@@ -237,7 +282,10 @@ function sqliteStateForPath(targetPath: string): { repository: SQLiteRepository<
     if (existsSync(configPath)) {
       try {
         const config = JSON.parse(readFileSync(configPath, "utf8")) as { layoutVersion?: unknown };
-        if (config.layoutVersion !== 2) return null;
+        if (config.layoutVersion !== 2) {
+          if (strict && config.layoutVersion !== 1) throw new Error("program_state.readonly_layout");
+          return null;
+        }
         const relative = path.relative(current, resolved).replaceAll("\\", "/");
         const programPrefix = "programs/";
         const automationPrefix = "artifacts/automation-studio/";
@@ -257,7 +305,9 @@ function sqliteStateForPath(targetPath: string): { repository: SQLiteRepository<
             kind: "automation.state",
           };
         }
-      } catch {
+        if (strict) throw new Error("program_state.readonly_path");
+      } catch (error) {
+        if (strict) throw error;
         return null;
       }
       return null;

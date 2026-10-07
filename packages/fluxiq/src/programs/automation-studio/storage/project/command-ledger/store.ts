@@ -3,7 +3,7 @@ import { AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS } from "../administ
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool, AutomationStudioSqlExecutor } from "../database.ts";
 import { AutomationStudioProjectUnitOfWork } from "../unit-of-work.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
-import { AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT as SCAN_LIMIT, AUTOMATION_STUDIO_COMMAND_SCAN_PAGE as SCAN_PAGE, type AutomationStudioCommandRunObservation, type AutomationStudioCommandLedgerMutationProof, type AutomationStudioCommandLedgerOperation } from "./contracts.ts";
+import { AUTOMATION_STUDIO_COMMAND_SCAN_LIMIT as SCAN_LIMIT, AUTOMATION_STUDIO_COMMAND_SCAN_PAGE as SCAN_PAGE, type AutomationStudioCommandRunObservation, type AutomationStudioCommandLedgerMutationProof, type AutomationStudioCommandLedgerOperation, type AutomationStudioCommandConsumptionOwner } from "./contracts.ts";
 import { AutomationStudioCommandRunAdmission } from "./admission.ts";
 import { AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION } from "./migration.ts";
 
@@ -12,7 +12,7 @@ type ReceiptRow = { command_id: string; receipt_json: string; proof_digest: stri
 type UnknownRow = { command_id: string; reason: ClientGatewayCommandUnknownReason; proof_digest: string };
 /** Receipt-only project storage; closed run admission is not wired to Flow execution. */
 export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayCommandLedgerPort {
-  private readonly admissions = new WeakMap<AutomationStudioCommandRunAdmission, { runId: string; first: ClientGatewayCommandClaim | null }>();
+  private readonly admissions = new WeakMap<AutomationStudioCommandRunAdmission, { runId: string; first: ClientGatewayCommandClaim | null; owner?: AutomationStudioCommandConsumptionOwner; consumed: Map<string, { ticket: object; claim: ClientGatewayCommandClaim; receipt: ClientGatewayCommandReceipt }> }>();
   private readonly pipelines = new Set<Promise<unknown>>();
   private closed = false;
   private closing?: Promise<void>;
@@ -35,23 +35,41 @@ export class AutomationStudioProjectCommandLedgerStore implements ClientGatewayC
     this.runId(runId);
     return this.pipeline(() => this.lease.database.transaction(sql => this.scanRun(sql, runId)));
   }
-  openRunAdmission(runId: string): Promise<AutomationStudioCommandRunAdmission> {
+  openRunAdmission(runId: string, owner?: AutomationStudioCommandConsumptionOwner): Promise<AutomationStudioCommandRunAdmission> {
     this.runId(runId);
+    if (owner !== undefined && (!owner || typeof owner.resolveConsumed !== "function")) throw new Error("command_ledger.invalid_consumption_owner");
     return this.pipeline(async () => {
       const observed = await this.lease.database.transaction(sql => this.scanRun(sql, runId));
       if (observed.records.length) throw new Error("command_ledger.prior_run_claim");
       if (this.closed) throw new Error("command_ledger.closed");
-      const admission = AutomationStudioCommandRunAdmission.create(); this.admissions.set(admission, { runId, first: null }); return admission;
+      const admission = AutomationStudioCommandRunAdmission.create(); this.admissions.set(admission, { runId, first: null, ...(owner ? { owner } : {}), consumed: new Map() }); return admission;
     });
   }
   claimForRun(input: ClientGatewayCommandClaim, admission: AutomationStudioCommandRunAdmission): Promise<{ sendAllowed: boolean; record: ClientGatewayCommandRecord }> {
     const claim = this.prepare(input), registered = this.admissions.get(admission);
     if (!registered || claim.binding.runId !== registered.runId) throw new Error("command_ledger.foreign_admission");
-    if (registered.first && Rules.digest(registered.first) !== Rules.digest(claim)) throw new Error("command_ledger.first_command_only");
-    registered.first ??= this.freeze(structuredClone(claim));
+    if (registered.first && Rules.digest(registered.first) !== Rules.digest(claim) && (!registered.owner || !registered.consumed.has(registered.first.binding.commandId))) throw new Error("command_ledger.first_command_only");
+    registered.first = this.freeze(structuredClone(claim));
     return this.pipeline(() => this.claimStored(claim, async sql => {
       const observed = await this.scanRun(sql, registered.runId);
-      if (observed.records.some(record => Rules.digest(record.claim) !== Rules.digest(claim))) throw new Error("command_ledger.run_claim_conflict");
+      for (const record of observed.records) {
+        if (Rules.digest(record.claim) === Rules.digest(claim)) continue;
+        const consumed = registered.consumed.get(record.claim.binding.commandId), original = consumed && registered.owner?.resolveConsumed(consumed.ticket);
+        if (!consumed || !original || Rules.digest(original) !== Rules.digest({ claim: consumed.claim, receipt: consumed.receipt }) || Rules.digest(record.claim) !== Rules.digest(consumed.claim) || Rules.digest(record.receipt) !== Rules.digest(consumed.receipt) || record.state !== "committed" || observed.historicalUnknownCommandIds.includes(record.claim.binding.commandId)) throw new Error("command_ledger.run_claim_conflict");
+      }
+    }));
+  }
+  consumeForRun(admission: AutomationStudioCommandRunAdmission, ticket: object): Promise<void> {
+    const registered = this.admissions.get(admission), resolved = registered?.owner?.resolveConsumed(ticket);
+    if (!registered || !resolved) throw new Error("command_ledger.foreign_consumption");
+    const value = this.freeze(structuredClone(resolved)), claim = this.prepare(value.claim); Rules.validateReceipt(claim, value.receipt);
+    if (claim.binding.runId !== registered.runId || !registered.first || Rules.digest(registered.first) !== Rules.digest(claim) || registered.consumed.has(claim.binding.commandId)) throw new Error("command_ledger.consumption_conflict");
+    return this.pipeline(() => this.lease.database.transaction(async sql => {
+      const observed = await this.scanRun(sql, registered.runId), record = observed.records.find(item => item.claim.binding.commandId === claim.binding.commandId);
+      if (!record || record.state !== "committed" || Rules.digest(record.claim) !== Rules.digest(claim) || Rules.digest(record.receipt) !== Rules.digest(value.receipt) || observed.historicalUnknownCommandIds.includes(claim.binding.commandId)) throw new Error("command_ledger.unavailable_consumption");
+      const still = registered.owner!.resolveConsumed(ticket);
+      if (this.closed || !still || Rules.digest(still) !== Rules.digest(value) || registered.consumed.has(claim.binding.commandId)) throw new Error("command_ledger.consumption_conflict");
+      registered.consumed.set(claim.binding.commandId, { ticket, claim: value.claim, receipt: value.receipt });
     }));
   }
   async claim(input: ClientGatewayCommandClaim): Promise<{ sendAllowed: boolean; record: ClientGatewayCommandRecord }> { const claim = this.prepare(input); return await this.pipeline(() => this.claimStored(claim)); }
