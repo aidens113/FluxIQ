@@ -21,7 +21,7 @@ export class AutomationStudioCandidateSource {
     if (input.resolution && (JSON.stringify(input.resolution.instructionIds) !== JSON.stringify(resolved.instructionIds)
       || JSON.stringify(fingerprint.snapshot(input.resolution.instructions)) !== JSON.stringify(fingerprint.snapshot(resolved.instructions)))) throw new Error("candidate.original_resolution_mismatch");
     const originalSources = fingerprint.snapshot({ schemaVersion: "candidate.original_sources.v1" as const, projectId, flowId,
-      inventoryInstructionIds: [...ids].sort(), instructions: [...instructions].sort((a, b) => a.instructionId.localeCompare(b.instructionId)),
+      inventoryInstructionIds: [...ids].sort(), instructions: [...instructions].sort((a, b) => a.instructionId < b.instructionId ? -1 : a.instructionId > b.instructionId ? 1 : 0),
       effectiveInstructionIds: resolved.instructionIds,
       excludedInstructionIds: ids.filter(id => !resolved.instructionIds.includes(id)).sort() });
     return fingerprint.snapshot({ originalSources, originalInstructionsDigest: fingerprint.source(originalSources) });

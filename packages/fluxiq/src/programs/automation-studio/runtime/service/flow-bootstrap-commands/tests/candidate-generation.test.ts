@@ -32,6 +32,7 @@ describe("candidate facade uses the actual service", () => {
     });
     try {
       const { project, flow } = await blankFixture(service); projectId = project.id; flowId = flow.flowId;
+      const originalInstruction = await service.getFlowInstruction(projectId, "instruction.build");
       const before = await service.getFlow(projectId, flowId), proposed = vi.spyOn(service, "createFlowBootstrapAdaptation");
       const readBinding = service.getLlmExecutionBinding.bind(service);
       vi.spyOn(service, "getLlmExecutionBinding").mockImplementation(async (p, f) => { const binding = await readBinding(p, f); return stale ? { ...binding, settingsRevision: binding.settingsRevision + 1 } : binding; });
@@ -44,6 +45,11 @@ describe("candidate facade uses the actual service", () => {
         const saved = await draftStore(service).get(projectId, flowId);
         expect(saved).toMatchObject({ candidateId: result.candidateId, sourceInstructionIds: ["instruction.build"], instructionText: "Build a primary path\nCreate a deterministic Start to End Flow.", candidate: { revision: 2, digest: result.digest, status: "draft" } });
         expect(saved?.candidate.buildPlan.subflows[0]?.nodes.map((node) => node.definitionId)).toEqual(["builtin.control.start", "builtin.control.end"]);
+        expect(saved?.schemaVersion).toBe(2);
+        if (saved?.schemaVersion !== 2) throw new Error("Actual facade did not retain original sources");
+        expect(saved.originalSources.instructions).toEqual([originalInstruction]);
+        expect(saved.originalSources.inventoryInstructionIds).toEqual(["instruction.build"]);
+        expect(saved.candidate.originalInstructionsDigest).toBe(saved.originalInstructionsDigest);
         expect(JSON.stringify(saved)).not.toContain("unrelated"); expect(JSON.stringify(saved)).not.toContain("wrong-turn");
         const spend = await (service as any).creationSpends.get(projectId, flowId); expect(spend).toMatchObject({ builds: 1, spentUsd: 0.004 });
         const restarted = new AutomationStudioService({ dataDir });
@@ -134,4 +140,31 @@ it.each(["digest", "ids", "submission", "undefined", "getter"] as const)("suppli
   if (kind === "getter") Object.defineProperty(build.input, "originalSource", { get: () => { getters++; return sourceFixture.binding(); } });
   await expect(generateAutomationStudioFlowCandidateDraft(build.input)).rejects.toThrow();
   expect(build.calls()).toBe(0); expect(save).not.toHaveBeenCalled(); expect(getters).toBe(0);
+});
+
+
+describe("actual candidate facade strict original inventory", () => {
+  it.each(["missing", "duplicate", "incomplete"] as const)("refuses %s original inventory before provider resolution", async kind => {
+    const parent = await realpath(os.tmpdir()), root = await mkdtemp(path.join(parent, "fluxiq-strict-facade-"));
+    const resolveProvider = vi.fn(() => ({ provider: mockProvider(async () => ({ response: { steps: [] } })) }));
+    const service = new AutomationStudioService({ dataDir: root, llmProviderResolver: resolveProvider, llmEvidenceRuntime: { domainId: "isolated", deniedEvidenceKeys: [], tools: [{ toolId: "inspect", description: "Inspect", inputSchema: { type: "object" }, effect: "observe" }], executeTool: async () => { throw new Error("No discovery expected"); } } });
+    try {
+      const { project, flow } = await blankFixture(service);
+      const list = service.listFlowInstructionSummaries.bind(service);
+      vi.spyOn(service, "listFlowInstructionSummaries").mockImplementation(async input => {
+        const page = await list(input);
+        const original = page.instructions[0];
+        if (!original) return page;
+        return kind === "incomplete" ? { ...page, total: 101 }
+          : { ...page, total: 2, instructions: [original, kind === "duplicate" ? original : { ...original, instructionId: "instruction.missing" }] };
+      });
+      await expect(service.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller(), authoringMode: "candidate", evidenceGuided: true })).rejects.toThrow();
+      expect(resolveProvider).not.toHaveBeenCalled();
+      expect(await draftStore(service).get(project.id, flow.flowId)).toBeUndefined();
+    } finally {
+      await service.close();
+      const target = await realpath(root); expect(path.dirname(target)).toBe(parent); expect(path.basename(target)).toMatch(/^fluxiq-strict-facade-/);
+      await rm(target, { recursive: true, force: true });
+    }
+  });
 });

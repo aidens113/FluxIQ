@@ -8,6 +8,23 @@ proposal, or mutate a Flow by itself.
 
 ## Explicit candidate authoring
 
+The actual candidate service enumerates all active original instruction IDs before
+reading or filtering artifacts. Missing, duplicate, incomplete or changing pages
+refuse before provider resolution. It captures full original artifacts and explicit
+applicable/excluded IDs into a schema2 draft, with a canonical original-source digest
+and `candidate.plan+original_sources.v2` fingerprint covering the complete normalized
+build plan. Inventory and artifact ordering use the same locale-independent ID order.
+Synthetic prompt/repair context stays separate. Legacy helper callers without bound
+inventory still create historical schema1 records; adding fields cannot upgrade them.
+
+`getVerificationSource` reads existing disk state without repair, validates the full
+source/build fingerprints, exact reference/base/settings and current original bytes,
+and refuses historical, memory-only, malformed or stale records. V2 accounting must
+equal the existing closed sanitized projection; it is informational. Normal WAL
+read-only observation remains unsupported here. Source binding is historical byte
+consistency, and supplies no pinned read, complete interpretation, execution permission
+or accepted promotion. Those production joins remain required.
+
 `runtime/flow-bootstrap/candidate/` supplies an opt-in discovery-only loop and
 `core.submit_candidate`. Discovery appends evidence without draft retention,
 automatic opener insertion or act completion. A complete submission uses the

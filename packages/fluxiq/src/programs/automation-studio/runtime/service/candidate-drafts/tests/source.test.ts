@@ -51,3 +51,10 @@ it("full candidate record detects executable derivation and original byte tamper
   const source = structuredClone(valid); source.originalSources.instructions[0]!.body = "changed";
   expect(Source.record(source, valid.projectId, valid.flowId)).toMatchObject({ status: "invalid" });
 });
+
+it("keeps full original artifacts in the same canonical ID order as inventory", () => {
+  const binding = fixture.binding([fixture.instruction({ instructionId: "instruction.\u00e4" }), fixture.instruction({ instructionId: "instruction.z" })]);
+  expect(binding.originalSources.inventoryInstructionIds).toEqual(["instruction.z", "instruction.\u00e4"]);
+  expect(binding.originalSources.instructions.map(original => original.instructionId)).toEqual(binding.originalSources.inventoryInstructionIds);
+  expect(Source.validate(binding)).toEqual(binding);
+});
