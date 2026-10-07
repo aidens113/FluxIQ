@@ -1,9 +1,9 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
-import type { AutomationStudioFlowCandidateDraftStore } from "../../candidate-drafts/index.ts";
+import { AutomationStudioFlowCandidateDraftStore, type AutomationStudioFlowCandidateDraftRecord } from "../../candidate-drafts/index.ts";
 import { blankFixture, caller, mockProvider, plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 
 function draftStore(service: AutomationStudioService) { return (service as unknown as { candidateDrafts: AutomationStudioFlowCandidateDraftStore }).candidateDrafts; }
@@ -61,4 +61,77 @@ describe("candidate facade uses the actual service", () => {
       expect(requests).not.toContain("loop_verification");
     } finally { await service.close(); await rm(dataDir, { recursive: true, force: true }); }
   }, 60_000);
+});
+
+
+// Real helper pipeline with deterministic provider-free harness, not facade wiring.
+import { generateAutomationStudioFlowCandidateDraft } from "../candidate-generation.ts";
+import { automationStudioFlowBootstrapGenerationContext } from "../generation-context.ts";
+import { candidateSourceFixture as sourceFixture } from "../../candidate-drafts/tests/fixtures.ts";
+import { AutomationStudioCandidateSource } from "../../candidate-drafts/index.ts";
+import { AutomationStudioProjectPaths, AutomationStudioFlowPaths } from "../../paths/index.ts";
+import type { AutomationStudioProjectStore } from "../../projects/index.ts";
+import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
+import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
+import { runAutomationStudioLlmHarness } from "../../../llm/index.ts";
+
+function boundGeneration(store: Pick<AutomationStudioFlowCandidateDraftStore, "save">) {
+  const registry = new AutomationStudioNodeRegistry(), resolution = { scope: { kind: "domain" as const, domainId: "isolated" }, permissions: [], runtimeCapabilities: [] };
+  const context = automationStudioFlowBootstrapGenerationContext({ projectId: "project.1", flowId: "flow.1", instructions: [sourceFixture.instruction()], registry, resolution,
+    parent: { flowId: "flow.1", projectId: "project.1" } as AutomationStudioFlowArtifact, originalInstructionInventory: { instructionIds: ["instruction.original"] } });
+  if (context.originalSource.status !== "bound") throw new Error("Missing bound context fixture");
+  const binding = context.originalSource.binding;
+  let calls = 0;
+  const provider = mockProvider(async request => {
+    calls++;
+    const latest = [...(request.context.evidenceLoop?.evidence ?? [])].reverse().find(entry => entry.toolId === "core.submit_candidate")?.value as { revision: number; digest: string } | undefined;
+    return { response: { kind: "evidence_tool_decision", summary: "Synthetic authoring", decision: calls === 1
+      ? { kind: "tool_call", callId: "submit", toolId: "core.submit_candidate", input: { summary: "Original candidate", plan: plan() } }
+      : { kind: "complete", result: { revision: latest?.revision, digest: latest?.digest } } }, usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5, estimatedCostUsd: 0.001 } };
+  });
+  const input: Parameters<typeof generateAutomationStudioFlowCandidateDraft>[0] = {
+    submission: { projectId: "project.1", flowId: "flow.1", registry, resolution, baseDependencyDigest: "base", instructionText: context.bootstrapInstructionText, originalSource: binding },
+    originalSource: binding, sourceInstructionIds: [...binding.originalSources.effectiveInstructionIds], baseSettingsRevision: 1,
+    loop: { propagateDecisionErrors: true, tools: [], maxIterations: 3, maxToolCalls: 2, executeTool: async () => { throw new Error("No discovery/effect expected"); } },
+    harness: { projectId: "project.1", flowId: "flow.1", instructions: [sourceFixture.instruction()], provider, deniedEvidenceKeys: [] }, runHarness: runAutomationStudioLlmHarness,
+    wrapDecision: decide => decide, beforeDecision: () => undefined, progress: () => undefined, ending: () => undefined,
+    authorityUsage: { calls: 0, estimatedInputTokens: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 },
+    currentBinding: async () => ({ executionDigest: "base", settingsRevision: 1 }), store
+  };
+  return { input, calls: () => calls };
+}
+
+it("actual context/submission/generator persist original v2 fields and survive a new disk store", async () => {
+  const parent = await realpath(os.tmpdir()), root = await mkdtemp(path.join(parent, "fluxiq-bound-generator-"));
+  try {
+    const paths = new AutomationStudioProjectPaths(path.join(root, "programs", "automation-studio", "projects")), flows = new AutomationStudioFlowPaths(paths);
+    const projects = { ensureProjectStructure: async () => undefined } as unknown as AutomationStudioProjectStore;
+    const store = new AutomationStudioFlowCandidateDraftStore(paths, flows, projects), build = boundGeneration(store);
+    const record = await generateAutomationStudioFlowCandidateDraft(build.input);
+    expect(record.schemaVersion).toBe(2);
+    expect(record.candidate).toMatchObject({ fingerprintVersion: "candidate.plan+original_sources.v2", originalInstructionsDigest: build.input.originalSource!.originalInstructionsDigest });
+    if (record.schemaVersion !== 2) throw new Error("Unexpected legacy record");
+    expect(record.originalSources.instructions).toEqual([sourceFixture.instruction()]);
+    expect(record.instructionText).toBe(AutomationStudioCandidateSource.text(build.input.originalSource!));
+    expect(record.accounting).toMatchObject({ inputTokens: 6, outputTokens: 4, totalTokens: 10, estimatedCostUsd: 0.002 });
+    expect(build.calls()).toBe(2);
+    const restarted = new AutomationStudioFlowCandidateDraftStore(paths, flows, projects);
+    expect(await restarted.getVerificationSource({ reference: sourceFixture.reference(record), currentOriginalSources: record.originalSources })).toMatchObject({ status: "bound", record });
+    expect(record).not.toHaveProperty("requirements"); expect(record.verification).toBe("not_performed");
+  } finally {
+    const target = await realpath(root); expect(path.dirname(target)).toBe(parent); expect(path.basename(target)).toMatch(/^fluxiq-bound-generator-/);
+    await rm(target, { recursive: true, force: true });
+  }
+});
+
+it.each(["digest", "ids", "submission", "undefined", "getter"] as const)("supplied %s source refuses before provider/save", async kind => {
+  const save = vi.fn(async (record: AutomationStudioFlowCandidateDraftRecord) => record), build = boundGeneration({ save });
+  if (kind === "digest") build.input.originalSource = { ...build.input.originalSource!, originalInstructionsDigest: "b".repeat(64) };
+  if (kind === "ids") build.input.sourceInstructionIds = ["borrowed"];
+  if (kind === "submission") delete build.input.submission.originalSource;
+  if (kind === "undefined") Object.defineProperty(build.input, "originalSource", { value: undefined });
+  let getters = 0;
+  if (kind === "getter") Object.defineProperty(build.input, "originalSource", { get: () => { getters++; return sourceFixture.binding(); } });
+  await expect(generateAutomationStudioFlowCandidateDraft(build.input)).rejects.toThrow();
+  expect(build.calls()).toBe(0); expect(save).not.toHaveBeenCalled(); expect(getters).toBe(0);
 });
