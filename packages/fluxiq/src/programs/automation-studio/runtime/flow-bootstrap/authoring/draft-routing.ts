@@ -84,6 +84,8 @@ export type AutomationStudioFlowDraftRoutedStep = {
   written: Pick<AutomationStudioFlowScriptStep, "description" | "node" | "entries">;
   /** The pages the step ran between, as the build signed them (`AutomationStudioFlowScriptStep.routeSignatures`). */
   routeSignatures?: AutomationStudioRouteSignatures;
+  /** What the node it becomes is named (`AutomationStudioFlowScriptStep.nodeLabel`). */
+  nodeLabel?: string;
 };
 
 /**
@@ -498,6 +500,7 @@ function scriptStep(entry: AutomationStudioFlowDraftRoutedStep, label: string | 
     // it. The joins and loops this module adds carry none.
     draftStepId: automationStudioFlowDraftStepId(entry.step),
     ...(entry.routeSignatures ? { routeSignatures: entry.routeSignatures } : {}),
+    ...(entry.nodeLabel ? { nodeLabel: entry.nodeLabel } : {}),
     line: 0
   };
 }

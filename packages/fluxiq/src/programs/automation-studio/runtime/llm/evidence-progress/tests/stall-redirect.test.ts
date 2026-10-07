@@ -86,6 +86,20 @@ describe("the stall note about an act still owed", () => {
     expect(said).not.toContain("Do not run another step for a2");
   });
 
+  // Week report W1: the checklist now says what a claimed step did instead and
+  // where to name the act (`todoSaid`, run `run-mux74k5q-1c3c2127`: a1 on the
+  // press of "Spain"). "correct step 5 ... Do not run another step for a1"
+  // forbade naming a1 on the Add to cart press, the very step that does it.
+  it("says the checklist's own sentence for the step named, in place of correct it and run no other step", () => {
+    const todoSaid = "Step 5 chose \"Spain\", one of a1's options (a1.origin), and does not do a1. Step 7 (\"Add to cart\") names it: name a1 there with amend_draft add on step 7 with act a1.";
+    const said = String(redirect([{ id: "a1", verb: "put", quote: "put the hub in my cart", todo: "step_only_chooses", step: 5, todoSaid }]).instruction);
+    expect(said).toContain(todoSaid);
+    expect(said).not.toContain("correct step 5");
+    expect(said).not.toContain("Do not run another step for a1");
+    // Only a string is read: anything else leaves the generic note.
+    expect(String(redirect([{ id: "a1", todo: "step_changed_nothing", step: 5, todoSaid: 7 }]).instruction)).toContain("correct step 5 for that reason");
+  });
+
   it("sends the act once none of its choices is owed", () => {
     const said = String(automationStudioLlmEvidenceStallRedirect({
       stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: [], proposableSteps: 8, completionAttempts: 0, lastIssueCodes: [], canComplete: true,

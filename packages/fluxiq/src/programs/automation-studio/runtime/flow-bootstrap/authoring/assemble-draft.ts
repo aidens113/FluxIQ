@@ -53,6 +53,7 @@ import {
   AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT,
   automationStudioFlowDraftConditionalStepReasons,
   automationStudioFlowDraftInputs,
+  automationStudioFlowDraftRepeatIsWhile,
   automationStudioFlowDraftStepId,
   automationStudioFlowDraftStoredBindingKind,
   type AutomationStudioFlowDraftStep
@@ -122,6 +123,7 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
 } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const routable: AutomationStudioFlowDraftRoutedStep[] = [];
+  const perRow = stepsRunPerRow(input.steps);
   for (const step of input.steps) {
     const written = input.write(step);
     if (!written) {
@@ -129,6 +131,7 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
       continue;
     }
     const routeSignatures = input.routeSignaturesOf?.(step);
+    const nodeLabel = perRow.has(automationStudioFlowDraftStepId(step)) ? undefined : describedName(step);
     routable.push({
       step,
       written: {
@@ -136,7 +139,8 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
         ...(written.node ? { node: written.node } : {}),
         entries: (written.entries ?? []).map((entry) => ({ key: entry.key, lines: entry.value.split("\n"), line: 0 }))
       },
-      ...(routeSignatures ? { routeSignatures } : {})
+      ...(routeSignatures ? { routeSignatures } : {}),
+      ...(nodeLabel ? { nodeLabel } : {})
     });
   }
   // What each step says about when it runs becomes the steps, ports and edges
@@ -302,6 +306,37 @@ function earlierOutputPaths(parameters: JsonObject | undefined): string[] {
     return undefined;
   });
   return paths;
+}
+
+/** The longest described name a node is labelled with: a name, never a passage of the page. */
+const NODE_LABEL_MAX = 200;
+
+/**
+ * What a step's node is named: the domain's own words for what it acted on
+ * (`does.target`, the step's `words`), which the build's cards already showed
+ * (R3-U-12: playback's read card said only "Read list"). Nothing when the
+ * domain gave none, or gave more than a name.
+ */
+function describedName(step: AutomationStudioFlowDraftStep): string | undefined {
+  const name = step.words?.target?.replace(/\s+/gu, " ").trim();
+  return name && name.length <= NODE_LABEL_MAX ? name : undefined;
+}
+
+/**
+ * The steps a repeat over an earlier step runs once per row or pass: their
+ * words name the one row the build explored ("Confirm · Jonas"), which every
+ * other pass is not, so their nodes are not named after it. A span that runs
+ * while its own last step succeeds walks no rows, and keeps its names.
+ */
+function stepsRunPerRow(steps: readonly AutomationStudioFlowDraftStep[]): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const [start, step] of steps.entries()) {
+    const routing = step.routing;
+    if (routing?.kind !== "repeat" || automationStudioFlowDraftRepeatIsWhile(routing)) continue;
+    const end = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === routing.through);
+    for (const member of steps.slice(start, end < start ? start + 1 : end + 1)) ids.add(automationStudioFlowDraftStepId(member));
+  }
+  return ids;
 }
 
 /** The ids of each span a step repeats: that step through the one it names as `through`, in draft order. */

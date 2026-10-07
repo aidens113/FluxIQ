@@ -159,12 +159,12 @@ describe("completion against the route the person named", () => {
   it("changes nothing with no route accessor", () => {
     expect(automationStudioFlowBootstrapDraftRoute({ activeInstructions: instructions, startLocation: START, arrival })).toEqual({});
     const acts = automationStudioFlowBootstrapDraftActs({ instructionText: "Confirm every request.", startLocation: START, arrival });
-    expect(Object.keys(acts).sort()).toEqual(["acts", "actsMissing"]);
+    expect(Object.keys(acts).sort()).toEqual(["acts", "actsMissing", "claimRefused"]);
   });
 
   it("is handed to the loop beside the acts when the build has a route", async () => {
     const acts = automationStudioFlowBootstrapDraftActs({ instructionText: "Confirm every request.", startLocation: START, arrival, route: accessor(named), activeInstructions: instructions });
-    expect(Object.keys(acts).sort()).toEqual(["acts", "actsMissing", "route", "routeCheck"]);
+    expect(Object.keys(acts).sort()).toEqual(["acts", "actsMissing", "claimRefused", "route", "routeCheck"]);
     expect(acts.route!()).toMatchObject({ state: "named", places: PLACES });
     expect((await acts.routeCheck!([navigate(START), press(2, ["r1"])]))?.issueCodes).toEqual(["bootstrap.route_place_missing"]);
   });

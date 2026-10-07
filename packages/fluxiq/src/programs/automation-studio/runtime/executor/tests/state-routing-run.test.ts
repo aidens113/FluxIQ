@@ -174,6 +174,44 @@ describe("a step that cannot run continues where the page is", () => {
     expect(recoveryRows().length).toBeGreaterThan(0);
   });
 
+  // W22 (run `run-mut4fvkm-e2fc03e6`, t289-E): a forward route took the run
+  // from s6 past a sometimes-present s7 and the join m8 its optional shape meets
+  // at, straight to s9; s9, the last step, succeeded, and the run was ended
+  // `failed` for the two nodes it never attempted -- with no End node, the end
+  // asks that every node was visited, and the page had made those two needless.
+  describe("a forward route past some steps, to a step that completes the Flow", () => {
+    const wShape = (stray = false): AutomationStudioFlowDocument => {
+      const nodes = [step("s5", signatures("p1", "p2")), step("s6", signatures("p2", "p3")), step("s7", signatures("p3", "p3")), { id: "m8", definitionId: "builtin.control.merge" }, step("s9", signatures("p4", "p5")), ...(stray ? [step("stray")] : [])];
+      const edge = (source: string, port: string, target: string, targetPort = "in") => ({ id: `${source}.${port}`, sourceNodeId: source, sourcePortId: port, targetNodeId: target, targetPortId: targetPort });
+      const edges = [edge("s5", "success", "s6"), edge("s6", "success", "s7"), edge("s7", "success", "m8", "branches"), edge("s7", "failed", "m8", "branches"), { id: "m8.next", sourceNodeId: "m8", targetNodeId: "s9", targetPortId: "in" }, ...(stray ? [edge("s5", "failed", "stray")] : [])];
+      return { ...line([]), nodes, edges };
+    };
+
+    it("ends succeeded: the steps the route passed over count as visited", async () => {
+      const page: Page = { current: "p1", observed: 0 };
+      const calls: string[] = [];
+      // s5's press lands where s9 starts: s6's target is gone, and so is the banner s7 would dismiss.
+      const trace = await inRun(wShape(), { hostRuntime: host(page), effectDispatcher: dispatcher(page, calls, (id) => id === "s6", { s5: "p4", s9: "p5" }) });
+
+      expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["s5", "s6", "s9"]);
+      expect(trace.attempts[1]).toMatchObject({ skipped: { reason: "state_routed", toNodeId: "s9", direction: "forward" } });
+      expect(trace.status).toBe("succeeded");
+      expect(trace.currentNodeId).toBe("s9");
+      expect(trace.message).toBeUndefined();
+    });
+
+    it("still ends failed when a node no route passed over was never reached", async () => {
+      const page: Page = { current: "p1", observed: 0 };
+      const calls: string[] = [];
+      // s5's recovery, never needed: it is not between s6 and s9, so no route went past it.
+      const trace = await inRun(wShape(true), { hostRuntime: host(page), effectDispatcher: dispatcher(page, calls, (id) => id === "s6", { s5: "p4", s9: "p5" }) });
+
+      expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["s5", "s6", "s9"]);
+      expect(trace.status).toBe("failed");
+      expect(trace.message).toContain("before the Flow visited every node");
+    });
+  });
+
   it("routes without dispatching when a readiness gate judged the step's state and it did not hold", async () => {
     const page: Page = { current: "p1", observed: 0 };
     const calls: string[] = [];

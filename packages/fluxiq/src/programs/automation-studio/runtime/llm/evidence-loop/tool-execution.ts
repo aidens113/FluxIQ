@@ -6,7 +6,7 @@
 // call -- which is what lets one tool run a whole library of actions.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftStepChange, AutomationStudioFlowDraftStepReplay, AutomationStudioFlowDraftStepToggle } from "../../flow-draft/index.ts";
 
 export type AutomationStudioLlmEvidenceToolExecutionResult = {
   kind: "llm_evidence_tool_execution";
@@ -201,5 +201,18 @@ export type AutomationStudioLlmEvidenceToolExecutionResult = {
      * sends it**: the key list of a statement is exact.
      */
     reads?: string;
+    /**
+     * The caller's word for what the call changed on the page it stayed on:
+     * the lines that appeared, went, now read otherwise, or rose, at most
+     * sixteen in page order, each exactly `words` and `how`. Carried only on a
+     * statement whose `effect` is `mutate`; each line only when its words were
+     * shown in the call's own evidence and are plain
+     * (`../../flow-draft/control-words.ts`) and `how` is one of the four. A bad
+     * line is withheld, never refused, and a list with none left, or past
+     * sixteen, is absent. Core reads which step did an act from what it changed
+     * (`../../flow-draft/step.ts`, week report W1). **Learned here before any
+     * caller sends it**: the key list of a statement is exact.
+     */
+    changed?: AutomationStudioFlowDraftStepChange[];
   };
 };

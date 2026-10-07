@@ -65,13 +65,17 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 // **What the step did instead (W1, 23 live runs; `./act-evidence.ts`).** An
 // act claimed on a step whose record shows it chose one of the act's options
 // (`step_only_chooses`, `chooses`), only cleared a layer in front of the page
-// (`step_only_clears_the_way`), went to another page (`step_only_arrives`) or
-// only opened the page of its choices (`step_only_opens_its_choices`) carries
-// `todoSaid`: what that step did, that it does not do the act, and where to
-// name the act -- the step whose words name it (`instead`), or the press to
-// run. That verdict replaces the advisory `claimSaid` for these four. The two
-// new reasons are their own union (`AutomationStudioInstructedActEvidenceTodo`),
-// so a reader typed over the other two falls back safely.
+// (`step_only_clears_the_way`), went to another page (`step_only_arrives`),
+// only opened the page of its choices (`step_only_opens_its_choices`), or
+// changed nothing that shows the act while another step's change does
+// (`another_step_shows_it`) carries `todoSaid`: what that step did, that it
+// does not do the act, and where to name the act -- the step whose change
+// shows it or whose words name it (`instead`), or the press to run. That
+// verdict replaces the advisory `claimSaid` for these five, and a step whose
+// change shows the act carries no `claimSaid` either: what it changed answers
+// the doubt about its words. The three new reasons are their own union
+// (`AutomationStudioInstructedActEvidenceTodo`), so a reader typed over the
+// other two falls back safely.
 //
 // Nothing here calls a provider or reads a page; it is the instruction's words
 // and the draft.
@@ -79,7 +83,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftStepGoesToLocation } from "../reachability/index.ts";
-import { automationStudioInstructedActEvidenceSaid, automationStudioInstructedActIsEvidenceFault } from "./act-evidence.ts";
+import { automationStudioInstructedActChangeShows, automationStudioInstructedActEvidenceSaid, automationStudioInstructedActIsEvidenceFault } from "./act-evidence.ts";
 import { automationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
 import { automationStudioInstructedActClaimDoubt } from "./claim-doubt.ts";
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedChoice } from "./contracts.ts";
@@ -119,11 +123,13 @@ export type AutomationStudioInstructedActObjectTodo = "step_acts_on_another_obje
 
 /**
  * Why an act is not done, read from what the step claimed for it did instead
- * (`./act-evidence.ts`): it made one of the act's own choices, or only cleared
- * a layer in front of the page. Held apart from the two unions above, so a
- * reader typed over those falls back safely. Information, never a refusal.
+ * (`./act-evidence.ts`): it made one of the act's own choices, only cleared a
+ * layer in front of the page, or changed nothing that shows the act while
+ * another step's change does. Held apart from the two unions above, so a
+ * reader typed over those falls back safely. Information on the checklist; a
+ * claim is refused for it only as it is made (`./claim-verdict.ts`).
  */
-export type AutomationStudioInstructedActEvidenceTodo = "step_only_chooses" | "step_only_clears_the_way";
+export type AutomationStudioInstructedActEvidenceTodo = "step_only_chooses" | "step_only_clears_the_way" | "another_step_shows_it";
 
 /** Every reason an act or choice on the checklist is not done. */
 type Todo = AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo | AutomationStudioInstructedActEvidenceTodo;
@@ -138,7 +144,7 @@ type AutomationStudioInstructedTodoDetail = {
   after?: number;
   /** `step_only_chooses`: the id of the act's own choice the step made instead. */
   chooses?: string;
-  /** The position of a step whose words name the act, for a step judged to have done something else (`./act-evidence.ts`). */
+  /** The position of a step whose change shows the act or whose words name it, for a step judged to have done something else (`./act-evidence.ts`). */
   instead?: number;
 };
 
@@ -175,9 +181,10 @@ export type AutomationStudioInstructedActChecklistItem = {
   /** Why no step does it yet, when none does. */
   todo?: Todo;
   /**
-   * `step_only_chooses`, `step_only_clears_the_way`, `step_only_arrives` and
-   * `step_only_opens_its_choices`: what the step did, that it does not do the
-   * act, and where to name it (`./act-evidence.ts`). Replaces `claimSaid`.
+   * `step_only_chooses`, `step_only_clears_the_way`, `step_only_arrives`,
+   * `step_only_opens_its_choices` and `another_step_shows_it`: what the step
+   * did, that it does not do the act, and where to name it
+   * (`./act-evidence.ts`). Replaces `claimSaid`.
    */
   todoSaid?: string;
   /** The step that says it does it but does not, when one does. */
@@ -219,8 +226,10 @@ export function automationStudioInstructedActsChecklist(input: {
     const doer = stood ? ("done" in stood ? stood.done : stood.step) : undefined;
     const once = act.plural && doer ? singleRowSteps(act.id, doer, input.draftSteps) : undefined;
     const todoSaid = evidenceSaid(act, stood, input.draftSteps);
-    // The verdict on what the step did replaces the doubt about its words.
-    const claimSaid = doer && todoSaid === undefined ? automationStudioInstructedActClaimDoubt(act, doer, input.draftSteps) : undefined;
+    // The verdict on what the step did, or a change of it that shows the act, replaces the doubt about its words.
+    const claimSaid = doer && todoSaid === undefined && !automationStudioInstructedActChangeShows(act, doer)
+      ? automationStudioInstructedActClaimDoubt(act, doer, input.draftSteps)
+      : undefined;
     const item: AutomationStudioInstructedActChecklistItem = {
       id: act.id, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true as const } : {}), ...shown(stood),
       ...(todoSaid !== undefined ? { todoSaid } : {}),

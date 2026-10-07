@@ -74,6 +74,13 @@ export type AutomationStudioFlowScriptStep = {
    * only on a step a draft step became; a join or a loop routing adds has none.
    */
   routeSignatures?: AutomationStudioRouteSignatures;
+  /**
+   * What the Flow node this step becomes is named: the draft step's described
+   * name, in the domain's words (`does.target`, R3-U-12), which a run's step
+   * card shows. Never written by a model, and set only on a step a draft step
+   * became; a join or a loop routing adds has none.
+   */
+  nodeLabel?: string;
   line: number;
 };
 
