@@ -1,7 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import type { LoginAttemptState } from "../../../../../lib/login-attempts";
 
 const fixture = vi.hoisted(() => {
   class TotpRequiredError extends Error {}
@@ -33,6 +34,8 @@ import { loginTotpError } from "../route";
 const USERNAME_MAX_ATTEMPTS = 5;
 const ADDRESS_MAX_ATTEMPTS = 20;
 const PANEL_MAX_ATTEMPTS = 100;
+// The whole-panel failures a case drives through the route, after seeding the rest.
+const DRIVEN_PANEL_FAILURES = 5;
 const GUESSED_PASSWORD = "dummy-password-guess";
 
 const trustProxy = process.env.FLUXIQ_TRUST_PROXY;
@@ -53,8 +56,14 @@ describe("login credential validation", () => {
 // Every case drives the durable attempt store: each login takes up to six
 // locked read-modify-write cycles on disk. Alone a case finishes in under half a
 // second, but under the parallel suite on Windows a 25-login case measured over
-// 5 s, and a case that times out keeps running and rewrites the shared mocks
-// under the next case. The budget matches the whole-panel case below.
+// 5 s (2026-10-07 sweep: about 250 ms a login), so the whole-panel cases seed
+// their store rather than drive 100 logins through it.
+//
+// A case that times out is not stopped: vitest abandons its body, which keeps
+// running. Each case therefore logs in through `caseLogin()`, bound to its own
+// route module and refused once the case has ended, so an abandoned case cannot
+// keep failing logins into the next case's store or calling its mocks. Before
+// that, one timed-out whole-panel case made the next one lock out early.
 describe("login attempt bounds", { timeout: 60_000 }, () => {
   beforeEach(async () => {
     // A fresh attempt store and route module per test, so no count carries over.
@@ -82,6 +91,7 @@ describe("login attempt bounds", { timeout: 60_000 }, () => {
     { name: "no trusted proxy, with a forwarded address it must ignore", trust: false, forwardedFor: "203.0.113.20" },
     { name: "a trusted proxy that forwards no address", trust: true, forwardedFor: undefined },
   ])("without a trusted client address ($name), failures across other usernames do not lock out a different username", async ({ trust, forwardedFor }) => {
+    const login = caseLogin();
     if (trust) process.env.FLUXIQ_TRUST_PROXY = "true";
     fixture.authenticate.mockRejectedValue(new Error("Invalid username or credentials"));
 
@@ -96,6 +106,7 @@ describe("login attempt bounds", { timeout: 60_000 }, () => {
   });
 
   it("with a trusted proxy, bounds failed logins from one address across usernames, without bounding another address", async () => {
+    const login = caseLogin();
     process.env.FLUXIQ_TRUST_PROXY = "true";
     fixture.authenticate.mockRejectedValue(new Error("Invalid username or credentials"));
 
@@ -120,6 +131,7 @@ describe("login attempt bounds", { timeout: 60_000 }, () => {
   });
 
   it("keeps the lower per-username bound inside the address bound", async () => {
+    const login = caseLogin();
     process.env.FLUXIQ_TRUST_PROXY = "true";
     fixture.authenticate.mockRejectedValue(new Error("Invalid username or credentials"));
 
@@ -137,23 +149,29 @@ describe("login attempt bounds", { timeout: 60_000 }, () => {
     { name: "a trusted proxy, each failure from its own address", trust: true },
     { name: "no trusted proxy", trust: false },
   ])("trips the whole-panel bound at 100 failures ($name)", async ({ trust }) => {
+    const login = caseLogin();
     if (trust) process.env.FLUXIQ_TRUST_PROXY = "true";
     fixture.authenticate.mockRejectedValue(new Error("Invalid username or credentials"));
 
+    // The panel has already counted all but the last few failures; the rest come
+    // through the route, each from its own address and username. Were the seed
+    // not read, every one of them would answer 401 and the case would fail.
+    seedPanelFailures(PANEL_MAX_ATTEMPTS - DRIVEN_PANEL_FAILURES);
     const statuses: number[] = [];
-    for (let attempt = 0; attempt < PANEL_MAX_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < DRIVEN_PANEL_FAILURES; attempt += 1) {
       statuses.push((await login(trust ? `198.51.100.${attempt}` : undefined, `panel-${attempt}`)).status);
     }
 
-    expect(statuses.slice(0, -1)).toEqual(Array(PANEL_MAX_ATTEMPTS - 1).fill(401));
+    expect(statuses.slice(0, -1)).toEqual(Array(DRIVEN_PANEL_FAILURES - 1).fill(401));
     expect(statuses.at(-1)).toBe(429);
 
     fixture.authenticate.mockResolvedValue(successfulLogin("after-panel"));
     expect((await login(trust ? "198.51.100.200" : undefined, "after-panel")).status).toBe(429);
-    expect(fixture.authenticate).toHaveBeenCalledTimes(PANEL_MAX_ATTEMPTS);
-  }, 60_000);
+    expect(fixture.authenticate).toHaveBeenCalledTimes(DRIVEN_PANEL_FAILURES);
+  });
 
   it("does not count an authenticator prompt for a correct password against the address", async () => {
+    const login = caseLogin();
     process.env.FLUXIQ_TRUST_PROXY = "true";
     fixture.authenticate.mockRejectedValue(new fixture.TotpRequiredError("Authenticator code required"));
 
@@ -170,14 +188,36 @@ describe("login attempt bounds", { timeout: 60_000 }, () => {
   });
 });
 
-function login(forwardedFor: string | undefined, username: string): Promise<Response> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (forwardedFor) headers["x-forwarded-for"] = forwardedFor;
-  return POST(new Request("http://127.0.0.1/api/auth/login", {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ username, password: GUESSED_PASSWORD }),
-  }));
+/**
+ * The login one case drives: bound to the route module its `beforeEach` loaded,
+ * and refused once the case has ended, so a case vitest abandons on a timeout
+ * cannot reach the next case's store or mocks.
+ */
+function caseLogin(): (forwardedFor: string | undefined, username: string) => Promise<Response> {
+  const post = POST;
+  let ended = false;
+  onTestFinished(() => {
+    ended = true;
+  });
+  return (forwardedFor, username) => {
+    if (ended) return Promise.reject(new Error("This case has ended; its login no longer runs."));
+    const headers: Record<string, string> = { "content-type": "application/json" };
+    if (forwardedFor) headers["x-forwarded-for"] = forwardedFor;
+    return post(new Request("http://127.0.0.1/api/auth/login", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ username, password: GUESSED_PASSWORD }),
+    }));
+  };
+}
+
+/** Writes `count` whole-panel failures into this case's store, in the store's own file format. */
+function seedPanelFailures(count: number): void {
+  const nowMs = Date.now();
+  const panel: LoginAttemptState = { count, windowStartedAtMs: nowMs, lockedUntilMs: 0, updatedAtMs: nowMs };
+  const directory = path.join(fixture.root, "security");
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, "login-panel-attempts.json"), JSON.stringify({ schemaVersion: 1, attempts: { panel } }));
 }
 
 function successfulLogin(username: string) {

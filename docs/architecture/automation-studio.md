@@ -625,7 +625,12 @@ step of the span whose node declares an input `item`. A node that can act on
 "the current row of an enclosing loop" declares that input as
 `{ id: "item", valueType: "any", role: "data", required: false }` after its
 control input `in`, and receives each pass's row as `inputs.item`. A span that
-repeats while a check holds has no rows and gets no `item` edges. The assembler
+repeats while a check holds has no rows and gets no `item` edges. A do-while
+repeat (`repeat {through, while, most}`, used to page a list: read, Next page,
+again while Next page moves on) is wired through `builtin.control.repeat`
+instead: the span runs, its last step's `success` goes back to the loop for
+another pass, and its `ended` route or Repeat's `done` after `most` passes
+leaves the loop (`automation-studio/flow-authoring.md`). The assembler
 reaches a `role: "data"` input only through a branch that names it; an edge
 that names no port never falls into one.
 
