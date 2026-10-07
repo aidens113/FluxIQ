@@ -74,6 +74,14 @@ The bridge converts client messages into canonical Studio artifacts:
   active. A result may carry a structured `failure` record. The runtime
   transport keeps it on the command result and on the `command.result` runtime
   event only when `parseAutomationStudioFailureRecord` accepts it.
+  While a command is pending, only the transport session it was dispatched to
+  may settle its promise and publish its action-result event. A known pending
+  command ID supplied by another ready session leaves the original deadline
+  and pending command intact and emits no action-result event. Results for
+  unknown or expired command IDs retain the existing event behavior, but those
+  events are unbound client reports, not authoritative performed-command
+  receipts. Pending commands are in memory; durable reconciliation and binding
+  of late acknowledgements across restart remain separate requirements.
 - `server.start_recording` and `server.stop_recording` are mirrored to the
   client while the canonical `RecordingSession` remains owned by FluxIQ.
   `server.start_recording` also acknowledges a start the client asked for, as

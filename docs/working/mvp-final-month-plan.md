@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: Acceptance/cancellation, receipt/executor infrastructure and opt-in draft facade pushed; executing Core identity pushed; loaded host identity and durable receipt restart proof underway; production promotion pending.
+Status detail: Acceptance/cancellation, receipt/executor infrastructure and opt-in draft facade pushed; executing Core identity pushed; loaded host and durable restart proof integrated; atomic graph import independently verified; production promotion pending.
 Created: 2026-10-06
 Last updated: 2026-10-07
 Owner: Codex senior supervisor
@@ -24,10 +24,13 @@ t298 cancellation and reachable Stop are integrated/pushed2ee06482 after indepen
 current-pair browser proofs. t300 receipt/detached-executor infrastructure is
 integrated/pushed386b4c15, not a production promotion path. Executing Core identity is integrated/pushedc8501c15 after independent
 Core/routes59/59 and headed retained-service identity/runner61/61; loaded
-domain host is the additive t305 provenance slice. Candidate authoring/facade t299 is integrated/pushed7f9bae15
+domain host t305 is integrated/pushedc051b8f7 after root6/6 and headed
+actual built-host/identity/runner55/55. Candidate authoring/facade t299 is integrated/pushed7f9bae15
 after independent53/53 and package/dependent web checks; t304 durable receipt
 ledger has independent owning52/52 and package check/build/audit0 after current dev
-merge. Literal owned process termination/relaunch probes precede integration.
+merge. Literal owned process termination/relaunch probes passed2/2 independently;
+ledger integrated/pushed04b51050. New graph import t307 has root19/19 after
+current paired dev merge; types/build pass, integration follows.
 Accepted-topology transaction/read authority is still required.
 
 Task t296 now requires affirmative confirmation for a build yes and refuses
@@ -149,3 +152,24 @@ incomplete, with no reduction in the requested atomicity or outcome proof.
 - Validation: root binding/diagnostic6/6, fluxiqcheck0(27.8s)/build0(39.9s)/audit0; downstream current merged host generated then actual headed built-Core/host/identity/runner55/55 zero skips9.27s, domain/runner checks and generator21/21. Retained-host route reload refusal and fresh child match; actual providers0.
 - Outcome: Narrow provenance unit verified; paired integration follows, Core taskfinish --skip-checks only after these observed narrow gates under daily full-suite limit.
 - Follow-up: external web websocket server adapter is outside this scope; project authority/semantic interpreter/independent browser oracle and paid qualification remain. Full receipt downstream reports/p0-domain-host-identity.md. No user panel management.
+
+### 2026-10-07 - t307 graph import independently verified
+- Agent: Codex supervisor.
+- Changed: import existence decision+all graph/index writes inside actual SQLite transaction, optional executor on existing upsert preserving caller compatibility; current dev merged.
+- Validation: root graph-store19/19 zero skips8.10s, check0(36.4s)/build0(72.7s), current audit follows; real rollback/reopen retry/concurrent owners/lost COMMIT acknowledgement. Full downstream report preserves commands/owners/limits.
+- Outcome: Narrow atomic import verified; paired integration follows. Old partial revision1 imports not repaired; no full topology/source/settings authority or accepting promoter.
+- Follow-up: staged complete-project contract foundation then coherent reader/all-writer/adoption cutover; actual executing web server adapter provenance. Core taskfinish --skip-checks only after observed narrow gates under full-suite limit; no user panel/providers.
+
+### 2026-10-07 - t311 command sender independently verified
+- Agent: Codex supervisor.
+- Changed: known pending command settlement checks sender session before map/timer/resolve; inbound suppresses wrong-session result publication. No protocol or server-identity changes.
+- Validation: root real paired-service/runtime23/23 zero skips1.85s; Coretypes/build validated matching current stamps (cached0); root Core/downstreamaudits0 after correcting downstream archived relative links. Full downstream report preserves fail-first/commands/limits.
+- Outcome: Narrow sender binding verified; paired integration follows. Unknown/late event attribution and durable command journal remain absent.
+- Follow-up: candidate receipts cannot trust unknown late events; no browser/restart/provider/panel proof claimed. Core taskfinish --skip-checks follows observed narrow gates under daily sweep limit.
+
+### 2026-10-07 - t309 staged foundation independently verified
+- Agent: Codex supervisor.
+- Changed: complete supplied staged snapshot/head CAS and immutable history, bounded canonical validation and durable original-request receipt joins. Current dev210453c1 merged before root checks.
+- Validation: root37/37 zero skips, fluxiqcheck0 actual38.432s/build0 actual46.106s, Coreaudit0; paired downstream integration audit follows. Root required fail-first borrowed owner/operation/snapshot generation fixes; receipt in downstream reports/p2-staged-authority-foundation.md.
+- Outcome: Staged-only consistency verified; production activation/reader/writer/capture/compiler/promotion unsupported. No OS-kill/power-loss/browser/provider/panel claim.
+- Follow-up: all-writer/read cutover proposal reviewed separately; actual server adapter provenance t310. Core taskfinish --skip-checks only after observed narrow gates under daily full-suite limit.
