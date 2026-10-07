@@ -19,7 +19,9 @@ and digest and grants static validity only.
 `runtime/service/candidate-drafts/` persists unverified submissions separately
 from adaptations in Core project storage. Reading a stored draft grants neither
 execution nor promotion; it must be revalidated before runtime use. The existing
-legacy authoring path remains the default. Explicit API requests with
+raw API legacy authoring path remains the omitted-mode default. Website panel
+Explore/Improve and conversation build/create/explore/improve explicitly request
+unverified candidate drafts. Explicit API requests with
 `authoringMode: "candidate"` and `evidenceGuided: true` run discovery and full
 submission through the service, then store a separate unverified draft. The API
 returns `payload.candidate` with candidate ID, revision/digest, accepted base and
@@ -35,8 +37,19 @@ draft record. Completion stores the latest submitted revision without marking
 the creation purse ended. Current Flow/settings mismatches and cancellation
 checkpoints refuse storage. This is not an atomic base compare or cancellation
 inside the underlying OS write. Stored drafts grant no execution or promotion.
-Conversation/re-author callers require a proposed result before adaptation use;
-an unexpected draft is reported as saved and unverified with no apply.
+Website authoring callers validate the closed `payload.candidate` envelope against
+the original project/Flow, retain its reference/revision and report verification
+pending. They do not approve/apply adaptations or offer an apply confirmation.
+Conversation completion means a draft was authored; its candidate attachment
+contains an ID reference, not execution or acceptance authority. Explicit plain
+structural generation and raw omitted-mode API compatibility remain legacy.
+
+Browser consumers import the pure parser from
+`fluxiq/automation-studio/candidate-authoring`, rather than the server-bearing
+automation-studio barrel. The owning Fluxiq build validates and removes its fixed
+generated library outputs before compilation so relocated modules cannot survive
+as orphan artifacts. Neither browser compilation nor a draft response proves
+execution or semantic acceptance.
 
 Exact detached execution, declared start reset, independent requirements/observer
 receipts, command/subject acknowledgements and durable promotion reconciliation
