@@ -240,6 +240,17 @@ The detailed procedure for each, with the current offenders, is in the
   more, and the same comment anywhere else does not count. The `swallowed-failure`
   rule enforces this in all non-test source, with existing instances
   baselined per file.
+- **Casting `as never`.** `never` is assignable to every type, so
+  `stub as never` compiles wherever it is written and switches off the one
+  check that would notice the stub no longer fits. In October 2026 seven
+  re-author tests stayed broken for a day because their build stubs were cast
+  `as never` and a change to the proposal shape compiled clean. Write a typed
+  stub (`const port: Port = { ... }`), check a literal with `satisfies T`, or
+  use a helper that returns the real type
+  (`stubPort(overrides: Partial<Port> = {}): Port`). A `never` annotation or
+  return type is checked and stays fine. The `as-never` rule enforces this in
+  source and tests alike, reading the syntax tree so a comment or string does
+  not count, with existing casts baselined per file.
 - **Reaching Node from a module a browser loads.** A `node:crypto` import
   type-checks; what fails is loading it in the browser, so no type check
   sees it. On 2026-09-30 a `runtime/parking/` module imported `node:crypto`,
