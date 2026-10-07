@@ -77,6 +77,8 @@ export class AutomationStudioProjectUnitOfWork {
     requestDigest?: string;
     changedAt?: number;
     expiresAt?: number | null;
+    /** Trusted owner precondition, checked inside this transaction even on replay. */
+    validateAdmission?: (sql: AutomationStudioSqlExecutor) => Promise<void>;
   }, operation: (context: AutomationStudioProjectMutationContext) => Promise<TResult>): Promise<AutomationStudioIdempotentMutationResult<TResult>> {
     const mutationId = requiredId(input.mutationId, "mutation");
     const operationKind = requiredKind(input.operationKind, "operation kind");
@@ -86,6 +88,7 @@ export class AutomationStudioProjectUnitOfWork {
     const changedAt = input.changedAt ?? Date.now();
     try {
       return await this.lease.database.transaction(async (sql) => {
+        await input.validateAdmission?.(sql);
         const existing = await sql.get<MutationRecordRow>("select * from mutation_records where mutation_id = ?", [mutationId]);
         if (existing) return replayExistingMutation<TResult>(existing, requestDigest);
         await sql.run(

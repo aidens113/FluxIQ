@@ -108,6 +108,28 @@ The bridge converts client messages into canonical Studio artifacts:
   context-free path: executor-issued invocation propagation, same-run durable
   admission/recovery/resume fences and candidate performed-subject evidence
   are separate unfinished joins. Child Flow context issuance is not enabled.
+
+    The separate, unwired CLOSED command-run foundation reserves only one command
+    per registered root-session scope. Storage-issued admissions authenticate
+    against the exact store lease; informational observations never authorize
+    continuation. Admission scans the project in deterministic pages of128,
+    bounded to4096 claims,4096 receipts,4096 unknown rows and12288 mutation
+    proofs, validating complete historical joins and orphan inventories.
+    Corruption or overflow anywhere in that project conservatively refuses;
+    the bounded scan can still be costly and is not an indexed run projection.
+    The trusted UoW admission check runs in the same transaction before replay
+    or insertion, so separate owners cannot both claim distinct first commands.
+    Fresh or reconstructed same-run scopes refuse any prior claim, including
+    committed receipt-only claims. A live scope can reconcile its exact first
+    command after cancellation, but success, receipt JSON and reconciliation
+    cannot authorize a second command or clear its sticky continuation block.
+    Each controller retains its run reservation through scoped close and failed
+    opens, so replacing a handle cannot clear private uncertainty before a claim
+    was persisted; that controller cannot reopen the identical project/run.
+    Close invalidates admission and waits owned operations before releasing
+    storage. This is not wired to gateway, executor, Runtime or domain paths;
+    actual invocation issuance, outcome consumption and every progression,
+    recovery and resume fence remain required before Flow durability is enabled.
 - `server.start_recording` and `server.stop_recording` are mirrored to the
   client while the canonical `RecordingSession` remains owned by FluxIQ.
   `server.start_recording` also acknowledges a start the client asked for, as
