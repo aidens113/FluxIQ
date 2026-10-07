@@ -60,8 +60,17 @@ const towelsSize = (step: Partial<AutomationStudioFlowDraftStep> = {}) => web(28
 const ADD = { selector: "[data-testid=\"atc\"]", accessibleName: "Add to cart" };
 const towelsAdd = (position: number, step: Partial<AutomationStudioFlowDraftStep> = {}) => web(position, click, ADD, TOWELS_PAGE, { consequences: ["modify_existing"], step });
 
+// "both for pickup" asks a2.fulfilment and a3.fulfilment: a "Pickup" press of its own
+// on each product's page, before its add. They take free positions (24, 23) so the
+// numbers the assertions name stay put; the page each was on binds it to its product.
+const pickup = (position: number, page: string, choice: string) =>
+  web(position, click, { selector: "[data-testid=\"fulfilment-pickup\"]", accessibleName: "Pickup", visibleText: "Pickup" }, page, { step: { words: { target: "Pickup" }, acts: [choice] } });
+const towelsPickup = pickup(24, TOWELS_PAGE, "a2.fulfilment");
+const napkinsPickup = pickup(23, NAPKINS_PAGE, "a3.fulfilment");
+
 // Run 40's draft, as far as it bears on the claims: the store, the towels' search, product, size and add.
-const RUN_40 = [navigate(1), store, typeTowels, searchTowels, towelsLink, towelsSize({ routing: { kind: "repeat", over: "d27", through: "d29" } }), towelsAdd(29)];
+// Both pickup presses are given so the refusals listed stay the quantity and the napkins.
+const RUN_40 = [navigate(1), store, napkinsPickup, towelsPickup, typeTowels, searchTowels, towelsLink, towelsSize({ routing: { kind: "repeat", over: "d27", through: "d29" } }), towelsAdd(29)];
 const RUN_40_CLAIMS = [{ action: "a1", step: "7" }, { action: "a2", step: "29" }, { action: "a2.size", step: "28" }, { action: "a3", step: "26" }, { action: "a2.quantity", step: "28" }];
 
 // The honest rest: the stepper's "+" for two packs, then the napkins searched, opened, sized and added.
@@ -140,7 +149,8 @@ describe("a claim is held to what its step acted on", () => {
   });
 
   it("accepts the napkins claimed on the napkins' own Add to cart, and the honest Flow whole", () => {
-    const draft = [navigate(1), store, typeTowels, searchTowels, towelsLink, towelsSize(), towelsAdd(29), stepper, typeNapkins, searchNapkins, napkinsLink, napkinsSize, napkinsAdd];
+    // With each product's "Pickup" press, which "both for pickup" asks for.
+    const draft = [navigate(1), store, napkinsPickup, towelsPickup, typeTowels, searchTowels, towelsLink, towelsSize(), towelsAdd(29), stepper, typeNapkins, searchNapkins, napkinsLink, napkinsSize, napkinsAdd];
     const verdict = check(draft, [
       { action: "a1", step: "7" }, { action: "a2", step: "29" }, { action: "a2.size", step: "28" }, { action: "a2.quantity", step: "30" },
       { action: "a3", step: "36" }, { action: "a3.size", step: "35" }
@@ -149,7 +159,8 @@ describe("a claim is held to what its step acted on", () => {
   });
 
   it("refuses a size claimed on the other product's swatch, by the page the swatch was on", () => {
-    const draft = [navigate(1), store, typeTowels, searchTowels, towelsLink, towelsSize(), towelsAdd(29), stepper, typeNapkins, searchNapkins, napkinsLink, napkinsSize, napkinsAdd];
+    // With each product's "Pickup" press, so the size is the only refusal.
+    const draft = [navigate(1), store, napkinsPickup, towelsPickup, typeTowels, searchTowels, towelsLink, towelsSize(), towelsAdd(29), stepper, typeNapkins, searchNapkins, napkinsLink, napkinsSize, napkinsAdd];
     const verdict = check(draft, [
       { action: "a1", step: "7" }, { action: "a2", step: "29" }, { action: "a2.size", step: "28" }, { action: "a2.quantity", step: "30" },
       { action: "a3", step: "36" }, { action: "a3.size", step: "28" }
@@ -160,7 +171,8 @@ describe("a claim is held to what its step acted on", () => {
   it("accepts as before a step whose record names no object at all", () => {
     // The add pressed on a page whose address names nothing, with no row, and nothing after it.
     const bare = web(40, click, ADD, `${SITE}cart`, { consequences: ["modify_existing"] });
-    const draft = [navigate(1), store, typeTowels, searchTowels, towelsLink, towelsSize(), towelsAdd(29), stepper, napkinsSize, bare];
+    // With each product's "Pickup" press, which "both for pickup" asks for.
+    const draft = [navigate(1), store, napkinsPickup, towelsPickup, typeTowels, searchTowels, towelsLink, towelsSize(), towelsAdd(29), stepper, napkinsSize, bare];
     const verdict = check(draft, [
       { action: "a1", step: "7" }, { action: "a2", step: "29" }, { action: "a2.size", step: "28" }, { action: "a2.quantity", step: "30" },
       { action: "a3", step: "40" }, { action: "a3.size", step: "35" }
@@ -168,13 +180,15 @@ describe("a claim is held to what its step acted on", () => {
     expect(verdict.ok ? [] : verdict.missing.map((missing) => [missing.id, missing.reason])).toEqual([]);
     // And a step that carries no record at all, as every draft did before the web domain recorded one.
     const plain = (position: number): AutomationStudioFlowDraftStep => ({ position, id: `d${position}`, iteration: position, actionId: click, input: {}, effect: "mutate", effectApplied: true, disposition: "kept" });
-    const unrecorded = [navigate(1), plain(2), plain(3), plain(4), plain(5), plain(6), plain(7)];
-    expect(check(unrecorded, [{ action: "a1", step: "2" }, { action: "a2", step: "3" }, { action: "a3", step: "4" }, { action: "a2.size", step: "5" }, { action: "a2.quantity", step: "6" }, { action: "a3.size", step: "7" }]).ok).toBe(true);
+    // Steps 8 and 9 are the two "Pickup" presses "both for pickup" asks for, after the adds as this draft's other choices are.
+    const unrecorded = [navigate(1), plain(2), plain(3), plain(4), plain(5), plain(6), plain(7), plain(8), plain(9)];
+    expect(check(unrecorded, [{ action: "a1", step: "2" }, { action: "a2", step: "3" }, { action: "a3", step: "4" }, { action: "a2.size", step: "5" }, { action: "a2.quantity", step: "6" }, { action: "a3.size", step: "7" }, { action: "a2.fulfilment", step: "8" }, { action: "a3.fulfilment", step: "9" }]).ok).toBe(true);
   });
 });
 
 describe("a quantity is set, not repeated", () => {
-  const SIZED = [navigate(1), store, typeTowels, searchTowels, towelsLink, towelsSize(), towelsAdd(29), typeNapkins, searchNapkins, napkinsLink, napkinsSize, napkinsAdd];
+  // With each product's "Pickup" press, which "both for pickup" asks for, so each case stays about the quantity.
+  const SIZED = [navigate(1), store, napkinsPickup, towelsPickup, typeTowels, searchTowels, towelsLink, towelsSize(), towelsAdd(29), typeNapkins, searchNapkins, napkinsLink, napkinsSize, napkinsAdd];
   const BASE = [{ action: "a1", step: "7" }, { action: "a2", step: "29" }, { action: "a2.size", step: "28" }, { action: "a3", step: "36" }, { action: "a3.size", step: "35" }];
   const withSteps = (...extra: AutomationStudioFlowDraftStep[]) => [...SIZED, ...extra].sort((left, right) => left.position - right.position);
   const reasons = (verdict: ReturnType<typeof check>) => verdict.ok ? [] : verdict.missing.map((missing) => [missing.id, missing.reason, missing.presses]);

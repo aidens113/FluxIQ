@@ -25,6 +25,20 @@
 //   anything else     -- the rerun is refused like one that did not work: the
 //                        step keeps the argument it ran with.
 //
+// **A check cannot change which action a step is.** Live run
+// `run-mux74k5q-1c3c2127` (lane A round 3, C2): step 12 pressed "Spain" and
+// claimed the lasting add-to-cart act, so every rerun of it was a check. The
+// model's reruns to type 3 into the quantity field (`node:
+// web.output.dom-type`) came back `core.replay.present` and took: the step kept
+// `actionId: web.output.dom-click` and took the typing's input, completion
+// compiled it as a click and refused `text` and `submit`, and the draft showed a
+// type node the Flow would never run. A check runs nothing, so it declares no
+// action; a value whose `node` names an action other than the step's, with no
+// action declared by the answer, does not take whatever the check answered: the
+// step keeps its action, input and resolved form, and the answer says the check
+// ran nothing and that a different action is a new call with add true. The
+// action is never inferred from `value.node` -- this refuses, it does not infer.
+//
 // Either way the answer says so in plain words (`rerunCheck`): checked and not
 // done again, because the act was already done once while building, and that
 // when the Flow runs the step does its act each time -- a repeated step on each
@@ -64,7 +78,9 @@ const RERUN_CHECK_KEY = "rerunCheck";
  * to, or an ordinary call when there is no `replaces` -- and answers what it
  * returned, with where a rerun ran. `took` is whether a checked rerun's step now
  * runs with the new argument (see the header); it is false for every call that
- * was run as asked.
+ * was run as asked. `checked` is whether the call was sent as the dry run's
+ * check, which acts on nothing: the repeat guard records no attempt of its input
+ * for it (`../repeat-guard/outcomes.ts`, run `run-mux74k5q-1c3c2127` C3).
  */
 export async function automationStudioNodeRerunAnswer(input: {
   place: AutomationStudioNodeRerunPlace | undefined;
@@ -79,14 +95,14 @@ export async function automationStudioNodeRerunAnswer(input: {
   signal?: AbortSignal | undefined;
   /** The instruction's lasting acts, as the dry run reads them (`../../flow-draft/verify-only.ts`, t174-w83). */
   lastingActs?: ReadonlySet<string> | undefined;
-}): Promise<{ ran: Answer; took: boolean }> {
-  if (input.place?.kind === "unreachable") return { ran: input.place.result, took: false };
+}): Promise<{ ran: Answer; took: boolean; checked: boolean }> {
+  if (input.place?.kind === "unreachable") return { ran: input.place.result, took: false, checked: false };
   const step = input.replaces !== undefined && automationStudioFlowDraftStepActDone(input.replaces, input.lastingActs) ? input.replaces : undefined;
   const value = step ? checkCall(step, input.call.value) : input.call.value;
   // A refusal after a put-back says the page was loaded again and names the control the argument meant (`./step-place.ts`, run `run-musq0b1m-0472cfa0` Cause 4).
   const named = input.replaces ? { step: input.replaces.position, ...(input.words ? { words: input.words } : {}) } : undefined;
   const ran = automationStudioNodeRerunPlaceNoted(input.place, await input.executeTool({ callId: input.call.callId, toolId: input.call.toolId, value, ...(input.signal ? { signal: input.signal } : {}) }), named);
-  return step ? checked(step, input.call.callId, input.call.toolId, input.call.value, input.words, ran, input.steps) : { ran, took: false };
+  return step ? { ...checked(step, input.call.callId, input.call.toolId, input.call.value, input.words, ran, input.steps), checked: true } : { ran, took: false, checked: false };
 }
 
 /** The dry run's check of `step`, with the rerun's new argument in place of what the step ran with (`./replay.ts`). */
@@ -98,7 +114,11 @@ function checkCall(step: AutomationStudioFlowDraftStep, value: JsonObject): Json
 function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: string, value: JsonObject, words: AutomationStudioFlowDraftStepWords | undefined, ran: Answer, steps: readonly AutomationStudioFlowDraftStep[] | undefined): { ran: Answer; took: boolean } {
   const parsed = automationStudioLlmEvidenceParseToolExecutionResult(ran, "mutate");
   const code = parsed?.resultCode;
-  const took = code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE || code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE;
+  const answered = code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_VERIFIED_CODE || code === AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_PRESENT_CODE;
+  // A value naming another node, with no action declared by the answer, is a different step: the check ran nothing, so it
+  // cannot say which action the step would run (run `run-mux74k5q-1c3c2127`, C2; see the header). Refused, never inferred.
+  const otherNode = typeof value.node === "string" && value.node !== step.actionId && parsed?.draft?.actionId === undefined ? value.node : undefined;
+  const took = answered && otherNode === undefined;
   const position = step.position;
   const acts = [...(step.acts ?? [])];
   if (took) {
@@ -129,6 +149,7 @@ function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: st
     delete step.stateAfter;
     delete step.instance;
     delete step.toggle;
+    delete step.reads;
     delete step.interruption;
     delete step.cancels;
     delete step.routeSignatures;
@@ -154,6 +175,8 @@ function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: st
     : "The check found the step could run now with the new argument";
   const detail = took
     ? `${why} ${found}, so step ${position} now holds the new argument as a checked candidate, not performed evidence. Its act claims describe intention; the earlier execution remains tied to the original argument. When the Flow runs, the step does its act each time it runs: a repeated step does it on each row its listing keeps.`
+    : otherNode !== undefined
+    ? `${why} The new argument names ${otherNode}, a different action from the step's ${step.actionId}, and the check ran nothing (${code}), so it cannot make step ${position} that action: nothing changed, and step ${position} keeps ${step.actionId} and the argument it ran with. A different action is a different step: run it as a new call with add true.`
     : `${why} The check did not find the step able to run with the new argument on the page it started on (${code ?? "no answer"}), so nothing changed: step ${position} keeps the argument it ran with, as after a rerun that did not work.`;
   return { ran: noted(ran, { checked: true, doneAgain: false, acts, ...(code ? { answer: code } : {}), took, detail }), took };
 }

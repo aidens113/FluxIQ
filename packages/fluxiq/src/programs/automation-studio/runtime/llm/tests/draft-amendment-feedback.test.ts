@@ -228,13 +228,14 @@ describe("the feedback an amendment refusal is shown as", () => {
     no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, over_not_before: true, not_a_kept_step: true,
     did_not_work: true, already_in_flow: true, already_out: true, changes_nothing: true, act_on_a_read: true, act_already_named: true,
     bind_not_a_binding: true, bind_new_key: true, bind_row_outside_loop: true, bind_malformed: true,
-    rerun_holds_binding: true, repeat_taken_off: true, strands_a_step: true
+    rerun_holds_binding: true, repeat_taken_off: true, strands_a_step: true, settings_rewrite_run: true, second_copy: true
   };
 
   it("can say every reason the draft computes, with what the word means", () => {
     for (const reason of Object.keys(everyReason) as AutomationStudioFlowDraftAmendmentRefusal["reason"][]) {
       const feedback = built([{ step: 2, reason }]);
-      expect(feedback.refused).toEqual([{ step: 2, reason }]);
+      // Every refusal names its way out, even on a draft read for positions alone (W2).
+      expect(feedback.refused).toEqual([{ step: 2, reason, next: expect.stringMatching(/\b[Ss]tep 2\b|"step": 2\b/u) }]);
       const explanation = (feedback.reasons as Record<string, string>)[reason];
       expect(typeof explanation).toBe("string");
       expect(explanation!.length).toBeGreaterThan(20);
@@ -245,7 +246,7 @@ describe("the feedback an amendment refusal is shown as", () => {
   // says what a bind is for and how to write it.
   it("names the parameter a refused bind was about, and says how to write a binding", () => {
     const feedback = built([{ step: 2, reason: "bind_new_key", parameter: "options.sort" }, { step: 3, reason: "bind_row_outside_loop", parameter: "note" }]);
-    expect(feedback.refused).toEqual([{ step: 2, reason: "bind_new_key", parameter: "options.sort" }, { step: 3, reason: "bind_row_outside_loop", parameter: "note" }]);
+    expect(feedback.refused).toEqual([{ step: 2, reason: "bind_new_key", parameter: "options.sort", next: expect.stringContaining("Step 2 has no value to bind at options.sort") }, { step: 3, reason: "bind_row_outside_loop", parameter: "note", next: expect.stringContaining("Step 3 is in no repeat") }]);
     const reasons = feedback.reasons as Record<string, string>;
     expect(reasons.bind_new_key).toMatch(/already has/u);
     expect(reasons.bind_row_outside_loop).toMatch(/repeat/u);
@@ -281,12 +282,18 @@ describe("the feedback an amendment refusal is shown as", () => {
     const told = (actsNotDone: readonly string[] | undefined) => automationStudioLlmEvidenceDraftAmendmentFeedback({
       refusals: [{ step: 2, reason: "act_already_named", act: "a2.quantity" }], applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8, actsNotDone
     });
-    expect(told(["a3", "a3.size"]).refused).toEqual([{ step: 2, reason: "act_already_named", next: "The acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Still not done on the checklist: a3, a3.size. Go on with those." }]);
-    expect(told([]).refused).toEqual([{ step: 2, reason: "act_already_named", next: "The acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Nothing on the checklist is still to do: complete when the Flow does what the person asked." }]);
-    // Still to do: the todo is the fault, as before, and nothing more is said.
-    expect(told(["a2.quantity", "a3"]).refused).toEqual([{ step: 2, reason: "act_already_named" }]);
-    // No checklist read: nothing is claimed about it.
-    expect(told(undefined).refused).toEqual([{ step: 2, reason: "act_already_named" }]);
+    expect(told(["a3", "a3.size"]).refused).toEqual([{ step: 2, reason: "act_already_named", next: "Step 2 already names a2.quantity, and the acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Still not done on the checklist: a3, a3.size. Go on with those." }]);
+    expect(told([]).refused).toEqual([{ step: 2, reason: "act_already_named", next: "Step 2 already names a2.quantity, and the acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Nothing on the checklist is still to do: complete when the Flow does what the person asked." }]);
+    // Still to do: the todo is the fault, and next says to correct the step it names -- never the checklist, which would send it back to the same act.
+    const stillToDo = (told(["a2.quantity", "a3"]).refused as { next?: string }[])[0]?.next;
+    expect(stillToDo).toContain("Step 2 already names a2.quantity, and the checklist still shows it not done");
+    expect(stillToDo).toContain("act a2.quantity");
+    expect(stillToDo).not.toContain("Still not done on the checklist");
+    // No checklist read: nothing is claimed about it, and step 2 is left as it is.
+    const bare = (told(undefined).refused as { next?: string }[])[0]?.next;
+    expect(bare).toContain("Step 2 already names a2.quantity");
+    expect(bare).toContain("leave step 2 as it is");
+    expect(bare).not.toContain("checklist");
     // The reason itself now says what a done act needs.
     expect((told(undefined).reasons as Record<string, string>).act_already_named).toContain("If the acts checklist shows the act done, nothing is left to do for it");
   });
@@ -308,10 +315,12 @@ describe("the feedback an amendment refusal is shown as", () => {
     expect(feedback.positions).toEqual(long.map((step) => step.position));
   });
 
-  it("carries codes, Core's own sentences and integers, and stays well under two kilobytes", () => {
+  // Every refusal now carries its way out (W2), so the bound is per refusal:
+  // it was two kilobytes for sixteen refusals that carried no next.
+  it("carries codes, Core's own sentences and integers, and stays under a quarter kilobyte per refusal beside its reason", () => {
     const feedback = built(Array.from({ length: 16 }, (_unused, index) => ({ step: index + 40, reason: "no_such_step" as const })));
     expect(feedback.refused).toHaveLength(16);
-    expect(Buffer.byteLength(JSON.stringify(feedback), "utf8")).toBeLessThan(2_048);
+    expect(Buffer.byteLength(JSON.stringify(feedback), "utf8")).toBeLessThan(1_024 + 16 * 256);
   });
 
   // Every refusal since 2026-09-30: it listed at most 16.
@@ -399,12 +408,16 @@ describe("a refusal about a listing says what comes next", () => {
     expect(nextOf(told([{ step: 2, reason: "changes_nothing" }], other))).toContain(`send {"step": 3, "change": "repeat", "over": 2}`);
   });
 
-  it("says nothing extra where the refused step is not a listing, or the draft gives no effects", () => {
-    expect(nextOf(told([{ step: 6, reason: "changes_nothing" }]))).toBeUndefined();
-    expect(nextOf(told([{ step: 6, reason: "over_not_before", over: 6 }]))).toBeUndefined();
+  // W2: these used to carry no next at all.
+  it("still names a way out by number where the refused step is not a listing, or the draft gives no effects", () => {
+    const press = nextOf(told([{ step: 6, reason: "changes_nothing" }]));
+    expect(press).toContain("Step 6's identical call was not sent again");
+    expect(press).toContain(`{"step": 6, "change": "rerun", "input": {`);
+    expect(press).not.toContain("rows");
+    expect(nextOf(told([{ step: 6, reason: "over_not_before", over: 6 }]))).toContain(`Step 6's repeat over step 6 was refused`);
     const plain = told([{ step: 2, reason: "over_not_before", over: 2 }], [{ position: 1 }, { position: 2 }]);
-    expect(plain.refused).toEqual([{ step: 2, reason: "over_not_before" }]);
-    expect(plain.instruction).not.toContain("next, beside a refusal");
+    expect(plain.refused).toEqual([{ step: 2, reason: "over_not_before", next: expect.stringContaining(`{"step": <the act>, "change": "repeat", "over": <the listing>}`) }]);
+    expect(plain.instruction).toContain("next, beside a refusal");
   });
 
   // The loop passes the draft itself, so a refusal it tells carries next.
@@ -430,7 +443,11 @@ describe("a refusal about a listing says what comes next", () => {
     await runAutomationStudioLlmEvidenceLoop({ tools: [list], decide, executeTool, draft: { seed: [{ position: 1, iteration: 0, actionId: "list", input: { where: "previous valid read" }, effect: "observe", effectApplied: true, proposes: true, disposition: "kept" }] }, unusableDecisions: { stalled: () => new Error("stalled") }, maxIterations: 5, maxToolCalls: 5, dryRun: false });
     const feedback = feedbackShown(decide, 2)!;
     expect(feedback).toMatchObject({ refused: [{ step: 2, reason: "changes_nothing" }] });
-    expect(nextOf(feedback)).toContain("only if it actually returned the intended rows");
+    // run-mustvzvg C4: step 2 never ran, so nothing says its rows stand or to go on to the act.
+    expect(nextOf(feedback)).toContain("Step 2 did not work");
+    expect(nextOf(feedback)).toContain("would be refused again");
+    expect(nextOf(feedback)).not.toContain("intended rows");
+    expect(nextOf(feedback)).not.toContain("go on to the act");
     expect(nextOf(feedback)).not.toContain("its result stands");
     expect(executeTool).toHaveBeenCalledTimes(1);
   });
@@ -468,14 +485,18 @@ describe("an act named again that the checklist already shows done, through the 
     const { decide, done } = run(() => ["a3", "a3.size"]);
     await expect(done).rejects.toBe(stalledError);
     const feedback = feedbackShown(decide, 2);
-    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "act_already_named", next: "The acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Still not done on the checklist: a3, a3.size. Go on with those." }] });
+    expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "act_already_named", next: "Step 1 already names a2.quantity, and the acts checklist shows a2.quantity done, so nothing is left to do for it: do not name it again. Still not done on the checklist: a3, a3.size. Go on with those." }] });
     expect(String(feedback?.instruction)).toContain("next, beside a refusal, is what to do instead");
   });
 
-  it("is told the general reason alone while the checklist still shows the act not done", async () => {
+  // W2: it used to be told the general reason alone, with no next.
+  it("is told to correct the step its todo names while the checklist still shows the act not done, never sent back to the checklist", async () => {
     const { decide, done } = run(() => ["a2.quantity", "a3"]);
     await expect(done).rejects.toBe(stalledError);
-    expect(feedbackShown(decide, 2)?.refused).toEqual([{ step: 1, reason: "act_already_named" }]);
+    const refused = feedbackShown(decide, 2)?.refused as { step: number; reason: string; next?: string }[];
+    expect(refused).toMatchObject([{ step: 1, reason: "act_already_named" }]);
+    expect(refused[0]?.next).toContain("Step 1 already names a2.quantity, and the checklist still shows it not done");
+    expect(refused[0]?.next).not.toContain("Still not done on the checklist");
   });
 
   it("stalls the round as amendments refused, not as a refused call", async () => {
@@ -600,42 +621,6 @@ describe("run musp4h2f: a refused amendment says what is still to do, and a move
   });
 });
 
-// t174-w108 Cause 6 (`run-musp8nz1-dbd3905a`, steps 0027-0028): with steps 1-13
-// in the draft the model sent `{step 14, add, act a1}` for an Add to cart press
-// it had not run yet. It was told `no_such_step` and the positions, but no
-// `next`: a step enters the draft by running, so the number after the last is
-// the one a run with add true would take.
-describe("a refusal naming the next free number says to run the step first", () => {
-  const steps = [{ position: 1 }, { position: 2 }, { position: 3 }];
-  const told = (step: number, on = steps) => automationStudioLlmEvidenceDraftAmendmentFeedback({
-    refusals: [{ step, reason: "no_such_step" }], applied: 0, steps: on, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8
-  });
-
-  it("says step 4 of three is not there until it runs, and to run it with add true", () => {
-    const feedback = told(4);
-    const next = (feedback.refused as { next?: string }[])[0]?.next;
-    expect(next).toBe("There is no step 4 yet: a step enters the draft only by running. Run that action first as a call with add true (and its act, if it does one), and it becomes step 4; do not amend it before it has run.");
-    expect(feedback.positions).toEqual([1, 2, 3]);
-    expect(feedback.instruction).toContain("next, beside a refusal, is what to do instead");
-    expect((told(1, []).refused as { next?: string }[])[0]?.next).toContain("it becomes step 1");
-  });
-
-  it("says nothing more for a number past the next free one, or one inside the draft", () => {
-    expect((told(9).refused as { next?: string }[])[0]).toEqual({ step: 9, reason: "no_such_step" });
-    expect((told(2, [{ position: 1 }, { position: 3 }]).refused as { next?: string }[])[0]).toEqual({ step: 2, reason: "no_such_step" });
-  });
-
-  // Merged with run musp4h2f's rule that every refusal names the acts still to
-  // do: the run-first `next` comes first, then the checklist, when there is one.
-  it("ends with the acts the checklist still shows not done, and names only those for any other number", () => {
-    const withChecklist = (step: number) => (automationStudioLlmEvidenceDraftAmendmentFeedback({
-      refusals: [{ step, reason: "no_such_step" }], applied: 0, steps, stepsWithoutProgress: 1, maxStepsWithoutProgress: 8, actsNotDone: ["a1"]
-    }).refused as { next?: string }[])[0]?.next;
-    expect(withChecklist(4)).toBe("There is no step 4 yet: a step enters the draft only by running. Run that action first as a call with add true (and its act, if it does one), and it becomes step 4; do not amend it before it has run. Still not done on the checklist: a1. Go on with those.");
-    expect(withChecklist(9)).toBe("Still not done on the checklist: a1. Go on with those.");
-  });
-});
-
 // Live run `run-musp474o-e0ed7432` reran the attempt its rerun of step 6 had
 // replaced, listed as step 7, three times, and was told only that the argument
 // had already run. The refusal now says which step replaced it.
@@ -734,12 +719,12 @@ describe("a refused bind says what the step offers instead, run B7", () => {
 
   it("passes on an empty bindable, and says what that means", () => {
     const feedback = told([{ step: 9, reason: "bind_new_key", parameter: "quantity", bindable: [] }]);
-    expect(feedback.refused).toEqual([{ step: 9, reason: "bind_new_key", parameter: "quantity", bindable: [] }]);
+    expect(feedback.refused).toEqual([{ step: 9, reason: "bind_new_key", parameter: "quantity", bindable: [], next: expect.stringContaining("Step 9 has no value to bind") }]);
     expect((feedback.reasons as Record<string, string>).bind_new_key).toContain("An empty bindable");
   });
 
   it("passes on nothing for a refusal of another reason", () => {
-    expect(told([{ step: 9, reason: "bind_row_outside_loop", parameter: "text", bindable: ["text"] }]).refused).toEqual([{ step: 9, reason: "bind_row_outside_loop", parameter: "text" }]);
+    expect(told([{ step: 9, reason: "bind_row_outside_loop", parameter: "text", bindable: ["text"] }]).refused).toEqual([{ step: 9, reason: "bind_row_outside_loop", parameter: "text", next: expect.stringContaining(`{"step": 9, "change": "repeat", "over": <the listing>}`) }]);
   });
 });
 

@@ -147,7 +147,7 @@ describe("an act claimed on the step that only opened the page where its choices
   });
 
   it("still counts a doubted claim whose choices were made on the same page", () => {
-    const draft = [store, press(10, "item", "Pickup", ["a2"]), press(11, "item", "12 Double Rolls", ["a2.size"])];
+    const draft = [store, press(10, "item", "Buy box", ["a2"]), press(11, "item", "12 Double Rolls", ["a2.size"])];
     expect(a2Of(draft)).toMatchObject({ done: 10 });
   });
 });
@@ -183,8 +183,11 @@ describe("the choices after an act claimed on a step that led to another page", 
     expect(choices.find((each) => each.id === "a1.colour")).toMatchObject({ done: 8 });
     expect(choices.find((each) => each.id === "a1.version")).toMatchObject({ done: 9 });
     expect(choices.some((each) => "afterAct" in each)).toBe(false);
-    // The claim on the listing click stays on it, doubted, and does not do a1.
-    expect(items[0]).toMatchObject({ todo: "step_only_opens_its_choices", step: 6, claimSaid: expect.stringContaining("step 6") });
+    // The claim on the listing click stays on it and does not do a1; the
+    // verdict says what step 6 did in place of the doubt (`../act-evidence.ts`).
+    expect(items[0]).toMatchObject({ todo: "step_only_opens_its_choices", step: 6, todoSaid: expect.stringContaining("Step 6") });
+    expect(items[0]?.todoSaid).toContain("only opened the page where a1's choices are made");
+    expect(items[0]).not.toHaveProperty("claimSaid");
     expect(draft[0]?.acts).toEqual(["a1"]);
   });
 });

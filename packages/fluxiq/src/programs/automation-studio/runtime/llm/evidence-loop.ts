@@ -23,7 +23,7 @@ import {
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE,
   automationStudioLlmEvidenceAnswerCheck,
-  automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct,
+  automationStudioLlmEvidenceAskedAgain, automationStudioLlmEvidenceClaimWrittenAct, automationStudioLlmEvidenceSecondCopyRefused,
   automationStudioLlmEvidenceHandleAmendment, automationStudioLlmEvidenceSettleHeldAmendments,
   automationStudioLlmEvidenceHandleAnsweredRequest,
   automationStudioLlmEvidenceHandleRefusedRepeat, automationStudioLlmEvidenceRerunChangedNothing, automationStudioLlmEvidenceSearchingWithoutActing,
@@ -207,8 +207,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // A step that ran is `taken` -- evidence, not a step of the Flow -- unless
     // the model added it as it ran it and it worked (`../flow-draft/step.ts`).
     const appended: AutomationStudioFlowDraftStep = { ...step, position: draftSteps.length + 1, id: `d${draftAppended}`, disposition: authoring ? "taken" : "kept" };
-    if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended)) appended.disposition = "kept";
-    draftSteps.push(appended);
+    draftSteps.push(appended); // Before the add: a copy of a kept step stays taken, and the model is told which step does it (`./decision-handlers/second-copy.ts`).
+    if (authoring && authored?.add && automationStudioFlowDraftStepIsProposable(appended) && !automationStudioLlmEvidenceSecondCopyRefused(handling, appended)) appended.disposition = "kept";
     if (authoring && appended.disposition === "kept" && authored?.act !== undefined && appended.effect === "mutate") automationStudioLlmEvidenceClaimWrittenAct(handling, appended, authored.act); // A read does no act (`../flow-draft/amendment/apply.ts`, `act_on_a_read`); one act, one step, and a step it leaves is told (`./decision-handlers/amendment.ts`).
     if (authoring && appended.disposition === "kept" && authored?.place !== undefined) automationStudioFlowDraftSetRoutePlaces(appended, authored.place); // The places on the named route it is on; a read may be on one too (`../flow-draft/route-places/set.ts`).
     if (authoring && appended.disposition === "kept") { automationStudioFlowDraftKeepOpeners(draftSteps, appended); automationStudioFlowDraftDropReversals(draftSteps); } // The press that opened its page joins it (`../flow-draft/opener.ts`); a pair of presses on one control that changed nothing leaves (`../flow-draft/reversal.ts`).
@@ -418,7 +418,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
     let ran: Awaited<ReturnType<typeof input.executeTool>> | undefined;
     let stateBefore: string | undefined;
     let stateAfter: string | undefined;
-    let rerunTook = false; // A checked rerun whose step took the new argument (`./node-tools/rerun-check.ts`, run `run-murwcaj0-40e56557` R7).
+    let rerunTook = false, rerunChecked = false; // A checked rerun whose step took the new argument (run `run-murwcaj0-40e56557` R7); one sent as the dry run's check at all, which acted on nothing (run `run-mux74k5q-1c3c2127` C3): `./node-tools/rerun-check.ts`.
     const words = automationStudioFlowDraftStepWordsOf(input.describeCall, { toolId: decision.toolId, value: decision.input }); // Asked before the call: a click that closes its popup leaves its handle naming nothing (`../flow-draft/step-words.ts`).
     try {
       // A rerun runs from its step's own page, never from where the last call left it; a carried step from where its node started in the repaired run (`./node-tools/step-place.ts`, t194 C-D).
@@ -426,7 +426,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, startedOn, steps: draftSteps, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal, ...(lastingActs ? { lastingActs: await lastingActs() } : {}) }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
       // The answer says where a rerun ran (`rerunPlace`; run `run-muqk713g` C6), and a rerun of a done lasting act is checked, not done again (R7).
-      ({ ran, took: rerunTook } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, steps: draftSteps, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
+      ({ ran, took: rerunTook, checked: rerunChecked } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, steps: draftSteps, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {
@@ -457,8 +457,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     // An action this build saw only look and propose nothing: what withdrawal withholds.
     if (record.effect === "observe" && record.proposes === false) looks.sawLook(tool.toolId, record.actionId);
     if (record.effect === "mutate") { counters.attemptEpoch += 1; if (effectApplied) counters.mutationEpoch += 1; }
-    // What this call did on the page it found: a call that failed or changed nothing is not made again there (`repeat-guard/outcomes.ts`).
-    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, answer: JSON.stringify(value) });
+    // What this call did on the page it found: a call that failed or changed nothing is not made again there; a rerun sent as a check is no attempt of its input (`repeat-guard/outcomes.ts`).
+    handling.repeats.recorded({ callId, toolId: decision.toolId, input: decision.input, stateBefore, stateAfter, effect: record.effect, proposes: record.proposes ?? record.effect === "mutate", effectApplied, refused: typeof value === "object" && value !== null && !Array.isArray(value) && value.ok === false, resultCode, resultReason: execution.resultReason, answer: JSON.stringify(value), ...(rerunChecked ? { checked: true } : {}) });
     if (!lookRefused && automationStudioLlmEvidenceLookNeedsAttempt(tool, mutableTools)) {
       observationEpochs.set(tool.toolId, counters.attemptEpoch);
       latestObservations.set(tool.toolId, callId);

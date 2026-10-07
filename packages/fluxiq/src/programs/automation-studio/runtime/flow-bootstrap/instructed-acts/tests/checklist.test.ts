@@ -89,6 +89,29 @@ describe("the acts checklist", () => {
   it("is nothing for an instruction that asks only for something to be read", () => {
     expect(automationStudioInstructedActsChecklist({ instructionText: "List the dining tables for sale in Kelford.", draftSteps: [] })).toBeUndefined();
   });
+
+  // Seven runs on 2026-09-30 (`run-munovwp3-d898de74` cause 6; causes-early row
+  // 34) were told to "take the earliest pickup time on offer", saw 11am-2pm Full
+  // and 2pm-3pm open, and pressed 3pm-4pm. The time is now a choice of the
+  // order (a1.time, value "earliest"), and the checklist says what earliest is.
+  it("says what an earliest time is, beside the time choice and in the verdict", () => {
+    const ORDER = "Order one pack of the Softly Paper Towels for pickup at my current store. Check out as a guest, take the earliest pickup time on offer, and pay at pickup.";
+    const time = automationStudioInstructedActsChecklist({ instructionText: ORDER, draftSteps: [] })![0]!.choices!.find((choice) => choice.id === "a1.time")!;
+    expect(time).toMatchObject({ value: "earliest", todo: "no_step_added" });
+    expect(time.valueSaid).toContain("a1.time asks for the earliest one on offer");
+    expect(time.valueSaid).toContain("not full, disabled or unavailable");
+    expect(time.valueSaid).toContain("a later one is not it");
+    // Said whether or not a step is named for it: Core cannot tell which slot was the earliest.
+    const named = automationStudioInstructedActsChecklist({ instructionText: ORDER, draftSteps: [step(4, { acts: ["a1.time"], words: { target: "3pm–4pm" } })] })![0]!.choices!.find((choice) => choice.id === "a1.time")!;
+    expect(named).toMatchObject({ done: 4, valueSaid: time.valueSaid });
+    const verdict = checkAutomationStudioInstructedActs({ instructionText: ORDER, result: { summary: "x" }, draftSteps: [] });
+    expect(verdict.ok ? "" : verdict.instruction).toContain("An id like a1.time asks for the earliest");
+    // Other choices carry no such sentence.
+    const size = automationStudioInstructedActsChecklist({ instructionText: "Add the towels in the 12 Double Rolls size to my cart.", draftSteps: [] })![0]!.choices![0]!;
+    expect(size).not.toHaveProperty("valueSaid");
+    const plain = checkAutomationStudioInstructedActs({ instructionText: "Add the towels in the 12 Double Rolls size to my cart.", result: { summary: "x" }, draftSteps: [] });
+    expect(plain.ok ? "" : plain.instruction).not.toContain("a1.time");
+  });
 });
 
 // Live run 36 (`run-muq3uozx-3153564b`): the checklist showed a1 done by the

@@ -25,11 +25,15 @@
 //       on the step after which the page first showed the control as needed;
 //   (b) a partner out of the Flow that went the other way: this step only put
 //       back what a step outside the Flow did, so in the Flow it would flip the
-//       control the wrong way. It leaves alone.
+//       control the wrong way. It leaves alone, whatever lies between them:
+//       the earlier half never runs, so no step between them can see a
+//       temporary state. Live run `run-mux6n7m4-8273e7a0` dropped Space Grey
+//       off and kept Space Grey on with 7-in-1, Spain and the quantity kept
+//       between them, and its Flow un-chose the colour the page arrived with.
 //
-// A kept executable step between the halves prevents pairing: an act may use
-// the temporary state, and a read may return it. Core has no dependency proof
-// that would permit dropping the toggles around either one.
+// Under (a) only, a kept executable step between the halves prevents pairing:
+// an act may use the temporary state, and a read may return it. Core has no
+// dependency proof that would permit dropping the toggles around either one.
 // A partner that went the same way means something the host did not see
 // changed the control between them, and nothing is taken out. A step with
 // routing says when it runs and is never paired.
@@ -43,7 +47,9 @@
 // Run wherever a step joins the Flow, after the steps that opened its page
 // joined with it: a step appended with `add` (`../llm/evidence-loop.ts`), a
 // rerun that took a kept step's place, and an `add` or `keep` amendment
-// (`./amendment/apply.ts`).
+// (`./amendment/apply.ts`). Run as well where an amendment takes a kept step
+// out (`drop`, `exploratory`): a kept half whose partner just left falls under
+// (b). A step taken out loses its acts, so the checklist shows each as to do.
 
 import { automationStudioFlowDraftStepId } from "./routing.ts";
 import { automationStudioFlowDraftStepIsProposable, type AutomationStudioFlowDraftStep } from "./step.ts";
@@ -59,11 +65,12 @@ export function automationStudioFlowDraftDropReversals(steps: readonly Automatio
     const earlier = partnerOf(ordered, later, toggle.key);
     // The same way twice: something the host did not see changed the control between them.
     if (!earlier || earlier.toggle?.to === toggle.to) continue;
-    if (ordered.slice(ordered.indexOf(earlier) + 1, ordered.indexOf(later))
-      .some((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step))) continue;
     if (earlier.disposition === "kept") {
       // A half the model put back stays where it put it; so does one that says when it runs.
       if (earlier.cancels !== undefined || earlier.routing !== undefined) continue;
+      // Rule (a) only: a kept step between the halves may need the state the pair leaves between them.
+      if (ordered.slice(ordered.indexOf(earlier) + 1, ordered.indexOf(later))
+        .some((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step))) continue;
       takeOut(earlier, later);
       takeOut(later, earlier);
       out.push(earlier, later);
