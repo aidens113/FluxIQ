@@ -70,6 +70,7 @@ export function createGlobalProgramRuntime(paths?: FluxIQHostPaths, options: { m
     : { ...storageOptions, ...(modelProvidersEnabled ? { resultCheckProviderResolver } : {}) });
   const trustedClientTtlMs = positiveNumber(process.env.FLUXIQ_CLIENT_GATEWAY_TRUST_TTL_MS);
   const clientGateway = new ClientGatewayService({
+    resolveCommandLedger: context => automationStudio.commandContexts.resolve(context),
     enabled: process.env.FLUXIQ_CLIENT_GATEWAY_ENABLED !== "false",
     ...(paths ? { trustedClientStore: createClientGatewayTrustedClientStore(paths.data) } : {}),
     ...(trustedClientTtlMs ? { trustedClientTtlMs } : {}),

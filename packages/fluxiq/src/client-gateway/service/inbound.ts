@@ -89,9 +89,11 @@ export class ClientGatewayInbound {
       return;
     }
     if (message.type === "client.action_result") {
-      const disposition = this.commands.settle(sessionId, message.payload);
-      if (disposition === "wrong_session") return;
-      await this.events.emit({ type: "client.action_result", session: this.sessions.toPublic(session), message });
+      const eventMessage = this.commands.isDurableCommand(message.payload?.commandId) ? structuredClone(message) : message;
+      const eventSession = this.sessions.toPublic(session);
+      const disposition = await this.commands.settle(sessionId, eventMessage.payload);
+      if (disposition === "wrong_session" || disposition === "suppressed") return;
+      await this.events.emit({ type: "client.action_result", session: eventSession, message: eventMessage });
       return;
     }
     if (message.type === "client.error") await this.events.emit({ type: "client.error", session: this.sessions.toPublic(session), message });
