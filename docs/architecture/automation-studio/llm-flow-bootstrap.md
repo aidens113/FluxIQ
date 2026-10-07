@@ -707,7 +707,18 @@ Core's observation of the test leads with that count ("30 records would be
 stored"), which is what the check's card says, and the judge is told to judge it
 as the result (t274, live run `run-muw60j7c-bb7c9a62`, C-3: told the test
 "stored nothing", both judges passed a Flow whose two reads appended 20
-unfiltered rows and 10 filtered ones to one dataset, 3 of them twice). Both
+unfiltered rows and 10 filtered ones to one dataset, 3 of them twice). Since
+read-list stage S1, assembly gives every read a dataset of its own
+(`<slug>-<stepId>`), so two reads no longer share one by accident. These
+counts are the rows collected, one answer per pass of a repeated read, not
+the answer a run keeps: a run processes each dataset when it ends (default
+whole-row dedupe, then the record output's `process`; see
+[record outputs and run-end processing](../automation-studio-native-nodes.md#record-outputs-and-run-end-processing)),
+and the run-time judges read that answer, but the build's test does not
+process yet. Nor does `stores.ts` yet know the Repeat node a do-while writes
+between the steps' nodes, so it finds no writing step from the first such
+loop on. Stage S3 (not done) makes `buildTest.stores` process the test's rows
+with each read's `process` and report the answer and its account. Both
 kinds of judge are also shown `leftOutNamingTheItem`
 (`runtime/result-verification/request-rows/`): rows one condition alone left
 out, tested on the row's own label, whose label names first the request's phrase
@@ -1244,7 +1255,13 @@ reads, the brief's step 3 also says that where the check's advice contradicts
 pages of a read that already read every page there was -- Core's account
 stands and that part of the advice is not followed (t194-w78,
 `runtime/recovery/refuted-result/brief.ts`): live run `run-musp39u8-9ac026ab`
-raised its page bound six times per try and reread the same rows. If money or the
+raised its page bound six times per try and reread the same rows. That
+wording, the brief's "a pagination setting", and the rerun-input example of a
+stored `maxPages` (`runtime/llm/evidence-loop/rerun-input.ts`) still assume a
+read that follows pages itself; under the read-list redesign a read reads one
+page and the Flow pages with a do-while `repeat`
+([a list that continues](flow-authoring.md#a-list-that-continues)), and stage
+S3 (not done) changes these words. If money or the
 round limit runs out first, the budget ending says the Flow as it stands was
 never run whole and names those steps.
 
@@ -1729,7 +1746,9 @@ taken after that change, because that replay is a run of that Flow. The
 replay signature (`automationStudioFlowDraftReplaySignature`, routing left out)
 remains only for progress and no-progress: whether the model is re-sending the
 same steps, and the `seedSignature` an extend build's first round starts from.
-A repeat is run once per row its list returned in the test, and a written step
+A repeat is run once per row its list returned in the test, a do-while repeat
+pass by pass until its last step answers `ended` or its `most` is reached,
+and a written step
 the test never ran on a row is refused `not_reached`: see
 [the build's test](flow-authoring.md#the-builds-test) (t252).
 

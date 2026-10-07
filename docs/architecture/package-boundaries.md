@@ -108,6 +108,60 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): a read collects, a do-while repeat pages, and each dataset is processed at run end (`@fluxiq/contracts`, `fluxiq`)
+
+Read-list redesign, stages S1 and S2. A list read reads one page; a Flow
+pages with a step that moves the list on and a do-while `repeat`, and every
+pass appends to the read's own dataset, which Core turns into an answer when
+the run ends
+([a list that continues](automation-studio/flow-authoring.md#a-list-that-continues),
+[record outputs and run-end processing](automation-studio-native-nodes.md#record-outputs-and-run-end-processing)).
+Read this entry if a host reads run datasets, writes record outputs, reads
+draft routing, or registers a node that should end a loop.
+
+**Added.**
+- `AutomationStudioRecordOutput.process?: AutomationStudioRecordProcessing`
+  (`dedupe`, `where`, `sort`, `limit`, `columns`, `minRows`), its parser
+  `parseAutomationStudioRecordProcessing` (issues `record_output.process_*`),
+  `processAutomationStudioRecordRows`, `AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS`,
+  the value readers and their parity table
+  `AUTOMATION_STUDIO_RECORD_VALUE_READING_CASES`, from
+  `@fluxiq/contracts/automation-studio`.
+- `AutomationStudioRunDatasetSummary.processing?:
+  AutomationStudioRecordProcessingAccount`, set once a dataset is processed.
+- Project migration `0024_run_dataset_answers`: table
+  `run_dataset_answer_rows`, and `run_datasets.process_json`,
+  `processing_json`, `processed_at_ms`.
+- The node `builtin.control.repeat` (outputs `body`, `done`, `pass`;
+  parameters `most`, default 50, at most 500, and `maxStepsPerIteration`).
+- The routing shape `{kind: "repeat", through, while, most?}`
+  (`AutomationStudioFlowDraftRepeatWhileRouting`,
+  `automationStudioFlowDraftRepeatIsWhile`), and `while?`/`most?` on
+  `AutomationStudioFlowDraftAmendment`. The replay result code
+  `core.replay.ended` in `AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES`.
+
+**Changed.**
+- Every dataset a run wrote is processed when the run ends, before its result
+  is verified, whether or not it declares `process`: with none, repeated rows
+  (whole row, layout and case ignored) are dropped, the first kept. Dataset
+  pages, export streams, record counts and the run-time judges then read the
+  answer; the collected rows stay. A dataset processing failed on, or one from
+  a run before this release, reads as its collected rows.
+- A batch whose `process` differs from the one its dataset stored in the run
+  is refused at capture, as a changed schema is.
+- Assembly gives every extraction node a `recordOutput` (id
+  `<slug>-<stepId>`), not only one whose instruction names columns.
+- A dispatched action's success may take a route its node declares with role
+  `branch`, named as `route` in its result payload (`runtime/io-policy.ts`,
+  `runtime/executor/node-execution.ts`); any other `route` is ignored.
+- `AutomationStudioFlowDraftStepRouting`'s repeat kind is a union: code that
+  read `routing.over` as always present must narrow with
+  `automationStudioFlowDraftRepeatIsWhile` first.
+
+**Not yet (stage S3).** The build's test does not process (`buildTest.stores`
+counts every collected row), and the read account still carries a read's own
+paging (`runtime/result-verification/read-account/`).
+
 ### Next minor (unreleased): a paired client's run pays only for the checks that judge a repair (`fluxiq`)
 
 MVP item 23. A run a person asked the model into has its result judged with

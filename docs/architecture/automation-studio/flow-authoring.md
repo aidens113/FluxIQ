@@ -360,9 +360,21 @@ steps, withheld excusal and per-step verdicts; the walker sends the same calls.
 - **While spans.** At a `repeat` over a check, the body runs and the check is
   asked again until it stops replaying. A while span whose body is a lasting
   act runs one pass: the test never does the act that would end the loop.
-- **The bound** is For Each's default `maxIterations`
+- **Do-while spans** ([a list that continues](#a-list-that-continues)). At a
+  `repeat` whose routing says `while`, the plan is made from the routing
+  alone and needs no listing. The members run pass by pass, call ids
+  `<callId>.pass.<n>`, as the Repeat node runs them in the Flow. After a pass,
+  the last member answering `core.replay.ended` (`replay.ts`) is that pass
+  passing and the loop ending, as a next-page step's `ended` route leaves the
+  Flow's loop; `replayed` runs another pass; any other answer is that
+  member's pass failing, and the loop goes no further. `ended` from any other
+  member, or outside a do-while, reads as `failed`. A last member the test
+  only checks (`replay: "verify"`) never moves on, so the span runs once.
+- **The bound** of a list or while span is For Each's default `maxIterations`
   (`automationStudioFlowDraftReplayLoopBound`, 100). More rows than that, or a
-  while span past it, fail every member `core.replay.loop_bound`.
+  while span past it, fail every member `core.replay.loop_bound`. A do-while's
+  bound is its routing's `most`, else the Repeat node's default `most` (50);
+  reaching it ends the loop without a failure, as the Repeat's `done` does.
 - **No rows known** -- the list step was verified or failed, the host sent no
   `outputs`, the rows are not records, or the caller gave no `nodeOf` node
   lookup -- leaves the span unplanned: it runs once on the explored row and is
@@ -518,6 +530,65 @@ The unrepeat draft amendment accepts only step and change. It removes a repeat o
 
 **A read before the last act asks for a new read, never a move (t195-w47, R18).** When every read giving the instruction's named columns runs before the draft's last act step, the note beside the draft (`runtime/flow-bootstrap/authoring/instruction-record-columns.ts`, through `runtime/llm/harness-options/draft-acts.ts`) says to run a new read after that step and add it, and to leave the reads before it where they are; of an act in a repeated span, that the listing it repeats over stays before it. "The draft needs a read after step N" had been read as "move the read": in the same run the model moved the loop's own listing after the act that walks it.
 
+### A list that continues
+
+Read-list redesign, stages S1 and S2 in Core; the web domain's side is S4 and
+S5. A list read reads one page. A Flow goes through a list that continues
+with three steps: the read, a step that moves the list on (the web domain's
+Next page node, `web.output.dom-next_page`, whose outputs are `success`,
+`failed` and `ended`, `ended` meaning there is no further page), and a
+do-while repeat on the read through that step:
+`{"step": <read>, "change": "repeat", "while": <next page>, "most"?: n}`
+(`runtime/flow-draft/amendment/schema.ts`; `through` defaults to `while`).
+The parse (`runtime/llm/evidence-loop-decision.ts`) drops as malformed a
+`while` with `over`, a `most` without `while`, a `most` that is not an integer
+from 1 to 500, and a `through` that differs from `while`. The routing is
+`{kind: "repeat", through, while, most?}` (`runtime/flow-draft/routing.ts`,
+`automationStudioFlowDraftRepeatIsWhile`): the span, from the read through
+the moving step, runs, then runs again while its last step succeeds. Absent
+`most`, the Repeat node's default of 50 passes applies. `over` keeps its two
+meanings, a list loop and a while loop whose check comes first. Every step
+between the read and the moving step is in the span and runs on every pass
+(a dialog dismissed, a wait).
+
+**Assembly** (`runtime/flow-bootstrap/authoring/draft-routing.ts`) writes
+`prev -> loop (Merge) -> pass (builtin.control.repeat).body -> read ... last`,
+with `last.success` back to the loop's Merge, every `branch`-role output of
+the last step's node (`ended` for Next page) and the Repeat's `done` into an
+exit Merge, and the exit falling into the step after the span. The Repeat
+node (`nodes/control-flow/repeat.ts`) is a bounded pass counter: it keeps its
+count through `context.iteration` as For Each does, routes `body` with
+`{pass: n}` while fewer than `most` passes have begun, and otherwise routes
+`done`, a success whose message says the loop reached its most passes, and
+the Flow carries on. Neither an `ended` exit nor the bound fails the run; a
+`failed` from the last step is a failure as anywhere else. A do-while whose
+last step declares no `branch` output and that carries no `most` is refused
+`flow_draft.repeat_while_never_ends`, and one on the Flow's first step is
+refused `flow_draft.repeat_not_after_its_source`. The executor's step
+allowance (`runtime/executor/graph-run.ts`) and the state-routing progress
+mark (`runtime/executor/state-routing/progress-guard.ts`) count Repeat passes
+as they count For Each's.
+
+**The route comes from the dispatch** (`runtime/io-policy.ts`,
+`runtime/executor/node-execution.ts`). An action names the route a success
+takes by putting `route: "<output id>"` in its result payload. The executor
+keeps it only when the node's definition declares that output with role
+`branch` (an importer node's declared outputs travel from
+`runtime/native-node-runtime.ts`); otherwise the route stays `success`. A
+failed dispatch is `failed` whatever it says. The build's test reads the same
+answer as `core.replay.ended` ([the walker](#the-walker)). A stored do-while
+Flow reads back as that routing on the read
+(`runtime/llm/node-tools/{seeded-loops,draft-from-flow}.ts`), so it can be
+repaired.
+
+**Collection.** Each pass of the read is a new attempt, so it appends a new
+batch to the read's own dataset: assembly always writes an extraction's
+`recordOutput` (`runtime/flow-bootstrap/authoring/assembled-record-output.ts`),
+its id the slug of the step's words then its stable step id
+(`<slug>-<stepId>`), its write mode `append` unless the model wrote
+`replace`. What the run keeps of those rows is decided when the run ends: see
+[record outputs and run-end processing](../automation-studio-native-nodes.md#record-outputs-and-run-end-processing).
+
 ### Selecting a terminal recovery cause
 
 Terminal recovery selects the newest failed or unknown attempt that has no later successful attempt of the same node. Both canonical execution callbacks and the durable annotation fallback use this selector. It preserves every historical attempt and the actual run status: a graph can still fail after all action faults have healed. Genuine unresolved failures and result-refutation attempts remain eligible, while no unresolved attempt retains the provider-free no-failed-attempt refusal.
@@ -591,6 +662,13 @@ delta, including zero when nothing was sent. Whole-test, current-signature,
 lasting-effect and permission gates remain authoritative.
 
 ### Paging Evidence Sent To The Result Judge
+
+This describes the read account as the code has it today, in which a read's
+account may still carry pages it followed, a stop and a page bound. Under the
+read-list redesign a read reads one page and the Flow pages with a do-while
+`repeat` ([a list that continues](#a-list-that-continues)); stage S3, not
+done, retires this paging account
+(`runtime/result-verification/read-account/`) in favour of the loop's passes.
 
 The result verifier adds paging wording to its provider-facing summary copy after unread-column annotation. A consistent observed end with no truncation and plausible page counts states the observed end and omits the authored page limit on that copy. Real page-bound termination retains the limit and incomplete-list advice. Missing or unknown stop, contradictory truncation, impossible counts and an absent first-page continuation control retain the facts and uncertainty. This projection changes no verdict, default bound, executed read or durable raw account; the saved evidence remains available unchanged. Owner regressions cover the actual judge request as well as the projection boundaries; live extraction acceptance remains a separate requirement.
 
