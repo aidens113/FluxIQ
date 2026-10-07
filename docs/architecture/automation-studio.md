@@ -1927,3 +1927,7 @@ controller and inherits the run's abort signal.
 Stop is cooperative. It prevents later dispatch/promotion but cannot undo effects
 already dispatched to an external system. Providers/tools that ignore AbortSignal
 may finish their current work; their late result cannot authorize another action.
+
+### Trusted loaded-module identity
+
+`bindNativeNodeRuntime` accepts an optional bounded `TrustedModuleBuildIdentity` supplied by trusted host registration. A focused service-owned registry captures a frozen descriptor before the runtime assignment. The diagnostic exposes active loaded identities under its existing read permission; it does not inspect latest host files. Rebinding a changed descriptor on the retained owner refuses before registration; legacy unstamped binding clears active identity but preserves the original anchor. This additive signature preserves legacy callers while preventing them from attesting missing provenance. Downstream uses the seam for its independently bundled host; it does not attest the web server websocket adapter or establish transport authorization.
