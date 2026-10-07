@@ -47,7 +47,8 @@ describe("a paired client on the program route", () => {
   it("allowlists exactly the conversation, run and Simple Mode endpoints, and the secret-keys snapshot", () => {
     expect(PAIRED_CLIENT_ENDPOINTS).toEqual({
       "automation-studio": [
-        "list-conversations",
+        "get-runtime-build-identity",
+    "list-conversations",
         "open-conversation",
         "get-conversation",
         "append-turn",
