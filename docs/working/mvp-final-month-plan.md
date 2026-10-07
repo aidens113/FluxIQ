@@ -191,3 +191,9 @@ incomplete, with no reduction in the requested atomicity or outcome proof.
 - Validation: root SQL33/33 zero skips5.49s, literal current-built child SIGKILL/reopen2/2 zero skips2.55s, nonincremental Core tsc0/audit0. Merged actual t317 dev, root affected guard/ledger/private program owners51/51 zero skips26.62s, fresh nonincremental tsc0, actual owning build39.221s (6078 files). Combined-built child rerun/audit integration follows.
 - Limits: actual original all-writer/global canonical owner/capture/pinned reader/execution/acceptance joins absent. Result and read-only release evidence remain trusted producer assertions. Read/open may create/migrate DB and is not authority admission. No panel/provider/fullsuite.
 - Follow-up: downstream closes first then Core under observed narrow gates; t323 closed one-effect run admission and scoped global canonical owner routing next. Neither can activate or certify multi-command production before serial joins.
+
+
+### 2026-10-07 - t327 runtime completion event authority
+- Changed: removed generic transport client.action_result -> runtime command.result forwarding; gateway diagnostics and other transport observations retained. RuntimeService owns awaited completion; documented public observer compatibility effect. No executor/context activation.
+- Validation: actual owning fail-first8cases4failed/4passed1.87s; after fix owning transport8/runtime16/gateway16 passed40/40 zero skips2.20s. Actual nonincremental Core typecheck exit0; Core structure audit exit0 (281 warnings/349 baseline). Downstream task structure gate follows. No build claimed: public signatures and dependency contracts unchanged. No provider/panel/full suite.
+- Follow-up: integrate t323 closed run admission then trusted outcome tickets and executor consumption on both IO paths, with unknown/resume/repair/bounds fences. No whole-run durability claim.
