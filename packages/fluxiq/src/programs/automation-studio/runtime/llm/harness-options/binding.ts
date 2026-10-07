@@ -130,6 +130,16 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * nothing is left out.
    */
   rowContextKeys?: readonly string[];
+  /**
+   * Where a list read's answer holds the records it kept, written `holder.member`
+   * as in `observedStateKeys` -- for the web domain, `read.extracted`. A repair
+   * compares a rerun of the read a judged test blamed with the rows Core's check
+   * named (`../node-tools/rerun-checked-rows.ts`, live run
+   * `run-mux6naez-6c20f26e`, R3-3), and only the domain knows which member is
+   * the kept rows rather than the rejected ones. Absent, only an answer that
+   * names its rows under Core's own `readRows` is compared.
+   */
+  readRowsKey?: string;
   tools: AutomationStudioLlmEvidenceTool[];
   /**
    * Whether this domain can run a node of the library against its live target,

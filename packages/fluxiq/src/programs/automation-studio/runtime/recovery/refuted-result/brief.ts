@@ -65,7 +65,7 @@
 // carries the run's own record -- what each step changed, and the page before
 // and after the run, as the check was shown them -- and a last section: where
 // that record contradicts the check, complete the seeded draft unchanged with
-// the reason as the summary, and Core ends the repair there
+// `nothingToChange: true` and the reason as the summary, and Core ends the repair there
 // (`./nothing-to-change.ts`). It is said as the exception it is: a fix the
 // record supports is still made.
 
@@ -135,8 +135,8 @@ const NOT_RUN_LINES: readonly string[] = [
  */
 const NOTHING_TO_CHANGE_LINES: readonly string[] = [
   "When the Flow needs no change:",
-  "The check reads the run and can be wrong. If what the run itself recorded above -- each step's change, and the page before and after -- shows the Flow did every act the request asks for, with the item, option, size and quantity it names, and that what the check calls wrong did not happen, the Flow needs no change. Then complete with your draft exactly as it was seeded: amend nothing and rerun nothing. Your completion summary is your reason: name the steps and what each changed that shows it. Core then changes nothing, tests nothing and ends this repair, recording your reason beside the check's verdict, which stands.",
-  "This is not a way out of a fix. Where the record shows a step did something else, does not show an act was done, or does not settle what the check says, make the fix as above. An unchanged completion ends the repair this way."
+  "The check reads the run and can be wrong. If what the run itself recorded above -- each step's change, and the page before and after -- shows the Flow did every act the request asks for, with the item, option, size and quantity it names, and that what the check calls wrong did not happen, the Flow needs no change. Then complete with your draft exactly as it was seeded and nothingToChange: true in the result: amend nothing and rerun nothing. Your completion summary is your reason: name the steps and what each changed that shows it. Core then changes nothing, tests nothing and ends this repair, recording your reason beside the check's verdict, which stands.",
+  "This is not a way out of a fix. Where the record shows a step did something else, does not show an act was done, or does not settle what the check says, make the fix as above. Only a completion that says nothingToChange: true, of the Flow as it was seeded, ends the repair this way."
 ];
 
 /**

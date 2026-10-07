@@ -430,7 +430,7 @@ describe("a re-author that concludes the Flow needs no change", () => {
   function serviceBuild(completedWith: readonly AutomationStudioFlowDraftStep[]) {
     return vi.fn(async (_request: unknown, _brief: unknown, _costLeftUsd: number, _startPages: unknown, watch?: AutomationStudioReauthorEndingWatch) => {
       try {
-        const ended = watch?.completed({ seed: seeded, steps: completedWith, result: { summary: REASON } });
+        const ended = watch?.completed({ seed: seeded, steps: completedWith, result: { summary: REASON, nothingToChange: true } });
         if (ended) throw ended;
       } catch (error) {
         throw automationStudioFlowBootstrapGenerationCatch(error, "provider_output_validation", undefined, "flow_bootstrap.provider_output_validation_failed", 3);

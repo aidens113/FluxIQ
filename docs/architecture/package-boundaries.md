@@ -122,14 +122,25 @@ dry-run gate directly.
   keys are used).
 - `resultReauthor.outcome: "nothing_to_change"` with `reason` (or
   `reasonWithheld`): a wrong-answer re-author completed its seeded draft
-  unchanged; nothing was approved, applied, held or re-run, and the check's
-  verdict stands (`recovery/refuted-result/nothing-to-change.ts`). The build
-  ends there only where its completion check asks the watch
+  unchanged and said `nothingToChange: true` in its result (an unchanged
+  completion that does not say it, such as a wrap-up's, goes on as before);
+  nothing was approved, applied, held or re-run, and the check's
+  verdict stands (`recovery/refuted-result/nothing-to-change.ts`). The
+  service's build hands its completion check the watch
   (`AutomationStudioReauthorEndingWatch`, the optional fifth argument of
-  `AutomationStudioReauthorBuildDependencies.generate`).
+  `AutomationStudioReauthorBuildDependencies.generate`), and the run's ending
+  says "the repair found nothing in the Flow to change".
 - `AutomationStudioBuildTestVerdict` and a repair judgement's `judge` carry
-  `checkedRows` beside `checked`; `automationStudioRequestRowsAfterRerun` says
-  which of them a rerun of the read keeps.
+  `checkedRows` beside `checked`; a rerun of a read in such a repair answers
+  `checkedRowsNow` (`llm/node-tools/rerun-checked-rows.ts`), reading Core's
+  `readRows` or the binding's new `readRowsKey` (where a live read keeps its
+  records, `holder.member`; absent, a live read is not compared).
+- A repair judgement's `judge` carries `testStepIsDraftStep` where the judged
+  test numbered the round's steps otherwise than the repair seed; Core's own
+  step numbers in it (`checked`, `fix`, `checkedRows`, `untestedCarried`) are
+  the seed's (`flow-bootstrap/unfinished-build/test-step-numbers.ts`).
+- `automationStudioObservedTestTool`: the phases' test of a stopped round's
+  Flow is said in the chat as the loop's own test is.
 
 **Changed.**
 - A finished run's step changes skip a diff that reports `documentChanged`, not

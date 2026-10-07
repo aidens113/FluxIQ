@@ -79,3 +79,35 @@ describe("a downgraded build-test yes, as the next round reads it", () => {
     }
   });
 });
+
+// Live run `run-mux6naez-6c20f26e` (report `fix-judges-e.md`, question 2): the
+// test numbers the round's steps as its draft did, exploratory steps and all,
+// so the check called the read "Step 9"; the repair's seed numbers the Flow's
+// steps again from 1, where it was step 5, and whereToFix said so. One read,
+// two numbers. Core's own numbers now follow the seed, and the judge's words
+// are read through a map.
+describe("a judged test whose round explored steps the Flow leaves out, as the repair reads it", () => {
+  /** Steps 1-10 as the round's draft numbered them; 2-5 were exploratory, so the Flow's steps 6-10 are the seed's 2-6. */
+  const explored = (): AutomationStudioFlowDraftStep[] => Array.from({ length: 10 }, (_, index) => ({ ...step(index + 1), ...(index >= 1 && index <= 4 ? { disposition: "exploratory" as const } : {}) }));
+
+  it("names the read by the seed's number in Core's lines and rows, and maps the test's numbers to the draft's", async () => {
+    const { judge, instruction: said } = await nextRound(explored());
+    const checked = (judge.checked as string[]).join("\n");
+    const fix = (judge.fix as string[]).join("\n");
+    expect(checked).toMatch(/\(Step 6\)|^Step 6:/mu);
+    expect(checked).not.toMatch(/Step 10\b/u);
+    expect(fix).toMatch(/\(Step 6\)|^Step 6:/mu);
+    expect(fix).not.toMatch(/\(Step 10\)|^Step 10:/mu);
+    expect(judge.checkedRows).toEqual([{ step: 6, condition: "name", rows: RUN_MUW60J7C_PAIRS_LEFT_OUT.map((label) => ({ label })) }]);
+    expect(judge.testStepIsDraftStep).toEqual({ "6": 2, "7": 3, "8": 4, "9": 5, "10": 6 });
+    expect(said).toContain("judgement.judge.testStepIsDraftStep maps each test step number that differs");
+    expect(said).toContain("judgement.judge.checkedRows lists the same rows by read and condition");
+  });
+
+  it("changes nothing when the round's draft numbered the Flow's steps as the seed does", async () => {
+    const { judge, instruction: said } = await nextRound([step(1), step(2)]);
+    expect(judge).not.toHaveProperty("testStepIsDraftStep");
+    expect(said).not.toContain("testStepIsDraftStep");
+  });
+});
+

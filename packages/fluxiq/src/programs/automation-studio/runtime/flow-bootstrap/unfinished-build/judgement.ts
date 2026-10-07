@@ -73,6 +73,7 @@ import { automationStudioFlowDraftCopyScheduledCandidate } from "../../flow-draf
 import { automationStudioFlowDraftFlowSignature, automationStudioFlowDraftReplayOutcomeWord, automationStudioFlowDraftReplaySignature, automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import type { AutomationStudioRequestRowsNamed } from "../../result-verification/request-rows/index.ts";
 import { automationStudioInstructedActsNotDone, type AutomationStudioInstructedActChecklistItem } from "../instructed-acts/index.ts";
+import { automationStudioFlowBootstrapJudgeInSeedNumbers } from "./test-step-numbers.ts";
 import type {
   AutomationStudioFlowBootstrapJudgeReading,
   AutomationStudioFlowBootstrapJudgedWrong,
@@ -191,7 +192,8 @@ export function automationStudioFlowBootstrapJudgeFinished(input: {
   const workedIds = new Set(input.steps.filter((step) => step.replayed?.status === "replayed" && step.id !== undefined).map((step) => step.id));
   const checkedIds = new Set(input.steps.filter((step) => step.id !== undefined && checkedOnly([step]).size > 0).map((step) => step.id));
   const { done, todo, proven, checked } = checklistRead(input.checklist(seed), new Set(seed.filter((step) => step.id !== undefined && workedIds.has(step.id)).map((step) => step.position)), new Set(seed.filter((step) => step.id !== undefined && checkedIds.has(step.id)).map((step) => step.position)));
-  const judge = judgedWrong(input.verdict);
+  // In the seed's step numbers: the test numbered them as the round's draft did (`./test-step-numbers.ts`).
+  const judge = automationStudioFlowBootstrapJudgeInSeedNumbers(judgedWrong(input.verdict), input.steps);
   // A verdict that judged nothing, or another Flow's test, is no evidence this Flow ran: a `no` is always about the loop's own test.
   const testedThisFlow = input.verdict.verdict === "no" || input.verdict.flowSignature === automationStudioFlowDraftFlowSignature(input.steps);
   const notRun = automationStudioFlowBootstrapStepsNotRunInThisBuild(seed);
@@ -375,6 +377,8 @@ function judgeValue(judge: AutomationStudioFlowBootstrapJudgedWrong): JsonObject
     // The rows `checked` names per read and condition, for the repair loop to compare a rerun of that read with (`result-verification/request-rows/rerun-rows.ts`, R3-3).
     ...(judge.checkedRows?.length ? { checkedRows: judge.checkedRows.map(namedValue) } : {}),
     ...(judge.untestedCarried?.length ? { untestedCarried: [...judge.untestedCarried] } : {}),
+    // How the judge's own step numbers read in the draft's (`./test-step-numbers.ts`; `resume.ts` says what it is).
+    ...(judge.testStepIsDraftStep ? { testStepIsDraftStep: { ...judge.testStepIsDraftStep } } : {}),
     // An unknown's one unconfirmed reading, under its own key so it is never read as a no (`resume.ts` says what it is).
     ...(judge.unconfirmedReading ? { unconfirmedReading: { ...judge.unconfirmedReading } } : {})
   };

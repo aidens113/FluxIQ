@@ -121,7 +121,7 @@ describe("the repair brief, on a Flow that needs no change", () => {
     const section = body.slice(body.indexOf("When the Flow needs no change:"));
     expect(body.indexOf("When the Flow needs no change:")).toBeGreaterThan(body.indexOf("What to do:"));
     expect(section).toContain("The check reads the run and can be wrong.");
-    expect(section).toContain("complete with your draft exactly as it was seeded: amend nothing and rerun nothing");
+    expect(section).toContain("complete with your draft exactly as it was seeded and nothingToChange: true in the result: amend nothing and rerun nothing");
     expect(section).toContain("Your completion summary is your reason");
     expect(section).toContain("Core then changes nothing, tests nothing and ends this repair");
     expect(section).toContain("the check's verdict, which stands");

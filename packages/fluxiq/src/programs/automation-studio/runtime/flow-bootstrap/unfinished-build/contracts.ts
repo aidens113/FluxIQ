@@ -132,6 +132,15 @@ export type AutomationStudioFlowBootstrapJudgedWrong = {
   checkedRows?: AutomationStudioRequestRowsNamed[];
   untestedCarried?: number[];
   /**
+   * Where the test numbered the round's steps otherwise than the repair seed
+   * does (exploratory steps left out, the rest numbered from 1): each changed
+   * test step number, as a string, to the draft step it now is. Core's own
+   * numbers above are already the seed's; the judge's words are not rewritten,
+   * and are read through this (`./test-step-numbers.ts`, live run
+   * `run-mux6naez-6c20f26e`: "Step 9" in `checked`, step 5 in `whereToFix`).
+   */
+  testStepIsDraftStep?: Record<string, number>;
+  /**
    * An `unknown`'s only: the reading of the one judge call that said the test
    * does not do what was asked, which the other call did not confirm (live run
    * murwcmx2). Information for the repair to weigh against the rows, never a

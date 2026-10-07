@@ -68,7 +68,7 @@ import {
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
 import { automationStudioLlmFailedDecisionFeedback, automationStudioLlmFailedDecisionUsage } from "./failed-decision/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioNodeRerunAnswer, automationStudioNodeRerunFromItsPlace } from "./node-tools/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioLlmEvidenceRerunCheckedRows, automationStudioNodeRerunAnswer, automationStudioNodeRerunFromItsPlace } from "./node-tools/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "./build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
 import {
@@ -440,7 +440,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       return next.kind === "end" ? next.result : undefined;
     }
     ({ before: stateBefore, after: stateAfter } = statesOf(execution, stateBefore, stateAfter));
-    const { evidence: value, effectApplied, resultCode } = execution;
+    const { effectApplied, resultCode } = execution; const value = automationStudioLlmEvidenceRerunCheckedRows(execution.evidence, { replaces: rerunReplaces, judgement: input.draft === false ? undefined : input.draft?.resume?.judgement, deniedEvidenceKeys: input.deniedEvidenceKeys, readRowsKey: input.readRowsKey }); // A rerun of the read a judged test blamed says which rows Core's check named it keeps now (R3-3, `./node-tools/rerun-checked-rows.ts`).
     const evidenceBytes = Buffer.byteLength(JSON.stringify(value), "utf8");
     accounting.toolCalls += 1;
     accounting.evidenceBytes += evidenceBytes;

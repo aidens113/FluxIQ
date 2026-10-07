@@ -24,7 +24,7 @@ const seed = (): AutomationStudioFlowDraftStep[] => Array.from({ length: 11 }, (
 describe("a re-author that completes its seeded draft unchanged", () => {
   it("ends the build at that completion: no test, no further decision, and the reason kept", async () => {
     const watch = automationStudioReauthorEndingWatch();
-    const decide = vi.fn(async () => ({ kind: "complete", result: { summary: REASON } }));
+    const decide = vi.fn(async () => ({ kind: "complete", result: { summary: REASON, nothingToChange: true } }));
     const executeTool = vi.fn(async (_call: { toolId: string }) => ({ seen: true }));
     // The build's completion check as the service wires it: the watch first, before anything is checked or tested.
     const checkCompletion = vi.fn(async (result: JsonObject, context: { steps: readonly AutomationStudioFlowDraftStep[] }) => {
@@ -53,8 +53,20 @@ describe("a re-author that completes its seeded draft unchanged", () => {
     const watch = automationStudioReauthorEndingWatch();
     // Live run muw5zv4m reran step 9 with its own arguments many times; the Flow is the same Flow.
     const rerun = seed().map((step) => step.position === 9 ? { ...step, id: "d40", callId: "c40", iteration: 40 } : step);
-    expect(watch.completed({ seed: seed(), steps: rerun, result: { summary: REASON } })).toBeInstanceOf(Error);
+    expect(watch.completed({ seed: seed(), steps: rerun, result: { summary: REASON, nothingToChange: true } })).toBeInstanceOf(Error);
     expect(watch.said()).toEqual({ reason: REASON });
+  });
+});
+
+describe("a completion of the unchanged seed that does not say so", () => {
+  // A loop's wrap-up that offers no more calls forces a completion of the draft as it stands, and a
+  // model that only reran carried steps completes the same Flow: neither judged the check wrong
+  // (the service's `repair-purse-chain` test's provider completes "Unfinished." when no call is offered).
+  it("is not this ending: the completion goes on as before", () => {
+    const watch = automationStudioReauthorEndingWatch();
+    expect(watch.completed({ seed: seed(), steps: seed(), result: { summary: "Unfinished." } })).toBeUndefined();
+    expect(watch.completed({ seed: seed(), steps: seed(), result: { summary: REASON, nothingToChange: "yes" } })).toBeUndefined();
+    expect(watch.said()).toBeUndefined();
   });
 });
 
@@ -62,15 +74,15 @@ describe("a re-author that changed the Flow", () => {
   it("is not this ending: the completion goes on to be checked and tested as before", () => {
     const watch = automationStudioReauthorEndingWatch();
     const fixed = seed().map((step) => step.position === 9 ? { ...step, input: { target: "t-other" }, ranWith: { target: "t-other" } } : step);
-    expect(watch.completed({ seed: seed(), steps: fixed, result: { summary: "Step 9 now opens the 12 Double Rolls listing." } })).toBeUndefined();
+    expect(watch.completed({ seed: seed(), steps: fixed, result: { summary: "Step 9 now opens the 12 Double Rolls listing.", nothingToChange: true } })).toBeUndefined();
     expect(watch.said()).toBeUndefined();
   });
 
   it("is not this ending with no seed or nothing in the Flow", () => {
     const watch = automationStudioReauthorEndingWatch();
-    expect(watch.completed({ seed: [], steps: seed(), result: { summary: REASON } })).toBeUndefined();
-    expect(watch.completed({ seed: undefined, steps: seed(), result: { summary: REASON } })).toBeUndefined();
-    expect(watch.completed({ seed: seed(), steps: [], result: { summary: REASON } })).toBeUndefined();
+    expect(watch.completed({ seed: [], steps: seed(), result: { summary: REASON, nothingToChange: true } })).toBeUndefined();
+    expect(watch.completed({ seed: undefined, steps: seed(), result: { summary: REASON, nothingToChange: true } })).toBeUndefined();
+    expect(watch.completed({ seed: seed(), steps: [], result: { summary: REASON, nothingToChange: true } })).toBeUndefined();
     expect(watch.said()).toBeUndefined();
   });
 });
@@ -78,13 +90,13 @@ describe("a re-author that changed the Flow", () => {
 describe("the reason, screened like the brief's other text", () => {
   it("withholds a credential-shaped reason whole and still ends", () => {
     const watch = automationStudioReauthorEndingWatch();
-    expect(watch.completed({ seed: seed(), steps: seed(), result: { summary: "Bearer sk-live-0123456789abcdef0123456789abcdef already did it" } })).toBeInstanceOf(Error);
+    expect(watch.completed({ seed: seed(), steps: seed(), result: { summary: "Bearer sk-live-0123456789abcdef0123456789abcdef already did it", nothingToChange: true } })).toBeInstanceOf(Error);
     expect(watch.said()).toEqual({ reasonWithheld: true });
   });
 
   it("rewrites a locator inside the reason and says so", () => {
     const watch = automationStudioReauthorEndingWatch();
-    watch.completed({ seed: seed(), steps: seed(), result: { summary: "Step 11 pressed #qty-plus > button.inc twice and the line reads Qty 2." } });
+    watch.completed({ seed: seed(), steps: seed(), result: { summary: "Step 11 pressed #qty-plus > button.inc twice and the line reads Qty 2.", nothingToChange: true } });
     const said = watch.said();
     expect(said?.reasonWithheld).toBe(true);
     expect(said?.reason).toBeDefined();

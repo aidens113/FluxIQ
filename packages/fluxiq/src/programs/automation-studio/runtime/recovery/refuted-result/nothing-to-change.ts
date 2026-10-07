@@ -13,8 +13,13 @@
 // **The ending reuses a decision the model already has.** A re-author that
 // completes with its draft exactly as it was seeded -- the same Flow signature
 // (`../../flow-draft/flow-signature.ts`), the rule the unchanged-completion
-// refusal already uses -- says the Flow needs no change, and its completion
-// summary is its reason. No new tool, no new schema field.
+// refusal already uses -- and says so, `nothingToChange: true` in its
+// completion's result, ends saying the Flow needs no change; its completion
+// summary is its reason. No new tool. The word is required, not inferred: a
+// completion of the unchanged seed is also what a loop's wrap-up forces when
+// it offers no more calls, and what a model that only reran carried steps
+// sends, and neither is a judgement that the check was wrong (the service's
+// `repair-purse-chain` test's provider is the first).
 //
 // **What Core does with it.** The build's completion check asks this watch
 // before anything else is checked or tested (`runtime/service.ts`, the build's
@@ -43,6 +48,9 @@ import { automationStudioLocatorShapedText, automationStudioWithoutLocators, scr
 /** The outcome a re-author that found nothing to change is recorded under (`resultReauthor.outcome`). */
 export const AUTOMATION_STUDIO_REAUTHOR_NOTHING_TO_CHANGE = "nothing_to_change";
 
+/** The member of a completion's result by which a re-author says the Flow needs no change. */
+export const AUTOMATION_STUDIO_REAUTHOR_NOTHING_TO_CHANGE_FIELD = "nothingToChange";
+
 /** What the re-author said: its reason, screened, and whether anything of it was withheld. */
 export type AutomationStudioReauthorNothingToChange = { reason?: string; reasonWithheld?: true };
 
@@ -50,8 +58,9 @@ export type AutomationStudioReauthorNothingToChange = { reason?: string; reasonW
 export type AutomationStudioReauthorEndingWatch = {
   /**
    * Asked by the build's completion check, before it checks or tests anything.
-   * Answers the error the check throws to end the build, when the completed
-   * draft is the seed unchanged; nothing otherwise.
+   * Answers the error the check throws to end the build, when the completion
+   * says `nothingToChange: true` and its draft is the seed unchanged; nothing
+   * otherwise.
    */
   completed(input: {
     /** The Flow the re-author started from: its draft as seeded. */
@@ -70,6 +79,7 @@ export function automationStudioReauthorEndingWatch(): AutomationStudioReauthorE
   let said: AutomationStudioReauthorNothingToChange | undefined;
   return {
     completed({ seed, steps, result }) {
+      if (result[AUTOMATION_STUDIO_REAUTHOR_NOTHING_TO_CHANGE_FIELD] !== true) return undefined;
       if (!seed?.length || !steps.some(automationStudioFlowDraftStepIsProposed)) return undefined;
       if (automationStudioFlowDraftFlowSignature(steps) !== automationStudioFlowDraftFlowSignature(seed)) return undefined;
       said = screenedReason(result.summary);
