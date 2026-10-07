@@ -100,10 +100,10 @@ describe("an extraction with no declared columns", () => {
     expect(unmatched[0]!.message).toContain("\"stars\"");
   });
 
-  it("no named column matching any field declares nothing, and says so", () => {
+  it("no named column matching any field stores every field it reads, and says so", () => {
     const { recordOutput, issues } = assembled({ extractList: RUN_12_READ }, "Collect the earbuds with columns title and cost.");
 
-    expect(recordOutput).toBeNull();
+    expect(declaredIds(recordOutput)).toEqual(["name", "price", "rating", "url", "plus", "ad"]);
     expect(issues.find((issue) => issue.code === "record_output.named_column_unmatched")?.message).toContain("every field it reads");
   });
 
@@ -128,12 +128,18 @@ describe("what is left alone", () => {
     expect(issues.filter((issue) => issue.code === "record_output.named_column_unmatched")).toEqual([]);
   });
 
-  it("an instruction that names no columns leaves the record output empty", () => {
-    expect(assembled({ extractList: RUN_12_READ }, "Find every pair of Plus earbuds under $50.").recordOutput).toBeNull();
+  // Since read-list S1 a read is never left without a record output
+  // (`./read-record-output.test.ts`): with no column named, it stores every
+  // field it reads, in a dataset of its own step.
+  it("an instruction that names no columns stores every field the read reads", () => {
+    const { recordOutput } = assembled({ extractList: RUN_12_READ }, "Find every pair of Plus earbuds under $50.");
+
+    expect(declaredIds(recordOutput)).toEqual(["name", "price", "rating", "url", "plus", "ad"]);
+    expect(recordOutput).toMatchObject({ datasetId: "read-the-results-p1", label: "read the results" });
   });
 
-  it("a build with no instruction text leaves the record output empty", () => {
-    expect(assembled({ extractList: RUN_12_READ }, undefined).recordOutput).toBeNull();
+  it("a build with no instruction text stores every field the read reads", () => {
+    expect(declaredIds(assembled({ extractList: RUN_12_READ }, undefined).recordOutput)).toEqual(["name", "price", "rating", "url", "plus", "ad"]);
   });
 });
 

@@ -63,12 +63,11 @@
 // "+" (steps 0063-0065), and the Flow lost its Add to cart.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
-  automationStudioFlowDraftConditionalStepIds,
+  automationStudioFlowDraftExemptStepIds,
   automationStudioFlowDraftDryRunVerdict,
   automationStudioFlowDraftReplayOutcomeWord,
   automationStudioFlowDraftSometimesPresentStepIds,
   automationStudioFlowDraftStepIsProposed,
-  automationStudioFlowDraftWithheldStepIds,
   type AutomationStudioFlowDraftReplayOutcome,
   type AutomationStudioFlowDraftStep,
   type AutomationStudioFlowDraftStepWords
@@ -191,7 +190,7 @@ function stepsBefore(steps: readonly AutomationStudioFlowDraftStep[], step: Auto
  * not rewritten here: a step the gate would make optional is only passed.
  */
 function firstBlocking(steps: readonly AutomationStudioFlowDraftStep[], outcomes: readonly AutomationStudioFlowDraftReplayOutcome[]): AutomationStudioFlowDraftReplayOutcome | undefined {
-  const excused = new Set([...automationStudioFlowDraftConditionalStepIds(steps), ...automationStudioFlowDraftWithheldStepIds(outcomes)]);
+  const excused = automationStudioFlowDraftExemptStepIds(steps, outcomes);
   const verdict = automationStudioFlowDraftDryRunVerdict({ attempt: 0, reset: "ok", outcomes, conditional: excused });
   if (verdict.ok) return undefined;
   for (const id of automationStudioFlowDraftSometimesPresentStepIds({ steps, verdict })) excused.add(id);

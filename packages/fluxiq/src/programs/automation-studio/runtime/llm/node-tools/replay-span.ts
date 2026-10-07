@@ -22,14 +22,31 @@
 //             (`resolveAutomationNodeParameterValues`), so an input takes its
 //             test value and a row field the pass's row. More rows than a For
 //             Each takes fail the span, as the For Each fails the Flow.
-//   while  -- the check has just been asked, on its own line. While it
-//             replays, the body runs once and the check is asked again. Past
-//             the same bound the span fails.
+//   while  -- the check has just been asked, on its own line, and held. While
+//             it replays, the body runs once and the check is asked again.
+//             Past the same bound the span fails. A check whose own ask did
+//             not hold runs the span zero times in the Flow, so no loop is
+//             planned on it; the walker excuses that check (`./replay-draft.ts`).
+//
+// **A do-while (read-list design S2, 4.2(e))** -- a span whose first step
+// repeats `while` its last step succeeds (`../../flow-draft/routing.ts`) -- is
+// planned from the routing alone: it needs no listing and no node. Its members
+// run pass by pass, as the Repeat node runs them in the Flow. After a pass, the
+// last member answering `core.replay.ended` (`./replay.ts`) is that pass
+// passing and the loop ending, as the next page's `ended` route leaves the
+// Flow's loop; `replayed` runs another pass; anything else is that member's
+// pass failing, as a list's pass fails, and the loop goes no further, since
+// the Flow stops there. The bound is the routing's `most`, else the Repeat
+// node's own default, and reaching it ends the loop: not a failure, unlike a
+// list's bound, because the Repeat node leaves on `done` and the Flow carries
+// on. `ended` from any other member, or outside a do-while, reads as `failed`.
+// A last member the test only checks never moves on, so the span runs once.
 //
 // **When the test knows no rows, nothing changes.** A list step that was only
 // checked or did not replay, a host that sends no `outputs`, rows that are not
-// records, or a caller that cannot describe the nodes: the span is not
-// planned here and the walker sends it once, excused, exactly as before t252.
+// records, or a caller that cannot describe the nodes: a repeat over a list or
+// a check is not planned here and the walker sends it once, excused, exactly
+// as before t252.
 //
 // **What a member's outcome says.** Every pass's status, and the status of its
 // first pass that did not pass, else `replayed`. A pass answering
@@ -61,9 +78,10 @@
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "../../flow-draft/scheduled-candidate/index.ts";
-import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../../nodes/index.ts";
+import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues, type AutomationStudioNodeDefinition } from "../../../nodes/index.ts";
 import {
   automationStudioFlowDraftHoldsBinding,
+  automationStudioFlowDraftRepeatIsWhile,
   automationStudioFlowDraftStepId,
   automationStudioFlowDraftStepOutputsState,
   type AutomationStudioFlowDraftReplayMode,
@@ -108,6 +126,12 @@ const WITHHELD_LABEL = "(withheld)";
 /** The For Each node the assembler builds a list loop from, whose bound the test applies. */
 const FOR_EACH_NODE_ID = "builtin.control.for-each";
 
+/** The Repeat node the assembler builds a do-while from, whose default bound the test applies. */
+const REPEAT_NODE_ID = "builtin.control.repeat";
+
+/** The Repeat node's own default, should its definition not be found: the read's old page ceiling. */
+const REPEAT_DEFAULT_MOST = 50;
+
 /**
  * What the test needs to know of a step's node: its ports. Structurally the
  * build's catalog entry (`../../flow-bootstrap/plan/contracts.ts`), so a caller
@@ -122,6 +146,15 @@ export type AutomationStudioFlowDraftReplayNode = {
 /** The node a step names, by the step's `actionId`, or nothing for a node the caller cannot describe. */
 export type AutomationStudioFlowDraftReplayNodeOf = (nodeId: string) => AutomationStudioFlowDraftReplayNode | undefined;
 
+/**
+ * The full definition of the node a step names, by its `actionId`: what a call
+ * needs to carry the record output assembly writes on that step's node
+ * (`./replay.ts`, read-list S1), so the test's read sends what the stored
+ * Flow's read sends. The catalog entry `nodeOf` answers is what the model is
+ * shown and holds no parameter's control, so the two are looked up apart.
+ */
+export type AutomationStudioFlowDraftReplayDefinitionOf = (nodeId: string) => AutomationStudioNodeDefinition | undefined;
+
 /** One call's answer as the replay reads it; `readable: false` is a failed step, never a skipped one (`./replay-draft.ts`). */
 export type AutomationStudioFlowDraftReplayAnswer =
   | { readable: true; result: NonNullable<ReturnType<typeof automationStudioLlmEvidenceParseToolExecutionResult>> }
@@ -134,18 +167,31 @@ export type AutomationStudioFlowDraftReplayAnswer =
 export type AutomationStudioFlowDraftReplayObservation = { step: number; stepId?: string; resultCode?: string; evidence: JsonValue; pass?: number; of?: number };
 
 /**
- * A repeat the test runs as the Flow would: over the list's rows, or while its
- * check holds. A list's `labels` are its read's screened `readRows.rows`, when
- * it answered them: label n names row n.
+ * A repeat the test runs as the Flow would: over the list's rows, while its
+ * check holds, or pass by pass until its last member ends it (`do-while`, at
+ * most `most` passes). A list's `labels` are its read's screened
+ * `readRows.rows`, when it answered them: label n names row n.
  */
 export type AutomationStudioFlowDraftReplaySpanPlan =
   | { kind: "list"; members: AutomationStudioFlowDraftStep[]; over: AutomationStudioFlowDraftStep; rows: JsonObject[]; labels?: readonly string[] }
-  | { kind: "while"; members: AutomationStudioFlowDraftStep[]; over: AutomationStudioFlowDraftStep };
+  | { kind: "while"; members: AutomationStudioFlowDraftStep[]; over: AutomationStudioFlowDraftStep }
+  | { kind: "do-while"; members: AutomationStudioFlowDraftStep[]; most: number };
 
 /** How many passes one span may take: the bound the executor's For Each applies when the assembler sets none. */
 export function automationStudioFlowDraftReplayLoopBound(): number {
   const bound = getAutomationNodeDefinition(FOR_EACH_NODE_ID)?.parameters.find((parameter) => parameter.id === "maxIterations")?.defaultValue;
   return typeof bound === "number" && Number.isInteger(bound) && bound > 0 ? bound : 100;
+}
+
+/**
+ * How many passes a do-while takes: its routing's `most`, else the bound the
+ * Repeat node applies when the assembler writes none, read from its definition
+ * as the For Each's is above.
+ */
+function repeatBound(most?: number): number {
+  if (typeof most === "number" && Number.isInteger(most) && most > 0) return most;
+  const bound = getAutomationNodeDefinition(REPEAT_NODE_ID)?.parameters.find((parameter) => parameter.id === "most")?.defaultValue;
+  return typeof bound === "number" && Number.isInteger(bound) && bound > 0 ? bound : REPEAT_DEFAULT_MOST;
 }
 
 /**
@@ -162,17 +208,23 @@ export function automationStudioFlowDraftReplaySpanPlan(input: {
 }): AutomationStudioFlowDraftReplaySpanPlan | undefined {
   const first = input.run[input.index];
   const routing = first?.routing;
-  if (!first || routing?.kind !== "repeat" || !input.nodeOf) return undefined;
+  if (!first || routing?.kind !== "repeat") return undefined;
+  // A do-while names no earlier step: it is planned from its routing alone, and never reaches the plans over one (see the header).
+  if (automationStudioFlowDraftRepeatIsWhile(routing)) {
+    return { kind: "do-while", members: spanMembers(input.steps, input.run, input.index, routing.through), most: repeatBound(routing.most) };
+  }
+  if (!input.nodeOf) return undefined;
   const over = input.run.slice(0, input.index).find((candidate) => automationStudioFlowDraftStepId(candidate) === routing.over);
   const asked = over ? input.asked(over) : undefined;
   if (!over || !asked || asked.mode !== "replay" || !asked.answer.readable) return undefined;
   const node = input.nodeOf(over.actionId);
   if (!node) return undefined;
+  // A list that did not replay gave no rows, and a check that did not hold runs the span zero times: neither is a loop to run.
+  if (automationStudioNodeReplayStatus(asked.answer.result.resultCode, "replay") !== "replayed") return undefined;
   const members = spanMembers(input.steps, input.run, input.index, routing.through);
   const port = node.outputs.find((output) => output.type === "array")?.id;
   // A check is asked again on every pass, so the assembler puts it right before the span.
   if (port === undefined) return input.run[input.index - 1] === over ? { kind: "while", members, over } : undefined;
-  if (automationStudioNodeReplayStatus(asked.answer.result.resultCode, "replay") !== "replayed") return undefined;
   const rows = asked.answer.result.outputs?.[port];
   if (!Array.isArray(rows) || !rows.every(isRecord)) return undefined;
   const labels = rowLabels(asked.answer.result.evidence);
@@ -238,14 +290,17 @@ export function automationStudioFlowDraftReplayProduced(answer: AutomationStudio
  * `earlier`, what earlier steps produced in this test; the row under `item`
  * when the node takes it, and then no `produced`, which describes the
  * explored row. `unresolved` names the paths nothing answered; nothing is
- * sent then. Nothing at all for a step with nothing to run it with.
+ * sent then. Nothing at all for a step with nothing to run it with. With the
+ * node's full `definition`, the call carries the record output assembly writes
+ * on the step's node, as the stored Flow's does.
  */
 export function automationStudioFlowDraftReplayPassCall(
   step: AutomationStudioFlowDraftStep,
   mode: AutomationStudioFlowDraftReplayMode,
   row?: { item: JsonObject; takesRow: boolean },
   node?: AutomationStudioFlowDraftReplayNode,
-  earlier?: Record<string, JsonValue>
+  earlier?: Record<string, JsonValue>,
+  definition?: AutomationStudioNodeDefinition
 ): { value: JsonObject } | { unresolved: string[] } | undefined {
   const scheduled = automationStudioFlowDraftScheduledCandidateCall(step);
   if (step.scheduledCandidate !== undefined && (!scheduled || !node?.outputAction?.fixed)) return undefined;
@@ -257,7 +312,7 @@ export function automationStudioFlowDraftReplayPassCall(
     pass.parameters = resolved.values;
   }
   if (row?.takesRow) pass.item = row.item;
-  const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step, pass) : automationStudioNodeReplayStepCall(step, pass);
+  const value = mode === "verify" ? automationStudioNodeReplayVerifyCall(step, pass, definition) : automationStudioNodeReplayStepCall(step, pass, definition);
   if (!value) return undefined;
   if (pass.item !== undefined) delete value.produced;
   return { value };
@@ -266,7 +321,10 @@ export function automationStudioFlowDraftReplayPassCall(
 /** What running a span needs from the walker that found it. */
 export type AutomationStudioFlowDraftReplaySpanRunInput = {
   plan: AutomationStudioFlowDraftReplaySpanPlan;
-  nodeOf: AutomationStudioFlowDraftReplayNodeOf;
+  /** Absent only for a do-while, which is planned without one: no member then takes a row. */
+  nodeOf?: AutomationStudioFlowDraftReplayNodeOf | undefined;
+  /** Each member's full node definition, so a pass's read carries its assembled record output. */
+  definitionOf?: AutomationStudioFlowDraftReplayDefinitionOf | undefined;
   modeOf(step: AutomationStudioFlowDraftStep): AutomationStudioFlowDraftReplayMode;
   callIdOf(step: AutomationStudioFlowDraftStep): string;
   send(callId: string, step: AutomationStudioFlowDraftStep, value: JsonObject): Promise<AutomationStudioFlowDraftReplayAnswer>;
@@ -307,35 +365,59 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     const of = plan.kind === "list" ? plan.rows.length : undefined;
     return automationStudioLlmStepLogScope.pass({ pass, ...(of !== undefined ? { of } : {}), ...(label !== undefined ? { row: label } : {}) }, () => input.send(callId, step, value));
   };
-  // One pass of every member, on `row` for a list. True when the walk stops.
-  const runPass = async (pass: number, row?: JsonObject): Promise<boolean> => {
+  // The member whose `ended` answer ends a do-while (see the header).
+  const ender = plan.kind === "do-while" ? plan.members.at(-1) : undefined;
+  // One pass of every member, on `row` for a list: `stopped` when the walk
+  // stops, `ended` when a do-while's last member ended the loop, `failed` when
+  // a member did not pass, else `passed`.
+  const runPass = async (pass: number, row?: JsonObject): Promise<"stopped" | "ended" | "failed" | "passed"> => {
     // What the members before this one produced on this pass, and nothing of the pass before.
     const produced = new Map<string, JsonObject>();
+    let ended = false;
+    let failed = false;
     for (const member of plan.members) {
       const mode = input.modeOf(member);
+      const node = input.nodeOf?.(member.actionId);
       const earlier = { ...(input.earlier ?? {}), ...automationStudioFlowDraftStepOutputsState(produced) };
-      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(input.nodeOf(member.actionId)) } : undefined, input.nodeOf(member.actionId), earlier);
+      const built = automationStudioFlowDraftReplayPassCall(member, mode, row ? { item: row, takesRow: automationStudioFlowDraftReplayTakesRow(node) } : undefined, node, earlier, input.definitionOf?.(member.actionId));
       let answered: AutomationStudioFlowDraftReplayPass;
       if (built && "unresolved" in built) answered = { pass, status: "failed", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE };
       else {
         const callId = `${input.callIdOf(member)}.pass.${pass}`;
         const answer: AutomationStudioFlowDraftReplayAnswer = built ? await sendPass(pass, callId, member, built.value) : { readable: false };
-        const status = answer.readable ? automationStudioNodeReplayStatus(answer.result.resultCode, mode) : "failed";
+        // The loop ending on its last member's `ended` is that pass passing, not the step failing.
+        const ends = member === ender && answer.readable && answer.result.resultCode === AUTOMATION_STUDIO_NODE_REPLAY_RESULT_CODES.ended;
+        if (ends) ended = true;
+        const status = ends ? "replayed" : answer.readable ? automationStudioNodeReplayStatus(answer.result.resultCode, mode) : "failed";
         answered = { pass, status, ...(answer.readable && answer.result.resultCode ? { resultCode: answer.result.resultCode } : {}) };
         observe(member, callId, answer, status, pass);
         const outputs = automationStudioFlowDraftReplayProduced(answer, mode);
         if (outputs) produced.set(automationStudioFlowDraftStepId(member), outputs);
       }
       passes.get(member)!.push(answered);
-      if (answered.status !== "replayed" && input.stops?.(member)) return true;
+      if (answered.status !== "replayed") {
+        failed = true;
+        if (input.stops?.(member)) return "stopped";
+      }
     }
-    return false;
+    return failed ? "failed" : ended ? "ended" : "passed";
   };
   if (plan.kind === "list") {
     overBound = plan.rows.length > bound;
     for (const [at, row] of (overBound ? [] : plan.rows).entries()) {
       count = at + 1;
-      if (await runPass(count, row)) { stopped = true; break; }
+      if (await runPass(count, row) === "stopped") { stopped = true; break; }
+    }
+  } else if (plan.kind === "do-while") {
+    // A last member the test only checks never moves on, so the span runs once.
+    const once = ender !== undefined && input.modeOf(ender) === "verify";
+    // Reaching `most` ends the loop as the Repeat node's `done` does: no failure (see the header).
+    while (count < plan.most) {
+      count += 1;
+      const ran = await runPass(count);
+      if (ran === "stopped") { stopped = true; break; }
+      // Ended, or a pass that did not pass, which would stop the Flow there.
+      if (ran !== "passed" || once) break;
     }
   } else {
     // The check was asked on its own line just before this, and holds: the walker planned this span only on its answer.
@@ -346,7 +428,7 @@ export async function automationStudioFlowDraftReplaySpanRun(input: AutomationSt
     while (holds) {
       if (count >= bound) { overBound = true; break; }
       count += 1;
-      if (await runPass(count)) { stopped = true; break; }
+      if (await runPass(count) === "stopped") { stopped = true; break; }
       if (once) break;
       const built = automationStudioFlowDraftReplayPassCall(plan.over, checkMode, undefined, undefined, input.earlier);
       if (!built || "unresolved" in built) break;

@@ -20,6 +20,10 @@
 // `quantity-fault.ts` (how many) -- are absent for the reason the choice
 // evidence is: they are how the loop reaches its verdict, not what it offers.
 //
+// `act-evidence.ts` is published because what a claimed step did instead of
+// its act, and the step whose words name the act, are said on the checklist
+// and the verdict by the same sentence (W1).
+//
 // `choice-order.ts` is published because the choice made after its act's step
 // travels on the verdict and the checklist as information, typed by it.
 //
@@ -28,6 +32,7 @@
 // is asked about needs a step declaring it, and an act whose only step is
 // optional may never be done (run `run-musq0b1m-0472cfa0`, Cause 5). The check
 // and the checklist are information beside the test and its judge.
+export * from "./act-evidence.ts";
 export * from "./check.ts";
 export * from "./checklist.ts";
 export * from "./choice-order.ts";

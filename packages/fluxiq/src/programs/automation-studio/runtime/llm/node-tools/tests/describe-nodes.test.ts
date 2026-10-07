@@ -1,6 +1,6 @@
 // `core.describe_nodes`: the model asks for the definitions of the nodes it is
-// about to use, and gets a receipt -- the definitions are shown under
-// `flowBootstrap.describedNodes`, never in the call's result (t235).
+// about to use, and its result names them under `describedNodes` -- the request
+// shows each definition there, in place of its id (t235; t289-G, W11).
 
 import { describe, expect, it } from "vitest";
 import { automationStudioActionPermissionDenied } from "../../../action-permissions/index.ts";
@@ -30,16 +30,17 @@ describe("core.describe_nodes", () => {
     expect(automationStudioLlmEvidenceValidTools([automationStudioHarnessOptionTool(option!)])).toBe(true);
     expect(option).toMatchObject({ effect: "observe", availability: { kind: "both" }, safety: { sideEffect: "observe" } });
     expect(option!.description.length).toBeLessThanOrEqual(400);
-    expect(option!.description).toContain("flowBootstrap.describedNodes");
+    expect(option!.description).toContain("under describedNodes in the result of the call that first described it");
+    expect(option!.description).not.toContain("flowBootstrap.describedNodes");
     const ids = (option!.inputSchema.properties as { ids: Record<string, unknown> }).ids;
     expect(ids).toMatchObject({ type: "array", minItems: 1, maxItems: 64, uniqueItems: true, items: { type: "string", pattern: "^[A-Za-z0-9._:-]{1,200}$" } });
     expect((ids.items as Record<string, unknown>).enum).toBeUndefined();
   });
 
-  it("answers with a receipt, never the definitions, and remembers what it described", async () => {
+  it("names the nodes it newly described, never their definitions, and remembers them", async () => {
     const { memory, run } = setup();
     const receipt = await run({ ids: ["builtin.logic.and", "builtin.logic.or"] });
-    expect(receipt).toEqual({ ok: true, described: ["builtin.logic.and", "builtin.logic.or"], shownIn: "flowBootstrap.describedNodes" });
+    expect(receipt).toEqual({ ok: true, describedNodes: ["builtin.logic.and", "builtin.logic.or"] });
     expect(JSON.stringify(receipt)).not.toContain("emptyBehavior");
     expect(memory.ids()).toEqual(["builtin.logic.and", "builtin.logic.or"]);
   });
@@ -48,8 +49,10 @@ describe("core.describe_nodes", () => {
     const { run } = setup();
     await run({ ids: ["builtin.logic.and"] });
     expect(await run({ ids: ["builtin.logic.and", "builtin.logic.not", "web.output.nowhere"] })).toEqual({
-      ok: true, described: ["builtin.logic.not"], alreadyDescribed: ["builtin.logic.and"], unknown: ["web.output.nowhere"], shownIn: "flowBootstrap.describedNodes"
+      ok: true, describedNodes: ["builtin.logic.not"], alreadyDescribed: ["builtin.logic.and"], alreadyShown: "under describedNodes, earlier in this request", unknown: ["web.output.nowhere"]
     });
+    // Nothing new described: nothing named, so the request shows no definition on this result.
+    expect(await run({ ids: ["builtin.logic.and"] })).toEqual({ ok: true, alreadyDescribed: ["builtin.logic.and"], alreadyShown: "under describedNodes, earlier in this request" });
   });
 
   it("refuses a call naming only unknown nodes, as feedback the model can act on", async () => {

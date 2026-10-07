@@ -1,9 +1,12 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioProjectDatabasePool, AutomationStudioProjectFlowResourceRepository } from "../../../../storage/index.ts";
+
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 let tempRoot: string;
 

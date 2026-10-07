@@ -10,7 +10,8 @@ import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmend
  *
  * The three things this does and nothing else. Whatever the model left out is
  * filled in from the draft -- a check is the step before, a span is this step
- * alone, a list is the step before -- so the commonest statement is one word.
+ * alone, a list is the step before, and a repeat `while` its last step
+ * succeeds runs through that step -- so the commonest statement is one word.
  * Whatever it wrote as a position is turned into the named step's own id, once,
  * here, so a later reorder cannot make the statement mean a different step. And
  * a statement about a step that is not in the Flow is refused, because routing
@@ -43,6 +44,14 @@ export function automationStudioFlowDraftAmendmentRoute(
     if (!automationStudioFlowDraftStepIsProposed(to)) return { ok: false, reason: "not_a_kept_step" };
     if (to === step) return { ok: false, reason: "already_so" };
     routing = { kind: "on_failed", to: automationStudioFlowDraftStepId(to) };
+  } else if (amendment.while !== undefined) {
+    // Run the span, then again while its last step succeeds: that step is the
+    // span's `through` and its `while` both, and nothing before it is named.
+    const last = named(amendment.while);
+    if (!last) return { ok: false, reason: "no_such_step" };
+    if (!automationStudioFlowDraftStepIsProposed(last)) return { ok: false, reason: "not_a_kept_step" };
+    const id = automationStudioFlowDraftStepId(last);
+    routing = { kind: "repeat", through: id, while: id, ...(amendment.most === undefined ? {} : { most: amendment.most }) };
   } else {
     const through = named(amendment.through) ?? step;
     const over = named(amendment.over) ?? before();

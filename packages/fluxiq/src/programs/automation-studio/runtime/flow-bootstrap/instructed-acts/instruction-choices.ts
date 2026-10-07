@@ -39,8 +39,35 @@
 // the other as "no longer doing an act", and the build test only verified
 // the Spain press, as an act with a lasting effect, so it never chose Spain.
 //
+// **How it is fulfilled, and when (live run `musp4h2f`, row 9 of its debug;
+// `munovwp3` cause 6, causes-early row 34).** "add two packs of the towels ...
+// and one pack of the napkins ... to my cart, both for pickup" read no pickup,
+// so the checklist never asked for one and the shipping-only napkin 3-Pack
+// satisfied the add. Seven runs on 2026-09-30 were told to "take the earliest
+// pickup time on offer" and chose 3pm-4pm while 2pm-3pm was open: the slot was
+// never read as something asked for. Two more closed forms, both `variant`:
+//
+//   - **A fulfilment** is "for pickup|pick-up|pick up|delivery|shipping|
+//     collection", optionally qualified (in-store, curbside, same-day, home,
+//     ...) and optionally after both|all|each ("both for pickup"), with the
+//     id word `fulfilment` and the bare word as its value. "for" is the bias:
+//     it makes the phrase a purpose of the act, where "Switch my pickup
+//     store", "pay at pickup", "with standard shipping" and "delivered free
+//     with standard delivery" name a store, a payment or a default the site
+//     makes anyway (lane A passes on the last two). After ready, available or
+//     eligible ("ready for pickup today") it describes stock, and is none.
+//   - **A time** is "(the) earliest|soonest|first available|next available|
+//     first open", up to three words, then time|slot|window|appointment|date
+//     ("the earliest pickup time", "the earliest weekday morning slot"), with
+//     the id word `time` and the ordinal as its value. The closing noun is the
+//     bias: without it the ordinal ranks something else ("soonest-ending
+//     first", "the first available kettle"), and is none.
+//
 // Only an act that puts an item somewhere or buys it has choices: adding,
-// buying, ordering. Saving a thing, or switching a store, chooses nothing.
+// buying, ordering. Saving a thing, or switching a store, chooses nothing. A
+// booking or reservation has only its time, and a check-out folded into the
+// order it pays for gives that order only its fulfilment and time
+// (`./instruction-acts.ts` says which reading each act gets).
 import type { AutomationStudioInstructedChoice } from "./contracts.ts";
 
 const NUMBER_WORDS: Readonly<Record<string, number>> = Object.freeze({ two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 });
@@ -74,6 +101,27 @@ const VARIANT_PARTS: readonly RegExp[] = [
 /** Where the item ships from: a proper name after "shipped|ships|dispatched from" ("shipped from Spain", "ships from the UK"). Case matters: a place is capitalised. */
 const ORIGIN = /(?<![A-Za-z0-9'-])(?:[Ss]hipped|[Ss]hips|[Dd]ispatched)\s+[Ff]rom\s+(?:the\s+)?(?<value>[A-Z][A-Za-z'-]*(?:\s+[A-Z][A-Za-z'-]*){0,2})(?![A-Za-z0-9'-])/gu;
 
+/**
+ * How the item reaches the person: "for pickup", "both for in-store pickup",
+ * "for same-day delivery". Only after "for", and not where the phrase only
+ * describes stock ("ready for pickup today", "available for delivery").
+ */
+const FULFILMENT = /(?<![A-Za-z0-9'-])(?<!(?:ready|available|eligible)\s+)(?:(?:both|all|each)\s+)?for\s+(?:(?:in-store|in\s+store|store|curbside|kerbside|same-day|next-day|home|local)\s+)?(?<value>pickup|pick-up|pick\s+up|delivery|shipping|collection)(?![A-Za-z0-9'-])/giu;
+
+/** The earliest of the times on offer: "the earliest pickup time", "the first available slot", "the earliest weekday morning slot". */
+const TIME = /(?<![A-Za-z0-9'-])(?:the\s+)?(?<value>earliest|soonest|first\s+available|next\s+available|first\s+open)(?![A-Za-z0-9'-])(?:\s+[A-Za-z0-9][A-Za-z0-9'-]*){0,3}?\s+(?:times?|slots?|windows?|appointments?|dates?)(?![A-Za-z0-9'-])/giu;
+
+/**
+ * What each reading takes from an object: an item's own object every form; a
+ * booking or reservation only its time; a check-out folded into the order it
+ * pays for only how the item is fulfilled and when.
+ */
+const READS: Readonly<Record<"item" | "booking" | "check-out", { item: boolean; fulfilment: boolean; time: boolean }>> = Object.freeze({
+  item: { item: true, fulfilment: true, time: true },
+  booking: { item: false, fulfilment: false, time: true },
+  "check-out": { item: false, fulfilment: true, time: true }
+});
+
 /** Words that name no particular variant, or join clauses rather than name one. */
 const NOT_A_VALUE: ReadonlySet<string> = new Set(["same", "right", "correct", "other", "usual", "default", "current", "that", "this", "any", "whatever", "my", "your", "our", "their", "his", "her", "its", "each", "every", "whole", "entire", "the", "a", "an", "and", "or", "to", "for", "with", "from", "of", "in", "is", "as"]);
 const COLOUR_WORD = new RegExp(`^(?:${COLOUR})$`, "iu");
@@ -82,10 +130,14 @@ const COLOUR_WORD = new RegExp(`^(?:${COLOUR})$`, "iu");
  * The choices of the item an act adds, read from the act's own object (the
  * words after its verb, bounded to its clause or its counted object), in the
  * order a Flow would make them: how many, then each variant as written.
+ * `reading` narrows what is read: `booking` (a book or reserve act) reads
+ * only the time, `check-out` (a check-out folded into its order) only the
+ * fulfilment and the time.
  */
-export function automationStudioInstructedChoices(actId: string, object: string): AutomationStudioInstructedChoice[] {
+export function automationStudioInstructedChoices(actId: string, object: string, reading: "item" | "booking" | "check-out" = "item"): AutomationStudioInstructedChoice[] {
+  const reads = READS[reading];
   const choices: Array<AutomationStudioInstructedChoice & { at: number }> = [];
-  const quantity = QUANTITY_FIRST.exec(object) ?? QUANTITY_NAMED.exec(object);
+  const quantity = reads.item ? QUANTITY_FIRST.exec(object) ?? QUANTITY_NAMED.exec(object) : null;
   const count = quantity?.groups?.count;
   if (quantity && count && (automationStudioInstructedQuantity(count) ?? 0) >= 2) {
     choices.push({ id: `${actId}.quantity`, kind: "set", of: actId, choice: "quantity", value: count, quote: fold(quantity[0]), at: -1 });
@@ -98,18 +150,23 @@ export function automationStudioInstructedChoices(actId: string, object: string)
     choices.push({ id: `${actId}.${named}`, kind: "set", of: actId, choice: "variant", value: fold(value), quote: fold(quote), at });
   };
   const found: Array<{ value: string; word?: string; quote: string; at: number }> = [];
-  for (const pattern of VARIANTS) {
+  const read = (pattern: RegExp, word: string): void => {
+    pattern.lastIndex = 0;
+    for (let match = pattern.exec(object); match; match = pattern.exec(object)) {
+      if (match.groups?.value) found.push({ value: match.groups.value, word, quote: match[0], at: match.index });
+    }
+  };
+  if (reads.fulfilment) read(FULFILMENT, "fulfilment");
+  if (reads.time) read(TIME, "time");
+  for (const pattern of reads.item ? VARIANTS : []) {
     pattern.lastIndex = 0;
     for (let match = pattern.exec(object); match; match = pattern.exec(object)) {
       if (match.groups?.value) found.push({ value: match.groups.value, ...(match.groups.word ? { word: match.groups.word } : {}), quote: match[0], at: match.index });
     }
   }
-  ORIGIN.lastIndex = 0;
-  for (let match = ORIGIN.exec(object); match; match = ORIGIN.exec(object)) {
-    if (match.groups?.value) found.push({ value: match.groups.value, word: "origin", quote: match[0], at: match.index });
-  }
+  if (reads.item) read(ORIGIN, "origin");
   let offset = 0;
-  for (const part of object.split(/[,:;]/u)) {
+  for (const part of reads.item ? object.split(/[,:;]/u) : []) {
     for (const pattern of VARIANT_PARTS) {
       const match = pattern.exec(part);
       if (match?.groups?.value) found.push({ value: match.groups.value, ...(match.groups.word ? { word: match.groups.word } : {}), quote: part, at: offset + match.index });
@@ -127,6 +184,20 @@ export function automationStudioInstructedQuantity(value: string): number | unde
   const written = value.trim().toLowerCase();
   if (/^[0-9]{1,3}$/u.test(written)) return Number(written);
   return written === "one" ? 1 : NUMBER_WORDS[written];
+}
+
+/**
+ * What a time asked for by its rank means ("the earliest pickup time on
+ * offer"), or nothing for any other choice. Core cannot tell which slot on a
+ * page was the earliest, so the model is told what earliest is, beside the
+ * choice on the checklist and in the verdict, whether or not a step is named
+ * for it: seven runs on 2026-09-30 (`run-munovwp3-d898de74` cause 6) saw the
+ * first three slots full and 2pm-3pm open, and pressed 3pm-4pm.
+ */
+export function automationStudioInstructedChoiceValueSaid(choice: Pick<AutomationStudioInstructedChoice, "id" | "value">): string | undefined {
+  if (!choice.id.endsWith(".time")) return undefined;
+  return `${choice.id} asks for the ${choice.value} one on offer: the first the list shows, in its own order, that can still be chosen (not full, disabled or unavailable). `
+    + `Read the list before pressing, and name for ${choice.id} the step that pressed that one: a later one is not it.`;
 }
 
 /** The id's word for a variant: `colour` for colour or color, `flavour` for either spelling. */

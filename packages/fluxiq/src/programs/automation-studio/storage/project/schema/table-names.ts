@@ -48,6 +48,7 @@ export const AUTOMATION_STUDIO_PROJECT_DOMAIN_TABLES = [
   "run_dataset_audit_events",
   "run_dataset_catalog",
   "run_dataset_batches",
+  "run_dataset_answer_rows",
   "conversations",
   "conversation_turns",
   "conversation_asks",

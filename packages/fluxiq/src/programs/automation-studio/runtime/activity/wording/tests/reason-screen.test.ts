@@ -93,3 +93,20 @@ describe("internal words said as a person's (R2-U-4)", () => {
       .toBe("The check said some steps are wrong; the check's advice is for a step. Its next step could cost more.");
   });
 });
+
+// R3-U-9 and R3-U-10 of the live-C round-3 UI review (run-mux6naez-6c20f26e, moments 04, 05, 12): a
+// decision's reason ended on ";" once the clause after it was dropped as the draft's mechanics, and
+// "the detected extraction handle" read "the detected reading the list handle".
+describe("a decision's reason ends as a sentence, and a list's handle is said as the list", () => {
+  it("never ends on a semicolon when the clause after it is left out", () => {
+    expect(automationStudioActivityReasonText("The extraction already keeps the right rows across all 5 pages; I'll complete the Flow with the search and the filtered list read.", 240, { decision: true }))
+      .toBe("The list reader already keeps the right rows across all 5 pages.");
+    expect(automationStudioActivityReasonText("The name exclusion wrongly drops earbuds sold with a charging case; I rerun step 5 with a narrower accessory-only exclusion.", 240, { decision: true }))
+      .toBe("The name exclusion wrongly drops earbuds sold with a charging case.");
+  });
+
+  it("says an extraction handle as the list it names", () => {
+    expect(automationStudioActivityReasonText("Reading the search results list with the detected extraction handle to see the real rows and columns before adding the extraction step.", 240, { decision: true }))
+      .toBe("Reading the search results list with the detected list to see the real rows and columns before adding the list reader.");
+  });
+});

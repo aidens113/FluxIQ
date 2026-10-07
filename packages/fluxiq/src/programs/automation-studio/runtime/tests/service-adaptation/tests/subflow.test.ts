@@ -8,6 +8,9 @@ import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.
 import { AutomationStudioService } from "../../../service.ts";
 import type { AutomationStudioGraphNodeRecord } from "../../../../storage/project/index.ts";
 
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 /** A node as a graph patch supplies one: the stored record without the fields the store fills in. */
 type SeededGraphNode = Omit<AutomationStudioGraphNodeRecord, "partitionId" | "revision" | "createdAt" | "updatedAt" | "deletedAt">;
 

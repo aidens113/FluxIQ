@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { activityActionTested } from "../tested.ts";
 import { ACTIVITY_RESULT_CHECK_LABELS, activityActionOf, type ActivityAction, type ActivityActionEvent, type ActivityActionKind } from "../index.ts";
 
 const RUN_NODE = "core.run_node";
@@ -389,6 +390,17 @@ describe("activityActionOf: what a test of the Flow did with each step (C10)", (
     // Not excused, it is still a step that did not hold.
     expect(activityActionOf(dry("core.replay.failed"))).toMatchObject({ outcome: "failed", why: "it couldn't run when the test tried it again" });
     expect(activityActionOf(dry("core.replay.failed"))).not.toHaveProperty("tested");
+  });
+
+  // U-B3-1 of run-mux6pndp-16feb842 (moments 10, 12, 14; step 0095 `add-paper-towels-cart-2`): a step the
+  // model wrote into the Flow (`write: true`) without running it answered `core.run_node.written`, and its
+  // card read "Click · Add to cart · Done": the person was told the towels were added.
+  it("says a step written into the Flow without running it as written, never as done", () => {
+    for (const phase of ["exploring", "building"] as const) {
+      const written = activityActionOf(tool("Clicking “Add to cart”", "Result: core.run_node.written · Node: web.output.dom-click", "succeeded", RUN_NODE, phase));
+      expect(written, phase).toMatchObject({ kind: "click", outcome: "done", tested: "Added to the Flow, not run yet" });
+    }
+    expect(activityActionTested("core.run_node.written", { kind: "type" })).toBe("Added to the Flow, not run yet");
   });
 
   it("gives a test step it cannot name its words by the verb of its title, and the completion check none", () => {

@@ -17,7 +17,12 @@
 //   which step, why, in the numbers the model was shown and, where they
 //   changed, the ones it reads next.
 import type { JsonObject } from "../../../../../core/index.ts";
-import { automationStudioFlowDraftRepeatOrderProblem, automationStudioFlowDraftStepById, type AutomationStudioFlowDraftStepRouting } from "../routing.ts";
+import {
+  automationStudioFlowDraftRepeatIsWhile,
+  automationStudioFlowDraftRepeatOrderProblem,
+  automationStudioFlowDraftStepById,
+  type AutomationStudioFlowDraftStepRouting
+} from "../routing.ts";
 import type { AutomationStudioFlowDraftStep } from "../step.ts";
 import type { AutomationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal } from "./types.ts";
@@ -55,7 +60,8 @@ export function automationStudioFlowDraftRepeatRefusal(
 ): AutomationStudioFlowDraftAmendmentRefusal | undefined {
   const problem = automationStudioFlowDraftRepeatOrderProblem(steps, step, routing);
   if (!problem) return undefined;
-  if (problem === "span_broken") return { step: amendment.step, reason: "no_such_position" };
+  // A repeat while its last step succeeds is never over_after: its only problem is a broken span.
+  if (problem === "span_broken" || automationStudioFlowDraftRepeatIsWhile(routing)) return { step: amendment.step, reason: "no_such_position" };
   const over = automationStudioFlowDraftStepById(steps, routing.over)!;
   const through = automationStudioFlowDraftStepById(steps, routing.through)!;
   const after = steps.indexOf(over) > steps.indexOf(step) && amendment.through !== undefined && through !== step;
@@ -106,14 +112,15 @@ export function automationStudioFlowDraftTakeOffBrokenRepeats(
     if (!problem) continue;
     delete step.routing;
     for (const changed of steps.slice(steps.indexOf(step))) delete changed.replayed;
-    const over = automationStudioFlowDraftStepById(steps, routing.over)!;
+    // A repeat while its last step succeeds is over no step, so only its through is said.
+    const over = automationStudioFlowDraftRepeatIsWhile(routing) ? undefined : automationStudioFlowDraftStepById(steps, routing.over)!;
     const through = automationStudioFlowDraftStepById(steps, routing.through)!;
     const span = problem === "span_broken";
     taken.push({
-      step: shown.number(step), reason: "repeat_taken_off", over: shown.number(over), takenOff: problem,
+      step: shown.number(step), reason: "repeat_taken_off", ...(over === undefined ? {} : { over: shown.number(over) }), takenOff: problem,
       ...(span ? { through: shown.number(through) } : {}),
       ...(step.position !== shown.number(step) ? { now: step.position } : {}),
-      ...(over.position !== shown.number(over) ? { overNow: over.position } : {}),
+      ...(over !== undefined && over.position !== shown.number(over) ? { overNow: over.position } : {}),
       ...(span && through.position !== shown.number(through) ? { throughNow: through.position } : {})
     });
   }

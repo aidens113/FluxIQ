@@ -24,6 +24,10 @@
 //   repeat      a Merge at the head of the loop, a Merge at its exit, and the
 //               last step of the span wired back to the head; over a list,
 //               For Each's `item` also goes to each step that declares `item`
+//   repeat while  the same two Merges, with a Repeat node after the head that
+//               numbers and bounds the passes; the last step goes back to the
+//               head on success, and each of its `branch` routes (next-page's
+//               `ended`) and the Repeat's `done` go to the exit
 //
 // **A loop is a cycle and Core's plan validation refuses cycles**, which is
 // right for everything except this. So the back edge arrives at the head
@@ -46,7 +50,8 @@
 
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftInterruptionStepIds, automationStudioFlowDraftStepId } from "../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftRepeatOverRouting, AutomationStudioFlowDraftRepeatWhileRouting } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftInterruptionStepIds, automationStudioFlowDraftRepeatIsWhile, automationStudioFlowDraftStepId } from "../../flow-draft/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type { AutomationStudioFlowScriptBranch, AutomationStudioFlowScriptStep } from "./contracts.ts";
@@ -63,6 +68,8 @@ import { matchAuthoringDefinition } from "./matching.ts";
  */
 const MERGE_NODE_ID = "builtin.control.merge";
 const FOR_EACH_NODE_ID = "builtin.control.for-each";
+/** The pass counter at the head of a span that repeats while its last step succeeds (`nodes/control-flow/repeat.ts`). */
+const REPEAT_NODE_ID = "builtin.control.repeat";
 
 /**
  * The port a list loop's current row travels on: For Each's `item` output, and
@@ -106,7 +113,10 @@ export function routeAutomationStudioFlowDraftSteps(input: {
   };
   const needsLibrary = steps.some((entry) => entry.step.routing !== undefined);
   if (needsLibrary) {
-    for (const id of [MERGE_NODE_ID, FOR_EACH_NODE_ID]) {
+    // The Repeat node only when a span repeats while its own last step
+    // succeeds: a library without it can still branch and walk lists.
+    const repeatsWhile = steps.some((entry) => automationStudioFlowDraftRepeatIsWhile(entry.step.routing));
+    for (const id of [MERGE_NODE_ID, FOR_EACH_NODE_ID, ...(repeatsWhile ? [REPEAT_NODE_ID] : [])]) {
       if (input.registry.get(id, input.resolution)) continue;
       issues.push(authoringError("flow_draft.routing_unavailable", `A Flow that branches or repeats needs "${id}", which this library does not offer.`, "draft"));
       return { steps: [], issues };
@@ -167,7 +177,8 @@ export function routeAutomationStudioFlowDraftSteps(input: {
       emitted.push(mergeStep(join, "the paths after a recovered step meet here"));
       continue;
     }
-    const repeated = repeat({ entry, routing, index, byId, positionOf, emitted, consumed, label, nextDerived, registry: input.registry, resolution: input.resolution });
+    const span = { entry, index, byId, positionOf, emitted, consumed, label, nextDerived, registry: input.registry, resolution: input.resolution };
+    const repeated = automationStudioFlowDraftRepeatIsWhile(routing) ? repeatWhile({ ...span, routing }) : repeat({ ...span, routing });
     if (repeated) refuse(entry.step, repeated.code, repeated.message);
   }
   return { steps: emitted, issues };
@@ -198,7 +209,7 @@ function effectiveSteps(steps: readonly AutomationStudioFlowDraftRoutedStep[]): 
  */
 function repeat(input: {
   entry: AutomationStudioFlowDraftRoutedStep;
-  routing: Extract<NonNullable<AutomationStudioFlowDraftStep["routing"]>, { kind: "repeat" }>;
+  routing: AutomationStudioFlowDraftRepeatOverRouting;
   index: number;
   byId: ReadonlyMap<string, AutomationStudioFlowDraftRoutedStep>;
   positionOf: ReadonlyMap<string, number>;
@@ -289,6 +300,89 @@ function repeat(input: {
       // The last step of the span goes back to the head rather than on: the
       // join is where several paths may arrive, so the loop closes there.
       ...(last ? { branches: [branch("success", loop, "branches")], routed: true } : {})
+    });
+  }
+  emitted.push(mergeStep(exit, "the Flow carries on from here when the loop is done"));
+  return undefined;
+}
+
+/**
+ * A span that runs, then runs again while its own last step succeeds, wired
+ * around a Repeat node, or the reason it could not be.
+ *
+ *   prev.success -> loop (Merge).branches      loop -> pass (Repeat)
+ *   pass.body -> first ... last                last.success -> loop.branches
+ *   last.<each branch route> -> exit.branches  pass.done -> exit.branches
+ *   exit falls into whatever comes after
+ *
+ * The check is the span's own last step, so nothing is lifted: the span runs
+ * at least once, and the loop ends on a route the last step answers
+ * (next-page's `ended`, which is not a failure) or when the Repeat reaches
+ * `most`. A last step whose node declares no such route, with no `most`
+ * either, could end the loop only by failing or at the Repeat's default bound,
+ * which is a Flow that does the wrong thing quietly, so it is refused.
+ */
+function repeatWhile(input: {
+  entry: AutomationStudioFlowDraftRoutedStep;
+  routing: AutomationStudioFlowDraftRepeatWhileRouting;
+  index: number;
+  byId: ReadonlyMap<string, AutomationStudioFlowDraftRoutedStep>;
+  positionOf: ReadonlyMap<string, number>;
+  emitted: AutomationStudioFlowScriptStep[];
+  consumed: Set<string>;
+  label: (id: string) => string;
+  nextDerived: (kind: string) => string;
+  registry: AutomationStudioNodeRegistry;
+  resolution: AutomationStudioNodeRegistryResolution;
+}): { code: string; message: string } | undefined {
+  const { routing, entry, emitted } = input;
+  const at = entry.step.position;
+  const through = input.byId.get(routing.through);
+  const throughAt = input.positionOf.get(routing.through) ?? -1;
+  if (!through) return { code: "flow_draft.repeat_span_unknown", message: `Step ${at} repeats while a step that is not in the Flow succeeds: it was dropped or never added. Send amend_draft repeat on step ${at} again with while naming the last kept step of the span.` };
+  if (throughAt < input.index) return { code: "flow_draft.repeat_span_unknown", message: `Step ${at} repeats while step ${through.step.position} succeeds, which comes before it. while names the last step of the span, at or after step ${at}; put steps in order with an amend_draft reorder first.` };
+  if (routing.while !== routing.through) return { code: "flow_draft.repeat_span_unknown", message: `Step ${at} repeats through one step while another succeeds; the span ends at the step whose success repeats it. Send amend_draft repeat on step ${at} again with while naming the last step of the span, and no through.` };
+  const body = [...input.byId.values()].slice(input.index, throughAt + 1);
+  if (body.some((candidate, offset) => offset > 0 && candidate.step.routing !== undefined)) {
+    return { code: "flow_draft.repeat_body_is_routed", message: `Step ${at} repeats a span in which another step also says when it runs. Say it once, on the first step of the span.` };
+  }
+  const last = body[body.length - 1]!;
+  const endings = writtenDefinition(last, input.registry, input.resolution)?.outputs.filter((port) => port.role === "branch").map((port) => port.id) ?? [];
+  if (!endings.length && routing.most === undefined) {
+    // The bound the Repeat node would apply, read from it rather than restated.
+    const bound = input.registry.get(REPEAT_NODE_ID, input.resolution)?.parameters.find((parameter) => parameter.id === "most")?.defaultValue;
+    const passes = typeof bound === "number" ? `after ${bound} passes` : "at its most passes";
+    return { code: "flow_draft.repeat_while_never_ends", message: `Step ${at} repeats while step ${last.step.position} succeeds, and step ${last.step.position} has no way to say the loop is done, so it would end only by failing or ${passes}. Repeat while a step that answers ended when there is nothing more, or send amend_draft repeat on step ${at} again with most set to the passes it should take.` };
+  }
+  // A Flow that starts with the loop would have no node without a way in --
+  // the head Merge has the back edge -- so no run could begin.
+  const head = emitted[emitted.length - 1];
+  if (!head) return { code: "flow_draft.repeat_not_after_its_source", message: `Step ${at} repeats from the very start of the Flow, so a run would have nowhere to begin. Keep the step that opens the page before step ${at}.` };
+  const loop = input.nextDerived("loop");
+  const pass = input.nextDerived("pass");
+  const exit = input.nextDerived("exit");
+  const first = input.label(automationStudioFlowDraftStepId(body[0]!.step));
+  head.branches = [...head.branches, branch("success", loop, "branches")];
+  head.routed = true;
+  emitted.push(mergeStep(loop, "each pass of the loop starts here"));
+  emitted.push({
+    label: pass,
+    description: "run the span again, up to its most passes",
+    node: REPEAT_NODE_ID,
+    entries: routing.most === undefined ? [] : [{ key: "most", lines: [String(routing.most)], line: 0 }],
+    branches: [branch("body", first), branch("done", exit, "branches")],
+    routed: true,
+    line: 0
+  });
+  for (const [offset, member] of body.entries()) {
+    const memberId = automationStudioFlowDraftStepId(member.step);
+    input.consumed.add(memberId);
+    const closes = offset === body.length - 1;
+    emitted.push({
+      ...scriptStep(member, input.label(memberId)),
+      // Success goes back to the head for another pass; each route the step
+      // answers when there is nothing more to do leaves the loop.
+      ...(closes ? { branches: [branch("success", loop, "branches"), ...endings.map((port) => branch(port, exit, "branches"))], routed: true } : {})
     });
   }
   emitted.push(mergeStep(exit, "the Flow carries on from here when the loop is done"));

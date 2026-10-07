@@ -95,10 +95,13 @@ const MECHANICS = /\b(?:acts?|draft|amend\w*|unreproducible|re-?runs?|re-?runnin
 /**
  * The sentences, and clauses between semicolons, of `text` that name neither
  * an act id nor the draft's mechanics, rejoined. Split by the chat's one
- * splitter, so "(e.g." ends no sentence (R2-U-3).
+ * splitter, so "(e.g." ends no sentence (R2-U-3). A clause kept before one
+ * left out ends as a sentence: "...across all 5 pages;" read as unfinished
+ * (R3-U-9, live run `run-mux6naez-6c20f26e`).
  */
 function withoutMechanics(text: string): string {
-  return activityActionSentences(text, { clauses: true }).filter((sentence) => !ACT_ID.test(sentence) && !MECHANICS.test(sentence)).join(" ");
+  const kept = activityActionSentences(text, { clauses: true }).filter((sentence) => !ACT_ID.test(sentence) && !MECHANICS.test(sentence));
+  return kept.map((sentence, index) => (index === kept.length - 1 ? sentence.replace(/\s*[;,:]\s*$/u, ".") : sentence)).join(" ");
 }
 
 /** `sentence` without its asides in parentheses. */

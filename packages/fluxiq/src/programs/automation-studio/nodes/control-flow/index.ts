@@ -4,7 +4,8 @@ import { forEachNode } from "./for-each.ts";
 import { loopNode } from "./loop.ts";
 import { mergeNode } from "./merge.ts";
 import { parallelNode } from "./parallel.ts";
+import { repeatNode } from "./repeat.ts";
 import { startNode } from "./start.ts";
 import { switchNode } from "./switch.ts";
 
-export const controlFlowNodes = [startNode, endNode, branchNode, switchNode, parallelNode, mergeNode, loopNode, forEachNode];
+export const controlFlowNodes = [startNode, endNode, branchNode, switchNode, parallelNode, mergeNode, loopNode, forEachNode, repeatNode];

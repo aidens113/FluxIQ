@@ -228,7 +228,7 @@ describe("the feedback an amendment refusal is shown as", () => {
     no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, over_not_before: true, not_a_kept_step: true,
     did_not_work: true, already_in_flow: true, already_out: true, changes_nothing: true, act_on_a_read: true, act_already_named: true,
     bind_not_a_binding: true, bind_new_key: true, bind_row_outside_loop: true, bind_malformed: true,
-    rerun_holds_binding: true, repeat_taken_off: true, strands_a_step: true, settings_rewrite_run: true
+    rerun_holds_binding: true, repeat_taken_off: true, strands_a_step: true, settings_rewrite_run: true, second_copy: true
   };
 
   it("can say every reason the draft computes, with what the word means", () => {
@@ -682,6 +682,13 @@ describe("a repeat taken off after a decision's moves", () => {
     const next = nextOf(feedbackOf([{ step: 16, reason: "repeat_taken_off", over: 15, through: 17, takenOff: "span_broken", now: 17, throughNow: 16 }]));
     expect(next).toContain("Step 16's repeat over step 15, through step 17, was taken off");
     expect(next).toContain("step 17 runs before step 16");
+  });
+
+  // Read-list design (S2): a repeat-while repeats over no step, and is told by the step it ran while.
+  it("says which step's repeat-while was taken off and why, with no over to name", () => {
+    const next = nextOf(feedbackOf([{ step: 16, reason: "repeat_taken_off", through: 17, takenOff: "span_broken", now: 17, throughNow: 16 }]));
+    for (const words of ["Step 16's repeat while step 17 succeeds was taken off", "step 17 runs before step 16", "step 16 is now step 17", "step 17 is now step 16"]) expect(next).toContain(words);
+    expect(next).not.toContain("over step");
   });
 
   it("is never marked repeated, since the model did not send it", () => {

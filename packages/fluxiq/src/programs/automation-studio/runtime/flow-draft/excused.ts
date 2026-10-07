@@ -22,10 +22,32 @@
 // answer.
 
 import type { AutomationStudioFlowDraftReplayOutcome } from "./dry-run.ts";
-import type { AutomationStudioFlowDraftConditionalReason } from "./routing.ts";
+import { automationStudioFlowDraftConditionalStepIds, type AutomationStudioFlowDraftConditionalReason } from "./routing.ts";
+import type { AutomationStudioFlowDraftStep } from "./step.ts";
+import { automationStudioFlowDraftWithheldStepIds } from "./verify-only.ts";
 
 /** Why a test passed over a step that did not hold: why the Flow does not always run it, or `withheld`. */
 export type AutomationStudioFlowDraftExcusedReason = AutomationStudioFlowDraftConditionalReason | "withheld";
+
+/**
+ * The steps a test's verdict passes over, from the draft and that test's
+ * outcomes: those the Flow does not always run (`./routing.ts`), those whose
+ * run a checked step withheld (`./verify-only.ts`), and the check a repeat runs
+ * while whose first ask did not hold, which the walk excused `check`
+ * (`../llm/node-tools/replay-draft.ts`): the Flow runs that span zero times,
+ * and only the node definitions the walk holds say a step is such a check.
+ * Every place that rebuilds the exemption -- the verdict, the gate, a rerun put
+ * back, a step proved only sometimes there -- reads it here, so none misses
+ * one: missed, the check was made optional and the assembler then refused its
+ * loop (read-list design S2, 4.2(e)). A fresh set, which a caller may extend.
+ */
+export function automationStudioFlowDraftExemptStepIds(
+  steps: readonly AutomationStudioFlowDraftStep[],
+  outcomes: readonly AutomationStudioFlowDraftReplayOutcome[]
+): Set<string> {
+  const checks = outcomes.flatMap((outcome) => (outcome.excused === "check" && outcome.stepId !== undefined ? [outcome.stepId] : []));
+  return new Set([...automationStudioFlowDraftConditionalStepIds(steps), ...automationStudioFlowDraftWithheldStepIds(outcomes), ...checks]);
+}
 
 /** Why the Flow passes over a step of each kind, in Core's words. */
 const WHY: Readonly<Record<AutomationStudioFlowDraftConditionalReason, string>> = {

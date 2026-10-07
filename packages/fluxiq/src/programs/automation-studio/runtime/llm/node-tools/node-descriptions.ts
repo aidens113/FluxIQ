@@ -6,11 +6,20 @@
 // build would ever run that node or not. The model is now shown each node by
 // name only, asks for the full definitions of the nodes it is about to use
 // (`./describe-nodes.ts`), and a node it was shown stays shown for the rest of
-// the build, under `flowBootstrap.describedNodes`. Every library call the
-// model makes describes its node too (`./describing-failures.ts`, wired in
-// `../harness-options/binding.ts`), succeeded or refused, because the model
-// seldom asked first (t280: in 2 of 23 live runs), so a node it has run once is
-// never run again without its definition in view.
+// the build. Every library call the model makes describes its node too
+// (`./describing-failures.ts`, wired in `../harness-options/binding.ts`),
+// succeeded or refused, because the model seldom asked first (t280: in 2 of 23
+// live runs), so a node it has run once is never run again without its
+// definition in view.
+//
+// **Where a definition is shown (t289-G, W11).** On the result of the call
+// that first described it, which names it under `describedNodes`
+// (`./described-nodes-key.ts`): the request shows the definition there, inside
+// the evidence window, so describing a node changes nothing in front of the
+// window and the provider's prefix cache holds. Only a node this memory holds
+// that no entry of the current window names -- one an earlier round of the
+// build described -- is shown in `flowBootstrap.describedNodes`, the head,
+// which is constant for the length of a window (`../deepseek/request-body.ts`).
 //
 // **What it holds.** Only ids, in the order they were first described, each
 // once: the harness input carries them (`flowBootstrap.describedNodeIds`) and

@@ -225,34 +225,36 @@ describe("Automation Studio harness option binding with a described-node memory"
 
   it("describes a node through the loop binding, and the memory is the one the build holds", async () => {
     const { memory, loop } = wired(vi.fn(async () => ({ observed: true })));
-    expect(await loop.executeTool({ callId: "call.1", toolId: "core.describe_nodes", value: { ids: [AND] } })).toMatchObject({ ok: true, described: [AND] });
+    expect(await loop.executeTool({ callId: "call.1", toolId: "core.describe_nodes", value: { ids: [AND] } })).toMatchObject({ ok: true, describedNodes: [AND] });
     expect(memory.ids()).toEqual([AND]);
   });
 
   it("describes the node of a failed call once, and names the parameters its definition does not declare", async () => {
     const { memory, run } = wired(vi.fn(async () => failed()));
     const first = await run({ node: AND, parameters: { emptyBehavior: "true", selector: "#go" }, consequences: [] });
-    expect(first).toMatchObject({ resultCode: "node_failed", evidence: { ok: false, code: "node_failed", described: `${AND} is now in flowBootstrap.describedNodes`, undeclaredParameters: ["selector"] } });
+    // Named on its result, where the request shows its definition (t289-G).
+    expect(first).toMatchObject({ resultCode: "node_failed", evidence: { ok: false, code: "node_failed", describedNodes: [AND], undeclaredParameters: ["selector"] } });
     expect(memory.ids()).toEqual([AND]);
 
-    // Already described: no second `described`, only the pointer and the list.
+    // Already described: not named again, only the pointer and the list.
     const second = await run({ node: AND, parameters: { emptyBehavior: "true" }, consequences: [] }, "call.2") as AutomationStudioLlmEvidenceToolExecutionResult;
-    expect(second.evidence).toEqual({ ok: false, code: "node_failed", definition: `${AND} is in flowBootstrap.describedNodes` });
+    expect(second.evidence).toEqual({ ok: false, code: "node_failed", definition: `${AND} is under describedNodes, earlier in this request` });
     expect(memory.ids()).toEqual([AND]);
   });
 
   it("explains a failure answered as bare evidence the same way", async () => {
     const { run } = wired(vi.fn(async () => ({ ok: false, code: "node_failed" })));
-    expect(await run({ node: AND, parameters: { bogus: 1 }, consequences: [] })).toEqual({ ok: false, code: "node_failed", described: `${AND} is now in flowBootstrap.describedNodes`, undeclaredParameters: ["bogus"] });
+    expect(await run({ node: AND, parameters: { bogus: 1 }, consequences: [] })).toEqual({ ok: false, code: "node_failed", describedNodes: [AND], undeclaredParameters: ["bogus"] });
   });
 
-  it("leaves a call that worked untouched, never refuses an undescribed node before it runs, and describes it (t280)", async () => {
+  it("never refuses an undescribed node before it runs, describes it, and names it on the first result only (t280, t289-G)", async () => {
     const answer = { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, rows: 2 }, effectApplied: false };
     const executeTool = vi.fn(async () => answer);
     const { memory, run } = wired(executeTool);
-    expect(await run({ node: AND, parameters: { bogus: 1 }, consequences: [] })).toBe(answer);
+    expect(await run({ node: AND, parameters: { bogus: 1 }, consequences: [] })).toEqual({ ...answer, evidence: { ok: true, rows: 2, describedNodes: [AND] } });
     expect(executeTool).toHaveBeenCalledTimes(1);
     expect(memory.ids()).toEqual([AND]);
+    expect(await run({ node: AND, parameters: {}, consequences: [] }, "call.2")).toBe(answer);
   });
 
   it("passes the loop's own replays through untouched", async () => {
@@ -261,10 +263,12 @@ describe("Automation Studio harness option binding with a described-node memory"
     expect(memory.ids()).toEqual([]);
   });
 
-  it("describes the node of a call that threw, and still throws", async () => {
+  it("still throws a call that threw, and leaves its node for the next run to describe (t289-G)", async () => {
+    // A thrown call has no result to name the node on, so describing it would
+    // put its definition in the request's head mid-build.
     const { memory, run } = wired(vi.fn(async () => { throw new Error("page gone"); }));
     await expect(run({ node: AND, parameters: {}, consequences: [] })).rejects.toThrow("page gone");
-    expect(memory.ids()).toEqual([AND]);
+    expect(memory.ids()).toEqual([]);
   });
 });
 

@@ -141,7 +141,7 @@ describe("withAutomationStudioRunActivity", () => {
 
   it("ends a failed run with what came back and why, read from the run's record (U3, run-musp39u8-9ac026ab)", async () => {
     const record = {
-      resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer", code: "core.result.does_not_answer_request", observation: "13 records stored, across 1 record set" },
+      resultVerification: { status: "refuted", performed: true, verdict: "does_not_answer", code: "core.result.does_not_answer_request", observation: "13 records stored, across 1 record set", reason: "Two products with the Plus badge were left out." },
       resultRepair: { attempted: true, attempts: 1, history: [{ attempt: 1, totalRecordCount: 13 }], phase: "settled", outcome: "not_rerun" },
       resultReauthor: { code: "flow_bootstrap.evidence_budget_exhausted", attempts: [{ attempt: 1, ending: { kind: "budget_exhausted", bound: "rounds", tried: { tested: "not_tested" } } }] }
     };
@@ -150,9 +150,10 @@ describe("withAutomationStudioRunActivity", () => {
       readRecord: async (session) => { read.push(session.runId); return record; }
     });
     // U-10 (t276): the ending says the run saved its rows, after a lower-case opening (`./wording/run-ending.ts`).
-    const sentence = "it saved 13 rows, but the check found they don't answer what you asked, and the fix used all its rounds before it could test a change.";
+    const sentence = "it saved 13 rows, but the check found they don't answer what you asked, and the fix ran out of build rounds before it could test a change.";
     expect(read).toEqual(["r4"]);
-    expect(seen.at(-1)).toMatchObject({ phase: "failed", final: true, label: `Run failed: ${sentence}`, detail: { kind: "step", title: "Run failed", status: "failed", text: sentence } });
+    // R3-U-3: the check's reason follows in the row's text; the status line keeps the ending alone.
+    expect(seen.at(-1)).toMatchObject({ phase: "failed", final: true, label: `Run failed: ${sentence}`, detail: { kind: "step", title: "Run failed", status: "failed", text: `${sentence} The check said: Two products with the Plus badge were left out.` } });
   });
 
   it("falls back to the session's own record, and to a bare \"Run failed\" when the record cannot be read", async () => {

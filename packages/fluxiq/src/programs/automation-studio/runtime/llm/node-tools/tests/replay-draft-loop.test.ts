@@ -8,7 +8,8 @@
 // in order, each member sent with that row when its node takes one and with its
 // bound values resolved for it; a span over a check runs while the check
 // replays. Without rows (an older host, a list step that was only checked, a
-// node the caller cannot describe) it runs once and is excused, as before.
+// node the caller cannot describe) it runs once and is excused, as before. A
+// do-while (read-list design S2) runs its span until its last step ends it.
 // The llm barrel first, as `../../decision-context/tests/recorded-runs.ts` says why.
 import { describe, expect, it } from "vitest";
 import { replayAutomationStudioFlowDraft, type AutomationStudioLlmEvidenceToolExecutionResult } from "../../index.ts";
@@ -239,6 +240,124 @@ describe("a repeat over a check", () => {
     const replayed = await test(whileDraft(), executor);
     expect(replayed.verdict.outcomes.find((outcome) => outcome.step === 3)).toMatchObject({ status: "failed", resultCode: AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_LOOP_BOUND_CODE });
     expect(executor.calls.filter((call) => call.callId.startsWith("dryrun.1.3.pass.")).length).toBe(100);
+    expect(replayed.verdict.ok).toBe(false);
+  });
+
+  // Design 4.2(e): the while plan was made whenever the check was asked to run,
+  // held or not, so a check that failed its first ask still ran the body once
+  // as a loop pass; and that check, failing, refused a Flow that would simply
+  // run the span zero times.
+  it("makes no while plan when the check's first ask did not hold, and excuses that check as a check", async () => {
+    const executor = host({ checks: 0 });
+    const excusable = new Map<string, unknown>();
+    const replayed = await replayAutomationStudioFlowDraft({
+      steps: whileDraft(),
+      attempt: 1,
+      nodeOf,
+      executeTool: async (input: Call & { excusable?: string }) => {
+        excusable.set(input.callId, input.excusable);
+        return executor.executeTool(input);
+      }
+    });
+    expect(executor.calls.map((call) => call.callId)).toEqual(["dryrun.1.reset", "dryrun.1.1", "dryrun.1.2", "dryrun.1.3", "dryrun.1.4"]);
+    expect(replayed.verdict.outcomes.find((outcome) => outcome.step === 2)).toMatchObject({ status: "failed", excused: "check" });
+    expect(replayed.verdict.outcomes.find((outcome) => outcome.step === 3)!.passes).toBeUndefined();
+    expect(excusable.get("dryrun.1.2")).toBe("check");
+    expect(excusable.get("dryrun.1.1")).toBeUndefined();
+    expect(replayed.verdict.ok).toBe(true);
+  });
+
+  it("never excuses a list a span walks as a check: a list read that fails refuses", async () => {
+    const executor = host({ rows: ROWS, answers: { "dryrun.1.1": "core.replay.failed" } });
+    const replayed = await test(loopDraft(), executor);
+    const list = replayed.verdict.outcomes.find((outcome) => outcome.step === 1)!;
+    expect(list).toMatchObject({ status: "failed" });
+    expect(list).not.toHaveProperty("excused");
+    expect(replayed.verdict.ok).toBe(false);
+  });
+});
+
+// Read-list design S2 (4.2(e), contract C6): a span run, then run again while
+// its last step succeeds -- read the list, press Next, again while Next found a
+// page. The last member's `core.replay.ended` is that pass passing and the loop
+// ending; reaching `most` ends the loop too, and neither is a failure.
+describe("a do-while repeat, in the build's test", () => {
+  const ENDED = "core.replay.ended";
+  const doWhileDraft = (most?: number) => [
+    step(1, "node.press", {}, { target: "#open" }),
+    step(2, "node.list", { routing: { kind: "repeat", through: "d3", while: "d3", ...(most === undefined ? {} : { most }) } }, { where: "all" }),
+    step(3, "node.press", {}, { target: "#next" }),
+    step(4, "node.press", {}, { target: "#done" })
+  ];
+
+  it("runs the span pass by pass until its last step answers ended, and passes", async () => {
+    const executor = host({ rows: ROWS, answers: { "dryrun.1.3.pass.3": ENDED } });
+    const replayed = await test(doWhileDraft(), executor);
+    expect(executor.calls.map((call) => call.callId)).toEqual([
+      "dryrun.1.reset", "dryrun.1.1",
+      "dryrun.1.2.pass.1", "dryrun.1.3.pass.1",
+      "dryrun.1.2.pass.2", "dryrun.1.3.pass.2",
+      "dryrun.1.2.pass.3", "dryrun.1.3.pass.3",
+      "dryrun.1.4"
+    ]);
+    expect(replayed.verdict.ok).toBe(true);
+    expect(replayed.verdict.outcomes.find((outcome) => outcome.step === 2)).toMatchObject({ status: "replayed", passes: [{ pass: 1 }, { pass: 2 }, { pass: 3 }] });
+    expect(replayed.verdict.outcomes.find((outcome) => outcome.step === 3)).toMatchObject({
+      status: "replayed",
+      passes: [{ pass: 1, status: "replayed" }, { pass: 2, status: "replayed" }, { pass: 3, status: "replayed", resultCode: ENDED }]
+    });
+    expect(replayed.verdict.outcomes.every((outcome) => outcome.excused === undefined)).toBe(true);
+    expect(replayed.observations.filter((each) => each.step === 2).map((each) => [each.pass, each.of])).toEqual([[1, 3], [2, 3], [3, 3]]);
+    expect(replayed.evidence).toBeUndefined();
+  });
+
+  it("is planned without a node lookup: it needs no list and no check", async () => {
+    const executor = host({ answers: { "dryrun.1.3.pass.2": ENDED } });
+    const replayed = await test(doWhileDraft(), executor, false);
+    expect(executor.calls.filter((call) => call.callId.includes(".pass.")).map((call) => call.callId)).toEqual(["dryrun.1.2.pass.1", "dryrun.1.3.pass.1", "dryrun.1.2.pass.2", "dryrun.1.3.pass.2"]);
+    expect(replayed.verdict.ok).toBe(true);
+  });
+
+  it("stops at most passes, and reaching them is the loop ending, not a failure", async () => {
+    const executor = host({ rows: ROWS });
+    const replayed = await test(doWhileDraft(2), executor);
+    expect(executor.calls.map((call) => call.callId)).toEqual([
+      "dryrun.1.reset", "dryrun.1.1",
+      "dryrun.1.2.pass.1", "dryrun.1.3.pass.1",
+      "dryrun.1.2.pass.2", "dryrun.1.3.pass.2",
+      "dryrun.1.4"
+    ]);
+    for (const at of [2, 3]) {
+      const outcome = replayed.verdict.outcomes.find((each) => each.step === at)!;
+      expect(outcome).toMatchObject({ status: "replayed" });
+      expect(outcome.resultCode).not.toBe(AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_LOOP_BOUND_CODE);
+      expect(outcome.passes).toHaveLength(2);
+    }
+    expect(replayed.verdict.ok).toBe(true);
+  });
+
+  it("stops at the Repeat node's default of 50 passes when the routing sets no most", async () => {
+    const executor = host({ rows: ROWS });
+    const replayed = await test(doWhileDraft(), executor);
+    expect(executor.calls.filter((call) => call.callId.startsWith("dryrun.1.3.pass.")).length).toBe(50);
+    expect(replayed.verdict.ok).toBe(true);
+  });
+
+  it("refuses when the read fails on pass 1: a real failure, and the loop goes no further", async () => {
+    const executor = host({ rows: ROWS, answers: { "dryrun.1.2.pass.1": "core.replay.failed" } });
+    const replayed = await test(doWhileDraft(), executor);
+    expect(executor.calls.map((call) => call.callId)).toEqual(["dryrun.1.reset", "dryrun.1.1", "dryrun.1.2.pass.1", "dryrun.1.3.pass.1", "dryrun.1.4"]);
+    const read = replayed.verdict.outcomes.find((outcome) => outcome.step === 2)!;
+    expect(read).toMatchObject({ status: "failed", resultCode: "core.replay.failed", passes: [{ pass: 1, status: "failed" }] });
+    expect(read).not.toHaveProperty("excused");
+    expect(replayed.evidence).toEqual({ callId: "dryrun.1.2.pass.1", toolId: "core.run_node", value: { call: "dryrun.1.2.pass.1" } });
+    expect(replayed.verdict.ok).toBe(false);
+  });
+
+  it("reads ended from any member but the last as that member failing", async () => {
+    const executor = host({ rows: ROWS, answers: { "dryrun.1.2.pass.1": ENDED } });
+    const replayed = await test(doWhileDraft(), executor);
+    expect(replayed.verdict.outcomes.find((outcome) => outcome.step === 2)).toMatchObject({ status: "failed", resultCode: ENDED });
     expect(replayed.verdict.ok).toBe(false);
   });
 });

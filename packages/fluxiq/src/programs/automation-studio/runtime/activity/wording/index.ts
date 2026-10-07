@@ -9,5 +9,5 @@ export { automationStudioActivityHumanLabel } from "./human-label.ts";
 export { automationStudioActivityPersonWords } from "./person-words.ts";
 export { automationStudioActivityReasonText } from "./reason-text.ts";
 export { automationStudioActivityRecoveryChoice } from "./recovery-choice.ts";
-export { automationStudioActivityRunEnding } from "./run-ending.ts";
+export { automationStudioActivityRunEnding, automationStudioActivityRunObjection } from "./run-ending.ts";
 export { automationStudioActivityToolCall } from "./tool-call.ts";

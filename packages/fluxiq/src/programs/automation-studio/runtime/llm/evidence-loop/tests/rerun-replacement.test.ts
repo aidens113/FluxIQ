@@ -83,6 +83,20 @@ describe("a rerun taking the replaced step's place", () => {
     expect(steps[1]!.routing).toEqual({ kind: "repeat", through: "d16", over: "d17" });
   });
 
+  // Read-list design (S2): a do-while names its last step twice, as through and
+  // as while; a rerun of that step moves both, or the loop's check is a step
+  // the Flow no longer has.
+  it("moves a do-while's through and while both onto the rerun of its last step", () => {
+    const steps = [
+      step("d1", 1, { effect: "observe", routing: { kind: "repeat", through: "d2", while: "d2", most: 9 } }),
+      step("d2", 2),
+      step("d3", 3, { disposition: "taken" })
+    ];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[1], { takesItsPlace: true });
+    expect(steps.map((entry) => entry.id)).toEqual(["d1", "d3", "d2"]);
+    expect(steps[0]!.routing).toEqual({ kind: "repeat", through: "d3", while: "d3", most: 9 });
+  });
+
   // Live run `run-musp474o-e0ed7432`: the listing at 6 was rerun with a fixed
   // where, and its withdrawn attempt was listed just after the rerun -- so the
   // old listing became step 7 and the Confirm step 8. The model then reran
