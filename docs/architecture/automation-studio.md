@@ -1908,3 +1908,22 @@ Project deletion blocks deadline writes, waits for in-flight session writes, and
 `get-runtime-build-identity` is an authenticated read endpoint (`programs.read`) also explicitly allowed for restricted paired clients. It projects only the immutable build descriptor captured by the actual Automation Studio service at construction and the hash of requested reached artifact contracts. A retained Next global service cannot claim a newer route module or files written after it was constructed.
 
 The owning Core build generator embeds executing fluxiq/contracts JavaScript hashes and writes an ignored disk stamp with source freshness. Its `reader-payload-v1` digest normalizes only the reader's embedded payload literal; every surrounding reader byte remains hashed. This is a normalized artifact digest, not a raw full-dist checksum. Missing/malformed identity refuses admission. It certifies Core service/contracts artifacts, not the separately built client-gateway-websocket adapter or downstream host module.
+### Build cancellation and extension Stop
+
+`cancel-flow-bootstrap` is an authoring endpoint under `runtime.control`, scoped
+by project and Flow. It requests cancellation of every already-active or queued
+build of that Flow; no active build answers `cancellationRequested: false`.
+It does not revoke permission or delete a Flow. A paired browser may call this
+endpoint through the existing restricted program-route allowlist.
+
+Build controllers register before database/lock waiting. Their scoped signal
+reaches provider calls, domain tool dispatch, permission/person-needed waits and
+judging. Cancellation checkpoints refuse subsequent dispatch and a late result
+before proposing a change, including after awaited proposal validation. A
+cancelled build reports `cancelled: true`; the chat and activity say the build
+stopped, rather than saying it is ready. A run's reauthor build shares this
+controller and inherits the run's abort signal.
+
+Stop is cooperative. It prevents later dispatch/promotion but cannot undo effects
+already dispatched to an external system. Providers/tools that ignore AbortSignal
+may finish their current work; their late result cannot authorize another action.

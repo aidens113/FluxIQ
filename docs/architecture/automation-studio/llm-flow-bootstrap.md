@@ -6,6 +6,43 @@ in `runtime/flow-bootstrap/plan.ts` and integrated with the existing LLM harness
 the `flow_bootstrap` task. It does not execute a provider request, persist a
 proposal, or mutate a Flow by itself.
 
+## Explicit candidate authoring
+
+`runtime/flow-bootstrap/candidate/` supplies an opt-in discovery-only loop and
+`core.submit_candidate`. Discovery appends evidence without draft retention,
+automatic opener insertion or act completion. A complete submission uses the
+existing bootstrap compiler, domain parameter resolution and plan/permission
+validation. Core assigns a revision and canonical digest; refused or superseded
+submissions invalidate the earlier candidate. Completion names the latest revision
+and digest and grants static validity only.
+
+`runtime/service/candidate-drafts/` persists unverified submissions separately
+from adaptations in Core project storage. Reading a stored draft grants neither
+execution nor promotion; it must be revalidated before runtime use. The existing
+legacy authoring path remains the default. Explicit API requests with
+`authoringMode: "candidate"` and `evidenceGuided: true` run discovery and full
+submission through the service, then store a separate unverified draft. The API
+returns `payload.candidate` with candidate ID, revision/digest, accepted base and
+settings revision, source instruction IDs and accounting, `status: "draft"`,
+`verification: "not_performed"` and `promotionAllowed: false`. It returns no
+adaptation ID or apply action; omitted mode still returns `payload.adaptation`
+with `status: "proposed"` through the legacy path.
+
+Candidate discovery uses the same purse, tool permissions, instruction authority,
+registry/handle resolution, routing observations and build cancellation as legacy
+generation. Discovery evidence does not enter the submitted graph or persisted
+draft record. Completion stores the latest submitted revision without marking
+the creation purse ended. Current Flow/settings mismatches and cancellation
+checkpoints refuse storage. This is not an atomic base compare or cancellation
+inside the underlying OS write. Stored drafts grant no execution or promotion.
+Conversation/re-author callers require a proposed result before adaptation use;
+an unexpected draft is reported as saved and unverified with no apply.
+
+Exact detached execution, declared start reset, independent requirements/observer
+receipts, command/subject acknowledgements and durable promotion reconciliation
+remain separate integration work. Static candidate submission does not prove
+the user's requested outcome, and this facade never accepts or promotes it.
+
 ## Context boundary
 
 A bootstrap request carries the existing effective active instruction
@@ -2135,3 +2172,24 @@ Successful generation opens the returned proposed Bootstrap Adaptation in the ex
 The authoring surface cannot approve or apply the proposal. The standard review endpoint, `review-flow-adaptation`, detects the Bootstrap identity and delegates only approve, reject, apply, and revert to the dedicated lifecycle; the Adaptations UI hides unsupported standard actions. Review responses re-project the new lifecycle state immediately. An applied response includes the canonical post-apply execution digest, which must match the dedicated application record. Only explicit application materializes the deterministic Core-owned Router, Subflows, and graph Flows; existing Router/Subflow mutation subscriptions then refresh Runtime Debug readiness and allow a deterministic Run.
 
 The browser request policy marks generation as an explicit mutation. No bootstrap provider request is part of ordinary preload or summary hydration.
+
+## Candidate verification and detached execution
+
+`runtime/flow-bootstrap/verification` owns revision/base/requirements-bound start,
+execution and independent observation receipts. It refuses unknown evidence,
+incomplete enumeration, unperformed commands, cancellation and stale identities.
+An explicit create requires start absence, a performed command and attribution
+to a newly produced subject; ensure may verify an already-present subject.
+
+The detached adapter revalidates the exact submitted topology, refuses silent
+compiler rewrites, routes through fresh host state and uses the normal canonical
+executor with the accepted parent's permission defaults. It writes no accepted
+graph, permits no partial run or hidden retry/LLM repair, and retains selected
+branch execution semantics. Its command list is intentionally empty until a
+trusted domain runtime supplies performed/subject acknowledgements. Successful
+node attempts alone do not certify lasting browser effects.
+
+These modules are independently tested infrastructure. The production service
+requirement interpreter, declared-start browser owner, independent oracle,
+durable receipt recovery and atomic shared promotion adapter are still required.
+No existing build or repair is automatically accepted by adding these exports.

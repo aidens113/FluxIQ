@@ -1,4 +1,4 @@
-import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest } from "../../runtime/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioActionPermissionRequest, AutomationStudioGenerateFlowBootstrapAdaptationResult } from "../../runtime/index.ts";
 import type { FlowIdProjectRequest } from "./flow.ts";
 
 export type AutomationStudioFlowBootstrapGenerationReadiness = {
@@ -105,6 +105,8 @@ export type GenerateFlowBootstrapAdaptationRequest = FlowIdProjectRequest & {
    */
   permittedConsequences?: AutomationStudioActionConsequence[];
   evidenceGuided?: true;
+  /** Explicit submission stores an unverified candidate draft; requires evidenceGuided:true. */
+  authoringMode?: "candidate";
   useReusableContext?: true;
   /**
    * Where the Flow this build writes starts, in the bound domain's own
@@ -162,33 +164,7 @@ export type GenerateFlowBootstrapAdaptationFailureDiagnostic = {
   permissionRequest?: AutomationStudioActionPermissionRequest;
 };
 
-export type GenerateFlowBootstrapAdaptationResponse = {
-  projectId: string;
-  flowId: string;
-  adaptationId: string;
-  status: "proposed";
-  riskLevel: "low" | "medium" | "high" | "destructive";
-  sourceInstructionIds: string[];
-  baseDependencyDigest: string;
-  baseSettingsRevision: number;
-  accounting: {
-    requestId: string;
-    estimatedInputTokens: number;
-    provider?: string;
-    model?: string;
-    inputTokens?: number;
-    outputTokens?: number;
-    totalTokens?: number;
-    estimatedCostUsd?: number;
-  };
-  /**
-   * Present when the build met an action its request did not permit and
-   * finished anyway. The proposal is real and is stored, and nothing may be
-   * approved or applied until the person has answered this: send the next
-   * build's `permittedConsequences` with the classes it lists as `missing`.
-   */
-  permissionRequest?: AutomationStudioActionPermissionRequest;
-};
+export type GenerateFlowBootstrapAdaptationResponse = AutomationStudioGenerateFlowBootstrapAdaptationResult;
 
 export type FlowAdaptationRequest = FlowIdProjectRequest & {
   adaptationId: string;

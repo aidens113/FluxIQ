@@ -38,6 +38,8 @@ import {
 export type AutomationStudioLlmEvidenceCallWords = { target?: string | undefined; text?: string | undefined };
 
 export type AutomationStudioLlmEvidenceLoopInput = {
+  /** Explicit candidate authoring records discovery evidence without retaining draft steps. */
+  discoveryOnly?: true;
   tools: AutomationStudioLlmEvidenceTool[];
   decide(input: {
     iteration: number;

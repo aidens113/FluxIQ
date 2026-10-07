@@ -144,6 +144,7 @@ export const AUTOMATION_STUDIO_ENDPOINTS = {
   getFlowBootstrapFailure: "get-flow-bootstrap-failure",
   saveFlowGenerationInstruction: "save-flow-generation-instruction",
   runRuntimeSession: "run-runtime-session",
+  cancelFlowBootstrap: "cancel-flow-bootstrap",
   cancelRuntimeSession: "cancel-runtime-session",
   pauseRuntimeSession: "pause-runtime-session",
   resumeRuntimeSession: "resume-runtime-session",

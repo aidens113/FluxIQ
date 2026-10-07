@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: P0 acceptance and cancellation tasks assigned; candidate-authoring implementation follows the readiness gate.
+Status detail: Acceptance/cancellation, receipt/executor infrastructure and opt-in draft facade pushed; loaded-server identity and durable receipt ledger isolated; production promotion pending.
 Created: 2026-10-06
 Last updated: 2026-10-06
 Owner: Codex senior supervisor
@@ -18,10 +18,14 @@ with continuous documentation so Claude can resume. Downstream owns the phase
 schedule, worker briefs and live qualification; this document owns generic Core
 contract state. Starting Core dev `e9b7d691`.
 
-P0 in progress: t296 isolated paired worktrees implement fail-closed confirming
-verdicts and refuse unsupported apply-before-judged repair topology; t298 isolated
-paired worktrees implement build cancellation and downstream reachable Stop.
-Downstream t297 implements running build identity independently.
+P0 in progress: t296 acceptance fences are integrated/pushed (6c449022);
+downstream t297 running extension identity is integrated/pushed (2c76ba48).
+t298 cancellation and reachable Stop are integrated/pushed2ee06482 after independent
+current-pair browser proofs. t300 receipt/detached-executor infrastructure is
+integrated/pushed386b4c15, not a production promotion path. Running Core identity
+remains t302. Candidate authoring/facade t299 is integrated/pushed7f9bae15
+after independent53/53 and package/dependent web checks; t304 durable receipt
+ledger is isolated. Accepted-topology transaction/read authority is still required.
 
 Task t296 now requires affirmative confirmation for a build yes and refuses
 unsupported held reauthor topologies before apply/dispatch/writes. Supervisor
@@ -64,3 +68,60 @@ and closes downstream task first, then Core under Core's own task gate.
 - Validation: intake trees clean; relevant audit and current Core instructions read; no product tests yet.
 - Outcome: Partial
 - Follow-up: t296/t298 reports, independent checks, downstream t297 readiness.
+
+### 2026-10-06 - t298 cancellation independently verified for integration
+- Agent: Codex supervisor.
+- Changed: scoped external build cancellation, inherited reauthor cancellation, restricted route, truthful unknown in-flight usage, durable declined held-rerun reason; paired reachable extension Stop. Source ada199b7 and 3b1a5019.
+- Validation: current dev merged both trees; supervisor owning reauthor file 9/9, Core check0, touched Core build0, current Chrome/Firefox/e2e extension artifacts22files each. Headed real extension/Core Stop build and run tests2/2 (18.1s), no subsequent node/proposal, accepted graphs unchanged. Task audits pending.
+- Outcome: Accepted bounded cancellation slice; not all P0.
+- Follow-up: integrate paired task/push both dev; t299 facade must inherit this scope. Ignoring provider late charge remains unknown, Firefox live/pairing/real provider unexercised. No paid calls or user panel.
+
+### 2026-10-06 - Candidate verification and detached execution module review
+- Agent: Codex supervisor.
+- Changed: t300 source91903d4a/55736594; requirement/start/run/oracle controller and real canonical detached adapter, architecture limits recorded.
+- Validation: supervisor reviewed controller/receipt contracts and detached adapter; independent58/58 owning tests passed before current dev merge, post-merge narrow check pending. No provider/browser execution by this task.
+- Outcome: Partial infrastructure, not production acceptance or P2 complete.
+- Follow-up: trusted semantic interpreter/start/oracle, domain command acknowledgements and durable atomic promotion must join t299 facade. Empty commands cannot qualify create; no accepted graph writes.
+
+### 2026-10-06 - Paired infrastructure push and honest remaining scope
+- Agent: Codex supervisor.
+- Changed: Core386b4c15 and downstreamafb5f939 pushed; t30058/58 independently verified and exported, typed browser downstreamt301 integrated.
+- Validation: exact bounded receipts in paired downstream ledger; final Core typecheck/audit0 before lifecycle merge, no full suites/provider calls.
+- Outcome: Partial overall plan.
+- Follow-up: t299 draft facade, t302 immutable executing service identity, then trusted requirements/start/oracle/domaincommand acknowledgements/durable shared promotion. Existing builds/repairs do not yet use candidate receipts automatically.
+
+### 2026-10-06 - Actual candidate facade independently checked
+- Agent: Codex supervisor.
+- Changed: t29987c4c9f9 atomic service/API draft branch; both current devs merged, only Core barrel conflict resolved preserving candidate and verification exports.
+- Validation: supervisor source/context/accounting review and post-merge53/53 actual service/API/conversation/reauthor; Corecheck0 (45.29s), touched Corebuild0 (46.15s), dependent webcheck0 (60.48s), Coreaudit0. Integration audit and paired push pending.
+- Outcome: Partial overall plan; coherent opt-in draft slice validated.
+- Follow-up: durable receipt ledger/preparation then explicit atomic topology authority migration. Discovery, draft save and compile do not promote; no provider/browser proof for this slice.
+
+### P2 implementation correction: authoritative storage prerequisite
+
+Source inspection of existing bootstrap apply/reader paths found sequential writes
+and compensating rollback across global documents, project graph SQL, router and
+subflow ProgramJsonStore files and generated config/source. Current readers combine
+these owners. Neither generation locks nor wrapping one store's transaction makes
+the entire accepted topology and receipt crash-atomic. Do not mark the promoter
+complete from a callback test that returns promoted.
+
+Next bounded step persists trusted bounded receipt/run records with restart and
+idempotency proof and refuses promotion where authority is missing. The subsequent
+unit must establish one authoritative project transaction for accepted parent,
+router, subflows, graph revisions and promotion receipt, migrate routing/execution
+reads to it, and retain apply-time validation/authorization/version/representation
+checks. JSON-backed layouts require an actual journal/authority strategy or explicit
+unsupported refusal. Global documents/config may be projections only if reader
+compatibility is migrated and recovery regenerates them after commit. Detailed
+owner/read/write migration is being recorded by the promotion worker; P2 remains
+incomplete, with no reduction in the requested atomicity or outcome proof.
+
+- Validation: Source audit only; no atomic promotion or crash-recovery success is claimed. See the paired downstream p2-promotion-design.md report for the inspected owners and migration requirements.
+
+### 2026-10-06 - Draft facade paired push; durable ledger scope bounded
+- Agent: Codex supervisor.
+- Changed: Core7f9bae15/downstream59b61cc2 pushed; t304 next receipt ledger brief downstream, no accepting promoter yet.
+- Validation: actual facade/API/conversation/reauthor53/53, package check/build and dependent webcheck0, taskaudits0; records in paired report.
+- Outcome: Partial overall plan.
+- Follow-up: t302 immutableidentity input inventory correction; t304 truthful durable claims and create-empty-scope negative, then authoritative topology migration. Public candidate request only returns unverified draft and cannot apply. No provider/fullsuite/userpanel.
