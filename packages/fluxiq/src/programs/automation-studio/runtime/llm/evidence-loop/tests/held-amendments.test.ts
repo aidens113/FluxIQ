@@ -8,7 +8,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop } from "../../index.ts";
-import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
+import type { AutomationStudioFlowDraftClaimRefused, AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import { automationStudioLlmEvidenceHeldAmendments } from "../held-amendments.ts";
 import { automationStudioLlmEvidenceRerunReplaced } from "../rerun-replacement.ts";
 
@@ -22,7 +22,7 @@ type Shown = ReadonlyArray<{ toolId: string; value: JsonObject }>;
 const shownAt = (decide: { mock: { calls: unknown[][] } }, index: number): Shown => (decide.mock.calls[index]![0] as { evidence: Shown }).evidence;
 
 // Step 1 added, step 2 refused, step 3 worked and not yet added; then one decision reruns step 2 and adds both.
-const run = async (rerunOutcome: "worked" | "refused" | "threw", amendments: JsonObject[]) => {
+const run = async (rerunOutcome: "worked" | "refused" | "threw", amendments: JsonObject[], draft?: { claimRefused: AutomationStudioFlowDraftClaimRefused }) => {
   const decide = vi.fn()
     .mockResolvedValueOnce(call(1, { add: true }))
     .mockResolvedValueOnce(call(2))
@@ -32,7 +32,7 @@ const run = async (rerunOutcome: "worked" | "refused" | "threw", amendments: Jso
   const executeTool = vi.fn().mockResolvedValueOnce(worked).mockResolvedValueOnce(refused).mockResolvedValueOnce(worked);
   if (rerunOutcome === "threw") executeTool.mockRejectedValueOnce(new Error("page gone"));
   else executeTool.mockResolvedValueOnce(rerunOutcome === "worked" ? worked : refused);
-  const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { stalled } });
+  const result = await runAutomationStudioLlmEvidenceLoop({ tools: [go], decide, executeTool, maxIterations: 8, maxToolCalls: 8, dryRun: false, unusableDecisions: { stalled }, ...(draft ? { draft } : {}) });
   return { result, decide };
 };
 
@@ -83,6 +83,34 @@ describe("an amendment naming the step its decision reruns", () => {
     // attempt d2 stays at the end, where a rerun's receipt goes (`run-musp474o-e0ed7432`).
     expect(result.steps.map((step) => [step.id, step.position])).toEqual([["d1", 1], ["d3", 2], ["d4", 3], ["d2", 4]]);
     expect(result.steps.find((step) => step.id === "d4")).toMatchObject({ disposition: "kept", acts: ["a1"] });
+  });
+
+  // t285 gap 1: a held claim was applied without the act judge, so an act held for a rerun was claimed unasked.
+  it("asks the act judge before a held act is claimed on the rerun, as an amendment applied at once is", async () => {
+    const judge = vi.fn<AutomationStudioFlowDraftClaimRefused>((_steps, step, act) => act === "a1" ? { act, said: `Step ${step.position} only opened the page, and does not do a1.` } : undefined);
+    const { result, decide } = await run("worked", decision5, { claimRefused: judge });
+    expect(judge).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ id: "d4" }), "a1");
+    // The rerun stands in the Flow without a1; the add beside it still applied.
+    expect(result.steps.find((step) => step.id === "d4")).toMatchObject({ disposition: "kept" });
+    expect(result.steps.find((step) => step.id === "d4")?.acts).toBeUndefined();
+    const rerunRow = result.trace.find((row) => row.callId === "rerun.2");
+    expect(rerunRow?.amendmentsRefused).toEqual([expect.objectContaining({ step: 2, reason: "act_not_done_there", act: "a1", said: "Step 2 only opened the page, and does not do a1." })]);
+    const feedback = shownAt(decide, 4).find((entry) => entry.toolId === "core.amendment_check")?.value;
+    expect(feedback).toMatchObject({ refused: [{ step: 2, reason: "act_not_done_there", act: "a1" }] });
+  });
+
+  // t285 gap 2: the judge's sentence is worded on the draft as it stands, which the decision's own move renumbered.
+  it("says a held claim's refusal in the numbers the model wrote, after a move in the same decision", async () => {
+    const judge = vi.fn<AutomationStudioFlowDraftClaimRefused>((steps, step, act) => act === "a1"
+      ? { act, said: `Step ${step.position} only opened the page, and does not do a1. Step ${steps.find((each) => each.id === "d1")!.position} names it: amend_draft add on step ${steps.find((each) => each.id === "d1")!.position}.`, instead: steps.find((each) => each.id === "d1")!.position }
+      : undefined);
+    // Step 3 moves to 1 now, so d1 is 2 and the rerun of step 2 stands at 3 when its held add is applied.
+    const { result } = await run("worked", [{ step: 2, change: "rerun", input: { target: "#fixed" } }, { step: 3, change: "reorder", to: 1 }, { step: 2, change: "add", act: "a1" }], { claimRefused: judge });
+    expect(result.steps.map((step) => [step.id, step.position])).toEqual([["d3", 1], ["d1", 2], ["d4", 3], ["d2", 4]]);
+    const rerunRow = result.trace.find((row) => row.callId === "rerun.2");
+    expect(rerunRow?.amendmentsRefused).toEqual([expect.objectContaining({
+      step: 2, reason: "act_not_done_there", said: "Step 2 only opened the page, and does not do a1. Step 1 names it: amend_draft add on step 1.", instead: 1
+    })]);
   });
 
   it("says a repeat its move took off in the numbers the model wrote, not the held amendment's", () => {
