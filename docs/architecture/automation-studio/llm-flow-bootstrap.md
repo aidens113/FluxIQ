@@ -6,6 +6,34 @@ in `runtime/flow-bootstrap/plan.ts` and integrated with the existing LLM harness
 the `flow_bootstrap` task. It does not execute a provider request, persist a
 proposal, or mutate a Flow by itself.
 
+## Authoring mode
+
+How the product's own creation and improvement builds are authored is one runtime
+setting with one owner, `model/authoring-mode/`: `FLUXIQ_AUTHORING_MODE` in the
+Core process environment, `legacy` (the default) or `candidate`. Any other value
+refuses instead of falling back. Nothing else holds a mode literal of its own.
+
+- `legacy` is the behaviour before candidate drafts became the default
+  (Core `e9b7d691` through the parent of t330's merge `66a310cc`). The chat's
+  `flow.createHere` and `flow.explore` build with the evidence loop, its build
+  tests and judges, then approve and apply the proposed adaptation onto the blank
+  Flow and say the automation is ready. `flow.improve` asks before applying its
+  extend. The web panel's Explore and Improve show the proposal for review.
+- `candidate` is t330's draft-only behaviour: the same callers request
+  `authoringMode: "candidate"`, a successful build saves an unverified candidate
+  draft, the Flow's steps stay unchanged and nothing is applied or asked about.
+
+The conversation commands read the setting through
+`automationStudioConversationAuthorsCandidates` in `runtime/conversations/commands/build.ts`, for their descriptors, their
+first reply, the build request and the result. The web panel cannot read Core's
+environment, so it sends `authoringMode: "configured"` and the
+`generate-flow-bootstrap-adaptation` handler resolves it once per request; the
+answer is `payload.adaptation` in legacy mode and `payload.candidate` in candidate
+mode, and the handler refuses a result that disagrees with the resolved mode. An
+API request that omits the field is legacy and one that sends `candidate` is a
+candidate request, whatever the setting. The downstream Lab sets the variable on
+each Core it starts and refuses created-Flow qualification only in candidate mode.
+
 ## Explicit candidate authoring
 
 The actual candidate service enumerates all active original instruction IDs before
@@ -36,9 +64,9 @@ and digest and grants static validity only.
 `runtime/service/candidate-drafts/` persists unverified submissions separately
 from adaptations in Core project storage. Reading a stored draft grants neither
 execution nor promotion; it must be revalidated before runtime use. The existing
-raw API legacy authoring path remains the omitted-mode default. Website panel
-Explore/Improve and conversation build/create/explore/improve explicitly request
-unverified candidate drafts. Explicit API requests with
+raw API legacy authoring path remains the omitted-mode default. In candidate
+authoring mode (above), website panel Explore/Improve and conversation
+create/explore/improve request unverified candidate drafts. Explicit API requests with
 `authoringMode: "candidate"` and `evidenceGuided: true` run discovery and full
 submission through the service, then store a separate unverified draft. The API
 returns `payload.candidate` with candidate ID, revision/digest, accepted base and
@@ -54,9 +82,10 @@ draft record. Completion stores the latest submitted revision without marking
 the creation purse ended. Current Flow/settings mismatches and cancellation
 checkpoints refuse storage. This is not an atomic base compare or cancellation
 inside the underlying OS write. Stored drafts grant no execution or promotion.
-Website authoring callers validate the closed `payload.candidate` envelope against
-the original project/Flow, retain its reference/revision and report verification
-pending. They do not approve/apply adaptations or offer an apply confirmation.
+In candidate mode, website authoring callers validate the closed `payload.candidate`
+envelope against the original project/Flow, retain its reference/revision and report
+verification pending. They do not approve/apply adaptations or offer an apply
+confirmation. In legacy mode they review or apply the proposed adaptation as before.
 Conversation completion means a draft was authored; its candidate attachment
 contains an ID reference, not execution or acceptance authority. Explicit plain
 structural generation and raw omitted-mode API compatibility remain legacy.

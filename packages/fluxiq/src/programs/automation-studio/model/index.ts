@@ -29,3 +29,4 @@ export * from "./tokens-per-run/index.ts";
 export * from "./validation.ts";
 export * from "./run-cost-ceiling/index.ts";
 export * from "./build-call-limit/index.ts";
+export * from "./authoring-mode/index.ts";

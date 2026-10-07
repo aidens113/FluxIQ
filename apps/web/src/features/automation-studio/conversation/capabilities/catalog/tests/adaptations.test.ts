@@ -43,7 +43,8 @@ describe("improving a Flow from the conversation", () => {
     expect(dispatch.outcome.status).toBe("done");
     expect(calls.map((call) => call.endpoint)).toEqual(["get-flow-metadata-detail", "save-flow-instruction", "generate-flow-bootstrap-adaptation"]);
     expect(calls[1]!.payload).toMatchObject({ projectId: "p1", flowId: "f1", body: "Close the What's new announcement when it is showing.", requirement: "required", tags: ["generation"] });
-    expect(calls[2]!.payload).toEqual({ projectId: "p1", flowId: "f1", evidenceGuided: true, mode: "extend" });
+    // Core's own authoring mode decides what comes back (`authoring/flow-authoring-response.ts`).
+    expect(calls[2]!.payload).toEqual({ projectId: "p1", flowId: "f1", evidenceGuided: true, authoringMode: "configured", mode: "extend" });
   });
 
   it("changes nothing when the Flow has no model key", async () => {

@@ -1,9 +1,9 @@
-const draft = (flowId: string, candidateId = "candidate.one") => ({ status: "draft", projectId: "project.one", flowId, candidateId, revision: 1, digest: "a".repeat(64), sourceInstructionIds: ["instruction.one"], baseDependencyDigest: "base", baseSettingsRevision: 0, verification: "not_performed", promotionAllowed: false, accounting: { requestId: "request", estimatedInputTokens: 1 } });
 // Improving a Flow that already has steps, from what a person says should
 // change. The creation panel refuses such a Flow by design; this is the door
 // for it, and it has to send exactly what Core's `extend` build needs: the
 // person's words saved as an active instruction first, then an exploration
-// request carrying `authoringMode: "candidate", mode: "extend"`.
+// request carrying `authoringMode: "configured", mode: "extend"`, so Core's own
+// authoring mode decides whether a proposal or a candidate draft comes back.
 
 import React from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
@@ -44,7 +44,7 @@ function renderedText(value: any): string {
 function commands(overrides: Record<string, unknown> = {}) {
   return {
     saveImprovementInstruction: vi.fn(async () => ({ ok: true, payload: { instruction: { instructionId: "instruction.improvement.one", status: "active" } } })),
-    improveFromWebsite: vi.fn(async () => ({ ok: true, payload: { candidate: draft(builtFlow.flowId) } })),
+    improveFromWebsite: vi.fn(async () => ({ ok: true, payload: { adaptation: { projectId: "project.one", flowId: builtFlow.flowId, adaptationId: "adaptation.extend.one", status: "proposed" } } })),
     ...overrides
   } as any;
 }
@@ -74,7 +74,7 @@ describe("improving a Flow that already has steps", () => {
       });
       await act(async () => {
         if (outcome === "reject") reject(new Error("Old request failed"));
-        else resolve(outcome === "success" ? { ok: true, payload: { candidate: draft(builtFlow.flowId) } } : { ok: false });
+        else resolve(outcome === "success" ? { ok: true, payload: { adaptation: { flowId: builtFlow.flowId, adaptationId: "proposal.old", status: "proposed" } } } : { ok: false });
         await pending.catch(() => undefined);
       });
       expect(onOpenAdaptation).not.toHaveBeenCalled();
@@ -91,8 +91,9 @@ describe("improving a Flow that already has steps", () => {
     const { renderer, onOpenAdaptation } = await mount(improvementCommands);
     await ask(renderer);
     await act(async () => renderer.root.findByProps({ "aria-label": "What should change" }).props.onChange({ target: { value: "A later request" } }));
-    expect(button(renderer, "Review suggested change")).toBeUndefined();
-    expect(onOpenAdaptation).not.toHaveBeenCalled();
+    expect(button(renderer, "Review suggested change")).toBeDefined();
+    await act(async () => button(renderer, "Review suggested change")!.props.onClick());
+    expect(onOpenAdaptation).toHaveBeenLastCalledWith(builtFlow.flowId, "adaptation.extend.one");
     expect(improvementCommands.improveFromWebsite).toHaveBeenCalledTimes(1);
     expect(renderer.root.findByProps({ "aria-label": "What should change" }).props.value).toBe("A later request");
     await act(async () => renderer.unmount());
@@ -131,7 +132,7 @@ describe("improving a Flow that already has steps", () => {
     await improveFlowFromWebsiteAdaptation(api, { projectId: "p", flowId: "f" });
     expect(post.mock.calls[0]).toEqual(["save-flow-instruction", { projectId: "p", flowId: "f", ...improvementInstruction(CHANGE) }]);
     expect(post.mock.calls[1]).toEqual(["save-flow-instruction", { projectId: "p", flowId: "f", instructionId: "instruction.improvement.one", ...improvementInstruction("Reworded.") }]);
-    expect(post.mock.calls[2]).toEqual(["generate-flow-bootstrap-adaptation", { projectId: "p", flowId: "f", evidenceGuided: true, authoringMode: "candidate", mode: "extend" }, { policy: { timeoutMs: WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS } }]);
+    expect(post.mock.calls[2]).toEqual(["generate-flow-bootstrap-adaptation", { projectId: "p", flowId: "f", evidenceGuided: true, authoringMode: "configured", mode: "extend" }, { policy: { timeoutMs: WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS } }]);
   });
 
   it("is not offered for a blank Flow", async () => {
@@ -147,14 +148,14 @@ describe("improving a Flow that already has steps", () => {
     expect(improvementCommands.improveFromWebsite).toHaveBeenCalledWith(improvementPayload);
     expect(improvementCommands.improveFromWebsite.mock.calls[0]?.[0]).not.toHaveProperty("llmExecutionGrantId");
     expect(improvementCommands.saveImprovementInstruction.mock.invocationCallOrder[0]).toBeLessThan(improvementCommands.improveFromWebsite.mock.invocationCallOrder[0]);
-    expect(onOpenAdaptation).not.toHaveBeenCalled();
-    expect(renderedText(renderer.toJSON())).toContain("Verification pending");
+    expect(onOpenAdaptation).toHaveBeenCalledWith("flow.week-ahead", "adaptation.extend.one");
+    expect(renderedText(renderer.toJSON())).toContain("Nothing has changed yet.");
   });
 
   it("never asks to confirm a large run, and a retry of the same words does not save a second instruction", async () => {
     const improveFromWebsite = vi.fn()
       .mockResolvedValueOnce({ ok: false, payload: { diagnostic: { code: "flow_bootstrap.provider_timeout" } } })
-      .mockResolvedValue({ ok: true, payload: { candidate: draft(builtFlow.flowId) } });
+      .mockResolvedValue({ ok: true, payload: { adaptation: { flowId: builtFlow.flowId, adaptationId: "adaptation.extend.one", status: "proposed" } } });
     const improvementCommands = commands({ improveFromWebsite });
     const { renderer } = await mount(improvementCommands);
     await ask(renderer);
@@ -195,7 +196,7 @@ describe("improving a Flow that already has steps", () => {
     };
     const improveFromWebsite = vi.fn()
       .mockResolvedValueOnce({ ok: false, payload: { diagnostic: { code: "flow_bootstrap.permission_required", permissionRequest } } })
-      .mockResolvedValueOnce({ ok: true, payload: { candidate: draft(builtFlow.flowId) } });
+      .mockResolvedValueOnce({ ok: true, payload: { adaptation: { flowId: builtFlow.flowId, adaptationId: "adaptation.extend.two", status: "proposed" } } });
     const improvementCommands = commands({ improveFromWebsite });
     const { renderer, onOpenAdaptation } = await mount(improvementCommands);
     await ask(renderer);
@@ -203,15 +204,20 @@ describe("improving a Flow that already has steps", () => {
     await act(async () => { await button(renderer, "Allow and continue")!.props.onClick(); });
     expect(improveFromWebsite.mock.calls[0]?.[0]).not.toHaveProperty("permittedConsequences");
     expect(improveFromWebsite).toHaveBeenLastCalledWith({ ...improvementPayload, permittedConsequences: ["modify_existing"] });
-    expect(onOpenAdaptation).not.toHaveBeenCalled();
+    expect(onOpenAdaptation).toHaveBeenCalledWith("flow.week-ahead", "adaptation.extend.two");
   });
 });
 
-it("saved improvement draft is pending and cannot open an apply action", async () => {
-  const { renderer, onOpenAdaptation } = await mount(commands());
-  await ask(renderer);
-  expect(renderedText(renderer.toJSON())).toContain("Verification pending");
-  expect(onOpenAdaptation).not.toHaveBeenCalled();
-  expect(button(renderer, "Review suggested change")).toBeUndefined();
-  await act(async () => renderer.unmount());
+describe("when Core authors candidate drafts", () => {
+  const draft = (flowId: string, candidateId = "candidate.one") => ({ status: "draft", projectId: "project.one", flowId, candidateId, revision: 1, digest: "a".repeat(64), sourceInstructionIds: ["instruction.one"], baseDependencyDigest: "base", baseSettingsRevision: 0, verification: "not_performed", promotionAllowed: false, accounting: { requestId: "request", estimatedInputTokens: 1 } });
+
+  it("saved improvement draft is pending and cannot open an apply action", async () => {
+    const { renderer, onOpenAdaptation } = await mount(commands({ improveFromWebsite: vi.fn(async () => ({ ok: true, payload: { candidate: draft(builtFlow.flowId) } })) }));
+    await ask(renderer);
+    expect(renderedText(renderer.toJSON())).toContain("Verification pending");
+    expect(renderedText(renderer.toJSON())).not.toContain("Nothing has changed yet.");
+    expect(onOpenAdaptation).not.toHaveBeenCalled();
+    expect(button(renderer, "Review suggested change")).toBeUndefined();
+    await act(async () => renderer.unmount());
+  });
 });

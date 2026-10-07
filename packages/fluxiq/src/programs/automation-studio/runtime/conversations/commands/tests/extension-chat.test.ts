@@ -19,11 +19,15 @@ import { plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 // its steps again (`automationStudioReplayingBinding`), the scripted provider
 // also answers as the judge, and an improvement -- an extend build, which
 // carries the Flow's steps -- reruns each carried step before it finishes.
+//
+// All of that is Core's default legacy authoring mode. In candidate mode
+// (`FLUXIQ_AUTHORING_MODE=candidate`, the describe at the end) a build saves an
+// unverified candidate draft and the Flow keeps no steps.
 
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../../_shared/api.ts";
 import { registerAutomationStudioApi } from "../../../../api/handlers/index.ts";
@@ -54,6 +58,7 @@ let world: World | null = null;
 
 beforeEach(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-extension-chat-"));
+  vi.stubEnv("FLUXIQ_AUTHORING_MODE", "");
 });
 
 afterEach(async () => {
@@ -62,6 +67,7 @@ afterEach(async () => {
   await world?.service.close();
   world = null;
   await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  vi.unstubAllEnvs();
 });
 
 function definition(id: string, label: string): AutomationStudioNodeDefinition {
@@ -248,6 +254,57 @@ function resultTurns(turns: Awaited<ReturnType<World["thread"]>>["turns"], capab
 }
 
 describe("the extension's chat, end to end in Core", () => {
+  it("creates an automation from the page the person is on, builds it by exploring, and puts the steps into it", async () => {
+    world = await createWorld({ unlocked: UNLOCKED_SESSION });
+    world.scriptBuild(SEARCH_THEN_COMPLETE);
+
+    const response = await world.say("Find the kettles on this page", { do: "flow.createHere", with: { instruction: "Search the catalog for kettles." } });
+    expect(response?.decision.kind).toBe("invoke");
+    expect(response?.execution).toMatchObject({ capabilityId: "flow.createHere", status: "started" });
+    await automationStudioConversationCommandWork.idle();
+    expect(automationStudioConversationCommandWork.takeUnreported()).toEqual([]);
+
+    const flow = await onlyFlow(world.service, world.project.id);
+    expect(await flowNodes(world.service, world.project.id, flow.flowId)).toContain(SEARCH_ID);
+    // The build started from the page the person had open, and ran on their unlocked session, not the token's.
+    expect(world.toolInputs.some((input) => input.startLocation === PAGE)).toBe(true);
+    expect(world.resolutions.map((entry) => entry.caller?.actorSessionId)).toEqual(world.resolutions.map(() => UNLOCKED_SESSION));
+    const thread = await world.thread();
+    const [result] = resultTurns(thread.turns, "flow.createHere");
+    expect(result?.text).toMatch(/is ready/u);
+    expect(result?.text).not.toMatch(/Say "run it"/u);
+    // The first reply says what will happen, for the person, and names the site, never the address (UI D9).
+    const announced = thread.turns.find((turn) => turn.author === "automation" && turn.text.includes("I'll make you a new automation"))?.text ?? "";
+    expect(announced).toContain("trying them on shop.example.test");
+    expect(thread.turns.filter((turn) => turn.author === "automation").map((turn) => turn.text).join(" ")).not.toContain(PAGE);
+    // What the build did was shown in this chat.
+    const built = world.activity.filter((event) => event.subject.kind === "build");
+    expect(built.length).toBeGreaterThan(0);
+    expect(built.every((event) => event.conversationId === world!.conversationId)).toBe(true);
+  }, 60_000);
+
+  it("builds from a job the person only described, taking their message as what the automation should do", async () => {
+    world = await createWorld({ unlocked: UNLOCKED_SESSION });
+    world.scriptBuild(SEARCH_THEN_COMPLETE);
+    const message = "Find every kettle in the catalog that costs under 30 dollars";
+
+    // The model named the capability and left its instruction out, as the person's own message already says it.
+    const response = await world.say(message, { do: "flow.createHere" });
+    expect(response?.decision.kind).toBe("invoke");
+    expect(response?.execution).toMatchObject({ capabilityId: "flow.createHere", status: "started" });
+    await automationStudioConversationCommandWork.idle();
+    expect(automationStudioConversationCommandWork.takeUnreported()).toEqual([]);
+
+    const flow = await onlyFlow(world.service, world.project.id);
+    expect(await flowNodes(world.service, world.project.id, flow.flowId)).toContain(SEARCH_ID);
+    const page = await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" }) as unknown as { instructions: Array<{ instructionId: string }> };
+    const bodies = await Promise.all(page.instructions.map(async (entry) => (await world!.service.getFlowInstruction(world!.project.id, entry.instructionId))?.body));
+    expect(bodies).toEqual([message]);
+    const [result] = resultTurns((await world.thread()).turns, "flow.createHere");
+    expect(result?.text).toMatch(/is ready/u);
+    expect(result?.text).not.toMatch(/Say "run it"/u);
+  }, 60_000);
+
   it("says what an automation should do", async () => {
     world = await createWorld({ unlocked: UNLOCKED_SESSION });
     const flow = await world.service.createFlow({ projectId: world.project.id, name: "Kettles" });
@@ -257,6 +314,51 @@ describe("the extension's chat, end to end in Core", () => {
     const page = await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" }) as unknown as { instructions: Array<{ instructionId: string }> };
     const bodies = await Promise.all(page.instructions.map(async (entry) => (await world!.service.getFlowInstruction(world!.project.id, entry.instructionId))?.body));
     expect(bodies).toContain("Find every kettle under 30 dollars.");
+  }, 60_000);
+
+  it("explores and builds a blank automation it is told about, and applies it", async () => {
+    world = await createWorld({ unlocked: UNLOCKED_SESSION });
+    const flow = await world.service.createFlow({ projectId: world.project.id, name: "Kettles" });
+    world.scriptBuild(SEARCH_THEN_COMPLETE);
+
+    const response = await world.say("Build it by trying it here", { do: "flow.explore", with: { flowId: flow.flowId, instruction: "Search the catalog for kettles." } });
+    expect(response?.execution).toMatchObject({ capabilityId: "flow.explore", status: "started" });
+    await automationStudioConversationCommandWork.idle();
+    expect(await flowNodes(world.service, world.project.id, flow.flowId)).toContain(SEARCH_ID);
+    expect(resultTurns((await world.thread()).turns, "flow.explore")[0]?.text).not.toMatch(/stopped because/u);
+  }, 60_000);
+
+  it("continues a kept creation through the real explore registry command without adding an instruction or another Flow", async () => {
+    world = await createWorld({ unlocked: UNLOCKED_SESSION });
+    world.scriptBuild([
+      SEARCH_THEN_COMPLETE[0]!,
+      ...Array.from({ length: 8 }, (_, index) => ({ kind: "tool_call", callId: `look.${index}`, toolId: "example.inspect", input: {} }))
+    ]);
+    // A round that stopped short is judged (t195 C2); judged no, the creation stays unfinished with its draft kept.
+    world.scriptJudge(["no", "no"]);
+    await world.say("Find the kettles here", { do: "flow.createHere", with: { instruction: "Search the catalog for kettles." } });
+    await automationStudioConversationCommandWork.idle();
+    const flow = await onlyFlow(world.service, world.project.id);
+    expect(await world.service.getFlowRouter(world.project.id, flow.flowId)).toBeNull();
+    const beforeInstructions = await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" });
+    const beforeRequests = world.buildRequests.length;
+    world.scriptBuild([
+      { kind: "tool_call", callId: "continued.look", toolId: "example.inspect", input: {} },
+      { kind: "complete", result: { summary: "Search the catalog for kettles." } }
+    ]);
+    const response = await world.say("Continue building it", { do: "flow.explore", with: { flowId: flow.flowId } });
+    expect(response?.execution).toMatchObject({ capabilityId: "flow.explore", status: "started" });
+    await automationStudioConversationCommandWork.idle();
+    const continued = world.buildRequests.slice(beforeRequests);
+    const resume = continued.flatMap((request) => request.context.evidenceLoop?.evidence ?? []).find((entry) => entry.toolId === "core.resumed");
+    expect(resume?.value).toMatchObject({ revision: 1, draftSteps: 2, proposableSteps: 1 });
+    expect(continued.some((request) => request.taskKind === "loop_verification")).toBe(true);
+    expect(world.judgeAppliedCounts.length).toBeGreaterThan(0);
+    expect(world.judgeAppliedCounts.every((count) => count === 0)).toBe(true);
+    expect(await flowNodes(world.service, world.project.id, flow.flowId)).toContain(SEARCH_ID);
+    expect((await onlyFlow(world.service, world.project.id)).flowId).toBe(flow.flowId);
+    expect(await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" })).toEqual(beforeInstructions);
+    expect(automationStudioConversationCommandWork.takeUnreported()).toEqual([]);
   }, 60_000);
 
   it("does not apply an explored creation while its adaptation carries a permission request", async () => {
@@ -273,6 +375,43 @@ describe("the extension's chat, end to end in Core", () => {
     expect(calls).toEqual(["generate-flow-bootstrap-adaptation"]);
     expect(result.status).toBe("failed");
   });
+
+  it("improves an automation, asks before applying, sets the change aside on no and applies it on yes", async () => {
+    world = await createWorld({ unlocked: UNLOCKED_SESSION });
+    world.scriptBuild(SEARCH_THEN_COMPLETE);
+    await world.say("Find the kettles on this page", { do: "flow.createHere", with: { instruction: "Search the catalog for kettles." } });
+    await automationStudioConversationCommandWork.idle();
+    const flow = await onlyFlow(world.service, world.project.id);
+
+    const improveOnce = async () => {
+      // The improvement carries the Flow's search step, which has not run in this build: it runs it again as it stands,
+      // so the improved Flow can be tested whole, and then finishes.
+      world!.scriptBuild([
+        { kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: { consequences: [] } }] },
+        { kind: "complete", result: { summary: "Search, then open the first kettle." } }
+      ]);
+      const response = await world!.say("It should also open the first kettle", { do: "flow.improve", with: { flowId: flow.flowId, change: "Also open the first kettle." } });
+      expect(response?.execution).toMatchObject({ capabilityId: "flow.improve", status: "started" });
+      await automationStudioConversationCommandWork.idle();
+      const pending = (await world!.thread()).turns.filter((turn) => turn.ask?.status === "pending" && turn.ask.askId.startsWith("conversation-command."));
+      expect(pending, JSON.stringify(resultTurns((await world!.thread()).turns, "flow.improve").map((turn) => turn.text))).toHaveLength(1);
+      const ref = JSON.parse(Buffer.from(pending[0]!.attachment!.ref, "base64url").toString("utf8")) as { arguments: { adaptationId: string } };
+      return { askId: pending[0]!.ask!.askId, adaptationId: ref.arguments.adaptationId };
+    };
+
+    const declined = await improveOnce();
+    const deny = await world.call("answer-ask", { projectId: world.project.id, askId: declined.askId, kind: "deny" });
+    expect(deny.ok, deny.error).toBe(true);
+    expect((deny.payload as { execution: Record<string, unknown> | null }).execution).toMatchObject({ capabilityId: "adaptation.reject", status: "done" });
+    // Rejected rather than left waiting: a change left waiting would refuse the next improvement (`pending_adaptation_exists`).
+    expect((await world.service.getFlowBootstrapAdaptation(world.project.id, flow.flowId, declined.adaptationId))!.status).toBe("rejected");
+
+    const accepted = await improveOnce();
+    const grant = await world.call("answer-ask", { projectId: world.project.id, askId: accepted.askId, kind: "grant" });
+    expect(grant.ok, grant.error).toBe(true);
+    expect((grant.payload as { execution: Record<string, unknown> | null }).execution).toMatchObject({ status: "done" });
+    expect((await world.service.getFlowBootstrapAdaptation(world.project.id, flow.flowId, accepted.adaptationId))!.status).toBe("applied");
+  }, 90_000);
 
   it("runs an automation from its own chat, where \"run it\" means that automation", async () => {
     world = await createWorld({ unlocked: UNLOCKED_SESSION });
@@ -339,38 +478,42 @@ describe("the extension's chat, end to end in Core", () => {
     expect(result?.text).not.toMatch(/Before that I created the Flow/u);
     expect(result?.text).toMatch(/model key is locked/u);
   }, 60_000);
-  it("actual registry chat creation saves a draft and leaves accepted topology unchanged", async () => {
-    world = await createWorld({ unlocked: UNLOCKED_SESSION });
-    await world.say("Create a flow that finds products", { do: "flow.createHere", with: { instruction: "Find products", name: "Draft" } });
-    await automationStudioConversationCommandWork.idle();
-    const flow = await onlyFlow(world.service, world.project.id);
-    expect(await world.service.getFlowRouter(world.project.id, flow.flowId)).toBeNull();
-    expect((await world.service.getFlow(world.project.id, flow.flowId)).nodes).toEqual([]);
-    expect((await world.service.listFlowAdaptationSummaries({ projectId: world.project.id, flowId: flow.flowId, limit: 50 })).adaptations).toEqual([]);
-    const turns = (await world.thread()).turns;
-    expect(turns.filter((turn) => turn.ask)).toEqual([]);
-    expect(turns.some((turn) => turn.attachment?.kind === "candidate-draft")).toBe(true);
-    expect(turns.map((turn) => turn.text).join(" ")).toContain("Verification pending");
-    expect(world.buildRequests.some((request) => request.taskKind === "loop_verification")).toBe(false);
-    const original = await world.service.getFlowInstructionSet({ projectId: world.project.id, flowId: flow.flowId });
-    const flowCount = (await world.service.listFlows(world.project.id)).length;
-    await world.say("Continue building it", { do: "flow.explore", with: { flowId: flow.flowId } });
-    await automationStudioConversationCommandWork.idle();
-    expect((await world.service.listFlows(world.project.id)).length).toBe(flowCount);
-    expect(await world.service.getFlowInstructionSet({ projectId: world.project.id, flowId: flow.flowId })).toEqual(original);
-    expect(await world.service.getFlowRouter(world.project.id, flow.flowId)).toBeNull();
-    expect((await world.thread()).turns.filter((turn) => turn.attachment?.kind === "candidate-draft")).toHaveLength(2);
 
-  }, 60_000);
+  describe("in candidate authoring mode", () => {
+    beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate"); });
 
-  it.each([PAGE, "http://127.0.0.1:4100/private?token=sensitive"])("candidate announcement masks address %s", async (page) => {
-    world = await createWorld({ unlocked: UNLOCKED_SESSION });
-    await world.say("Create an automation", { do: "flow.createHere", with: { instruction: "Find products", name: "Draft" } }, { pageUrl: page });
-    await automationStudioConversationCommandWork.idle();
-    const text = (await world.thread()).turns.filter((turn) => turn.author === "automation").map((turn) => turn.text).join(" ");
-    expect(text).not.toContain(page); expect(text).not.toContain("token=sensitive");
-    expect(text).toContain(page === PAGE ? "shop.example.test" : "the page you had open");
-    expect(text).toContain("Verification pending");
-  }, 60_000);
+    it("actual registry chat creation saves a draft and leaves accepted topology unchanged", async () => {
+      world = await createWorld({ unlocked: UNLOCKED_SESSION });
+      await world.say("Create a flow that finds products", { do: "flow.createHere", with: { instruction: "Find products", name: "Draft" } });
+      await automationStudioConversationCommandWork.idle();
+      const flow = await onlyFlow(world.service, world.project.id);
+      expect(await world.service.getFlowRouter(world.project.id, flow.flowId)).toBeNull();
+      expect((await world.service.getFlow(world.project.id, flow.flowId)).nodes).toEqual([]);
+      expect((await world.service.listFlowAdaptationSummaries({ projectId: world.project.id, flowId: flow.flowId, limit: 50 })).adaptations).toEqual([]);
+      const turns = (await world.thread()).turns;
+      expect(turns.filter((turn) => turn.ask)).toEqual([]);
+      expect(turns.some((turn) => turn.attachment?.kind === "candidate-draft")).toBe(true);
+      expect(turns.map((turn) => turn.text).join(" ")).toContain("Verification pending");
+      expect(world.buildRequests.some((request) => request.taskKind === "loop_verification")).toBe(false);
+      const original = await world.service.getFlowInstructionSet({ projectId: world.project.id, flowId: flow.flowId });
+      const flowCount = (await world.service.listFlows(world.project.id)).length;
+      await world.say("Continue building it", { do: "flow.explore", with: { flowId: flow.flowId } });
+      await automationStudioConversationCommandWork.idle();
+      expect((await world.service.listFlows(world.project.id)).length).toBe(flowCount);
+      expect(await world.service.getFlowInstructionSet({ projectId: world.project.id, flowId: flow.flowId })).toEqual(original);
+      expect(await world.service.getFlowRouter(world.project.id, flow.flowId)).toBeNull();
+      expect((await world.thread()).turns.filter((turn) => turn.attachment?.kind === "candidate-draft")).toHaveLength(2);
 
+    }, 60_000);
+
+    it.each([PAGE, "http://127.0.0.1:4100/private?token=sensitive"])("candidate announcement masks address %s", async (page) => {
+      world = await createWorld({ unlocked: UNLOCKED_SESSION });
+      await world.say("Create an automation", { do: "flow.createHere", with: { instruction: "Find products", name: "Draft" } }, { pageUrl: page });
+      await automationStudioConversationCommandWork.idle();
+      const text = (await world.thread()).turns.filter((turn) => turn.author === "automation").map((turn) => turn.text).join(" ");
+      expect(text).not.toContain(page); expect(text).not.toContain("token=sensitive");
+      expect(text).toContain(page === PAGE ? "shop.example.test" : "the page you had open");
+      expect(text).toContain("Verification pending");
+    }, 60_000);
+  });
 });
