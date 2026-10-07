@@ -8,7 +8,7 @@ import { AUTOMATION_LLM_PROGRESS_LABELS, type BlankFlowAuthoringReadiness } from
 import { existingFlowImprovementRequest, IMPROVEMENT_INSTRUCTION_MAX_LENGTH } from "./existing-flow-improvement";
 import type { FlowImprovementCommands } from "./improvement-host";
 
-type Phase = "idle" | "preparing" | "improving";
+type Phase = "idle" | "preparing" | "improving" | "review";
 
 /** What the person has already been asked and has answered for this wording. */
 type Continuation = { text: string; permission: AutomationStudioActionPermissionRequest };
@@ -21,7 +21,7 @@ function improvementFailureMessage(result: any): string {
   if (code === "flow_bootstrap.evidence_iteration_limit" || code === "flow_bootstrap.evidence_limit") return "FluxIQ reached its limit before it found the change. Say more precisely what should be different, then try again.";
   if (code === "flow_bootstrap.evidence_tool_failed" || code === "flow_bootstrap.evidence_runtime_unavailable") return "The connected browser could not try this out. Check that the website's tab is still open, then try again.";
   if (code === "flow_bootstrap.user_intervention_required") return "The website showed a check only you can complete, and it was not completed. Complete it in the browser, then try again.";
-  return "FluxIQ did not come back with a candidate draft. Check the connected browser and what you asked for, then try again.";
+  return "FluxIQ did not come back with a change to review. Check the connected browser and what you asked for, then try again.";
 }
 
 /**
@@ -42,6 +42,7 @@ export function ImproveFlowPanel(props: {
   const request = useMemo(() => existingFlowImprovementRequest(props.projectId, props.flow, props.readiness), [props.flow, props.projectId, props.readiness]);
   const [text, setText] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
+  const [proposal, setProposal] = useState<{ flowId: string; adaptationId: string } | null>(null);
   const [candidate, setCandidate] = useState<AutomationStudioCandidateAuthoringResult | null>(null);
   const [error, setError] = useState("");
   const [pending, setPending] = useState<Continuation | null>(null);
@@ -55,6 +56,7 @@ export function ImproveFlowPanel(props: {
   useEffect(() => {
     setText("");
     setPhase("idle");
+    setProposal(null);
     setCandidate(null);
     setError("");
     setPending(null);
@@ -95,10 +97,19 @@ export function ImproveFlowPanel(props: {
       // Only what the person allowed in answer to this improvement's own request.
       const generated = await props.commands.improveFromWebsite({ projectId, flowId, ...(continuation ? { permittedConsequences: [...continuation.permission.missing] } : {}) });
       if (!current()) return;
-      if (generated?.ok) {
+      // Core's authoring mode decides the answer (`./flow-authoring-response.ts`):
+      // a candidate draft in candidate mode, otherwise a proposal to review.
+      if (generated?.ok && generated.payload?.candidate !== undefined) {
         const draft = parseAutomationStudioCandidateAuthoringResult(generated.payload, { projectId, flowId });
         if (!draft) { setPhase("idle"); setError("The build did not return a valid candidate draft for this Flow."); return; }
-        setCandidate(draft); setPhase("idle"); return;
+        setCandidate(draft); setProposal(null); setPhase("idle"); return;
+      }
+      const adaptation = generated?.payload?.adaptation;
+      if (generated?.ok && adaptation?.status === "proposed" && typeof adaptation.adaptationId === "string") {
+        setPhase("review");
+        setProposal({ flowId: adaptation.flowId ?? flowId, adaptationId: adaptation.adaptationId });
+        props.onOpenAdaptation?.(adaptation.flowId ?? flowId, adaptation.adaptationId);
+        return;
       }
       setPhase("idle");
       const asked = generated?.payload?.diagnostic?.code === "flow_bootstrap.permission_required"
@@ -120,11 +131,12 @@ export function ImproveFlowPanel(props: {
   const confirmingPermission = pending?.permission ?? null;
 
   return <section aria-label="Improve this automation" className="automation-runtime-run-panel automation-flow-authoring-panel">
-    <header><div><strong>Improve this automation</strong><span className="automation-flow-authoring-description">Say what it should do differently, in your own words. FluxIQ explores the website and saves a candidate draft. Verification is pending; the existing steps stay unchanged.</span></div></header>
-    <label className="automation-flow-exploration-task"><span>What should change</span><textarea aria-describedby="improvement-help" aria-label="What should change" disabled={busy} maxLength={IMPROVEMENT_INSTRUCTION_MAX_LENGTH} onChange={(event) => { setText(event.target.value); setError(""); setPending(null); }} placeholder="For example: Sometimes a What's new window covers the page. When it is showing, close it first; when it is not, carry on as before." rows={4} value={text} /><small id="improvement-help">{text.length}/{IMPROVEMENT_INSTRUCTION_MAX_LENGTH} characters. This is kept with the automation as one more thing it has been asked to do.</small></label>
-    <div className="automation-runtime-run-command"><div><small>The existing steps stay unchanged. Applying a candidate is unavailable until independent verification is supported.</small></div><button className="button button-primary" disabled={busy || !wording} onClick={() => void improve()} type="button">{phase === "preparing" ? "Getting ready..." : phase === "improving" ? `${AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}...` : "Improve automation"}</button></div>
+    <header><div><strong>Improve this automation</strong><span className="automation-flow-authoring-description">Say what it should do differently, in your own words. FluxIQ opens the website, works out the change to the steps it already has, and shows it to you before anything is saved.</span></div></header>
+    <label className="automation-flow-exploration-task"><span>What should change</span><textarea aria-describedby="improvement-help" aria-label="What should change" disabled={busy} maxLength={IMPROVEMENT_INSTRUCTION_MAX_LENGTH} onChange={(event) => { setText(event.target.value); setError(""); setPending(null); if (phase === "review") setPhase("idle"); }} placeholder="For example: Sometimes a What's new window covers the page. When it is showing, close it first; when it is not, carry on as before." rows={4} value={text} /><small id="improvement-help">{text.length}/{IMPROVEMENT_INSTRUCTION_MAX_LENGTH} characters. This is kept with the automation as one more thing it has been asked to do.</small></label>
+    <div className="automation-runtime-run-command"><div><small>The steps it already has stay as they are until you accept the suggested change.</small></div><button className="button button-primary" disabled={busy || !wording} onClick={() => void improve()} type="button">{phase === "preparing" ? "Getting ready..." : phase === "improving" ? `${AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}...` : "Improve automation"}</button></div>
     {phase === "improving" ? <div className="automation-flow-exploration-progress"><progress aria-label={AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget} /> <span aria-atomic="true" aria-live="polite" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.inspectingLiveTarget}.</strong> Keep the browser and the website's tab connected.</span></div> : null}
-    {candidate && candidate.projectId === props.projectId && candidate.flowId === props.flow?.flowId ? <p role="status" data-candidate-id={candidate.candidateId}>Saved candidate draft (revision {candidate.revision}). Verification pending. The Flow?s steps are unchanged.</p> : null}
+    {proposal ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> Nothing has changed yet. Check the suggested change and accept it to keep it. <button className="button" disabled={busy || !props.onOpenAdaptation} onClick={() => props.onOpenAdaptation?.(proposal.flowId, proposal.adaptationId)} type="button">Review suggested change</button></p> : null}
+    {candidate && candidate.projectId === props.projectId && candidate.flowId === props.flow?.flowId ? <p role="status" data-candidate-id={candidate.candidateId}>Saved candidate draft (revision {candidate.revision}). Verification pending. The Flow's steps are unchanged; applying a candidate is unavailable until independent verification is supported.</p> : null}
     {error ? <p className="automation-runtime-message" role="alert">{error}</p> : null}
     {confirmingPermission ? <Modal busy={busy} closeOnEscape={!busy} title="Confirm what the change may do" onClose={() => setPending(null)}><div className="automation-modal-form">
       <p className="automation-router-modal-intro">{confirmingPermission.sentence}</p>

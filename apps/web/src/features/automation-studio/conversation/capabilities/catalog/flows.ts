@@ -13,13 +13,22 @@
 // site (Core's `extend`) into a suggested change to review with the
 // `adaptation.*` capabilities.
 
-import { flowModelBinding, flowModelFromDetail, generateFlowBootstrapAdaptation, generateFlowFromWebsiteExplorationAdaptation, improveFlowFromWebsiteAdaptation, saveFlowGenerationInstruction, saveFlowImprovementInstruction } from "../../../authoring";
+import { flowModelBinding, flowModelFromDetail, generateFlowBootstrapAdaptation, generateFlowFromWebsiteExplorationAdaptation, improveFlowFromWebsiteAdaptation, saveFlowGenerationInstruction, saveFlowImprovementInstruction, type FlowAuthoringPayload } from "../../../authoring";
 import { saveFlowInstruction } from "../../../instructions";
 import { loadFlowSettingsDetail } from "../../../settings";
 import { automationStudioViewId } from "../../../views";
 import { definePanelCapability, panelCapabilityResult, type PanelCapability } from "../contract";
 import { PROJECT, FLOW, PIN } from "./argument";
 import { str } from "./value";
+
+/**
+ * What a build says once Core answered it. Core's authoring mode decides the
+ * answer (`../../../authoring/flow-authoring-response.ts`): a candidate draft
+ * in candidate mode, otherwise the proposal `proposed` describes.
+ */
+function authoredSummary(response: { ok: boolean; payload?: FlowAuthoringPayload }, proposed: string): string {
+  return response.ok && response.payload?.candidate !== undefined ? "Saved a candidate draft. Verification pending; the Flow's steps are unchanged." : proposed;
+}
 
 export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
   definePanelCapability({
@@ -80,11 +89,10 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
     endpoints: ["generate-flow-bootstrap-adaptation"],
     arguments: [PROJECT, FLOW],
     consequences: ["modify_existing"],
-    invoke: async (context, args) => panelCapabilityResult(
-      await generateFlowFromWebsiteExplorationAdaptation(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId") }),
-      "Saved a candidate draft. Verification pending; the Flow?s steps are unchanged.",
-      "The exploration could not be started."
-    )
+    invoke: async (context, args) => {
+      const built = await generateFlowFromWebsiteExplorationAdaptation(context.transport, { projectId: str(args, "projectId"), flowId: str(args, "flowId") });
+      return panelCapabilityResult(built, authoredSummary(built, "Exploring the site and building the Flow from what worked."), "The exploration could not be started.");
+    }
   }),
   definePanelCapability({
     id: "flow.improve",
@@ -113,11 +121,8 @@ export const FLOW_CAPABILITIES: readonly PanelCapability[] = [
       if (!binding.ok) return { status: "failed", summary: "This Flow has no DeepSeek model key chosen. Choose one in the Flow's settings first.", error: "This Flow has no DeepSeek model key chosen." };
       const saved = await saveFlowImprovementInstruction(context.transport, { projectId, flowId, instruction: str(args, "change") });
       if (!saved.ok) return panelCapabilityResult(saved, "", "What should change could not be saved, so nothing was built.");
-      return panelCapabilityResult(
-        await improveFlowFromWebsiteAdaptation(context.transport, { projectId, flowId }),
-        "Saved a candidate draft. Verification pending; the Flow?s steps are unchanged.",
-        "The improvement could not be worked out."
-      );
+      const improved = await improveFlowFromWebsiteAdaptation(context.transport, { projectId, flowId });
+      return panelCapabilityResult(improved, authoredSummary(improved, "Worked out the change on the website. It is waiting in Suggested changes for you to accept or reject."), "The improvement could not be worked out.");
     }
   }),
   definePanelCapability({

@@ -1,8 +1,8 @@
-import { parseAutomationStudioCandidateAuthoringResult, type AutomationStudioCandidateAuthoringResult } from "fluxiq/automation-studio/candidate-authoring";
 import type { ProgramCommandTransport } from "../data/program-transport";
 import { saveFlowInstruction } from "../instructions";
 import { WEBSITE_EXPLORATION_OVERALL_TIMEOUT_MS } from "./blank-flow-authoring-model";
 import { improvementInstruction } from "./existing-flow-improvement";
+import { screenFlowAuthoringResponse, type FlowAuthoringPayload } from "./flow-authoring-response";
 
 // A website exploration iterates for as long as Core lets the run go on, so the
 // browser waits out the whole run and the reply.
@@ -16,35 +16,37 @@ export function saveFlowGenerationInstruction(api: ProgramCommandTransport, payl
   return api.post<{ instruction?: { instructionId?: string; status?: string } }>("save-flow-generation-instruction", payload);
 }
 
+/**
+ * Builds a blank Flow by exploring the website. How it is authored is Core's
+ * own setting, asked for as `configured` (`./flow-authoring-response.ts`).
+ */
 export async function generateFlowFromWebsiteExplorationAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; permittedConsequences?: string[] }) {
-  const response = await api.post<{ candidate?: AutomationStudioCandidateAuthoringResult }>("generate-flow-bootstrap-adaptation", {
+  const response = await api.post<FlowAuthoringPayload>("generate-flow-bootstrap-adaptation", {
     ...payload,
     evidenceGuided: true,
-    authoringMode: "candidate"
+    authoringMode: "configured"
   }, {
     policy: { timeoutMs: WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS }
   });
-  return response.ok && !parseAutomationStudioCandidateAuthoringResult(response.payload, payload)
-    ? { ...response, ok: false, error: "The build did not return a valid candidate draft for this Flow." } : response;
+  return screenFlowAuthoringResponse(response, payload);
 }
 
 /**
  * Improves a Flow that already has steps. It is an exploration -- the model
  * opens the page and sees what the Flow does not handle -- run as Core's
  * `extend`, so the Flow's own steps are the draft the model amends and its
- * Router, Subflow and node ids are kept.
+ * Router, Subflow and node ids are kept. Authored in Core's own mode, as above.
  */
 export async function improveFlowFromWebsiteAdaptation(api: ProgramCommandTransport, payload: { projectId: string; flowId: string; permittedConsequences?: string[] }) {
-  const response = await api.post<{ candidate?: AutomationStudioCandidateAuthoringResult }>("generate-flow-bootstrap-adaptation", {
+  const response = await api.post<FlowAuthoringPayload>("generate-flow-bootstrap-adaptation", {
     ...payload,
     evidenceGuided: true,
-    authoringMode: "candidate",
+    authoringMode: "configured",
     mode: "extend"
   }, {
     policy: { timeoutMs: WEBSITE_EXPLORATION_COMMAND_TIMEOUT_MS }
   });
-  return response.ok && !parseAutomationStudioCandidateAuthoringResult(response.payload, payload)
-    ? { ...response, ok: false, error: "The build did not return a valid candidate draft for this Flow." } : response;
+  return screenFlowAuthoringResponse(response, payload);
 }
 
 /**

@@ -42,6 +42,41 @@ describe("Automation Studio LLM execution API", () => {
     generate.mockResolvedValue({ ...draft, status: "proposed" });
     expect(await registry.call(request)).toMatchObject({ ok: false });
   });
+  it("resolves a configured authoring mode from Core's setting: legacy proposes, candidate drafts", async () => {
+    const draft = { projectId: "project", flowId: "flow", status: "draft", candidateId: "candidate", revision: 1, digest: "a".repeat(64), baseDependencyDigest: "base", baseSettingsRevision: 1, sourceInstructionIds: ["instruction"], accounting: { requestId: "request", estimatedInputTokens: 10 }, verification: "not_performed", promotionAllowed: false };
+    const proposed = { projectId: "project", flowId: "flow", adaptationId: "adaptation", status: "proposed", riskLevel: "low", baseDependencyDigest: "base", baseSettingsRevision: 1, sourceInstructionIds: ["instruction"], accounting: { requestId: "request", estimatedInputTokens: 10 } };
+    const generate = vi.fn(), registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, readyLlmApiService({ generateFlowBootstrapAdaptation: generate }) as any);
+    const actor: ProgramApiActor = { sessionId: "session", userId: "user", roleId: "admin", permissions: ["flows.write"] };
+    const request = { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, scope: {}, actor, payload: { projectId: "project", flowId: "flow", authSessionId: "session", authoringMode: "configured", evidenceGuided: true } };
+    try {
+      vi.stubEnv("FLUXIQ_AUTHORING_MODE", "");
+      generate.mockResolvedValue(proposed);
+      expect(await registry.call(request)).toMatchObject({ ok: true, payload: { adaptation: { adaptationId: "adaptation", status: "proposed" } } });
+      expect(generate.mock.calls[0]![0]).not.toHaveProperty("authoringMode");
+      // A legacy Core answering a draft is refused rather than passed on as the other mode.
+      generate.mockResolvedValue(draft);
+      expect(await registry.call(request)).toMatchObject({ ok: false });
+
+      vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate");
+      generate.mockClear().mockResolvedValue(draft);
+      expect(await registry.call(request)).toMatchObject({ ok: true, payload: { candidate: { candidateId: "candidate", verification: "not_performed", promotionAllowed: false } } });
+      expect(generate).toHaveBeenCalledWith(expect.objectContaining({ authoringMode: "candidate", evidenceGuided: true }));
+      generate.mockResolvedValue(proposed);
+      expect(await registry.call(request)).toMatchObject({ ok: false });
+
+      // A request without the field stays a proposal whatever the setting, and a misconfigured setting refuses before any build.
+      generate.mockClear().mockResolvedValue(proposed);
+      expect(await registry.call({ ...request, payload: { ...request.payload, authoringMode: undefined } })).toMatchObject({ ok: true, payload: { adaptation: { status: "proposed" } } });
+      vi.stubEnv("FLUXIQ_AUTHORING_MODE", "sometimes");
+      generate.mockClear();
+      expect(await registry.call(request)).toMatchObject({ ok: false, error: expect.stringContaining("FLUXIQ_AUTHORING_MODE") });
+      expect(await registry.call({ ...request, payload: { ...request.payload, evidenceGuided: undefined } })).toMatchObject({ ok: false });
+      expect(generate).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
   it("runs a diagnosis_only intent for the signed-in actor, with no grant, and may name the run it continues", async () => {
     const runRuntimeSession = vi.fn().mockResolvedValue({ runId: "run.one", status: "failed" });
     const registry = new GlobalProgramApiRegistry();

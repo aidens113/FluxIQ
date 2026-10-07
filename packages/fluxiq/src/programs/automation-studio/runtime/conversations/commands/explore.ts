@@ -1,9 +1,21 @@
-// Explores for a candidate on the existing blank Flow, preserving its original instruction.
-// The saved candidate still requires independent execution, verification and promotion.
+// "Try it on the website": build a Flow by exploring the site.
+//
+// The panel's `flow.explore`, run by Core, with two things the chat adds: what
+// the person just said is saved first when they said it, and the page they
+// have open is where the exploration starts. The build is Core's `create`
+// mode, which Core accepts only on a blank Flow, so a change it produced has
+// nothing of the person's to replace and is applied straight away -- the same
+// reason create-here applies. A Flow that already has steps is refused by the
+// build itself, and the thread says so; improving one is `flow.improve`.
+//
+// In candidate authoring mode (`./build.ts`) the build saves an
+// unverified candidate draft instead, and nothing is applied.
 
+import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
-import { buildAutomationStudioFlowFromConversation } from "./build.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED, automationStudioConversationAuthorsCandidates, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
+import { automationStudioConversationSiteName } from "../site-name.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
 
 const TITLE = "Build the Flow by exploring the site";
@@ -13,7 +25,11 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
   capability: {
     id: "flow.explore",
     title: TITLE,
-    summary: "Builds a Flow that has no applied steps yet, or continues its compatible saved unfinished draft, then saves a candidate draft with verification pending.",
+    get summary() {
+      return automationStudioConversationAuthorsCandidates()
+        ? "Builds a Flow that has no applied steps yet, or continues its compatible saved unfinished draft, then saves a candidate draft with verification pending."
+        : "Builds a Flow that has no applied steps yet, or continues its compatible saved unfinished draft, then puts the completed steps into that same Flow.";
+    },
     group: "Flows",
     control: "Explore and build",
     arguments: [
@@ -24,7 +40,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
     consequences: ["modify_existing"],
     reauthorizes: false
   },
-  announce: ({ flowName, place }) => `I'll work out ${flowName ? `the steps for "${flowName}"` : "the Flow's steps"} by trying them on ${place}, and save an unverified candidate draft.`,
+  announce: ({ flowName, place }) => `I'll work out ${flowName ? `the steps for "${flowName}"` : "the Flow's steps"} by trying them on ${place}, ${automationStudioConversationAuthorsCandidates() ? "and save an unverified candidate draft" : "and say here when they are in"}.`,
   async run(context, args) {
     const progress = automationStudioConversationCommandProgress(TITLE, context.keyLocked);
     const flowId = automationStudioConversationCommandText(args, "flowId");
@@ -40,6 +56,15 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "create" });
     if (!built.ok) return progress.failed(built.cause, { ending: built.ending });
-    return { ...progress.succeeded("Saved a candidate draft. Verification pending; the Flow's steps are unchanged."), candidate: built.candidate };
+    if (built.status === "draft") return { ...progress.succeeded(AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_SAVED), candidate: built.candidate };
+    progress.carry({ adaptationId: built.adaptationId });
+    const where = automationStudioConversationSiteName(context.startLocation);
+    progress.landed(`tried the steps on ${where} and worked out which ones work`);
+    if (built.awaitingPermission) return progress.failed("the build finished still waiting for your permission for one of its steps, so its steps were not put into the Flow");
+
+    const applied = await applyAutomationStudioConversationAdaptation(context, { flowId, adaptationId: built.adaptationId });
+    if (!applied.ok) return progress.failed(applied.cause);
+    // Says what is so, never "say run it": a run may already be under way (UI D9).
+    return progress.succeeded(`The Flow's steps are in: I tried them on ${where} and kept the ones that worked.`);
   }
 };

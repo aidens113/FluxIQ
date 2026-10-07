@@ -4,6 +4,7 @@
 // only a lasting consequence of one of its actions is asked about
 // (`permittedConsequences`).
 
+import { resolveAutomationStudioAuthoringMode } from "../../model/authoring-mode/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowBootstrapFailedBuilds, automationStudioFlowStartLocation, parseAutomationStudioFlowBootstrapGenerationError, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioService } from "../../runtime/index.ts";
@@ -65,7 +66,14 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
       const unknownField = Object.keys(payload).find((key) => !FLOW_BOOTSTRAP_GENERATION_REQUEST_FIELDS.has(key));
       if (unknownField) return { ok: false, error: "Flow bootstrap generation request contains unsupported fields." };
       if (payload.evidenceGuided !== undefined && payload.evidenceGuided !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid evidence-guided flag." };
-      if (payload.authoringMode !== undefined && (payload.authoringMode !== "candidate" || payload.evidenceGuided !== true)) return { ok: false, error: "Candidate authoring requires evidence-guided generation." };
+      if (payload.authoringMode !== undefined && ((payload.authoringMode !== "candidate" && payload.authoringMode !== "configured") || payload.evidenceGuided !== true)) return { ok: false, error: "Candidate authoring requires evidence-guided generation." };
+      // `configured` is how a client that cannot read Core's configuration
+      // (the web panel) asks for Core's own authoring mode
+      // (`../../model/authoring-mode/`); it is resolved here, once, so the build
+      // and the answer below agree on it.
+      let candidateAuthoring: boolean;
+      try { candidateAuthoring = payload.authoringMode === "candidate" || (payload.authoringMode === "configured" && resolveAutomationStudioAuthoringMode() === "candidate"); }
+      catch (error) { return { ok: false, error: error instanceof Error ? error.message : "Core's authoring mode is misconfigured." }; }
       if (payload.useReusableContext !== undefined && payload.useReusableContext !== true) return { ok: false, error: "Flow bootstrap generation request contains an invalid reusable-context flag." };
       // `extend` improves the Flow as it stands instead of writing one from
       // nothing. Only the two words Core knows pass; absent is `create`, which
@@ -102,7 +110,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
           // permits nothing lasting.
           permittedConsequences,
           ...(payload.evidenceGuided === true ? { evidenceGuided: true as const } : {}),
-          ...(payload.authoringMode === "candidate" ? { authoringMode: "candidate" as const } : {}),
+          ...(candidateAuthoring ? { authoringMode: "candidate" as const } : {}),
           ...(payload.useReusableContext === true ? { useReusableContext: true as const } : {}),
           ...(payload.mode === "extend" ? { mode: "extend" as const } : {}),
           // Where the Flow starts, when the caller named one. Validated above,
@@ -133,7 +141,7 @@ export function registerLlmGenerationEndpoints(dependencies: AutomationStudioApi
         return { ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.unclassified_failure)." };
       }
       failedBuilds.ended(projectId, flowId, undefined);
-      if ((payload.authoringMode === "candidate") !== (generated.status === "draft")) return { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
+      if (candidateAuthoring !== (generated.status === "draft")) return { ok: false, error: "Flow bootstrap generation returned a status inconsistent with the requested authoring mode." };
       const sanitized = sanitizedFlowBootstrapGeneration(generated);
       return { ok: true, payload: sanitized.status === "draft" ? { candidate: sanitized } : { adaptation: sanitized } };
     }
