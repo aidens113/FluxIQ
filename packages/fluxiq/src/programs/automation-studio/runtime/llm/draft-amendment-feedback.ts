@@ -343,6 +343,8 @@ type AutomationStudioDraftAmendmentFeedbackStep = {
   resultCode?: string;
   resultReason?: string;
   callId?: string;
+  /** The host says the step answered a layer in front of the page (`../flow-draft/step.ts`): never a loop's act (`rowAct`). */
+  interruption?: true;
 };
 
 /**
@@ -424,9 +426,16 @@ function listingFirst(act: AutomationStudioDraftAmendmentFeedbackStep, listing: 
  * The act a loop over the listing at `listing` needs: the first step after it
  * that changed something, with the repeat to put on it, or -- when there is
  * none -- that the act on one row comes first.
+ *
+ * A press the host says answered a layer in front of the page (`interruption`)
+ * did nothing to a row the listing kept, so it is never named: live run
+ * `run-muxky54f-fadb9d03` (0034, 0036) was told its "Close chat", over the
+ * request list, might be the act, added a1 on it with the repeat, and the
+ * checklist then said it only cleared the way. The draft records no more than
+ * that of whether a press acted inside a row.
  */
 function rowAct(listing: number, steps: readonly AutomationStudioDraftAmendmentFeedbackStep[]): string {
-  const press = steps.find((step) => step.position > listing && step.effect === "mutate" && step.effectApplied !== false);
+  const press = steps.find((step) => step.position > listing && step.effect === "mutate" && step.effectApplied !== false && step.interruption !== true);
   const repeat = (act: string): string => `{"step": ${act}, "change": "repeat", "over": ${listing}}`;
   if (!press) {
     return `No step after step ${listing} does anything to a row yet, so there is nothing to repeat. A loop over rows needs the act done once first: do it to one row step ${listing} kept -- press that row's own control, never one on a row it left out -- with add true and its act, then send ${repeat("<that press>")}.`;

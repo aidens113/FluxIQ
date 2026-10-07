@@ -58,8 +58,25 @@
 // which is why the domain's `deniedEvidenceKeys` reach the merge. A key the
 // patch kept without writing is still named with the rerun's answer
 // (`retained`, `../rerun-arguments/note.ts`), with how to remove it.
+//
+// **A rerun of a read that another identical read already ran is not a repeat**
+// (live run `run-muxky54f-fadb9d03`, lane D round 4, D4-1). Step 11 read the
+// listing with `where [{field: mutual, atLeast: 5}]`; step 12 read it with no
+// where and was kept as the Flow's listing. Five reruns of step 12 with that
+// where (0025-0037) merged to exactly step 11's call, on the page both started
+// on, and the repeat guard holds every read there as `changed_nothing` -- a read
+// never moves its page (`../repeat-guard/outcomes.ts`). Each was refused
+// `changes_nothing`, unrun, though it would have put the filter on the step the
+// Flow keeps, and the build ran out of calls on the unfiltered listing. So the
+// guard's outcome is asked for here, not a yes or no: a step that only reads
+// (`effect: "observe"`), rerun with an input other than its own, changes the
+// draft whatever that call did to the page, and runs. Still refused: the
+// identical rerun (the step's own input), an identical call that `failed`
+// there, and any rerun of a step that changes something.
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decision.ts";
+import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "../repeat-guard/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_DRAFT_REPLACED_ATTEMPT_REASON,
   automationStudioFlowDraftHoldsBinding,
@@ -93,12 +110,12 @@ export function automationStudioLlmEvidenceRerunRequest(
   steps: readonly AutomationStudioFlowDraftStep[],
   toolIds: ReadonlySet<string>,
   /**
-   * Whether this exact call already failed or changed nothing on the page it
-   * would run on (`../repeat-guard/outcomes.ts`): `at` is the page the step
-   * started on, where the rerun is put back to (`../node-tools/step-place.ts`),
-   * or absent for the page as it is now.
+   * How this exact call already went on the page it would run on, when it
+   * failed or changed nothing there (`../repeat-guard/outcomes.ts`, `blocks`):
+   * `at` is the page the step started on, where the rerun is put back to
+   * (`../node-tools/step-place.ts`), or absent for the page as it is now.
    */
-  ranAlready: (toolId: string, input: JsonObject, at?: string) => boolean = () => false,
+  ranAlready: (toolId: string, input: JsonObject, at?: string) => AutomationStudioLlmEvidenceRepeatedOutcome | undefined = () => undefined,
   deniedEvidenceKeys?: readonly string[]
 ): { request: AutomationStudioLlmEvidenceRerunCall | undefined; refused: AutomationStudioFlowDraftAmendmentRefusal[]; retainedRefusals?: { retained: AutomationStudioRerunArgumentMetadata; reason: "rerun_holds_binding" }[] } {
   let request: AutomationStudioLlmEvidenceRerunCall | undefined;
@@ -142,14 +159,25 @@ export function automationStudioLlmEvidenceRerunRequest(
       if (retained) retainedRefusals.push({ retained, reason: "rerun_holds_binding" });
       continue;
     }
-    // The same call on the same untouched page answers the same: refused, unrun (`../repeat-guard/outcomes.ts`).
-    if (ranAlready(toolId, input, step.replay?.from ? step.stateBefore : undefined)) {
+    // The same call on the same untouched page answers the same: refused, unrun (`../repeat-guard/outcomes.ts`) --
+    // unless the step only reads and this changes its input, which changes the draft (header, D4-1).
+    const earlier = ranAlready(toolId, input, step.replay?.from ? step.stateBefore : undefined);
+    if (earlier && !changesARead(step, merged, earlier)) {
       refused.push({ step: amendment.step, reason: "changes_nothing" });
       continue;
     }
     request = { step: step.position, toolId, input, callId: `rerun.${step.position}`, ...(retained ? { retained } : {}) };
   }
   return { request, refused, ...(retainedRefusals.length ? { retainedRefusals } : {}) };
+}
+
+/**
+ * Whether a rerun the guard holds as `earlier` still changes the draft: `step`
+ * only reads, the earlier identical call did not fail, and the merged input is
+ * not the one the step already ran with (header, D4-1).
+ */
+function changesARead(step: AutomationStudioFlowDraftStep, merged: JsonObject, earlier: AutomationStudioLlmEvidenceRepeatedOutcome): boolean {
+  return step.effect === "observe" && earlier.outcome !== "failed" && automationStudioLlmEvidenceCanonicalJson(merged) !== automationStudioLlmEvidenceCanonicalJson(step.input);
 }
 
 /**
