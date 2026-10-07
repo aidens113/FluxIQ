@@ -166,3 +166,10 @@ incomplete, with no reduction in the requested atomicity or outcome proof.
 - Validation: root real paired-service/runtime23/23 zero skips1.85s; Coretypes/build validated matching current stamps (cached0); root Core/downstreamaudits0 after correcting downstream archived relative links. Full downstream report preserves fail-first/commands/limits.
 - Outcome: Narrow sender binding verified; paired integration follows. Unknown/late event attribution and durable command journal remain absent.
 - Follow-up: candidate receipts cannot trust unknown late events; no browser/restart/provider/panel proof claimed. Core taskfinish --skip-checks follows observed narrow gates under daily sweep limit.
+
+### 2026-10-07 - t309 staged foundation independently verified
+- Agent: Codex supervisor.
+- Changed: complete supplied staged snapshot/head CAS and immutable history, bounded canonical validation and durable original-request receipt joins. Current dev210453c1 merged before root checks.
+- Validation: root37/37 zero skips, fluxiqcheck0 actual38.432s/build0 actual46.106s, Coreaudit0; paired downstream integration audit follows. Root required fail-first borrowed owner/operation/snapshot generation fixes; receipt in downstream reports/p2-staged-authority-foundation.md.
+- Outcome: Staged-only consistency verified; production activation/reader/writer/capture/compiler/promotion unsupported. No OS-kill/power-loss/browser/provider/panel claim.
+- Follow-up: all-writer/read cutover proposal reviewed separately; actual server adapter provenance t310. Core taskfinish --skip-checks only after observed narrow gates under daily full-suite limit.
