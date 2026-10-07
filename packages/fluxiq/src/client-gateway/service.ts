@@ -1,3 +1,5 @@
+import { ClientGatewayTransportBuildIdentity, type TrustedTransportBuildLease } from "./service/transport-build-identity/index.ts";
+import type { TrustedModuleBuildIdentity } from "../runtime/build-identity/modules/index.ts";
 import type {
   ClientGatewayActionCommand,
   ClientGatewayActionResponse,
@@ -50,6 +52,7 @@ import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayServ
  * behind it can be reshaped freely.
  */
 export class ClientGatewayService {
+  private readonly transportBuildIdentity = new ClientGatewayTransportBuildIdentity();
   private readonly trustedClients: ClientGatewayTrustedClientRegistry;
   private readonly transport: ClientGatewayTransport;
   private readonly events: ClientGatewayEventBus;
@@ -93,6 +96,10 @@ export class ClientGatewayService {
     this.activity = new ClientGatewayActivityPublisher(sessions, transport);
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit });
   }
+
+  /** Trusted local transport binds before IO; legacy callers remain unattested. */
+  bindTransportBuildIdentity(identity?: TrustedModuleBuildIdentity | null): TrustedTransportBuildLease { return this.transportBuildIdentity.bind(identity); }
+  readTransportBuildIdentity(): TrustedModuleBuildIdentity | null { return this.transportBuildIdentity.read(); }
 
   async ready(): Promise<void> {
     await this.trustedClients.ready();

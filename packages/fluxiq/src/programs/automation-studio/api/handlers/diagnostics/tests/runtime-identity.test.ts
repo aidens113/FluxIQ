@@ -1,3 +1,4 @@
+import { ClientGatewayService } from "../../../../../../client-gateway/index.ts";
 import { bindTrustedModuleIdentity } from "../../../../../../runtime/build-identity/modules/index.ts";
 import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
@@ -35,4 +36,16 @@ it("projects active trusted module identity and never a cleared legacy anchor", 
   expect((await registered.handler({ payload: { reachedInputs: [file] } })).payload.loadedModules).toEqual([module]);
   bindTrustedModuleIdentity(service);
   expect((await registered.handler({ payload: { reachedInputs: [file] } })).payload.loadedModules).toEqual([]);
+});
+
+it("projects listening transport from actual gateway separately from native host and clears on release", async () => {
+  let registered: any; const service = { coreRuntimeBuildIdentity: identity }, clientGateway = new ClientGatewayService();
+  const descriptor = { schema: 1 as const, protocol: "fluxiq.module-build-identity.v1" as const, moduleId: "fluxiq/web-client-gateway-server", version: "0.1.0", normalization: "module-payload-v1" as const, artifactDigest: "c".repeat(64), sourceInputsDigest: "d".repeat(64) };
+  const host = { ...descriptor, moduleId: "example/host" }; bindTrustedModuleIdentity(service, host);
+  registerRuntimeIdentityEndpoint({ registry: { register: (entry: unknown) => { registered = entry; } }, service, clientGateway } as unknown as AutomationStudioApiDependencies);
+  const read = async () => (await registered.handler({ payload: { reachedInputs: [file] } })).payload;
+  const lease = clientGateway.bindTransportBuildIdentity(descriptor);
+  expect((await read()).serverTransportIdentity).toBeNull(); lease.activate();
+  expect(await read()).toMatchObject({ loadedModules: [host], serverTransportIdentity: descriptor });
+  lease.release(); expect((await read()).serverTransportIdentity).toBeNull(); expect((await read()).loadedModules).toEqual([host]);
 });
