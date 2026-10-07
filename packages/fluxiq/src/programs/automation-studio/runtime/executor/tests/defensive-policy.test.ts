@@ -116,13 +116,18 @@ describe("every dispatch path gets the policy, with the node opting into nothing
 
   it("dispatches a node only through the one seam, so a path added later cannot bypass the policy", () => {
     // The guard is the reason this policy is a default rather than a convention.
-    // Every way a node is run has to sit inside `node-execution.ts`, which never
-    // rejects and classifies whatever it catches.
+    // Every way a node is run has to sit behind `node-execution.ts`, which never
+    // rejects and classifies whatever it catches. Since t331 (8c5482e7) the
+    // dispatch itself lives in `node-execution/attempt.ts` and the seam is the
+    // one `try` around it, so the guard holds both halves: no other module
+    // dispatches, and no other module starts an attempt.
     const runtimeDir = join(import.meta.dirname, "..", "..");
     const sources = collectSources(runtimeDir);
     const dispatchSites = sources.filter(({ text }) => /definition\.execute\(|options\.nativeNodeExecutor\?\.\(|options\.compositeExecutor\?\.\(|options\.effectDispatcher\(/u.test(text));
+    const attemptStarts = sources.filter(({ text }) => /AutomationStudioNodeAttemptExecution\.execute\(/u.test(text));
 
-    expect(dispatchSites.map(({ file }) => file)).toEqual(["executor/node-execution.ts"]);
+    expect(dispatchSites.map(({ file }) => file)).toEqual(["executor/node-execution/attempt.ts"]);
+    expect(attemptStarts.map(({ file }) => file)).toEqual(["executor/node-execution.ts"]);
   });
 });
 

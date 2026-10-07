@@ -11,6 +11,8 @@ export * from "./composite-executor.ts";
 export * from "./compiled-plan.ts";
 export * from "./executor.ts";
 export * from "./flow-bootstrap/index.ts";
+// Published here, not through the flow-bootstrap barrel: see that barrel.
+export * from "./flow-bootstrap/candidate/index.ts";
 export * from "./flow-change/index.ts";
 export * from "./flow-draft/index.ts";
 export * from "./flow-version/index.ts";

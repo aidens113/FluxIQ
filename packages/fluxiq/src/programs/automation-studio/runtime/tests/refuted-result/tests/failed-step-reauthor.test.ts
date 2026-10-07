@@ -12,6 +12,7 @@ import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY } from "../../../recover
 import { verifyAutomationStudioRuntimeSessionResult, type AutomationStudioResultVerificationPorts } from "../../../result-verification/index.ts";
 import { ANSWER, flow, harness, runDetail, session } from "../../../result-verification/tests/run-outcome-harness.ts";
 import { automationStudioStepFailureRepairPort } from "../../../service/runtime-adaptation/index.ts";
+import { automationStudioReauthorProposed } from "../../../service/runtime-adaptation/tests/reauthor-proposal.ts";
 
 /** Step `n2` failed `target_ambiguous`; the ladder ran and ended as `metadata` says. */
 function ladderEnded(metadata: JsonObject): AutomationStudioFlowRunDetail {
@@ -29,7 +30,10 @@ function ladderEnded(metadata: JsonObject): AutomationStudioFlowRunDetail {
 
 function wired(detail: AutomationStudioFlowRunDetail, rerunStatus: "succeeded" | "failed" = "succeeded") {
   const context = harness({ answer: ANSWER.yes });
-  const generate = vi.fn(async () => ({ adaptationId: "adaptation.bootstrap.1", accounting: { estimatedCostUsd: 0.03 } }));
+  // The build's whole answer: since t299 a re-author approves only a result
+  // marked `status: "proposed"`, so an id and accounting alone is refused
+  // before anything is approved or re-run (`service/runtime-adaptation/reauthor-build.ts`).
+  const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.bootstrap.1", { estimatedCostUsd: 0.03 }, { projectId: "project-1", flowId: "flow-1" }));
   const approve = vi.fn(async () => undefined);
   // Not a dependency any more: a sentinel that nothing in the route applies the edit.
   const apply = vi.fn(async () => undefined);
@@ -41,7 +45,7 @@ function wired(detail: AutomationStudioFlowRunDetail, rerunStatus: "succeeded" |
     repairFailedStep: automationStudioStepFailureRepairPort({
       projectId: "project-1", flowId: () => "flow-1", now: () => 0,
       caller: { actorUserId: "user-1", actorSessionId: "session-1" },
-      generate: generate as never, approve, reject: vi.fn(async () => undefined)
+      generate, approve, reject: vi.fn(async () => undefined)
     }),
     rerunRepairedFlow: async (request) => {
       reruns.push(request.detail);
