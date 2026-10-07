@@ -87,3 +87,30 @@ and closes downstream task first, then Core under Core's own task gate.
 - Validation: exact bounded receipts in paired downstream ledger; final Core typecheck/audit0 before lifecycle merge, no full suites/provider calls.
 - Outcome: Partial overall plan.
 - Follow-up: t299 draft facade, t302 immutable executing service identity, then trusted requirements/start/oracle/domaincommand acknowledgements/durable shared promotion. Existing builds/repairs do not yet use candidate receipts automatically.
+
+### 2026-10-06 - Actual candidate facade independently checked
+- Agent: Codex supervisor.
+- Changed: t29987c4c9f9 atomic service/API draft branch; both current devs merged, only Core barrel conflict resolved preserving candidate and verification exports.
+- Validation: supervisor source/context/accounting review and post-merge53/53 actual service/API/conversation/reauthor; Corecheck0 (45.29s), touched Corebuild0 (46.15s), dependent webcheck0 (60.48s), Coreaudit0. Integration audit and paired push pending.
+- Outcome: Partial overall plan; coherent opt-in draft slice validated.
+- Follow-up: durable receipt ledger/preparation then explicit atomic topology authority migration. Discovery, draft save and compile do not promote; no provider/browser proof for this slice.
+
+### P2 implementation correction: authoritative storage prerequisite
+
+Source inspection of existing bootstrap apply/reader paths found sequential writes
+and compensating rollback across global documents, project graph SQL, router and
+subflow ProgramJsonStore files and generated config/source. Current readers combine
+these owners. Neither generation locks nor wrapping one store's transaction makes
+the entire accepted topology and receipt crash-atomic. Do not mark the promoter
+complete from a callback test that returns promoted.
+
+Next bounded step persists trusted bounded receipt/run records with restart and
+idempotency proof and refuses promotion where authority is missing. The subsequent
+unit must establish one authoritative project transaction for accepted parent,
+router, subflows, graph revisions and promotion receipt, migrate routing/execution
+reads to it, and retain apply-time validation/authorization/version/representation
+checks. JSON-backed layouts require an actual journal/authority strategy or explicit
+unsupported refusal. Global documents/config may be projections only if reader
+compatibility is migrated and recovery regenerates them after commit. Detailed
+owner/read/write migration is being recorded by the promotion worker; P2 remains
+incomplete, with no reduction in the requested atomicity or outcome proof.
