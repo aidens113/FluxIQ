@@ -46,6 +46,35 @@ describe("a drop of one toggle half", () => {
     expect(steps[3]!.acts).toEqual(["a1"]);
   });
 
+  // t281's open edge: an add or keep in the same decision ran the reversal before the strand check, so the
+  // on half was taken out against a drop the check then put back.
+  it("a drop of the off half that strands a kept step, beside an add of another step, leaves the on half kept", () => {
+    const later = (position: number, disposition: AutomationStudioFlowDraftStep["disposition"]): AutomationStudioFlowDraftStep => ({ position, id: `d${position}`, iteration: position, actionId: "web.dom.click", input: { step: position }, effect: "mutate", effectApplied: true, disposition });
+    const steps = [...draft(), later(4, "kept"), later(5, "taken")];
+    const pages = ["A", "A", "B", "B", "B"];
+    steps.forEach((step, index) => { step.replay = { from: { page: pages[index]! } }; });
+    steps[1]!.toggle = { key: "t940", to: "off" };
+    steps[3]!.toggle = { key: "t940", to: "on" };
+    steps[3]!.acts = ["a1"];
+    for (const amendments of [[{ step: 2, change: "drop" as const }, { step: 5, change: "add" as const }], [{ step: 5, change: "add" as const }, { step: 2, change: "drop" as const }]]) {
+      const each = structuredClone(steps);
+      expect(applyAutomationStudioFlowDraftAmendments(each, amendments)).toEqual({ applied: 1, refused: [{ step: 2, reason: "strands_a_step", strands: 3 }] });
+      expect(each.map((step) => step.disposition)).toEqual(["kept", "kept", "kept", "kept", "kept"]);
+      expect(each.map((step) => step.cancels)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+      expect(each[3]!.acts).toEqual(["a1"]);
+    }
+  });
+
+  it("a drop of the off half that stands, beside an add of another step, still takes the on half out", () => {
+    const later = (position: number, disposition: AutomationStudioFlowDraftStep["disposition"]): AutomationStudioFlowDraftStep => ({ position, id: `d${position}`, iteration: position, actionId: "web.dom.click", input: { step: position }, effect: "mutate", effectApplied: true, disposition });
+    const steps = [...draft(), later(4, "kept"), later(5, "taken")];
+    steps[1]!.toggle = { key: "t940", to: "off" };
+    steps[3]!.toggle = { key: "t940", to: "on" };
+    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "drop" }, { step: 5, change: "add" }])).toEqual({ applied: 2, refused: [] });
+    expect(steps.map((step) => step.disposition)).toEqual(["kept", "dropped", "kept", "dropped", "kept"]);
+    expect(steps[3]!.cancels).toBe("d2");
+  });
+
   it("a drop of the off half that strands nothing still takes the on half out once the drop stands", () => {
     const fourth: AutomationStudioFlowDraftStep = { position: 4, id: "d4", iteration: 4, actionId: "web.dom.click", input: { step: 4 }, effect: "mutate", effectApplied: true, disposition: "kept" };
     const steps = [...draft(), fourth];

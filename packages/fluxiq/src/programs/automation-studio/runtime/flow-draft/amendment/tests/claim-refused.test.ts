@@ -57,6 +57,22 @@ describe("an amendment whose act the judge says the step does not do", () => {
     expect(report.refused).toEqual([expect.objectContaining({ step: 2, reason: "act_not_done_there", instead: 3 })]);
   });
 
+  // t285 gap 2: the judge words the draft as it stands, which the decision's own move renumbered.
+  it("says the judge's sentence in the numbers the decision was shown, after a move in the same decision", () => {
+    const steps = draft();
+    const wordy = vi.fn<AutomationStudioFlowDraftClaimRefused>((all, step, act) => {
+      const add = all.find((each) => each.words?.target === "Add to cart")!.position;
+      return { act, said: `Step ${step.position} chose "Spain (step 9 of 9)", one of a1's options, and does not do a1. Step ${add} ("Add to cart") names it: name a1 there with amend_draft add on step ${add} with act a1.`, instead: add };
+    });
+    const report = applyAutomationStudioFlowDraftAmendments(steps, [{ step: 3, change: "reorder", to: 1 }, { step: 2, change: "add", act: "a1" }], { claimRefused: wordy });
+    // Asked on the draft as it stands: the Spain press is 3 there and Add to cart 1.
+    expect(wordy).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ position: 3 }), "a1");
+    expect(report.refused).toEqual([{
+      step: 2, reason: "act_not_done_there", act: "a1", instead: 3,
+      said: `Step 2 chose "Spain (step 9 of 9)", one of a1's options, and does not do a1. Step 3 ("Add to cart") names it: name a1 there with amend_draft add on step 3 with act a1.`
+    }]);
+  });
+
   it("puts a1 on the Add to cart press, and on any step when no judge is given", () => {
     const steps = draft();
     expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 3, change: "add", act: "a1" }], { claimRefused: judge })).toEqual({ applied: 1, refused: [] });

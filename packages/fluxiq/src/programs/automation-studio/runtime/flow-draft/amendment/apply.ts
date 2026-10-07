@@ -18,6 +18,7 @@ import {
   type AutomationStudioFlowDraftWrittenRepeat
 } from "./repeat-revalidation.ts";
 import { automationStudioFlowDraftSettingsRewriteRun } from "./settings-rewrite-run.ts";
+import { automationStudioFlowDraftSaidInNumbers } from "./said-numbers.ts";
 import { automationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
 import { automationStudioFlowDraftReach } from "./reach.ts";
 import { automationStudioFlowDraftStrandCheck, type AutomationStudioFlowDraftWithdrawal } from "./strand-check.ts";
@@ -94,6 +95,8 @@ export function applyAutomationStudioFlowDraftAmendments(
   // Each step's way to its page as the decision found it, and the steps it took out (`./strand-check.ts`).
   const reachBefore = automationStudioFlowDraftReach(steps);
   const withdrawn: AutomationStudioFlowDraftWithdrawal[] = [];
+  // A step kept after a withdrawal of this decision, whose reversal waits for the strand check.
+  let reversalAfterCheck = false;
   for (const amendment of amendments) {
     const step = shown.step(amendment.step);
     if (!step) {
@@ -224,10 +227,19 @@ export function applyAutomationStudioFlowDraftAmendments(
     // still applies, as with an act on a read (week report W1, live run
     // `run-mux74k5q-1c3c2127`: a1 on the press of "Spain"). Asked before the
     // step changes, so a claim that was the amendment's only news changes nothing.
+    // Judged, and worded, on the draft as it stands; told in the numbers the
+    // model wrote, which a move earlier in this decision may have changed
+    // (`./said-numbers.ts`, t285 gap 2).
     const claimRefusal = claimed === undefined ? undefined : options.claimRefused?.(steps, step, claimed);
     if (claimRefusal) {
-      const instead = claimRefusal.instead === undefined ? undefined : steps.find((each) => each.position === claimRefusal.instead);
-      refused.push({ step: amendment.step, reason: "act_not_done_there", act: claimRefusal.act, said: claimRefusal.said, ...(instead ? { instead: shown.number(instead) } : {}) });
+      const written = (position: number): number => {
+        const there = steps.find((each) => each.position === position);
+        return there ? shown.number(there) : position;
+      };
+      refused.push({
+        step: amendment.step, reason: "act_not_done_there", act: claimRefusal.act, said: automationStudioFlowDraftSaidInNumbers(claimRefusal.said, written),
+        ...(claimRefusal.instead !== undefined && steps.some((each) => each.position === claimRefusal.instead) ? { instead: written(claimRefusal.instead) } : {})
+      });
     }
     const act = claimRefusal ? undefined : claimed;
     // The places on the named route the step says it is on, taken wherever an
@@ -266,8 +278,14 @@ export function applyAutomationStudioFlowDraftAmendments(
     if (moves && automationStudioFlowDraftAmendmentMove(steps, step, place, undefined)) movedStep = true;
     // A press a later press of the same control undid leaves the Flow with it, once the
     // step, its openers, its act and its place are settled (`../reversal.ts`). A drop or
-    // exploratory of a kept step runs it after the strand check, below.
-    if (disposition === "kept") automationStudioFlowDraftDropReversals(steps);
+    // exploratory of a kept step runs it after the strand check, below -- and so does a
+    // step kept after one this decision withdrew: run now, it would read that drop as
+    // standing and take its partner out before the check could put the drop back
+    // (t281's open edge).
+    if (disposition === "kept") {
+      if (withdrawn.length) reversalAfterCheck = true;
+      else automationStudioFlowDraftDropReversals(steps);
+    }
     if (amendment.settings) step.settings = { ...(step.settings ?? {}), ...amendment.settings };
     applied += 1;
   }
@@ -286,7 +304,7 @@ export function applyAutomationStudioFlowDraftAmendments(
   // and not put back by the strand check -- would flip the control the wrong way
   // (live run `run-mux6n7m4-8273e7a0`, rule b). Run only once the check is done, so
   // a drop put back never takes its partner out with it (`../reversal.ts`).
-  if (withdrawn.some((entry) => entry.step.disposition !== "kept")) automationStudioFlowDraftDropReversals(steps);
+  if (reversalAfterCheck || withdrawn.some((entry) => entry.step.disposition !== "kept")) automationStudioFlowDraftDropReversals(steps);
   const moved = movedActs(claims);
   return { applied, refused, ...(moved.length ? { moved } : {}), ...(reach.unreached.length ? { unreached: reach.unreached } : {}) };
 }

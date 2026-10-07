@@ -244,7 +244,8 @@ export function automationStudioLlmEvidenceSettleHeldAmendments(
 ): AutomationStudioLlmEvidenceRerunSettled {
   automationStudioLlmDecisionContextSupersede(context.evidence, "core.rerun_check");
   if (held.retained) tellRetained(context, iteration, held.retained, attempt);
-  const settled = held.amendments.settle(context.draftSteps, rerun);
+  // Held claims go to the act judge too, as the decision's others did (t285 gap 1).
+  const settled = held.amendments.settle(context.draftSteps, rerun, { claimRefused: context.input.draft ? context.input.draft.claimRefused : undefined });
   const refused = settled.refused.map((refusal) => ({ ...refusal, nodeId: held.nodeId }));
   const given = context.amendmentMemory.refusals(refused);
   const refusals = [...held.refusals, ...given];
