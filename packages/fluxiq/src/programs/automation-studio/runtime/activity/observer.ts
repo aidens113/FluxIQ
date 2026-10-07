@@ -101,6 +101,21 @@ function describeSafely(describe: AutomationStudioLlmEvidenceLoopInput["describe
 }
 
 /**
+ * The words a call's end is said with: those asked before it ran, which a
+ * press that closes its popup needs, since afterwards its handle names
+ * nothing; and, only when they named no control, the domain's answer asked
+ * again now. A rerun sent with a handle the replays' reload had renumbered
+ * named nothing before the call, while the node run's own look showed the same
+ * handle as "Quantity", and its card read "Click · Working on it" to the end
+ * (D4 of the t342 round 2 UI review, run-muylu4pp-f9cb2121, step 0139).
+ */
+function namedAtEnd(describe: AutomationStudioLlmEvidenceLoopInput["describeCall"], call: ToolCall, before: AutomationStudioActivityCallWords | undefined): AutomationStudioActivityCallWords | undefined {
+  if (before?.target !== undefined) return before;
+  const target = describeSafely(describe, call)?.target;
+  return target === undefined ? before : { ...before, target };
+}
+
+/**
  * A decision that never came closes its own row, so the chat is not left
  * "Thinking about the next step". A model provider that gave no answer at all
  * is said in words, and that it is being asked again: during an outage every
@@ -138,8 +153,9 @@ function decidedCall(decision: unknown): { callId: string; toolId: string; value
  * (`resultReason`), carried so a card can say a refusal in its own words --
  * a press refused for naming no control from the page read "it wasn't on the
  * page" from its code alone (t193, `run-muqiojz4-04a7a8fc`, `S/0090`). Only a
- * code-shaped reason is carried. `described` is the domain's words for it, asked once
- * before the call runs and kept for its end: asked again after a click, a
+ * code-shaped reason is carried. `described` is the domain's words for it, asked
+ * before the call runs and kept for its end (asked again at the end only when
+ * they named no control, `namedAtEnd`): asked again after a click, a
  * handle on the page the click left was no longer there, so the row that ended
  * a press of "No thanks" read "Clicking on the page" and its card "Click · the
  * page" (t193, `run-muqiojz4-04a7a8fc`). A refusal the domain gives again
@@ -278,7 +294,8 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         const ended = resultOf(result);
         // A detection's answer names the list when the page does; its row ends named by it (R2-U-9).
         const { list, ...answered } = context.answered(call, result);
-        toolActivity(call, "succeeded", { ...ended, reason: causes.of(call, ended), ...answered }, list === undefined ? described : { ...described, list }, said, excusable);
+        const named = namedAtEnd(input.describeCall, call, described);
+        toolActivity(call, "succeeded", { ...ended, reason: causes.of(call, ended), ...answered }, list === undefined ? named : { ...named, list }, said, excusable);
         return result;
       } catch (error) {
         toolActivity(call, "failed", { code: undefined }, described, said);
