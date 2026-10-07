@@ -9,6 +9,9 @@ import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceO
 import { AutomationStudioService } from "../../../service.ts";
 import { plan, mockProvider, blankFixture, caller, copyDataDirSeed, expectNoTopology, rejectedGenerationDiagnostic, seedDataDir, successfulHarnessResult, blankFixturesPerService, type DataDirSeed } from "./fixtures.ts";
 
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 // Every case needs a project holding a blank Flow and its active instruction. Writing it through the service costs about a second on an idle
 // machine and several under load, inside each case's 15s budget, so it is written once
 // per file from a closed service and each case runs on its own copy.

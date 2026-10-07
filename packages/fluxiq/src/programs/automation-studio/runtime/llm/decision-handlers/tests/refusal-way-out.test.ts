@@ -130,7 +130,7 @@ describe("W2: every amendment refusal names its way out, in the draft's numbers"
     no_such_step: {}, already_so: {}, no_such_position: {}, run_by_the_loop: {}, no_step_before_it: {}, over_not_before: { over: 2 }, not_a_kept_step: {},
     did_not_work: {}, already_in_flow: {}, already_out: {}, changes_nothing: {}, act_on_a_read: {}, act_already_named: { act: "a1" },
     bind_not_a_binding: { parameter: "query" }, bind_new_key: { parameter: "query", bindable: ["text"] }, bind_row_outside_loop: { parameter: "query" }, bind_malformed: { parameter: "query" },
-    rerun_holds_binding: {}, repeat_taken_off: { over: 3, takenOff: "over_after" }, strands_a_step: { strands: 3 }, settings_rewrite_run: {}
+    rerun_holds_binding: {}, repeat_taken_off: { over: 3, takenOff: "over_after" }, strands_a_step: { strands: 3 }, settings_rewrite_run: {}, second_copy: { copyOf: 1 }
   };
 
   it("gives every reason a next naming the step, without a checklist and with one", () => {

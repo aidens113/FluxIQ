@@ -20,3 +20,5 @@ export * from "./run-start-pages.ts";
 export * from "./node-descriptions.ts";
 export * from "./describe-nodes.ts";
 export * from "./describing-failures.ts";
+// Where a newly described node is named on a call's result, and its definition shown (t289-G).
+export * from "./described-nodes-key.ts";

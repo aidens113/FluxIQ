@@ -11,6 +11,9 @@ import { cacheActor } from "./test-actor.ts";
 import { createCacheApiTestService } from "./test-service.ts";
 import { registerAutomationStudioApi } from "../index.ts";
 
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
+
 async function runOneDeterministicFlow(service: AutomationStudioService, projectId: string): Promise<string> {
   const flow = await service.createFlow({ projectId, flowId: "flow.audit-export", name: "Audit Export Flow" });
   const subflow = await service.createFlowSubflow({ projectId, flowId: flow.flowId, name: "Primary", role: "primary" });

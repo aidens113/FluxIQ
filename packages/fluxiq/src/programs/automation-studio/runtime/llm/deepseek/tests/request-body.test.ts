@@ -51,6 +51,31 @@ describe("what an evidence decision is shown of the node catalog", () => {
     expect(bootstrap.nodeCatalog).toEqual(automationStudioFlowBootstrapCatalogNames(catalogContext.nodeCatalog));
   });
 
+  it("shows a definition on the window entry that names it, once, and in the head only one no entry names (t289-G)", () => {
+    const [headNode, runNode, askedNode] = [catalogContext.nodeCatalog[2]!, catalogContext.nodeCatalog[1]!, catalogContext.nodeCatalog[0]!];
+    const evidence = [
+      { callId: "initial.core.run_node", toolId: "core.run_node", value: { ok: true, describedNodes: [runNode.id] } },
+      { callId: "call.1", toolId: "core.describe_nodes", value: { ok: true, describedNodes: [askedNode.id, "web.no-such-node"] } },
+      // A later entry naming a node already shown keeps the id: each definition once.
+      { callId: "call.2", toolId: "core.run_node", value: { ok: false, describedNodes: [runNode.id] } }
+    ];
+    const base = evidenceRequest({ ...catalogContext, describedNodes: [headNode, runNode, askedNode] });
+    const request = { ...base, context: { ...base.context, evidenceLoop: { ...base.context.evidenceLoop!, evidence } } };
+    const sent = userPayload(request).context;
+
+    expect((sent.flowBootstrap as Record<string, unknown>).describedNodes).toEqual([headNode]);
+    expect((sent.evidenceLoop as { evidence: unknown }).evidence).toEqual([
+      { ...evidence[0], value: { ok: true, describedNodes: [runNode] } },
+      { ...evidence[1], value: { ok: true, describedNodes: [askedNode, "web.no-such-node"] } },
+      evidence[2]
+    ]);
+    const wire = JSON.stringify(sent);
+    for (const node of [headNode, runNode, askedNode]) expect(wire.split(JSON.stringify(node)).length - 1, node.id).toBe(1);
+    // The packet itself is untouched: the checks that read it see ids, never catalog text.
+    expect(request.context.evidenceLoop.evidence).toBe(evidence);
+    expect(evidence[0]!.value).toEqual({ ok: true, describedNodes: [runNode.id] });
+  });
+
   it("reports what it sent: the names and the described nodes, measured", () => {
     const described = [catalogContext.nodeCatalog[0]!];
     const names = automationStudioFlowBootstrapCatalogNames(catalogContext.nodeCatalog);

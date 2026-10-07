@@ -35,14 +35,15 @@ export function automationStudioConversationFallbackDecision(
     return { kind: "reply", text: "The control panel did not tell me what it can do this time, so I cannot act on that from here. The controls themselves still work." };
   }
   const flowWords = automationStudioConversationFlowWords(context.flows ?? []);
-  const asked = automationStudioNameWords(message).filter((word) => !flowWords.has(word)).join(" ");
+  const askedWords = automationStudioNameWords(message).filter((word) => !flowWords.has(word));
+  const asked = askedWords.join(" ");
   const said = ` ${automationStudioNameWords(message).join(" ")} `;
   let best: { id: string; confidence: number } | null = null;
   for (const capability of context.capabilities) {
     let confidence = automationStudioClosestName(asked, [{ key: capability.id, labels: [capability.title, ...capability.phrases] }])?.confidence ?? 0;
     for (const phrase of capability.phrases) {
       const words = automationStudioNameWords(phrase);
-      if (words.length && said.includes(` ${words.join(" ")} `)) confidence = Math.max(confidence, 0.7 + Math.min(0.25, words.length * 0.06));
+      if (words.length && phraseIsWhatWasAsked(words, askedWords.length) && said.includes(` ${words.join(" ")} `)) confidence = Math.max(confidence, 0.7 + Math.min(0.25, words.length * 0.06));
     }
     if (!best || confidence > best.confidence) best = { id: capability.id, confidence };
   }
@@ -58,6 +59,21 @@ export function automationStudioConversationFallbackDecision(
   const decision = automationStudioConversationInvocationDecision(best.id, mentioned ? { flowId: mentioned.flowId } : {}, context, null);
   if (decision.kind === "invoke") decision.invocation.confidence = best.confidence;
   return decision;
+}
+
+/**
+ * Whether a declared phrase found in the message is what the person asked for,
+ * rather than a few words that happen to turn up inside something longer.
+ *
+ * Filler is dropped from both sides, so "run it" is the one word `run` and "go"
+ * is `go`. Found anywhere, they made lane D's live task -- "Go through my friend
+ * requests and confirm everyone ... Then give me a table ..." -- run an
+ * unrelated Flow when the model was too slow to read it. A phrase counts only
+ * when it is at least half of what was asked once the Flow's own name is set
+ * aside: "run it", "please run the kettle checker now" and "go ahead" still do.
+ */
+function phraseIsWhatWasAsked(phraseWords: readonly string[], askedWordCount: number): boolean {
+  return phraseWords.length * 2 >= askedWordCount;
 }
 
 /**

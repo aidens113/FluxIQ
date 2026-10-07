@@ -24,6 +24,16 @@ import {
 import { buildAutomationStudioLlmEvidenceLoopDecisionSchema } from "../evidence-loop.ts";
 import type { AutomationStudioLlmTaskRequest } from "../harness.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_OUTPUT_SCHEMA, type AutomationStudioFlowBootstrapCatalogEntry } from "../../flow-bootstrap/index.ts";
+import { automationStudioActionPermissionDenied } from "../../action-permissions/index.ts";
+import { packAutomationStudioLlmContext, type AutomationStudioLlmHarnessInput } from "../harness/index.ts";
+import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
+import {
+  AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID,
+  automationStudioLlmDescribeNodesBundle,
+  automationStudioLlmNodeDescriptions,
+  automationStudioLlmRunNodeDescribingFailures,
+  type AutomationStudioLlmNodeDescriptions
+} from "../node-tools/index.ts";
 
 /** A peak instant, Wednesday 2026-09-30 02:00 UTC: DeepSeek bills calls at their send time, peak or off-peak (t254), and these figures are peak. */
 const PEAK_CLOCK = (): number => Date.UTC(2026, 8, 30, 2);
@@ -83,23 +93,26 @@ describe("the order of a DeepSeek evidence-loop request", () => {
     expect(shared / first.length).toBeGreaterThan(0.8);
   });
 
-  it("keeps the prefix through the names and their note when a node is described between two calls", async () => {
-    // A describe appends to describedNodes, which sits after the names and the
-    // note in the constant head: everything before it stays cached, and only
-    // what follows the new definition is read again.
+  it("keeps the whole window cached when a node is described between two calls (t289-G)", async () => {
+    // The call that described a node names it under describedNodes on its own
+    // result, and its definition is shown there; a node no entry names stays in
+    // the head after the names and their note. Before t289-G every new
+    // definition was appended to the head, in front of the tools and the window.
     const [run, extract] = [nodeCatalog[1]!, nodeCatalog[0]!];
-    const first = await userMessage(loopRequest(1, evidence(3), [run]));
-    const second = await userMessage(loopRequest(2, evidence(4), [run, extract]));
-    const shared = commonPrefixLength(first, second);
+    const describing = (count: number) => evidence(count).map((entry, index) => index === 3 ? { ...entry, value: { ...(entry.value as object), describedNodes: [extract.id] } } : entry);
+    const first = await userMessage(loopRequest(1, describing(3), [run]));
+    const second = await userMessage(loopRequest(2, describing(4), [run, extract]));
 
     expect(first.indexOf('"nodeCatalogNote"')).toBeGreaterThan(first.indexOf('"nodeCatalog"'));
-    expect(first.indexOf('"describedNodes"'), "the note and the first described node").toBeLessThan(shared);
-    expect(first.slice(0, shared)).toContain(JSON.stringify(run));
-    expect(second.indexOf(JSON.stringify(extract)), "the newly described node").toBeGreaterThanOrEqual(shared - 1);
+    expect(first.slice(0, first.indexOf('"evidenceLoop"'))).toContain(JSON.stringify(run));
+    expect(second.slice(0, windowEnd(first))).toBe(first.slice(0, windowEnd(first)));
+    expect(second.indexOf(JSON.stringify(extract)), "the newly described node, on the entry that described it").toBeGreaterThan(second.indexOf('"call.4"'));
+    expect(occurrences(second, JSON.stringify(extract))).toBe(1);
+    expect(occurrences(second, JSON.stringify(run))).toBe(1);
     // And with the described set unchanged, the two calls share everything up
     // to the newest result, exactly as before.
-    const third = await userMessage(loopRequest(3, evidence(5), [run, extract]));
-    expect(commonPrefixLength(second, third)).toBeGreaterThan(second.indexOf('"call.4"'));
+    const third = await userMessage(loopRequest(3, describing(5), [run, extract]));
+    expect(third.slice(0, windowEnd(second))).toBe(second.slice(0, windowEnd(second)));
   });
 
   it("keeps the whole constant block when only the evidence grows", async () => {
@@ -111,6 +124,65 @@ describe("the order of a DeepSeek evidence-loop request", () => {
 
     expect(early.indexOf('"nodeCatalog"')).toBeLessThan(shared);
     expect(early.slice(0, shared)).toContain("web.output.dom-extract_list");
+  });
+});
+
+// W11 (t289-G): a node's definition used to be appended to
+// `flowBootstrap.describedNodes`, the end of the constant head, the moment the
+// build first ran or described it -- in front of the tools and the whole
+// evidence window, so each newly described node made the next request read the
+// tools and every result again uncached (`run-murzln6g-11debe1d` C18,
+// `run-musp4h2f-72e8ed99` cause 12: "append, do not insert"). These requests
+// are built the way a build builds them: the library call goes through the
+// describing wrapper, the window entry is what it returned, and the packet is
+// packed from the build's memory.
+describe("a node described in the middle of a build", () => {
+  const AND = "builtin.logic.and";
+  const OR = "builtin.logic.or";
+
+  it("reaches the model without changing a byte the previous request sent before the end of its window", async () => {
+    const build = describingBuild();
+    // The host's opening call runs before the first decision; the model's first call runs a node not yet described.
+    const window = [await build.run("initial.core.run_node", AND)];
+    const first = await userMessage(packedRequest(1, window, build.memory.ids()));
+    window.push(await build.run("call.1", OR));
+    const second = await userMessage(packedRequest(2, window, build.memory.ids()));
+
+    expect(windowEnd(first), "the end of the first request's window").toBeGreaterThan(0);
+    expect(second.slice(0, windowEnd(first)), "everything the first request sent up to the end of its window").toBe(first.slice(0, windowEnd(first)));
+    // And the model is shown each definition, exactly once.
+    for (const id of [AND, OR]) expect(occurrences(second, JSON.stringify(build.memory.definition(id))), id).toBe(1);
+  });
+
+  it("does the same for a node the model asked core.describe_nodes about", async () => {
+    const build = describingBuild();
+    const window = [await build.run("initial.core.run_node", AND)];
+    const first = await userMessage(packedRequest(1, window, build.memory.ids()));
+    window.push(await build.describe("call.1", [OR, AND]));
+    const second = await userMessage(packedRequest(2, window, build.memory.ids()));
+
+    expect(second.slice(0, windowEnd(first))).toBe(first.slice(0, windowEnd(first)));
+    for (const id of [AND, OR]) expect(occurrences(second, JSON.stringify(build.memory.definition(id))), id).toBe(1);
+    // Running a node already described adds nothing, and the next request still extends this one.
+    window.push(await build.run("call.2", OR));
+    const third = await userMessage(packedRequest(3, window, build.memory.ids()));
+    expect(third.slice(0, windowEnd(second))).toBe(second.slice(0, windowEnd(second)));
+    for (const id of [AND, OR]) expect(occurrences(third, JSON.stringify(build.memory.definition(id))), id).toBe(1);
+  });
+
+  it("keeps in the head only the nodes described before this window began, and the head never changes after", async () => {
+    // A repair round shares the build's memory and starts a new window: what an
+    // earlier round described has no entry here, so it is shown in the head,
+    // which is constant for the length of this window.
+    const build = describingBuild();
+    build.memory.describe([AND]);
+    const first = await userMessage(packedRequest(1, [], build.memory.ids()));
+    const second = await userMessage(packedRequest(2, [await build.run("call.1", OR)], build.memory.ids()));
+    const head = (message: string): string => message.slice(0, message.indexOf('"evidenceLoop"'));
+
+    expect(head(first)).toContain('"describedNodes"');
+    expect(head(second)).toBe(head(first));
+    for (const id of [AND, OR]) expect(occurrences(second, JSON.stringify(build.memory.definition(id))), id).toBe(1);
   });
 });
 
@@ -352,4 +424,62 @@ function loopRequest(iteration: number, gathered: Array<{ callId: string; toolId
       evidenceLoop
     }
   };
+}
+
+const GLOBAL_RESOLUTION = { scope: { kind: "global" as const } };
+
+/** One build's described-node memory, with the library call and the describe call wired through it as the binding wires them. */
+function describingBuild(): {
+  memory: AutomationStudioLlmNodeDescriptions;
+  run: (callId: string, node: string) => Promise<{ callId: string; toolId: string; value: unknown }>;
+  describe: (callId: string, ids: string[]) => Promise<{ callId: string; toolId: string; value: unknown }>;
+} {
+  const memory = automationStudioLlmNodeDescriptions({ resolution: GLOBAL_RESOLUTION });
+  const library = automationStudioLlmRunNodeDescribingFailures(async (input) => ({
+    kind: "llm_evidence_tool_execution",
+    evidence: { ok: true, ran: input.value.node as string, page: { url: "https://example.test/", title: "A page" } },
+    effectApplied: false
+  }), memory);
+  const describeNodes = automationStudioLlmDescribeNodesBundle(memory).implementations[AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID]!;
+  const evidenceOf = (result: unknown): unknown =>
+    typeof result === "object" && result !== null && (result as { kind?: unknown }).kind === "llm_evidence_tool_execution" ? (result as AutomationStudioLlmEvidenceToolExecutionResult).evidence : result;
+  const call = (callId: string, optionId: string, value: Record<string, unknown>) => ({
+    projectId: "project.one", flowId: "flow.one", callId, optionId, value: value as never, permission: automationStudioActionPermissionDenied
+  });
+  return {
+    memory,
+    run: async (callId, node) => ({ callId, toolId: "core.run_node", value: evidenceOf(await library(call(callId, "core.run_node", { node, parameters: {}, consequences: [] }))) }),
+    describe: async (callId, ids) => ({ callId, toolId: AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, value: evidenceOf(await describeNodes(call(callId, AUTOMATION_STUDIO_LLM_DESCRIBE_NODES_TOOL_ID, { ids }))) })
+  };
+}
+
+/** An evidence decision packed by Core's own packer from a window and the build's described ids. */
+function packedRequest(iteration: number, gathered: Array<{ callId: string; toolId: string; value: unknown }>, describedNodeIds: readonly string[]): AutomationStudioLlmTaskRequest {
+  const input: AutomationStudioLlmHarnessInput = {
+    taskKind: "evidence_tool_decision",
+    projectId: "project.one",
+    flowId: "flow.one",
+    instructions: [],
+    deniedEvidenceKeys: [],
+    evidenceLoop: {
+      iteration,
+      tools,
+      evidence: structuredClone(gathered) as never,
+      decisionSchema: buildAutomationStudioLlmEvidenceLoopDecisionSchema(tools, completionSchema, true, false),
+      completionSchema,
+      canComplete: true
+    },
+    flowBootstrap: { resolution: GLOBAL_RESOLUTION, describedNodeIds }
+  };
+  const context = packAutomationStudioLlmContext(input);
+  return { ...loopRequest(iteration, gathered), promptVersion: context.promptVersion, context };
+}
+
+/** Where a user message's evidence window ends: the offset of the bracket that closes it. */
+function windowEnd(message: string): number {
+  return message.indexOf('],"iteration":', message.indexOf('"evidence":'));
+}
+
+function occurrences(text: string, part: string): number {
+  return text.split(part).length - 1;
 }

@@ -149,6 +149,7 @@ function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: st
     delete step.stateAfter;
     delete step.instance;
     delete step.toggle;
+    delete step.reads;
     delete step.interruption;
     delete step.cancels;
     delete step.routeSignatures;

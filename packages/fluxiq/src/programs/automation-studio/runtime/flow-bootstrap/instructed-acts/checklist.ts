@@ -62,16 +62,29 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 // the completion gate are unchanged, and a build's ending words every todo
 // (`../unfinished-build/not-done.ts`).
 //
+// **What the step did instead (W1, 23 live runs; `./act-evidence.ts`).** An
+// act claimed on a step whose record shows it chose one of the act's options
+// (`step_only_chooses`, `chooses`), only cleared a layer in front of the page
+// (`step_only_clears_the_way`), went to another page (`step_only_arrives`) or
+// only opened the page of its choices (`step_only_opens_its_choices`) carries
+// `todoSaid`: what that step did, that it does not do the act, and where to
+// name the act -- the step whose words name it (`instead`), or the press to
+// run. That verdict replaces the advisory `claimSaid` for these four. The two
+// new reasons are their own union (`AutomationStudioInstructedActEvidenceTodo`),
+// so a reader typed over the other two falls back safely.
+//
 // Nothing here calls a provider or reads a page; it is the instruction's words
 // and the draft.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowBootstrapDraftStepGoesToLocation } from "../reachability/index.ts";
+import { automationStudioInstructedActEvidenceSaid, automationStudioInstructedActIsEvidenceFault } from "./act-evidence.ts";
 import { automationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
 import { automationStudioInstructedActClaimDoubt } from "./claim-doubt.ts";
-import type { AutomationStudioInstructedChoice } from "./contracts.ts";
+import type { AutomationStudioInstructedAct, AutomationStudioInstructedChoice } from "./contracts.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
+import { automationStudioInstructedChoiceValueSaid } from "./instruction-choices.ts";
 import { automationStudioInstructedActRepeatSpans } from "./span.ts";
 import { automationStudioInstructedActsStanding, type AutomationStudioInstructedStanding } from "./standing.ts";
 
@@ -104,6 +117,17 @@ export type AutomationStudioInstructedActTodo =
  */
 export type AutomationStudioInstructedActObjectTodo = "step_acts_on_another_object" | "quantity_is_a_repeat" | "quantity_presses_differ";
 
+/**
+ * Why an act is not done, read from what the step claimed for it did instead
+ * (`./act-evidence.ts`): it made one of the act's own choices, or only cleared
+ * a layer in front of the page. Held apart from the two unions above, so a
+ * reader typed over those falls back safely. Information, never a refusal.
+ */
+export type AutomationStudioInstructedActEvidenceTodo = "step_only_chooses" | "step_only_clears_the_way";
+
+/** Every reason an act or choice on the checklist is not done. */
+type Todo = AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo | AutomationStudioInstructedActEvidenceTodo;
+
 /** What the checklist adds to a todo it read from what a step acted on. */
 type AutomationStudioInstructedTodoDetail = {
   /** `step_acts_on_another_object`: the id of the act whose object the step acted on. */
@@ -112,6 +136,10 @@ type AutomationStudioInstructedTodoDetail = {
   presses?: number[];
   /** `span_stops_short`: the position of the step right after the repeat that does part of the act. */
   after?: number;
+  /** `step_only_chooses`: the id of the act's own choice the step made instead. */
+  chooses?: string;
+  /** The position of a step whose words name the act, for a step judged to have done something else (`./act-evidence.ts`). */
+  instead?: number;
 };
 
 /** One choice of an act's item as the model is shown it: how many, or which size, colour or version. */
@@ -123,12 +151,14 @@ export type AutomationStudioInstructedChoiceChecklistItem = {
   value: string;
   quote: string;
   done?: number;
-  todo?: AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo;
+  todo?: Todo;
   step?: number;
   /** The position of the step that does this choice's act, when it comes before the step that makes the choice (`./choice-order.ts`). */
   afterAct?: number;
   /** What that means, in words the model and the judge act on. Information, never a todo. */
   afterActSaid?: string;
+  /** For a time asked for by its rank, which one that is (`./instruction-choices.ts`, `automationStudioInstructedChoiceValueSaid`). */
+  valueSaid?: string;
 } & AutomationStudioInstructedTodoDetail;
 
 /** One act as the model is shown it. */
@@ -143,7 +173,13 @@ export type AutomationStudioInstructedActChecklistItem = {
   /** The position of the step of the Flow that does it. */
   done?: number;
   /** Why no step does it yet, when none does. */
-  todo?: AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo;
+  todo?: Todo;
+  /**
+   * `step_only_chooses`, `step_only_clears_the_way`, `step_only_arrives` and
+   * `step_only_opens_its_choices`: what the step did, that it does not do the
+   * act, and where to name it (`./act-evidence.ts`). Replaces `claimSaid`.
+   */
+  todoSaid?: string;
   /** The step that says it does it but does not, when one does. */
   step?: number;
   /** The choices the person made for this act's item, each done or todo. Absent when they made none. */
@@ -182,19 +218,28 @@ export function automationStudioInstructedActsChecklist(input: {
     const stood = standing.get(act.id);
     const doer = stood ? ("done" in stood ? stood.done : stood.step) : undefined;
     const once = act.plural && doer ? singleRowSteps(act.id, doer, input.draftSteps) : undefined;
-    const claimSaid = doer ? automationStudioInstructedActClaimDoubt(act, doer, input.draftSteps) : undefined;
+    const todoSaid = evidenceSaid(act, stood, input.draftSteps);
+    // The verdict on what the step did replaces the doubt about its words.
+    const claimSaid = doer && todoSaid === undefined ? automationStudioInstructedActClaimDoubt(act, doer, input.draftSteps) : undefined;
     const item: AutomationStudioInstructedActChecklistItem = {
       id: act.id, verb: act.verb, quote: act.quote, ...(act.plural ? { plural: true as const } : {}), ...shown(stood),
+      ...(todoSaid !== undefined ? { todoSaid } : {}),
       ...(claimSaid ? { claimSaid } : {}),
       ...(once ? { drop: once.drop, dropSaid: once.said } : {})
     };
     if (!act.requires?.length) return item;
-    return { ...item, choices: act.requires.map((choice) => ({ id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote, ...shown(standing.get(choice.id)), ...madeAfterAct(choice, standing.get(choice.id)) })) };
+    return {
+      ...item,
+      choices: act.requires.map((choice) => {
+        const valueSaid = automationStudioInstructedChoiceValueSaid(choice);
+        return { id: choice.id, choice: choice.choice, value: choice.value, quote: choice.quote, ...shown(standing.get(choice.id)), ...madeAfterAct(choice, standing.get(choice.id)), ...(valueSaid ? { valueSaid } : {}) };
+      })
+    };
   });
 }
 
 /** An act or choice as the checklist shows it: the step that does it, or why none does and the step judged. */
-function shown(stood: AutomationStudioInstructedStanding | undefined): { done: number } | ({ todo: AutomationStudioInstructedActTodo | AutomationStudioInstructedActObjectTodo; step?: number } & AutomationStudioInstructedTodoDetail) {
+function shown(stood: AutomationStudioInstructedStanding | undefined): { done: number } | ({ todo: Todo; step?: number } & AutomationStudioInstructedTodoDetail) {
   if (!stood) return { todo: "no_step_added" };
   if ("done" in stood) return { done: stood.done.position };
   return {
@@ -202,8 +247,16 @@ function shown(stood: AutomationStudioInstructedStanding | undefined): { done: n
     step: stood.step.position,
     ...(stood.after !== undefined ? { after: stood.after } : {}),
     ...(stood.actsOn !== undefined ? { actsOn: stood.actsOn } : {}),
-    ...(stood.presses ? { presses: [...stood.presses] } : {})
+    ...(stood.presses ? { presses: [...stood.presses] } : {}),
+    ...(stood.chooses !== undefined ? { chooses: stood.chooses } : {}),
+    ...(stood.instead !== undefined ? { instead: stood.instead } : {})
   };
+}
+
+/** For an act judged to have been claimed on a step that did something else, the sentence saying so (`./act-evidence.ts`). */
+function evidenceSaid(act: AutomationStudioInstructedAct, stood: AutomationStudioInstructedStanding | undefined, steps: readonly AutomationStudioFlowDraftStep[]): string | undefined {
+  if (!stood || !("fault" in stood) || stood.reads || !automationStudioInstructedActIsEvidenceFault(stood.fault)) return undefined;
+  return automationStudioInstructedActEvidenceSaid({ act, fault: stood.fault, step: stood.step, chooses: stood.chooses, instead: stood.instead, steps });
 }
 
 /** A done choice whose act's step comes before it: that step, and the sentence the verdict says (`./choice-order.ts`). */

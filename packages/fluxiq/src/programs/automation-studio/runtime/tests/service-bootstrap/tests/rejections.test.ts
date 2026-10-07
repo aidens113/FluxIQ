@@ -9,6 +9,9 @@ import type { AutomationStudioLlmProviderResolverInput, AutomationStudioServiceO
 import { AutomationStudioService } from "../../../service.ts";
 import { plan, mockProvider, blankFixture, caller, expectNoTopology, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, blankFixturesPerService, type DataDirSeed } from "./fixtures.ts";
 
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 let tempRoot: string;
 type Fixture = Awaited<ReturnType<typeof blankFixture>>;
 

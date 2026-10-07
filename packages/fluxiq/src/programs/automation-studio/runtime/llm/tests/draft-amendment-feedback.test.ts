@@ -228,7 +228,7 @@ describe("the feedback an amendment refusal is shown as", () => {
     no_such_step: true, already_so: true, no_such_position: true, run_by_the_loop: true, no_step_before_it: true, over_not_before: true, not_a_kept_step: true,
     did_not_work: true, already_in_flow: true, already_out: true, changes_nothing: true, act_on_a_read: true, act_already_named: true,
     bind_not_a_binding: true, bind_new_key: true, bind_row_outside_loop: true, bind_malformed: true,
-    rerun_holds_binding: true, repeat_taken_off: true, strands_a_step: true, settings_rewrite_run: true
+    rerun_holds_binding: true, repeat_taken_off: true, strands_a_step: true, settings_rewrite_run: true, second_copy: true
   };
 
   it("can say every reason the draft computes, with what the word means", () => {

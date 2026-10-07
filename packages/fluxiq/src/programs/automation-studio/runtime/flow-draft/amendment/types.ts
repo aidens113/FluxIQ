@@ -70,7 +70,7 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
   step: number;
   reason: "no_such_step" | "already_so" | "no_such_position" | "run_by_the_loop" | "no_step_before_it" | "over_not_before" | "not_a_kept_step" | "did_not_work" | "already_in_flow" | "already_out" | "changes_nothing" | "act_on_a_read" | "act_already_named"
     | "bind_not_a_binding" | "bind_new_key" | "bind_row_outside_loop" | "bind_malformed" | "rerun_holds_binding" | "repeat_taken_off"
-    | "strands_a_step" | "settings_rewrite_run";
+    | "strands_a_step" | "settings_rewrite_run" | "second_copy";
   /**
    * `over_not_before` only: the step the repeat named as `over`, so the
    * telling can say, in the draft's numbers, which step lists the rows and
@@ -153,6 +153,14 @@ export type AutomationStudioFlowDraftAmendmentRefusal = {
    * `run-muwao5n4-44977b2a`, D2-1).
    */
   strands?: number;
+  /**
+   * `second_copy` only: an `add` or `keep` refused because the step it would
+   * bring into the Flow copies a step already in it -- the same press on the
+   * same page, or a read of the same list with nothing changed in between --
+   * and this is that step, in the draft's shown numbers (`../second-copy.ts`,
+   * live run `run-murwdp4f-35f976d2`, C9).
+   */
+  copyOf?: number;
 };
 
 /**

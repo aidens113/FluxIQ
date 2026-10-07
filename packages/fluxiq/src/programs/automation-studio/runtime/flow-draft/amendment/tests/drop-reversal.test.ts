@@ -30,4 +30,29 @@ describe("a drop of one toggle half", () => {
     expect(steps[2]!.acts).toBeUndefined();
     expect(automationStudioInstructedActsChecklist({ instructionText: CART, draftSteps: steps })![0]).toMatchObject({ todo: "no_step_added" });
   });
+
+  it("a drop of the off half that strands a kept step is refused, and the on half stays kept", () => {
+    // 1 stays on page A, 2 (off) moves A to B, 3 acts on B, 4 (on) on B: 2 is the only way to 3's page.
+    const fourth: AutomationStudioFlowDraftStep = { position: 4, id: "d4", iteration: 4, actionId: "web.dom.click", input: { step: 4 }, effect: "mutate", effectApplied: true, disposition: "kept" };
+    const steps = [...draft(), fourth];
+    const pages = ["A", "A", "B", "B"];
+    steps.forEach((step, index) => { step.replay = { from: { page: pages[index]! } }; });
+    steps[1]!.toggle = { key: "t940", to: "off" };
+    steps[3]!.toggle = { key: "t940", to: "on" };
+    steps[3]!.acts = ["a1"];
+    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "drop" }])).toEqual({ applied: 0, refused: [{ step: 2, reason: "strands_a_step", strands: 3 }] });
+    expect(steps.map((step) => step.disposition)).toEqual(["kept", "kept", "kept", "kept"]);
+    expect(steps.map((step) => step.cancels)).toEqual([undefined, undefined, undefined, undefined]);
+    expect(steps[3]!.acts).toEqual(["a1"]);
+  });
+
+  it("a drop of the off half that strands nothing still takes the on half out once the drop stands", () => {
+    const fourth: AutomationStudioFlowDraftStep = { position: 4, id: "d4", iteration: 4, actionId: "web.dom.click", input: { step: 4 }, effect: "mutate", effectApplied: true, disposition: "kept" };
+    const steps = [...draft(), fourth];
+    steps[1]!.toggle = { key: "t940", to: "off" };
+    steps[3]!.toggle = { key: "t940", to: "on" };
+    expect(applyAutomationStudioFlowDraftAmendments(steps, [{ step: 2, change: "drop" }])).toEqual({ applied: 1, refused: [] });
+    expect(steps.map((step) => step.disposition)).toEqual(["kept", "dropped", "kept", "dropped"]);
+    expect(steps[3]!.cancels).toBe("d2");
+  });
 });

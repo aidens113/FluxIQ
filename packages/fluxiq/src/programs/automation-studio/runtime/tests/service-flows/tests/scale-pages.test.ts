@@ -9,12 +9,15 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAutomationStudioFlowExpansionFixture, createAutomationStudioLargeProjectFixture } from "../../../../model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { SQLiteRepository } from "../../../../../database-manager/storage/sqlite-repository.ts";
 import { withEndpointPerformanceScope } from "../../../../../_shared/performance-metrics.ts";
+
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 // The rows a 50-row Subflow page may read back from SQLite, against the 10,000
 // it pages over. Measured at 106 and 57: the page and its count, plus the
