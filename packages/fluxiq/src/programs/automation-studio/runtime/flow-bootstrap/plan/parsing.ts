@@ -104,7 +104,7 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
     issues.push(error("bootstrap.invalid_node", "Bootstrap node must be an object.", path));
     return;
   }
-  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences", "routeSignatures"], path, issues);
+  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences", "routeSignatures", "label"], path, issues);
   symbolic(value.key, `${path}.key`, issues);
   identifier(value.definitionId, `${path}.definitionId`, issues);
   boundedText(value.definitionVersion, `${path}.definitionVersion`, issues);
@@ -123,6 +123,7 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
   if (value.routeSignatures !== undefined && !automationStudioRouteSignaturesValue(value.routeSignatures)) {
     issues.push(error("bootstrap.invalid_route_signatures", "Node routeSignatures must hold a before and/or an after, each a small JSON object.", `${path}.routeSignatures`));
   }
+  if (value.label !== undefined) boundedText(value.label, `${path}.label`, issues);
 }
 
 function parseEdge(value: unknown, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {

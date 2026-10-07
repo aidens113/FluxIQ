@@ -34,6 +34,13 @@ export type AutomationStudioFlowBootstrapNode = {
    * to the Flow node's metadata under `routeSignatures` (`../adaptation.ts`).
    */
   routeSignatures?: AutomationStudioRouteSignatures;
+  /**
+   * What the Flow node is named: its draft step's described name, in the
+   * domain's words (R3-U-12). Core-derived only, as `routeSignatures` is, and
+   * written to the Flow node's `label`, which a run's step card shows
+   * (`../adaptation.ts`, `../../activity/step/`).
+   */
+  label?: string;
 };
 
 export type AutomationStudioFlowBootstrapEdge = {
