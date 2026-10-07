@@ -2,6 +2,7 @@ export * from "./activity/index.ts";
 export * from "./adaptation-confidence/index.ts";
 export * from "./action-permissions/index.ts";
 export * from "./adapters.ts";
+export * from "./candidate-start-hook/index.ts";
 export * from "./adaptive-orchestrator.ts";
 export * from "./contracts.ts";
 export * from "./conversations/index.ts";
