@@ -21,6 +21,9 @@ import { AutomationStudioService } from "../../../service.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, expectNoTopology, caller, isJudgeRequest, judgeReply, mockProvider, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 const PRESS_ID = "domain.example.press";
 const REFUND = { handle: "c4", name: "Refund line 1" };
 const OPEN = { handle: "c1", name: "Open order ORD-40100" };
@@ -166,7 +169,7 @@ describe("the same build, when the instruction itself asks for it", () => {
     await run.instance.reviewFlowBootstrapAdaptation({ projectId: run.project.id, flowId: run.flow.flowId, adaptationId: result.adaptationId, action: "apply" });
     const applied = await run.instance.getFlow(run.project.id, run.flow.flowId);
     expect(applied.metadata?.bootstrapInstructedConsequences).toEqual(stored!.instructedConsequences);
-  }, 30_000); // A build, its test, its judge, then approval and apply: about 6 s alone, past 15 s beside other files.
+  }, 60_000); // A build, its test, its judge, then approval and apply: about 6 s alone, past 15 s beside other files.
 
   it("still asks for a consequence the instruction did not ask for", async () => {
     const run = await build([pressDecision(REFUND.handle)], undefined, [{ consequence: "modify_existing", quote: "refund the first line of Ada Lovelace's order" }]);

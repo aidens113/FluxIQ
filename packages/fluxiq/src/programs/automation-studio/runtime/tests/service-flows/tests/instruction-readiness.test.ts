@@ -1,11 +1,14 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createAutomationStudioLargeProjectFixture } from "../../../../model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { type AutomationStudioProjectStore, withAutomationStudioProjectDatabaseHeld } from "../../../service/projects/index.ts";
 import type { AutomationStudioProjectDatabasePool } from "../../../../storage/index.ts";
+
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 // 102 sequential SQLite saves through the service. Alone it takes 3-7 s on the
 // development machine (2026-10-05, t266); under the full suite's parallel load

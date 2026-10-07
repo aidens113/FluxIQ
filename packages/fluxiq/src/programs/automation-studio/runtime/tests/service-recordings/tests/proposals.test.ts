@@ -1,7 +1,7 @@
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stateValue } from "../../../../model/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
@@ -9,6 +9,9 @@ import { type AutomationStudioImporterSdkManifest } from "../../../../nodes/inde
 import { IoRegistry, createEnvelope } from "../../../../../../io/index.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { getPrimarySubflowGraph } from "../../service-fixtures.ts";
+
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 let tempRoot: string;
 
@@ -177,7 +180,7 @@ describe("AutomationStudioService recording persistence", () => {
     expect(artifacts.recordingFlowProposals.map((proposal) => proposal.proposalId)).toContain(secondProposalId);
     expect(artifacts.recordingFlowProposals.map((proposal) => proposal.proposalId)).not.toContain(firstProposalId);
     await expect(service.getRecordingSession(recording.recordingId, project.id)).resolves.toMatchObject({ recordingId: recording.recordingId });
-  }, 15_000);
+  }, 60_000);
 
   it("ignores stale object-backed proposal artifacts during proposal refresh", async () => {
     const io = new IoRegistry();

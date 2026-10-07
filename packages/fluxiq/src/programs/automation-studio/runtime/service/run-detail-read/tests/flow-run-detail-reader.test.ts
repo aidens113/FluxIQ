@@ -8,6 +8,9 @@ import { AutomationStudioProjectRuntimeStreamStore } from "../../../../storage/i
 import { AutomationStudioService } from "../../../service.ts";
 import { createRunnableCanonicalFlow } from "../../../tests/service-fixtures.ts";
 
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
+
 // Reading a run's detail: the typed runtime store first, then the legacy JSON
 // detail, then a rebuild from the run's session for a run neither store holds.
 // A typed store that is configured but cannot be opened or read is an error.

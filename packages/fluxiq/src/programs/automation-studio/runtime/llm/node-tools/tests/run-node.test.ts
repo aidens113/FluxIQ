@@ -40,9 +40,9 @@ describe("the run-node tool's declaration", () => {
     const built = tool()!;
     expect(built.description).toContain("flowBootstrap.nodeCatalog names every node");
     expect(built.description).toContain("core.describe_nodes");
-    expect(built.description).toContain("A node you run is described for you, in flowBootstrap.describedNodes from then on.");
+    expect(built.description).toContain("A node you run is described for you, under describedNodes in its first result.");
     const properties = built.inputSchema.properties as { parameters: { description: string } };
-    expect(properties.parameters.description).toContain("flowBootstrap.describedNodes");
+    expect(properties.parameters.description).toContain("its definition under describedNodes");
   });
 
   it("leaves the consequence classes to the schema's enum rather than repeating them in prose", () => {
