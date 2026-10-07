@@ -1,12 +1,13 @@
 import type {
   AutomationStudioFailureRecord,
+  AutomationStudioRecordProcessing,
   AutomationStudioRecordSchema,
   AutomationStudioRecordWriteMode,
   AutomationStudioRunDatasetSummary
 } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
-import type { AutomationNodeExecutionResult, AutomationNodeTargetResolution, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
+import type { AutomationNodeExecutionResult, AutomationNodePort, AutomationNodeTargetResolution, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
 import type { AutomationStudioAskKind, AutomationStudioParkedRun, AutomationStudioParkingPort } from "../parking/index.ts";
@@ -383,6 +384,12 @@ export type AutomationStudioRecordBatch = {
   invalidCount: number;
   /** True when the output returned more rows than the record output keeps. */
   truncated: boolean;
+  /**
+   * The record output's `process` declaration, copied as parsed: how the run's
+   * collected rows become the dataset's answer when the run ends. Absent is the
+   * default processing.
+   */
+  process?: AutomationStudioRecordProcessing;
 };
 
 export type AutomationStudioGraphExecutionOptions = {
@@ -448,8 +455,12 @@ export type AutomationStudioGraphExecutionOptions = {
   callFlowAttemptPath?: string[];
   /** Executes a pinned composite Flow when no built-in implementation exists. */
   compositeExecutor?: (request: { node: AutomationStudioFlowNode; inputs: Record<string, JsonValue>; options: AutomationStudioGraphExecutionOptions }) => Promise<{ result: AutomationNodeExecutionResult; childTrace?: AutomationStudioGraphExecutionTrace; compositeTarget?: { flowId: string; version: string; flowDigest: string } } | undefined>;
-  /** Executes explicitly bound importer or trusted-local Code Node implementations. */
-  nativeNodeExecutor?: (request: { node: AutomationStudioFlowNode; inputs: Record<string, JsonValue>; signal?: AbortSignal; hostContext?: { currentStateRef?: AutomationStudioHostStateSnapshotRef; previousStateRef?: AutomationStudioHostStateSnapshotRef; capabilityIds: string[]; sideEffectClass: "none" | "internal" | "external" | "destructive"; target?: JsonValue } }) => Promise<{ result: AutomationNodeExecutionResult; logs?: AutomationStudioNativeLogEntry[] } | undefined>;
+  /**
+   * Executes explicitly bound importer or trusted-local Code Node implementations.
+   * `declaredOutputs` is the bound definition's output ports: a route the node's
+   * dispatch answers is taken only when they declare it a branch (`node-execution.ts`).
+   */
+  nativeNodeExecutor?: (request: { node: AutomationStudioFlowNode; inputs: Record<string, JsonValue>; signal?: AbortSignal; hostContext?: { currentStateRef?: AutomationStudioHostStateSnapshotRef; previousStateRef?: AutomationStudioHostStateSnapshotRef; capabilityIds: string[]; sideEffectClass: "none" | "internal" | "external" | "destructive"; target?: JsonValue } }) => Promise<{ result: AutomationNodeExecutionResult; logs?: AutomationStudioNativeLogEntry[]; declaredOutputs?: readonly AutomationNodePort[] } | undefined>;
   nodeRegionIds?: Record<string, string>;
   regionRuntime?: {
     regions: Array<{ id: string; kind?: "deterministic" | "trigger" | "policy"; timeoutMs?: number; requiredRuntimeCapabilities?: string[] }>;

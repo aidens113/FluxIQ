@@ -14,6 +14,12 @@ const DETERMINER = /(?:\b(?:the|an?|this|that|its|their|his|her|my|our|your|each
 const VERB_BEFORE = /\b(?:to|then|must|should|will|would|can|could|also|please)\s+$/iu;
 /** What a list read is called: "extract list (node)", "dom extract list", "extraction node". */
 const LIST_READER = /\b(?:dom\s+)?(?:extract[\s_-]?list(?:\s+(?:nodes?|steps?|tools?))?|extraction\s+(?:nodes?|steps?|tools?))\b/giu;
+/**
+ * A list's handle, by the list read's name for it: "the detected extraction
+ * handle" read "the detected reading the list handle" (R3-U-10, live run
+ * `run-mux6naez-6c20f26e`). It is said as the list it names.
+ */
+const LIST_HANDLE = /\b(?:dom\s+)?(?:extract[\s_-]?list|extraction)\s+handles?\b/giu;
 /** "extraction", alone. */
 const EXTRACTION = /\bextraction(s?)\b/giu;
 const SCRAPE: Readonly<Record<string, string>> = { e: "read", es: "reads", ed: "read", ing: "reading" };
@@ -46,6 +52,7 @@ function determined(text: string, offset: number): boolean {
  */
 export function automationStudioActivityPersonWords(text: string): string {
   return text
+    .replace(LIST_HANDLE, (found: string) => cased(found, "list"))
     .replace(LIST_READER, (found: string, offset: number, whole: string) => cased(found, determined(whole, offset) ? "list reader" : "the list reader"))
     .replace(EXTRACTION, (found: string, plural: string, offset: number, whole: string) => cased(found, determined(whole, offset) ? `list reader${plural}` : plural ? "list reads" : "reading the list"))
     .replace(/\b([Aa])n(\s+list reader)/gu, "$1$2")

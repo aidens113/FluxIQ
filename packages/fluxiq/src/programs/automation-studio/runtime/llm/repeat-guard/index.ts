@@ -4,4 +4,5 @@
 export * from "./draft-key.ts";
 export * from "./feedback.ts";
 export * from "./outcomes.ts";
+export * from "./retry-later.ts";
 export * from "./searching.ts";

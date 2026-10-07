@@ -274,7 +274,7 @@ describe("a Flow the model says is ready, judged on what its test did", () => {
     expect(requests).toHaveLength(2);
     expect(outcome).toMatchObject({ kind: "finished", rounds: 2, judged: { verdict: "yes" } });
     expect(requests[1]!.repair!.resume.judgement).toMatchObject({ test: "not_tested", judge: { verdict: "unknown", untestedCarried: [5, 6, 7, 8, 9] } });
-    expect(announced[1]).toBe("repairing: Repairing the Flow: The Flow was not judged to do what you asked: steps 5, 6, 7, 8, 9 came from the earlier Flow and were not run when it was tested. Repairing it live, running them again.");
+    expect(announced[1]).toBe("repairing: Repairing the Flow: The Flow was not judged to do what you asked: 5 of its steps came from the earlier Flow and were not run when it was tested. Repairing it live, running them again.");
   });
 
   it("still repairs a re-authored Flow the judge found wrong, carried steps or not", async () => {

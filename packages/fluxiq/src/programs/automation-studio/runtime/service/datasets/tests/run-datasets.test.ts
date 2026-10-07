@@ -269,6 +269,42 @@ describe("AutomationStudioRunDatasets", () => {
     await expect(datasets.streamRunDataset({ projectId: "project.unknown", runId: RUN, datasetId: "listings", format: "csv" })).rejects.toThrow("Unknown Automation Studio project");
     expect(existsSync(path.join(rootDir, "projects", "project.unknown"))).toBe(false);
   });
+  // Read-list design P1: the run's end turns each dataset into its answer.
+  it("processes nothing, and fails nothing, without a project database pool", async () => {
+    const datasets = new AutomationStudioRunDatasets(new AutomationStudioProjectStore(new AutomationStudioProjectPaths(undefined)), undefined);
+    await expect(datasets.processRunDatasets({ projectId: PROJECT, runId: RUN })).resolves.toEqual([]);
+    await expect(datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN })).resolves.toBeUndefined();
+  });
+
+  it("stores each batch's process declaration and processes the run's datasets into their answers", async () => {
+    const { datasets } = await openFixture([{ runId: RUN, flowId: "flow.a" }]);
+    const handler = datasets.recordBatchHandler(PROJECT, RUN);
+    const process = { sort: [{ field: "title" as const, order: "desc" as const }] };
+    const row = (title: string) => ({ title, price: 1 });
+    await handler(batch({ process, rows: [row("A"), row("B"), row("C")] }));
+    await handler(batch({ process, attemptId: "extract.attempt.2", batchKey: "extract.attempt.2", rows: [row("C"), row("D")] }));
+    await expect(datasets.listRunDatasets({ projectId: PROJECT, runId: RUN })).resolves.toMatchObject([{ recordCount: 5 }]);
+
+    const processed = await datasets.processRunDatasets({ projectId: PROJECT, runId: RUN });
+
+    expect(processed).toMatchObject([{ datasetId: "listings", recordCount: 4, processing: { collected: 5, duplicates: 1, kept: 4 } }]);
+    await expect(datasets.listRunDatasets({ projectId: PROJECT, runId: RUN })).resolves.toEqual(processed);
+    // The declaration reached the store: the answer is in its order, not the order collected.
+    expect(required(await datasets.getRunDatasetPage({ projectId: PROJECT, runId: RUN, datasetId: "listings" })).rows).toEqual([row("D"), row("C"), row("B"), row("A")]);
+    // A batch declaring something else is refused by the store, so the declaration is what was stored.
+    await expect(handler(batch({ process: { limit: 1 }, attemptId: "extract.attempt.3", batchKey: "extract.attempt.3", rows: [row("E")] }))).rejects.toThrow("Run dataset processing changed within one run.");
+  });
+
+  it("leaves a dataset unprocessed, without throwing, when processing it fails at the run's end", async () => {
+    const { pool, datasets } = await openFixture([{ runId: RUN, flowId: "flow.a" }]);
+    await datasets.recordBatchHandler(PROJECT, RUN)(batch({ rows: items(2) }));
+    await dropRowsTable(pool);
+
+    await expect(datasets.processRunDatasets({ projectId: PROJECT, runId: RUN })).rejects.toThrow();
+    await expect(datasets.processEndedRunDatasets({ projectId: PROJECT, runId: RUN })).resolves.toBeUndefined();
+    const [summary] = await datasets.listRunDatasets({ projectId: PROJECT, runId: RUN });
+    expect(summary).not.toHaveProperty("processing");
+  });
 });
 
 function batch(overrides: Partial<AutomationStudioRecordBatch> = {}): AutomationStudioRecordBatch {

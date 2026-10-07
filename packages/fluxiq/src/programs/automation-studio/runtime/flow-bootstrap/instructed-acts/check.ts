@@ -93,6 +93,15 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 // the choice (`afterAct`, `afterActSaid`), which is how it reaches the model
 // beside its draft and the judge of the build's test (`./choice-order.ts`).
 //
+// **What the step did instead (W1, 23 live runs).** An act of adding, saving,
+// claiming, submitting or moving claimed on a step whose words do not name it
+// is judged by what that step's record shows it did (`./act-evidence.ts`): it
+// chose one of the act's options (`step_only_chooses`, `chooses`), only
+// cleared a layer in front of the page (`step_only_clears_the_way`), or went to
+// another page (`step_only_arrives`). Each such entry, and one
+// `step_only_opens_its_choices`, carries `said` -- the checklist's `todoSaid`
+// -- and `instead`, a step whose words name the act, where the draft has one.
+//
 // **Only a draft is checked.** A plan the model wrote as a script has no steps
 // to name, so it is left where it stood before this check existed.
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -106,7 +115,9 @@ import type {
   AutomationStudioInstructedActsVerdict,
   AutomationStudioInstructedChoice
 } from "./contracts.ts";
+import { automationStudioInstructedActEvidenceSaid, automationStudioInstructedActIsEvidenceFault } from "./act-evidence.ts";
 import { automationStudioInstructedActs } from "./instruction-acts.ts";
+import { automationStudioInstructedChoiceValueSaid } from "./instruction-choices.ts";
 import { AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS } from "./kind-words.ts";
 import { automationStudioInstructedActsOnSaid } from "./object-binding.ts";
 import { AUTOMATION_STUDIO_INSTRUCTED_QUANTITY_INSTRUCTIONS } from "./quantity-fault.ts";
@@ -129,8 +140,16 @@ export const AUTOMATION_STUDIO_INSTRUCTED_ACTS_INSTRUCTION = "Nothing was create
   + "Each act needs a step of its own, and it must be one that changed something.";
 
 /** Said only when a claim named a step that only arrived, so the plain refusal stays as it was. */
-const ARRIVAL_INSTRUCTION = " A reason of step_only_arrives means the step named only goes to an address -- the page this Flow starts on, or another page of its site -- "
+const ARRIVAL_INSTRUCTION = " A reason of step_only_arrives means the step named only goes to a page -- the page this Flow starts on, another page of its site, or, for a press whose words do not name the act, such as a typed search or a product link, a press that led to another page -- "
   + "and arriving at a page does not do the act. After arriving, press or set the control that does it (the add, collect, save or set control), keep that step, and name it for the act instead.";
+
+/** Said only when a claim named a step that made one of the act's own choices (`./act-evidence.ts`, run mux74k5q). */
+const CHOOSES_INSTRUCTION = " A reason of step_only_chooses means the step named made one of the act's own choices (chooses), such as an option or the quantity, and its words do not name the act: it still makes that choice, and does not do the act. "
+  + "Name the act on the press whose words name it (instead, where the draft has one), made after its choices.";
+
+/** Said only when a claim named a step that answered a layer in front of the page (`./act-evidence.ts`, run muqiho5c). */
+const CLEARS_INSTRUCTION = " A reason of step_only_clears_the_way means the step named only closed something in front of the page, such as a popup's \"Not now\" or a consent wall, and does not do the act. "
+  + "Leave that step as it is, and name the act on the press whose words name it (instead, where the draft has one).";
 
 /** Said only when a claim named a step that only opened the page of the act's choices (`./standing.ts`, run mux6pndp). */
 const OPENS_CHOICES_INSTRUCTION = " A reason of step_only_opens_its_choices means the step named only opened the page where the act's own choices are made, and its control does not name the act: it prepares the act and does not do it. "
@@ -153,6 +172,9 @@ const CHOICE_INSTRUCTION = " An id like a2.quantity or a2.size is a choice the p
   + "The press that adds does not make it: choose the size or set the quantity with its own step before adding -- press that option, or set the quantity control to the number -- keep that step, and name that step for the choice's id, e.g. {\"action\": \"a2.quantity\", \"step\": \"9\"}. "
   + "If the item's page already shows that option chosen, do not press it -- pressing a chosen option can clear it -- and name for the choice's id the step after which the page showed it chosen, such as the one that opened the item's page. "
   + "A reason of choice_is_the_act_step means the step named is the one named for the act itself, and nothing it was given sets the choice.";
+
+/** Said only when a time asked for by its rank is missing (`./instruction-choices.ts`, `automationStudioInstructedChoiceValueSaid`; run munovwp3 cause 6). */
+const TIME_INSTRUCTION = " An id like a1.time asks for the earliest (or soonest, first available) time or slot on offer: the first the list shows, in its own order, that can still be chosen -- not full, disabled or unavailable -- and never a later one.";
 
 /** Said only when an act over a whole set was claimed by a step that acts once; the way to repeat is the draft's own telling of it. */
 const REPEAT_INSTRUCTION = " A reason of act_needs_repeat means the act is asked for every item of a list (plural) and the step named does it once: "
@@ -198,6 +220,8 @@ export function checkAutomationStudioInstructedActs(input: {
   const missing: AutomationStudioInstructedActMissing[] = [];
   // The positions of the steps named for an act, when each of them only reads the page.
   const reads = new Map<string, number[]>();
+  // What a step judged to have done something else did, and where the act is named (`./act-evidence.ts`).
+  const evidence = new Map<string, string>();
   for (const item of [...acts, ...choices]) {
     const stood = standing.get(item.id);
     if (stood && "done" in stood) continue;
@@ -208,6 +232,9 @@ export function checkAutomationStudioInstructedActs(input: {
       continue;
     }
     if (stood.reads) reads.set(item.id, stood.reads);
+    else if (!("of" in item) && automationStudioInstructedActIsEvidenceFault(stood.fault)) {
+      evidence.set(item.id, automationStudioInstructedActEvidenceSaid({ act: item, fault: stood.fault, step: stood.step, chooses: stood.chooses, instead: stood.instead, steps }));
+    }
     // A step is named by its position, the number the draft shows; the model never sees a step's id.
     missing.push({
       ...item,
@@ -215,7 +242,9 @@ export function checkAutomationStudioInstructedActs(input: {
       step: `${stood.step.position}`,
       ...(stood.after !== undefined ? { after: stood.after } : {}),
       ...(stood.actsOn !== undefined ? { actsOn: stood.actsOn } : {}),
-      ...(stood.presses ? { presses: stood.presses } : {})
+      ...(stood.presses ? { presses: stood.presses } : {}),
+      ...(stood.chooses !== undefined ? { chooses: stood.chooses } : {}),
+      ...(stood.instead !== undefined ? { instead: stood.instead } : {})
     });
   }
   if (!missing.length) return { ok: true, acts, ...afterAct };
@@ -249,8 +278,12 @@ export function checkAutomationStudioInstructedActs(input: {
         ...(act.after !== undefined ? { after: act.after } : {}),
         ...(act.actsOn !== undefined ? { actsOn: act.actsOn } : {}),
         ...(act.presses ? { presses: [...act.presses] } : {}),
+        ...(act.chooses !== undefined ? { chooses: act.chooses } : {}),
+        ...(act.instead !== undefined ? { instead: act.instead } : {}),
         // An act whose only step may be skipped: said beside it, for the model and the judge of the test.
-        ...(act.reason === "step_is_optional" && act.step ? { said: optionalSaid(act.id, act.step) } : {})
+        ...(act.reason === "step_is_optional" && act.step ? { said: optionalSaid(act.id, act.step) } : {}),
+        // An act claimed on a step that did something else: what it did, and where to name the act.
+        ...(evidence.has(act.id) ? { said: evidence.get(act.id)! } : {})
       })),
       // The steps that could be named: kept, and changed something, by the
       // positions the draft shows. Every one of them (user, 2026-09-30): no count cap.
@@ -269,6 +302,7 @@ export function checkAutomationStudioInstructedActs(input: {
         .map(([, said]) => said)
         .join("")
       + (missing.some((act) => "of" in act) ? CHOICE_INSTRUCTION : "")
+      + (missing.some((act) => "of" in act && automationStudioInstructedChoiceValueSaid(act) !== undefined) ? TIME_INSTRUCTION : "")
   };
 }
 
@@ -311,6 +345,8 @@ function readsSaid(id: string, positions: readonly number[]): string {
 const REASON_INSTRUCTIONS: ReadonlyArray<readonly [AutomationStudioInstructedActMissing["reason"], string]> = [
   ["step_only_arrives", ARRIVAL_INSTRUCTION],
   ["step_only_opens_its_choices", OPENS_CHOICES_INSTRUCTION],
+  ["step_only_chooses", CHOOSES_INSTRUCTION],
+  ["step_only_clears_the_way", CLEARS_INSTRUCTION],
   ["step_is_optional", OPTIONAL_INSTRUCTION],
   ["act_needs_repeat", REPEAT_INSTRUCTION],
   ["span_stops_short", SPAN_INSTRUCTION],

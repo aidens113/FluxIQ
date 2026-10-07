@@ -81,7 +81,7 @@ import {
   automationStudioFlowDraftSometimesPresentStepIds,
   automationStudioFlowDraftStepId,
   automationStudioFlowDraftStepIsProposed,
-  automationStudioFlowDraftWithheldStepIds,
+  automationStudioFlowDraftExemptStepIds,
   type AutomationStudioFlowDraftDryRun,
   type AutomationStudioFlowDraftStep,
   type AutomationStudioFlowDraftUnrunnableWord
@@ -235,6 +235,8 @@ export type AutomationStudioFlowDraftDryRunGateInput = {
   endView?: ((request: { callId: string; after?: number; signal?: AbortSignal }) => Promise<AutomationStudioFlowDraftTestEndView | undefined>) | undefined;
   /** The node each step names, handed to the replay so a repeat runs once per row (`./replay-draft.ts`). */
   nodeOf?: AutomationStudioFlowDraftReplayInput["nodeOf"];
+  /** Each step's full node definition, so a read sends the record output the stored Flow's read sends (`./replay-draft.ts`). */
+  definitionOf?: AutomationStudioFlowDraftReplayInput["definitionOf"];
   signal?: AbortSignal;
 };
 
@@ -369,6 +371,7 @@ export function automationStudioFlowDraftDryRunGate(
         executeTool: input.executeTool,
         ...(lastingIds ? { lastingActs: lastingIds } : {}),
         ...(input.nodeOf ? { nodeOf: input.nodeOf } : {}),
+        ...(input.definitionOf ? { definitionOf: input.definitionOf } : {}),
         ...(input.signal ? { signal: input.signal } : {})
       });
     } catch {
@@ -482,7 +485,7 @@ function repeatedStepIds(steps: readonly AutomationStudioFlowDraftStep[]): Reado
 function unchangedLine(steps: readonly AutomationStudioFlowDraftStep[], verdict: AutomationStudioFlowDraftDryRun, test: "replayed" | "replayed_differently" | "not_replayed"): string {
   // The verdict's own exemption (`../../flow-draft/dry-run.ts`): a step of a
   // repeat the test ran once per row (`passes`) is excused only by a withheld effect.
-  const excused = new Set([...automationStudioFlowDraftConditionalStepIds(steps), ...automationStudioFlowDraftWithheldStepIds(verdict.outcomes)]);
+  const excused = automationStudioFlowDraftExemptStepIds(steps, verdict.outcomes);
   const passedOver = (outcome: AutomationStudioFlowDraftDryRun["outcomes"][number]): boolean => outcome.stepId !== undefined && excused.has(outcome.stepId)
     && (outcome.passes === undefined || outcome.withheldBy !== undefined);
   const failing = verdict.outcomes
@@ -531,7 +534,7 @@ function madeOptional(steps: AutomationStudioFlowDraftStep[], verdict: Automatio
     attempt: verdict.attempt,
     reset: verdict.reset,
     outcomes: verdict.outcomes,
-    conditional: new Set([...automationStudioFlowDraftConditionalStepIds(steps), ...automationStudioFlowDraftWithheldStepIds(verdict.outcomes), ...sometimesPresent])
+    conditional: new Set([...automationStudioFlowDraftExemptStepIds(steps, verdict.outcomes), ...sometimesPresent])
   });
   if (!judged.ok) return undefined;
   for (const step of steps) {

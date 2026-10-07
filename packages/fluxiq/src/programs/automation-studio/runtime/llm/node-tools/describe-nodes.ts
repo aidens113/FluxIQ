@@ -6,15 +6,24 @@
 // Core's, whatever domain runs its nodes, and reading a definition touches no
 // target, so a domain neither declares nor carries it out.
 //
-// **The answer is a receipt, never the definitions.** A definition shown in a
-// call's result would be shown again in every later decision that carries the
-// result, and pushed out by the context window with it. Shown under
-// `flowBootstrap.describedNodes` instead, each definition appears once per
-// request for the rest of the build, however long ago it was asked for.
+// **The answer names the nodes; the request shows their definitions on it
+// (t289-G, W11).** The receipt lists the newly described ids under
+// `describedNodes` (`./described-nodes-key.ts`), and the request puts each
+// definition there in place of its id (`../deepseek/request-body.ts`). The
+// receipt is a window entry, which never changes or leaves once it is in
+// (`../context-window.ts`), so each definition appears once per request for the
+// rest of the build, however long ago it was asked for. It used to be shown
+// under `flowBootstrap.describedNodes`, at the end of the request's constant
+// head: every describe then changed the bytes in front of the tools and the
+// whole window, and the next request read them again uncached
+// (`run-murzln6g-11debe1d` C18). The definitions are not written into the
+// receipt itself, so the build's own record of the call -- its step log, its
+// repeat guard -- holds ids, not catalog text.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceToolExecutionResult } from "../evidence-loop.ts";
 import type { AutomationStudioHarnessOptionBundle } from "../harness-options/index.ts";
+import { AUTOMATION_STUDIO_LLM_DESCRIBED_NODES_KEY } from "./described-nodes-key.ts";
 import type { AutomationStudioLlmNodeDescriptions } from "./node-descriptions.ts";
 
 /** The option that describes nodes. */
@@ -26,8 +35,8 @@ const MAX_IDS = 64;
 const DESCRIPTION = [
   "Show the full definitions of library nodes: what each does and every parameter it takes.",
   "A node you run is shown too; ask before its first run only to learn its parameters, several ids per call.",
-  "A described node stays in flowBootstrap.describedNodes for the rest of the build, so never ask for it again.",
-  "Returns a receipt; the definitions are shown there. Observes only; never a step of the Flow."
+  "Each definition is shown once, under describedNodes in the result of the call that first described it, for the rest of the build: never ask for one again.",
+  "Observes only; never a step of the Flow."
 ].join(" ");
 
 /**
@@ -73,12 +82,12 @@ export function automationStudioLlmDescribeNodesBundle(memory: AutomationStudioL
         }
         const answer = memory.describe(ids);
         if (!answer.described.length && !answer.alreadyDescribed.length) return rejection("describe_nodes.unknown_nodes", { unknown: answer.unknown });
+        // Shown with their definitions in place of the ids; one already described is earlier in the request.
         const receipt: JsonObject = {
           ok: true,
-          described: answer.described,
-          ...(answer.alreadyDescribed.length ? { alreadyDescribed: answer.alreadyDescribed } : {}),
-          ...(answer.unknown.length ? { unknown: answer.unknown } : {}),
-          shownIn: "flowBootstrap.describedNodes"
+          ...(answer.described.length ? { [AUTOMATION_STUDIO_LLM_DESCRIBED_NODES_KEY]: answer.described } : {}),
+          ...(answer.alreadyDescribed.length ? { alreadyDescribed: answer.alreadyDescribed, alreadyShown: "under describedNodes, earlier in this request" } : {}),
+          ...(answer.unknown.length ? { unknown: answer.unknown } : {})
         };
         return receipt;
       }

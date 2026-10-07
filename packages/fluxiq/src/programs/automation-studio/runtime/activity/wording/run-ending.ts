@@ -22,6 +22,8 @@
 // opens in lower case, as the rest of the line it finishes, and says the rows
 // were saved.
 
+import { automationStudioActivityReasonText } from "./reason-text.ts";
+
 type Fields = Readonly<Record<string, unknown>>;
 
 /** The sentence, in lower case after the "Run failed" it finishes, or undefined when the record says the run did not fail at its result check. */
@@ -63,7 +65,9 @@ function repairEnding(repair: Fields | undefined, reauthor: Fields | undefined):
   const tried = fields(ending?.tried);
   const before = tried?.tested === "not_tested" ? "before it could test a change" : "before it finished";
   if (ending?.kind === "budget_exhausted") {
-    if (ending.bound === "rounds") return `the fix used all its rounds ${before}`;
+    // "Build rounds": a repair's attempt runs a build, and "all its rounds" read against the
+    // live line's "attempt 1 of 3" (R3-U-3, run-mux6naez-6c20f26e).
+    if (ending.bound === "rounds") return `the fix ran out of build rounds ${before}`;
     if (ending.bound === "cost") return `the fix spent all a repair may spend ${before}`;
     if (ending.bound === "duration") return `the fix ran out of time ${before}`;
     return `the fix reached its limit ${before}`;
@@ -73,6 +77,25 @@ function repairEnding(repair: Fields | undefined, reauthor: Fields | undefined):
   if (/cost|spend/u.test(code)) return `the fix spent all a repair may spend ${before}`;
   if (/budget_exhausted|evidence_budget/u.test(code)) return `the fix reached its limit ${before}`;
   return "the fix didn't finish";
+}
+
+/** The most of the check's reason a failed run's row says after its ending. */
+const MAX_OBJECTION = 240;
+
+/**
+ * What the result check objected to, after the ending, for the row's text
+ * only (the status line holds the ending alone): "The check said: <its
+ * reason>", in whole sentences and screened of ids (`./reason-text.ts`).
+ * Undefined when the run did not fail at its check or the check gave no
+ * reason. "...but the check found they don't answer what you asked" named no
+ * objection, while the rows were the right ones and the check doubted two
+ * items (R3-U-3 of the live-C round-3 UI review, `run-mux6naez-6c20f26e`).
+ */
+export function automationStudioActivityRunObjection(record: Fields | null | undefined): string | undefined {
+  const verification = fields(record?.resultVerification);
+  if (!verification || verification.performed !== true || verification.verdict === "answers" || verification.status === "confirmed") return undefined;
+  const reason = automationStudioActivityReasonText(verification.reason, MAX_OBJECTION);
+  return reason ? `The check said: ${reason}` : undefined;
 }
 
 /** The last entry of a recorded list, or nothing. */

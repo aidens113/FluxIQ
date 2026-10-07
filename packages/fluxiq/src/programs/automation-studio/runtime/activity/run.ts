@@ -1,7 +1,7 @@
 import type { ClientGatewayActivityPhase } from "@fluxiq/contracts/client-gateway";
 import { emitAutomationStudioActivity } from "./emit.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
-import { automationStudioActivityRunEnding } from "./wording/index.ts";
+import { automationStudioActivityRunEnding, automationStudioActivityRunObjection } from "./wording/index.ts";
 
 type Settled = { phase: ClientGatewayActivityPhase; label: string; kind: "step" | "ask"; status: "started" | "succeeded" | "failed"; final: boolean };
 
@@ -54,11 +54,14 @@ export async function withAutomationStudioRunActivity<T extends { status: string
     }
     const settled = SETTLED[session.status];
     if (!settled) return session;
-    const ending = session.status === "failed" ? await failedRunEnding(session, options.readRecord) : undefined;
+    const failed = session.status === "failed" ? await failedRunEnding(session, options.readRecord) : undefined;
+    const ending = failed?.ending;
+    // The check's objection follows in the row's text only: the status line holds the ending alone (R3-U-3).
+    const text = ending && failed?.objection ? `${ending} ${failed.objection}` : ending;
     emitAutomationStudioActivity({
       phase: settled.phase,
       label: ending ? `${settled.label}: ${ending}` : settled.label,
-      detail: { kind: settled.kind, title: settled.label, status: settled.status, ...(ending ? { text: ending } : {}) },
+      detail: { kind: settled.kind, title: settled.label, status: settled.status, ...(text ? { text } : {}) },
       ...(settled.final ? { final: true } : {})
     });
     return session;
@@ -70,12 +73,14 @@ export async function withAutomationStudioRunActivity<T extends { status: string
  * own metadata; undefined when neither says. The session's metadata answers
  * first, so a record that cannot be read leaves what the session already says.
  */
-async function failedRunEnding<T extends { metadata?: unknown }>(session: T, readRecord: AutomationStudioRunActivityOptions<T>["readRecord"]): Promise<string | undefined> {
+async function failedRunEnding<T extends { metadata?: unknown }>(session: T, readRecord: AutomationStudioRunActivityOptions<T>["readRecord"]): Promise<{ ending?: string; objection?: string }> {
   const own = session.metadata !== null && typeof session.metadata === "object" && !Array.isArray(session.metadata) ? session.metadata as RunRecord : {};
-  let ending = automationStudioActivityRunEnding(own);
+  let read: RunRecord = own;
   try {
     const record = await readRecord?.(session);
-    if (record) ending = automationStudioActivityRunEnding({ ...own, ...record });
+    if (record) read = { ...own, ...record };
   } catch { /* best-effort: the stream must never fail the run it reports */ }
-  return ending;
+  const ending = automationStudioActivityRunEnding(read);
+  const objection = automationStudioActivityRunObjection(read);
+  return { ...(ending ? { ending } : {}), ...(objection ? { objection } : {}) };
 }

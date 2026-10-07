@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionDeclaration, AutomationStudioActionPermissionVerdict, AutomationStudioInstructedConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioAsk, AutomationStudioAskAnswer, AutomationStudioParkingPort } from "../../parking/index.ts";
-import { automationStudioFlowBootstrapActionPermissions } from "../action-permissions.ts";
+import { automationStudioFlowBootstrapActionPermissions, automationStudioFlowBootstrapUnansweredSaid } from "../action-permissions.ts";
 import { automationStudioInstructedActs } from "../instructed-acts/index.ts";
 
 const CHECKOUT: AutomationStudioActionDeclaration = { consequences: ["move_money"], control: { name: "Continue to checkout", kind: "button" }, verb: "press" };
@@ -339,5 +339,23 @@ describe("the instruction's lasting acts, read once before the first test", () =
       const run = reading(new Error("provider down"));
       expect([...await run.permissions.instructedLastingActs(automationStudioInstructedActs(RUN_B))].sort()).toEqual(["a2", "a3"]);
     });
+  });
+});
+
+// W25 of the week review (run-mux6n7m4-8273e7a0, moment 4): the thread quoted "...in my cart: Space
+// Grey, the 7-in-1 version, shipped f...", an act's words cut inside a word. A long quote is cut
+// where a word ends, never inside one.
+describe("the line that names the acts the read gave no answer for", () => {
+  const LONG = "put three of the Voltbay USB-C hub sold by Voltbay Official Store in my cart: Space Grey, the 7-in-1 version, shipped from Spain";
+
+  it("cuts a long quote where a word ends, and leaves a short one whole", () => {
+    const said = automationStudioFlowBootstrapUnansweredSaid([LONG, "Collect that store's coupon while you are on the item"]);
+    const quoted = /^Reading your instruction gave no answer for "([^"]+)…", "Collect that store's coupon while you are on the item", so the build's tests check the steps that do them rather than do them again\.$/u.exec(said);
+    expect(quoted, said).not.toBeNull();
+    const kept = quoted![1]!;
+    expect(LONG.startsWith(kept)).toBe(true);
+    expect(LONG.charAt(kept.length)).toBe(" ");
+    expect(kept.length).toBeLessThanOrEqual(120);
+    expect(automationStudioFlowBootstrapUnansweredSaid(["add the towels"])).toBe("Reading your instruction gave no answer for \"add the towels\", so the build's tests check the step that does it rather than do it again.");
   });
 });

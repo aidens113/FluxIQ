@@ -58,6 +58,9 @@ describe("the described-node memory", () => {
 // 10-16 times per build without its definition (`run-mux6nxst-c9bca37c`,
 // `run-muwao5n4-44977b2a`), because only a call that failed described its node.
 // Every run the model makes now describes its node, at no cost of a decision.
+// t289-G (W11): the call that first describes a node names it under
+// `describedNodes` on its own result, where the request shows its definition,
+// so a describe never changes the request in front of the evidence window.
 describe("a node the model runs is described by running it", () => {
   const AND = "builtin.logic.and";
   function wrapped(answer: Awaited<ReturnType<AutomationStudioHarnessOptionImplementation>>) {
@@ -70,16 +73,41 @@ describe("a node the model runs is described by running it", () => {
     return { memory, implementation, run };
   }
 
-  it("leaves the definition of a first, successful run in describedNodes and the answer untouched", async () => {
+  it("names a first, successful run's node on its result, and leaves every later run of it untouched", async () => {
     const answer = { kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, rows: 2 }, effectApplied: false };
     const { memory, implementation, run } = wrapped(answer);
-    expect(await run({ node: AND, parameters: { emptyBehavior: "true" }, consequences: [] })).toBe(answer);
+    expect(await run({ node: AND, parameters: { emptyBehavior: "true" }, consequences: [] })).toEqual({ ...answer, evidence: { ok: true, rows: 2, describedNodes: [AND] } });
+    expect(answer.evidence).toEqual({ ok: true, rows: 2 });
     expect(implementation).toHaveBeenCalledTimes(1);
     expect(memory.ids()).toEqual([AND]);
     // A second run adds nothing: each node once, in the order first run.
-    await run({ node: "builtin.logic.or", parameters: {}, consequences: [] });
-    await run({ node: AND, parameters: {}, consequences: [] });
+    expect(await run({ node: "builtin.logic.or", parameters: {}, consequences: [] })).toEqual({ ...answer, evidence: { ok: true, rows: 2, describedNodes: ["builtin.logic.or"] } });
+    expect(await run({ node: AND, parameters: {}, consequences: [] })).toBe(answer);
     expect(memory.ids()).toEqual([AND, "builtin.logic.or"]);
+  });
+
+  it("describes nothing when the result cannot name it, so the head never gains a node mid-build", async () => {
+    // A result that is not an object, or one whose domain already wrote the key.
+    for (const answer of [["a", "list"], { ok: true, describedNodes: "the domain's own" }]) {
+      const { memory, run } = wrapped(answer as never);
+      expect(await run({ node: AND, parameters: {}, consequences: [] })).toBe(answer);
+      expect(memory.ids()).toEqual([]);
+    }
+  });
+
+  it("describes nothing for a call that threw, and still throws: its next run describes it", async () => {
+    const memory = automationStudioLlmNodeDescriptions({ resolution });
+    let fail = true;
+    const call = automationStudioLlmRunNodeDescribingFailures(async () => {
+      if (fail) throw new Error("page gone");
+      return { ok: true };
+    }, memory);
+    const run = () => call({ projectId: "p.1", flowId: "f.1", callId: "c.1", optionId: "core.run_node", value: { node: AND, parameters: {}, consequences: [] } as never, permission: automationStudioActionPermissionDenied });
+    await expect(run()).rejects.toThrow("page gone");
+    expect(memory.ids()).toEqual([]);
+    fail = false;
+    expect(await run()).toEqual({ ok: true, describedNodes: [AND] });
+    expect(memory.ids()).toEqual([AND]);
   });
 
   it("describes a written step's node too, since writing it is using it", async () => {
@@ -88,12 +116,15 @@ describe("a node the model runs is described by running it", () => {
     expect(memory.ids()).toEqual([AND]);
   });
 
-  it("points a refused first run at the definition it now has", async () => {
+  it("names a refused first run's node on its result, and points a later refusal at the definition", async () => {
     const { memory, run } = wrapped({ ok: false, code: "node_failed" });
     expect(await run({ node: AND, parameters: { selector: "#go" }, consequences: [] })).toEqual({
-      ok: false, code: "node_failed", described: `${AND} is now in flowBootstrap.describedNodes`, undeclaredParameters: ["selector"]
+      ok: false, code: "node_failed", describedNodes: [AND], undeclaredParameters: ["selector"]
     });
     expect(memory.ids()).toEqual([AND]);
+    expect(await run({ node: AND, parameters: { selector: "#go" }, consequences: [] })).toEqual({
+      ok: false, code: "node_failed", definition: `${AND} is under describedNodes, earlier in this request`, undeclaredParameters: ["selector"]
+    });
   });
 
   it("leaves the loop's own replays and unknown nodes out", async () => {

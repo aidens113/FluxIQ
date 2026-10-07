@@ -6,7 +6,7 @@ import {
   automationStudioFlowDraftTranslateBindings
 } from "../binding-forms.ts";
 import { automationStudioFlowDraftBindablePaths } from "../bindable/index.ts";
-import { automationStudioFlowDraftStepId } from "../routing.ts";
+import { automationStudioFlowDraftRepeatIsWhile, automationStudioFlowDraftStepId } from "../routing.ts";
 import { automationStudioFlowDraftStepIsProposed, type AutomationStudioFlowDraftStep } from "../step.ts";
 import type { AutomationStudioFlowDraftShownNumbering } from "./shown-numbering.ts";
 import type { AutomationStudioFlowDraftAmendment, AutomationStudioFlowDraftAmendmentRefusal } from "./types.ts";
@@ -133,11 +133,15 @@ function replacedTest(replaced: JsonValue): JsonValue | undefined {
   return automationStudioFlowDraftHoldsBinding(replaced) ? undefined : replaced;
 }
 
-/** Whether a step is inside a span some step repeats: that step, through the one it names as `through`. */
+/**
+ * Whether a step is inside a span some step repeats over rows: that step,
+ * through the one it names as `through`. A span that runs again while its last
+ * step succeeds repeats over no listing, so it has no row (read-list design, S2).
+ */
 function insideRepeat(steps: readonly AutomationStudioFlowDraftStep[], step: AutomationStudioFlowDraftStep): boolean {
   const at = steps.indexOf(step);
   return steps.some((first, start) => {
-    if (first.routing?.kind !== "repeat") return false;
+    if (first.routing?.kind !== "repeat" || automationStudioFlowDraftRepeatIsWhile(first.routing)) return false;
     const through = first.routing.through;
     const end = steps.findIndex((candidate) => automationStudioFlowDraftStepId(candidate) === through);
     return at === start || (end >= start && at >= start && at <= end);

@@ -3,6 +3,8 @@ import type { ActivityActionKind } from "./types.ts";
 /** A replay's result codes (`programs/automation-studio/runtime/llm/node-tools/replay.ts`). */
 const VERIFIED = "core.replay.verified";
 const ALREADY_DONE: ReadonlySet<string> = new Set(["core.replay.present", "core.replay.remembered"]);
+/** A step written into the Flow without being run (`programs/automation-studio/runtime/llm/node-tools/replay.ts`, `write: true`). */
+const WRITTEN = "core.run_node.written";
 
 /**
  * Why a test passes over a step that did not hold, as the activity record
@@ -22,6 +24,10 @@ const SOMETIMES: ReadonlySet<string> = new Set(["only_if", "check", "fallback"])
  *   step does something lasting, so the test only checked it could.
  * - `present`, `remembered`: "Already done on the site": its effect was in
  *   place, or the site remembered it, so there was nothing to do.
+ * - `core.run_node.written`, a step the model wrote into the Flow without
+ *   running it: "Added to the Flow, not run yet". It read "Click · Add to cart
+ *   · Done" and told the person the towels were added (U-B3-1,
+ *   `run-mux6pndp-16feb842`, step 0095).
  * - a step that did not hold and that the Flow passes over (`excused`):
  *   "Skipped: not there, optional" for an optional or interruption step,
  *   "Skipped: it only runs sometimes" for a conditional or fallback one,
@@ -41,6 +47,7 @@ export function activityActionTested(resultCode: string, context: { excused?: st
   const code = resultCode.trim().toLowerCase();
   if (code === VERIFIED) return context.kind === "type" ? "Checked, not typed" : "Checked, not pressed";
   if (ALREADY_DONE.has(code)) return "Already done on the site";
+  if (code === WRITTEN) return "Added to the Flow, not run yet";
   const excused = context.excused?.trim().toLowerCase();
   if (!excused || !code.startsWith("core.replay.") || code === "core.replay.replayed") return null;
   if (OPTIONAL.has(excused)) return "Skipped: not there, optional";

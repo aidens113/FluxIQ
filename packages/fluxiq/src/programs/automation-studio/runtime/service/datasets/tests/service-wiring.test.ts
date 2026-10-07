@@ -213,3 +213,107 @@ describe("the run datasets the service wires into a run", () => {
     await expect(service.getRuntimeSession(project.id, run.runId)).resolves.toMatchObject({ status: "failed", metadata: { projectStoreUnavailable: { sessionStatus: "failed" } } });
   });
 });
+
+// Read-list design P1: when the graph run ends -- succeeded, failed or
+// cancelled -- and before its result is verified, the run's datasets become
+// their answers, so every reader reads the answer and not the collected rows.
+describe("the answer a run's datasets hold once the run ends", () => {
+  const SCHEMA: JsonObject = {
+    schemaVersion: "0.1",
+    fields: [
+      { id: "title", label: "Title", valueType: "string", required: true },
+      { id: "price", label: "Price", valueType: "number" }
+    ]
+  };
+  // Sorted descending, so the answer's order proves the declaration reached the store.
+  const PROCESSED_OUTPUT: JsonObject = { datasetId: "pairs", label: "Pairs", recordsPath: "rows", writeMode: "append", schema: SCHEMA, process: { sort: [{ field: "title", order: "desc" }] } };
+  const row = (title: string): JsonObject => ({ title: `${ROW}-${title}`, price: 1 });
+
+  // Two passes into one dataset: A,B,C then C,D. Each call answers the next list in turn.
+  function startPassService(passes: JsonObject[][]): AutomationStudioService {
+    const io = new IoRegistry();
+    let call = 0;
+    io.registerOutput("example", {
+      definition: { id: "extract-list", title: "Extract list" },
+      mode: "request",
+      dispatch: async (request) => ({ ok: true, domainId: "example", outputId: request.outputId, payload: { rows: passes[call++] ?? [] } })
+    });
+    const service = new AutomationStudioService({ dataDir: tempRoot }).bindIoRuntime(io, "example");
+    services.add(service);
+    return service;
+  }
+
+  async function twoPassFlow(service: AutomationStudioService, projectId: string, flowId: string) {
+    const flow = await service.createFlow({ projectId, flowId, name: flowId });
+    const subflow = await service.createFlowSubflow({ projectId, flowId: flow.flowId, name: "Primary", role: "primary" });
+    const blank = await service.getFlow(projectId, subflow.graphFlowId!);
+    const read = (id: string) => ({ id, definitionId: "builtin.policy.action", parameterValues: { outputId: "extract-list", parameters: {}, recordOutput: PROCESSED_OUTPUT } });
+    await service.saveFlow({
+      projectId,
+      flow: {
+        ...blank,
+        nodes: [
+          { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
+          read("read"),
+          read("read-more"),
+          { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
+        ],
+        edges: [
+          { id: "start.read", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "read", targetPortId: "in" },
+          { id: "read.read-more", sourceNodeId: "read", sourcePortId: "success", targetNodeId: "read-more", targetPortId: "in" },
+          { id: "read-more.end", sourceNodeId: "read-more", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
+        ]
+      }
+    });
+    await service.setFlowMapFallback({ projectId, flowId: flow.flowId, kind: "subflow", targetSubflowId: subflow.subflowId });
+    return flow;
+  }
+
+  it("processes a succeeded run's dataset before it returns: the answer is what every reader reads", { timeout: 120_000 }, async () => {
+    const service = startPassService([[row("A"), row("B"), row("C")], [row("C"), row("D")]]);
+    const project = await service.createProject({ name: "Datasets processed", domainId: "example" });
+    const flow = await twoPassFlow(service, project.id, "flow.two-pass");
+    const seen: ObservedBatch[] = [];
+    observeBatches(service, seen);
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, adaptiveMode: "no_llm_intervention" });
+
+    expect(run.status).toBe("succeeded");
+    expect(seen.map((entry) => entry.batch.process)).toEqual([PROCESSED_OUTPUT.process, PROCESSED_OUTPUT.process]);
+    const [summary] = await service.runDatasets.listRunDatasets({ projectId: project.id, runId: run.runId });
+    expect(summary).toMatchObject({ datasetId: "pairs", recordCount: 4, processing: { collected: 5, duplicates: 1, kept: 4 } });
+    const exported = await service.runDatasets.exportRunDataset({ projectId: project.id, runId: run.runId, datasetId: "pairs", format: "json" });
+    expect(exported).toMatchObject({ tooLarge: false, rowCount: 4 });
+    expect(JSON.parse((exported as { body: string }).body)).toEqual([row("D"), row("C"), row("B"), row("A")]);
+  });
+
+  it("processes a failed run's dataset too", { timeout: 120_000 }, async () => {
+    // The second pass returns rows the schema refuses every one of, which fails its node and the run.
+    const service = startPassService([[row("A"), row("B"), row("A")], [{ price: 2 }]]);
+    const project = await service.createProject({ name: "Datasets processed, failed", domainId: "example" });
+    const flow = await twoPassFlow(service, project.id, "flow.two-pass-failed");
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, adaptiveMode: "no_llm_intervention" });
+
+    expect(run.status).toBe("failed");
+    expect(run.trace?.attempts.find((entry) => entry.nodeId === "read-more")?.failure).toMatchObject({ code: "record_output.records_refused" });
+    await expect(service.runDatasets.listRunDatasets({ projectId: project.id, runId: run.runId }))
+      .resolves.toMatchObject([{ datasetId: "pairs", recordCount: 2, processing: { collected: 3, duplicates: 1, kept: 2 } }]);
+  });
+
+  it("ends the run as it would have, with its dataset unprocessed, when processing fails", { timeout: 120_000 }, async () => {
+    const service = startPassService([[row("A"), row("B"), row("C")], [row("C"), row("D")]]);
+    const project = await service.createProject({ name: "Datasets processing fails", domainId: "example" });
+    const flow = await twoPassFlow(service, project.id, "flow.two-pass-unprocessed");
+    const failure = `${ROW}-processing-failure`;
+    (service.runDatasets as { processRunDatasets: unknown }).processRunDatasets = async () => { throw new Error(failure); };
+
+    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, adaptiveMode: "no_llm_intervention" });
+
+    expect(run.status).toBe("succeeded");
+    expect(JSON.stringify(run)).not.toContain(failure);
+    const [summary] = await service.runDatasets.listRunDatasets({ projectId: project.id, runId: run.runId });
+    expect(summary).toMatchObject({ recordCount: 5 });
+    expect(summary).not.toHaveProperty("processing");
+  });
+});

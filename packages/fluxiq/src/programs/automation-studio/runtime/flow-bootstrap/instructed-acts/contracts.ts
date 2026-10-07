@@ -142,11 +142,29 @@ export type AutomationStudioInstructedActMissingReason =
   /** The step named is already claimed for another act. */
   | "step_claimed_twice"
   /**
-   * The step named only went to where the Flow starts, and the act is not one
-   * of opening. Arriving at the start page adds, collects, sets or sends
-   * nothing (`run-munoeac4-33c17306`, `./check.ts`).
+   * The step named only went to a page, and the act is not one of opening:
+   * to where the Flow starts (`run-munoeac4-33c17306`, `./check.ts`), or, for
+   * an act of adding, saving, claiming, submitting or moving, a press whose
+   * words do not name the act and after which the next recorded step found
+   * the page somewhere else -- a typed search that led to the results, a
+   * product link (`run-musp4h2f-72e8ed99`, `./act-evidence.ts`). Arriving at a
+   * page adds, collects, sets or sends nothing.
    */
   | "step_only_arrives"
+  /**
+   * The step named made one of the act's own choices, and its words do not
+   * name the act: the press of "Spain" for "put the hub in my cart", shipped
+   * from Spain (`run-mux74k5q-1c3c2127`, C1b), or the quantity typed. `chooses`
+   * names that choice, which the step still makes (`./act-evidence.ts`).
+   */
+  | "step_only_chooses"
+  /**
+   * The host says the step named answered something in front of the page --
+   * a popup's "Not now", a consent wall -- and its words do not name the act:
+   * it cleared the way and did not do the act (`run-muqiho5c-e830ce01`,
+   * `./act-evidence.ts`).
+   */
+  | "step_only_clears_the_way"
   /**
    * The step named only opened the page where the act's own choices are then
    * made: its control does not name the act, and a later step named for one of
@@ -213,6 +231,14 @@ type AutomationStudioInstructedMissingWhy = {
   actsOn?: string;
   /** `quantity_presses_differ` only: the positions of the kept presses of the add, which are not the count. */
   presses?: number[];
+  /** `step_only_chooses` only: the id of the act's own choice the step made instead. */
+  chooses?: string;
+  /**
+   * `step_only_chooses`, `step_only_clears_the_way`, `step_only_arrives` and
+   * `step_only_opens_its_choices`: the position of a step whose words name
+   * the act, where the draft has one (`./act-evidence.ts`).
+   */
+  instead?: number;
 };
 
 /**

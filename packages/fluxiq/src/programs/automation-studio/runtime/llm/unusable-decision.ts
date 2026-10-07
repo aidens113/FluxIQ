@@ -103,7 +103,7 @@ const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
     + "Looks return once an action runs: run an action the instruction needs, amend the draft, or complete.",
   // `./evidence-loop/decision-refusal.ts`: a decision of a kind this decision was not offered.
   "llm_evidence_loop.complete_not_offered": "Finishing was not offered for this decision: the decision schema has no complete variant yet. Run a tool call the instruction needs first.",
-  "llm_evidence_loop.amend_not_offered": "Editing the draft was not offered for this decision: the decision schema has no amend_draft variant. Choose one of the variants it does offer.",
+  "llm_evidence_loop.amend_not_offered": "Editing the draft was not offered for this decision: the decision schema has no amend_draft variant, because there is no step in the draft to edit yet, this exploration's edits are used up, or this is its last decision. Run a tool call instead, with add true to put its step in the Flow (and act, if it does one), or complete if that is offered and the Flow already does what the person asked.",
   // `./evidence-loop/decision-refusal.ts`: a reply that was JSON, but not a decision of any accepted shape.
   "llm_evidence_loop.decision_shape_invalid": "The decision was JSON but not one of the accepted shapes: check its kind, write only the keys that shape lists, give input and result as objects, and give every amendment a step number and a change from the list.",
   // `./evidence-loop-decision.ts` (t194-w78): an amend_draft left with nothing because a rerun had no input.

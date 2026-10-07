@@ -300,6 +300,13 @@ export type AutomationStudioFlowBootstrapJudgement = {
    * it). Absent when nothing was tested.
    */
   proven?: number;
+  /**
+   * Of `proven`, those whose step the test only checked could run, or found
+   * already done on the site (`verified`, `present`), and did not run: "ran,
+   * or could run" said six acts were done while Add to cart was never pressed
+   * (W24, run-mux74k5q-1c3c2127). Absent when nothing was tested.
+   */
+  checked?: number;
   todo: string[];
   /** The last refusal codes the model was shown before the round stopped. */
   lastIssueCodes: string[];

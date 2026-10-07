@@ -114,7 +114,39 @@ no kept proposable step between them could use or return the temporary state.
 An intervening action or exported read preserves both presses. Conditional
 steps and an explicit model decision to restore a removed step are preserved.
 Removed steps retain `cancels` and an `out` explanation; their old act claims
-are cleared so they cannot continue claiming instruction coverage.
+are cleared so they cannot continue claiming instruction coverage. A drop or
+`exploratory` of a kept half runs the reversal rule only after the strand
+check (`runtime/flow-draft/amendment/apply.ts`): a drop put back because it
+strands a kept step never takes its partner out with it.
+
+The host may attach `reads: <code>` to an observing recorded step: its opaque
+code for the list the read reads, the same for the same list on the same page
+for the whole build. Core compares codes for equality and reads nothing else.
+The parse keeps it only on a statement whose `effect` is `observe` and only
+when it is a code; anything else is withheld, never refused.
+
+### A Second Copy Of A Step Is Not Added
+
+A step joining the Flow that copies a step already in it is not added
+(`runtime/flow-draft/second-copy.ts`; live run `run-murwdp4f-35f976d2`, C9,
+added a second press of the 3-Pack link from the same results page).
+Candidates are other kept, proposable steps with the same action and tool. A
+changing step copies one when its `input` and `ranWith` are canonically equal
+(both absent counts as equal) and both started from one known `stateBefore`;
+"+" pressed twice starts from two states and is no copy. A read copies one
+when both observe and propose, carry the same `reads` code, and no kept
+changing step lies between them in draft order; a read after a kept press (a
+filter, a sort, the next page) is no copy.
+
+On a call with `add` (`runtime/llm/decision-handlers/second-copy.ts`), the step
+stays `taken`: no act claim, no openers, no reversal. The model is told, under
+`core.amendment_check` after the call's answer, "Step M was not added to the
+Flow: step N already does this (the same press on the same page | a read of
+the same list with nothing changed in between); the Flow does each step once."
+An `add` or `keep` amendment that would bring a non-kept step into the Flow
+while it copies a kept step is refused whole, before anything changes, as
+`second_copy` with `copyOf` the kept step's shown number. Re-adding the attempt
+a rerun replaced is refused on its own (`replacedBy`).
 
 Reordering invalidates `replayed` marks from the first changed position
 onward. A successful checked rerun replaces its argument/resolved form and

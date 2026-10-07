@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseAutomationStudioPanelCapabilities } from "../../../panel-capabilities/index.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE } from "../../commands/index.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_COMMANDS, AUTOMATION_STUDIO_CONVERSATION_CREATE_HERE } from "../../commands/index.ts";
 import { automationStudioConversationFallbackDecision, type AutomationStudioConversationDecisionContext } from "../index.ts";
 
 const CAPABILITIES = parseAutomationStudioPanelCapabilities([
@@ -38,4 +38,34 @@ describe("a described job read without the model", () => {
   it("leaves a message that names a capability to that capability", () => {
     expect(decide("run the flow")).not.toMatchObject({ kind: "invoke", invocation: { capabilityId: "flow.createHere" } });
   });
+
+  // Lane D's live task (`social-network-feed-confirm-requests`) starts "Go through ...". With every
+  // Core command offered, the one-word phrase "go" (and "run it", which is `run` once filler is
+  // dropped) was found inside a forty-word job, scored 0.76, and ran an unrelated Flow (or, with no
+  // Flows, answered "nothing to use for Run a Flow") instead of building what was described.
+  it("is built even when a short phrase of another capability turns up inside it", () => {
+    const flows = [{ flowId: "flow.kettle-1", name: "Kettle price checker" }];
+    for (const job of [
+      "Go through my friend requests and confirm everyone I have at least five mutual friends with, and leave every other request as it is. Then give me a table of every request the list now shows as accepted.",
+      "Run through every page of the results and give me the prices of the usb hubs in a table with columns title and price."
+    ]) {
+      expect(decideWith(job, ALL_COMMANDS, flows)).toMatchObject({ kind: "invoke", invocation: { capabilityId: "flow.createHere", arguments: { instruction: job } } });
+      expect(decideWith(job, ALL_COMMANDS, [])).toMatchObject({ kind: "invoke", invocation: { capabilityId: "flow.createHere" } });
+    }
+  });
+
+  it("still runs a Flow when the phrase is most of what was said", () => {
+    const flows = [{ flowId: "flow.kettle-1", name: "Kettle price checker" }];
+    for (const said of ["run it", "go", "please run the kettle price checker now", "go ahead and run it"]) {
+      expect(decideWith(said, ALL_COMMANDS, flows), said).not.toMatchObject({ kind: "invoke", invocation: { capabilityId: "flow.createHere" } });
+    }
+    expect(decideWith("run the kettle price checker", ALL_COMMANDS, flows)).toMatchObject({ kind: "invoke", invocation: { capabilityId: "run.execute" } });
+  });
 });
+
+const ALL_COMMANDS = parseAutomationStudioPanelCapabilities([...AUTOMATION_STUDIO_CONVERSATION_COMMANDS.values()].map((command) => command.capability));
+
+function decideWith(message: string, capabilities: typeof CAPABILITIES, flows: { flowId: string; name: string }[]) {
+  const context = { projectId: "project.home", capabilities, flows, onScreen: { pageUrl: PAGE }, message } as unknown as AutomationStudioConversationDecisionContext;
+  return automationStudioConversationFallbackDecision(message, context);
+}

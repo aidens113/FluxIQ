@@ -73,7 +73,9 @@ describe("a call already tried on this same page", () => {
     await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
 
     expect(executeTool.mock.calls.map(([call]) => call.value)).toEqual([{ list: "results" }, { list: "results", where: "price < 50" }]);
-    expect(decide).toHaveBeenCalledTimes(5);
+    // The first rerun found exactly the rows the read had found (R3-2, `../../decision-handlers/rerun-result.ts`), so it
+    // is the first of the three that changed nothing, and the round stalls one decision sooner than it did.
+    expect(decide).toHaveBeenCalledTimes(4);
     const feedback = shownAt(decide, 3).find((entry) => entry.toolId === "core.amendment_check")?.value;
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "changes_nothing" }] });
     // t262's wording (`../../draft-amendment-feedback.ts`): the identical request was not sent, and the model
@@ -121,7 +123,7 @@ describe("a call already tried on this same page", () => {
     expect(executeTool.mock.calls.map(([call]) => call.value.target)).toEqual(["X", "Next", "X"]);
   });
 
-  it("run 36: the same refused amendment sent again and again stalls the round at the third repeat", async () => {
+  it("run 36: the same refused amendment sent again and again stalls the round at the third refusal in a row", async () => {
     // `25 keep act a1` seven times, each refused `already_in_flow` in the run -- `act_already_named` since lane D's F36, which
     // tells the model the name stands: the first is a refusal, the next three are repeats of it.
     const keep = { kind: "amend_draft", amendments: [{ step: 1, change: "keep", act: "a1" }] };
@@ -131,7 +133,9 @@ describe("a call already tried on this same page", () => {
     const executeTool = site();
 
     await expect(loop(decide, executeTool)).rejects.toBe(stalledError);
-    expect(decide).toHaveBeenCalledTimes(5);
+    // Three decisions in a row refused `act_already_named` end the round (W2, `../../decision-handlers/refusal-run.ts`):
+    // the refusal and two repeats of it, one sooner than the third repeat did.
+    expect(decide).toHaveBeenCalledTimes(4);
     const feedback = shownAt(decide, 2).find((entry) => entry.toolId === "core.amendment_check")?.value;
     expect(feedback).toMatchObject({ refused: [{ step: 1, reason: "act_already_named" }] });
   });
@@ -380,6 +384,9 @@ describe("a rerun that changed nothing, sent again", () => {
     const note = shownAt(decide, 4).find((entry) => entry.toolId === "core.repeat_check")?.value;
     expect(note).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_refused", then: { outcome: "same_amendment", resultCode: "web.action.rejected.target_unobserved", rerunFailed: true } });
     expect(String(note?.instruction)).toContain("its rerun did not work");
+    // The way out names the step and the rerun shape, and how a key the patch leaves out is removed (W2).
+    expect(String(note?.instruction)).toContain('rerun step 1 with a corrected argument, {"step": 1, "change": "rerun", "input": {<only the keys that change>}}');
+    expect(String(note?.instruction)).toContain("set to null");
   });
 
   it("still runs the same rerun once the draft has changed since it changed nothing", async () => {
@@ -395,5 +402,37 @@ describe("a rerun that changed nothing, sent again", () => {
 
     await expect(rerunLoop(decide, executeTool)).resolves.toMatchObject({ ok: true });
     expect(clicks(executeTool)).toBe(3);
+  });
+});
+
+// Live run `run-mux74k5q-1c3c2127` (lane A round 3, C3, steps 0059-0068): step 12 pressed "Spain" and claimed the
+// lasting act a1, so its rerun to type 3 into the quantity field was sent as the dry run's check (`replay: "verify"`,
+// `../../node-tools/rerun-check.ts`) and answered `core.replay.present`: nothing ran. The repeat guard recorded that
+// check as a failed attempt of its input, and the model's identical plain call on the same page (the digest after the
+// put-back equal to the live page's, `web-state.v4`) was refused `repeat_refused` twice, `sameAsCall: rerun.12.6`,
+// which ended the round. A check is not an attempt of its input: the plain call runs.
+describe("a rerun sent as a check, then the same input as a plain call", () => {
+  it("runs the plain call on the same page rather than refusing it as a repeat of the check", async () => {
+    const executeTool = vi.fn(async ({ value }: { toolId: string; value: JsonObject }) => {
+      const node = String(value.node);
+      const page = { before: "item", after: "item" };
+      if (value.replay === "verify") return { kind: "llm_evidence_tool_execution", stateDigests: page, evidence: { ok: true, node, code: "core.replay.present", found: "missing" }, effectApplied: false, resultCode: "core.replay.present" };
+      return { kind: "llm_evidence_tool_execution", stateDigests: page, evidence: { ok: true, node, status: "succeeded" }, effectApplied: true, resultCode: "web.action.succeeded", draft: { actionId: node, effect: "mutate", proposes: true } };
+    });
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "pick.spain", toolId: "core.run_node", input: spain, add: true, act: "a1" })
+      .mockResolvedValueOnce({ kind: "amend_draft", amendments: [{ step: 1, change: "rerun", input: quantity }] })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "type-quantity", toolId: "core.run_node", input: quantity, add: true, act: "a1.quantity" })
+      .mockResolvedValue(complete);
+
+    await runAutomationStudioLlmEvidenceLoop({
+      tools: nodeTools, decide, executeTool, maxIterations: 12, maxToolCalls: 12, dryRun: false, propagateDecisionErrors: true,
+      unusableDecisions: { maxConsecutive: 8, stalled: () => stalledError }, lastingActs: async () => new Set(["a1"])
+    }).catch(() => undefined);
+
+    // The rerun was the check, never the typing; the plain call then typed for real.
+    const sent = executeTool.mock.calls.map(([call]) => [call.value.node, call.value.replay ?? null]);
+    expect(sent).toEqual([["web.output.dom-click", null], ["web.output.dom-type", "verify"], ["web.output.dom-type", null]]);
+    expect(shownAt(decide, 3).some((entry) => entry.toolId === "core.repeat_check")).toBe(false);
   });
 });

@@ -37,7 +37,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import { automationStudioInstructedActRepeatSpans } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
+import { automationStudioFlowDraftRepeatIsWhile, automationStudioFlowDraftStepById, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 
 /** The sentence that goes with a suggestion, in the draft's numbers. */
 export type AutomationStudioRepeatSuggestion = { amendment: JsonObject; instruction: string };
@@ -76,10 +76,14 @@ export function automationStudioRepeatSuggestion(input: {
   };
 }
 
-/** The repeat holding the claimed step, carried on through the step after it. */
+/**
+ * The repeat holding the claimed step, carried on through the step after it.
+ * A repeat while its last step succeeds is skipped: it is over no listing, and
+ * carrying it through another step would move its while off that last step.
+ */
 function throughTheStepAfter(claimed: AutomationStudioFlowDraftStep, after: number, steps: readonly AutomationStudioFlowDraftStep[]): AutomationStudioRepeatSuggestion | undefined {
   const span = automationStudioInstructedActRepeatSpans(claimed, steps).find((each) => each.to < after);
-  if (span?.carrier.routing?.kind !== "repeat") return undefined;
+  if (span?.carrier.routing?.kind !== "repeat" || automationStudioFlowDraftRepeatIsWhile(span.carrier.routing)) return undefined;
   const over = automationStudioFlowDraftStepById(steps, span.carrier.routing.over)?.position;
   if (over === undefined) return undefined;
   const from = span.carrier.position;

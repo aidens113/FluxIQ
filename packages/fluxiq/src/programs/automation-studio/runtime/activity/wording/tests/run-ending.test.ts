@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "../../limits.ts";
-import { automationStudioActivityRunEnding } from "../run-ending.ts";
+import { automationStudioActivityRunEnding, automationStudioActivityRunObjection } from "../run-ending.ts";
 
 /** The run record of `run-musp39u8-9ac026ab`, as far as the ending reads it. */
 const refuted = {
@@ -21,7 +21,7 @@ describe("automationStudioActivityRunEnding", () => {
       resultRepair: repairEnded({ outcome: "not_rerun" }),
       resultReauthor: { code: "flow_bootstrap.evidence_budget_exhausted", attempts: [{ attempt: 1, ending: { kind: "budget_exhausted", bound: "rounds", tried: { rounds: 6, decisions: 37, stepsInFlow: 7, tested: "not_tested" } } }] }
     });
-    expect(said).toBe("it saved 13 rows, but the check found they don't answer what you asked, and the fix used all its rounds before it could test a change.");
+    expect(said).toBe("it saved 13 rows, but the check found they don't answer what you asked, and the fix ran out of build rounds before it could test a change.");
   });
 
   it("names the limit the re-author's last build stopped at, and whether it tested anything", () => {
@@ -88,14 +88,29 @@ describe("automationStudioActivityRunEnding", () => {
   });
 
   // t276, U-10 of `run-muw60j7c-bb7c9a62` (picture 16): "Run failed — It returned 30 rows, but the check found
-  // they don't answer what you asked, and the fix used all its rounds before it could test a change."
+  // they don't answer what you asked, and the fix ran out of build rounds before it could test a change."
   it("says the rows were saved, in lower case after the dash the chat puts before it (U-10)", () => {
     const said = automationStudioActivityRunEnding({
       resultVerification: { ...refuted.resultVerification, observation: "30 records stored, across 1 record set" },
       resultRepair: { ...repairEnded({ outcome: "not_rerun" }), history: [{ attempt: 1, totalRecordCount: 30 }] },
       resultReauthor: { code: "flow_bootstrap.evidence_budget_exhausted", attempts: [{ attempt: 1, ending: { kind: "budget_exhausted", bound: "rounds", tried: { tested: "not_tested" } } }] }
     })!;
-    expect(said).toBe("it saved 30 rows, but the check found they don't answer what you asked, and the fix used all its rounds before it could test a change.");
+    expect(said).toBe("it saved 30 rows, but the check found they don't answer what you asked, and the fix ran out of build rounds before it could test a change.");
     expect(said).not.toMatch(/^[A-Z]|returned/u);
+  });
+});
+
+// R3-U-3 of the live-C round-3 UI review (run-mux6naez-6c20f26e, moment 26): "it saved 13 rows, but the
+// check found they don't answer what you asked, and the fix used all its rounds" named no objection,
+// while the 13 rows were the right ones and the check's doubt was about two items; and "all its
+// rounds" read against "attempt 1 of 3". The check's own reason is said after the ending, in whole
+// sentences, and the limit is called the build rounds it was.
+describe("what the check objected to", () => {
+  it("says the check's reason in whole sentences, screened, and nothing when it gave none", () => {
+    const reason = "Two products with the Plus badge were left out: the plus condition dropped them. The other 13 rows look right.";
+    expect(automationStudioActivityRunObjection({ resultVerification: { ...refuted.resultVerification, reason } })).toBe(`The check said: ${reason}`);
+    expect(automationStudioActivityRunObjection({ resultVerification: { ...refuted.resultVerification, reason: "step node.bootstrap.1.main.s7 kept extraction.4 rows" } }) ?? "").not.toMatch(/node\.bootstrap|extraction\.4/u);
+    expect(automationStudioActivityRunObjection(refuted)).toBeUndefined();
+    expect(automationStudioActivityRunObjection({ resultVerification: { status: "confirmed", performed: true, verdict: "answers", reason } })).toBeUndefined();
   });
 });

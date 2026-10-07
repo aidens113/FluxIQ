@@ -6,6 +6,9 @@ import { AutomationStudioProjectDatabasePool, type AutomationStudioProjectDataba
 import { AutomationStudioService, type AutomationStudioServiceOptions } from "../../../service.ts";
 import { adaptiveTrainingMetadata, createRunnableCanonicalFlow } from "../../service-fixtures.ts";
 
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 // A run whose start throws must not stay active. A `queued` or `running`
 // session counts as an active adaptive run, which holds the project's next
 // adaptive run off until somebody cancels it. A run a person asked the model

@@ -108,13 +108,25 @@
 // refusals as any repeat (`../decision-handlers/amendment.ts`). Once the draft
 // changes it is a new decision and runs, as a call does once its page changes.
 //
+// **A rerun sent as a check is not an attempt of its input.** Live run
+// `run-mux74k5q-1c3c2127` (lane A round 3, C3, steps 0059-0068): step 12 had
+// done the lasting add-to-cart act, so its rerun `rerun.12.6` was sent as the
+// dry run's check (`replay: "verify"`, `../node-tools/rerun-check.ts`) and
+// answered `core.replay.present`: it acted on nothing, and so applied nothing.
+// Recorded here as a press that did not work, it made the model's plain call
+// with the same input on the same page (the digest after the put-back equal to
+// the live one) a repeat of a failure, refused twice, which ended the round.
+// A call the loop reports as `checked` still moves the last page seen and ends
+// a run of looks, but records no outcome for its key: the identical plain
+// call is the first attempt of that input there, and runs.
+//
 // **What still runs.**
 //
 // - Anything after the page changed: the key holds the page.
 // - A look, which changes nothing by nature: looks stay with the repeat policy,
 //   which answers one asked again from memory and runs one after an attempt.
 // - A call whose earlier outcome said to wait and try again: a rate limit, a
-//   control briefly disabled, a page still loading (`RETRY_LATER`).
+//   control briefly disabled, a page still loading (`./retry-later.ts`).
 // - A call that threw: nothing answered it, so it is not a repeat.
 // - The judgement's and the repair's replays: they go through the dry-run gate
 //   (`../node-tools/dry-run-gate.ts`), not through the loop's calls. A replay
@@ -124,10 +136,9 @@
 import { createHash } from "node:crypto";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decision.ts";
+import { automationStudioLlmEvidenceRetriesLater } from "./retry-later.ts";
 import { automationStudioLlmEvidenceSearchStreak, type AutomationStudioLlmEvidenceSearchStreak } from "./searching.ts";
 
-/** Words in a result code or reason that say the call may work if made again later. */
-const RETRY_LATER = /rate[_-]?limit|too[_-]?many|throttl|retry|disabled|busy|not[_-]?ready|loading|timed[_-]?out|timeout|try[_-]?again/iu;
 
 /**
  * Reasons that say the call named a handle no call had shown or minted yet on
@@ -178,6 +189,8 @@ export type AutomationStudioLlmEvidenceCallOutcome = {
   resultReason?: string | undefined;
   /** What the call answered, as the model was shown it: compared for a look only. */
   answer?: string | undefined;
+  /** A rerun sent as the dry run's check (`../node-tools/rerun-check.ts`): it acted on nothing, so it is no attempt of its input (see the header). */
+  checked?: boolean | undefined;
 };
 
 /** The loop's record of what its calls did. */
@@ -251,7 +264,8 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       // included, since nothing says it did not move -- ends the run (`./searching.ts`).
       if (look && state !== undefined && call.stateAfter === state) searching.looked({ callId: call.callId, toolId: call.toolId, input: call.input });
       else searching.acted();
-      if (state === undefined) return;
+      // A check ran nothing: no outcome of its input to record (run `run-mux74k5q-1c3c2127`, C3).
+      if (state === undefined || call.checked === true) return;
       if (look) {
         const at = key(call.toolId, call.input, state);
         const answer = call.answer === undefined || call.refused ? undefined : createHash("sha256").update(call.answer).digest("hex");
@@ -266,7 +280,7 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       const runsDraft = options.draftOf?.(call.toolId) !== undefined;
       const failed = call.refused || (call.effect === "mutate" && !call.effectApplied && !runsDraft);
       const changedNothing = !call.effectApplied || (call.stateAfter !== undefined && call.stateAfter === state);
-      const retryLater = RETRY_LATER.test(`${call.resultCode ?? ""} ${call.resultReason ?? ""}`);
+      const retryLater = automationStudioLlmEvidenceRetriesLater(call.resultCode, call.resultReason);
       const at = key(call.toolId, call.input, state);
       if (!call.refused) showed(state);
       const sameResult = !failed && !changedNothing && call.stateAfter !== undefined && endedOn.get(at) === call.stateAfter;
@@ -293,7 +307,7 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
     amended(outcome) {
       const at = amendmentKey(outcome.signature, outcome.draft);
       // As for a call: one that changed something, or whose outcome says to wait and try again, is not a repeat to refuse.
-      if (outcome.changed || RETRY_LATER.test(`${outcome.resultCode ?? ""} ${outcome.resultReason ?? ""}`)) {
+      if (outcome.changed || automationStudioLlmEvidenceRetriesLater(outcome.resultCode, outcome.resultReason)) {
         outcomes.delete(at);
         return;
       }

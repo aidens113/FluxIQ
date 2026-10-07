@@ -51,8 +51,25 @@
 // Nothing is refused (t195); the claim stays on the step until the model names
 // the act on the press that does it (one act, one step).
 //
+// **An act claimed on a step whose own record shows it did something else
+// (W1, 23 live runs).** The model put a1, "put the hub in my cart", on the
+// press of "Spain", one of a1's own options (`run-mux74k5q-1c3c2127`, C1b); an
+// add on a typed search that led to the results page and on a product link
+// (`run-musp4h2f-72e8ed99`, row 7); and the add on "Not now", a popup's
+// dismissal (`run-muqiho5c-e830ce01`). Each was counted done, so every list of
+// what was left hid the act. After the choices rule above, a step claimed for
+// an act of adding, saving, claiming, submitting or moving whose words do not
+// name the act is judged by what its record shows it did instead
+// (`./act-evidence.ts`): `step_only_clears_the_way`, `step_only_arrives`, or
+// `step_only_chooses` with `chooses` naming the act's choice it made (which
+// that step still makes). For those three and `step_only_opens_its_choices`,
+// the standing carries `instead`: a step whose words name the act, where the
+// draft has one, so the model is told where to move the claim. Nothing is
+// refused (t195).
+//
 // Nothing here calls a provider or reads a page; it is the draft and the claims.
 import { automationStudioFlowDraftStepMovedTarget, type AutomationStudioFlowDraftStep } from "../../flow-draft/index.ts";
+import { automationStudioInstructedActIsEvidenceFault, automationStudioInstructedActStepDidInstead, automationStudioInstructedActStepThatNamesIt } from "./act-evidence.ts";
 import { automationStudioInstructedChoiceSetBy } from "./choice-evidence.ts";
 import { automationStudioInstructedActClaimDoubt } from "./claim-doubt.ts";
 import type { AutomationStudioInstructedAct, AutomationStudioInstructedActMissingReason } from "./contracts.ts";
@@ -63,20 +80,22 @@ import { automationStudioInstructedActStepFault } from "./step-fault.ts";
 
 type Step = AutomationStudioFlowDraftStep;
 type Fault = Exclude<AutomationStudioInstructedActMissingReason, "no_step_named" | "no_such_step">;
-/** Why one step does not answer, with the act it acted on instead, or the presses of the add counted. */
-type Judged = { fault: Fault; actsOn?: string; presses?: number[] };
+/** Why one step does not answer, with the act it acted on instead, the presses of the add counted, or the choice it made instead. */
+type Judged = { fault: Fault; actsOn?: string; presses?: number[]; chooses?: string };
 
 /**
  * How one act or choice stands against the steps named for it: done by a
  * step, or the fault of the step judged, with `after` for `span_stops_short`
  * and `reads` -- the positions of every step named for it -- when each of them
- * only reads the page; `actsOn` for `step_acts_on_another_object` and
- * `presses` for `quantity_presses_differ`.
+ * only reads the page; `actsOn` for `step_acts_on_another_object`,
+ * `presses` for `quantity_presses_differ`, `chooses` for `step_only_chooses`,
+ * and `instead` -- a step whose words name the act -- for the faults
+ * `./act-evidence.ts` words, where the draft has one.
  */
 export type AutomationStudioInstructedStanding =
   /** `afterAct`: for a choice, the step that does its act when that step comes before this one (`./choice-order.ts`). */
   | { done: Step; afterAct?: Step }
-  | { fault: Fault; step: Step; after?: number; reads?: number[]; actsOn?: string; presses?: number[] };
+  | { fault: Fault; step: Step; after?: number; reads?: number[]; actsOn?: string; presses?: number[]; chooses?: string; instead?: number };
 
 /**
  * Each act, then each choice of an act's item, against every step named for
@@ -107,7 +126,7 @@ export function automationStudioInstructedActsStanding(input: {
       return answering.step;
     }
     const judged = tried.find((each) => each.step.effect === "mutate") ?? tried[0]!;
-    const { fault, actsOn, presses } = judged.judged!;
+    const { fault, actsOn, presses, chooses } = judged.judged!;
     const after = fault === "span_stops_short" ? automationStudioInstructedActSpanStopsShort(judged.step, input.steps, claimed)?.after.position : undefined;
     const reads = candidates.every((step) => step.effect !== "mutate") ? candidates.map((step) => step.position) : undefined;
     standing.set(id, {
@@ -116,7 +135,8 @@ export function automationStudioInstructedActsStanding(input: {
       ...(after !== undefined ? { after } : {}),
       ...(reads ? { reads } : {}),
       ...(actsOn !== undefined ? { actsOn } : {}),
-      ...(presses ? { presses } : {})
+      ...(presses ? { presses } : {}),
+      ...(chooses !== undefined ? { chooses } : {})
     });
     return undefined;
   };
@@ -140,9 +160,18 @@ export function automationStudioInstructedActsStanding(input: {
       const fault = automationStudioInstructedActStepFault(act, step, input.steps, input.onlyArrives, claimed);
       if (fault) return { fault };
       if (opensItsChoices(act, step)) return { fault: "step_only_opens_its_choices" };
+      // What the step's own record shows it did instead (see the header, W1).
+      const instead = automationStudioInstructedActStepDidInstead(act, step, input.steps);
+      if (instead) return instead;
       return another(act, step) ?? (used.has(step) ? { fault: "step_claimed_twice" } : undefined);
     });
     if (done) actSteps.set(act.id, done);
+    // Where the act is named, for a step judged to have done something else.
+    const stood = standing.get(act.id);
+    if (stood && "fault" in stood && automationStudioInstructedActIsEvidenceFault(stood.fault)) {
+      const instead = automationStudioInstructedActStepThatNamesIt(act, input.acts, stood.step, input.steps);
+      if (instead !== undefined) standing.set(act.id, { ...stood, instead });
+    }
   }
   for (const choice of choices) {
     // A choice is a setting, held to what any act of setting is and never repeated.

@@ -37,6 +37,9 @@ import { AutomationStudioService } from "../../../service.ts";
 import { automationStudioReplayingBinding } from "../../replaying-binding.ts";
 import { blankFixture, expectNoTopology, caller, isJudgeRequest, judgeReply, mockProvider, rejectedGenerationDiagnostic, copyDataDirSeed, seedDataDir, type DataDirSeed } from "./fixtures.ts";
 
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 const TYPE_ID = "domain.example.type";
 /** The stand-in's own tool for typing into a field it showed: not a node of the library. */
 const TYPE_TOOL = "example.type_text";

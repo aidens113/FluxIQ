@@ -24,6 +24,14 @@
 // $0.089 of $0.10 over thirty exploration decisions and reached its judgement
 // with $0.0111 left, against a gate of $0.0187.
 //
+// **The call allowance is asked too (D3-5).** The reserve keeps the pair back
+// only from calls that are not a judge's, and the money gate above counts
+// dollars, not calls. Live run `run-mux6nxst-c9bca37c` opened a round with 47
+// of its 48 calls spent: no decision fitted beside the pair kept back, and its
+// reserve judgement had one call, whose unconfirmed yes finished the build. A
+// round now opens only when the allowance holds its first decision and, with a
+// judge, the whole pair (`callsFit`); otherwise the build ends at the allowance.
+//
 // The reserves come from the purse's own leaf module, never `../../llm/index.ts`: that barrel reaches back into `flow-bootstrap/`, and importing a value from it here closed a module cycle that left the harness undefined in tests.
 import { AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES, type AutomationStudioLlmBuildPurse } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioFlowBootstrapNextRoundHold } from "./budget-exhausted.ts";
@@ -35,13 +43,15 @@ const JUDGING_CALLS = 2;
  * A build's round funding under `purse`: with a judge, the judging pair is kept
  * back from every other call from now on; `nextRound` is what one more round
  * needs at least. Without a purse there is nothing to fund and `nextRound` is
- * `undefined`.
+ * `undefined`. `callsFit` is whether the call allowance holds one more round:
+ * its first decision and, with a judge, the judging pair; true without a purse.
  */
-export function automationStudioFlowBootstrapRoundFunding(purse: AutomationStudioLlmBuildPurse | undefined, judged: boolean): { nextRound(): AutomationStudioFlowBootstrapNextRoundHold | undefined } {
+export function automationStudioFlowBootstrapRoundFunding(purse: AutomationStudioLlmBuildPurse | undefined, judged: boolean): { nextRound(): AutomationStudioFlowBootstrapNextRoundHold | undefined; callsFit(): boolean } {
   if (purse && judged) {
     purse.keepBackForJudging({ calls: JUDGING_CALLS, unpriced: { inputTokens: AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.judgeInputTokens, outputTokens: AUTOMATION_STUDIO_LLM_BUILD_CALL_RESERVES.judgeReplyTokens } });
   }
   return {
+    callsFit: () => !purse || purse.callsFit(1 + (judged ? JUDGING_CALLS : 0)),
     nextRound: () => {
       if (!purse) return undefined;
       // The least the first decision can be held at: its reply reserve, with no input, at the rate in force now. Undefined until a call has brought the provider's price.

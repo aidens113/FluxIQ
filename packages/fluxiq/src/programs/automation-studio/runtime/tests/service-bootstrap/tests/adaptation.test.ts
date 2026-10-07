@@ -14,6 +14,9 @@ import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBui
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
 
+// Heavy service test: under full-suite load it ran past the 15 s default (t289).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
+
 // Every case needs a project that already holds a blank instruction Flow, and
 // most need a proposed bootstrap adaptation on top of it. Writing that through
 // the service costs about a second on an idle machine and roughly three times

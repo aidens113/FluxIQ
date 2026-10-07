@@ -23,8 +23,9 @@
 // available node, as is the catalog the model is shown beside its evidence.
 // Since 2026-10-01 an evidence decision is shown that catalog by name only, and
 // the full definitions of just the nodes this build asked about or ran
-// (`./describe-nodes.ts`, `./node-descriptions.ts`), so the description below
-// tells the model where a node's definition is shown.
+// (`./describe-nodes.ts`, `./node-descriptions.ts`), each on the result of the
+// call that first described it (`./described-nodes-key.ts`), so the
+// description below tells the model where a node's definition is shown.
 //
 // **What the tool does not decide.** Whether a call looked or changed, what it
 // should be recorded as, and whether it belongs in the result are properties of
@@ -62,10 +63,13 @@ const PUBLISHING: (typeof AUTOMATION_STUDIO_ACTION_CONSEQUENCES)[number] = "send
 // first using it. Since t280 (2026-10-06) running a node describes it
 // (`./describing-failures.ts`), because the model rarely asked first, so the
 // sentence says the definition arrives with the first run and asking is for a
-// node whose parameters it does not know yet.
+// node whose parameters it does not know yet. Since t289-G (W11) that
+// definition is shown on the first run's own result, not in
+// `flowBootstrap.describedNodes`, so a describe never changes the request in
+// front of the evidence window (`./describing-failures.ts`).
 const DESCRIPTION = [
   "Run one node from the library against the live target, now, and get back what it really did: the same node, with the same parameters, that the finished Flow runs.",
-  "flowBootstrap.nodeCatalog names every node; pick from those names. A node you run is described for you, in flowBootstrap.describedNodes from then on. Give exactly the parameters its definition declares; for a node whose parameters you do not know yet, read it first with core.describe_nodes, several at once.",
+  "flowBootstrap.nodeCatalog names every node; pick from those names. A node you run is described for you, under describedNodes in its first result. Give exactly the parameters its definition declares; for a node whose parameters you do not know yet, read it first with core.describe_nodes, several at once.",
   "Where a node acts on something you observed, name it under `target` as {\"handle\": \"<the handle the evidence printed, copied exactly>\"} and nothing else. Never write a locator, a description or a guess of your own: a step that names something you did not observe is refused.",
   "A node that reads a repeating list names it the same way, by the handle the detection tool issued, with the fields you want beside it: detect the list first, then read the rows it really returned.",
   // A check is not a failure to try again. "Run again. A failure ends nothing"
@@ -104,7 +108,7 @@ const WRITE_DESCRIPTION = "true: write this step into the Flow without running i
  * value (`../../flow-draft/binding-forms.ts`). A call that runs now carries
  * concrete values only, and the decision parse refuses one that does not.
  */
-const PARAMETERS_DESCRIPTION = "That node's own parameters, exactly as its definition in flowBootstrap.describedNodes declares them. "
+const PARAMETERS_DESCRIPTION = "That node's own parameters, exactly as its definition under describedNodes declares them. "
   + "Where a value changes between runs or rows, a written step (write true) holds a binding in its place: {\"$input\": \"<name>\", \"test\": <the value to test with>} for a value the person gave, which becomes an input of the Flow, or {\"$row\": \"<field>\"} for a field of the row a repeat is on, "
   + "or {\"$step\": <n>, \"output\": \"<output id>\"} for an output of the earlier step n (add \"path\": \"<field>\" for one field of a record output). "
   + "A call that runs now takes concrete values only.";
