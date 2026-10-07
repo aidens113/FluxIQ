@@ -6,8 +6,9 @@ import type { ClientGatewayTransport } from "../transport.ts";
 import type { ClientGatewayEventBus } from "../event-bus.ts";
 import { COMMAND_ANSWER_MARGIN_MS } from "../command-answer-margin.ts";
 import { ClientGatewayCommandContext } from "./context.ts";
+import { ClientGatewayCommandOutcome } from "./outcome.ts";
 import { ClientGatewayCommandLedgerController as Controller } from "./controller.ts";
-import type { ClientGatewayCommandClaim, ClientGatewayCommandLedgerLease, ClientGatewayCommandReceipt, ClientGatewayDurableActionOptions, ClientGatewayDurableActionResponse, ClientGatewayDurableDispatchResult } from "./contracts.ts";
+import type { ClientGatewayCommandClaim, ClientGatewayCommandLedgerLease, ClientGatewayCommandReceipt, ClientGatewayDurableActionOptions, ClientGatewayDurableActionResponse, ClientGatewayDurableDispatchResult, ClientGatewayCommandOutcomeObserver, ClientGatewayCommandCompletion } from "./contracts.ts";
 
 type Answer = { result: ClientGatewayActionResult; receipt: ClientGatewayCommandReceipt };
 type Entry = {
@@ -16,10 +17,18 @@ type Entry = {
   abort: AbortController; timer?: ReturnType<typeof setTimeout>; detach(): void;
   resolve(answer: Answer): void; reject(): void;
   answer: Promise<Answer>; completion: Promise<ClientGatewayDurableDispatchResult<ClientGatewayActionResult>>;
+  context: ClientGatewayCommandContext; observer?: ClientGatewayCommandOutcomeObserver; proof?: object;
+  uncertainty?: Promise<void>;
 };
 type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease> };
 /** Explicit trusted gateway dispatch only; existing Flow/domain callers remain on the legacy path. */
 export class ClientGatewayDurableDispatch {
+  private static readonly proofs = new WeakMap<object, { entry: Entry; observer: ClientGatewayCommandOutcomeObserver; value: ClientGatewayCommandCompletion }>();
+  static readCompletionProof(proof: object, context: ClientGatewayCommandContext, observer: ClientGatewayCommandOutcomeObserver): ClientGatewayCommandCompletion {
+    const registered = this.proofs.get(proof);
+    if (!registered || registered.entry.context !== context || registered.observer !== observer || registered.entry.abort.signal.aborted || registered.entry.phase !== "reserved") throw new Error("command_outcome.foreign_completion_proof");
+    return registered.value;
+  }
   private readonly pending = new Map<string, Entry>();
   private readonly pipelines = new Set<Promise<unknown>>();
   private readonly cleanupErrors: unknown[] = [];
@@ -46,11 +55,13 @@ export class ClientGatewayDurableDispatch {
     let resolve!: Entry["resolve"], reject!: Entry["reject"];
     const answer = new Promise<Answer>((yes, no) => { resolve = yes; reject = () => no(new Error("durable_command.outcome_unknown")); });
     void answer.catch(/* best-effort: preadmission cancellation is reported by public completion */ () => undefined);
-    const entry: Entry = { sessionId, clientId: session.clientId, claim, phase: "preparing", abort: new AbortController(), detach: () => undefined, resolve, reject, answer, completion: Promise.resolve({ status: "outcome_unknown" }) };
+    const observer = ClientGatewayCommandOutcome.observer(options.context);
+    const entry: Entry = { sessionId, clientId: session.clientId, claim, context: options.context, ...(observer ? { observer } : {}), phase: "preparing", abort: new AbortController(), detach: () => undefined, resolve, reject, answer, completion: Promise.resolve({ status: "outcome_unknown" }) };
     const abort = () => this.uncertain(entry);
     options.signal?.addEventListener("abort", abort, { once: true }); entry.detach = () => options.signal?.removeEventListener("abort", abort);
     if (options.signal?.aborted) this.uncertain(entry);
     this.pending.set(commandId, entry);
+    if (observer) entry.timer = setTimeout(() => this.uncertain(entry), command.timeoutMs === undefined ? this.ports.config.commandTimeoutMs : command.timeoutMs + COMMAND_ANSWER_MARGIN_MS);
     const pipeline = this.run(entry, options.context, command, message);
     entry.completion = pipeline; this.pipelines.add(pipeline);
     void pipeline.finally(() => this.pipelines.delete(pipeline)).catch(/* best-effort: derived observer mirrors the public failure */ () => undefined);
@@ -67,7 +78,7 @@ export class ClientGatewayDurableDispatch {
     try { resultDigest = Controller.digest(input); result = this.parseResult(input); this.freeze(result); }
     catch { return "suppressed"; }
     if (result.status === "unknown" || result.status === "timed_out" || result.status === "cancelled") { this.uncertain(entry); await entry.completion; return "suppressed"; }
-    entry.phase = "reserved"; clearTimeout(entry.timer);
+    entry.phase = "reserved"; if (!entry.observer) clearTimeout(entry.timer);
     const receipt: ClientGatewayCommandReceipt = { schemaVersion: "gateway_command_receipt.v1", commandId: entry.claim.binding.commandId, requestDigest: entry.claim.requestDigest, clientId: entry.clientId, sessionId: entry.sessionId, status: result.status, receivedAt: this.ports.config.now(), resultDigest, redaction: "receipt_only", ...(result.status === "failed" ? { failureClass: "action_failed" as const } : {}) };
     entry.resolve({ result, receipt });
     const completed = await entry.completion;
@@ -76,7 +87,7 @@ export class ClientGatewayDurableDispatch {
   drain(): Promise<void> {
     this.closing ??= (async () => {
       this.closed = true; for (const entry of this.pending.values()) this.uncertain(entry);
-      try { await Promise.allSettled([...this.pipelines]); }
+      try { while (this.pipelines.size) await Promise.allSettled([...this.pipelines]); }
       finally { this.unsubscribe(); }
       if (this.cleanupErrors.length) throw new AggregateError(this.cleanupErrors, "durable_command.lease_cleanup_failed");
     })();
@@ -84,29 +95,51 @@ export class ClientGatewayDurableDispatch {
   }
   private async run(entry: Entry, context: ClientGatewayCommandContext, command: ClientGatewayActionCommand, message: ClientGatewayDurableActionResponse["message"]): Promise<ClientGatewayDurableDispatchResult<ClientGatewayActionResult>> {
     let lease: ClientGatewayCommandLedgerLease | undefined;
+    let observing: Promise<void> | undefined;
     try {
       if (!this.ports.resolve) throw new Error("durable_command.storage_unavailable");
       lease = await this.ports.resolve(context);
-      return await new Controller(lease.ledger).dispatch(entry.claim, async () => {
+      if (entry.observer && lease.outcomeObserver !== entry.observer) throw new Error("command_outcome.observer_mismatch");
+      const outcome = await new Controller(lease.ledger).dispatch(entry.claim, async () => {
         const current = this.ports.sessions.requireReady(entry.sessionId);
         if (entry.abort.signal.aborted || this.closed || current.clientId !== entry.clientId || current.projectId && current.projectId !== entry.claim.binding.projectId) throw new Error("durable_command.admission_refused");
         entry.phase = "waiting";
         const waitMs = command.timeoutMs === undefined ? this.ports.config.commandTimeoutMs : command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
-        entry.timer = setTimeout(() => this.uncertain(entry), waitMs);
+        if (!entry.observer) entry.timer = setTimeout(() => this.uncertain(entry), waitMs);
         // Account for send rejection without awaiting a transport's possibly stalled flush before the answer deadline.
         void this.ports.transport.sendChecked(entry.sessionId, entry.clientId, message).catch(() => { /* best-effort: send rejection becomes durable unknown through the answer pipeline */ this.uncertain(entry); });
         return await entry.answer;
       }, entry.abort.signal);
+      if (!entry.observer) return outcome;
+      if (outcome.status !== "completed" || entry.abort.signal.aborted || this.closed) { this.uncertain(entry); await this.notifyUncertainty(entry, outcome.status); return { status: "outcome_unknown" }; }
+      const proof = Object.freeze({}); entry.proof = proof;
+      const value = { context, claim: entry.claim, receipt: structuredClone(outcome.receipt), result: structuredClone(outcome.result) }; this.freeze(value.claim); this.freeze(value.receipt); this.freeze(value.result); Object.freeze(value);
+      ClientGatewayDurableDispatch.proofs.set(proof, { entry, observer: entry.observer, value });
+      let detach: () => void = () => undefined;
+      const stopped = new Promise<void>((_resolve, reject) => { const abort = () => reject(new Error("command_outcome.interrupted")); entry.abort.signal.addEventListener("abort", abort, { once: true }); detach = () => entry.abort.signal.removeEventListener("abort", abort); if (entry.abort.signal.aborted) abort(); });
+      observing = Promise.resolve().then(() => entry.observer!.completed(proof));
+      try { await Promise.race([observing, stopped]); } finally { detach(); ClientGatewayDurableDispatch.proofs.delete(proof); }
+      if (entry.abort.signal.aborted || this.closed) throw new Error("command_outcome.interrupted");
+      return outcome;
+    } catch (error) {
+      if (!entry.observer) throw error;
+      this.uncertain(entry); await this.notifyUncertainty(entry, "observer_or_dispatch_failed"); return { status: "outcome_unknown" };
     } finally {
       clearTimeout(entry.timer); entry.detach(); entry.phase = "terminal";
       this.pending.delete(entry.claim.binding.commandId);
-      if (lease) try { await lease.close(); } catch (error) { this.cleanupErrors.push(error); }
+      if (entry.proof) ClientGatewayDurableDispatch.proofs.delete(entry.proof);
+      if (lease) {
+        const owned = lease, cleanup = async () => { try { await observing; } catch { /* best-effort: public result already records observer refusal */ } try { await owned.close(); } catch (error) { this.cleanupErrors.push(error); } };
+        if (observing && entry.abort.signal.aborted) { const pending = cleanup(); this.pipelines.add(pending); void pending.finally(() => this.pipelines.delete(pending)); } else await cleanup();
+      }
     }
   }
   private uncertain(entry: Entry): void {
-    if (entry.phase === "reserved" || entry.phase === "terminal") return;
+    if ((!entry.observer && entry.phase === "reserved") || entry.phase === "terminal") return;
+    if (entry.proof) ClientGatewayDurableDispatch.proofs.delete(entry.proof);
     entry.phase = "terminal"; clearTimeout(entry.timer); entry.abort.abort(); entry.reject();
   }
+  private notifyUncertainty(entry: Entry, disposition: string): Promise<void> { entry.uncertainty ??= Promise.resolve().then(() => entry.observer!.uncertain(entry.context, disposition)); return entry.uncertainty; }
   private validateCommand(command: ClientGatewayActionCommand): void {
     const fields = ["actionType", "parameters", "target", "timeoutMs", "metadata"];
     if (!command || typeof command !== "object" || Array.isArray(command) || Object.keys(command).some(key => !fields.includes(key)) || typeof command.actionType !== "string" || !command.actionType.trim() || command.actionType.length > 200 || command.timeoutMs !== undefined && (!Number.isSafeInteger(command.timeoutMs) || command.timeoutMs <= 0 || command.timeoutMs > 2_147_483_647 - COMMAND_ANSWER_MARGIN_MS)) throw new Error("durable_command.invalid_command");

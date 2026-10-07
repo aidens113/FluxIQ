@@ -651,3 +651,16 @@ wait fields. Public transport observers receive fewer duplicate/out-of-band
 completion events. This boundary does not by itself enable durable Flow dispatch
 or prove semantic outcomes; trusted run admission, executor consumption and both
 production IO paths require their separate integration.
+
+Required command outcomes use server-only authentic context registration and an
+exact leased observer reference. The gateway privately issues a completion proof
+only after receipt COMMIT and parsed live result validation; copied JSON and
+receipt-only replay cannot issue it. Deadline, cancellation and close revoke the
+proof before success resolution, while owned late storage/observer work drains.
+An unwired command-run owner can privately account for that proof and consume it
+only through a trusted executor's registered post-handling witness. Project SQL
+checks all prior consumed receipt/history joins inside the next claim transaction;
+fresh/reconstructed runs still refuse every prior claim. Legacy explicit contexts
+without required registration retain existing semantics. Actual node-entry
+issuance, both IO/runtime paths, execution/repair fences and Flow activation remain
+separate pending integration; this contract does not attest semantic outcomes.
