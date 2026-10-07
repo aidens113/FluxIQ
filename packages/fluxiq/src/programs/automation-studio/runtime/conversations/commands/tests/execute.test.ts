@@ -63,6 +63,17 @@ function contextFor(conversations: AutomationStudioConversations, conversationId
   return { port, host: conversations, projectId: PROJECT, conversationId, sessionId: "session.person", keyLocked: false, paired: false, startLocation: PAGE, ...extra };
 }
 
+/**
+ * The person's message and Core's answer to it, as the chat writes them before
+ * a command starts. A command reads what the person said from the turns before
+ * that answer (`../person-words.ts`), so the instruction it saves is theirs.
+ */
+async function personAsked(conversations: AutomationStudioConversations, conversationId: string, text: string): Promise<Partial<AutomationStudioConversationCommandContext>> {
+  await conversations.appendTurn({ projectId: PROJECT, conversationId, text });
+  const answer = await conversations.appendAutomationTurn({ projectId: PROJECT, conversationId, text: "I'll make you a new automation for this.", ask: null, attachment: null });
+  return { answerTurnId: answer.turnId };
+}
+
 async function turnsOf(conversations: AutomationStudioConversations, conversationId: string) {
   return (await conversations.getConversation({ projectId: PROJECT, conversationId }))?.turns ?? [];
 }
@@ -215,11 +226,11 @@ describe("conversation commands", () => {
       "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: "Flow Bootstrap generation failed (flow_bootstrap.provider_refused).", payload: { diagnostic: { code: "flow_bootstrap.provider_refused", stage: "provider" } } })
     });
 
-    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port, { keyLocked: true }), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
+    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port, { keyLocked: true, ...await personAsked(conversations, conversationId, "Watch kettle prices") }), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
     await automationStudioConversationCommandWork.idle();
 
     expect(calls.map((call) => call.endpoint)).not.toContain("review-flow-adaptation");
-    const [result] = await turnsOf(conversations, conversationId);
+    const result = (await turnsOf(conversations, conversationId)).at(-1);
     // Said in plain words, never the code with its stage (t276).
     expect(result?.text).toContain('"Create an automation here" stopped because the build failed: the request to the model was refused.');
     expect(result?.text).not.toMatch(/flow_bootstrap|Flow Bootstrap/u);
@@ -243,10 +254,10 @@ describe("conversation commands", () => {
       "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: "Flow Bootstrap generation failed.", payload: { diagnostic: { code: "flow_bootstrap.not_doable", stage: "provider_output_validation", ending: { message: ending } } } })
     });
 
-    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
+    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port, await personAsked(conversations, conversationId, "Watch kettle prices")), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
     await automationStudioConversationCommandWork.idle();
 
-    const [result] = await turnsOf(conversations, conversationId);
+    const result = (await turnsOf(conversations, conversationId)).at(-1);
     expect(result?.text.startsWith(ending)).toBe(true);
     expect(result?.text).not.toContain("stopped because");
     expect(result?.text).not.toContain("could not finish");
@@ -267,10 +278,10 @@ describe("conversation commands", () => {
       "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: "Flow Bootstrap generation failed.", payload: { diagnostic: { code: "flow_bootstrap.budget_exhausted", stage: "provider_output_validation", evidenceLoop: { iterationCount: 30, decisionCount: 30, toolCallCount: 20, evidenceBytes: 1, incompleteDraft: { revision: 2, steps: 13 } }, ending: { message: ending } } } })
     });
 
-    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
+    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port, await personAsked(conversations, conversationId, "Watch kettle prices")), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
     await automationStudioConversationCommandWork.idle();
 
-    const [result] = await turnsOf(conversations, conversationId);
+    const result = (await turnsOf(conversations, conversationId)).at(-1);
     expect(result?.text).not.toContain("empty");
     // t195 `run-musp474o-e0ed7432` (12-failure-panel): "What is left: the Flow ..., with what
     // you asked saved on it" read as a label, not a sentence, after the build's own ending.
@@ -291,10 +302,10 @@ describe("conversation commands", () => {
       "generate-flow-bootstrap-adaptation": () => ({ ok: false, error: "Flow Bootstrap generation failed.", payload: { diagnostic: { code: "flow_bootstrap.evidence_iteration_limit", stage: "provider_output_validation", evidenceLoop: { iterationCount: 30, decisionCount: 30, toolCallCount: 20, evidenceBytes: 1, incompleteDraft: { revision: 1, steps: 4 } } } } })
     });
 
-    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
+    await executeAutomationStudioConversationCommand({ command: command("flow.createHere"), context: contextFor(conversations, conversationId, port, await personAsked(conversations, conversationId, "Watch kettle prices")), arguments: { instruction: "Watch kettle prices", name: "Kettles" } });
     await automationStudioConversationCommandWork.idle();
 
-    const [result] = await turnsOf(conversations, conversationId);
+    const result = (await turnsOf(conversations, conversationId)).at(-1);
     expect(result?.text).not.toContain("empty");
     expect(result?.text).toContain('The Flow "Kettles" keeps your instruction, and the steps found so far were kept as a draft, so building it again carries on from them.');
     expect(result?.text).not.toContain("What is left");

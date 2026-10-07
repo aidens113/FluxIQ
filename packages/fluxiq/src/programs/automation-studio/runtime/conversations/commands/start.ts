@@ -24,7 +24,8 @@ export async function startAutomationStudioConversationCommand(input: {
   const command = AUTOMATION_STUDIO_CONVERSATION_COMMANDS.get(invocation.capabilityId);
   if (!command) return null;
   try {
-    return await executeAutomationStudioConversationCommand({ command, context: input.context, arguments: invocation.arguments });
+    // Core's answer to the person's turn anchors what they said: a command that saves an instruction saves their words, not the model's (`../person-words.ts`).
+    return await executeAutomationStudioConversationCommand({ command, context: { ...input.context, answerTurnId: response.turnId }, arguments: invocation.arguments });
   } catch (error) {
     const cause = error instanceof Error ? error.message : String(error);
     return { capabilityId: command.capability.id, status: "failed", summary: `"${command.capability.title}" ran, but what it came to could not be written into the conversation: ${cause}`, error: cause };

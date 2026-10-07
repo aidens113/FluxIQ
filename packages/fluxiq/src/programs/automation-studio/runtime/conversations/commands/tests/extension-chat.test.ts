@@ -326,10 +326,14 @@ describe("the extension's chat, end to end in Core", () => {
     const flow = await world.service.createFlow({ projectId: world.project.id, name: "Kettles" });
     world.scriptBuild(SEARCH_THEN_COMPLETE);
 
-    const response = await world.say("Build it by trying it here", { do: "flow.explore", with: { flowId: flow.flowId, instruction: "Search the catalog for kettles." } });
+    // The model's goal is a paraphrase; what is saved is the person's message, as written (t349).
+    const message = "Build it by trying it here: search the catalog for kettles";
+    const response = await world.say(message, { do: "flow.explore", with: { flowId: flow.flowId, instruction: "Search the catalog for kettles." } });
     expect(response?.execution).toMatchObject({ capabilityId: "flow.explore", status: "started" });
     await automationStudioConversationCommandWork.idle();
     expect(await flowNodes(world.service, world.project.id, flow.flowId)).toContain(SEARCH_ID);
+    const page = await world.service.listFlowInstructionSummaries({ projectId: world.project.id, flowId: flow.flowId, status: "active" }) as unknown as { instructions: Array<{ instructionId: string }> };
+    expect(await Promise.all(page.instructions.map(async (entry) => (await world!.service.getFlowInstruction(world!.project.id, entry.instructionId))?.body))).toEqual([message]);
     expect(resultTurns((await world.thread()).turns, "flow.explore")[0]?.text).not.toMatch(/stopped because/u);
   }, 60_000);
 
