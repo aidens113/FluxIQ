@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../client-gateway/service/command-ledger/index.ts";
 import { COMMAND_ANSWER_MARGIN_MS } from "../client-gateway/service/index.ts";
 import type {
   FluxIQRuntimeAdapter,
@@ -31,6 +32,8 @@ export class RuntimeService {
   private pendingWrites: Promise<void> = Promise.resolve();
   private readonly adapters = new Map<string, FluxIQRuntimeAdapter>();
   private readonly transports = new Map<string, FluxIQRuntimeTransport>();
+  private readonly requiredAdapters = new WeakMap<FluxIQRuntimeAdapter, NonNullable<FluxIQRuntimeAdapter["executeWithCommandContext"]>>();
+  private readonly requiredTransports = new WeakMap<FluxIQRuntimeTransport, NonNullable<FluxIQRuntimeTransport["dispatchWithCommandContext"]>>();
   private readonly handlers = new Set<FluxIQRuntimeEventHandler>();
   private readonly runs = new Map<string, FluxIQRuntimeRun>();
   private readonly commandAttempts = new Map<string, FluxIQRuntimeCommandAttempt>();
@@ -57,6 +60,7 @@ export class RuntimeService {
     if (!adapterId) throw new Error("Runtime adapter id is required.");
     if (this.adapters.has(adapterId)) throw new Error(`Duplicate runtime adapter: ${adapter.adapterId}`);
     this.adapters.set(adapterId, adapter);
+    if (typeof adapter.executeWithCommandContext === "function") this.requiredAdapters.set(adapter, adapter.executeWithCommandContext.bind(adapter));
     return this;
   }
 
@@ -65,6 +69,7 @@ export class RuntimeService {
     if (!transportId) throw new Error("Runtime transport id is required.");
     if (this.transports.has(transportId)) throw new Error(`Duplicate runtime transport: ${transport.transportId}`);
     this.transports.set(transportId, transport);
+    if (typeof transport.dispatchWithCommandContext === "function") this.requiredTransports.set(transport, transport.dispatchWithCommandContext.bind(transport));
     this.transportUnsubscribes.set(transportId, transport.onEvent((event) => this.emit(event)));
     return this;
   }
@@ -181,6 +186,7 @@ export class RuntimeService {
   }
 
   async dispatch(command: FluxIQRuntimeCommand, context: FluxIQRuntimeDispatchContext = {}): Promise<FluxIQRuntimeCommandResult> {
+    if (Object.hasOwn(context, "commandContext")) { ClientGatewayCommandContext.owner(context.commandContext!); if (!ClientGatewayCommandOutcome.observer(context.commandContext!)) throw new Error("runtime.required_context_missing"); }
     await this.readyPromise;
     // Withheld values and a withheld result payload shape only the attempt the
     // runtime keeps. They are not handed on, the command the target executes
@@ -223,6 +229,7 @@ export class RuntimeService {
     const result = target
       ? await this.dispatchToTarget(target, normalizedCommand, dispatchContext)
       : rejectedResult(commandId, "No runtime adapter or transport client matches the requested command.", this.now());
+    if (!target && context.commandContext) await ClientGatewayCommandOutcome.stop(context.commandContext, "runtime.missing_target");
     const settled = this.settleAttempt(attempt.attemptId, result, withheld, withheldResultPayload === true);
     await this.emit({ type: "command.result", ...(context.runId ? { runId: context.runId } : {}), result });
     if (run) {
@@ -259,6 +266,11 @@ export class RuntimeService {
 
   private async dispatchToTarget(target: RuntimeDispatchTarget, command: FluxIQRuntimeCommand & { commandId: string }, context: FluxIQRuntimeDispatchContext): Promise<FluxIQRuntimeCommandResult> {
     const run = async () => {
+      if (Object.hasOwn(context, "commandContext")) {
+        const handler = target.kind === "adapter" ? this.requiredAdapters.get(target.adapter) : this.requiredTransports.get(target.transport);
+        if (!handler || command.kind !== "execute_action") throw new Error("runtime.unsupported_required_handler");
+        return await handler(command, context);
+      }
       if (target.kind === "transport") {
         return await target.transport.dispatch(command, {
           ...context,
@@ -353,7 +365,8 @@ async function withRuntimeBounds(
   context: FluxIQRuntimeDispatchContext,
   now: () => number
 ): Promise<FluxIQRuntimeCommandResult> {
-  if (context.signal?.aborted) return cancelledResult(command.commandId, now());
+  const stop = async (reason: string) => { if (context.commandContext) await ClientGatewayCommandOutcome.stop(context.commandContext, reason); };
+  if (context.signal?.aborted) { await stop("runtime.cancelled"); return cancelledResult(command.commandId, now()); }
   const bounds: Array<Promise<FluxIQRuntimeCommandResult>> = [];
   let timer: ReturnType<typeof setTimeout> | undefined;
   let abortListener: (() => void) | undefined;
@@ -363,21 +376,22 @@ async function withRuntimeBounds(
     // answer margin longer before it decides the target never answered.
     const waitMs = command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
     const message = `Runtime command timed out after ${waitMs}ms: no answer within its ${command.timeoutMs}ms timeout and ${COMMAND_ANSWER_MARGIN_MS}ms answer margin.`;
-    bounds.push(new Promise((resolve) => {
+    bounds.push(new Promise((resolve, reject) => {
       timer = setTimeout(() => {
-        resolve({ commandId: command.commandId, status: "timed_out", completedAt: now(), message, error: message });
+        void stop("runtime.timeout").then(() => resolve({ commandId: command.commandId, status: "timed_out", completedAt: now(), message, error: message }), reject);
       }, waitMs);
     }));
   }
   if (context.signal) {
-    bounds.push(new Promise((resolve) => {
-      abortListener = () => resolve(cancelledResult(command.commandId, now()));
+    bounds.push(new Promise((resolve, reject) => {
+      abortListener = () => { void stop("runtime.cancelled").then(() => resolve(cancelledResult(command.commandId, now())), reject); };
       context.signal?.addEventListener("abort", abortListener, { once: true });
     }));
   }
   try {
     return bounds.length ? await Promise.race([run(), ...bounds]) : await run();
   } catch (error) {
+    await stop("runtime.dispatch_failed");
     const message = error instanceof Error ? error.message : "Runtime command failed.";
     return { commandId: command.commandId, status: "failed", completedAt: now(), message, error: message };
   } finally {

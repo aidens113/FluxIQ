@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../../client-gateway/service/command-ledger/index.ts";
 import {
   createEnvelope,
   defineDomainIo,
@@ -9,6 +10,12 @@ import {
 } from "../index.ts";
 
 describe("IoRegistry", () => {
+  it("required context refuses a legacy output callback before its effect", async () => {
+    const registry = new IoRegistry(), dispatch = vi.fn(() => ({ ok: true, outputId: "action" })), context = ClientGatewayCommandContext.issue({ projectId: "project.1", runId: "run.1", flowId: "flow.1", invocationId: "invoke.1", attemptId: "attempt.1", effectOrdinal: 0 }), uncertain = vi.fn(async () => undefined);
+    ClientGatewayCommandOutcome.require(context, { completed: async () => undefined, uncertain }); registry.registerOutput("synthetic", { definition: { id: "action", title: "Action" }, mode: "request", dispatch });
+    try { await registry.dispatchOutput({ domainId: "synthetic", outputId: "action", payload: {}, commandContext: context }); } catch { /* the support gate may reject */ }
+    expect(dispatch).not.toHaveBeenCalled(); expect(uncertain).toHaveBeenCalledTimes(1);
+  });
   it("reads inputs on demand", async () => {
     const registry = new IoRegistry();
     registry.registerInput("example", {

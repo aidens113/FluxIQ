@@ -148,6 +148,8 @@ export type FluxIQRuntimeExecutionContext = {
   runId?: string;
   signal?: AbortSignal;
   now?: () => number;
+  /** Authentic server collaborator; never command JSON/metadata or saved attempts. */
+  commandContext?: import("../client-gateway/service/command-ledger/index.ts").ClientGatewayCommandContext;
 };
 
 /**
@@ -204,6 +206,7 @@ export type FluxIQRuntimeAdapter = {
   domainId?: string | null;
   capabilities(): Promise<FluxIQRuntimeCapability[]> | FluxIQRuntimeCapability[];
   canExecute?(command: FluxIQRuntimeCommand): Promise<boolean> | boolean;
+  executeWithCommandContext?(command: FluxIQRuntimeCommand, context: FluxIQRuntimeExecutionContext): Promise<FluxIQRuntimeCommandResult> | FluxIQRuntimeCommandResult;
   execute(
     command: FluxIQRuntimeCommand,
     context: FluxIQRuntimeExecutionContext
@@ -223,6 +226,7 @@ export type FluxIQRuntimeTransport = {
   label: string;
   kind: Exclude<FluxIQRuntimeTransportKind, "direct" | "native">;
   clients(): FluxIQRuntimeClient[];
+  dispatchWithCommandContext?(command: FluxIQRuntimeCommand, context: FluxIQRuntimeDispatchContext): Promise<FluxIQRuntimeCommandResult>;
   dispatch(
     command: FluxIQRuntimeCommand,
     context: FluxIQRuntimeDispatchContext

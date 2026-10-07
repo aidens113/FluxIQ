@@ -1,4 +1,5 @@
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../client-gateway/service/command-ledger/index.ts";
 import type { JsonObject } from "../core/index.ts";
 import type { DomainInputDefinition, DomainManifest, DomainOutputDefinition } from "../domains/index.ts";
 import type { FluxIQRuntimeCommandStatus } from "../runtime/index.ts";
@@ -26,6 +27,8 @@ export type OutputDispatchRequest<TPayload = unknown> = {
   outputId: string;
   payload: TPayload;
   metadata?: JsonObject;
+  commandContext?: import("../client-gateway/service/command-ledger/index.ts").ClientGatewayCommandContext;
+  signal?: AbortSignal;
 };
 
 export type OutputDispatchResult<TPayload = unknown> = {
@@ -110,6 +113,7 @@ export type OutputAdapter<TPayload = unknown, TResult = unknown> = {
   definition: DomainOutputDefinition;
   mode: IoMode;
   dispatch: (request: OutputDispatchRequest<TPayload>) => Promise<OutputDispatchResult<TResult>> | OutputDispatchResult<TResult>;
+  dispatchWithCommandContext?: (request: OutputDispatchRequest<TPayload>) => Promise<OutputDispatchResult<TResult>> | OutputDispatchResult<TResult>;
   subscribe?: (handler: (event: IoEnvelope<TResult>) => void) => IoUnsubscribe;
 };
 
@@ -173,6 +177,7 @@ export type IoSnapshot = {
 export class IoRegistry {
   private readonly inputs = new Map<string, InputAdapter<any>>();
   private readonly outputs = new Map<string, OutputAdapter<any, any>>();
+  private readonly requiredOutputs = new WeakMap<OutputAdapter<any, any>, NonNullable<OutputAdapter["dispatchWithCommandContext"]>>();
 
   register(registration: IoRegistration): void {
     for (const input of registration.inputs ?? []) {
@@ -199,6 +204,7 @@ export class IoRegistry {
       throw new Error(`Duplicate output adapter: ${key}`);
     }
     this.outputs.set(key, adapter);
+    if (typeof adapter.dispatchWithCommandContext === "function") this.requiredOutputs.set(adapter, adapter.dispatchWithCommandContext.bind(adapter));
   }
 
   async readInput<TPayload = unknown>(request: InputReadRequest): Promise<IoEnvelope<TPayload>> {
@@ -259,9 +265,16 @@ export class IoRegistry {
   async dispatchOutput<TPayload = unknown, TResult = unknown>(
     request: OutputDispatchRequest<TPayload>
   ): Promise<OutputDispatchResult<TResult>> {
+    if (Object.hasOwn(request, "commandContext")) { ClientGatewayCommandContext.owner(request.commandContext!); if (!ClientGatewayCommandOutcome.observer(request.commandContext!)) throw new Error("io.required_context_missing"); }
     const adapter = this.outputs.get(ioKey(request.domainId, request.outputId));
     if (!adapter) {
+      if (Object.hasOwn(request, "commandContext")) await ClientGatewayCommandOutcome.stop(request.commandContext!, "io.missing_output");
       throw new Error(`Output adapter not found: ${ioKey(request.domainId, request.outputId)}`);
+    }
+    if (Object.hasOwn(request, "commandContext")) {
+      const handler = this.requiredOutputs.get(adapter);
+      if (!handler) { await ClientGatewayCommandOutcome.stop(request.commandContext!, "io.unsupported_required_handler"); throw new Error("io.unsupported_required_handler"); }
+      try { return await handler(request) as OutputDispatchResult<TResult>; } catch (error) { await ClientGatewayCommandOutcome.stop(request.commandContext!, "io.required_dispatch_failed"); throw error; }
     }
     return adapter.dispatch(request) as Promise<OutputDispatchResult<TResult>>;
   }

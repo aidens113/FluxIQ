@@ -2,7 +2,7 @@ import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExecutionResult } from "../../nodes/index.ts";
-import { automationStudioNodeAdaptationIds } from "../flow-change/index.ts";
+import { automationStudioNodeAdaptationIds } from "../flow-change/node-adaptation/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "./contracts.ts";
 import { compareAutomationStudioTransition } from "./transition-comparison.ts";
 

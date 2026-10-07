@@ -393,6 +393,7 @@ export type AutomationStudioRecordBatch = {
 };
 
 export type AutomationStudioGraphExecutionOptions = {
+  commandRun?: import("./command-scope/index.ts").AutomationStudioExecutorCommandRun;
   startNodeId?: string;
   /**
    * A partial run: the node after which the run ends `succeeded` with
@@ -437,7 +438,7 @@ export type AutomationStudioGraphExecutionOptions = {
    * for a dispatcher that keeps its own record of the command; the effect itself
    * carries the real value.
    */
-  effectDispatcher?: (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; withheldValues?: FluxIQRuntimeWithheldValues }) => Promise<AutomationNodeExecutionResult | undefined> | AutomationNodeExecutionResult | undefined;
+  effectDispatcher?: (effect: { type: string; payload?: JsonValue }, context?: { signal?: AbortSignal; withheldValues?: FluxIQRuntimeWithheldValues; commandContext?: import("../../../../client-gateway/service/command-ledger/index.ts").ClientGatewayCommandContext }) => Promise<AutomationNodeExecutionResult | undefined> | AutomationNodeExecutionResult | undefined;
   /**
    * Stores the rows a record output captured. Called once per capture, after
    * the dispatch succeeded and before the attempt is returned. A throw fails the
