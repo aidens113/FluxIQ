@@ -72,3 +72,10 @@ and closes downstream task first, then Core under Core's own task gate.
 - Validation: current dev merged both trees; supervisor owning reauthor file 9/9, Core check0, touched Core build0, current Chrome/Firefox/e2e extension artifacts22files each. Headed real extension/Core Stop build and run tests2/2 (18.1s), no subsequent node/proposal, accepted graphs unchanged. Task audits pending.
 - Outcome: Accepted bounded cancellation slice; not all P0.
 - Follow-up: integrate paired task/push both dev; t299 facade must inherit this scope. Ignoring provider late charge remains unknown, Firefox live/pairing/real provider unexercised. No paid calls or user panel.
+
+### 2026-10-06 - Candidate verification and detached execution module review
+- Agent: Codex supervisor.
+- Changed: t300 source91903d4a/55736594; requirement/start/run/oracle controller and real canonical detached adapter, architecture limits recorded.
+- Validation: supervisor reviewed controller/receipt contracts and detached adapter; independent58/58 owning tests passed before current dev merge, post-merge narrow check pending. No provider/browser execution by this task.
+- Outcome: Partial infrastructure, not production acceptance or P2 complete.
+- Follow-up: trusted semantic interpreter/start/oracle, domain command acknowledgements and durable atomic promotion must join t299 facade. Empty commands cannot qualify create; no accepted graph writes.
