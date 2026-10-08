@@ -42,3 +42,43 @@ describe("trial feedback for a step that failed", () => {
     expect((feedback.steps as unknown[])[1]).toMatchObject({ control: "Get coupons", failureCode: "web.target.not_found", happened: "The step's control was not found on the page.", retryable: false });
   });
 });
+
+// Lane A round 5 (`run-muz0f12h-eae63685`, 0022 and 0028): the coupon press was refused busy, retried at once and
+// succeeded, yet the feedback listed the refusal as "step 6 failed" and the retry as a new "step 7". Since t355 a node
+// may make up to four attempts; a step is listed once, with its final outcome and how many attempts it took.
+describe("trial feedback counts steps, not attempts", () => {
+  type Attempt = AutomationStudioGraphExecutionTrace["attempts"][number];
+  type Failure = NonNullable<Attempt["failure"]>;
+  const busy: Failure = { category: "action_failed", code: "web.action.rate_limited", retryable: true, expected: "the page accepts the press", actual: "the page answered that it was busy" };
+  const open: Attempt = { attemptId: "a1", nodeId: "open", definitionId: "web.output.browser-navigate", startedAt: 1, status: "succeeded", inputs: {}, outputs: {}, effects: [] };
+  const coupon = (attemptId: string, failure?: Failure): Attempt => ({
+    attemptId, nodeId: "coupon", definitionId: "web.output.dom-click", startedAt: 2, status: failure ? "failed" : "succeeded", inputs: {}, outputs: {}, effects: [], ...(failure ? { failure } : {})
+  });
+
+  it("reads a press refused busy and then accepted as one succeeded step that took 2 attempts", () => {
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph,
+      trace: { status: "failed", startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, coupon("a2", busy), coupon("a3")] } });
+    expect(feedback.steps).toEqual([
+      { step: 1, definitionId: "web.output.browser-navigate", status: "succeeded" },
+      { step: 2, definitionId: "web.output.dom-click", control: "Get coupons", status: "succeeded", attempts: 2 }
+    ]);
+    expect(JSON.stringify(feedback)).not.toContain("rate_limited");
+  });
+
+  it("reads a step that failed after all its attempts as one failed step with its final reason", () => {
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph,
+      trace: { status: "failed", startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, coupon("a2", busy), coupon("a3", busy), coupon("a4", busy),
+        coupon("a5", { category: "target_not_found", code: "web.target.not_found", retryable: false })] } });
+    expect(feedback.steps).toEqual([
+      { step: 1, definitionId: "web.output.browser-navigate", status: "succeeded" },
+      { step: 2, definitionId: "web.output.dom-click", control: "Get coupons", status: "failed", attempts: 4, failureCode: "web.target.not_found",
+        happened: "The step's control was not found on the page.", retryable: false }
+    ]);
+  });
+
+  it("lists a node the run reached again after it succeeded as a new step", () => {
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph,
+      trace: { status: "failed", startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, coupon("a2"), coupon("a3")] } });
+    expect((feedback.steps as Array<{ step: number; attempts?: number }>).map((step) => [step.step, step.attempts])).toEqual([[1, undefined], [2, undefined], [3, undefined]]);
+  });
+});
