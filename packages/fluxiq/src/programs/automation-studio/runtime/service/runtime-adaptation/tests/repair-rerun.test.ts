@@ -21,7 +21,8 @@ describe("a repaired re-run of an optional press whose target is gone", () => {
   it("runs under the default recovery budget a Flow is created with", async () => {
     const context = await adaptationContext();
 
-    expect(recoveryBudgetFromRuntimeAdaptationContext(context)).toMatchObject({ maxRetriesPerAction: 2, maxRecoveryAttemptsPerSubflow: 2, maxReroutesPerRun: 2 });
+    // Three retries, the runtime's own default (t355).
+    expect(recoveryBudgetFromRuntimeAdaptationContext(context)).toMatchObject({ maxRetriesPerAction: 3, maxRecoveryAttemptsPerSubflow: 2, maxReroutesPerRun: 2 });
   });
 
   it("follows the press's failed route through the Merge and reaches the step after it", async () => {

@@ -117,8 +117,9 @@ describe("a failure the skip does not cover keeps the recovery ladder", () => {
     const trace = await runAutomationStudioGraph(straight, { effectDispatcher: dispatcher, recoveryBudget: DEFAULT_RECOVERY_BUDGET, delay: async () => undefined });
 
     const checks = trace.attempts.filter((attempt) => attempt.nodeId === "check");
-    expect(counter.calls).toBe(3);
-    expect(checks.slice(0, 2).map(decisionKind)).toEqual(["retry_node", "retry_node"]);
+    // The first attempt and the default's three retries (t355).
+    expect(counter.calls).toBe(4);
+    expect(checks.slice(0, 3).map(decisionKind)).toEqual(["retry_node", "retry_node", "retry_node"]);
     expect(checks.every((attempt) => attempt.skipped === undefined && attempt.status === "failed")).toBe(true);
     // The retry record still points at the attempt it followed.
     expect(checks[1]?.retry?.previousAttemptId).toBe(checks[0]?.attemptId);
@@ -127,7 +128,7 @@ describe("a failure the skip does not cover keeps the recovery ladder", () => {
   // The ladder as it was: an action that ran and failed is retried; an ambiguous
   // target is not retryable and goes straight to the authored failed route.
   it.each([
-    ["action_failed", ["retry_node", "retry_node", "deterministic_path"]],
+    ["action_failed", ["retry_node", "retry_node", "retry_node", "deterministic_path"]],
     ["target_ambiguous", ["deterministic_path"]]
   ] as const)("takes the ladder for an optional press that failed with %s", async (category, decisions) => {
     const trace = await run({ effectDispatcher: checkFails(category) });

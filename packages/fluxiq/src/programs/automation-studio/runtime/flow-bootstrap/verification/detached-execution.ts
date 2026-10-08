@@ -71,9 +71,17 @@ export async function runAutomationStudioDetachedCandidate(input: {
       || graph.metadata?.parentSubflowId !== selected.subflow.subflowId || graph.metadata?.subflowGraph !== true) return { ...refused("candidate.execution_graph_not_owned"), route };
     if (parent.executionDefaults) graph.executionDefaults = structuredClone(parent.executionDefaults);
     returnedGraph = structuredClone(graph);
+    // No model, patch, reroute or subflow recovery: the candidate runs as
+    // submitted. But each node keeps the retries every node gets (t355, the
+    // user's rule of 2026-10-07): until then a trial ran each step once while
+    // playback ran it three times, so lane A round 4's trial
+    // (`run-muyrpbnk-fef374e7`) died on the page's first-press "Network busy"
+    // that playback would have waited out. The retry policy is therefore left
+    // to Core's default (`executor/retry-policy.ts`), with no override and no
+    // `maxRetriesPerAction` of its own.
     const trace = await runCanonicalAutomationStudioFlow(graph, snapshots, { ...options, ...(signal ? { signal } : {}), currentSubflowId: selected.subflow.subflowId,
-      allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [], retryPolicy: { maxAttempts: 1, backoffMs: [] },
-      recoveryBudget: { maxRetriesPerAction: 0, maxRecoveryAttemptsPerSubflow: 0, maxReroutesPerRun: 0, maxAdaptationOrLlmAttemptsPerRun: 0 }
+      allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [],
+      recoveryBudget: { maxRecoveryAttemptsPerSubflow: 0, maxReroutesPerRun: 0, maxAdaptationOrLlmAttemptsPerRun: 0 }
     }, input.deprecatedPublicationIds ?? []);
     returnedTrace = trace;
     const stillFresh = await fresh();

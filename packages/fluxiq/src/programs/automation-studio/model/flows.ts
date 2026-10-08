@@ -251,12 +251,13 @@ export function defaultAutomationStudioFlowSettingsMetadata(): JsonObject {
     allowPromotion: true,
     requireFirstManualReviewBeforeAutoPromotion: false,
     recoveryBudget: {
-      // Two retries after the first attempt, so a Flow created with these
-      // defaults gets the runtime's three. It was 1, from when this number only
-      // withdrew a Flow's own authored failed route; as the attempt allowance it
-      // now is, 1 would cap every node at two attempts and quietly contradict
-      // `AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY`.
-      maxRetriesPerAction: 2,
+      // The runtime's own default retries, `AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY`
+      // less its first attempt: three since the user's rule of 2026-10-07 (t355).
+      // Written as a number because the model layer imports no runtime value;
+      // `runtime/executor/tests/retry-policy.test.ts` fails if the two disagree,
+      // and the runtime floors every node at its default whatever this says, so
+      // settings stored at the old 2 still get three retries.
+      maxRetriesPerAction: 3,
       maxRecoveryAttemptsPerSubflow: 2,
       maxReroutesPerRun: 2
     },
