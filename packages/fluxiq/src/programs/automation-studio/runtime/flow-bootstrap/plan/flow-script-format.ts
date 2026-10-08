@@ -104,7 +104,11 @@
 // choice was a dropdown, and nothing said a press toggles. So a choice is now
 // taught as the state it leaves, with the nodes that set a state rather than
 // flip it (`web.dom.check`, `web.dom.select`), and the press kept for a plain
-// button the page arrives with unchosen. And no script could say a step was
+// button the page arrives with unchosen. Since t364 (round 5) `web.dom.check`
+// also sets an option the page draws itself by the chosen state it shows -- the
+// Space Grey `<div>` swatch -- so the guidance points at the swatch, not at a
+// hidden box behind it, which round 5's model spent eight decisions seeking.
+// And no script could say a step was
 // only sometimes needed -- a consent banner or popup that may not show --
 // although the runtime already skips an absent step of that kind; the
 // `optional: yes` line now says it (`../authoring/assemble.ts`). Both live in
@@ -198,8 +202,8 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
  */
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
   "A choice is written as the state it leaves, not as a press. A press toggles: pressing an option the page already shows chosen un-chooses it.",
-  "An option in a dropdown is `node: web.dom.select` with the option's `value:`. A checkbox or a radio -- including a swatch, chip or button the page draws over one -- is `node: web.dom.check` on the box or radio itself, `checked: true` to choose it or `checked: false` to clear a checkbox; it presses only when the state differs, so it is right however the page arrives.",
-  "Every option the instruction asks for gets its own step, even one the page arrives with already chosen: write it with `web.dom.check` or `web.dom.select`, which change nothing when the state is already right, so the Flow is right however a later run's page arrives. Press an option with `node: web.dom.click` only when it is a plain button with no box, radio or dropdown behind it. A press is right for a control that does something each time it is pressed: apply, add, send, open, next.",
+  "An option in a dropdown is `node: web.dom.select` with the option's `value:`. A checkbox, a radio, or an option the page draws itself and shows chosen -- a colour swatch or size chip drawn apart from the others (`marked`), a `selected` tab, a `pressed` toggle -- is `node: web.dom.check` on that control itself, `checked: true` to choose it or `checked: false` to clear it; it presses only when the state differs, so it is right however the page arrives. Never look for a hidden box behind a swatch or chip: check the swatch or chip itself.",
+  "Every option the instruction asks for gets its own step, even one the page arrives with already chosen: write it with `web.dom.check` or `web.dom.select`, which change nothing when the state is already right, so the Flow is right however a later run's page arrives. Press an option with `node: web.dom.click` only when the page shows no chosen state for it at all; `web.dom.check` refuses such a control and says so. A press is right for a control that does something each time it is pressed: apply, add, send, open, next.",
   "`optional: yes` marks a step that is only sometimes needed -- closing a cookie banner, a popup or a notice the page may not show -- and the run goes on past it when it cannot be done. Use it only on such a step, never on one the answer depends on, never inside a repeat and never beside an `on <port>:` line.",
   "Example, acting on one item:",
   "flow: Put two medium blue shirts in the basket",

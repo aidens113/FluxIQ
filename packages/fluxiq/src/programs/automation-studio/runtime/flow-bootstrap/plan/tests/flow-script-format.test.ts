@@ -206,12 +206,18 @@ describe("the Flow script act-on-one-item example", () => {
   it("teaches a choice as the state it leaves, with the nodes that set a state, and says when a press is right instead", () => {
     expect(guidance).toContain("A choice is written as the state it leaves, not as a press. A press toggles: pressing an option the page already shows chosen un-chooses it.");
     expect(guidance).toContain("An option in a dropdown is `node: web.dom.select`");
-    expect(guidance).toContain("is `node: web.dom.check` on the box or radio itself, `checked: true` to choose it or `checked: false` to clear a checkbox; it presses only when the state differs");
+    // t364: `check` reads the chosen state of an option the page draws itself (lane A round 5's
+    // preselected Space Grey `<div>`), so the guidance names it, and no longer sends the model
+    // looking for a hidden box behind a swatch.
+    expect(guidance).toContain("is `node: web.dom.check` on that control itself, `checked: true` to choose it or `checked: false` to clear it; it presses only when the state differs");
+    expect(guidance).toContain("a colour swatch or size chip drawn apart from the others (`marked`)");
+    expect(guidance).toContain("Never look for a hidden box behind a swatch or chip: check the swatch or chip itself.");
+    expect(guidance).not.toContain("on the box or radio itself");
     // Every instructed choice keeps its own step even when the page arrives with it chosen: the
     // instructed-acts check asks for one, and a later run's page may arrive differently.
     expect(guidance).toContain("Every option the instruction asks for gets its own step, even one the page arrives with already chosen: write it with `web.dom.check` or `web.dom.select`, which change nothing when the state is already right");
     expect(guidance).not.toContain("needs no step");
-    expect(guidance).toContain("Press an option with `node: web.dom.click` only when it is a plain button with no box, radio or dropdown behind it.");
+    expect(guidance).toContain("Press an option with `node: web.dom.click` only when the page shows no chosen state for it at all; `web.dom.check` refuses such a control and says so.");
     expect(guidance).toContain("A press is right for a control that does something each time it is pressed");
     // The example practises what the guidance says: no choice in it is a press.
     const steps = example.split(/\n(?=step)/u);
