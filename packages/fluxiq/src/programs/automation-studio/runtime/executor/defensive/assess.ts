@@ -2,6 +2,7 @@ import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import type { AutomationStudioFaultAssessment, AutomationStudioFaultEffect } from "./contracts.ts";
+import { automationStudioNodeActLasts } from "./lasting-act.ts";
 import { automationStudioNodeMutates, automationStudioNodeRepeatCannotAct, automationStudioNodeRepeatIsSafe } from "./node-side-effect.ts";
 import { automationStudioFaultFromResultMessage } from "./result-message.ts";
 import { automationStudioRetryHintMs } from "./retry-hint.ts";
@@ -19,8 +20,8 @@ import { automationStudioRetryHintMs } from "./retry-hint.ts";
  * time of the run arguing with the only code that knows. Last, the message, for
  * every node that reports a failure without a record at all.
  *
- * Two gates then apply, and both exist to stop a retry becoming a second act.
- * They ask the question from opposite ends, because the evidence differs:
+ * Three gates then apply, and all exist to stop a retry becoming a second act.
+ * The first two ask the question from opposite ends, because the evidence differs:
  *
  *  1. **The failure was found after the action ran** -- stage `confirmation` or
  *     `verification`. That is evidence the action ran, so looking again needs a
@@ -30,6 +31,12 @@ import { automationStudioRetryHintMs } from "./retry-hint.ts";
  *     retries unless it acts on the world. A fault that demonstrably never
  *     reached anything (`unacted`) is repeated freely, however consequential the
  *     node is, because nothing happened to repeat.
+ *  3. **The act lasts and its effect is unknown** (t359) -- the node's step
+ *     declared a lasting consequence, or the producer's record states the act
+ *     was made (`effect: "ambiguous"`). Gate 2 asks the same question of a
+ *     node marked as acting on the world; this one hears it from the two
+ *     places a web press can say it, since a Flow's web node is marked with
+ *     nothing (`./lasting-act.ts`). Both refuse with `actUncertain`.
  *
  * **The stage used to end it on its own, for every node, and that was the single
  * biggest measured cause of lost runs.** Eleven of roughly eighteen reportable
@@ -73,6 +80,7 @@ export function automationStudioAssessAttemptFault(
     return {
       ...fault,
       disposition: "refuse",
+      ...(node && fault.effect !== "unacted" && automationStudioNodeActLasts(node) ? { actUncertain: true as const } : {}),
       reason: node
         ? `The failure was found at ${stage}, after the action had already run, and nothing about ${node.id} says that running it again could not act a second time.`
         : `The failure was found at ${stage}, after the action had already run, and no node was named to say whether running it again could act a second time.`
@@ -82,7 +90,22 @@ export function automationStudioAssessAttemptFault(
     return {
       ...fault,
       disposition: "refuse",
+      actUncertain: true,
       reason: `${fault.reason} This node acts outside the run and does not state that repeating it is safe, so the act may already have landed and is not repeated.`
+    };
+  }
+  // 3. **A lasting act whose effect is unknown** (t359): the step declared a
+  //    lasting consequence, or the producer itself stated the act was made and
+  //    only its answer is missing (`./lasting-act.ts`). Repeated only when the
+  //    failure shows the act did not happen.
+  const producerSaysActed = attempt.failure?.effect === "ambiguous" && !(node && automationStudioNodeRepeatIsSafe(node));
+  if (fault.effect !== "unacted" && (producerSaysActed || (node && automationStudioNodeActLasts(node)))) {
+    return {
+      ...fault,
+      disposition: "refuse",
+      effect: "ambiguous",
+      actUncertain: true,
+      reason: `${node ? `${node.id} makes a lasting act` : "The act lasts"}, and ${fault.code} does not show that it did not happen: it may already have taken effect and nothing showed whether it did, so it is not made again.`
     };
   }
   return fault;

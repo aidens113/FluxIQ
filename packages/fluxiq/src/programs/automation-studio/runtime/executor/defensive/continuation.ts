@@ -100,6 +100,9 @@ export function automationStudioContinuationAfterFailure(
   if (!fault) {
     return { continues: false, reason: `${node.id} failed for a reason nothing could classify, so nothing establishes that the rest of the Flow still stands.` };
   }
+  if (fault.actUncertain) {
+    return { continues: false, reason: `${node.id} made a lasting act that may already have taken effect and was not repeated, so its outcome is uncertain and the steps after it assume it worked.` };
+  }
   if (!SURVIVABLE[fault.category]) {
     return { continues: false, reason: `${node.id} failed with ${fault.category}, which says the Flow is no longer standing where it assumed rather than that one step did not work.` };
   }

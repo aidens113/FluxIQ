@@ -9,6 +9,7 @@
 export * from "./assess.ts";
 export * from "./contracts.ts";
 export * from "./continuation.ts";
+export * from "./lasting-act.ts";
 export * from "./ledger.ts";
 export * from "./node-side-effect.ts";
 export * from "./result-message.ts";

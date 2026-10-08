@@ -10,7 +10,7 @@ import {
   automationStudioBoundedRetryWaitMs,
   automationStudioContinuationAfterFailure,
   automationStudioFaultFromThrownError,
-  automationStudioRunMayStillAbsorb,
+  automationStudioRunMayStillAbsorb, automationStudioStopMessage,
   automationStudioThrownErrorText,
   type AutomationStudioFaultAssessment
 } from "./defensive/index.ts";
@@ -674,7 +674,7 @@ async function executeAutomationStudioGraph(
               }
             }
             recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault ?? continuationFault(continuation.reason), "stopped", 0);
-            const recoveryStopMessage = failureMessageForRecoveryStop(recoveryDecision, attempt);
+            const recoveryStopMessage = automationStudioStopMessage(fault, failureMessageForRecoveryStop(recoveryDecision, attempt));
             return {
               status: "failed",
               startedAt,

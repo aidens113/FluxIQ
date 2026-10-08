@@ -12,7 +12,7 @@ export { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder, 
 export { AUTOMATION_STUDIO_READINESS_CAP_MS, AUTOMATION_STUDIO_READINESS_FLOOR_MS, AUTOMATION_STUDIO_RECORDED_GAP_METADATA_KEY, automationStudioNodeReadinessState, automationStudioReadinessCeilingMs, automationStudioRecordedState, type AutomationStudioRecordedState } from "./recorded-state.ts";
 export { chooseAutomationStudioRecovery, type AutomationStudioLadderState } from "./recovery-ladder.ts";
 // A node run outside a graph run -- a build exploring, a build testing its draft -- under the same retry policy (t355).
-export { automationStudioDispatchWithNodeRetries, type AutomationStudioNodeRetryOutcome, type AutomationStudioNodeRetryReading } from "./outside-graph/index.ts";
+export { automationStudioDispatchWithNodeRetries, type AutomationStudioLastingActCheck, type AutomationStudioNodeRetryOutcome, type AutomationStudioNodeRetryReading } from "./outside-graph/index.ts";
 export { AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY, automationStudioAttemptIsRetryable, automationStudioNodeRetryPolicy, automationStudioRetryBackoffMs, type AutomationStudioNodeRetryPolicy } from "./retry-policy.ts";
 export { chooseAutomationStudioStartNode, type AutomationStudioStartNodeChoice } from "./start-node.ts";
 export { automationStudioTraceSummary } from "./trace-summary.ts";

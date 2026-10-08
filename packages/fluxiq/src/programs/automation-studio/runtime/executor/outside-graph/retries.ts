@@ -47,7 +47,21 @@ export type AutomationStudioNodeRetryOutcome<T> = {
   waitedMs: number;
   /** Each failed attempt's assessment, in order: retried ones, then the one that ended it, if any. */
   faults: AutomationStudioFaultAssessment[];
+  /**
+   * How a lasting act that failed with its effect unknown was settled (t359):
+   * `landed` when the caller's effect check showed it took effect, so the node
+   * counts as done although the last answer is a failure; `uncertain` when
+   * nothing showed whether it did, so it was not made again. Absent otherwise.
+   */
+  lastingAct?: "landed" | "uncertain";
 };
+
+/**
+ * The caller's own check of whether a lasting act took effect, asked only after
+ * an attempt whose failure left that unknown: `landed`, `not_landed` (it did
+ * not happen, so making it again is not a second act) or `unknown`.
+ */
+export type AutomationStudioLastingActCheck<T> = (result: T, attempt: number) => Promise<"landed" | "not_landed" | "unknown">;
 
 /**
  * Dispatches a node, and dispatches it again after each fault the default
@@ -68,6 +82,11 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
    * `metadata.effect` (`"mutate"` or `"observe"`) where the caller knows it.
    */
   node: AutomationStudioFlowNode;
+  /**
+   * Whether a lasting act whose failure left its effect unknown took effect
+   * after all. Without one, such an act ends `uncertain` and is not made again.
+   */
+  checkEffect?: AutomationStudioLastingActCheck<T> | undefined;
   signal?: AbortSignal | undefined;
   /** How the loop waits; a real, unreferenced timer by default. */
   delay?: (ms: number, signal?: AbortSignal) => Promise<void>;
@@ -83,7 +102,14 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
     const result = await input.dispatch(attempt);
     const reading = input.read(result);
     if (reading.ok || !reading.failure) return { result, attempts: attempt, waitedMs, faults };
-    const fault = automationStudioAssessAttemptFault(failedAttempt(input.node, attempt, startedAt, reading.failure), input.node, now());
+    const assessed = automationStudioAssessAttemptFault(failedAttempt(input.node, attempt, startedAt, reading.failure), input.node, now());
+    // A lasting act whose failure left its effect unknown is checked, never blindly repeated (t359).
+    const settled = assessed?.actUncertain ? await (input.checkEffect?.(result, attempt) ?? Promise.resolve("unknown" as const)) : undefined;
+    if (assessed && (settled === "landed" || settled === "unknown")) {
+      faults.push(assessed);
+      return { result, attempts: attempt, waitedMs, faults, lastingAct: settled === "landed" ? "landed" : "uncertain" };
+    }
+    const fault = assessed && settled === "not_landed" ? notLanded(assessed) : assessed;
     if (fault) faults.push(fault);
     if (fault?.disposition !== "retry" || attempt >= policy.maxAttempts || input.signal?.aborted) return { result, attempts: attempt, waitedMs, faults };
     const wait = automationStudioBoundedRetryWaitMs({
@@ -96,6 +122,12 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
     waitedMs += wait.waitMs;
     if (input.signal?.aborted) return { result, attempts: attempt, waitedMs, faults };
   }
+}
+
+/** A lasting act the effect check showed did not happen: making it again is not a second act. */
+function notLanded(assessed: AutomationStudioFaultAssessment): AutomationStudioFaultAssessment {
+  const { actUncertain: _settled, ...fault } = assessed;
+  return { ...fault, disposition: "retry", effect: "unacted", reason: `${assessed.reason} The effect check then showed it did not take effect, so it is made again.` };
 }
 
 /** The attempt as the graph executor would have traced it, which is all the assessment reads. */

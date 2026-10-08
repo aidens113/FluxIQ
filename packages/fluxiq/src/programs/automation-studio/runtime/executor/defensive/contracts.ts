@@ -50,6 +50,13 @@ export type AutomationStudioFaultAssessment = {
   /** The transport status the fault carried, when it carried one. */
   httpStatus?: number;
   stage?: AutomationStudioFailureStage;
+  /**
+   * Present on a refusal that left a lasting act's outcome unknown: the act
+   * may already have taken effect, nothing showed whether it did, so it was
+   * not made again (`./lasting-act.ts`). A run that stops on it says the
+   * step's outcome is uncertain, and a Flow does not walk past it.
+   */
+  actUncertain?: true;
 };
 
 /**

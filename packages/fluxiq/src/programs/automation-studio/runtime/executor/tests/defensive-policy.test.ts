@@ -1,3 +1,4 @@
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -305,3 +306,93 @@ function collectSources(root: string, prefix = ""): Array<{ file: string; text: 
   }
   return sources;
 }
+// A lasting act in a graph run -- a saved Flow's playback and a candidate
+// trial, which runs the candidate through this same executor -- is retried
+// only when its failure shows it did not happen, settled as done when the
+// state it was to produce already holds, and otherwise ends uncertain without
+// a second act (t359, the user's rule of 2026-10-07). Every other node keeps
+// the first attempt and three retries (t355).
+
+const NOT_FOUND: AutomationStudioFailureRecord = { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" };
+const BUSY: AutomationStudioFailureRecord = { category: "action_failed", code: "web.action.rate_limited", retryable: true, stage: "execution", effect: "unacted" };
+/** The press was sent and only its answer is missing: the verb threw after the gesture, the page changed under it. */
+const AFTER_DISPATCH: AutomationStudioFailureRecord = { category: "action_failed", code: "web.action.failed", retryable: true, stage: "execution" };
+/** The producer's own statement that an act was made and its answer lost (the web domain's committing verbs). */
+const STATED_ACTED: AutomationStudioFailureRecord = { category: "page_changed", code: "web.page.changed", retryable: true, stage: "execution", effect: "ambiguous" };
+
+/** A Flow's web press as the build writes it: no domain metadata, only what its step declared. */
+function press(id: string, declared?: string[], parameterValues: AutomationStudioFlowNode["parameterValues"] = {}): AutomationStudioFlowNode {
+  return { id, definitionId: "web.output.dom-click", parameterValues: { target: id, ...parameterValues }, ...(declared ? { metadata: { declaredConsequences: declared } } : {}) };
+}
+
+function lastingFlowOf(nodes: AutomationStudioFlowNode[]): AutomationStudioFlowDocument {
+  const edges = nodes.slice(1).map((node, index) => ({ id: `e${index}`, sourceNodeId: nodes[index]!.id, targetNodeId: node.id, sourcePortId: "success" }));
+  return { schemaVersion: "0.1", flowId: "flow.lasting", ownerKind: "routine", ownerId: "routine.test", name: "Lasting", createdAt: 1, updatedAt: 1, nodes, edges };
+}
+
+/** Answers the first node's attempts with `failures` in turn and then success; every other node succeeds. Records each dispatch. */
+async function runLasting(nodes: AutomationStudioFlowNode[], failures: readonly AutomationStudioFailureRecord[], options: Partial<AutomationStudioGraphExecutionOptions> = {}): Promise<{ trace: AutomationStudioGraphExecutionTrace; dispatched: string[] }> {
+  const dispatched: string[] = [];
+  const trace = await runAutomationStudioGraph(lastingFlowOf(nodes), {
+    delay: async () => {},
+    nativeNodeExecutor: async ({ node }) => {
+      dispatched.push(node.id);
+      const failure = node.id === nodes[0]!.id ? failures[dispatched.filter((id) => id === node.id).length - 1] : undefined;
+      return failure
+        ? { result: { status: "failed", route: "failed", outputs: {}, message: "The press failed.", failure } }
+        : { result: { status: "success", route: "success", outputs: {} } };
+    },
+    ...options
+  });
+  return { trace, dispatched };
+}
+
+describe("a lasting press in a graph run", () => {
+  it("is retried when it failed before it was dispatched, and succeeds", async () => {
+    const notFound = await runLasting([press("add", ["create_new"]), press("next")], [NOT_FOUND, NOT_FOUND, NOT_FOUND]);
+    expect(notFound.dispatched).toEqual(["add", "add", "add", "add", "next"]);
+    expect(notFound.trace.status).toBe("succeeded");
+
+    const busy = await runLasting([press("add", ["create_new"]), press("next")], [BUSY]);
+    expect(busy.dispatched).toEqual(["add", "add", "next"]);
+    expect(busy.trace.status).toBe("succeeded");
+  });
+
+  it("is not pressed again when it failed after dispatch and the state it was to produce holds, and counts as done", async () => {
+    const { trace, dispatched } = await runLasting([press("add", ["create_new"], { expectedState: { conditions: [{ path: "cart.count" }] } }), press("next")], [AFTER_DISPATCH], {
+      hostRuntime: { capabilities: ["expectation-evaluation"], expectationEvaluator: () => ({ passed: true, checkedConditionCount: 1 }) }
+    });
+    expect(dispatched).toEqual(["add", "next"]);
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts[0]?.transitionComparison?.metadata).toMatchObject({ expectationSatisfiedAfterFailure: true });
+    expect(trace.defence?.entries[0]).toMatchObject({ outcome: "continued", code: "web.action.failed" });
+  });
+
+  it("ends uncertain without a second press when nothing shows whether it took effect", async () => {
+    const { trace, dispatched } = await runLasting([press("add", ["create_new"]), press("next")], [AFTER_DISPATCH, AFTER_DISPATCH]);
+    expect(dispatched).toEqual(["add"]);
+    expect(trace.status).toBe("failed");
+    expect(trace.message).toMatch(/^Outcome uncertain: add makes a lasting act/u);
+    expect(trace.defence?.entries[0]).toMatchObject({ outcome: "stopped", code: "web.action.failed" });
+  });
+
+  it("takes the producer's word that an undeclared press was made, and ends uncertain", async () => {
+    const { trace, dispatched } = await runLasting([press("send"), press("next")], [STATED_ACTED, STATED_ACTED]);
+    expect(dispatched).toEqual(["send"]);
+    expect(trace.status).toBe("failed");
+    expect(trace.message).toMatch(/^Outcome uncertain:/u);
+  });
+});
+
+describe("a node whose act does not last", () => {
+  it("keeps the first attempt and three retries on the same fault", async () => {
+    const declaredNone = await runLasting([press("open", []), press("next")], [AFTER_DISPATCH, AFTER_DISPATCH, AFTER_DISPATCH, AFTER_DISPATCH]);
+    expect(declaredNone.dispatched).toEqual(["open", "open", "open", "open"]);
+    expect(declaredNone.trace.status).toBe("failed");
+    expect(declaredNone.trace.message).not.toMatch(/uncertain/u);
+
+    const recovers = await runLasting([press("open"), press("next")], [AFTER_DISPATCH, AFTER_DISPATCH, AFTER_DISPATCH]);
+    expect(recovers.dispatched).toEqual(["open", "open", "open", "open", "next"]);
+    expect(recovers.trace.status).toBe("succeeded");
+  });
+});
