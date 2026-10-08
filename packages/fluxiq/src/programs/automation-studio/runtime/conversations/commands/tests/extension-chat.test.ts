@@ -506,7 +506,10 @@ describe("the extension's chat, end to end in Core", () => {
       expect(turns.filter((turn) => turn.ask)).toEqual([]);
       expect(turns.some((turn) => turn.attachment?.kind === "candidate-draft")).toBe(false);
       const text = turns.map((turn) => turn.text).join(" ");
-      expect(text).toContain("is ready"); expect(text).toContain("judged, twice, to do what you asked");
+      expect(text).toContain("is ready"); expect(text).toContain("checked it with a test run from the start");
+      // t370: the ready line says what the candidate build did, never the legacy build's words.
+      expect(text).toMatch(/is ready: I explored [^,]+, wrote its steps, and checked it with a test run from the start\./u);
+      expect(text).not.toContain("put the ones that worked");
       // The trial ran in a session of its own, marked as a candidate trial.
       const trials = (await world.service.listRuntimeSessions(world.project.id)).filter((session) => (session.metadata as { candidateTrial?: unknown } | undefined)?.candidateTrial !== undefined);
       expect(trials.map((session) => session.status)).toEqual(["succeeded"]);

@@ -84,8 +84,16 @@ export function automationStudioConversationCandidateKeptSaid(candidate: Automat
   return `${kept} A version of it was test-run from the start ${times}, ${lastSaid}.`;
 }
 
-/** Said after "ready" when a candidate's test run is what put the steps in (candidate mode only). */
-export const AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED = "Before that, a test run of the whole Flow from its start was judged, twice, to do what you asked.";
+/**
+ * What a candidate build did before its steps went in, as the ready line's
+ * last clause (candidate mode only). The ready line used to keep the legacy
+ * build's words, "I tried its steps on the page you had open and put the ones
+ * that worked into it", which a candidate build never did: it explores, writes
+ * the whole Flow, and puts it in only after a test run of the whole Flow from
+ * its start is judged to do what was asked; the person is told that plainly
+ * (t370, lane A round 7 UI).
+ */
+export const AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED = "checked it with a test run from the start";
 
 /** True when Core authors candidate drafts instead of proposing adaptations; read each time it matters. */
 export function automationStudioConversationAuthorsCandidates(): boolean {

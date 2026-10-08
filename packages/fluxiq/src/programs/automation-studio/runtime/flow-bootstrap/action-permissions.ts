@@ -104,6 +104,7 @@ import {
   type AutomationStudioActionPermissionRequest,
   type AutomationStudioInstructedConsequence
 } from "../action-permissions/index.ts";
+import type { AutomationStudioAuthoringMode } from "../../model/authoring-mode/index.ts";
 import { automationStudioActivityAskPort } from "../activity/index.ts";
 import { automationStudioFlowDraftDeclaresLasting } from "../flow-draft/index.ts";
 import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
@@ -223,6 +224,15 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
    * edit nobody declared is not one to put to the person.
    */
   say?: ((text: string) => Promise<unknown>) | undefined;
+  /**
+   * How the build is authored. The line about acts the instruction's read
+   * left unanswered is said only in `legacy` (the default): it tells the
+   * person that the build's dry-run tests check such a step rather than do it
+   * again, and a candidate build has no such tests -- its test runs the whole
+   * Flow from its start -- so there the line was untrue and is not said (t370,
+   * lane A round 7 UI). The read still treats the act as lasting either way.
+   */
+  authoringMode?: AutomationStudioAuthoringMode | undefined;
   now?: () => number;
   newRequestId?: () => string;
 }): AutomationStudioFlowBootstrapActionPermissions {
@@ -275,7 +285,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     const unanswered = (automationStudioInstructedActReads(entries) ?? []).filter((act) => act.consequences === null);
     if (unanswered.length && !unansweredSaid) {
       unansweredSaid = true;
-      await saidUnanswered(input.say, unanswered.map((act) => act.quote));
+      if (input.authoringMode !== "candidate") await saidUnanswered(input.say, unanswered.map((act) => act.quote));
     }
     return entries;
   };
@@ -369,7 +379,7 @@ const UNANSWERED_QUOTE_MAX = 120;
 export function automationStudioFlowBootstrapUnansweredSaid(quotes: readonly string[]): string {
   const named = quotes.map((quote) => `"${quoteCut(quote)}"`).join(", ");
   const one = quotes.length === 1;
-  return `Reading your instruction gave no answer for ${named}, so the build's tests check ${one ? "the step that does it" : "the steps that do them"} rather than do ${one ? "it" : "them"} again.`;
+  return `I could not tell from your instruction whether ${named} ${one ? "changes" : "change"} something that stays changed, so when the build tests its steps it checks ${one ? "the step that does it" : "the steps that do them"} rather than doing ${one ? "it" : "them"} again.`;
 }
 
 /** `quote` within `UNANSWERED_QUOTE_MAX`, cut after its last whole word with an ellipsis; one word longer than that is cut where it must. */

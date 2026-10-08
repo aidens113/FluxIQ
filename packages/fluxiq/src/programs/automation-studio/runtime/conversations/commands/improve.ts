@@ -16,7 +16,7 @@
 // and the answer says what its test run came to.
 
 import { AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS, automationStudioConversationCommandInstruction, automationStudioConversationCommandText } from "./argument.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
 
@@ -63,7 +63,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
     if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate)), candidate: built.candidate };
     progress.carry({ adaptationId: built.adaptationId });
     return {
-      ...progress.succeeded(`Worked out the change on the website.${built.trial ? ` ${AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED}` : ""} It is waiting for you to say whether to apply it.`),
+      ...progress.succeeded(`Worked out the change on the website${built.trial ? `, and ${AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED}` : ""}. It is waiting for you to say whether to apply it.`),
       confirm: {
         text: "Apply this change to the Flow? It changes the Flow's steps from its next run. Say yes to apply it, or no to leave the Flow as it is.",
         capabilityId: "adaptation.apply",
