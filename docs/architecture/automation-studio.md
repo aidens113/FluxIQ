@@ -893,9 +893,18 @@ not met, the same skip is taken with nothing dispatched, under the code
 `executor.ready_state.not_shown`. A gate that judged nothing says nothing about
 the page and the node is pressed as before. A straight-line node whose target
 is absent goes on to the rest of state routing, and through the ladder when that
-finds no way on; an optional node failing any other way (`target_ambiguous`, an
-action that ran and failed) goes through the ladder unchanged
-(`runtime/executor/tests/optional-failed-route.test.ts`, `absent-step.test.ts`).
+finds no way on. An optional node failing any other way (`target_ambiguous`, a
+timeout, a target that is not actionable, an action that ran and failed) keeps
+its retries through the ladder, and then the ladder takes the same way on
+(`automationStudioOptionalStepWayOn`, `runtime/executor/step-skip/optional-step.ts`)
+whatever the recovery budgets say. Going on past an optional step is the Flow's
+own path, not a recovery, so it spends none of the subflow recovery or reroute
+budget (`recovery-budget.ts` does not count it): a Flow with many optional
+steps goes on past every one that cannot be done, and the budgets stay bounded
+for real failures. A candidate trial reads the same rule, with budgets equal to
+its written `on failed:` branches only (t371;
+`runtime/executor/tests/optional-failed-route.test.ts`, `absent-step.test.ts`,
+`flow-bootstrap/verification/tests/detached-execution.test.ts`).
 
 **The recorded state is read while the Flow runs.** Every node a recording
 proposal produces carries `stateLink`, `stateSnapshotId`, `stateRef` and
