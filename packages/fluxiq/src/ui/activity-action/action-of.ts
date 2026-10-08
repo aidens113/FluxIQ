@@ -29,7 +29,12 @@ const CORE_TOOL_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
   // found nothing read "Look · Didn't work: it wasn't on the page" (t194).
   ["core.recall_result", "recall"],
   ["core.state_snapshot", "look"],
-  ["core.state_diff", "look"]
+  ["core.state_diff", "look"],
+  // A candidate build's own tools (t373): writing the Flow's steps is a change
+  // to the Flow, and its trial is a test run of the whole Flow. Before they had
+  // rows, the chat showed no card for either (t366).
+  ["core.submit_candidate", "draft"],
+  ["core.test_candidate", "test"]
 ]);
 
 /**
@@ -121,6 +126,8 @@ const counted = (count: number, word: string): string => `${count} ${word}${coun
  */
 function resultOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActionKind, outcome: ActivityActionOutcome, record: ReturnType<typeof activityActionRecordOf>): string | undefined {
   if (outcome !== "done") return undefined;
+  // Core's own account of how its call ended, in words (`./record.ts`, `Said`).
+  if (record.said) return record.said;
   if (kind === "draft") return record.changed;
   if (kind === "read" && record.rows !== undefined) {
     return record.pages !== undefined ? `${counted(record.rows, "row")} from ${counted(record.pages, "page")}` : counted(record.rows, "row");
@@ -415,6 +422,7 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const unconfirmed = kind === "result_check" && outcome === "failed" && event.label !== undefined && NOT_CONFIRMED.has(event.label.trim());
   const why = outcome !== "failed" || unconfirmed ? null
     : refusal ? refusal.because
+      : record.said ? record.said
       : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
         : kind === "result_check" ? activityActionCheckWhy(detail.text)
           : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason, kind) : null;

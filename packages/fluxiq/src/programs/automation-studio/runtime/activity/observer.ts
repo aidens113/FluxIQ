@@ -23,7 +23,10 @@
 // What it never shows: the decision's input values, the draft's amendments as
 // the model wrote them, the evidence a tool gathered beyond a row's name and a
 // count, or an issue code in a sentence. Ids and result codes go to
-// `detail.ref` and `detail.text` of the tool rows only.
+// `detail.ref` and `detail.text` of the tool rows only. A candidate build's
+// own calls -- saving the Flow's steps, testing the whole Flow -- end with
+// Core's account of how they went in words, last on the record (`Said` or
+// `Declined`, `./candidate/result.ts`, t373).
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { activityActionReplayFailing, activityActionTested, activityActionVerb } from "../../../../ui/index.ts";
@@ -35,9 +38,11 @@ import { automationStudioActivityDraftEdit, automationStudioActivityRefusedCall 
 import { emitAutomationStudioActivity } from "./emit.ts";
 import { automationStudioActivityRepeatedReason } from "./repeated-reason.ts";
 import { emitAutomationStudioActivityThought } from "./thought.ts";
+import { automationStudioActivityCandidateResult } from "./candidate/index.ts";
 import { automationStudioActivityCompletionRefusal, automationStudioActivityDecision, automationStudioActivityReasonText, automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "./wording/index.ts";
 
 type ToolCall = Parameters<AutomationStudioLlmEvidenceLoopInput["executeTool"]>[0];
+type CandidateSaid = NonNullable<ReturnType<typeof automationStudioActivityCandidateResult>>;
 
 /** A code a raw record may carry: no space, so never a sentence or a page's words. */
 const CODE_SHAPED = /^[A-Za-z0-9_.:-]{1,100}$/u;
@@ -176,7 +181,8 @@ function toolActivity(
   result: { code: string | undefined; reason?: string | undefined; rows?: number | undefined; pages?: number | undefined },
   described: AutomationStudioActivityCallWords | undefined,
   context: { start?: string; row?: string },
-  excusable?: string
+  excusable?: string,
+  said?: CandidateSaid
 ): void {
   const words = automationStudioActivityToolCall(call, described, context);
   const resultCode = result.code;
@@ -187,11 +193,13 @@ function toolActivity(
     excused ? `Excused: ${excused}` : "",
     result.rows !== undefined ? `Rows: ${result.rows}` : "",
     result.rows !== undefined && result.pages !== undefined ? `Pages: ${result.pages}` : "",
-    words.node ? `Node: ${words.node}` : ""
+    words.node ? `Node: ${words.node}` : "",
+    // A candidate build's own call ends in words, always last (`./candidate/result.ts`).
+    said ? `${said.part}: ${said.words}` : ""
   ].filter(Boolean).join(" · ");
   emitAutomationStudioActivity({
     phase: words.phase,
-    label: status === "started" ? words.label : `${words.label} — ${outcomeOf(status, resultCode, excused, words.title)}`,
+    label: status === "started" ? words.label : `${words.label} — ${said?.outcome ?? outcomeOf(status, resultCode, excused, words.title)}`,
     detail: { kind: words.kind, title: words.title, status, ref: call.toolId, ...(record ? { text: record } : {}) }
   });
 }
@@ -295,7 +303,9 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         // A detection's answer names the list when the page does; its row ends named by it (R2-U-9).
         const { list, ...answered } = context.answered(call, result);
         const named = namedAtEnd(input.describeCall, call, described);
-        toolActivity(call, "succeeded", { ...ended, reason: causes.of(call, ended), ...answered }, list === undefined ? named : { ...named, list }, said, excusable);
+        // Saving or testing a candidate's steps ends with its own words and status: a test the judge refused is no "done" (t373).
+        const candidate = automationStudioActivityCandidateResult(call.toolId, result);
+        toolActivity(call, candidate?.status ?? "succeeded", { ...ended, reason: causes.of(call, ended), ...answered }, list === undefined ? named : { ...named, list }, said, excusable, candidate);
         return result;
       } catch (error) {
         toolActivity(call, "failed", { code: undefined }, described, said);

@@ -489,3 +489,33 @@ describe("activityActionOf: a pass of a repeated test step names its row", () =>
     expect(activityActionOf(tool("Clicking “Confirm” for “Jonas Weber”", "Node: web.output.dom-click"))?.target).toBe("Confirm");
   });
 });
+
+// A candidate build's own tools (t373): saving its Flow's steps is a change to
+// the Flow, and testing it is a test run; each ends in Core's words, last on
+// its record (`Said` or `Declined`), which no code could say.
+describe("activityActionOf: a candidate build's own calls (t373)", () => {
+  const submit = (text: string | undefined, status: "started" | "succeeded" | "failed") => activityActionOf(tool("Saving the Flow's steps", text, status, "core.submit_candidate"));
+  const test = (text: string | undefined, status: "started" | "succeeded" | "failed") => activityActionOf(tool("Testing the whole Flow from the start", text, status, "core.test_candidate"));
+
+  it("saving the steps is a change to the Flow: done with what Core said, or not done with what to fix", () => {
+    expect(submit(undefined, "started")).toMatchObject({ kind: "draft", outcome: "working", why: null });
+    expect(submit("Said: the steps were accepted", "succeeded")).toMatchObject({ kind: "draft", outcome: "done", result: "the steps were accepted" });
+    const refused = submit("Result: flow_bootstrap.evidence_completion_parameters_unresolved · Declined: some steps point at things that weren't seen on the page; 2 things to fix", "failed");
+    expect(refused).toMatchObject({ kind: "draft", outcome: "failed", why: "some steps point at things that weren't seen on the page; 2 things to fix", refused: { all: true, because: "some steps point at things that weren't seen on the page; 2 things to fix" } });
+    expect(refused).not.toHaveProperty("result");
+  });
+
+  it("testing the Flow is a test run: passed with its steps, failed with why, or not done", () => {
+    expect(test(undefined, "started")).toMatchObject({ kind: "test", outcome: "working" });
+    expect(test("Result: candidate.trial_yes · Said: the test passed and the Flow did what you asked: 2 steps done", "succeeded"))
+      .toMatchObject({ kind: "test", outcome: "done", why: null, result: "the test passed and the Flow did what you asked: 2 steps done" });
+    // "trial_no" is no failing code by its words: the row's status says it failed, and its words say why.
+    expect(test("Result: candidate.trial_no · Said: the Flow ran, but it didn't do what you asked", "failed"))
+      .toMatchObject({ kind: "test", outcome: "failed", why: "the Flow ran, but it didn't do what you asked" });
+    expect(test("Result: candidate.trial_stale_revision · Declined: only the latest saved steps can be tested", "failed"))
+      .toMatchObject({ kind: "test", outcome: "failed", refused: { all: true, because: "only the latest saved steps can be tested" } });
+    for (const action of [test("Result: candidate.trial_yes · Said: the test passed", "succeeded"), test("Result: candidate.trial_no · Said: it didn't", "failed")]) {
+      expect(JSON.stringify(action)).not.toMatch(DOTTED);
+    }
+  });
+});

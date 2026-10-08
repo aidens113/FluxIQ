@@ -33,3 +33,15 @@ describe("activityActionRecordOf: what an action came to (U-1, U2)", () => {
     expect(activityActionRecordOf("Changed: removed step 2, Result: web.x · Rows: 9")).toEqual({ resultCode: undefined, changed: "removed step 2, Result: web.x · Rows: 9", node: undefined });
   });
 });
+
+describe("activityActionRecordOf: Core's own words on a call's end (t373)", () => {
+  it("reads a Said or a Declined part, last and whole, never as codes", () => {
+    expect(activityActionRecordOf("Result: candidate.trial_yes · Reason: retry_allowed · Said: the test passed: 2 steps done, Result: x · Rows: 3"))
+      .toEqual({ resultCode: "candidate.trial_yes", reason: "retry_allowed", said: "the test passed: 2 steps done, Result: x · Rows: 3", node: undefined });
+    expect(activityActionRecordOf("Result: candidate.trial_stale_revision · Declined: only the latest saved steps can be tested"))
+      .toEqual({ resultCode: "candidate.trial_stale_revision", declined: "only the latest saved steps can be tested", node: undefined });
+    expect(activityActionRecordOf("Said: the steps were accepted")).toEqual({ resultCode: undefined, said: "the steps were accepted", node: undefined });
+    // A words part names only the first marker; one inside its words is words.
+    expect(activityActionRecordOf("Declined: it said Changed: nothing")).toEqual({ resultCode: undefined, declined: "it said Changed: nothing", node: undefined });
+  });
+});

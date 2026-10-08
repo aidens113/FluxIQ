@@ -12,9 +12,19 @@
  * pages, where the call's answer said. Codes and counts are read only to
  * classify the row and say how it went, and no code is ever shown.
  *
- * `Changed`, always last, is the one part in words: Core's plain account of
- * what an edit to the Flow changed ('removed "Add to cart"'), written
- * from the amendments Core applied, and shown as the card's `result`.
+ * The parts in words come last, one to a row, and everything after the marker
+ * is that part's words, never read as codes:
+ *
+ * - `Changed`: Core's plain account of what an edit to the Flow changed
+ *   ('removed "Add to cart"'), written from the amendments Core applied, and
+ *   shown as the card's `result`.
+ * - `Said`: Core's plain account of how a call of its own ended, shown as the
+ *   card's `result` when it is done and its `why` when it failed: a candidate
+ *   build's test of its Flow ("the test passed: 6 steps done"), which no
+ *   result code could say (t373).
+ * - `Declined`: why Core declined a call before doing any of it, shown as the
+ *   card's refusal ("Not done: ..."): a candidate build's steps the check
+ *   refused, or a test the trial gate would not run (t373).
  */
 export function activityActionRecordOf(text: string | undefined): {
   resultCode: string | undefined;
@@ -24,12 +34,16 @@ export function activityActionRecordOf(text: string | undefined): {
   rows?: number | undefined;
   pages?: number | undefined;
   changed?: string | undefined;
+  said?: string | undefined;
+  declined?: string | undefined;
   node: string | undefined;
 } {
   if (!text) return { resultCode: undefined, node: undefined };
-  const changedAt = /(?:^|\s·\s)Changed: /u.exec(text);
-  const changed = changedAt ? text.slice(changedAt.index + changedAt[0].length).replace(/\s+/gu, " ").trim() : undefined;
-  const codes = changedAt ? text.slice(0, changedAt.index) : text;
+  const wordsAt = /(?:^|\s·\s)(Changed|Said|Declined): /u.exec(text);
+  const words = wordsAt ? text.slice(wordsAt.index + wordsAt[0].length).replace(/\s+/gu, " ").trim() : undefined;
+  const part = (name: string): string | undefined => (wordsAt?.[1] === name && words ? words : undefined);
+  const changed = part("Changed"), said = part("Said"), declined = part("Declined");
+  const codes = wordsAt ? text.slice(0, wordsAt.index) : text;
   const count = (name: string): number | undefined => {
     const found = new RegExp(`(?:^|·\\s*)${name}: (\\d{1,6})(?=\\s|$)`, "u").exec(codes)?.[1];
     return found === undefined ? undefined : Number(found);
@@ -47,6 +61,8 @@ export function activityActionRecordOf(text: string | undefined): {
     ...(rows === undefined ? {} : { rows }),
     ...(pages === undefined ? {} : { pages }),
     ...(changed ? { changed } : {}),
+    ...(said ? { said } : {}),
+    ...(declined ? { declined } : {}),
     node: /(?:^|·\s*)Node: (\S+)/u.exec(codes)?.[1]
   };
 }
