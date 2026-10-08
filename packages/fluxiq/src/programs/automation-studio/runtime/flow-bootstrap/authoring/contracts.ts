@@ -89,6 +89,23 @@ export type AutomationStudioFlowScriptStep = {
    * graph shape.
    */
   repeat?: AutomationStudioFlowScriptRepeat;
+  /**
+   * The step's `optional:` line, as written: the step is only sometimes needed
+   * -- a consent banner or a popup that may not be showing -- so the run goes
+   * on past it when it cannot be done. Assembled into the optional shape a
+   * drafted `optional` step becomes (`./draft-routing.ts`), which the runtime
+   * already skips when the target is absent
+   * (`../../executor/step-skip/absent-step.ts`). Whether the value says yes,
+   * and whether the step may be optional where it stands, is the assembler's
+   * question, not the parser's.
+   */
+  optional?: AutomationStudioFlowScriptOptional;
+  line: number;
+};
+
+/** A step's `optional:` line: its value as written, and where it was written. */
+export type AutomationStudioFlowScriptOptional = {
+  text: string;
   line: number;
 };
 

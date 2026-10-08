@@ -13,7 +13,8 @@
 //
 // A step's `repeat over:`, `repeat through:`, `repeat while:` and `repeat
 // most:` lines are read onto the step as written (t346); whether they make a
-// loop, and which, is `./draft-routing.ts`'s question.
+// loop, and which, is `./draft-routing.ts`'s question. Its `optional:` line is
+// read the same way (t357); what it means is `./assemble.ts`'s.
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type {
   AutomationStudioFlowScript,
@@ -48,6 +49,12 @@ const GO_TO = /^(?:go\s*to|goto|->|=>|jump\s+to|then)\s+/iu;
  */
 const REPEAT_WORD = "repeat";
 const REPEAT_PARTS = new Set(["over", "through", "while", "most"]);
+/**
+ * A step's `optional:` line (`AutomationStudioFlowScriptOptional`): the step is
+ * only sometimes needed. Reserved, as `node:` is, so it is never read as a node
+ * parameter; no node declares a parameter by either name.
+ */
+const OPTIONAL_WORDS = new Set(["optional", "sometimespresent"]);
 
 export function parseAutomationStudioFlowScript(text: string): {
   script: AutomationStudioFlowScript;
@@ -112,6 +119,11 @@ class ScriptReader {
       return;
     }
     if (keyword === REPEAT_WORD && REPEAT_PARTS.has(authoringKey(rest))) return this.repeat(step, authoringKey(rest), value, line);
+    if (OPTIONAL_WORDS.has(authoringKey(head))) {
+      step.optional = { text: value, line };
+      this.open = undefined;
+      return;
+    }
     const entry: AutomationStudioFlowScriptEntry = { key: head, lines: [value], line };
     step.entries.push(entry);
     this.open = entry.lines;
