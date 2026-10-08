@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "pnpm --filter @fluxiq/web dev",
     "build": "node scripts/build-cache/cli.mjs contracts:build fluxiq:build client-gateway-websocket:build web:build",
-    "check": "node --test \"scripts/structure-audit/rules/tests/*.test.mjs\" \"scripts/structure-audit/tests/*.test.mjs\" \"scripts/task/tests/*.test.mjs\" \"scripts/build-cache/tests/*.test.mjs\" && node scripts/build-cache/cli.mjs structure-audit:check && node scripts/build-cache/cli.mjs --parallel contracts:check fluxiq:check client-gateway-websocket:check web:check",
+    "check": "node --test \"scripts/structure-audit/rules/tests/*.test.mjs\" \"scripts/structure-audit/tests/*.test.mjs\" \"scripts/task/tests/*.test.mjs\" \"scripts/build-cache/tests/*.test.mjs\" \"scripts/tests/*.test.mjs\" && node scripts/build-cache/cli.mjs structure-audit:check && node scripts/build-cache/cli.mjs --parallel contracts:check fluxiq:check client-gateway-websocket:check web:check",
     "test": "pnpm -r --no-bail test",
     "docs:reference": "node scripts/docs-reference.mjs",
     "docs:check": "node scripts/structure-audit.mjs --rule docs-links && node scripts/docs-reference.mjs --check",
