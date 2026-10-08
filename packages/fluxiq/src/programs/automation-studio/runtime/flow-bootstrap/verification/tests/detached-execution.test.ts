@@ -285,6 +285,77 @@ describe("detached candidate normal execution", () => {
     });
   });
 
+  // t371: a trial and a playback share one rule for optional steps
+  // (`executor/step-skip/optional-step.ts`): going on past one, for any reason,
+  // spends no budget, and the trial's budget covers its written `on failed:`
+  // branches only. Until then every optional route was added to the budget and
+  // each one taken spent it, so a written branch was taken as often as the
+  // optional steps had left budget over.
+  describe("optional steps and a real failure, as in playback", () => {
+    const ABSENT = { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" } as const;
+    const TIMEOUT = { category: "timeout", code: "web.action.timeout", retryable: true, stage: "execution" } as const;
+    const NOT_ACTIONABLE = { category: "unexpected_state", code: "web.target.not_actionable", retryable: false, stage: "execution" } as const;
+    const FAILURES: Readonly<Record<string, typeof ABSENT | typeof TIMEOUT | typeof NOT_ACTIONABLE>> = { "custom.banner": ABSENT, "custom.notice": TIMEOUT, "custom.consent": NOT_ACTIONABLE, "custom.pay": NOT_ACTIONABLE };
+    const step = (id: string, effect?: "mutate"): AutomationStudioNodeDefinition => ({ schemaVersion: "0.1", id, version: "1.0.0", label: id, description: "A domain output known only to the build's registry", category: "action",
+      source: { kind: "code", moduleId: "test", implementationKey: id, trust: "trusted-local" }, availability: { kind: "global" }, capabilities: { executable: true },
+      safety: { requiredPermissions: [] }, inputs: [{ id: "in", label: "In", valueType: "any" }], outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "failed", label: "Failed", valueType: "any" }], parameters: [],
+      ...(effect ? { metadata: { effect } } : {}) });
+    type PlanNodes = AutomationStudioFlowBootstrapPlan["subflows"][number]["nodes"];
+    type PlanEdges = AutomationStudioFlowBootstrapPlan["subflows"][number]["edges"];
+    const link = (key: string, source: string, port: string, target: string, targetPort = "in"): PlanEdges[number] => ({ key, source: { nodeKey: source, portId: port }, target: { nodeKey: target, portId: targetPort } });
+
+    /** start, three optional steps that cannot be done (absent, timed out, covered), then `tail`, entered at `first`. */
+    function trialOf(tail: { nodes: PlanNodes; edges: PlanEdges; first: string }, dispatched: string[]) {
+      const { input, plan } = fixture();
+      const definitions = [step("custom.banner"), step("custom.notice"), step("custom.consent"), step("custom.pay", "mutate"), step("custom.fix"), step("custom.read")];
+      input.registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, ...definitions]);
+      const nodes: PlanNodes = [{ key: "start", definitionId: "builtin.control.start", definitionVersion: "1.0.0" }];
+      const edges: PlanEdges = [];
+      let previous = "start";
+      for (const key of ["banner", "notice", "consent"]) {
+        nodes.push({ key, definitionId: `custom.${key}`, definitionVersion: "1.0.0", consequences: [] }, { key: `${key}_join`, definitionId: "builtin.control.merge", definitionVersion: "1.0.0", parameters: { mergeMode: "first" } });
+        edges.push(link(`${previous}_${key}`, previous, "success", key), link(`${key}_failed`, key, "failed", `${key}_join`, "branches"), link(`${key}_success`, key, "success", `${key}_join`, "branches"));
+        previous = `${key}_join`;
+      }
+      edges.push(link(`${previous}_${tail.first}`, previous, "success", tail.first));
+      plan.subflows[0]!.nodes = [...nodes, ...tail.nodes]; plan.subflows[0]!.edges = [...edges, ...tail.edges];
+      input.candidate.buildPlan = validateAutomationStudioFlowBootstrapPlan({ plan, resolution: input.resolution, registry: input.registry }).validated!;
+      expect(input.candidate.buildPlan).toBeDefined();
+      input.options!.delay = async () => undefined;
+      input.options!.nativeNodeExecutor = async ({ node }) => {
+        dispatched.push(node.definitionId);
+        const failure = FAILURES[node.definitionId];
+        return failure
+          ? { result: { status: "failed", route: "failed", outputs: {}, message: `${node.definitionId} could not be done`, failure: { ...failure } } }
+          : { result: { status: "success", route: "success", outputs: {} } };
+      };
+      return input;
+    }
+    const node = (key: string, definitionId = `custom.${key}`): PlanNodes[number] => ({ key, definitionId, definitionVersion: "1.0.0", consequences: [] });
+
+    it("goes on past all three, absent, timed out and not actionable, to the end", async () => {
+      const dispatched: string[] = [];
+      const result = await runAutomationStudioDetachedCandidate(trialOf({ first: "read", nodes: [node("read")], edges: [] }, dispatched));
+      expect(result.receipt.status).toBe("succeeded");
+      expect(result.trace?.attempts.at(-1)?.definitionId).toBe("custom.read");
+      expect(dispatched.filter((id) => id === "custom.notice")).toHaveLength(4);
+    });
+
+    it("takes a written failed branch once after them, and stops the trial at the next real failure", async () => {
+      // again -> pay; pay fails into fix, which leads back through again to pay.
+      const dispatched: string[] = [];
+      const result = await runAutomationStudioDetachedCandidate(trialOf({
+        first: "again",
+        nodes: [{ key: "again", definitionId: "builtin.control.merge", definitionVersion: "1.0.0", parameters: { mergeMode: "first" } }, node("pay"), node("fix"), node("read")],
+        edges: [link("again_pay", "again", "success", "pay"), link("pay_read", "pay", "success", "read"), link("pay_failed", "pay", "failed", "fix"), link("fix_again", "fix", "success", "again", "branches")]
+      }, dispatched));
+      expect(dispatched.filter((id) => id === "custom.fix")).toHaveLength(1);
+      expect(dispatched.filter((id) => id === "custom.pay")).toHaveLength(2);
+      expect(result.receipt.status).toBe("failed");
+      expect(result.code).toBe("candidate.execution_incomplete");
+    });
+  });
+
   it("preserves completed execution facts when the subsequent owner read fails", async () => {
     const { input } = fixture(); let reads = 0;
     input.currentIdentity = async () => { if (++reads === 3) throw new Error("synthetic owner unavailable"); return input.identity; };

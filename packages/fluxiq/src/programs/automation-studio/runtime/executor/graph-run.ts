@@ -19,7 +19,7 @@ import { executeAutomationStudioNode } from "./node-execution.ts";
 import { automationStudioIsPersonNeededAsk, automationStudioPersonNeededEnding, automationStudioPersonNeededStep } from "./person-needed.ts";
 import { automationStudioRecordedState } from "./recorded-state.ts";
 import { recoveryBudgetState } from "./recovery-budget.ts";
-import { failureMessageForRecoveryStop } from "./recovery-ladder.ts";
+import { automationStudioRecoveryPathEdge, failureMessageForRecoveryStop } from "./recovery-ladder.ts";
 import { automationStudioAttemptIsRetryable, automationStudioNodeRetryPolicy } from "./retry-policy.ts";
 import type { AutomationStudioCapturedRecords } from "./record-summary.ts";
 import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransition } from "./region-execution.ts";
@@ -601,7 +601,7 @@ async function executeAutomationStudioGraph(
           attempt: attempts[attemptIndex]!,
           failedEdge,
           options,
-          budgetState: recoveryBudgetState(attempts, attemptIndex, failedNode.id, options.currentSubflowId),
+          budgetState: recoveryBudgetState(attempts, attemptIndex, failedNode.id, options.currentSubflowId, flow),
           policy: retryPolicy,
           attemptsForNode: arrival.attempts,
           consumed: arrival.consumed,
@@ -650,7 +650,7 @@ async function executeAutomationStudioGraph(
           recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "continued", 0);
           routeOverride = "success";
         } else {
-          const executableFailedEdge = recoveryDecision.selected?.kind === "deterministic_path" && recoveryDecision.selected.edgeId === failedEdge?.id ? failedEdge : null;
+          const executableFailedEdge = automationStudioRecoveryPathEdge(flow, failedNode, recoveryDecision, failedEdge);
           if (!executableFailedEdge) {
             // The ladder is spent and the Flow has no failed route of its own.
             // Before this, that ended the run -- every time, for every node,

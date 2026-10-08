@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 3366
+- Public declarations: 3367
 - Class: 106
 - Interface: 2
 - Object: 430
 - Type: 1834
 - Type Alias: 1
-- Value: 993
+- Value: 994
 
 ## Public Declarations
 
@@ -1769,6 +1769,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioObjectSummary` | Type | `packages/fluxiq/src/programs/automation-studio/storage/file-store.ts` | - |
 | `AutomationStudioObjectWriteOptions` | Type | `packages/fluxiq/src/programs/automation-studio/storage/object-store.ts` | - |
 | `AutomationStudioObservation` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/adapters.ts` | - |
+| `automationStudioOptionalStepWayOn` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/step-skip/optional-step.ts` | - |
 | `AutomationStudioPackReusableLlmContextsRequest` | Type | `packages/fluxiq/src/programs/automation-studio/api/contracts/llm.ts` | - |
 | `AutomationStudioPageCursor` | Type | `packages/fluxiq/src/programs/automation-studio/storage/paging.ts` | - |
 | `automationStudioPageLimit` | Value | `packages/fluxiq/src/programs/automation-studio/storage/paging.ts` | - |

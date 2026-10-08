@@ -3,7 +3,7 @@ export * from "./contracts.ts";
 // a host, a domain and a test all need to read the same numbers the runtime
 // enforces rather than restate them.
 export * from "./defensive/index.ts";
-export { automationStudioAbsentStepSkip } from "./step-skip/index.ts";
+export { automationStudioAbsentStepSkip, automationStudioOptionalStepWayOn } from "./step-skip/index.ts";
 export { AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT, automationStudioCouldNotRun, decideAutomationStudioStateRoute, type AutomationStudioStateRouteDecision } from "./state-routing/index.ts";
 export { runAutomationStudioGraph, resumeAutomationStudioGraphRun, type AutomationStudioGraphRunSeed } from "./graph-run.ts";
 export { resumeAutomationStudioGraph, type AutomationStudioResumeOutcome, type AutomationStudioRunResumption } from "./resume.ts";

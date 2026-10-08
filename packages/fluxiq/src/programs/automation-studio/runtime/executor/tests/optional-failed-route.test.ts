@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDocument } from "../../../model/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioNodeAttemptTrace } from "../index.ts";
 import { recoveryBudgetState } from "../recovery-budget.ts";
 
@@ -140,11 +140,14 @@ describe("a failure the skip does not cover keeps the recovery ladder", () => {
     expect(checks.every((attempt) => attempt.skipped === undefined && attempt.status === "failed")).toBe(true);
   });
 
-  it("gives an optional press that failed some other way no failed route when the subflow budget is zero", async () => {
-    const trace = await run({ effectDispatcher: checkFails("action_failed"), recoveryBudget: { ...DEFAULT_RECOVERY_BUDGET, maxRecoveryAttemptsPerSubflow: 0 } });
+  // t371: an optional step's way on is no recovery, so a budget of zero no
+  // longer withholds it. Until then this press stopped the run.
+  it("still takes an optional press's way on when it failed some other way and the subflow budget is zero", async () => {
+    const trace = await run({ effectDispatcher: checkFails("action_failed"), recoveryBudget: { ...DEFAULT_RECOVERY_BUDGET, maxRecoveryAttemptsPerSubflow: 0, maxReroutesPerRun: 0 } });
 
-    expect(trace.status).toBe("failed");
-    expect(trace.attempts.at(-1)?.recoveryDecision?.candidates.map((candidate) => candidate.kind)).not.toContain("deterministic_path");
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.at(-1)?.nodeId).toBe("read");
+    expect(trace.attempts.filter((attempt) => attempt.nodeId === "check").at(-1)?.recoveryDecision?.selected).toMatchObject({ kind: "deterministic_path", edgeId: "check.failed" });
   });
 });
 
@@ -171,7 +174,7 @@ describe("what the recovery budgets count", () => {
       attempt("check", undefined, 5)
     ];
 
-    expect(recoveryBudgetState(attempts, 4, "check", undefined)).toEqual({ failedAttemptsForAction: 4, recoveryAttemptsForSubflow: 0, reroutesForRun: 0, llmAttemptsForRun: 0 });
+    expect(recoveryBudgetState(attempts, 4, "check", undefined, optionalPressFlow)).toEqual({ failedAttemptsForAction: 4, recoveryAttemptsForSubflow: 0, reroutesForRun: 0, llmAttemptsForRun: 0 });
   });
 
   it("counts a followed failed route, a reroute and the model's rung", () => {
@@ -182,7 +185,19 @@ describe("what the recovery budgets count", () => {
       attempt("d", undefined, 4)
     ];
 
-    expect(recoveryBudgetState(attempts, 3, "d", undefined)).toMatchObject({ recoveryAttemptsForSubflow: 3, reroutesForRun: 2, llmAttemptsForRun: 1 });
+    expect(recoveryBudgetState(attempts, 3, "d", undefined, optionalPressFlow)).toMatchObject({ recoveryAttemptsForSubflow: 3, reroutesForRun: 2, llmAttemptsForRun: 1 });
+  });
+
+  // t371: going on past an optional step is the Flow's own path, so it is not
+  // counted; any other followed route of the same node still is.
+  it("does not count going on past an optional step, and still counts another route from it", () => {
+    const along = (index: number, edgeId: string): AutomationStudioNodeAttemptTrace => {
+      const base = attempt("check", "deterministic_path", index);
+      return { ...base, recoveryDecision: { ...base.recoveryDecision!, selected: { ...base.recoveryDecision!.selected!, edgeId } } };
+    };
+    const attempts = [along(1, "check.failed"), along(2, "check.failed"), along(3, "check.elsewhere"), attempt("read", undefined, 4)];
+
+    expect(recoveryBudgetState(attempts, 3, "read", undefined, optionalPressFlow)).toMatchObject({ recoveryAttemptsForSubflow: 1, reroutesForRun: 1 });
   });
 });
 
@@ -204,5 +219,152 @@ describe("attempt numbering in a run that continues under the same id", () => {
 
     expect(trace.attempts.slice(0, 4).map((entry) => entry.attemptId)).toEqual(["search.attempt.7", "check.attempt.8", "check.attempt.9", "check.attempt.10"]);
     expect(trace.attempts[2]?.retry?.previousAttemptId).toBe("check.attempt.8");
+  });
+});
+
+// t371: a saved Flow's playback goes on past every optional step that cannot
+// be done, whatever stopped it, without spending the recovery or reroute budget
+// that real failures need (t368's report, "Playback parity"). Until then only an
+// absent target was exempt, and a timed-out or not-actionable optional step took
+// its way on as a recovery: under the default subflow budget of two, the third
+// such step stopped a playback whose trial had passed.
+
+type Dispatcher = NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>;
+
+/** How each step that cannot be done fails, as the web domain reports it (`domain/src/runtime/failure/codes.ts`). */
+const ABSENT = { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" } as const;
+const TIMEOUT = { category: "timeout", code: "web.action.timeout", retryable: true, stage: "execution" } as const;
+const NOT_ACTIONABLE = { category: "unexpected_state", code: "web.target.not_actionable", retryable: false, stage: "execution" } as const;
+type Failure = typeof ABSENT | typeof TIMEOUT | typeof NOT_ACTIONABLE;
+
+const press = (id: string, elementId: string, extra: Partial<AutomationStudioFlowNode> = {}): AutomationStudioFlowNode => ({
+  id,
+  definitionId: "builtin.policy.action",
+  ...extra,
+  parameterValues: { outputId: "activate-element", parameters: { elementId } }
+});
+const merge = (id: string): AutomationStudioFlowNode => ({ id, definitionId: "builtin.control.merge", parameterValues: { mergeMode: "first" } });
+const edge = (sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId = "in") => ({ id: `${sourceNodeId}.${sourcePortId}`, sourceNodeId, sourcePortId, targetNodeId, targetPortId });
+
+function flowOf(nodes: AutomationStudioFlowNode[], edges: AutomationStudioFlowDocument["edges"]): AutomationStudioFlowDocument {
+  return { schemaVersion: "0.1", flowId: "flow.optional-playback", ownerKind: "routine", ownerId: "routine.test", name: "Optional playback", createdAt: 1, updatedAt: 1, nodes, edges };
+}
+
+/**
+ * search, then three optional steps -- a banner whose button is absent, a
+ * notice wait that times out, a consent button that is covered -- each in the
+ * optional shape the assembler writes (`failed` and `success` into one Merge),
+ * then `tail`'s nodes and edges after the last Merge.
+ */
+function threeOptionalSteps(tail: { nodes: AutomationStudioFlowNode[]; edges: AutomationStudioFlowDocument["edges"]; first: string }): AutomationStudioFlowDocument {
+  const nodes: AutomationStudioFlowNode[] = [press("search", "search")];
+  const edges: AutomationStudioFlowDocument["edges"] = [];
+  let previous = "search";
+  for (const [id, elementId] of [["banner", "banner-absent"], ["notice", "notice-timeout"], ["consent", "consent-covered"]] as const) {
+    nodes.push(press(id, elementId), merge(`${id}-join`));
+    edges.push(edge(previous, "success", id), edge(id, "failed", `${id}-join`), edge(id, "success", `${id}-join`, "branches"));
+    previous = `${id}-join`;
+  }
+  edges.push(edge(previous, "success", tail.first));
+  return flowOf([...nodes, ...tail.nodes], [...edges, ...tail.edges]);
+}
+
+/** Fails each dispatch whose payload names a key of `failures` that way; every other dispatch succeeds. */
+function dispatcher(failures: Record<string, Failure>, calls: string[] = []): Dispatcher {
+  return (effect) => {
+    const payload = JSON.stringify(effect.payload ?? null);
+    const key = Object.keys(failures).find((candidate) => payload.includes(candidate));
+    calls.push(key ?? "other");
+    return key
+      ? { status: "failed", route: "failed", message: `${key} could not be done.`, failure: { ...failures[key]! } }
+      : { status: "success", route: "success", outputs: { ok: true } };
+  };
+}
+
+const OPTIONAL_FAILURES = { "banner-absent": ABSENT, "notice-timeout": TIMEOUT, "consent-covered": NOT_ACTIONABLE };
+
+function last(attempts: AutomationStudioNodeAttemptTrace[], nodeId: string): AutomationStudioNodeAttemptTrace | undefined {
+  return attempts.filter((attempt) => attempt.nodeId === nodeId).at(-1);
+}
+
+describe("a playback with three optional steps that each cannot be done", () => {
+  const readTail = { nodes: [press("read", "results")], edges: [], first: "read" };
+
+  it.each([
+    ["the default budget", DEFAULT_RECOVERY_BUDGET],
+    ["a budget of zero", { maxRetriesPerAction: 2, maxRecoveryAttemptsPerSubflow: 0, maxReroutesPerRun: 0 }]
+  ] as const)("goes on past every one, absent, timed out and not actionable, to the end, under %s", async (_case, recoveryBudget) => {
+    const trace = await runAutomationStudioGraph(threeOptionalSteps(readTail), { effectDispatcher: dispatcher(OPTIONAL_FAILURES), recoveryBudget, delay: async () => undefined });
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.at(-1)?.nodeId).toBe("read");
+    // The absent banner is skipped on sight; the other two take their way on after the ladder.
+    expect(last(trace.attempts, "banner")).toMatchObject({ skipped: { reason: "target_absent" } });
+    for (const id of ["notice", "consent"]) {
+      expect(last(trace.attempts, id)?.recoveryDecision?.selected).toMatchObject({ kind: "deterministic_path", edgeId: `${id}.failed`, targetNodeId: `${id}-join` });
+    }
+  });
+
+  it("keeps each step's own retries: the timed-out wait is tried again, the covered button is not", async () => {
+    const calls: string[] = [];
+    await runAutomationStudioGraph(threeOptionalSteps(readTail), { effectDispatcher: dispatcher(OPTIONAL_FAILURES, calls), recoveryBudget: DEFAULT_RECOVERY_BUDGET, delay: async () => undefined });
+
+    expect(calls.filter((call) => call === "banner-absent")).toHaveLength(1);
+    expect(calls.filter((call) => call === "notice-timeout")).toHaveLength(4);
+    expect(calls.filter((call) => call === "consent-covered")).toHaveLength(1);
+  });
+});
+
+describe("a real failure after the optional steps", () => {
+  // pay fails and has a written failed branch into fix; then pay-again fails
+  // with one of its own. Neither is optional: their failed routes do not
+  // join their success routes at a Merge.
+  const realTail = {
+    first: "pay",
+    nodes: [press("pay", "pay-covered"), press("fix", "fix"), press("pay-again", "pay-again-covered"), press("fix-again", "fix-again"), press("read", "results")],
+    edges: [
+      edge("pay", "success", "pay-again"), edge("pay", "failed", "fix"), edge("fix", "success", "pay-again"),
+      edge("pay-again", "success", "read"), edge("pay-again", "failed", "fix-again"), edge("fix-again", "success", "read")
+    ]
+  };
+  const failures = { ...OPTIONAL_FAILURES, "pay-covered": NOT_ACTIONABLE, "pay-again-covered": NOT_ACTIONABLE };
+
+  it("still has the whole budget: its written failed route is taken after three optional steps under the default budget", async () => {
+    const trace = await runAutomationStudioGraph(threeOptionalSteps(realTail), { effectDispatcher: dispatcher(failures), recoveryBudget: DEFAULT_RECOVERY_BUDGET, delay: async () => undefined });
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.map((attempt) => attempt.nodeId).slice(-5)).toEqual(["pay", "fix", "pay-again", "fix-again", "read"]);
+    expect(last(trace.attempts, "pay")?.recoveryDecision?.metadata?.budgetState).toMatchObject({ recoveryAttemptsForSubflow: 0, reroutesForRun: 0 });
+  });
+
+  it("spends the bounded budget and stops once it is gone", async () => {
+    const recoveryBudget = { maxRetriesPerAction: 2, maxRecoveryAttemptsPerSubflow: 1, maxReroutesPerRun: 1 };
+    const trace = await runAutomationStudioGraph(threeOptionalSteps(realTail), { effectDispatcher: dispatcher(failures), recoveryBudget, delay: async () => undefined });
+
+    expect(trace.status).toBe("failed");
+    expect(trace.currentNodeId).toBe("pay-again");
+    expect(last(trace.attempts, "pay")?.recoveryDecision?.selected).toMatchObject({ kind: "deterministic_path", edgeId: "pay.failed" });
+    const stopped = last(trace.attempts, "pay-again")?.recoveryDecision;
+    expect(stopped?.metadata?.budgetExhausted).toBeDefined();
+    expect(stopped?.candidates.map((candidate) => candidate.kind)).not.toContain("deterministic_path");
+    expect(trace.attempts.some((attempt) => attempt.nodeId === "fix-again")).toBe(false);
+  });
+});
+
+describe("a sometimes-present step without the optional shape", () => {
+  it("goes on along its success route when it times out, even under a budget of zero", async () => {
+    const flow = flowOf(
+      [press("search", "search"), press("popup", "popup-timeout", { metadata: { sometimesPresent: true } }), press("read", "results")],
+      [edge("search", "success", "popup"), edge("popup", "success", "read")]
+    );
+    const trace = await runAutomationStudioGraph(flow, {
+      effectDispatcher: dispatcher({ "popup-timeout": TIMEOUT }),
+      recoveryBudget: { maxRetriesPerAction: 2, maxRecoveryAttemptsPerSubflow: 0, maxReroutesPerRun: 0 },
+      delay: async () => undefined
+    });
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.at(-1)?.nodeId).toBe("read");
+    expect(last(trace.attempts, "popup")?.recoveryDecision?.selected).toMatchObject({ kind: "deterministic_path", edgeId: "popup.success", targetNodeId: "read" });
   });
 });
