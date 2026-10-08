@@ -3,7 +3,7 @@ import { hostExpectationEvaluator } from "../host-runtime.ts";
 import { AUTOMATION_STUDIO_LADDER_RUNG_KINDS, type AutomationStudioGraphExecutionOptions, type AutomationStudioLadderRungKind, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryDecision } from "./contracts.ts";
 import { automationStudioExpectationRequest, automationStudioNodeReadinessState, automationStudioReadinessCeilingMs, automationStudioRecordedState } from "./recorded-state.ts";
 import { chooseAutomationStudioRecovery, type AutomationStudioLadderState } from "./recovery-ladder.ts";
-import { automationStudioNodeMutates, automationStudioNodeRepeatIsSafe } from "./defensive/index.ts";
+import { automationStudioAssessAttemptFault, automationStudioNodeMutates, automationStudioNodeRepeatIsSafe } from "./defensive/index.ts";
 import { automationStudioAttemptIsRetryable, automationStudioRetryBackoffMs, type AutomationStudioNodeRetryPolicy } from "./retry-policy.ts";
 import { automationStudioExpectationSatisfiedAfterFailure } from "./transition-comparison.ts";
 
@@ -116,7 +116,9 @@ function ladderState(input: AutomationStudioLadderRunInput, attemptsForNode: num
     maxAttempts: input.policy.maxAttempts,
     // The node is passed so the policy can refuse to repeat an act on the world.
     retryable: input.mayAbsorb !== false && automationStudioAttemptIsRetryable(input.attempt, input.node),
-    mayRepeat: input.mayAbsorb !== false && (!automationStudioNodeMutates(input.node) || automationStudioNodeRepeatIsSafe(input.node)),
+    // Nor after a wait or a cleared layer is a lasting act made again when this
+    // failure left its outcome unknown: that is still the act repeated (t359).
+    mayRepeat: input.mayAbsorb !== false && (!automationStudioNodeMutates(input.node) || automationStudioNodeRepeatIsSafe(input.node)) && automationStudioAssessAttemptFault(input.attempt, input.node)?.actUncertain !== true,
     expectationSatisfied: automationStudioExpectationSatisfiedAfterFailure(input.attempt.transitionComparison),
     // Waiting again is only worth offering when the run did not already see the
     // state before it attempted: if readiness held and the node still failed,
