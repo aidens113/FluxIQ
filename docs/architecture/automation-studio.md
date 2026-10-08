@@ -707,12 +707,19 @@ honours bounded retry hints; and records every absorbed or refused assessment in
 the run's defence ledger. Waits are capped per attempt, per arrival at a node,
 and per run.
 
-A node that fails may still be attempted again without anyone opting in: three
-attempts at 250 ms, 1 s and 2 s
-(`AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY`), overridable by a node's
-`parameterValues.retry` or `metadata.retry`, by a `builtin.timing.retry` node
-guarding the branch, by a Flow's `metadata.retry`, or by the run's own
-`retryPolicy`, and capped by `maxRetriesPerAction`. Retryability and failure
+A node that fails may still be attempted again without anyone opting in: the
+first attempt and three retries, at 250 ms, 1 s and 2 s
+(`AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY`; the user's rule of
+2026-10-07, t355). That default is a floor, on every path: a saved Flow's
+playback, a build's candidate trial (which ran each step once before t355),
+and a node a domain runs outside a graph run while a build explores or tests
+its draft, which goes through `automationStudioDispatchWithNodeRetries`
+(`runtime/executor/outside-graph/`) under the same policy and the same
+act-twice gates. A node's `parameterValues.retry` or `metadata.retry`, a
+`builtin.timing.retry` node guarding the branch, a Flow's `metadata.retry`,
+or the run's own `retryPolicy` may raise it, and `maxRetriesPerAction` caps
+what they ask for only above it; nothing lowers a node below four attempts.
+New Flow settings default `maxRetriesPerAction` to 3. Retryability and failure
 stage are evidence, not sufficient authority to repeat an action.
 `verification` and `confirmation` no longer prohibit retry by stage alone:
 Core asks whether the node could act twice. Read-only or positively non-acting

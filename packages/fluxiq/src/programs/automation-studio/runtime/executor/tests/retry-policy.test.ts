@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
+import { defaultAutomationStudioFlowSettingsMetadata, type AutomationStudioFlowDocument, type AutomationStudioFlowNode } from "../../../model/index.ts";
 import {
   AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY,
   AUTOMATION_STUDIO_READINESS_CAP_MS,
@@ -24,26 +24,42 @@ function attemptWith(failure: AutomationStudioNodeAttemptTrace["failure"]): Auto
 }
 
 describe("the retry policy a node runs under", () => {
-  it("is three attempts at 250 ms, 1 s and 2 s by default, because retries are not opt-in", () => {
+  it("is the first attempt and three retries, at 250 ms, 1 s and 2 s, by default, because retries are not opt-in (user rule, 2026-10-07)", () => {
     expect(automationStudioNodeRetryPolicy(flowOf([node]), node, {})).toEqual(AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY);
-    expect(AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY.maxAttempts).toBe(3);
+    expect(AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY.maxAttempts).toBe(4);
     expect([...AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY.backoffMs]).toEqual([250, 1_000, 2_000]);
   });
 
-  it("takes the node's own declaration over the Flow's, and the Flow's over the run's", () => {
-    const declared: AutomationStudioFlowNode = { ...node, parameterValues: { retry: { maxAttempts: 5, backoffMs: [10, 20] } } };
-    const flow = flowOf([declared], [], { retry: { maxAttempts: 2, backoffMs: 99 } });
-
-    expect(automationStudioNodeRetryPolicy(flow, declared, { retryPolicy: { maxAttempts: 4, backoffMs: [1] } })).toEqual({ maxAttempts: 5, backoffMs: [10, 20] });
-    expect(automationStudioNodeRetryPolicy(flow, node, { retryPolicy: { maxAttempts: 4, backoffMs: [1] } })).toEqual({ maxAttempts: 2, backoffMs: [99] });
-    expect(automationStudioNodeRetryPolicy(flowOf([node]), node, { retryPolicy: { maxAttempts: 4, backoffMs: [1] } })).toEqual({ maxAttempts: 4, backoffMs: [1] });
+  it("is what a new Flow's settings default to, so the two numbers cannot drift apart", () => {
+    const training = defaultAutomationStudioFlowSettingsMetadata().trainingModeSettings as { recoveryBudget: { maxRetriesPerAction: number } };
+    expect(training.recoveryBudget.maxRetriesPerAction).toBe(AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY.maxAttempts - 1);
   });
 
-  it("is capped by maxRetriesPerAction, which is now the allowance its name claims", () => {
-    expect(automationStudioNodeRetryPolicy(flowOf([node]), node, { recoveryBudget: { maxRetriesPerAction: 1 } }).maxAttempts).toBe(2);
-    expect(automationStudioNodeRetryPolicy(flowOf([node]), node, { recoveryBudget: { maxRetriesPerAction: 0 } }).maxAttempts).toBe(1);
+  it("takes the node's own declaration over the Flow's, and the Flow's over the run's, above the default", () => {
+    const declared: AutomationStudioFlowNode = { ...node, parameterValues: { retry: { maxAttempts: 6, backoffMs: [10, 20] } } };
+    const flow = flowOf([declared], [], { retry: { maxAttempts: 5, backoffMs: 99 } });
+
+    expect(automationStudioNodeRetryPolicy(flow, declared, { retryPolicy: { maxAttempts: 7, backoffMs: [1] } })).toEqual({ maxAttempts: 6, backoffMs: [10, 20] });
+    expect(automationStudioNodeRetryPolicy(flow, node, { retryPolicy: { maxAttempts: 7, backoffMs: [1] } })).toEqual({ maxAttempts: 5, backoffMs: [99, 99, 99, 99] });
+    expect(automationStudioNodeRetryPolicy(flowOf([node]), node, { retryPolicy: { maxAttempts: 7, backoffMs: [1] } })).toEqual({ maxAttempts: 7, backoffMs: [1] });
+  });
+
+  it("never runs a node below the default: a declaration, a run's policy or an allowance asking for fewer gets the default's attempts", () => {
+    const fewer: AutomationStudioFlowNode = { ...node, parameterValues: { retry: { maxAttempts: 1, backoffMs: [10] } } };
+    expect(automationStudioNodeRetryPolicy(flowOf([fewer]), fewer, {})).toEqual({ maxAttempts: 4, backoffMs: [10] });
+    expect(automationStudioNodeRetryPolicy(flowOf([node]), node, { retryPolicy: { maxAttempts: 1, backoffMs: [] } }).maxAttempts).toBe(4);
+    // A candidate trial passed both of these until t355, and ran every step once.
+    expect(automationStudioNodeRetryPolicy(flowOf([node]), node, { retryPolicy: { maxAttempts: 1, backoffMs: [] }, recoveryBudget: { maxRetriesPerAction: 0 } }).maxAttempts).toBe(4);
+    // Settings stored at the old default of two retries.
+    expect(automationStudioNodeRetryPolicy(flowOf([node]), node, { recoveryBudget: { maxRetriesPerAction: 2 } }).maxAttempts).toBe(4);
+  });
+
+  it("is capped by maxRetriesPerAction above the default, which is the allowance its name claims", () => {
+    const many: AutomationStudioFlowNode = { ...node, parameterValues: { retry: { maxAttempts: 9, backoffMs: [10] } } };
+    expect(automationStudioNodeRetryPolicy(flowOf([many]), many, { recoveryBudget: { maxRetriesPerAction: 5 } }).maxAttempts).toBe(6);
+    expect(automationStudioNodeRetryPolicy(flowOf([many]), many, { recoveryBudget: { maxRetriesPerAction: 1 } }).maxAttempts).toBe(4);
     // A cap above what the policy asks for changes nothing.
-    expect(automationStudioNodeRetryPolicy(flowOf([node]), node, { recoveryBudget: { maxRetriesPerAction: 9 } }).maxAttempts).toBe(3);
+    expect(automationStudioNodeRetryPolicy(flowOf([node]), node, { recoveryBudget: { maxRetriesPerAction: 9 } }).maxAttempts).toBe(4);
   });
 
   it("reads a Retry node's parameters for the branch its success port feeds, which retried nothing before", () => {

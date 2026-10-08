@@ -17,8 +17,11 @@ export type TimeoutPolicy = {
  * `automationStudioNodeRetryPolicy` (`runtime/executor/retry-policy.ts`), which
  * accepts this exact shape from a node's `parameterValues.retry`, a node's
  * `metadata.retry`, or a Flow's `metadata.retry`. `maxAttempts` counts the
- * first attempt, so 3 means one attempt and two retries, and `backoffMs` is the
- * wait before each retry.
+ * first attempt, so 6 means one attempt and five retries, and `backoffMs` is the
+ * wait before each retry. A declaration can only raise the attempts: the
+ * runtime's default of the first attempt and three retries
+ * (`AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY`, t355) is a floor, so asking
+ * for fewer than four still gets four.
  */
 export type RetryPolicy = {
   maxAttempts: number;

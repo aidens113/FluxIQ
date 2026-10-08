@@ -41,17 +41,18 @@ function failingDispatcher(failure: AutomationNodeExecutionResult["failure"], su
 }
 
 describe("a node that fails is attempted again", () => {
-  it("attempts three times by default, waiting 250 ms then 1 s, with no one opting in", async () => {
+  it("attempts four times by default -- the first attempt and three retries -- waiting 250 ms, 1 s then 2 s, with no one opting in (t355)", async () => {
     const dispatches: string[] = [];
     const waits: number[] = [];
     const trace = await runWith(flowOf([actionNode("act")]), { effectDispatcher: failingDispatcher(TIMEOUT_FAILURE, Number.POSITIVE_INFINITY, dispatches) }, waits);
 
-    expect(dispatches).toEqual(["output.act", "output.act", "output.act"]);
-    expect(waits).toEqual([250, 1_000]);
-    expect(trace.attempts).toHaveLength(3);
+    expect(dispatches).toEqual(["output.act", "output.act", "output.act", "output.act"]);
+    expect(waits).toEqual([250, 1_000, 2_000]);
+    expect(trace.attempts).toHaveLength(4);
     expect(trace.attempts[0]).not.toHaveProperty("retry");
-    expect(trace.attempts[1]?.retry).toMatchObject({ attemptNumber: 2, maxAttempts: 3, backoffMs: 250, rung: "retry_node", previousAttemptId: "act.attempt.1" });
+    expect(trace.attempts[1]?.retry).toMatchObject({ attemptNumber: 2, maxAttempts: 4, backoffMs: 250, rung: "retry_node", previousAttemptId: "act.attempt.1" });
     expect(trace.attempts[2]?.retry).toMatchObject({ attemptNumber: 3, backoffMs: 1_000, previousAttemptId: "act.attempt.2" });
+    expect(trace.attempts[3]?.retry).toMatchObject({ attemptNumber: 4, backoffMs: 2_000, previousAttemptId: "act.attempt.3" });
     expect(trace.status).toBe("failed");
   });
 
@@ -74,14 +75,22 @@ describe("a node that fails is attempted again", () => {
     expect(trace.attempts).toHaveLength(1);
   });
 
-  it("spends the allowance a node declares for itself", async () => {
+  it("spends the allowance a node declares for itself above the default", async () => {
     const dispatches: string[] = [];
     const waits: number[] = [];
-    const flow = flowOf([actionNode("act", { retry: { maxAttempts: 2, backoffMs: 7 } })]);
+    const flow = flowOf([actionNode("act", { retry: { maxAttempts: 5, backoffMs: 7 } })]);
     await runWith(flow, { effectDispatcher: failingDispatcher(TIMEOUT_FAILURE, Number.POSITIVE_INFINITY, dispatches) }, waits);
 
-    expect(dispatches).toHaveLength(2);
-    expect(waits).toEqual([7]);
+    expect(dispatches).toHaveLength(5);
+    expect(waits).toEqual([7, 7, 7, 7]);
+  });
+
+  it("never spends fewer than the default, whatever a node declares (t355)", async () => {
+    const dispatches: string[] = [];
+    const flow = flowOf([actionNode("act", { retry: { maxAttempts: 2, backoffMs: 7 } })]);
+    await runWith(flow, { effectDispatcher: failingDispatcher(TIMEOUT_FAILURE, Number.POSITIVE_INFINITY, dispatches) }, []);
+
+    expect(dispatches).toHaveLength(4);
   });
 });
 
@@ -101,11 +110,11 @@ describe("the ladder consumes each rung it runs", () => {
   it("offers the retry rung while attempts are left, and the failed route once they are not", async () => {
     const flow = flowOf([actionNode("act"), actionNode("handler")], [{ id: "e", sourceNodeId: "act", targetNodeId: "handler", sourcePortId: "failed" }]);
     const dispatches: string[] = [];
-    const trace = await runWith(flow, { allowLlmDiagnosis: false, effectDispatcher: failingDispatcher(TIMEOUT_FAILURE, 4, dispatches) }, []);
+    const trace = await runWith(flow, { allowLlmDiagnosis: false, effectDispatcher: failingDispatcher(TIMEOUT_FAILURE, 5, dispatches) }, []);
 
     expect(trace.attempts[0]?.recoveryDecision?.selected?.kind).toBe("retry_node");
-    expect(trace.attempts[2]?.recoveryDecision?.selected?.kind).toBe("deterministic_path");
-    expect(dispatches).toEqual(["output.act", "output.act", "output.act", "output.handler"]);
+    expect(trace.attempts[3]?.recoveryDecision?.selected?.kind).toBe("deterministic_path");
+    expect(dispatches).toEqual(["output.act", "output.act", "output.act", "output.act", "output.handler"]);
     expect(trace.status).toBe("succeeded");
   });
 });
