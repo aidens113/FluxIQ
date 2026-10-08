@@ -7,8 +7,8 @@ import { AUTOMATION_STUDIO_MAX_RETRY_WAIT_MS, automationStudioAttemptFaultIsAbso
  * How many times one node may be attempted, and how long the run waits between
  * those attempts.
  *
- * `maxAttempts` counts the first attempt, so the default of three means one
- * attempt and two retries. `backoffMs` is read by attempt number: the wait
+ * `maxAttempts` counts the first attempt, so the default of four means one
+ * attempt and three retries. `backoffMs` is read by attempt number: the wait
  * before attempt two is `backoffMs[0]`, before attempt three `backoffMs[1]`,
  * and a policy with fewer entries than attempts repeats its last one.
  */
@@ -18,16 +18,30 @@ export type AutomationStudioNodeRetryPolicy = {
 };
 
 /**
- * Retries are on by default, and this is that default: three attempts at
- * 250 ms, then 1 s, then 2 s.
+ * Retries are on by default, and this is that default: the first attempt and
+ * three retries, at 250 ms, then 1 s, then 2 s.
  *
- * It is a default rather than an opt-in because a runtime that retries only
- * when someone remembered to ask does not survive a site nobody controls. A
- * Flow, a node, or a Retry node guarding a branch may all override it, and the
- * run's `maxRetriesPerAction` budget caps whatever they ask for.
+ * **The user's rule (2026-10-07): three retries is always the default, for
+ * every node, on every path** -- a saved Flow's playback, a build's candidate
+ * trial, the build's own test runs, and every call it makes while exploring.
+ * This constant is the one place that number is written. The graph executor
+ * reads it below; a node run outside a graph run -- a domain running one node
+ * against a live page while a build explores or tests its draft -- goes
+ * through `automationStudioDispatchWithNodeRetries` (`./outside-graph/retries.ts`),
+ * which reads it too; and the Flow settings' `maxRetriesPerAction` default is
+ * derived from it (`model/flows.ts`).
+ *
+ * It is a floor. A Flow, a node, a Retry node or a run may ask for more
+ * attempts, and the run's `maxRetriesPerAction` caps what they ask for, but
+ * nothing lowers a node below this: what ends a node's retries early is the
+ * per-fault assessment refusing to repeat an act whose effect is uncertain
+ * (`defensive/assess.ts`), asked of every fault rather than declared ahead of
+ * time. Settings stored before 2026-10-07 carry `maxRetriesPerAction: 2` from
+ * the old default of three attempts; the floor keeps those Flows from running
+ * one retry short.
  */
 export const AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY: AutomationStudioNodeRetryPolicy = Object.freeze({
-  maxAttempts: 3,
+  maxAttempts: 4,
   backoffMs: Object.freeze([250, 1_000, 2_000])
 });
 
@@ -39,29 +53,32 @@ const MAX_DECLARED_ATTEMPTS = 25;
 
 /**
  * The policy this node runs under: its own declaration first, then a Retry node
- * guarding its branch, then the Flow's, then Core's default, and finally capped
- * by the run's `maxRetriesPerAction` allowance.
+ * guarding its branch, then the Flow's, then the run's, then Core's default;
+ * never fewer attempts than that default, and capped by the run's
+ * `maxRetriesPerAction` allowance only above it.
  *
  * The cap is why `maxRetriesPerAction` is now read here. It was a budget whose
  * only effect was to *remove* the Flow's own authored failed route once a node
  * had already failed in the run -- a cap wearing the name of an allowance. It
  * now means what it says: how many further attempts of the same action a run
- * may make.
+ * may make, above the default every node gets.
  */
 export function automationStudioNodeRetryPolicy(
   flow: AutomationStudioFlowDocument,
   node: AutomationStudioFlowNode,
   options: AutomationStudioGraphExecutionOptions
 ): AutomationStudioNodeRetryPolicy {
-  const declared = declaredRetryPolicy(node.parameterValues?.retry)
+  const asked = declaredRetryPolicy(node.parameterValues?.retry)
     ?? declaredRetryPolicy(node.metadata?.retry)
     ?? branchRetryPolicy(flow, node)
     ?? declaredRetryPolicy(flow.metadata?.retry)
     ?? boundedPolicy(options.retryPolicy)
     ?? AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY;
+  const floor = AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY.maxAttempts;
+  const declared = asked.maxAttempts >= floor ? asked : { maxAttempts: floor, backoffMs: asked.backoffMs };
   const allowance = options.recoveryBudget?.maxRetriesPerAction;
   if (allowance === undefined || !Number.isFinite(allowance)) return declared;
-  const capped = Math.max(1, Math.floor(allowance) + 1);
+  const capped = Math.max(floor, Math.floor(allowance) + 1);
   return capped >= declared.maxAttempts ? declared : { maxAttempts: capped, backoffMs: declared.backoffMs };
 }
 

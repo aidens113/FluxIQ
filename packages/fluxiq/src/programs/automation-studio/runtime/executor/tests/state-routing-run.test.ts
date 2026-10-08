@@ -285,10 +285,10 @@ describe("a step that cannot run continues where the page is", () => {
       ]);
       const trace = await inRun(flow, { hostRuntime: effectHost(page), effectDispatcher: dispatcher(page, calls, (id) => id === "n2") });
 
-      // The ladder's own course, as it ran before effects existed: two retries, then the continuation rule.
-      expect(calls).toEqual(["n1", "n2", "n2", "n2", "n3"]);
+      // The ladder's own course, as it ran before effects existed: the default's three retries (t355), then the continuation rule.
+      expect(calls).toEqual(["n1", "n2", "n2", "n2", "n2", "n3"]);
       const n2 = trace.attempts.filter((attempt) => attempt.nodeId === "n2");
-      expect(n2).toHaveLength(3);
+      expect(n2).toHaveLength(4);
       for (const attempt of n2) {
         expect(attempt).toMatchObject({ status: "failed", route: "failed", stateRouting: { outcome: "no_match", candidates: 2, matched: 0 } });
         expect(attempt.recoveryDecision).toBeDefined();

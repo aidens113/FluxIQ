@@ -150,6 +150,39 @@ describe("detached candidate normal execution", () => {
     expect(result.receipt.commands).toEqual([]);
   });
 
+  // t355, the user's rule of 2026-10-07: a trial keeps every node's default
+  // retries. Until then it ran each step once, and lane A round 4's trial
+  // (`run-muyrpbnk-fef374e7`) died on the page's first-press "Network busy".
+  it.each([
+    ["a busy refusal that clears", { category: "action_failed", code: "web.action.rate_limited", retryable: true, stage: "execution", effect: "unacted" }, 1, 2, "succeeded"],
+    ["a target that appears before the third retry", { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" }, 3, 4, "succeeded"],
+    ["a target that never appears", { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution" }, 99, 4, "failed"],
+    // The producer says repeating it cannot help (the web domain says so of a press whose confirmation was lost): one attempt.
+    ["a failure the producer will not have repeated", { category: "output_not_observed", code: "web.validation.output_not_observed", retryable: false, stage: "verification" }, 99, 1, "failed"]
+  ] as const)("retries %s as playback would, within the default's four attempts", async (_case, failure, failures, dispatches, status) => {
+    const { input, plan } = fixture();
+    const definition: AutomationStudioNodeDefinition = { schemaVersion: "0.1", id: "custom.press", version: "1.0.0", label: "Press", description: "Test press", category: "action",
+      source: { kind: "code", moduleId: "test", implementationKey: "test.press", trust: "trusted-local" }, availability: { kind: "global" }, capabilities: { executable: true },
+      safety: { requiredPermissions: [] }, inputs: [{ id: "in", label: "In", valueType: "any" }], outputs: [{ id: "success", label: "Success", valueType: "any" }], parameters: [], metadata: { effect: "mutate" } };
+    input.registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, definition]);
+    plan.subflows[0]!.nodes[1] = { key: "press", definitionId: definition.id, definitionVersion: definition.version, consequences: [] };
+    plan.subflows[0]!.edges[0]!.target.nodeKey = "press";
+    input.candidate.buildPlan = validateAutomationStudioFlowBootstrapPlan({ plan, resolution: input.resolution, registry: input.registry }).validated!;
+    expect(input.candidate.buildPlan).toBeDefined();
+    let calls = 0;
+    input.options!.delay = async () => undefined;
+    input.options!.nativeNodeExecutor = async () => {
+      calls++;
+      return calls <= failures
+        ? { result: { status: "failed", route: "failed", outputs: {}, message: failure.code, failure: { ...failure } } }
+        : { result: { status: "success", route: "success", outputs: {} } };
+    };
+    const result = await runAutomationStudioDetachedCandidate(input);
+    expect(calls).toBe(dispatches);
+    expect(result.receipt.status).toBe(status);
+    expect(result.trace?.attempts.filter((attempt) => attempt.definitionId === definition.id)).toHaveLength(dispatches);
+  });
+
   it("does not bypass native registry permissions", async () => {
     const { input, plan } = fixture();
     const definition: AutomationStudioNodeDefinition = { schemaVersion: "0.1", id: "custom.privileged", version: "1.0.0", label: "Privileged", description: "Permission probe", category: "action",
