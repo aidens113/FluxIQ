@@ -186,6 +186,7 @@ describe("conversation commands", () => {
     await automationStudioConversationCommandWork.idle();
     const [result] = await turnsOf(conversations, conversationId);
     expect(result?.text).toContain("tried the steps on shop.example and worked out which ones work");
+    expect(result?.text).not.toContain("test-ran the whole Flow");
     expect(result?.text).not.toContain("https://");
   });
 
@@ -437,6 +438,7 @@ describe("conversation commands", () => {
     expect(calls.filter((call) => call.endpoint === "save-flow-generation-instruction")).toHaveLength(1);
     const texts = (await turnsOf(conversations, conversationId)).map((turn) => turn.text);
     expect(texts.some((text) => text.includes("The Flow's steps are in: I tried them on shop.example and kept the ones that worked."))).toBe(true);
+    expect(texts.some((text) => text.includes("checked it with a test run"))).toBe(false);
     expect(texts.some((text) => text.includes("requires a blank top-level orchestration Flow") && text.includes("Nothing was changed."))).toBe(true);
   });
 
@@ -568,14 +570,31 @@ describe("conversation commands", () => {
         { projectId: PROJECT, flowId: "flow.draft", adaptationId: "adaptation.candidate", action: "apply" }
       ]);
       expect(text).toContain(id === "flow.createHere" ? "is ready" : "steps are in");
-      expect(text).toContain("judged, twice, to do what you asked");
+      expect(text).toContain("checked it with a test run from the start");
+      // t370 (lane A round 7 UI): the ready line says what a candidate build did, in one sentence, never the legacy words.
+      expect(text).toContain(id === "flow.createHere"
+        ? "is ready: I explored shop.example, wrote its steps, and checked it with a test run from the start."
+        : "The Flow's steps are in: I explored shop.example, wrote them, and checked it with a test run from the start.");
+      expect(text).not.toContain("put the ones that worked");
+      expect(text).not.toContain("kept the ones that worked");
+      expect(text).not.toContain("Before that, a test run");
+    });
+
+    it.each(["flow.createHere", "flow.explore"])("%s says what a candidate build did when its steps could not be put in", async (id) => {
+      const conversations = openConversations(), conversationId = await chat(conversations);
+      const { port } = fakePort({ ...handlers(CANDIDATE_PROPOSED), "review-flow-adaptation": () => ({ ok: false, error: "The change could not be applied." }) });
+      await executeAutomationStudioConversationCommand({ command: command(id), context: contextFor(conversations, conversationId, port), arguments: { flowId: "flow.draft", instruction: "Find products", name: "Draft" } });
+      await automationStudioConversationCommandWork.idle();
+      const text = (await turnsOf(conversations, conversationId)).map((turn) => turn.text).join(" ");
+      expect(text).toContain("explored shop.example, wrote the Flow's steps and test-ran the whole Flow from its start");
+      expect(text).not.toContain("worked out which ones work");
     });
 
     it("flow.improve asks before applying a tested candidate's proposal", async () => {
       const { calls, turns, text } = await run("flow.improve", CANDIDATE_PROPOSED);
       expect(calls.some((call) => call.endpoint === "review-flow-adaptation")).toBe(false);
       expect(turns.find((turn) => turn.ask)?.ask).toMatchObject({ kind: "confirm", consequences: ["modify_existing"] });
-      expect(text).toContain("judged, twice, to do what you asked");
+      expect(text).toContain("Worked out the change on the website, and checked it with a test run from the start. It is waiting for you to say whether to apply it.");
     });
 
     it.each(["flow.createHere", "flow.explore", "flow.improve"])("%s never applies a proposal that names no candidate trial", async (id) => {

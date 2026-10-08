@@ -350,12 +350,14 @@ describe("the line that names the acts the read gave no answer for", () => {
 
   it("cuts a long quote where a word ends, and leaves a short one whole", () => {
     const said = automationStudioFlowBootstrapUnansweredSaid([LONG, "Collect that store's coupon while you are on the item"]);
-    const quoted = /^Reading your instruction gave no answer for "([^"]+)…", "Collect that store's coupon while you are on the item", so the build's tests check the steps that do them rather than do them again\.$/u.exec(said);
+    const quoted = /^I could not tell from your instruction whether "([^"]+)…", "Collect that store's coupon while you are on the item" change something that stays changed, so when the build tests its steps it checks the steps that do them rather than doing them again\.$/u.exec(said);
     expect(quoted, said).not.toBeNull();
     const kept = quoted![1]!;
     expect(LONG.startsWith(kept)).toBe(true);
     expect(LONG.charAt(kept.length)).toBe(" ");
     expect(kept.length).toBeLessThanOrEqual(120);
-    expect(automationStudioFlowBootstrapUnansweredSaid(["add the towels"])).toBe("Reading your instruction gave no answer for \"add the towels\", so the build's tests check the step that does it rather than do it again.");
+    expect(automationStudioFlowBootstrapUnansweredSaid(["add the towels"])).toBe("I could not tell from your instruction whether \"add the towels\" changes something that stays changed, so when the build tests its steps it checks the step that does it rather than doing it again.");
+    // t370 (lane A rounds 6 and 7 UI): the old words, "Reading your instruction gave no answer for ...", are gone.
+    expect(automationStudioFlowBootstrapUnansweredSaid(["add the towels"])).not.toContain("gave no answer");
   });
 });

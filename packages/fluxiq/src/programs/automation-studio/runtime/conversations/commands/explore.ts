@@ -16,7 +16,7 @@
 
 import { applyAutomationStudioConversationAdaptation } from "./apply.ts";
 import { AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS, automationStudioConversationCommandInstruction, automationStudioConversationCommandText } from "./argument.ts";
-import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
+import { AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED, automationStudioConversationAuthorsCandidates, automationStudioConversationCandidateDraftSaid, buildAutomationStudioFlowFromConversation } from "./build.ts";
 import type { AutomationStudioConversationCommand } from "./command.ts";
 import { automationStudioConversationSiteName } from "../site-name.ts";
 import { automationStudioConversationCallCause, automationStudioConversationCommandProgress } from "./progress.ts";
@@ -68,12 +68,14 @@ export const AUTOMATION_STUDIO_CONVERSATION_EXPLORE: AutomationStudioConversatio
     if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate)), candidate: built.candidate };
     progress.carry({ adaptationId: built.adaptationId });
     const where = automationStudioConversationSiteName(context.startLocation);
-    progress.landed(`tried the steps on ${where} and worked out which ones work`);
+    progress.landed(built.trial ? `explored ${where}, wrote the Flow's steps and test-ran the whole Flow from its start` : `tried the steps on ${where} and worked out which ones work`);
     if (built.awaitingPermission) return progress.failed("the build finished still waiting for your permission for one of its steps, so its steps were not put into the Flow");
 
     const applied = await applyAutomationStudioConversationAdaptation(context, { flowId, adaptationId: built.adaptationId });
     if (!applied.ok) return progress.failed(applied.cause);
     // Says what is so, never "say run it": a run may already be under way (UI D9).
-    return progress.succeeded(`The Flow's steps are in: I tried them on ${where} and kept the ones that worked.${built.trial ? ` ${AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED}` : ""}`);
+    return progress.succeeded(built.trial
+      ? `The Flow's steps are in: I explored ${where}, wrote them, and ${AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_JUDGED}.`
+      : `The Flow's steps are in: I tried them on ${where} and kept the ones that worked.`);
   }
 };
