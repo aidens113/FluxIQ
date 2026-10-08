@@ -26,7 +26,9 @@ export {
   automationStudioHarnessInputWithDeniedEvidenceKeys,
   automationStudioHarnessOptionBundleFromBinding,
   automationStudioHarnessOptionRegistry,
-  type AutomationStudioLlmEvidenceRuntimeBinding
+  type AutomationStudioLlmEvidenceRuntimeBinding,
+  type AutomationStudioPlanHandleReach,
+  type AutomationStudioPlanHandleView
 } from "./binding.ts";
 // A generated plan node that names an opaque handle, and the domain's
 // resolution of every node's parameters into the ones it runs with.
@@ -48,6 +50,7 @@ export {
   AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES,
   assertAutomationStudioFlowBootstrapPlanHandlesResolved,
   resolveAutomationStudioFlowBootstrapPlanParameters,
+  type AutomationStudioFlowBootstrapPlanHandleView,
   type AutomationStudioFlowBootstrapPlanParameterResolution
 } from "./plan-parameter-resolution.ts";
 export {

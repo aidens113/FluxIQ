@@ -124,10 +124,10 @@ import {
 } from "../../flow-bootstrap/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceLoopAnswerability } from "../evidence-loop.ts";
 import type { AutomationStudioLlmEvidenceRestoredStep } from "../evidence-loop/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./binding.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleReach } from "./binding.ts";
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
-import { resolveAutomationStudioFlowBootstrapPlanParameters } from "./plan-parameter-resolution.ts";
+import { resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView } from "./plan-parameter-resolution.ts";
 
 // `evidence_completion_cannot_answer` is still produced, by the two act rules
 // that refuse (an undeclared consequence a person is asked about, and an act
@@ -162,6 +162,13 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
      * `check` for the same reason as `warnings`.
      */
     notes?: AutomationStudioBuildTestNote[];
+    /**
+     * Which of exploration's views each handle of the accepted plan came from,
+     * when the check was asked to resolve from the view history (`handleReach`,
+     * a candidate submission; `./plan-parameter-resolution.ts`). A record,
+     * beside `check` for the same reason as `warnings`.
+     */
+    handleViews?: AutomationStudioFlowBootstrapPlanHandleView[];
   }
   | {
     ok: false;
@@ -246,6 +253,14 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
    * node. Read on the draft path only: a plan the model wrote carries none.
    */
   routeSignaturesOf?: ((step: { stateBefore?: string | undefined; stateAfter?: string | undefined }) => AutomationStudioRouteSignatures | undefined) | undefined;
+  /**
+   * Which of exploration's views a handle may resolve from
+   * (`./plan-parameter-resolution.ts`): `view_history` for a candidate
+   * submission alone, which may name any control exploration was shown.
+   * Absent -- every legacy completion -- the domain resolves against the page
+   * as exploration last saw it, as it always has.
+   */
+  handleReach?: AutomationStudioPlanHandleReach | undefined;
 }): Promise<AutomationStudioFlowBootstrapCompletionVerdict> {
   const { result } = input;
   const about = (plan: unknown): RefusalSubject => ({ plan, registry: input.registry, resolution: input.resolution });
@@ -284,6 +299,7 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   // capability checks are asked of, and the plan to build when nothing failed.
   let capabilityPlan: AutomationStudioFlowBootstrapPlan | undefined;
   let buildPlan: AutomationStudioFlowBuildPlan | undefined;
+  let handleViews: AutomationStudioFlowBootstrapPlanHandleView[] | undefined;
   // A refused Flow script carries the plan its steps got as far as, and the
   // issues' paths are that plan's. Read from the reply instead, as it was
   // before, and `bootstrap.unknown_parameter` came back naming a path into a
@@ -314,8 +330,10 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
         binding: input.binding,
         handlesIssued: true,
         permissionFor: input.permissionFor,
-        inheritedNodeRefs: drafted?.inheritedNodeRefs
+        inheritedNodeRefs: drafted?.inheritedNodeRefs,
+        ...(input.handleReach ? { handleReach: input.handleReach } : {})
       });
+      if (resolved.ok) handleViews = resolved.handleViews;
       if (!resolved.ok) {
         failures.push({ code: "flow_bootstrap.evidence_completion_parameters_unresolved", issues: resolved.issues, about: about(parsed.plan) });
       } else {
@@ -391,7 +409,8 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     buildPlan,
     check: { ok: true, answerability: answerability ?? { recordsRequested: false, recordProducerPresent: false, recordStorePresent: false }, ...restoredField },
     ...(warnings.length ? { warnings } : {}),
-    ...(notes.length ? { notes } : {})
+    ...(notes.length ? { notes } : {}),
+    ...(handleViews ? { handleViews } : {})
   };
 }
 
