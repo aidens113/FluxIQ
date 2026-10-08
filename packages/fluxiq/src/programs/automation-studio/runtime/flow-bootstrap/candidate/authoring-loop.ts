@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT } from "../plan/index.ts";
-import type { AutomationStudioCandidateTrialPort } from "./contracts.ts";
+import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidate } from "./contracts.ts";
 import { AutomationStudioFlowCandidateSubmissionController } from "./submission.ts";
 import { automationStudioCandidateSubmissionRefusal } from "./submission-refusal.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
@@ -17,6 +17,8 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   loop: Omit<AutomationStudioLlmEvidenceLoopInput, "draft" | "dryRun" | "checkCompletion" | "completionSchema" | "fullRunRequired" | "discoveryOnly">;
   submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0];
   trial?: { candidateId: string; port: AutomationStudioCandidateTrialPort };
+  /** Told each submission Core accepted, so a caller whose loop then fails still knows the latest one (t362: a refused resubmission clears `latest`). */
+  accepted?: (candidate: Readonly<AutomationStudioFlowCandidate>) => void;
 }) {
   const signals = [input.loop.signal, input.submission.signal].filter((value): value is AbortSignal => value !== undefined);
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
@@ -46,6 +48,7 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
       const submitted = await controller.submit(call.value);
       // A refused submission names its way out and counts in the loop's run of refusals of one kind (`./submission-refusal.ts`).
       if (!submitted.ok) return { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, ...automationStudioCandidateSubmissionRefusal(submitted) };
+      input.accepted?.(structuredClone(submitted.candidate));
       const evidence: JsonObject = { ok: true, status: "draft", revision: submitted.candidate.revision, digest: submitted.candidate.digest, changedPaths: submitted.candidate.changedPaths, verification: "not_performed", promotionAllowed: false,
         // Which view each target was resolved from, so a step aimed at a control of another page than the one it runs on can be seen (t358).
         ...(submitted.handleViews.length ? { handleViews: submitted.handleViews.map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location })) } : {}),

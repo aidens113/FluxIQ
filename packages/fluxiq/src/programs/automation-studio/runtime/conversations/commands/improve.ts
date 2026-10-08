@@ -59,7 +59,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_IMPROVE: AutomationStudioConversatio
     progress.landed(said.from === "person" ? "saved what should change as an instruction on the Flow" : `saved what should change as an instruction on the Flow, ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`);
 
     const built = await buildAutomationStudioFlowFromConversation(context, { flowId, mode: "extend" });
-    if (!built.ok) return progress.failed(built.cause, { ending: built.ending });
+    if (!built.ok) return progress.failed(built.cause, { ending: built.ending, kept: built.candidateKept });
     if (built.status === "draft") return { ...progress.succeeded(automationStudioConversationCandidateDraftSaid(built.candidate)), candidate: built.candidate };
     progress.carry({ adaptationId: built.adaptationId });
     return {

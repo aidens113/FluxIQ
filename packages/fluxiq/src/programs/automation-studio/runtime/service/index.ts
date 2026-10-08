@@ -2,6 +2,7 @@ export * from "./adaptations/index.ts";
 export * from "./bootstrap-adaptations.ts";
 export * from "./catalogue.ts";
 export * from "./candidate-drafts/index.ts";
+export * from "./candidate-failure/index.ts";
 export * from "./collections.ts";
 export * from "./compact-json.ts";
 export * from "./creation-spend.ts";

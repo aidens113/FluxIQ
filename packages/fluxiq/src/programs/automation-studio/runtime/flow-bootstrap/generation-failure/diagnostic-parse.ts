@@ -15,6 +15,7 @@ import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS, AUTOMATION_STUDI
 import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loop-steps.ts";
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import { parseAutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
+import { parseAutomationStudioFlowBootstrapCandidateKept } from "./candidate-kept.ts";
 import { FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE } from "./codes.ts";
 import type { AutomationStudioLlmProviderThrow, AutomationStudioLlmProviderThrowWithheld } from "../../llm/index.ts";
 import { DIAGNOSTIC_ISSUE_CODE, MAX_DIAGNOSTIC_ISSUE_CODES, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
@@ -23,7 +24,7 @@ import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstra
 export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   value: unknown
 ): AutomationStudioFlowBootstrapFailureDiagnostic | null {
-  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending", "totalProviderCallCount"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending", "candidate", "totalProviderCallCount"])) return null;
   if (typeof value.code !== "string") return null;
   if (value.totalProviderCallCount !== undefined && (!Number.isSafeInteger(value.totalProviderCallCount) || (value.totalProviderCallCount as number) < 0)) return null;
   // The stage a code belongs to, which is also the only stage it may claim. A
@@ -58,6 +59,8 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   // Required beside its two codes and refused beside any other, by the one parse its producer uses.
   const ending = parseAutomationStudioFlowBootstrapBuildEnding(value.ending, value.code);
   if (ending === null || (state.ending === "required") !== (ending !== undefined)) return null;
+  const candidate = parseAutomationStudioFlowBootstrapCandidateKept(value.candidate);
+  if (candidate === null) return null;
   return {
     ...(value.totalProviderCallCount === undefined ? {} : { totalProviderCallCount: value.totalProviderCallCount as number }),
     code: value.code,
@@ -70,7 +73,8 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
     ...(value.issueCodes !== undefined ? { issueCodes: [...value.issueCodes as string[]] } : {}),
     ...(permissionRequest ? { permissionRequest } : {}),
     ...(providerThrow ? { providerThrow } : {}),
-    ...(ending ? { ending } : {})
+    ...(ending ? { ending } : {}),
+    ...(candidate ? { candidate } : {})
   };
 }
 

@@ -123,9 +123,15 @@ function automationStudioConversationFlowName(instruction: string): string {
  *
  * The instruction is "yours" only when it is the person's own message; the
  * argument a caller with no person turn gave is said to be the request's (t349).
+ *
+ * A candidate build that failed after writing its steps says what it kept --
+ * the latest version as a draft, and how its test runs came out -- in place of
+ * "has no steps yet" (t362, `run-muyrpbnk-fef374e7`).
  */
-function automationStudioConversationCreateHereLeft(name: string, built: { ending?: string | undefined; kept: boolean }, from: AutomationStudioConversationCommandInstruction["from"]): string {
+function automationStudioConversationCreateHereLeft(name: string, built: { ending?: string | undefined; kept: boolean; candidateKept?: string | undefined }, from: AutomationStudioConversationCommandInstruction["from"]): string {
   const instruction = from === "person" ? "your instruction" : `the instruction ${AUTOMATION_STUDIO_CONVERSATION_ARGUMENT_WORDS}`;
+  // A candidate build's draft is never carried on from, and is not "no steps" either (t362, round 4's C6).
+  if (built.candidateKept) return `${built.candidateKept} The Flow "${name}" keeps ${instruction}, so you can build it again.`;
   if (!built.kept) return `The Flow "${name}" has no steps yet, but it keeps ${instruction}, so you can build it again.`;
   if (built.ending) return `The Flow "${name}" keeps ${instruction}.`;
   return `The Flow "${name}" keeps ${instruction}, and the steps found so far were kept as a draft, so building it again carries on from them.`;

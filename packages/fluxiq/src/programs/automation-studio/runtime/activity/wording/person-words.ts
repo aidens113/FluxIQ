@@ -26,6 +26,15 @@ const SCRAPE: Readonly<Record<string, string>> = { e: "read", es: "reads", ed: "
 const PAGINATE: Readonly<Record<string, string>> = { e: "page through", es: "pages through", ed: "paged", ing: "paging through" };
 /** "is deduplicated" and the like, said with "have": "has duplicates removed". */
 const HAVE: Readonly<Record<string, string>> = { is: "has", are: "have", was: "had", were: "had", be: "have", been: "had", being: "having" };
+/**
+ * A candidate's revision number, with what names it: "revision 2", "rev 7",
+ * "(revision 3)", "revisions 4 and 5", "r7" never (too short to tell from a
+ * word). The person never sees a revision: "Testing the submitted Flow
+ * revision 2" reached the chat (t362, `run-muyrpbnk-fef374e7`).
+ */
+const REVISION = /\s*\(?\b(?:rev(?:ision)?s?\.?)\s*#?\d+(?:\s*(?:,|and|or|to|-|–)\s*#?\d+)*\)?/giu;
+/** What a candidate is to the person: the Flow. "the candidate", "this candidate Flow", "candidate's steps". */
+const CANDIDATE = /\bcandidate(s?)('s)?(?:\s+(?:flow|plan|script)s?\b)?/giu;
 /** A draft step's own number: "Step 8", "steps 3 and 4", which the person's Flow numbers its own way. */
 const STEP_NUMBER = /\b([Ss])tep(s?)\s+\d+(?:\s*(?:,|and|or|to|-|–)\s*\d+)*\b/gu;
 
@@ -48,10 +57,19 @@ function determined(text: string, offset: number): boolean {
  * duplicates", "removing duplicates" or "with duplicates removed"; "the judge"
  * is "the check"; a "next call" is the "next step"; and a draft step's number
  * ("Step 8", "steps 3 and 4") is "a step" or "some steps", since the person's
- * Flow numbers its steps its own way.
+ * Flow numbers its steps its own way. A candidate is "the Flow", and its
+ * revision number is left out (t362).
  */
 export function automationStudioActivityPersonWords(text: string): string {
   return text
+    .replace(REVISION, (found: string, offset: number, whole: string) => {
+      // Said as "this version" where the sentence needs a noun -- its subject, or after a preposition -- and left out after the noun it numbers ("the Flow revision 2").
+      const before = whole.slice(0, offset);
+      if (/(?:^|[.!?;:]\s*)$/u.test(before)) return `${/^\s/u.test(found) && before ? " " : ""}${/[;:]\s*$/u.test(before) ? "this" : "This"} version`;
+      if (/\b(?:in|of|for|from|on|with|to|at|by|than)$/iu.test(before.trimEnd())) return " this version";
+      return "";
+    })
+    .replace(CANDIDATE, (found: string, plural: string, owner: string | undefined, offset: number, whole: string) => cased(found, `${determined(whole, offset) ? "" : "the "}Flow${plural}${owner ?? ""}`))
     .replace(LIST_HANDLE, (found: string) => cased(found, "list"))
     .replace(LIST_READER, (found: string, offset: number, whole: string) => cased(found, determined(whole, offset) ? "list reader" : "the list reader"))
     .replace(EXTRACTION, (found: string, plural: string, offset: number, whole: string) => cased(found, determined(whole, offset) ? `list reader${plural}` : plural ? "list reads" : "reading the list"))
