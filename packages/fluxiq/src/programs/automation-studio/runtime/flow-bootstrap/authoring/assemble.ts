@@ -96,11 +96,13 @@ export function assembleAutomationStudioFlowScriptPlan(input: {
 }): { plan?: AutomationStudioFlowBootstrapPlan; refusedPlan?: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[] } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const definitions = input.registry.list(input.resolution);
-  // Each block's `repeat` statements become the steps that wire them, before
-  // anything else reads the block (`./draft-routing.ts`); a block with none
-  // comes through as it was.
-  const blocks = input.script.blocks.map((block) => {
-    const routed = routeAutomationStudioFlowScriptRepeats({ steps: block.steps, registry: input.registry, resolution: input.resolution });
+  // Each block's `optional:` and `repeat` statements become the steps that
+  // wire them, before anything else reads the block (`optionalScriptSteps`,
+  // `./draft-routing.ts`); a block with neither comes through as it was.
+  const blocks = input.script.blocks.map((block, blockIndex) => {
+    const optional = optionalScriptSteps({ steps: block.steps, blockIndex, definitions, registry: input.registry, resolution: input.resolution });
+    issues.push(...optional.issues);
+    const routed = routeAutomationStudioFlowScriptRepeats({ steps: optional.steps, registry: input.registry, resolution: input.resolution });
     issues.push(...routed.issues);
     return routed.steps === block.steps ? block : { ...block, steps: [...routed.steps] };
   });
@@ -241,6 +243,126 @@ function blockRoutes(blocks: readonly AutomationStudioFlowScriptBlock[], issues:
     issues.push(authoringError("flow_script.subflow_unreachable", `The block "${block.label}" at line ${block.line} has no \`when:\` line, so the router would never run it. Say when it runs, or put its steps outside every block.`, `flow.line.${block.line}`));
   }
   return { conditions, fallback, primary: fallback ?? 0 };
+}
+
+/** The node an optional step's two ways out meet at, as `./draft-routing.ts` writes a drafted one. */
+const MERGE_NODE_ID = "builtin.control.merge";
+/** The port an optional step is skipped on; the runtime reads it by this id (`../../executor/step-skip/absent-step.ts`). */
+const FAILED_PORT = "failed";
+/** An `optional:` value that says yes: the word alone means it. */
+const OPTIONAL_YES = new Set(["", "yes", "true", "y", "optional"]);
+/** An `optional:` value that says no, which leaves the step as if the line were absent. */
+const OPTIONAL_NO = new Set(["no", "false", "n"]);
+
+/**
+ * One block with each `optional: yes` step made into the optional shape, or
+ * the issues that refused it.
+ *
+ *   step.failed -> join (a Merge)        step.success falls into the join
+ *
+ * It is the shape a drafted `optional` step becomes (`./draft-routing.ts`),
+ * built the same way, so a step a model marked optional in a script and one a
+ * build drafted as optional are one graph shape, and the runtime treats both
+ * as sometimes present: an absent target is skipped with no retry and no
+ * fault, exactly as `metadata.sometimesPresent` is
+ * (`../../executor/step-skip/absent-step.ts`). Nothing new is asked of the
+ * plan, the Flow or the runtime.
+ *
+ * Refused, each naming the `optional:` line: a value that is neither yes nor
+ * no; a step that runs a block; a step inside a repeat span or starting one,
+ * which runs on every pass; a step with its own `on <port>:` line, whose ways
+ * out the shape owns; and a node with no `failed` way out, which could not be
+ * gone past. A step whose node is unknown is left for the node's own refusal.
+ *
+ * A block with no `optional:` line comes back as it was, the same array.
+ */
+function optionalScriptSteps(input: {
+  steps: readonly AutomationStudioFlowScriptStep[];
+  blockIndex: number;
+  definitions: readonly AutomationStudioNodeDefinition[];
+  registry: AutomationStudioNodeRegistry;
+  resolution: AutomationStudioNodeRegistryResolution;
+}): { steps: readonly AutomationStudioFlowScriptStep[]; issues: AutomationStudioFlowBootstrapIssue[] } {
+  if (!input.steps.some((step) => step.optional)) return { steps: input.steps, issues: [] };
+  const issues: AutomationStudioFlowBootstrapIssue[] = [];
+  const spanned = repeatedScriptSteps(input.steps);
+  const merges = input.registry.get(MERGE_NODE_ID, input.resolution) !== undefined;
+  const emitted: AutomationStudioFlowScriptStep[] = [];
+  let joins = 0;
+  for (const [index, written] of input.steps.entries()) {
+    const optional = written.optional;
+    if (!optional) {
+      emitted.push(written);
+      continue;
+    }
+    const step: AutomationStudioFlowScriptStep = { ...written };
+    delete step.optional;
+    const at = `The step at line ${written.line}`;
+    const refuse = (code: string, message: string): void => {
+      issues.push(authoringError(code, message, `flow.line.${optional.line}`));
+      emitted.push(step);
+    };
+    const answer = authoringKey(optional.text);
+    if (OPTIONAL_NO.has(answer)) {
+      emitted.push(step);
+      continue;
+    }
+    if (!OPTIONAL_YES.has(answer)) {
+      refuse("flow_script.optional_invalid", `${at} says optional: ${JSON.stringify(optional.text.slice(0, 40))}. Write \`optional: yes\` on a step that is only sometimes needed, or leave the line out.`);
+      continue;
+    }
+    if (written.runsBlock) {
+      refuse("flow_script.optional_misplaced", `${at} runs a block and says optional. Only a step that runs a node can be optional; a block runs by its \`when:\` line.`);
+      continue;
+    }
+    if (spanned.has(index)) {
+      refuse("flow_script.optional_misplaced", `${at} says optional and is part of a repeat, which runs it on every pass. Take the optional line off, or move the optional step before the step that says repeat.`);
+      continue;
+    }
+    if (written.branches.length) {
+      refuse("flow_script.optional_misplaced", `${at} says optional and branches with \`on ${written.branches[0]!.port}:\` at line ${written.branches[0]!.line}. An optional step goes on to the next step whether or not it was done, so it takes no \`on <port>:\` line: remove one of the two.`);
+      continue;
+    }
+    const definition = matchAuthoringDefinition(written.node ?? written.description, input.definitions).definition;
+    if (!definition) {
+      emitted.push(step);
+      continue;
+    }
+    if (!definition.outputs.some((port) => port.id === FAILED_PORT)) {
+      refuse("flow_script.optional_misplaced", `${at} says optional, but ${definition.id} has no failed way out, so the run could not go on past it. Optional is for a step that acts on something the page may not be showing, such as closing a banner or a popup.`);
+      continue;
+    }
+    if (!merges) {
+      refuse("flow_script.optional_unavailable", `${at} says optional, which needs "${MERGE_NODE_ID}", and this library does not offer it.`);
+      continue;
+    }
+    // A label no written one can equal: a written label ends at its line's
+    // first colon (`./parse.ts`). The block is in it because labels are
+    // counted across every block.
+    const join = `:optional${input.blockIndex}.${(joins += 1)}`;
+    emitted.push({ ...step, branches: [{ port: FAILED_PORT, target: join, line: optional.line }] });
+    emitted.push({ label: join, description: "the paths after an optional step meet here", node: MERGE_NODE_ID, entries: [], branches: [], line: 0 });
+  }
+  return { steps: emitted, issues };
+}
+
+/**
+ * The indexes of the steps a written `repeat` takes into its span: the step
+ * that says repeat through the one its `repeat while:` or `repeat through:`
+ * names, or that step alone. A span whose end names no step at or after it is
+ * the repeat's own refusal (`./draft-routing.ts`), and is counted as its
+ * first step only.
+ */
+function repeatedScriptSteps(steps: readonly AutomationStudioFlowScriptStep[]): ReadonlySet<number> {
+  const spanned = new Set<number>();
+  for (const [index, step] of steps.entries()) {
+    if (!step.repeat) continue;
+    const endLabel = step.repeat.while ?? step.repeat.through;
+    const found = endLabel === undefined ? index : steps.findIndex((candidate) => candidate.label === endLabel);
+    const end = found >= index ? found : index;
+    for (let member = index; member <= end; member += 1) spanned.add(member);
+  }
+  return spanned;
 }
 
 /** One block's nodes and the edges the order and the branches imply. */
