@@ -7,7 +7,13 @@
 import { resolveAutomationStudioAuthoringMode } from "../../model/authoring-mode/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MAX_ACCOUNTED_TOKENS } from "../../runtime/loop-limits/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_GENERATION_READINESS, type GenerateFlowBootstrapAdaptationRequest, type GenerateFlowBootstrapAdaptationResponse } from "../contracts.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowBootstrapFailedBuilds, automationStudioFlowStartLocation, parseAutomationStudioFlowBootstrapGenerationError, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioCandidateDraftTrial, type AutomationStudioGeneratedCandidateTrial, type AutomationStudioService } from "../../runtime/index.ts";
+// Values come from their owning modules, not the runtime barrel: through the barrel a load order
+// reached llm-generation before generation-failure finished loading, and its builders read undefined
+// (sweep-1008: twelve runtime-execution tests). Types erase, so they may stay on the barrel.
+import { parseAutomationStudioPermittedConsequences } from "../../runtime/action-permissions/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PERMISSION_ASK_TIMEOUT_MS, automationStudioFlowStartLocation } from "../../runtime/flow-bootstrap/index.ts";
+import { automationStudioFlowBootstrapFailedBuilds, parseAutomationStudioFlowBootstrapGenerationError } from "../../runtime/flow-bootstrap/generation-failure/index.ts";
+import type { AutomationStudioActionConsequence, AutomationStudioCandidateDraftTrial, AutomationStudioGeneratedCandidateTrial, AutomationStudioService } from "../../runtime/index.ts";
 import { boundedWholeNumber } from "./bounded-whole-number.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
