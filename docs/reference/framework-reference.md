@@ -549,7 +549,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioActivityLoopWords` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/loop/words.ts:16` | - |
 | `automationStudioActivityPersonWords` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/person-words.ts:63` | - |
 | `automationStudioActivityReasonText` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/reason-text.ts:174` | - |
-| `automationStudioActivityRecoveryChoice` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/recovery-choice.ts:18` | - |
+| `automationStudioActivityRecoveryChoice` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/recovery-choice.ts:41` | - |
 | `AutomationStudioActivityScope` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/contracts.ts:10` | One unit of work the activity belongs to: a build or a run. |
 | `AutomationStudioActivitySnapshot` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/contracts.ts:27` | The latest event of one project, and the events before it, oldest first. |
 | `automationStudioActivityStepNumbers` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/step/numbers.ts:23` | - |
