@@ -1,6 +1,7 @@
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace, AutomationStudioRecoveryCandidate, AutomationStudioRecoveryDecision, AutomationStudioRecoveryLookupInput, AutomationStudioTransitionComparison } from "./contracts.ts";
 import { recoveryBudgetExhaustion } from "./recovery-budget.ts";
+import { automationStudioOptionalStepWayOn } from "./step-skip/index.ts";
 
 /**
  * What the executor already knows about this failure, which decides which
@@ -79,7 +80,23 @@ export function chooseAutomationStudioRecovery(
   const budget = options.recoveryBudget ?? {};
   const candidates: AutomationStudioRecoveryCandidate[] = ladderCandidates(node, ladder);
   const budgetExhausted = recoveryBudgetExhaustion(budget, budgetState);
-  if (failedEdge && !budgetExhausted.recovery && !budgetExhausted.reroute) {
+  // An optional step's way on is the Flow's own path past a step that is only
+  // sometimes there to be done, not a recovery: it is offered whatever the
+  // budgets say and spends none of them (`recovery-budget.ts`), so a Flow with
+  // many optional steps goes on past every one that cannot be done, for any
+  // reason, and the budgets stay for real failures (t371). It takes the place
+  // of the failed-route candidate, which for the optional shape is the same edge.
+  const optionalWayOn = automationStudioOptionalStepWayOn(flow, node);
+  if (optionalWayOn) {
+    candidates.push({
+      kind: "deterministic_path",
+      priority: DETERMINISTIC_PATH_PRIORITY,
+      label: "Go on past the optional step",
+      targetNodeId: optionalWayOn.targetNodeId,
+      edgeId: optionalWayOn.id,
+      reason: `${node.id} is optional, so the run goes on along ${optionalWayOn.id} without spending recovery budget.`
+    });
+  } else if (failedEdge && !budgetExhausted.recovery && !budgetExhausted.reroute) {
     candidates.push({
       kind: "deterministic_path",
       priority: DETERMINISTIC_PATH_PRIORITY,
@@ -187,6 +204,25 @@ function ladderCandidates(node: AutomationStudioFlowNode, ladder: AutomationStud
     });
   }
   return candidates;
+}
+
+/**
+ * The edge a decision that follows a path sends the run along: an optional
+ * step's way on, which for a `sometimesPresent` step without the optional
+ * shape is its success edge (`step-skip/optional-step.ts`), or the Flow's
+ * authored failed route. Nothing when the decision follows neither.
+ */
+export function automationStudioRecoveryPathEdge(
+  flow: AutomationStudioFlowDocument,
+  node: AutomationStudioFlowNode,
+  decision: AutomationStudioRecoveryDecision,
+  failedEdge: AutomationStudioFlowEdge | null
+): AutomationStudioFlowEdge | null {
+  const selected = decision.selected?.kind === "deterministic_path" ? decision.selected.edgeId : undefined;
+  if (selected === undefined) return null;
+  const optionalWayOn = automationStudioOptionalStepWayOn(flow, node);
+  if (optionalWayOn && selected === optionalWayOn.id) return optionalWayOn;
+  return failedEdge && selected === failedEdge.id ? failedEdge : null;
 }
 
 export function failureMessageForRecoveryStop(recoveryDecision: AutomationStudioRecoveryDecision, attempt: AutomationStudioNodeAttemptTrace): string | undefined {

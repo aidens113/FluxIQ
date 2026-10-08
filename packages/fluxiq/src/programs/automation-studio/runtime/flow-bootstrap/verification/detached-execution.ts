@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { AutomationStudioFlowArtifact, AutomationStudioPublishedFlowSnapshot } from "../../../model/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../../composite-executor.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
+import { automationStudioOptionalStepWayOn, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
 import { automationStudioRouterStatePaths, routeAutomationStudioRun } from "../../route-state/index.ts";
 import type { AutomationStudioRouterExecutionResult } from "../../router-runtime.ts";
 import { normalizeAutomationStudioFlowBuildPlan } from "../adaptation.ts";
@@ -85,9 +85,14 @@ export async function runAutomationStudioDetachedCandidate(input: {
     // failed route only while the recovery and reroute budgets last, and a
     // budget of zero withheld every one: lane A round 6's trial 3
     // (`run-muz2cj6p-80eb2179`) failed on an `optional: yes` wait that timed out,
-    // although the optional shape's failed route led on into its Merge. Each
-    // budget is therefore the number of failed routes the graph declares, so
-    // each can be taken once; a graph that declares none keeps zero.
+    // although the optional shape's failed route led on into its Merge.
+    //
+    // An optional step's way on is now no recovery at all: the executor offers
+    // it whatever the budgets say and spends none of them, in a trial and a
+    // playback alike (`executor/step-skip/optional-step.ts`, t371). Each budget
+    // is therefore the number of written `on failed:` branches the graph
+    // declares, so each of those can be taken once and a real failure past them
+    // still stops the trial; a graph that declares none keeps zero.
     const authoredRoutes = authoredFailedRoutes(graph);
     const trace = await runCanonicalAutomationStudioFlow(graph, snapshots, { ...options, ...(signal ? { signal } : {}), currentSubflowId: selected.subflow.subflowId,
       allowLlmDiagnosis: false, approvedRuntimePatchNodeIds: [],
@@ -105,7 +110,8 @@ export async function runAutomationStudioDetachedCandidate(input: {
   }
 }
 
-/** How many `failed` ways out the graph's steps declare: an optional step's route into its Merge, or a written `on failed:` branch. */
+/** How many written `on failed:` branches the graph's steps declare: every `failed` way out but an optional step's way on, which spends no budget. */
 function authoredFailedRoutes(graph: AutomationStudioFlowArtifact): number {
-  return graph.edges.filter((edge) => edge.sourcePortId === "failed").length;
+  const optionalWayOns = new Set(graph.nodes.map((node) => automationStudioOptionalStepWayOn(graph, node)?.id).filter((id) => id !== undefined));
+  return graph.edges.filter((edge) => edge.sourcePortId === "failed" && !optionalWayOns.has(edge.id)).length;
 }
