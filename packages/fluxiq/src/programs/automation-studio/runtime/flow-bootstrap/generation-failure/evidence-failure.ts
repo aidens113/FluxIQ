@@ -81,16 +81,23 @@ export function flowBootstrapEvidenceLoopFailure(
  * Built from the loop's progress at the moment it stopped, which is all a
  * stopped loop has: it never produced a result. The last refusal's issue codes
  * say why.
+ *
+ * `code` is `flow_bootstrap.evidence_repeat_without_progress` for a caller
+ * that tells a stall of answers it could not use from one of usable answers
+ * that kept being refused, or changing nothing, for one reason (a candidate
+ * build, `../../service/candidate-failure/stall-code.ts`, t362):
+ * lane A round 4's twelve refused submissions were answers, not unusable ones.
  */
 export function flowBootstrapEvidenceUnusableDecisionFailure(
   progress: EvidenceLoopProgress & { issueCodes: readonly string[] },
-  accounting?: EvidenceAccounting
+  accounting?: EvidenceAccounting,
+  code: Extract<AutomationStudioFlowBootstrapPhaseFailureCode, "flow_bootstrap.evidence_unusable_decision" | "flow_bootstrap.evidence_repeat_without_progress"> = "flow_bootstrap.evidence_unusable_decision"
 ): AutomationStudioFlowBootstrapGenerationError {
   const issueCodes = flowBootstrapDiagnosticIssueCodes(progress.issueCodes);
   return new AutomationStudioFlowBootstrapGenerationError({
-    code: "flow_bootstrap.evidence_unusable_decision",
+    code,
     stage: "provider_output_validation",
-    retryable: false,
+    retryable: code === "flow_bootstrap.evidence_unusable_decision" ? false : automationStudioFlowBootstrapFailureState(code, "provider_output_validation", undefined).retryable,
     providerInvocation: "attempted",
     providerResponse: "received",
     ...(accounting ? { accounting } : {}),

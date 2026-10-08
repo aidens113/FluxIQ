@@ -26,8 +26,10 @@ export type AutomationStudioConversationCommandProgress = {
    * not build this Flow ...", t195 `run-murdouox-c5294247`). `account.left`
    * says what the failure leaves behind in place of the steps that landed,
    * for a command whose landed steps read as the opposite of the failure.
+   * `account.kept`, when given, says what the work kept although it failed
+   * (a candidate build's draft and its test runs, t362), after the rest.
    */
-  failed(cause: string, account?: { ending?: string | undefined; left?: string | undefined }): AutomationStudioConversationCommandOutcome;
+  failed(cause: string, account?: { ending?: string | undefined; left?: string | undefined; kept?: string | undefined }): AutomationStudioConversationCommandOutcome;
 };
 
 export function automationStudioConversationCommandProgress(title: string, keyLocked: boolean): AutomationStudioConversationCommandProgress {
@@ -42,8 +44,9 @@ export function automationStudioConversationCommandProgress(title: string, keyLo
       const plainCause = automationStudioConversationPlainCause(cause) || "something went wrong inside FluxIQ";
       const opening = account.ending ? `${account.ending.replace(/\.$/u, "")}.` : `"${title}" stopped because ${plainCause}.`;
       const distance = account.left ?? (steps.length ? `Before that I ${joined(steps)}.` : "Nothing was changed.");
+      const kept = account.kept ? ` ${account.kept}` : "";
       const locked = keyLocked ? " Your model key is locked for this browser: unlock your keys in FluxIQ, then ask again." : "";
-      return { status: "failed", summary: `${opening} ${distance}${locked}`, error: plainCause, ...ids };
+      return { status: "failed", summary: `${opening} ${distance}${kept}${locked}`, error: plainCause, ...ids };
     }
   };
 }
@@ -58,14 +61,15 @@ export function automationStudioConversationCommandProgress(title: string, keyLo
  * (pre_provider_validation: flow_bootstrap.blank_target_required)" (t276).
  */
 export function automationStudioConversationCallCause(what: string, response: AutomationStudioConversationCommandCallResult): string {
-  const diagnostic = (response.payload as { diagnostic?: { code?: unknown; stage?: unknown; ending?: { message?: unknown } } } | undefined)?.diagnostic;
+  const diagnostic = (response.payload as { diagnostic?: { code?: unknown; stage?: unknown; ending?: { message?: unknown }; evidenceLoop?: { exhausted?: { bound?: unknown; budgetBound?: unknown } } } } | undefined)?.diagnostic;
   // A build that could not finish carries a message written for the person --
   // not doable and why, or the budget that ran out -- which says more than any
   // code, so it is what they read (`flow-bootstrap/generation-failure/build-ending.ts`).
   const ending = diagnostic?.ending?.message;
   if (typeof ending === "string" && ending.trim()) return `${what} could not finish. ${ending.trim().replace(/\.$/u, "")}`;
   const code = typeof diagnostic?.code === "string" ? diagnostic.code : codesIn(response.error ?? "")[0];
-  const meant = (code ? CODE_WORDS.find(([pattern]) => pattern.test(code))?.[1] : undefined)
+  const meant = (code && ITERATION_LIMIT.test(code) ? exhaustedWords(diagnostic?.evidenceLoop?.exhausted) : undefined)
+    ?? (code ? CODE_WORDS.find(([pattern]) => pattern.test(code))?.[1] : undefined)
     ?? (typeof diagnostic?.stage === "string" && Object.hasOwn(STAGE_WORDS, diagnostic.stage) ? STAGE_WORDS[diagnostic.stage] : undefined);
   const said = meant ?? (automationStudioConversationPlainCause(response.error ?? "") || (code ? "something went wrong inside FluxIQ" : "no reason was given"));
   return `${what} failed: ${said}`;
@@ -79,8 +83,38 @@ function codesIn(text: string): string[] {
   return [...text.matchAll(DOTTED)].map((found) => found[0]).filter((name) => name.includes("_"));
 }
 
+/** A build that ran out of an allowance: what ran out says why (`exhaustedWords`). */
+const ITERATION_LIMIT = /evidence_iteration_limit$/u;
+
+/**
+ * Which allowance a build ran out of, in words that finish "failed: ...": the
+ * budget that ran out where one did, else the decisions or steps it may take.
+ * Round 4 (`run-muyrpbnk-fef374e7`, C6) showed what a code with no words of its
+ * own came to: its stage's, "the model's answer could not be used".
+ */
+function exhaustedWords(exhausted: { bound?: unknown; budgetBound?: unknown } | undefined): string {
+  const budget = typeof exhausted?.budgetBound === "string" && Object.hasOwn(BUDGET_WORDS, exhausted.budgetBound) ? BUDGET_WORDS[exhausted.budgetBound] : undefined;
+  if (budget) return budget;
+  return exhausted?.bound === "tool_calls" ? "it reached the limit on how many steps it may try" : "it reached the limit on how many decisions it may make";
+}
+
+/** Each budget a build can run out of, in words that finish "failed: ...". */
+const BUDGET_WORDS: Readonly<Record<string, string>> = Object.freeze({
+  cost: "it reached its spending limit",
+  tokens: "it reached the limit on how much the model may read and write for one build",
+  duration: "it ran out of time",
+  calls: "it reached the limit on how many times it may ask the model",
+  iterations: "it reached the limit on how many decisions it may make"
+});
+
 /** What a failure code means, in words that finish "failed: ...". First match wins. */
 const CODE_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
+  // A build's own endings, each named for what happened rather than the stage it ended in (t362, round 4's C6).
+  [/evidence_repeat_without_progress$/u, "it kept trying without getting any further, so it was stopped"],
+  [/evidence_unusable_decision$|model_replies_unreadable$|provider_response_malformed$/u, "the model's answer could not be used"],
+  [/evidence_limit$/u, "it reached the limit on how much it may read from the page"],
+  [/evidence_tool_failed$/u, "a step it tried failed in a way it could not go on from"],
+  [/evidence_cancelled$/u, "it was stopped"],
   [/blank_target_required$/u, "FluxIQ could not tell which part of this Flow to build on, as it builds on a Flow with one main part"],
   [/pending_adaptation_exists$/u, "a suggested change to this Flow is already waiting for you to accept or set aside"],
   [/generation_lock_failed$/u, "another build of this Flow was already under way"],

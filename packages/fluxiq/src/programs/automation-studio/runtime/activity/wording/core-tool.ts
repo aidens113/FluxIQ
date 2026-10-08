@@ -7,6 +7,20 @@ const DESCRIBE_NODES = "core.describe_nodes";
 const RECALL_RESULT = "core.recall_result";
 /** `core.run_flow` (`../../llm/node-tools/run-flow.ts`). */
 const RUN_FLOW = "core.run_flow";
+/** `core.submit_candidate` (`../../flow-bootstrap/candidate/authoring-loop.ts`). */
+const SUBMIT_CANDIDATE = "core.submit_candidate";
+/** `core.test_candidate` (`../../flow-bootstrap/candidate/trial-gate.ts`). */
+const TEST_CANDIDATE = "core.test_candidate";
+/**
+ * A candidate build's own tools, said as the act a person understands: the
+ * chat read "Using “Submit candidate”" and "Using “Test candidate”" (t362,
+ * lane A round 4, `run-muyrpbnk-fef374e7`). Never a revision or digest: the
+ * call names both, and the person never sees either.
+ */
+const CANDIDATE_TOOLS: ReadonlyMap<string, string> = new Map([
+  [SUBMIT_CANDIDATE, "Saving the Flow's steps"],
+  [TEST_CANDIDATE, "Testing the whole Flow from the start"]
+]);
 /** The most kinds of step a look-up's title says before it says "and more". */
 const MAX_NAMED = 3;
 
@@ -70,8 +84,12 @@ function listed(names: readonly string[], more: boolean): string {
  * named its node, "Look · Extract list" (R2-U-4, `run-muwansvz-a2b4a987`). A
  * part run's words name no step number: the person never sees the draft's
  * numbering (t195); the cards of the steps it sends say what each one does.
+ * A candidate build's tools say what they do for the Flow: saving its steps,
+ * and testing the whole Flow from the start (t362).
  */
 export function automationStudioActivityCoreTool(call: { toolId: string; value?: unknown }): string | undefined {
+  const candidateTool = CANDIDATE_TOOLS.get(call.toolId);
+  if (candidateTool) return candidateTool;
   const value = call.value && typeof call.value === "object" && !Array.isArray(call.value) ? call.value as Record<string, unknown> : {};
   if (call.toolId === DESCRIBE_NODES) {
     const ids = Array.isArray(value.ids) ? value.ids.filter((id): id is string => typeof id === "string") : [];

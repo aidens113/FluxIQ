@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { flowBootstrapEvidenceLoopFailure, flowBootstrapEvidenceUnusableDecisionFailure, flowBootstrapHarnessFailure, sanitizedBootstrapAccounting, type AutomationStudioBootstrapAccounting, type AutomationStudioFlowBootstrapFailureStage } from "../../flow-bootstrap/index.ts";
+import { automationStudioCandidateStallCode, automationStudioFlowBootstrapFailureWithCandidate } from "../candidate-failure/index.ts";
 import { runAutomationStudioFlowCandidateAuthoringLoop } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioLlmUnusableDecisionError, type AutomationStudioLlmEvidenceLoopAccounting, type AutomationStudioLlmEvidenceLoopTrace, type AutomationStudioLlmHarnessInput, type AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import { automationStudioActivityDecisionReason, observeAutomationStudioEvidenceLoop } from "../../activity/index.ts";
@@ -7,7 +8,7 @@ import type { AutomationStudioFlowCandidateDraftRecord, AutomationStudioFlowCand
 import type { AutomationStudioInstructionAuthorityUsage } from "../index.ts";
 import { AutomationStudioCandidateSource as Source } from "../candidate-drafts/index.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioCandidateOriginalSourceBinding, AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioCandidateOriginalSourceBinding, AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult, AutomationStudioCandidateTrialVerdict, AutomationStudioFlowCandidate } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioFlowBootstrapUnusableDecisions } from "./unusable-decisions.ts";
 import { automationStudioFlowBootstrapFailureWithSpend } from "./failure-spend.ts";
 
@@ -25,6 +26,12 @@ type Decide = AuthoringInput["loop"]["decide"];
  * round shares (`./unusable-decisions.ts`, t354); a run of them ends the build
  * as an unusable answer, and every ending carries the build's spend
  * (`./failure-spend.ts`).
+ *
+ * A build that fails after the model wrote a valid candidate keeps the latest
+ * one it wrote as an unverified draft, as a finished build keeps its own, and
+ * its failure names the candidate, that revision and each trial's verdict
+ * (`../candidate-failure/`, t362): round 4's no-progress ending said the Flow
+ * "has no steps yet" over four accepted revisions and two trials.
  */
 export async function generateAutomationStudioFlowCandidateDraft(input: {
   submission: AuthoringInput["submission"];
@@ -50,6 +57,8 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   trial?: AutomationStudioCandidateTrialPort;
   /** What the trials' judges have spent so far, counted into the build's accounting. */
   trialSpend?: () => { inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number };
+  /** Every trial the runner has run of this candidate so far, in order, for a failure to name (`../candidate-trial/`, `records`). */
+  trialRecords?: () => ReadonlyArray<{ revision: number; verdict: AutomationStudioCandidateTrialVerdict; trialRunId?: string; code?: string }>;
 }): Promise<{ record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined }> {
   if (input.trial && (typeof input.candidateId !== "string" || !input.candidateId)) throw new Error("candidate.trial_candidate_id_required");
   const candidateId = input.candidateId ?? `candidate.${randomUUID()}`;
@@ -74,11 +83,41 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
     provider: input.harness.provider.metadata.provider, model: input.harness.provider.metadata.model,
     inputTokens: spent.inputTokens + input.authorityUsage.inputTokens + judged.inputTokens, outputTokens: spent.outputTokens + input.authorityUsage.outputTokens + judged.outputTokens,
     totalTokens: spent.totalTokens + input.authorityUsage.totalTokens + judged.totalTokens, estimatedCostUsd: spent.estimatedCostUsd + input.authorityUsage.estimatedCostUsd + judged.estimatedCostUsd }); };
-  // A run of unusable decisions ends as an unusable answer, staged and worded as legacy's ("the model's answer could not be used"), with the build's spend.
+  // A run of unusable decisions ends as an unusable answer, staged and worded as legacy's ("the model's answer could not be used"), with the build's spend;
+  // a run of usable answers refused for one reason ends as no progress (`../candidate-failure/stall-code.ts`).
   const unusableDecisions = automationStudioFlowBootstrapUnusableDecisions({ maxConsecutiveUnusableDecisions: input.maxConsecutiveUnusableDecisions, maxIterations: input.loop.maxIterations,
-    callerEnding: (progress) => input.ending(progress, accounted(progress.accounting)), stalled: (progress) => flowBootstrapEvidenceUnusableDecisionFailure(progress, accounted(progress.accounting)) });
+    callerEnding: (progress) => input.ending(progress, accounted(progress.accounting)),
+    // Answers that kept being refused for one reason end as no progress, never as an unusable answer (t362, round 4's C6).
+    stalled: (progress) => flowBootstrapEvidenceUnusableDecisionFailure(progress, accounted(progress.accounting), automationStudioCandidateStallCode(progress.issueCodes)) });
+  // The latest submission Core accepted: a refused resubmission clears the loop's own `latest`, and a failed build still keeps this one.
+  let accepted: AutomationStudioFlowCandidate | undefined;
+  const draftRecord = (candidate: AutomationStudioFlowCandidate, accounting: AutomationStudioBootstrapAccounting): AutomationStudioFlowCandidateDraftRecord => {
+    const common = { kind: "flow_candidate_draft" as const, status: "draft" as const, verification: "not_performed" as const,
+      candidateId, projectId, flowId, sourceInstructionIds: [...sourceInstructionIds], instructionText,
+      baseSettingsRevision, accounting, createdAt: Date.now() };
+    return originalSource
+      ? { ...common, schemaVersion: 2, originalSources: originalSource.originalSources, originalInstructionsDigest: originalSource.originalInstructionsDigest,
+          candidate: { ...candidate, fingerprintVersion: "candidate.plan+original_sources.v2", originalInstructionsDigest: originalSource.originalInstructionsDigest } }
+      : { ...common, schemaVersion: 1, candidate };
+  };
+  // Whether a failed build may keep `candidate` as its draft: never once stopped, and only when written against the Flow and settings as they still are, bound to the same original instructions.
+  const keepable = async (candidate: AutomationStudioFlowCandidate): Promise<boolean> => {
+    if (input.loop.signal?.aborted || input.submission.signal?.aborted) return false;
+    const current = await input.currentBinding();
+    if (current.executionDigest !== candidate.baseDependencyDigest || current.settingsRevision !== baseSettingsRevision) return false;
+    return !originalSource || (candidate.fingerprintVersion === "candidate.plan+original_sources.v2" && candidate.originalInstructionsDigest === originalSource.originalInstructionsDigest);
+  };
+  const withCandidate = (error: unknown) => automationStudioFlowBootstrapFailureWithCandidate(error, {
+    candidateId, latest: accepted, trials: input.trialRecords?.() ?? [],
+    keep: async (candidate) => {
+      if (!(await keepable(candidate))) return false;
+      await input.store.save(draftRecord(candidate, accounted(observedUsage)), input.loop.signal);
+      return true;
+    }
+  });
   const authored = await runAutomationStudioFlowCandidateAuthoringLoop({
     submission: input.submission, ...(input.trial ? { trial: { candidateId, port: input.trial } } : {}),
+    accepted: (candidate) => { accepted = structuredClone(candidate); },
     loop: observeAutomationStudioEvidenceLoop({ ...input.loop, unusableDecisions, decide: input.wrapDecision(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
       input.beforeDecision();
       input.progress(accounted(observedUsage), "provider_request");
@@ -95,10 +134,10 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
       if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw unusable ?? flowBootstrapHarnessFailure(decision);
       return automationStudioActivityDecisionReason.attach({ ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) }, decision.response.summary);
     }) })
-  }).catch((error: unknown) => { throw automationStudioFlowBootstrapFailureWithSpend(error, accounted(observedUsage)); }); // Whatever ended it, the failure says what the build spent (round 3's C3).
+  }).catch(async (error: unknown) => { throw await withCandidate(automationStudioFlowBootstrapFailureWithSpend(error, accounted(observedUsage))); }); // Whatever ended it, the failure says what the build spent (round 3's C3) and what it wrote (t362).
   const accounting = accounted(authored.loop.accounting);
   input.progress(accounting, "post_provider_validation");
-  if (!authored.loop.ok) throw input.ending(authored.loop, accounting) ?? flowBootstrapEvidenceLoopFailure(authored.loop, accounting);
+  if (!authored.loop.ok) throw await withCandidate(input.ending(authored.loop, accounting) ?? flowBootstrapEvidenceLoopFailure(authored.loop, accounting));
   if (!authored.candidate) throw new Error("FLOW_CANDIDATE_MISSING: No latest submitted candidate.");
   input.loop.signal?.throwIfAborted(); input.submission.signal?.throwIfAborted();
   const current = await input.currentBinding();
@@ -106,12 +145,5 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   if (originalSource && (authored.candidate.fingerprintVersion !== "candidate.plan+original_sources.v2" || authored.candidate.originalInstructionsDigest !== originalSource.originalInstructionsDigest)) throw new Error("candidate.original_binding_mismatch");
   input.loop.signal?.throwIfAborted(); input.submission.signal?.throwIfAborted();
   input.progress(accounting, "persistence");
-  const common = { kind: "flow_candidate_draft" as const, status: "draft" as const, verification: "not_performed" as const,
-    candidateId, projectId, flowId, sourceInstructionIds: [...sourceInstructionIds], instructionText,
-    baseSettingsRevision, accounting, createdAt: Date.now() };
-  const record: AutomationStudioFlowCandidateDraftRecord = originalSource
-    ? { ...common, schemaVersion: 2, originalSources: originalSource.originalSources, originalInstructionsDigest: originalSource.originalInstructionsDigest,
-        candidate: { ...authored.candidate, fingerprintVersion: "candidate.plan+original_sources.v2", originalInstructionsDigest: originalSource.originalInstructionsDigest } }
-    : { ...common, schemaVersion: 1, candidate: authored.candidate };
-  return { record: await input.store.save(record, input.loop.signal), trial: authored.trial };
+  return { record: await input.store.save(draftRecord(authored.candidate, accounting), input.loop.signal), trial: authored.trial };
 }
