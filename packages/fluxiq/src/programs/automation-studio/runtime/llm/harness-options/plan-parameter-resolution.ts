@@ -28,11 +28,25 @@
 // The one node it does not ask about is a step the Flow being extended already
 // runs, carried over untouched and declaring nothing (`./inherited-plan-nodes.ts`):
 // it names no handle and adds nothing to what the Flow does, so it stands.
+//
+// **A candidate submission asks for the view history (t358).** A candidate is a
+// whole Flow written after exploration, and its first steps act on pages
+// exploration has since left: lane A round 4 (`run-muyrpbnk-fef374e7`) had
+// twelve submissions refused for the start page's popup controls, which the
+// page as exploration last saw it no longer showed. So a caller may say
+// `handleReach: "view_history"`, which is handed to the domain with every node,
+// and the domain then resolves a handle from any view exploration took. Only
+// such an answer may carry `handleViews` -- which view each handle came from --
+// and the resolution returns them per node as a record of where the
+// candidate's targets were learned. Without it nothing is sent and nothing
+// beside `status` and `parameters` is accepted, exactly as before.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
-import type { AutomationStudioLlmEvidenceRuntimeBinding } from "./binding.ts";
+// From the harness directory itself: through the `../harness.ts` re-export the two read as undefined when this module loads inside its import cycle.
+import { AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH, AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN } from "../harness/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleReach, AutomationStudioPlanHandleView } from "./binding.ts";
 import { automationStudioPlanNodeHandleSites, automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
 import { automationStudioPlanStepConsequences } from "./plan-step-consequences.ts";
 
@@ -56,9 +70,17 @@ export const AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES = Object.freeze({
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 const MAX_REFUSAL_CODES = 16;
 const MAX_RESOLVED_PARAMETER_BYTES = 16_384;
+/** Bounds on a node's `handleViews` (header): as many as a node may name handles, each location as long as a handle reference's. */
+const MAX_HANDLE_VIEWS = 64;
+const MAX_VIEW_LOCATION_LENGTH = 2_048;
+const handleToken = (): RegExp => new RegExp(AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN, "u");
+
+/** The view one handle of a plan node came from (header), with the node named `<subflow key>.<node key>`. */
+export type AutomationStudioFlowBootstrapPlanHandleView = AutomationStudioPlanHandleView & { node: string };
 
 export type AutomationStudioFlowBootstrapPlanParameterResolution =
-  | { ok: true; plan: AutomationStudioFlowBootstrapPlan; resolvedNodeKeys: string[] }
+  /** `handleViews` only when the caller asked for the view history, in plan order. */
+  | { ok: true; plan: AutomationStudioFlowBootstrapPlan; resolvedNodeKeys: string[]; handleViews?: AutomationStudioFlowBootstrapPlanHandleView[] }
   | { ok: false; issues: AutomationStudioFlowBootstrapIssue[] };
 
 /**
@@ -88,10 +110,13 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
    * there is nothing new to put to the gate.
    */
   inheritedNodeRefs?: ReadonlySet<string> | undefined;
+  /** `view_history` for a candidate submission alone (header); absent, the domain resolves against the page as exploration last saw it. */
+  handleReach?: AutomationStudioPlanHandleReach | undefined;
 }): Promise<AutomationStudioFlowBootstrapPlanParameterResolution> {
   const plan = structuredClone(input.plan);
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const resolvedNodeKeys: string[] = [];
+  const handleViews: AutomationStudioFlowBootstrapPlanHandleView[] = [];
   for (const [subflowIndex, subflow] of plan.subflows.entries()) {
     for (const [nodeIndex, node] of subflow.nodes.entries()) {
       const ref = `${subflow.key}.${node.key}`;
@@ -114,9 +139,11 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
       if (outcome.status === "unchanged") continue;
       node.parameters = outcome.parameters;
       resolvedNodeKeys.push(node.key);
+      for (const view of outcome.handleViews ?? []) handleViews.push({ node: ref, handle: view.handle, view: view.view, location: view.location });
     }
   }
-  return issues.length ? { ok: false, issues } : { ok: true, plan, resolvedNodeKeys };
+  if (issues.length) return { ok: false, issues };
+  return input.handleReach === undefined ? { ok: true, plan, resolvedNodeKeys } : { ok: true, plan, resolvedNodeKeys, handleViews };
 }
 
 /**
@@ -133,13 +160,13 @@ export function assertAutomationStudioFlowBootstrapPlanHandlesResolved(plan: Aut
 
 type NodeOutcome =
   | { status: "unchanged" }
-  | { status: "resolved"; parameters: JsonObject }
+  | { status: "resolved"; parameters: JsonObject; handleViews?: AutomationStudioPlanHandleView[] }
   | { status: "refused"; issueCodes: string[] }
   | { status: "needs_permission"; missing: string[]; requestId: string | null };
 
 async function resolveNode(
   node: AutomationStudioFlowBootstrapNode,
-  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean },
+  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean; handleReach?: AutomationStudioPlanHandleReach | undefined },
   permission: AutomationStudioActionPermissionCheck,
   inherited: boolean
 ): Promise<NodeOutcome> {
@@ -175,7 +202,8 @@ async function resolveNode(
       nodeDefinitionId: node.definitionId,
       parameters: structuredClone(parameters),
       permission,
-      ...(step.declared ? { declaredConsequences: [...step.declared] } : {})
+      ...(step.declared ? { declaredConsequences: [...step.declared] } : {}),
+      ...(input.handleReach ? { handleReach: input.handleReach } : {})
     });
   } catch {
     return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.failed);
@@ -196,6 +224,10 @@ async function resolveNode(
   if (answer.status === "unchanged" && exactKeys(answer, ["status"])) outcome = stripped(step, parameters);
   else if (answer.status === "resolved" && exactKeys(answer, ["status", "parameters"]) && isBoundedJsonObject(answer.parameters)) {
     outcome = { status: "resolved", parameters: structuredClone(answer.parameters) };
+  } else if (answer.status === "resolved" && input.handleReach !== undefined && exactKeys(answer, ["status", "parameters", "handleViews"])
+    && isBoundedJsonObject(answer.parameters) && isHandleViews(answer.handleViews)) {
+    // Only an answer to a resolution that asked for the view history (header).
+    outcome = { status: "resolved", parameters: structuredClone(answer.parameters), handleViews: answer.handleViews.map((view) => ({ handle: view.handle, view: view.view, location: view.location })) };
   } else return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
   // Whatever the node leaves with -- its own parameters or the domain's --
   // names no handle.
@@ -235,6 +267,15 @@ function permissionIssue(outcome: { missing: string[]; requestId: string | null 
     message: `A step would do something lasting the run is not permitted (${outcome.missing.join(", ")}); ${asked}.`,
     path
   };
+}
+
+/** A domain's `handleViews` (header): a short list of exactly `{handle, view, location}`, each a handle token, a capture number from 1, and a bounded location. */
+function isHandleViews(value: unknown): value is AutomationStudioPlanHandleView[] {
+  return Array.isArray(value) && value.length > 0 && value.length <= MAX_HANDLE_VIEWS && value.every((view) =>
+    isRecord(view) && exactKeys(view, ["handle", "view", "location"])
+    && typeof view.handle === "string" && view.handle.length <= AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH && handleToken().test(view.handle)
+    && typeof view.view === "number" && Number.isSafeInteger(view.view) && view.view >= 1
+    && typeof view.location === "string" && view.location !== "" && view.location.length <= MAX_VIEW_LOCATION_LENGTH);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

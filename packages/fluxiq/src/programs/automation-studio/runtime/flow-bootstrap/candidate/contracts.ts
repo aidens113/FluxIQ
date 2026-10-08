@@ -1,6 +1,6 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
-import type { AutomationStudioFlowBootstrapCompletionVerdict } from "../../llm/harness-options/index.ts";
+import type { AutomationStudioFlowBootstrapCompletionVerdict, AutomationStudioFlowBootstrapPlanHandleView } from "../../llm/harness-options/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
 
 /** Historical owner-enumerated bytes, never pinned-read or execution authority. */
@@ -32,7 +32,14 @@ export type AutomationStudioFlowCandidate = {
 };
 
 export type AutomationStudioFlowCandidateSubmission =
-  | { ok: true; candidate: AutomationStudioFlowCandidate }
+  /**
+   * `handleViews`: which of exploration's views each target handle the
+   * candidate named was resolved from (t358, `./submission.ts`) -- its node, the
+   * handle, the domain's number for that view and the location it reported. A
+   * record of where the targets were learned, beside the candidate rather than
+   * in it: it is outside the digest and the stored draft, and grants nothing.
+   */
+  | { ok: true; candidate: AutomationStudioFlowCandidate; handleViews: AutomationStudioFlowBootstrapPlanHandleView[] }
   | { ok: false; revision: number; check: Extract<AutomationStudioFlowBootstrapCompletionVerdict, { ok: false }>["check"] };
 
 /**

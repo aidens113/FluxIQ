@@ -47,6 +47,8 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
       // A refused submission names its way out and counts in the loop's run of refusals of one kind (`./submission-refusal.ts`).
       if (!submitted.ok) return { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, ...automationStudioCandidateSubmissionRefusal(submitted) };
       const evidence: JsonObject = { ok: true, status: "draft", revision: submitted.candidate.revision, digest: submitted.candidate.digest, changedPaths: submitted.candidate.changedPaths, verification: "not_performed", promotionAllowed: false,
+        // Which view each target was resolved from, so a step aimed at a control of another page than the one it runs on can be seen (t358).
+        ...(submitted.handleViews.length ? { handleViews: submitted.handleViews.map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location })) } : {}),
         next: gate.available ? `Test this revision with ${testId} before completing.` : "No trial runner is available here; completing leaves an unverified draft." };
       return { kind: "llm_evidence_tool_execution", evidence, effectApplied: false, targetsUnchanged: true };
     }
