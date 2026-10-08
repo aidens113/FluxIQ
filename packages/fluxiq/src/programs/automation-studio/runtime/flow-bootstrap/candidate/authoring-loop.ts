@@ -3,6 +3,7 @@ import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoo
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialPort } from "./contracts.ts";
 import { AutomationStudioFlowCandidateSubmissionController } from "./submission.ts";
+import { automationStudioCandidateSubmissionRefusal } from "./submission-refusal.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
 
 /**
@@ -43,10 +44,10 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
       if (call.toolId === testId) return gate.test(call.value, call.signal);
       if (call.toolId !== submitId) return input.loop.executeTool(call);
       const submitted = await controller.submit(call.value);
-      const evidence: JsonObject = submitted.ok
-        ? { ok: true, status: "draft", revision: submitted.candidate.revision, digest: submitted.candidate.digest, changedPaths: submitted.candidate.changedPaths, verification: "not_performed", promotionAllowed: false,
-            next: gate.available ? `Test this revision with ${testId} before completing.` : "No trial runner is available here; completing leaves an unverified draft." }
-        : { ok: false, revision: submitted.revision, diagnostics: submitted.check.feedback ?? {}, issueCodes: [...submitted.check.issueCodes] };
+      // A refused submission names its way out and counts in the loop's run of refusals of one kind (`./submission-refusal.ts`).
+      if (!submitted.ok) return { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, ...automationStudioCandidateSubmissionRefusal(submitted) };
+      const evidence: JsonObject = { ok: true, status: "draft", revision: submitted.candidate.revision, digest: submitted.candidate.digest, changedPaths: submitted.candidate.changedPaths, verification: "not_performed", promotionAllowed: false,
+        next: gate.available ? `Test this revision with ${testId} before completing.` : "No trial runner is available here; completing leaves an unverified draft." };
       return { kind: "llm_evidence_tool_execution", evidence, effectApplied: false, targetsUnchanged: true };
     }
   });

@@ -21,6 +21,15 @@
 // was at most sixteen issues, paths cut at 300 characters, messages at 400, and
 // the shapes held to 3,000 bytes (user: "Remove ANY AND ALL LIMITS ON THE
 // NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT HIDE INFORMATION").
+//
+// **A refused handle is named (t356, C3).** Lane A round 4
+// (`run-muyrpbnk-fef374e7`, 0037-0068) had twelve submissions refused
+// `web.handle.unknown` for `t478` and `t488`, handles printed only on the start
+// page, and every refusal named a node index and nothing else, so the model sent
+// the same two handles again each time. An issue whose code is about a handle
+// now carries `handles`: each handle (and the location beside it, when one was
+// written) that the refused node's parameter holds. They are tokens the model
+// itself wrote, never page content.
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "./contracts.ts";
@@ -122,6 +131,11 @@ const ROUTE_CODES: ReadonlySet<string> = new Set([
   "bootstrap.subflow_unreachable"
 ]);
 
+/** Issue codes about a handle a node's parameter names (`web.handle.unknown`, `web.handle.stale:target`, ...). */
+const HANDLE_ISSUE = /^[a-z]+\.handle\.[a-z_]+(?::|$)/u;
+/** The keys a written handle reference carries (`../../llm/harness-options/plan-node-handles.ts`). */
+const HANDLE_KEY = "handle", LOCATION_KEY = "location";
+
 const PARAMETER_PATH = /^plan\.subflows\.(\d+)\.nodes\.(\d+)\.parameters\.([^.]+)/u;
 /**
  * A domain refuses a node's parameters as a whole, at this path, and says
@@ -149,6 +163,8 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
       return { ...entry, accepted: { condition: AUTOMATION_STUDIO_ROUTE_CONDITION_FORM } };
     }
     const target = issue.path ? parameterTarget(issue.path, issue.code) : undefined;
+    const handles = issue.path && HANDLE_ISSUE.test(issue.code) ? handlesAt(input.plan, issue.path, issue.code) : [];
+    if (handles.length) entry.handles = handles;
     if (!target || described.has(target.key)) return entry;
     const definition = definitionAt(input, target);
     const accepted = definition ? acceptedShape(definition, target) : undefined;
@@ -182,6 +198,45 @@ function parameterTarget(path: string, code: string): ParameterTarget | undefine
     undeclared,
     key: `${subflow}.${node}${undeclared ? "#parameters" : `.${parameterId}`}`
   };
+}
+
+/**
+ * The handles the refused parameter holds, as the model wrote them: under the
+ * parameter the path or the code names, or, for an issue placed on the
+ * parameters as a whole with no parameter in its code, under all of them.
+ */
+function handlesAt(plan: unknown, path: string, code: string): JsonObject[] {
+  const named = PARAMETER_PATH.exec(path);
+  const whole = named ? undefined : PARAMETERS_PATH.exec(path);
+  const at = named ?? whole;
+  if (!at) return [];
+  const parameters = nodeAt(plan, Number(at[1]), Number(at[2]))?.parameters;
+  if (!isRecord(parameters)) return [];
+  // A named parameter, or the one the code positions; otherwise every parameter of the node.
+  const parameterId = named ? named[3] : POSITIONED_PARAMETER.exec(code)?.[1];
+  const found: JsonObject[] = [];
+  const seen = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) { value.forEach(visit); return; }
+    if (!isRecord(value)) return;
+    const handle = value[HANDLE_KEY];
+    if (typeof handle === "string" && handle.trim() !== "") {
+      const location = typeof value[LOCATION_KEY] === "string" ? value[LOCATION_KEY] : undefined;
+      const key = `${handle}\u0000${location ?? ""}`;
+      if (!seen.has(key)) { seen.add(key); found.push(location === undefined ? { handle } : { handle, location }); }
+    }
+    for (const nested of Object.values(value)) visit(nested);
+  };
+  visit(parameterId === undefined ? parameters : parameters[parameterId]);
+  return found;
+}
+
+function nodeAt(plan: unknown, subflowIndex: number, nodeIndex: number): Record<string, unknown> | undefined {
+  if (!isRecord(plan) || !Array.isArray(plan.subflows)) return undefined;
+  const subflow: unknown = plan.subflows[subflowIndex];
+  if (!isRecord(subflow) || !Array.isArray(subflow.nodes)) return undefined;
+  const node: unknown = subflow.nodes[nodeIndex];
+  return isRecord(node) ? node : undefined;
 }
 
 function definitionAt(

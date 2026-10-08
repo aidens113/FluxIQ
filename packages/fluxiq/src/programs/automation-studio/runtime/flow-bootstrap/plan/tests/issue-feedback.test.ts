@@ -177,3 +177,24 @@ describe("the feedback on a refused plan", () => {
     expect(feedback.filter((item) => item.accepted !== undefined)).toHaveLength(40);
   });
 });
+
+// Lane A round 4 (`run-muyrpbnk-fef374e7`, 0037-0068, t356 C3): twelve refusals named a node index and never the
+// handles it held, so the model sent the same start-page handles every time.
+describe("a refused handle is named", () => {
+  const plan = { subflows: [{ nodes: [{ parameters: { target: { handle: "t925" } } }, { parameters: { target: { handle: "t478", location: "~/" }, note: { handle: "t9" } } }] }] };
+
+  it("names the handles under the parameter the code positions, with the location written beside one", () => {
+    const feedback = automationStudioFlowBootstrapIssueFeedback({ plan, issues: [
+      { code: "web.handle.unknown:target", path: "plan.subflows.0.nodes.1.parameters", severity: "error", message: "" },
+      { code: "web.handle.unknown", path: "plan.subflows.0.nodes.1.parameters", severity: "error", message: "" }
+    ] });
+    expect(feedback[0]).toMatchObject({ code: "web.handle.unknown:target", handles: [{ handle: "t478", location: "~/" }] });
+    // Placed on the parameters as a whole with no parameter in its code: every handle the node holds.
+    expect(feedback[1]).toMatchObject({ handles: [{ handle: "t478", location: "~/" }, { handle: "t9" }] });
+  });
+
+  it("names nothing for an issue that is not about a handle", () => {
+    const feedback = automationStudioFlowBootstrapIssueFeedback({ plan, issues: [{ code: "bootstrap.invalid_parameter_value", path: "plan.subflows.0.nodes.0.parameters.target", severity: "error", message: "" }] });
+    expect(feedback[0]!.handles).toBeUndefined();
+  });
+});

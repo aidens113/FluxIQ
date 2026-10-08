@@ -13,7 +13,19 @@
 //   completed until the model changes it, so a judge cannot be asked until it
 //   happens to agree;
 // - unsure, not_judged and execution_failed refuse completion with the trial's
-//   feedback, and a transient one may be tested again.
+//   feedback, and a transient one may be tested again, up to
+//   `MAX_TRIALS_PER_REVISION` trials of one revision in all.
+//
+// **The gate is the one owner of re-testing (t356).** Lane A round 4
+// (`run-muyrpbnk-fef374e7`, steps 0048-0050): the second trial of revision 7
+// stopped on the page's first-press "Network busy" (`web.action.rate_limited`),
+// and the model's identical request to test it again was refused by the loop's
+// generic repeat guard (`../../llm/repeat-guard/outcomes.ts`) as "the same call
+// failed before", although nothing here forbade it. So a transient verdict
+// answers with the reason `retry_allowed`, which the repeat guard reads as "may
+// work if made again later" (`../../llm/repeat-guard/retry-later.ts`) and never
+// refuses; the bound on re-tests is this gate's, and a re-test past it is
+// refused here, by name, with what to do instead.
 //
 // With no port injected the test tool says `candidate.trial_unavailable` and
 // completion keeps its old meaning: the latest valid submission ends as an
@@ -26,13 +38,22 @@ import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandid
 
 export const AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID = "core.test_candidate";
 
+/** Trials of one revision and digest, the first included; a transient verdict may be tested again until this many have run. */
+export const AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION = 3;
+
+/** The reason a transient verdict carries: the repeat guard never refuses an identical call whose reason says to try again (header). */
+const RETEST_REASON = "retry_allowed";
+
 const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, string>> = Object.freeze({
   yes: "The trial passed for this exact revision and digest. Complete now with exactly this revision and digest. Submitting again makes a new revision that needs its own trial.",
   no: "The judge found the trial did not do what the instruction asks. Read the feedback, change the Flow to fix it, submit the whole revised candidate, then test the new revision. This exact Flow cannot be tested again or completed.",
   unsure: "The judge could not confirm the trial did what the instruction asks, so this revision cannot complete. Read the feedback; correct the Flow, submit it and test the new revision, or test this revision again if the feedback says nothing about the Flow itself.",
   not_judged: "The trial was not judged, so this revision cannot complete. Test this revision again, or change and resubmit it if the feedback names a cause in the Flow.",
-  execution_failed: "The candidate did not run to its end, so this revision cannot complete. Read the feedback for the step that failed, correct it, submit the whole candidate, then test the new revision."
+  execution_failed: "The candidate did not run to its end, so this revision cannot complete. Read the feedback for the step that failed: what it says happened, and whether trying again may pass (retryable). If it may, test this same revision again; otherwise correct that step, submit the whole candidate, then test the new revision."
 });
+
+/** Verdicts after which the same revision may be tested again, within the bound. */
+const TRANSIENT: ReadonlySet<AutomationStudioCandidateTrialVerdict> = new Set(["unsure", "not_judged", "execution_failed"]);
 
 /** The model-facing test tool and the completion rule bound to its verdicts. */
 export class AutomationStudioFlowCandidateTrialGate {
@@ -43,6 +64,8 @@ export class AutomationStudioFlowCandidateTrialGate {
   };
   private readonly verdicts = new Map<string, AutomationStudioCandidateTrialResult>();
   private readonly closedDigests = new Map<string, JsonObject>();
+  /** Trials run of each revision and digest. */
+  private readonly trials = new Map<string, number>();
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -70,18 +93,27 @@ export class AutomationStudioFlowCandidateTrialGate {
     }
     const closed = this.closedDigests.get(latest.digest);
     if (closed) return refused("candidate.trial_unchanged_after_no", "This exact Flow was already tried and judged no. Change it to address that feedback, submit it, then test the new revision.", { previousFeedback: closed });
+    const tried = this.trials.get(key(latest)) ?? 0;
+    if (tried >= AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION) {
+      return refused("candidate.trial_retest_limit", `This exact revision has been tested ${tried} times without a yes, so it is not tested again. Read the last trial's feedback, change the step it names (or the Flow), submit the whole candidate, then test the new revision.`,
+        { trials: tried, maxTrials: AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION, ...(this.verdicts.get(key(latest)) ? { previousFeedback: this.verdicts.get(key(latest))!.feedback } : {}) });
+    }
     const signal = callSignal ?? this.input.signal ?? this.fallbackSignal;
     signal.throwIfAborted();
+    this.trials.set(key(latest), tried + 1);
     const answer = await this.ask(trial, latest, signal);
     signal.throwIfAborted();
     this.verdicts.set(key(answer), answer);
     if (answer.verdict === "no") this.closedDigests.set(answer.digest, answer.feedback);
+    const retestsLeft = TRANSIENT.has(answer.verdict) ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
       ok: answer.verdict === "yes", verdict: answer.verdict, revision: answer.revision, digest: answer.digest,
-      ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback, instruction: INSTRUCTIONS[answer.verdict]
+      ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback, instruction: INSTRUCTIONS[answer.verdict],
+      ...(TRANSIENT.has(answer.verdict) ? { retestsLeft } : {})
     };
-    // The trial ran on the target, so whatever it touched may have moved.
-    return { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode: `candidate.trial_${answer.verdict}` };
+    // The trial ran on the target, so whatever it touched may have moved. A transient verdict with a re-test left says
+    // so in its reason, so the identical request to test again is never refused as a repeat (header).
+    return { kind: "llm_evidence_tool_execution", evidence, effectApplied: true, targetsUnchanged: false, resultCode: `candidate.trial_${answer.verdict}`, ...(retestsLeft > 0 ? { resultReason: RETEST_REASON } : {}) };
   }
 
   /** The completion rule, asked only once the receipt names the latest valid submission. */
