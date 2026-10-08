@@ -731,6 +731,56 @@ every failure is swallowed. Each deterministic ladder rung leaves the candidate
 list once it has run, so an already-consumed deterministic answer does not
 suppress escalation forever.
 
+**A lasting act is checked, never blindly repeated** (the user's rule of
+2026-10-07; t359). One owner decides it for every path, graph or not:
+`automationStudioAssessAttemptFault` (`runtime/executor/defensive/assess.ts`),
+with what makes an act lasting in `runtime/executor/defensive/lasting-act.ts`.
+A node's act lasts when either source says so:
+
+- **the node**: it is marked as acting on the world
+  (`automationStudioNodeMutates`, for example `metadata.effect: "mutate"`), or
+  the step it was built from declared a lasting consequence
+  (`metadata.declaredConsequences` holding any class; `[]` means none and does
+  not count). `AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY` is the one
+  definition of that key, which `runtime/flow-bootstrap/adaptation.ts` stamps.
+  A Flow's web node carries no effect metadata, which is why the declaration
+  and the producer's statement matter;
+- **the producer**: the failure record says `effect: "ambiguous"`, meaning the
+  act was made and only its answer is missing. The web domain states this on
+  its committing actions (a click, a key press, a dialog answer, typing that
+  sends its form) and states `effect: "unacted"` when the failure shows nothing
+  was dispatched, including a send its extension says the browser refused
+  before it reached the page (t361). It states nothing about any other action
+  and leaves its record's `retryable` as the code has it, wherever the failure
+  was found, so a field whose read-back does not match or a tick that did not
+  take is made again like any transient failure (t361; t355 had cleared
+  `retryable` for those at verification and confirmation).
+
+After a failure, a lasting act keeps the first attempt and three retries only
+when the failure shows the act did not happen (`effect: "unacted"`, or the
+fault was found while resolving the target). Otherwise the retry is refused and
+the assessment carries `actUncertain`: a graph run that stops on it says
+`Outcome uncertain: ...` (`automationStudioStopMessage`), a Flow does not walk
+past it (`continuation.ts`; a choice the author wrote down still wins), and the
+ladder's wait and clear-interference rungs do not re-press it
+(`ladder-run.ts`). An effect check that shows the act landed makes it count as
+done: on the graph path that is the existing `skip_satisfied_node` rung (the
+expected state already holds); outside a graph it is the optional `checkEffect`
+hook of `automationStudioDispatchWithNodeRetries`, which answers `landed`,
+`not_landed` (the act is made again, as `unacted`) or `unknown`, and the
+outcome then says `lastingAct: "landed"` or `"uncertain"`. Nodes whose act
+does not last keep t355's retries unchanged. A domain running a node outside a
+graph describes it as its Flow node would be described: the web domain marks a
+read `effect: "observe"` and gives a page-changing node only its call's
+declared consequences, never a blanket `effect: "mutate"`, which would make
+every page-changing node lasting and take typing's and navigation's retries
+away (t361). It reads `lastingAct: "uncertain"` on its exploration and
+test-replay paths and tells the model the step's outcome is uncertain and was
+not repeated, rather than that it failed (reason `outcome_uncertain`, which a
+chat card words as "FluxIQ couldn't tell whether it took effect, so it didn't
+do it again", `ui/activity-action/failure-reason.ts`); it passes no
+`checkEffect` there yet.
+
 **A step that cannot run continues where the page is.** When a step of a run
 cannot run, Core reads the page through the host and continues at the node
 whose recorded pre-state matches, before any recovery rung or model call

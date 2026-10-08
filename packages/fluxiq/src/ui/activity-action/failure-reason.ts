@@ -84,6 +84,11 @@ const REFUSAL_REASONS: readonly Reason[] = [
   // page miss: the repeats of a list read refused for its list read "it wasn't
   // on the page" (R2-U-6, `run-muwansvz-a2b4a987`, steps 0039 and 0046).
   { words: /_(answered_the_same_again|same_answer_again)_/u, why: "FluxIQ didn't send it, for the same reason as the time before", read: "FluxIQ didn't read it, for the same reason as the time before" },
+  // A lasting act whose failure left its effect unknown, which the run did not
+  // make again (`outcome_uncertain`, t359/t361): read from its code alone it
+  // said "the page changed before it could" or nothing at all, when the step
+  // may already have happened. Before `REASONS`, whose `changed` would say so.
+  { words: /_(outcome_uncertain)_/u, why: "FluxIQ couldn't tell whether it took effect, so it didn't do it again" },
   // A step asked to run again exactly as it was (`changes_nothing`, the draft's
   // own refusal reason): nothing was looked for on the page.
   { words: /_(changes_nothing)_/u, why: "it was already tried exactly this way on this same page" },
