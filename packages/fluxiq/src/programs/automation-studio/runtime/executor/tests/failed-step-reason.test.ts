@@ -10,6 +10,14 @@
 // And a playback through a Merge shows no "Join paths" card: the merge is
 // plumbing on the Flow's paths, never announced (t174/w88), and no row of the
 // whole sequence reads as a join.
+//
+// And the recovery ladder's end says why it stopped (t366). Lane A round 5
+// (`run-muz0f12h-eae63685`): the candidate's trial pressed Add to cart once, the
+// page refused it ("needs something first", `web.action.refused_by_page`, not
+// retryable), and the ladder's end read "The quick fixes didn't help: Trying
+// again didn't fix the step": nothing had pressed it a second time, and nothing
+// was being fixed. The trial runs in the build's unit of work, so its words
+// name it as the test it is.
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -95,5 +103,78 @@ describe("a playback through a Merge", () => {
 
     expect(seen.some((event) => event.step?.nodeId === "n2.join" || event.detail?.ref === "n2.join")).toBe(false);
     expect(seen.map((event) => activityActionOf(event)?.kind).filter((kind) => kind === "join")).toEqual([]);
+  });
+});
+
+const stopFlow: AutomationStudioFlowDocument = {
+  schemaVersion: "0.1",
+  flowId: "flow.ladder-stop-words",
+  ownerKind: "routine",
+  ownerId: "routine.test",
+  name: "Ladder stop words",
+  createdAt: 1,
+  updatedAt: 1,
+  nodes: [press("s4.coupon", "coupon", "Get coupons"), press("s9.cart", "cart", "Add to cart")],
+  edges: [{ id: "s4.coupon.success.s9.cart", sourceNodeId: "s4.coupon", sourcePortId: "success", targetNodeId: "s9.cart", targetPortId: "in" }]
+};
+
+const REFUSED = { category: "unexpected_state", code: "web.action.refused_by_page", retryable: false, stage: "execution", effect: "unacted" } as const;
+const BUSY = { category: "timeout", code: "web.action.rate_limited", retryable: true, stage: "execution", effect: "unacted" } as const;
+
+/** Fails the presses of `elementId` with `failures`, in order, then lets them through; every other press succeeds. */
+function failing(elementId: string, failures: ReadonlyArray<typeof REFUSED | typeof BUSY>): NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]> {
+  let index = 0;
+  return (effect) => {
+    if (JSON.stringify(effect.payload ?? null).includes(`"${elementId}"`) && index < failures.length) {
+      const failure = failures[index++]!;
+      return { status: "failed", route: "failed", message: "The page refused the action.", failure };
+    }
+    return { status: "success", route: "success", outputs: { ok: true } };
+  };
+}
+
+async function playedStop(kind: "build" | "run", dispatcher: NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>): Promise<void> {
+  await runWithAutomationStudioActivity({ kind, id: `${kind}.1`, projectId: "project.1", flowId: stopFlow.flowId }, () => runAutomationStudioGraph(stopFlow, { delay: async () => undefined, effectDispatcher: dispatcher }));
+}
+
+/** The ladder's own thought rows for `nodeId`: its choices and its end. */
+const ladderRows = (nodeId: string) => seen.filter((event) => event.detail?.kind === "thought" && event.detail.ref === nodeId);
+const said = (event: ClientGatewayActivity) => `${event.label} ${event.detail?.title ?? ""} ${event.detail?.text ?? ""}`;
+const TRYING_AGAIN = /\b(trying|tried|try)\b[^.]*\bagain\b/iu;
+
+describe("the recovery ladder's end", () => {
+  it("never says trying again for a refusal it did not retry, and names a build's run as its test", async () => {
+    await playedStop("build", failing("cart", [REFUSED]));
+
+    const rows = ladderRows("s9.cart");
+    expect(rows.map((event) => [event.detail!.title, event.detail!.text])).toEqual([
+      ["Not repeating the step", "Another try wouldn't change what happened, so the test follows what the Flow says to do when this step fails."]
+    ]);
+    const cart = seen.filter((event) => event.detail?.ref === "s9.cart");
+    expect(cart.length).toBeGreaterThan(1);
+    for (const event of cart) {
+      expect(said(event)).not.toMatch(TRYING_AGAIN);
+      expect(said(event)).not.toMatch(/\bfix/iu);
+    }
+  });
+
+  it("says the run, in a saved Flow's run", async () => {
+    await playedStop("run", failing("cart", [REFUSED]));
+
+    expect(ladderRows("s9.cart").map((event) => event.detail!.text)).toEqual(["Another try wouldn't change what happened, so the run follows what the Flow says to do when this step fails."]);
+  });
+
+  it("says trying again didn't help only once the step was pressed again", async () => {
+    await playedStop("build", failing("cart", [BUSY, REFUSED]));
+
+    expect(ladderRows("s9.cart").map((event) => event.detail!.title)).toEqual(["Trying the step again", "Trying again didn't help"]);
+    expect(ladderRows("s9.cart").at(-1)!.detail!.text).toBe("FluxIQ tried the step again and it still didn't work, so the test follows what the Flow says to do when this step fails.");
+  });
+
+  it("still says trying the step again when the ladder retries a busy page", async () => {
+    await playedStop("build", failing("coupon", [BUSY]));
+
+    expect(ladderRows("s4.coupon").map((event) => event.detail!.title)).toEqual(["Trying the step again"]);
+    expect(seen.filter((event) => event.step?.nodeId === "s4.coupon")).toHaveLength(2);
   });
 });
