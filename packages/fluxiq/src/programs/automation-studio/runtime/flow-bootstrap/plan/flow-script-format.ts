@@ -114,6 +114,17 @@
 // `optional: yes` line now says it (`../authoring/assemble.ts`). Both live in
 // the same candidate-only constant, because that is what candidate mode shows
 // (`../candidate/authoring-loop.ts`) and the legacy schema must not change.
+//
+// The statement about checks was added on 2026-10-07 (t368), from lane A round 7
+// (t342, qualifying run 2, `run-muz3jyz8-1d363a69`). Every trial did every act
+// right and then failed on the model's own last step, a `wait_for_text` for
+// "Cart (3)": text the page holds only inside a closed mini-cart. The act
+// example ended exactly so, with a wait for a confirmation it invented, and a
+// model copies the example. A trial whose last step fails still fails, because
+// the saved Flow would fail there in playback; what changed is that the example
+// no longer ends with an invented check, and the guidance says why one is not
+// needed -- the build-test judge reads the page the run ends on -- and what a
+// wait may wait for when the Flow needs one.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 
@@ -205,6 +216,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
   "An option in a dropdown is `node: web.dom.select` with the option's `value:`. A checkbox, a radio, or an option the page draws itself and shows chosen -- a colour swatch or size chip drawn apart from the others (`marked`), a `selected` tab, a `pressed` toggle -- is `node: web.dom.check` on that control itself, `checked: true` to choose it or `checked: false` to clear it; it presses only when the state differs, so it is right however the page arrives. Never look for a hidden box behind a swatch or chip: check the swatch or chip itself.",
   "Every option the instruction asks for gets its own step, even one the page arrives with already chosen: write it with `web.dom.check` or `web.dom.select`, which change nothing when the state is already right, so the Flow is right however a later run's page arrives. Press an option with `node: web.dom.click` only when the page shows no chosen state for it at all; `web.dom.check` refuses such a control and says so. A press is right for a control that does something each time it is pressed: apply, add, send, open, next.",
   "`optional: yes` marks a step that is only sometimes needed -- closing a cookie banner, a popup or a notice the page may not show -- and the run goes on past it when it cannot be done. Use it only on such a step, never on one the answer depends on, never inside a repeat and never beside an `on <port>:` line.",
+  "Do not end the Flow with a check you invented to confirm it worked: whether the run did what was asked is judged from the page it ends on, so the last step is the last act the instruction needs. A wait or check step belongs in the Flow only where a later step needs the page to be ready, or where the instruction asks for the check. It waits only for something the page visibly showed after that act while you gathered evidence, never for text inside a closed panel or menu, or a notice that has already gone.",
   "Example, acting on one item:",
   "flow: Put two medium blue shirts in the basket",
   "step: open the shirt's page",
@@ -230,10 +242,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
   "step: add it to the basket",
   "  node: web.dom.click",
   "  target: t11",
-  "  consequences: modify_existing",
-  "step: check the basket took it",
-  "  node: web.dom.wait_for_text",
-  "  text: added to your basket"
+  "  consequences: modify_existing"
 ].join("\n");
 
 /**

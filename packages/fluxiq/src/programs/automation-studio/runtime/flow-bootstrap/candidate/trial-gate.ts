@@ -27,6 +27,18 @@
 // refuses; the bound on re-tests is this gate's, and a re-test past it is
 // refused here, by name, with what to do instead.
 //
+// **The same failure twice ends re-testing (t368, F2).** Lane A round 6
+// (`run-muz2cj6p-80eb2179`, trials 1 and 2) re-tested revision 2 after its
+// wait timed out, and it timed out again at the same step: the producer calls
+// a timeout retryable, but the same step failing the same way in two trials of
+// one revision is the Flow, not the page. So when an `execution_failed` trial
+// stops at the same step, with the same node and failure code, as an earlier
+// trial of the same revision, that revision is not tested again: the answer
+// carries no re-test, says to change the step, and a later request to test it
+// is refused `candidate.trial_same_failure`. The step is read from the trial's
+// feedback, whose `steps` list ends at the step that stopped the run
+// (`../../service/candidate-trial/feedback.ts`).
+//
 // With no port injected the test tool says `candidate.trial_unavailable` and
 // completion keeps its old meaning: the latest valid submission ends as an
 // unverified draft, which is all a deployment without a trial runner can make.
@@ -52,6 +64,9 @@ const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, strin
   execution_failed: "The candidate did not run to its end, so this revision cannot complete. Read the feedback for the step that failed: what it says happened, and whether trying again may pass (retryable). If it may, test this same revision again; otherwise correct that step, submit the whole candidate, then test the new revision."
 });
 
+/** What the model is told when a revision failed the same way twice. */
+const SAME_FAILURE_INSTRUCTION = "This revision stopped at the same step with the same failure in two trials, so testing it again would fail the same way. Change that step, or remove it if it only checks the act before it (the judge reads the page the run ends on), submit the whole candidate, then test the new revision.";
+
 /** Verdicts after which the same revision may be tested again, within the bound. */
 const TRANSIENT: ReadonlySet<AutomationStudioCandidateTrialVerdict> = new Set(["unsure", "not_judged", "execution_failed"]);
 
@@ -66,6 +81,10 @@ export class AutomationStudioFlowCandidateTrialGate {
   private readonly closedDigests = new Map<string, JsonObject>();
   /** Trials run of each revision and digest. */
   private readonly trials = new Map<string, number>();
+  /** The steps the `execution_failed` trials of each revision and digest stopped at. */
+  private readonly stoppedAt = new Map<string, Set<string>>();
+  /** Revisions that stopped at the same step twice, with that step: they are not tested again. */
+  private readonly repeatedFailures = new Map<string, JsonObject>();
   private readonly fallbackSignal = new AbortController().signal;
 
   constructor(private readonly input: {
@@ -93,6 +112,8 @@ export class AutomationStudioFlowCandidateTrialGate {
     }
     const closed = this.closedDigests.get(latest.digest);
     if (closed) return refused("candidate.trial_unchanged_after_no", "This exact Flow was already tried and judged no. Change it to address that feedback, submit it, then test the new revision.", { previousFeedback: closed });
+    const repeated = this.repeatedFailures.get(key(latest));
+    if (repeated) return refused("candidate.trial_same_failure", SAME_FAILURE_INSTRUCTION, { failedStep: repeated, ...(this.verdicts.get(key(latest)) ? { previousFeedback: this.verdicts.get(key(latest))!.feedback } : {}) });
     const tried = this.trials.get(key(latest)) ?? 0;
     if (tried >= AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION) {
       return refused("candidate.trial_retest_limit", `This exact revision has been tested ${tried} times without a yes, so it is not tested again. Read the last trial's feedback, change the step it names (or the Flow), submit the whole candidate, then test the new revision.`,
@@ -105,10 +126,12 @@ export class AutomationStudioFlowCandidateTrialGate {
     signal.throwIfAborted();
     this.verdicts.set(key(answer), answer);
     if (answer.verdict === "no") this.closedDigests.set(answer.digest, answer.feedback);
-    const retestsLeft = TRANSIENT.has(answer.verdict) ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
+    const repeatedStep = this.recordStop(answer);
+    const retestsLeft = TRANSIENT.has(answer.verdict) && !repeatedStep ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
       ok: answer.verdict === "yes", verdict: answer.verdict, revision: answer.revision, digest: answer.digest,
-      ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback, instruction: INSTRUCTIONS[answer.verdict],
+      ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback, instruction: repeatedStep ? SAME_FAILURE_INSTRUCTION : INSTRUCTIONS[answer.verdict],
+      ...(repeatedStep ? { failedStep: repeatedStep } : {}),
       ...(TRANSIENT.has(answer.verdict) ? { retestsLeft } : {})
     };
     // The trial ran on the target, so whatever it touched may have moved. A transient verdict with a re-test left says
@@ -123,8 +146,29 @@ export class AutomationStudioFlowCandidateTrialGate {
     if (answer?.verdict === "yes") return { ok: true };
     const closed = this.closedDigests.get(receipt.digest);
     if (closed) return refusal("candidate.trial_unchanged_after_no", "This exact Flow was judged no and has not changed. Change it to address that feedback, submit it, test the new revision, and complete only after a yes.", { previousFeedback: closed });
+    const repeated = this.repeatedFailures.get(key(receipt));
+    if (answer && repeated) return refusal(`candidate.trial_${answer.verdict}`, SAME_FAILURE_INSTRUCTION, { verdict: answer.verdict, failedStep: repeated, trialFeedback: answer.feedback });
     if (!answer) return refusal("candidate.trial_required", `Test this candidate first: call ${AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
     return refusal(`candidate.trial_${answer.verdict}`, INSTRUCTIONS[answer.verdict], { verdict: answer.verdict, trialFeedback: answer.feedback });
+  }
+
+  /**
+   * Records the step an `execution_failed` trial stopped at, and answers that
+   * step when an earlier trial of the same revision stopped at it too, which
+   * closes the revision to re-testing (header).
+   */
+  private recordStop(answer: AutomationStudioCandidateTrialResult): JsonObject | undefined {
+    if (answer.verdict !== "execution_failed") return undefined;
+    const step = stoppingStep(answer.feedback);
+    if (!step) return undefined;
+    const signature = JSON.stringify(step);
+    const seen = this.stoppedAt.get(key(answer)) ?? new Set<string>();
+    const repeated = seen.has(signature);
+    seen.add(signature);
+    this.stoppedAt.set(key(answer), seen);
+    if (!repeated) return undefined;
+    this.repeatedFailures.set(key(answer), step);
+    return step;
   }
 
   /** The verdict standing for this candidate, when it was tried; undefined for an untested candidate. */
@@ -154,6 +198,23 @@ export class AutomationStudioFlowCandidateTrialGate {
 }
 
 function key(receipt: { revision: number; digest: string }): string { return `${receipt.revision}\n${receipt.digest}`; }
+
+/**
+ * The step a failed trial stopped at, from its feedback: the last step listed,
+ * when it failed, by its position, node and failure code, with the run's code.
+ * Nothing when the feedback lists no failed last step (a start that failed, a
+ * port that failed, a run that stopped between steps).
+ */
+function stoppingStep(feedback: JsonObject): JsonObject | undefined {
+  const steps = feedback.steps;
+  const last = Array.isArray(steps) ? steps.at(-1) : undefined;
+  if (!isJsonObject(last) || last.status !== "failed" || typeof last.step !== "number" || !Number.isSafeInteger(last.step) || typeof last.definitionId !== "string") return undefined;
+  return {
+    step: last.step, definitionId: last.definitionId,
+    ...(typeof last.failureCode === "string" ? { failureCode: last.failureCode } : {}),
+    ...(typeof feedback.code === "string" ? { code: feedback.code } : {})
+  };
+}
 
 function refused(code: string, instruction: string, detail: JsonObject = {}): AutomationStudioLlmEvidenceToolExecutionResult {
   return { kind: "llm_evidence_tool_execution", evidence: { ok: false, code, instruction, ...detail }, effectApplied: false, targetsUnchanged: true, resultCode: code };

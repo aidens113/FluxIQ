@@ -209,6 +209,82 @@ describe("detached candidate normal execution", () => {
     expect(called).toBe(false);
   });
 
+  // t368, F1 (lane A round 6, `run-muz2cj6p-80eb2179`, trial 3): the model's
+  // last step, `wait_for_text "Cart (3)"` marked `optional: yes`, timed out and
+  // still failed the trial. The optional shape's failed route into its Merge was
+  // never offered, because the trial ran with a recovery budget of zero, and the
+  // continuation rule could not enumerate a domain output's ports, so it stopped.
+  describe("an optional step that cannot be done", () => {
+    const TIMEOUT = { category: "timeout", code: "web.action.timeout", retryable: true, stage: "execution" } as const;
+    const domainOutput = (id: string): AutomationStudioNodeDefinition => ({ schemaVersion: "0.1", id, version: "1.0.0", label: id, description: "A domain output known only to the build's registry", category: "action",
+      source: { kind: "code", moduleId: "test", implementationKey: id, trust: "trusted-local" }, availability: { kind: "global" }, capabilities: { executable: true },
+      safety: { requiredPermissions: [] }, inputs: [{ id: "in", label: "In", valueType: "any" }], outputs: [{ id: "success", label: "Success", valueType: "any" }, { id: "failed", label: "Failed", valueType: "any" }], parameters: [] });
+
+    /** start, then each step in order; an optional one is joined to the next by a Merge on both of its ways out, as the script assembler writes it. */
+    function optionalPlan(steps: ReadonlyArray<{ key: string; optional: boolean }>) {
+      const { input, plan } = fixture();
+      const wait = domainOutput("custom.wait"), press = domainOutput("custom.press");
+      input.registry = new AutomationStudioNodeRegistry([...canonicalBuiltinAutomationNodeDefinitions, wait, press]);
+      const nodes: AutomationStudioFlowBootstrapPlan["subflows"][number]["nodes"] = [{ key: "start", definitionId: "builtin.control.start", definitionVersion: "1.0.0" }];
+      const edges: AutomationStudioFlowBootstrapPlan["subflows"][number]["edges"] = [];
+      let previous = { nodeKey: "start", portId: "success" };
+      for (const step of steps) {
+        const definition = step.key.startsWith("wait") ? wait : press;
+        nodes.push({ key: step.key, definitionId: definition.id, definitionVersion: definition.version, consequences: [] });
+        edges.push({ key: `${previous.nodeKey}_${step.key}`, source: previous, target: { nodeKey: step.key, portId: "in" } });
+        if (!step.optional) { previous = { nodeKey: step.key, portId: "success" }; continue; }
+        const join = `join_${step.key}`;
+        nodes.push({ key: join, definitionId: "builtin.control.merge", definitionVersion: "1.0.0", parameters: { mergeMode: "first" } });
+        edges.push({ key: `${step.key}_failed`, source: { nodeKey: step.key, portId: "failed" }, target: { nodeKey: join, portId: "branches" } });
+        edges.push({ key: `${step.key}_success`, source: { nodeKey: step.key, portId: "success" }, target: { nodeKey: join, portId: "branches" } });
+        previous = { nodeKey: join, portId: "success" };
+      }
+      plan.subflows[0]!.nodes = nodes; plan.subflows[0]!.edges = edges;
+      input.candidate.buildPlan = validateAutomationStudioFlowBootstrapPlan({ plan, resolution: input.resolution, registry: input.registry }).validated!;
+      expect(input.candidate.buildPlan).toBeDefined();
+      input.options!.delay = async () => undefined;
+      return input;
+    }
+
+    /** Every wait times out, after its retries, as `wait_for_text` did on hidden text; every press succeeds. */
+    function waitsTimeOut(input: ReturnType<typeof optionalPlan>) {
+      const dispatched: string[] = [];
+      input.options!.nativeNodeExecutor = async ({ node }) => {
+        dispatched.push(node.definitionId);
+        return node.definitionId === "custom.wait"
+          ? { result: { status: "failed", route: "failed", outputs: {}, message: "the text did not appear before the timeout", failure: { ...TIMEOUT } } }
+          : { result: { status: "success", route: "success", outputs: {} } };
+      };
+      return dispatched;
+    }
+
+    it("goes on past an optional last wait that timed out, after its retries, and the run reaches its end (round 6, trial 3)", async () => {
+      const input = optionalPlan([{ key: "press", optional: false }, { key: "wait", optional: true }]);
+      const dispatched = waitsTimeOut(input);
+      const result = await runAutomationStudioDetachedCandidate(input);
+      expect(dispatched.filter((id) => id === "custom.wait")).toHaveLength(4);
+      expect(result.receipt.status).toBe("succeeded");
+      expect(result.code).toBeUndefined();
+      expect(result.trace?.attempts.at(-1)?.definitionId).toBe("builtin.control.merge");
+    });
+
+    it("goes on past every optional step that cannot be done, however many there are, to the steps after them", async () => {
+      const input = optionalPlan([{ key: "wait1", optional: true }, { key: "wait2", optional: true }, { key: "wait3", optional: true }, { key: "press", optional: false }]);
+      waitsTimeOut(input);
+      const result = await runAutomationStudioDetachedCandidate(input);
+      expect(result.receipt.status).toBe("succeeded");
+      expect(result.trace?.attempts.at(-1)?.nodeId).toContain("press");
+    });
+
+    it("still fails the trial on a step that is not optional", async () => {
+      const input = optionalPlan([{ key: "press", optional: false }, { key: "wait", optional: false }]);
+      waitsTimeOut(input);
+      const result = await runAutomationStudioDetachedCandidate(input);
+      expect(result.receipt.status).toBe("failed");
+      expect(result.code).toBe("candidate.execution_incomplete");
+    });
+  });
+
   it("preserves completed execution facts when the subsequent owner read fails", async () => {
     const { input } = fixture(); let reads = 0;
     input.currentIdentity = async () => { if (++reads === 3) throw new Error("synthetic owner unavailable"); return input.identity; };

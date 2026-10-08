@@ -160,6 +160,61 @@ describe("candidate trial gate", () => {
     expect(String(limited?.instruction)).toMatch(/submit the whole candidate/);
   });
 
+  // t368, F2 (lane A round 6, `run-muz2cj6p-80eb2179`, trials 1 and 2): revision 2's wait timed out, the model
+  // re-tested it, and it timed out again at the same step. The same failure at the same step in two trials of one
+  // revision is the Flow, not the page: the revision is not tested again, and the model is told to change the step.
+  describe("the same failure at the same step twice", () => {
+    const stoppedAt = (step: number, definitionId: string, failureCode: string): JsonObject => ({
+      code: "candidate.execution_incomplete", start: "reset",
+      steps: [{ step: 1, definitionId: "web.output.browser-navigate", status: "succeeded" }, { step, definitionId, status: "failed", attempts: 4, failureCode, retryable: true }]
+    });
+    const failingPort = (feedbacks: JsonObject[], asked: AutomationStudioCandidateTrialRequest[]) => async (request: AutomationStudioCandidateTrialRequest): Promise<AutomationStudioCandidateTrialResult> => {
+      asked.push(request);
+      const feedback = feedbacks.shift();
+      return feedback
+        ? { revision: request.revision, digest: request.digest, verdict: "execution_failed", feedback, trialRunId: `run.${asked.length}` }
+        : { revision: request.revision, digest: request.digest, verdict: "yes", feedback: { said: "yes" }, trialRunId: `run.${asked.length}` };
+    };
+    const wait = stoppedAt(13, "web.output.dom-wait_for_text", "web.action.timeout");
+
+    it("ends re-testing of that revision with change-the-step feedback, within the three-trial limit", async () => {
+      const asked: AutomationStudioCandidateTrialRequest[] = [];
+      const { outcome, seen } = await run([submit(), test, test, test, complete, complete], failingPort([structuredClone(wait), structuredClone(wait), structuredClone(wait)], asked));
+      expect(asked.map((request) => request.revision)).toEqual([1, 1]);
+      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[2]!)).toMatchObject({ verdict: "execution_failed", retestsLeft: 2 });
+      const second = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!);
+      expect(second).toMatchObject({ verdict: "execution_failed", retestsLeft: 0,
+        failedStep: { step: 13, definitionId: "web.output.dom-wait_for_text", failureCode: "web.action.timeout", code: "candidate.execution_incomplete" } });
+      expect(String(second?.instruction)).toContain("stopped at the same step with the same failure in two trials");
+      expect(String(second?.instruction)).toContain("Change that step");
+      const refusedRetest = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!);
+      expect(refusedRetest).toMatchObject({ ok: false, code: "candidate.trial_same_failure", failedStep: { step: 13, definitionId: "web.output.dom-wait_for_text" } });
+      expect(JSON.stringify(seen[4])).not.toContain("llm_evidence_loop.repeat_refused");
+      // Completion says the same, never "test this same revision again".
+      const completion = completionFeedback(seen[5]!);
+      expect(completion).toMatchObject({ code: "candidate.trial_execution_failed", failedStep: { step: 13 } });
+      expect(String(completion?.instruction)).toContain("Change that step");
+      expect(loopOf(outcome).trial).toMatchObject({ verdict: "execution_failed", revision: 1 });
+    });
+
+    it("still re-tests a revision whose two failures were at different steps", async () => {
+      const asked: AutomationStudioCandidateTrialRequest[] = [];
+      const { outcome, seen } = await run([submit(), test, test, test, complete],
+        failingPort([structuredClone(wait), stoppedAt(8, "web.output.dom-click", "web.action.rate_limited")], asked));
+      expect(asked.map((request) => request.revision)).toEqual([1, 1, 1]);
+      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ verdict: "execution_failed", retestsLeft: 1 });
+      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).not.toHaveProperty("failedStep");
+      expect(loopOf(outcome).loop.ok).toBe(true);
+    });
+
+    it("tests the changed revision the model submits after it", async () => {
+      const asked: AutomationStudioCandidateTrialRequest[] = [];
+      const { outcome } = await run([submit("first"), test, test, submit("changed"), test, complete], failingPort([structuredClone(wait), structuredClone(wait)], asked));
+      expect(asked.map((request) => request.revision)).toEqual([1, 1, 2]);
+      expect(loopOf(outcome)).toMatchObject({ loop: { ok: true }, trial: { verdict: "yes", revision: 2 } });
+    });
+  });
+
   it("after a no, refuses completing or retesting the unchanged Flow until it changes", async () => {
     const asked: AutomationStudioCandidateTrialRequest[] = [];
     const { outcome, seen } = await run([submit("first"), test, complete, test, submit("first"), test, submit("revised"), test, complete], verdictPort(["no", "yes"], asked));
