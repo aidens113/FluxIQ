@@ -20,7 +20,7 @@ import { automationStudioIsPersonNeededAsk, automationStudioPersonNeededEnding, 
 import { automationStudioRecordedState } from "./recorded-state.ts";
 import { recoveryBudgetState } from "./recovery-budget.ts";
 import { failureMessageForRecoveryStop } from "./recovery-ladder.ts";
-import { automationStudioNodeRetryPolicy } from "./retry-policy.ts";
+import { automationStudioAttemptIsRetryable, automationStudioNodeRetryPolicy } from "./retry-policy.ts";
 import type { AutomationStudioCapturedRecords } from "./record-summary.ts";
 import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransition } from "./region-execution.ts";
 import { automationStudioParkedRun, automationStudioAskInEffects, automationStudioAskSettlement, type AutomationStudioAsk, type AutomationStudioAskSettlement, type AutomationStudioCarriedIteration, type AutomationStudioParkedRun } from "../parking/index.ts";
@@ -29,7 +29,7 @@ import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { automationStudioStopAfterNode } from "./partial-run/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
-import { automationStudioActivityAskResolution, automationStudioActivityLoopWords, automationStudioActivityRecoveryChoice, automationStudioActivityStepNumbers, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
+import { automationStudioActivityAskResolution, automationStudioActivityInBuild, automationStudioActivityLoopWords, automationStudioActivityRecoveryChoice, automationStudioActivityStepNumbers, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -619,7 +619,7 @@ async function executeAutomationStudioGraph(
           }
         });
         const recoveryDecision = ladder.decision;
-        const choice = automationStudioActivityRecoveryChoice(ladder); emitAutomationStudioActivityThought({ phase: "repairing", title: choice.title, text: choice.text, ref: failedNode.id });
+        const choice = automationStudioActivityRecoveryChoice(ladder, { attempts: arrival.attempts, actUncertain: fault?.actUncertain === true, mayAbsorb, retryable: automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode), test: automationStudioActivityInBuild() }); emitAutomationStudioActivityThought({ phase: "repairing", title: choice.title, text: choice.text, ref: failedNode.id });
         attempts[attemptIndex] = {
           ...attempts[attemptIndex]!,
           recoveryDecision
