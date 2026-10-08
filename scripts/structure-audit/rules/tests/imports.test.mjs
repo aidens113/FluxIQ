@@ -160,3 +160,44 @@ test("a boundary does not touch an importer outside its from directory", () => {
   const ctx = makeCtx({ ...BASE, "src/consumer/crosser.ts": 'import { thing } from "../other/index.ts";' }, BOUNDARY_CONFIG(true));
   assert.equal(run(ctx).filter((finding) => finding.message.includes("resolves under")).length, 0);
 });
+
+// --- A barrel that leads back: going through it would close a module cycle. ---
+// The import-cycles rule tells a module in a cycle to take a value from its
+// owner instead of a barrel whose imports lead back to it. Counting that as a
+// barrel skip would make the two rules refuse each other's remedy, so it is
+// not counted -- but only when the barrel really leads back, and only for an
+// import that binds a value, since a type-only import closes no cycle.
+
+const LEADS_BACK = {
+  "src/feature/index.ts": 'export * from "./subject";\nexport * from "./packet";',
+  "src/feature/subject.ts": "export const subject = 1;",
+  "src/feature/packet.ts": 'import { thing } from "../other/index.ts";\nexport const packet = thing;',
+  "src/other/index.ts": 'export * from "./thing";',
+  "src/other/thing.ts": "export const thing = 3;"
+};
+
+const skipsWith = (files, file) => run(makeCtx(files)).find((candidate) => candidate.key === file)?.value ?? 0;
+
+test("a value import of the owner past a barrel that leads back to the importer is not counted", () => {
+  const files = { ...LEADS_BACK, "src/other/thing.ts": 'import { subject } from "../feature/subject.ts";\nexport const thing = subject;' };
+  assert.equal(skipsWith(files, "src/other/thing.ts"), 0);
+});
+
+test("the same import is counted when the barrel does not lead back", () => {
+  const files = { ...LEADS_BACK, "src/feature/packet.ts": "export const packet = 2;", "src/other/thing.ts": 'import { subject } from "../feature/subject.ts";\nexport const thing = subject;' };
+  assert.equal(skipsWith(files, "src/other/thing.ts"), 1);
+});
+
+test("a type-only import past a barrel that leads back is still counted", () => {
+  const files = { ...LEADS_BACK, "src/other/thing.ts": 'import type { Subject } from "../feature/subject.ts";\nexport const thing = 3;' };
+  assert.equal(skipsWith(files, "src/other/thing.ts"), 1);
+});
+
+test("a barrel that leads only to a type-only import of the importer does not lead back", () => {
+  const files = {
+    ...LEADS_BACK,
+    "src/feature/packet.ts": 'import type { Thing } from "../other/index.ts";\nexport const packet = 2;',
+    "src/other/thing.ts": 'import { subject } from "../feature/subject.ts";\nexport const thing = subject;'
+  };
+  assert.equal(skipsWith(files, "src/other/thing.ts"), 1);
+});

@@ -22,6 +22,12 @@
 //   round, as every other run of refusals of one kind does (the user's rule of
 //   2026-10-06). The loop never drafts in candidate mode (`discoveryOnly`), so
 //   the statement adds no step anywhere.
+//
+// Since t358 a submission resolves a handle from any view exploration took
+// (`./submission.ts`, `handleReach: "view_history"`), so `t478` and `t488` now
+// resolve. A handle still refused is one no view printed (or not on the page
+// its `location` names), and the recovery says so rather than telling the model
+// a handle belongs only to the page it is on.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
@@ -75,8 +81,8 @@ function refusedHandles(feedback: JsonObject): string[] {
 /** What to do about refused handles; it names each one, which are tokens the model itself wrote. */
 function handleNext(handles: readonly string[]): string {
   const named = handles.join(", ");
-  return `${handles.length === 1 ? "The handle" : "The handles"} ${named} ${handles.length === 1 ? "does" : "do"} not name one control in the page views this build keeps, so copying ${handles.length === 1 ? "it" : "them"} again will be refused again. `
-    + "A handle belongs to the page view that printed it: one printed on a different page than the one the step runs on, or written from memory, cannot be a step's target. "
+  return `${handles.length === 1 ? "The handle" : "The handles"} ${named} ${handles.length === 1 ? "does" : "do"} not name one control in any view this build was shown, so copying ${handles.length === 1 ? "it" : "them"} again will be refused again. `
+    + "A step may name a control from any view this build printed, on any page it visited, copied exactly as that view printed it; a handle no view printed, or written from memory, cannot be a step's target. "
     + "To act on a control on the page this step runs on, look at that page (go there, then capture it) and copy the handle that view prints for the control; "
     + "if the Flow does not need the step -- the control is not on the page when the Flow gets there -- drop it. "
     + "Then submit the whole candidate again. Sending the same refused script, or one refused for the same reason, a third decision in a row ends this build.";

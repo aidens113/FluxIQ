@@ -251,6 +251,17 @@ The detailed procedure for each, with the current offenders, is in the
   return type is checked and stays fine. The `as-never` rule enforces this in
   source and tests alike, reading the syntax tree so a comment or string does
   not count, with existing casts baselined per file.
+- **An import cycle.** Two modules that reach each other at load time, even
+  through barrels, can hand each other `undefined` depending on which loads
+  first: in October 2026 a re-export through a barrel broke six tests in four
+  files, and a handle check could have accepted any handle in one load order.
+  Import a value from the module that defines it, not from a barrel that leads
+  back to you. The `import-cycles` rule counts imports that survive
+  compilation (not `import type`, `export type` or dynamic `import()`),
+  baselines today's cycles per module, and fails a module that joins a cycle,
+  a new import that leads back, or two cycles merging, printing the shortest
+  loop. The barrel rule does not insist on a barrel whose own imports lead
+  back to the importer.
 - **Reaching Node from a module a browser loads.** A `node:crypto` import
   type-checks; what fails is loading it in the browser, so no type check
   sees it. On 2026-09-30 a `runtime/parking/` module imported `node:crypto`,

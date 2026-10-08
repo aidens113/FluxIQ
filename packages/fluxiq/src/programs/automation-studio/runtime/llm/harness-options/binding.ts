@@ -368,13 +368,35 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
      * call, because only the domain knows whether the step acts.
      */
     declaredConsequences?: readonly AutomationStudioActionConsequence[] | undefined;
+    /**
+     * Which of exploration's views a handle may resolve from. Absent, the
+     * domain resolves against the page as exploration last saw it, as it
+     * always has. `view_history`, sent for a candidate submission alone
+     * (t358): a candidate is a whole Flow written after exploration, and its
+     * first steps act on pages exploration has since left, so any control
+     * exploration was shown may be named, resolved to the durable locator its
+     * views agree on. Only then may a resolved answer carry `handleViews`.
+     */
+    handleReach?: AutomationStudioPlanHandleReach | undefined;
   }): AutomationStudioPlanNodeResolution | Promise<AutomationStudioPlanNodeResolution>;
 };
+
+/** Which views a plan node's handles may resolve from (`resolvePlanNodeParameters`, `handleReach`). */
+export type AutomationStudioPlanHandleReach = "view_history";
+
+/**
+ * The view one handle of a resolved node came from, as the domain numbers its
+ * captures (from 1, in the order exploration took them), and the location that
+ * view reported. A record of where a candidate's target was learned, never
+ * authority to act.
+ */
+export type AutomationStudioPlanHandleView = { handle: string; view: number; location: string };
 
 /** A domain answer about one plan node. May be awaited: asking permission is. */
 export type AutomationStudioPlanNodeResolution =
   | { status: "unchanged" }
-  | { status: "resolved"; parameters: JsonObject }
+  /** `handleViews` only on an answer to a resolution that asked for `view_history`; Core refuses it on any other. */
+  | { status: "resolved"; parameters: JsonObject; handleViews?: readonly AutomationStudioPlanHandleView[] }
   | { status: "refused"; issueCodes: readonly string[] }
   | { status: "needs_permission"; missing: readonly string[]; requestId: string | null };
 

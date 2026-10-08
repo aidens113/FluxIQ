@@ -37,7 +37,9 @@ export class AutomationStudioFlowCandidateSubmissionController {
     const revision = ++this.revision;
     this.current = undefined;
     this.input.signal?.throwIfAborted();
-    const verdict = await checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result });
+    // A candidate is written after exploration, so it may name a control from
+    // any view exploration took, not only the page it last saw (t358).
+    const verdict = await checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history" });
     this.input.signal?.throwIfAborted();
     if (!verdict.ok) return { ok: false, revision, check: verdict.check };
     if (revision !== this.revision) return { ok: false, revision, check: { ok: false, issueCodes: ["candidate.superseded_submission"], feedback: { code: "candidate.superseded_submission" } } };
@@ -56,7 +58,8 @@ export class AutomationStudioFlowCandidateSubmissionController {
     };
     this.current = structuredClone(candidate);
     this.previous = structuredClone(candidate);
-    return { ok: true, candidate };
+    const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
+    return { ok: true, candidate, handleViews };
   }
 }
 

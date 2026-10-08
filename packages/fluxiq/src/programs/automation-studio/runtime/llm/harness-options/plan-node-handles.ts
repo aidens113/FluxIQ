@@ -29,11 +29,15 @@
 // location means is the domain's; Core only bounds it.
 
 import type { JsonValue } from "../../../../../core/index.ts";
+// From the module that owns them, never through `../harness.ts` or the harness
+// barrel: both lead back into this module's import cycle, and through them the
+// three read as undefined when another harness-options module loads first --
+// which made this check accept any token (t358, t360).
 import {
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,
   AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES
-} from "../harness.ts";
+} from "../harness/structured-response.ts";
 
 /** The key of a handle reference. */
 export const AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY = "handle";
