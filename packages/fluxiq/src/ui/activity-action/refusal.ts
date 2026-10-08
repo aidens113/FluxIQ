@@ -32,7 +32,9 @@ const MAX_REASONS = 2;
  *   reasons joined; never a code. A reason with no words is left out, and a
  *   refusal with none left says the Flow is as it was.
  */
-export function activityActionRefusal(record: { resultCode: string | undefined; reason?: string | undefined; applied?: number | undefined }): { all: boolean; rerun: boolean; because: string } | null {
+export function activityActionRefusal(record: { resultCode: string | undefined; reason?: string | undefined; applied?: number | undefined; declined?: string | undefined }): { all: boolean; rerun: boolean; because: string } | null {
+  // A call Core declined and said why in words (`./record.ts`, `Declined`): nothing of it was done.
+  if (record.declined) return { all: true, rerun: false, because: record.declined };
   const code = record.resultCode?.trim().toLowerCase();
   if (code === REPEAT_REFUSED) {
     return { all: true, rerun: true, because: REPEATED[record.reason?.trim().toLowerCase() ?? ""] ?? REPEATED.same_result! };

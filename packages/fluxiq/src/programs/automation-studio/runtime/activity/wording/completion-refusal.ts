@@ -25,6 +25,23 @@ const TEST_BECAUSE: Readonly<Record<string, string>> = Object.freeze({
 
 const FALLBACK = "It needs changes before it can be used, and it goes back to be fixed.";
 
+/** The refusal codes the check's feedback names (its `refusals` and `refusal`). */
+function refusalCodes(feedback: unknown): string[] {
+  const named = feedback && typeof feedback === "object" && !Array.isArray(feedback) ? feedback as { refusal?: unknown; refusals?: unknown } : {};
+  return [...(Array.isArray(named.refusals) ? named.refusals : []), named.refusal].filter((code): code is string => typeof code === "string");
+}
+
+/**
+ * Each known reason the check's feedback names, once each, in plain words;
+ * nothing for feedback that names none. The check that refuses a legacy
+ * build's completion also refuses a candidate build's submitted steps
+ * (`../../llm/harness-options/bootstrap-completion.ts`), so both read these
+ * words (`../candidate/submission-words.ts`, t373).
+ */
+export function automationStudioActivityCheckRefusalReasons(feedback: unknown): string[] {
+  return [...new Set(refusalCodes(feedback).map((code) => BECAUSE[code.split(".").at(-1)!.replace(/^evidence_completion_/u, "")]).filter((reason): reason is string => Boolean(reason)))];
+}
+
 /**
  * A refused completion, said in a person's words: which of Core's reasons
  * refused it (read from the check's feedback `refusal` and `refusals`, else
@@ -33,10 +50,8 @@ const FALLBACK = "It needs changes before it can be used, and it goes back to be
  * codes name no known reason reads as the plain fallback.
  */
 export function automationStudioActivityCompletionRefusal(check: { issueCodes: readonly string[]; feedback?: unknown; steps?: readonly number[] | undefined }): string {
-  const feedback = check.feedback && typeof check.feedback === "object" && !Array.isArray(check.feedback) ? check.feedback as { refusal?: unknown; refusals?: unknown } : {};
-  const codes = [...(Array.isArray(feedback.refusals) ? feedback.refusals : []), feedback.refusal].filter((code): code is string => typeof code === "string");
-  const checked = codes.map((code) => BECAUSE[code.split(".").at(-1)!.replace(/^evidence_completion_/u, "")]);
-  const tested = codes.length ? [] : check.issueCodes.map((code) => TEST_BECAUSE[code]);
+  const checked = automationStudioActivityCheckRefusalReasons(check.feedback);
+  const tested = refusalCodes(check.feedback).length ? [] : check.issueCodes.map((code) => TEST_BECAUSE[code]);
   const reasons = [...new Set([...checked, ...tested].filter((reason): reason is string => Boolean(reason)))];
   const steps = check.steps?.length ?? 0;
   const count = steps || check.issueCodes.length;

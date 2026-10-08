@@ -118,7 +118,9 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   const authored = await runAutomationStudioFlowCandidateAuthoringLoop({
     submission: input.submission, ...(input.trial ? { trial: { candidateId, port: input.trial } } : {}),
     accepted: (candidate) => { accepted = structuredClone(candidate); },
-    loop: observeAutomationStudioEvidenceLoop({ ...input.loop, unusableDecisions, decide: input.wrapDecision(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
+    // The loop observes its whole input, its own two tools among the calls, so saving and testing the Flow are cards in the chat (t373).
+    observe: observeAutomationStudioEvidenceLoop,
+    loop: { ...input.loop, unusableDecisions, decide: input.wrapDecision(async ({ iteration, tools, evidence, decisionSchema, canComplete, signal }) => {
       input.beforeDecision();
       input.progress(accounted(observedUsage), "provider_request");
       const decision = await input.runHarness({
@@ -133,7 +135,7 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
       input.progress(accounted(observedUsage), decision.ok || (unusable !== undefined && !unusable.providerUnanswered) ? "provider_output_validation" : "provider_request");
       if (!decision.ok || decision.response?.kind !== "evidence_tool_decision") throw unusable ?? flowBootstrapHarnessFailure(decision);
       return automationStudioActivityDecisionReason.attach({ ...decision.response.decision, ...(decision.usage ? { usage: decision.usage } : {}) }, decision.response.summary);
-    }) })
+    }) }
   }).catch(async (error: unknown) => { throw await withCandidate(automationStudioFlowBootstrapFailureWithSpend(error, accounted(observedUsage))); }); // Whatever ended it, the failure says what the build spent (round 3's C3) and what it wrote (t362).
   const accounting = accounted(authored.loop.accounting);
   input.progress(accounting, "post_provider_validation");
