@@ -21,7 +21,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
-import type { AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
+import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 
@@ -50,23 +50,43 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
   }
 });
 
-/** Each step that ran, in order: its definition, the control it acted on, its status and, for a failure, what happened. */
+/** Each step that ran, in order: its definition, the control it acted on, its final status, how many attempts it took and, for a failure, what happened. */
 function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined): JsonObject {
-  const attempts = trace?.attempts ?? [];
-  if (!attempts.length) return { steps: [] };
+  const ran = executedSteps(trace?.attempts ?? []);
+  if (!ran.length) return { steps: [] };
   const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
-  const listed = attempts.slice(0, MAX_STEPS).map((attempt, index) => {
+  const listed = ran.slice(0, MAX_STEPS).map(({ attempt, attempts }, index) => {
     const node = nodes.get(attempt.nodeId);
     const failure = attempt.failure;
     const step = compact({
       step: index + 1, definitionId: attempt.definitionId, label: node?.label, control: controlWords(node?.parameterValues), status: attempt.status,
+      attempts: attempts > 1 ? attempts : undefined,
       ...(attempt.skipped ? { skipped: attempt.skipped.reason === "target_absent" ? "Its control was not on the page, so the step was skipped." : "The page was already at another step, so the run went on from there." } : {}),
       failureCode: failure?.code, happened: failure ? HAPPENED[failure.category] ?? HAPPENED.action_failed : undefined,
       expected: failure?.expected, actual: failure?.actual
     });
     return failure ? { ...step, retryable: failure.retryable === true } : step;
   });
-  return { steps: listed, ...(attempts.length > MAX_STEPS ? { stepsLeftOut: attempts.length - MAX_STEPS } : {}) };
+  return { steps: listed, ...(ran.length > MAX_STEPS ? { stepsLeftOut: ran.length - MAX_STEPS } : {}) };
+}
+
+/**
+ * The trace's attempts folded into steps (t365). Since t355 a node may make up
+ * to four attempts, recorded one after another; lane A round 5
+ * (`run-muz0f12h-eae63685`) listed a busy refusal and its successful retry as a
+ * failed step and a new one. An attempt of the same node right after a failed
+ * attempt of it is that step tried again, so it replaces the step's outcome and
+ * adds to its count; a node reached again after it succeeded (a loop, a
+ * route back) is a new step.
+ */
+function executedSteps(attempts: readonly AutomationStudioNodeAttemptTrace[]): Array<{ attempt: AutomationStudioNodeAttemptTrace; attempts: number }> {
+  const folded: Array<{ attempt: AutomationStudioNodeAttemptTrace; attempts: number }> = [];
+  for (const attempt of attempts) {
+    const last = folded.at(-1);
+    if (last && last.attempt.nodeId === attempt.nodeId && last.attempt.status === "failed") folded[folded.length - 1] = { attempt, attempts: last.attempts + 1 };
+    else folded.push({ attempt, attempts: 1 });
+  }
+  return folded;
 }
 
 /** Core's plain sentence for each failure category (`@fluxiq/contracts` `AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES`). */
