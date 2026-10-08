@@ -128,6 +128,17 @@ describe("activityActionFailureReason: Core's own codes are no page miss (t194)"
   });
 });
 
+// t361: a lasting act whose failure left its effect unknown was not made
+// again. Its code alone said "the page changed before it could" (page_changed)
+// or nothing (action_failed), when the step may already have happened.
+describe("activityActionFailureReason: an uncertain outcome says so (t361)", () => {
+  it("says FluxIQ could not tell whether it took effect, whatever the code, and in a replay", () => {
+    for (const code of ["web.action.rejected.page_changed", "web.action.rejected.action_failed", "web.action.rejected.action_timed_out", "core.replay.failed"]) {
+      expect(activityActionFailureReason(code, "outcome_uncertain")).toBe("FluxIQ couldn't tell whether it took effect, so it didn't do it again");
+    }
+  });
+});
+
 // R2-U-6 (live run `run-muwansvz-a2b4a987`, moment 07, steps 0034, 0039 and
 // 0046): a list read the step gave no usable list for (`malformed_handle`),
 // then the same refusal given again (`answered_the_same_again`), read "Read
