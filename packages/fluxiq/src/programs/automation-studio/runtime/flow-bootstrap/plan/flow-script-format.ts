@@ -96,6 +96,20 @@
 // not more lines of the format, so the legacy completion schema -- which
 // carries the format and is held under a byte ratchet -- does not change while
 // legacy is the default and the baseline candidate mode is measured against.
+//
+// The choice and optional statements ahead of that example were added on
+// 2026-10-07 (t357), from lane A rounds 2-4 (t342). Every candidate script
+// pressed the Space Grey swatch, which the page arrives with already chosen,
+// so the press un-chose it (round 2's toggle trap): the only example of a
+// choice was a dropdown, and nothing said a press toggles. So a choice is now
+// taught as the state it leaves, with the nodes that set a state rather than
+// flip it (`web.dom.check`, `web.dom.select`), and the press kept for a plain
+// button the page arrives with unchosen. And no script could say a step was
+// only sometimes needed -- a consent banner or popup that may not show --
+// although the runtime already skips an absent step of that kind; the
+// `optional: yes` line now says it (`../authoring/assemble.ts`). Both live in
+// the same candidate-only constant, because that is what candidate mode shows
+// (`../candidate/authoring-loop.ts`) and the legacy schema must not change.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 
@@ -172,21 +186,35 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
 ].join("\n");
 
 /**
- * The act-on-one-item example, shown after the format wherever candidate mode
+ * How a candidate sets a choice and marks a step only sometimes needed, then
+ * the act-on-one-item example, shown after the format wherever candidate mode
  * shows it (`../candidate/authoring-loop.ts`). Kept beside the format rather
  * than in it, so the legacy completion schema the default build sends stays
  * byte for byte what the live baseline ran with.
+ *
+ * Every line of the example is the grammar `../authoring/parse.ts` reads, and
+ * its optional step assembles into the optional shape the runtime skips when
+ * the banner is absent (`../authoring/assemble.ts`).
  */
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
+  "A choice is written as the state it leaves, not as a press. A press toggles: pressing an option the page already shows chosen un-chooses it.",
+  "An option in a dropdown is `node: web.dom.select` with the option's `value:`. A checkbox or a radio -- including a swatch, chip or button the page draws over one -- is `node: web.dom.check` on the box or radio itself, `checked: true` to choose it or `checked: false` to clear a checkbox; it presses only when the state differs, so it is right however the page arrives.",
+  "Every option the instruction asks for gets its own step, even one the page arrives with already chosen: write it with `web.dom.check` or `web.dom.select`, which change nothing when the state is already right, so the Flow is right however a later run's page arrives. Press an option with `node: web.dom.click` only when it is a plain button with no box, radio or dropdown behind it. A press is right for a control that does something each time it is pressed: apply, add, send, open, next.",
+  "`optional: yes` marks a step that is only sometimes needed -- closing a cookie banner, a popup or a notice the page may not show -- and the run goes on past it when it cannot be done. Use it only on such a step, never on one the answer depends on, never inside a repeat and never beside an `on <port>:` line.",
   "Example, acting on one item:",
   "flow: Put two medium blue shirts in the basket",
   "step: open the shirt's page",
   "  node: web.browser.navigate",
   "  url: https://shop.test/shirts/oxford",
-  "step: choose the colour",
-  "  node: web.dom.select",
+  "step: close the cookie banner if it shows",
+  "  node: web.dom.click",
+  "  target: t2",
+  "  consequences: none",
+  "  optional: yes",
+  "step: choose the colour swatch",
+  "  node: web.dom.check",
   "  target: t3",
-  "  value: blue",
+  "  checked: true",
   "step: choose the size",
   "  node: web.dom.select",
   "  target: t6",

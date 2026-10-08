@@ -6,6 +6,18 @@
 // Exploration evidence is never in it: the trial gate's contract
 // (`../../flow-bootstrap/candidate/contracts.ts`) says the feedback is about
 // the trial alone.
+//
+// **Each step says what it acted on and what happened (t356, C4).** Lane A
+// round 4 (`run-muyrpbnk-fef374e7`, 0032 and 0048) told the model only "step 2,
+// web.output.dom-click, failed, web.target.not_found" and then
+// "web.action.rate_limited": no control, nothing to say the second may pass when
+// tried again. A step now carries `control`, the words of the element its node
+// targets (the identity the domain resolved from its handle at submission,
+// already screened there: the same words the model's own step was bound to);
+// `happened`, Core's plain sentence for the failure's category; `retryable`, the
+// producer's word that the same act unchanged may pass; and the producer's
+// `expected`/`actual`, which its contract keeps free of page content. The
+// failure's free-text message is still never shown.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
@@ -38,15 +50,51 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
   }
 });
 
-/** Each step that ran, in order: its definition, status and failure code. */
+/** Each step that ran, in order: its definition, the control it acted on, its status and, for a failure, what happened. */
 function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined): JsonObject {
   const attempts = trace?.attempts ?? [];
   if (!attempts.length) return { steps: [] };
-  const labels = new Map((graph?.nodes ?? []).map((node) => [node.id, node.label]));
-  const listed = attempts.slice(0, MAX_STEPS).map((attempt, index) => compact({
-    step: index + 1, definitionId: attempt.definitionId, label: labels.get(attempt.nodeId), status: attempt.status, failureCode: attempt.failure?.code
-  }));
+  const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
+  const listed = attempts.slice(0, MAX_STEPS).map((attempt, index) => {
+    const node = nodes.get(attempt.nodeId);
+    const failure = attempt.failure;
+    const step = compact({
+      step: index + 1, definitionId: attempt.definitionId, label: node?.label, control: controlWords(node?.parameterValues), status: attempt.status,
+      ...(attempt.skipped ? { skipped: attempt.skipped.reason === "target_absent" ? "Its control was not on the page, so the step was skipped." : "The page was already at another step, so the run went on from there." } : {}),
+      failureCode: failure?.code, happened: failure ? HAPPENED[failure.category] ?? HAPPENED.action_failed : undefined,
+      expected: failure?.expected, actual: failure?.actual
+    });
+    return failure ? { ...step, retryable: failure.retryable === true } : step;
+  });
   return { steps: listed, ...(attempts.length > MAX_STEPS ? { stepsLeftOut: attempts.length - MAX_STEPS } : {}) };
+}
+
+/** Core's plain sentence for each failure category (`@fluxiq/contracts` `AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES`). */
+const HAPPENED: Readonly<Record<string, string>> = Object.freeze({
+  action_failed: "The step ran and did not work.",
+  expected_state_missing: "The step ran, but what it should have changed was not seen.",
+  unexpected_state: "The step ended somewhere other than expected.",
+  timeout: "The step, or the wait for its result, ran out of time.",
+  blocked_by_capability_or_policy: "A permission or policy refused the step.",
+  missing_router_or_subflow_target: "The step named a route or Subflow that does not exist.",
+  graph_validation_or_unknown_node: "The step names a node that cannot run.",
+  external_side_effect_denied: "The step needed a lasting act it is not permitted to do.",
+  ambiguous_or_unknown: "The step failed for a reason the page did not make clear.",
+  target_not_found: "The step's control was not found on the page.",
+  target_ambiguous: "More than one control matched the step's control, and none could be chosen.",
+  navigation_unexpected: "The page went somewhere the step did not ask for, or did not reach where it asked to go.",
+  output_not_observed: "The step reported success, but its effect was never seen.",
+  page_changed: "The page changed under the step before it could act.",
+  auth_required: "The site asked to sign in before the step could go on.",
+  user_intervention_required: "The page needs a person before the step can go on."
+});
+
+/** The words of the element a node targets, from the identity its handle resolved to at submission (`parameters.element`). */
+function controlWords(parameters: JsonObject | undefined): string | undefined {
+  const element = parameters?.element;
+  if (!element || typeof element !== "object" || Array.isArray(element)) return undefined;
+  const words = [element.accessibleName, element.visibleText].find((value): value is string => typeof value === "string" && value.trim() !== "");
+  return words?.replace(/\s+/gu, " ").trim();
 }
 
 function compact(value: Record<string, string | number | undefined>): JsonObject {

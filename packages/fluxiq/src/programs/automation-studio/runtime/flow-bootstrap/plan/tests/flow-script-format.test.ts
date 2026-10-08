@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permissions/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
@@ -154,24 +155,86 @@ describe("the Flow script format's consequence declaration", () => {
 // options, set a quantity and press a control that changes something -- a shape
 // no example in the format shows. A model copies the example, so it must build
 // as written and its lasting press must declare what it changes.
+//
+// Since t357 the same constant first says how a choice is written -- as the
+// state it leaves, with the nodes that set a state -- and how a step only
+// sometimes needed is marked, and its example shows both: lane A's scripts
+// pressed a swatch the page arrived with already chosen, un-choosing it, and
+// had no way to say a banner may not show.
 describe("the Flow script act-on-one-item example", () => {
-  const registry = new AutomationStudioNodeRegistry(webDomainNodeDefinitionsFixture());
+  // The real web library beside Core's built-in nodes: an optional step joins at the built-in Merge.
+  const registry = new AutomationStudioNodeRegistry();
+  for (const definition of webDomainNodeDefinitionsFixture()) registry.register(definition);
   const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
-  const example = AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE.split("\n").slice(1).join("\n");
+  const lines = AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE.split("\n");
+  const heading = lines.indexOf("Example, acting on one item:");
+  const example = lines.slice(heading + 1).join("\n");
+  const guidance = lines.slice(0, heading).join("\n");
 
   it("stays out of the format, so the legacy completion schema does not change", () => {
-    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE.startsWith("Example, acting on one item:\n")).toBe(true);
-    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).not.toContain("acting on one item");
-    expect(String(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA.description)).not.toContain("acting on one item");
+    expect(heading).toBeGreaterThan(0);
+    for (const words of ["acting on one item", "optional: yes", "the state it leaves", "web.dom.check"]) {
+      expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).not.toContain(words);
+      expect(JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA)).not.toContain(words);
+    }
   });
 
-  it("builds as written: choose, choose, type, a press that declares modify_existing, then a check", () => {
+  it("builds as written: a banner closed if it shows, a swatch set, a size chosen, a quantity typed, a press that declares modify_existing, then a check", () => {
     const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: example }, registry, resolution });
-    expect(accepted.ok).toBe(true);
+    expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
     const nodes = accepted.ok ? accepted.plan.subflows[0]?.nodes ?? [] : [];
-    expect(nodes).toHaveLength(6);
+    expect(nodes.map((node) => node.definitionId)).toEqual([
+      "web.output.browser-navigate", "web.output.dom-click", "builtin.control.merge", "web.output.dom-check",
+      "web.output.dom-select", "web.output.dom-type", "web.output.dom-click", "web.output.dom-wait_for_text"
+    ]);
     const presses = nodes.filter((node) => node.definitionId === "web.output.dom-click");
-    expect(presses).toHaveLength(1);
-    expect(presses[0]?.consequences).toEqual(["modify_existing"]);
+    expect(presses.map((node) => node.consequences)).toEqual([[], ["modify_existing"]]);
+    // The swatch is set, never pressed: a press would toggle a colour the page arrived with.
+    expect(nodes[3]?.parameters).toMatchObject({ checked: true });
+    // The banner's failed way out joins the path its success takes, which is what the runtime skips past.
+    const edges = accepted.ok ? accepted.plan.subflows[0]?.edges ?? [] : [];
+    expect(edges.filter((edge) => edge.source.nodeKey === "s2").map((edge) => `${edge.source.portId}->${edge.target.nodeKey}`).sort()).toEqual(["failed->s3", "success->s3"]);
+  });
+
+  it("carries the consequence line on every press in the example, because a model copies the example", () => {
+    const steps = example.split(/\n(?=step)/u);
+    const presses = steps.filter((step) => step.includes("node: web.dom.click"));
+    expect(presses.length).toBe(2);
+    for (const step of presses) expect(step).toMatch(/consequences: /u);
+  });
+
+  it("teaches a choice as the state it leaves, with the nodes that set a state, and says when a press is right instead", () => {
+    expect(guidance).toContain("A choice is written as the state it leaves, not as a press. A press toggles: pressing an option the page already shows chosen un-chooses it.");
+    expect(guidance).toContain("An option in a dropdown is `node: web.dom.select`");
+    expect(guidance).toContain("is `node: web.dom.check` on the box or radio itself, `checked: true` to choose it or `checked: false` to clear a checkbox; it presses only when the state differs");
+    // Every instructed choice keeps its own step even when the page arrives with it chosen: the
+    // instructed-acts check asks for one, and a later run's page may arrive differently.
+    expect(guidance).toContain("Every option the instruction asks for gets its own step, even one the page arrives with already chosen: write it with `web.dom.check` or `web.dom.select`, which change nothing when the state is already right");
+    expect(guidance).not.toContain("needs no step");
+    expect(guidance).toContain("Press an option with `node: web.dom.click` only when it is a plain button with no box, radio or dropdown behind it.");
+    expect(guidance).toContain("A press is right for a control that does something each time it is pressed");
+    // The example practises what the guidance says: no choice in it is a press.
+    const steps = example.split(/\n(?=step)/u);
+    expect(steps.filter((step) => /^step: choose/u.test(step)).every((step) => !step.includes("web.dom.click"))).toBe(true);
+  });
+
+  it("teaches the optional line for a step only sometimes needed, and where it cannot stand", () => {
+    expect(guidance).toContain("`optional: yes` marks a step that is only sometimes needed");
+    expect(guidance).toContain("never inside a repeat and never beside an `on <port>:` line");
+    expect(example).toContain("  optional: yes");
+  });
+});
+
+// Legacy is the default and the baseline candidate mode is measured against,
+// so what it sends must not move while candidate-only text grows (t357). These
+// digests are of the format and the completion schema exactly as the live
+// baseline sent them; a deliberate change to legacy updates them in the same
+// commit, and nothing else may.
+describe("the legacy format and completion schema bytes", () => {
+  const digest = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+
+  it("are unchanged by candidate-only text", () => {
+    expect(digest(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT)).toBe("1209b6dd3c48a87d8d5366b38b4c3061114cbdb99a64cbc99697a2de67f480cc");
+    expect(digest(JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA))).toBe("85c8a062a18c40ba32b650a02b8cc3936e3df549565f664113f97efa9187f575");
   });
 });
