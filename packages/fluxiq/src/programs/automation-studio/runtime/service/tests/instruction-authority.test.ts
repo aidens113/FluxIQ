@@ -53,9 +53,10 @@ function authority(result: JsonObject | undefined, log: string[] = []) {
 }
 
 /** The build's gate reading through that authority, over a stand-in domain that asks the gate about each call's declaration. */
-function gate(result: JsonObject | undefined, said: string[] = [], log: string[] = []) {
+function gate(result: JsonObject | undefined, said: string[] = [], log: string[] = [], authoringMode?: "legacy" | "candidate") {
   const { reader, sent } = authority(result, log);
   const permissions = automationStudioFlowBootstrapActionPermissions({
+    ...(authoringMode ? { authoringMode } : {}),
     permittedConsequences: [],
     instructionIds: [INSTRUCTION.instructionId],
     deriveInstructed: reader.derive,
@@ -130,6 +131,20 @@ describe("an act the read gave no answer for is not repeated by the build's test
     expect([...await permissions.instructedLastingActs(UNKINDED)].sort()).toEqual(["a1", "a2"]);
     expect(said).toHaveLength(1);
     expect(said[0]).toContain(COUPON);
+    expect(said[0]).toMatch(/^I could not tell from your instruction whether /u);
+  });
+
+  // t370 (lane A rounds 6 and 7 UI): a candidate build said "Reading your instruction gave no answer for ...,
+  // so the build's tests check the steps ... rather than do them again" just before its ready line. A
+  // candidate build has no such tests (its test runs the whole Flow from its start), so it says nothing,
+  // and the read still names the act lasting.
+  it.each(["legacy", "candidate"] as const)("in %s mode, names the coupon lasting and says it only where the build's tests check it", async (mode) => {
+    const said: string[] = [];
+    const { permissions } = gate({ acts: { [CART_ACT().id]: ["create_new"] }, instructed: [{ consequence: "create_new", quote: CART }] }, said, [], mode);
+
+    expect([...await permissions.instructedLastingActs(UNKINDED)].sort()).toEqual(["a1", "a2"]);
+    expect(said).toHaveLength(mode === "candidate" ? 0 : 1);
+    expect(said.join(" ")).not.toContain("gave no answer");
   });
 
   it("names the coupon lasting when the read's answer carries no per-act answer at all (that run's own reply)", async () => {
