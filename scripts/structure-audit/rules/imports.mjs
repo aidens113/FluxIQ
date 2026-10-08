@@ -3,7 +3,9 @@
 // are banned outright; relative specifiers crossing a CONFIG.importBoundaries
 // edge are banned outright; and relative specifiers that reach past another
 // directory's index barrel into one of its files are counted per importer and
-// ratcheted.
+// ratcheted -- unless the import binds a value and that barrel's own imports
+// lead back to the importer, where going through the barrel would close a
+// module cycle (see import-cycles.mjs).
 //
 // A boundary may set `valueOnly: true` to ban only the imports that survive
 // into the emitted module graph. That is the setting for a boundary configured
@@ -16,6 +18,7 @@
 // which is a real edge in the emitted graph, so neither is exempt.
 
 import path from "node:path";
+import { buildRuntimeGraph, reachableModules } from "../import-graph/index.mjs";
 
 export const id = "imports";
 export const title = "Imports respect forbidden modules, directory boundaries, and barrels";
@@ -85,6 +88,18 @@ function fileDirectories(ctx) {
   return dirs;
 }
 
+// Whether the barrel of `directory` reaches `importer` through runtime
+// imports. Each barrel's reach is walked once per audit run.
+const barrelReach = new WeakMap();
+function barrelLeadsBack(ctx, directory, importer) {
+  if (!barrelReach.has(ctx)) barrelReach.set(ctx, { files: new Set(ctx.files), reach: new Map() });
+  const { files, reach } = barrelReach.get(ctx);
+  const barrel = BARREL_FILENAMES.map((name) => `${directory}/${name}`).find((candidate) => files.has(candidate));
+  if (barrel === undefined) return false;
+  if (!reach.has(barrel)) reach.set(barrel, reachableModules(buildRuntimeGraph(ctx), barrel));
+  return reach.get(barrel).has(importer);
+}
+
 export function run(ctx) {
   const { CONFIG } = ctx;
   const forbidden = CONFIG.forbiddenImports ?? [];
@@ -139,6 +154,12 @@ export function run(ctx) {
       if (importerDir === targetDir || importerDir.startsWith(`${targetDir}/`)) continue;
       if (path.posix.basename(target) === "index") continue;
       if (!barrels.has(targetDir)) continue;
+      // A barrel whose own imports lead back to the importer is a way into a
+      // module cycle, and the import-cycles rule tells the importer to take
+      // the value from its owner instead. Counting that as a skip would make
+      // the two rules refuse each other's remedy. A type-only import closes no
+      // cycle, so it still goes through the barrel.
+      if (!typeOnly && barrelLeadsBack(ctx, targetDir, file)) continue;
 
       skips += 1;
       firstSkip ??= { text, line };
