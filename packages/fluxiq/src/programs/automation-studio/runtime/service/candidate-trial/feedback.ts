@@ -18,12 +18,20 @@
 // producer's word that the same act unchanged may pass; and the producer's
 // `expected`/`actual`, which its contract keeps free of page content. The
 // failure's free-text message is still never shown.
+//
+// **A failed check says what it waited for (t368).** A failed wait or assert
+// adds what it waited for, whether the domain found that text hidden or absent,
+// the visible text most like it, and that a check which only confirms the act
+// before it is not needed (`./check-step.ts`, from lane A round 7). The
+// snippets are page text the extension screened by its sensitive-value rules
+// before they left the browser, bounded again here.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
 
 /** The most steps a feedback lists; a longer Flow says how many it left out. */
 const MAX_STEPS = 40;
@@ -65,7 +73,7 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
       failureCode: failure?.code, happened: failure ? HAPPENED[failure.category] ?? HAPPENED.action_failed : undefined,
       expected: failure?.expected, actual: failure?.actual
     });
-    return failure ? { ...step, retryable: failure.retryable === true } : step;
+    return failure ? { ...step, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt) } : step;
   });
   return { steps: listed, ...(ran.length > MAX_STEPS ? { stepsLeftOut: ran.length - MAX_STEPS } : {}) };
 }

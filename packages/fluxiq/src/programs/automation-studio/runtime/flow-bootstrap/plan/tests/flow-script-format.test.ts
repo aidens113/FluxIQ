@@ -179,13 +179,13 @@ describe("the Flow script act-on-one-item example", () => {
     }
   });
 
-  it("builds as written: a banner closed if it shows, a swatch set, a size chosen, a quantity typed, a press that declares modify_existing, then a check", () => {
+  it("builds as written: a banner closed if it shows, a swatch set, a size chosen, a quantity typed, and last a press that declares modify_existing", () => {
     const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: example }, registry, resolution });
     expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
     const nodes = accepted.ok ? accepted.plan.subflows[0]?.nodes ?? [] : [];
     expect(nodes.map((node) => node.definitionId)).toEqual([
       "web.output.browser-navigate", "web.output.dom-click", "builtin.control.merge", "web.output.dom-check",
-      "web.output.dom-select", "web.output.dom-type", "web.output.dom-click", "web.output.dom-wait_for_text"
+      "web.output.dom-select", "web.output.dom-type", "web.output.dom-click"
     ]);
     const presses = nodes.filter((node) => node.definitionId === "web.output.dom-click");
     expect(presses.map((node) => node.consequences)).toEqual([[], ["modify_existing"]]);
@@ -222,6 +222,17 @@ describe("the Flow script act-on-one-item example", () => {
     // The example practises what the guidance says: no choice in it is a press.
     const steps = example.split(/\n(?=step)/u);
     expect(steps.filter((step) => /^step: choose/u.test(step)).every((step) => !step.includes("web.dom.click"))).toBe(true);
+  });
+
+  // t368, lane A round 7 (`run-muz3jyz8-1d363a69`): every trial did every act right and then failed on the
+  // model's own last step, a wait for "Cart (3)" that the page shows only inside a closed mini-cart. The
+  // example ended with such a wait, and a model copies the example.
+  it("says not to end with an invented confirmation check, because the judge reads the end page, and ends its own example on the act", () => {
+    expect(guidance).toContain("Do not end the Flow with a check you invented to confirm it worked: whether the run did what was asked is judged from the page it ends on");
+    expect(guidance).toContain("It waits only for something the page visibly showed after that act while you gathered evidence, never for text inside a closed panel or menu, or a notice that has already gone.");
+    const steps = example.split(/\n(?=step)/u);
+    expect(steps.at(-1)).toContain("node: web.dom.click");
+    expect(example).not.toContain("web.dom.wait_for_text");
   });
 
   it("teaches the optional line for a step only sometimes needed, and where it cannot stand", () => {

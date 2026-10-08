@@ -1,5 +1,6 @@
 export * from "./contracts.ts";
 export * from "./summary.ts";
+export * from "./check-step.ts";
 export * from "./feedback.ts";
 export * from "./run.ts";
 export * from "./port.ts";
