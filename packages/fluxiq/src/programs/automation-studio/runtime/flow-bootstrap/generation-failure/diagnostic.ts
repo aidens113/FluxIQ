@@ -14,6 +14,7 @@ import type { AutomationStudioLlmProviderRefusal } from "../../provider-refusal/
 import type { AutomationStudioLlmEvidenceLoopExhaustion, AutomationStudioLlmProviderThrow } from "../../llm/index.ts";
 import type { AutomationStudioFlowBootstrapEvidenceStep } from "../evidence-loop-steps.ts";
 import type { AutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
+import type { AutomationStudioFlowBootstrapCandidateKept } from "./candidate-kept.ts";
 import type { AutomationStudioFlowBootstrapFailureStage } from "./codes.ts";
 
 export type AutomationStudioFlowBootstrapFailureDiagnostic = {
@@ -160,6 +161,14 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
    * facts as ids and counts (`./build-ending.ts`).
    */
   ending?: AutomationStudioFlowBootstrapBuildEnding;
+  /**
+   * Present only on a candidate-mode build's failure (t362): the candidate's
+   * id, the latest revision Core accepted, whether it was kept as an
+   * unverified draft, and each trial's verdict -- ids, counts and closed words
+   * (`./candidate-kept.ts`). It says what the build left, never why it ended:
+   * that is still the code.
+   */
+  candidate?: AutomationStudioFlowBootstrapCandidateKept;
 };
 
 export const MAX_DIAGNOSTIC_ISSUE_CODES = 16;

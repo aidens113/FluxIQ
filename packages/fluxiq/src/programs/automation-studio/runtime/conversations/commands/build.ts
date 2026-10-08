@@ -24,6 +24,7 @@
 
 import { resolveAutomationStudioAuthoringMode } from "../../../model/authoring-mode/index.ts";
 import { parseAutomationStudioCandidateAuthoringResult, parseAutomationStudioCandidateProposalResult, type AutomationStudioCandidateAuthoringResult } from "../../flow-bootstrap/authoring-result/index.ts";
+import { parseAutomationStudioFlowBootstrapCandidateKept, type AutomationStudioFlowBootstrapCandidateKept } from "../../flow-bootstrap/generation-failure/index.ts";
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandContext } from "./command.ts";
 import { automationStudioConversationCallCause } from "./progress.ts";
 
@@ -53,6 +54,36 @@ export function automationStudioConversationCandidateDraftSaid(candidate: Automa
   return `${said[trial.verdict]} ${kept}`;
 }
 
+/** How a test run from the start came out, in words that finish "the last test run ...". */
+const LAST_TRIAL: Readonly<Record<AutomationStudioFlowBootstrapCandidateKept["trials"][number]["verdict"], string>> = Object.freeze({
+  yes: "was judged to do what you asked",
+  no: "was judged not to do what you asked",
+  unsure: "could not be confirmed to do what you asked",
+  not_judged: "was not checked",
+  execution_failed: "did not get to the end"
+});
+
+/**
+ * What a candidate build that failed kept, in plain words (t362): whether the
+ * latest version of the Flow's steps it wrote was kept as a draft, that
+ * nothing was put into the Flow, and how its test runs from the start came
+ * out. Round 4 (`run-muyrpbnk-fef374e7`, C6) said the Flow "has no steps yet"
+ * over four saved revisions and two test runs. Nothing when the model never
+ * wrote a version Core accepted: then there is nothing to say beyond the Flow
+ * having no steps. Never a revision number, a candidate id or a code.
+ */
+export function automationStudioConversationCandidateKeptSaid(candidate: AutomationStudioFlowBootstrapCandidateKept): string | undefined {
+  if (candidate.revision === undefined) return undefined;
+  const kept = candidate.draft === "saved"
+    ? "I kept the latest version of the Flow's steps that I wrote as a draft, but nothing was put into the Flow."
+    : "The latest version of the Flow's steps that I wrote could not be kept, and nothing was put into the Flow.";
+  const last = candidate.trials.at(-1);
+  if (candidate.trialCount === 0 || !last) return `${kept} It was never test-run from the start.`;
+  const times = candidate.trialCount === 1 ? "once" : candidate.trialCount === 2 ? "twice" : `${candidate.trialCount} times`;
+  const lastSaid = candidate.trialCount === 1 ? `and that test run ${LAST_TRIAL[last.verdict]}` : `and the last test run ${LAST_TRIAL[last.verdict]}`;
+  return `${kept} A version of it was test-run from the start ${times}, ${lastSaid}.`;
+}
+
 /** Said after "ready" when a candidate's test run is what put the steps in (candidate mode only). */
 export const AUTOMATION_STUDIO_CONVERSATION_CANDIDATE_TESTED = "Before that, a test run of the whole Flow from its start was judged, twice, to do what you asked.";
 
@@ -79,9 +110,12 @@ export type AutomationStudioConversationBuildResult =
    * the steps it had found as an incomplete draft that building again carries
    * on from, though the Flow itself holds none of them
    * (`diagnostic.evidenceLoop.incompleteDraft`,
-   * `../../flow-bootstrap/generation-failure/diagnostic.ts`).
+   * `../../flow-bootstrap/generation-failure/diagnostic.ts`). `candidateKept`
+   * is what a candidate build that failed kept, said for the person
+   * (`automationStudioConversationCandidateKeptSaid`); a candidate draft is not
+   * carried on from, so `kept` stays about the incomplete draft alone.
    */
-  | { ok: false; cause: string; ending?: string; kept: boolean };
+  | { ok: false; cause: string; ending?: string; kept: boolean; candidateKept?: string };
 
 export async function buildAutomationStudioFlowFromConversation(
   context: AutomationStudioConversationCommandContext,
@@ -101,7 +135,8 @@ export async function buildAutomationStudioFlowFromConversation(
   });
   if (!response.ok) {
     const ending = (response.payload as { cancelled?: boolean } | undefined)?.cancelled === true ? "Build stopped. The Flow was not promoted." : buildEnding(response);
-    return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), kept: keptDraft(response) };
+    const candidateKept = keptCandidate(response);
+    return { ok: false, cause: automationStudioConversationCallCause("the build", response), ...(ending ? { ending } : {}), kept: keptDraft(response), ...(candidateKept ? { candidateKept } : {}) };
   }
   if (candidateMode) {
     const subject = { projectId: context.projectId, flowId: input.flowId };
@@ -136,4 +171,10 @@ function buildEnding(response: AutomationStudioConversationCommandCallResult): s
 function keptDraft(response: AutomationStudioConversationCommandCallResult): boolean {
   const draft = (response.payload as { diagnostic?: { evidenceLoop?: { incompleteDraft?: { steps?: unknown } } } } | undefined)?.diagnostic?.evidenceLoop?.incompleteDraft;
   return typeof draft?.steps === "number" && draft.steps > 0;
+}
+
+/** What a failed candidate build kept, said for the person, when its diagnostic names the candidate (`diagnostic.candidate`). */
+function keptCandidate(response: AutomationStudioConversationCommandCallResult): string | undefined {
+  const candidate = parseAutomationStudioFlowBootstrapCandidateKept((response.payload as { diagnostic?: { candidate?: unknown } } | undefined)?.diagnostic?.candidate);
+  return candidate ? automationStudioConversationCandidateKeptSaid(candidate) : undefined;
 }

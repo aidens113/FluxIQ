@@ -17,6 +17,7 @@
 // stores is a refusal Core reads back. Before it arrived, a build refused with a
 // 400 could publish the status and nothing about why.
 export * from "./build-ending.ts";
+export * from "./candidate-kept.ts";
 export * from "./codes.ts";
 export * from "./diagnostic.ts";
 export * from "./with-total-provider-calls.ts";
