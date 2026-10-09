@@ -11,6 +11,12 @@
 // - An expected route that repeats the route the failure already took is not
 //   evidence: matching it again would mean reproducing the failure.
 // - A changed node that saves records is checked against what it captured.
+// - An attempt an automatic retry replaced (`retried`) is passed over by every
+//   per-node check and by the downstream assertions: the retry that followed it
+//   is what the node did. A failure no retry followed still fails, so a node
+//   whose retries were all spent is still a contradiction. Where the run went
+//   (the first changed attempt, the continuation) reads the attempts as they
+//   ran.
 //
 // What the trial proved and whether the run may continue are two questions. The
 // second is `resume.ts`, decided from these checks and never from the outcome
@@ -44,8 +50,9 @@ export function decideAutomationStudioChangeVerdict(input: AutomationStudioChang
   }
 
   const checks: AutomationStudioChangeVerdictCheck[] = [];
+  const standing = attempts.filter((attempt) => attempt.retried !== true);
   for (const nodeId of reachedChangedNodeIds(attempts, changed)) {
-    const nodeAttempts = attempts.filter((attempt) => attempt.nodeId === nodeId);
+    const nodeAttempts = standing.filter((attempt) => attempt.nodeId === nodeId);
     const succeeded = nodeAttempts.filter((attempt) => attempt.status === "succeeded");
     checks.push(changedNodeCheck(nodeId, nodeAttempts));
     for (const check of [
@@ -127,8 +134,11 @@ function reachedChangedNodeIds(attempts: readonly AutomationStudioChangeVerdictA
 }
 
 // A cancelled or unfinished attempt says nothing about the change, so it is
-// `unknown`, not a failure.
+// `unknown`, not a failure. So is a node with no attempt left standing, which
+// only a caller marking every attempt replaced can produce: nothing it did is
+// left to pass.
 function changedNodeCheck(nodeId: string, nodeAttempts: readonly AutomationStudioChangeVerdictAttempt[]): AutomationStudioChangeVerdictCheck {
+  if (!nodeAttempts.length) return check("changed_node_succeeded", "unknown", nodeId, "changed_node_incomplete");
   if (nodeAttempts.some((attempt) => attempt.status === "failed")) return check("changed_node_succeeded", "failed", nodeId, "changed_node_failed");
   if (nodeAttempts.some((attempt) => attempt.status !== "succeeded")) return check("changed_node_succeeded", "unknown", nodeId, "changed_node_incomplete");
   return check("changed_node_succeeded", "passed", nodeId);
@@ -184,9 +194,11 @@ function recordsCheck(nodeId: string, succeeded: readonly AutomationStudioChange
 
 // A verification node counts only when it ran after the first changed attempt,
 // so a changed verification node never vouches for itself, while in a created
-// Flow, where every node is changed, a later assertion still counts.
+// Flow, where every node is changed, a later assertion still counts. An
+// assertion attempt a retry replaced is passed over, so one that failed and then
+// held on its retry counts as passed.
 function downstreamAssertionChecks(attempts: readonly AutomationStudioChangeVerdictAttempt[], firstChangedIndex: number): AutomationStudioChangeVerdictCheck[] {
-  const later = attempts.slice(firstChangedIndex + 1).filter((attempt) => attempt.verifiesState === true);
+  const later = attempts.slice(firstChangedIndex + 1).filter((attempt) => attempt.verifiesState === true && attempt.retried !== true);
   return unique(later.map((attempt) => attempt.nodeId)).map((nodeId) => {
     const nodeAttempts = later.filter((attempt) => attempt.nodeId === nodeId);
     if (nodeAttempts.some((attempt) => attempt.status === "failed")) return check("downstream_assertion", "failed", nodeId, "downstream_assertion_failed");

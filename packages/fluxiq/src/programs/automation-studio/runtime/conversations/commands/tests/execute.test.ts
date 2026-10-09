@@ -451,7 +451,7 @@ describe("conversation commands", () => {
     const execution = await executeAutomationStudioConversationCommand({ command: command("run.execute"), context: contextFor(conversations, conversationId, port), arguments: { flowId: "flow.kettle" } });
     expect(execution.status).toBe("started");
     await automationStudioConversationCommandWork.idle();
-    expect(calls).toEqual([{ endpoint: "run-runtime-session", payload: { projectId: PROJECT, flowId: "flow.kettle", runIntent: "explore_and_adapt" } }]);
+    expect(calls).toEqual([{ endpoint: "run-runtime-session", payload: { projectId: PROJECT, flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" } }]);
     const [result] = await turnsOf(conversations, conversationId);
     // No run id and no code in what the thread keeps (t276).
     expect(result?.text).toBe("The run failed: The price element never appeared.");

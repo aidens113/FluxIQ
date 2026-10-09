@@ -437,7 +437,7 @@ describe("the extension's chat, end to end in Core", () => {
     expect(response?.execution).toMatchObject({ capabilityId: "run.execute", status: "started" });
     await automationStudioConversationCommandWork.idle();
     const [result] = resultTurns((await world.thread(flowThread)).turns, "run.execute");
-    expect(result?.text).toMatch(/run/iu);
+    expect(result?.text).toMatch(/^"Find the kettles on this page" ran all the way through\./u);
     const runs = await world.call("list-flow-runs", { projectId: world.project.id, flowId: flow.flowId, limit: 5 });
     expect(runs.ok, runs.error).toBe(true);
     expect(JSON.stringify(runs.payload)).toContain(flow.flowId);

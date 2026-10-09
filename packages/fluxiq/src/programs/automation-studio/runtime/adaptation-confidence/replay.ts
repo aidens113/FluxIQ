@@ -38,6 +38,7 @@ import {
   automationStudioAttemptCapturedRecords,
   automationStudioAttemptVerifiesState,
   automationStudioChangeValidationResult,
+  automationStudioRetriedAttemptIds,
   decideAutomationStudioChangeConfidence,
   decideAutomationStudioChangeVerdict,
   type AutomationStudioChangeConfidence,
@@ -141,9 +142,10 @@ function replayOutcome(
   const changedNodeIds = exercisedNodeIds(input.trace.attempts, adaptation.adaptationId);
   if (!changedNodeIds.length) return unchanged("not_exercised");
 
+  const retried = automationStudioRetriedAttemptIds(input.trace.attempts);
   const verdict = decideAutomationStudioChangeVerdict({
     changedNodeIds,
-    attempts: input.trace.attempts.map((attempt) => replayAttempt(attempt, input)),
+    attempts: input.trace.attempts.map((attempt) => replayAttempt(attempt, input, retried)),
     runStatus: input.trace.status,
     ...(input.trace.currentNodeId !== undefined ? { endNodeId: input.trace.currentNodeId } : {}),
     ...(input.subflowId !== undefined ? { subflowId: input.subflowId } : {})
@@ -189,8 +191,12 @@ function exercisedNodeIds(attempts: readonly AutomationStudioNodeAttemptTrace[],
  *
  * A route is read as declared only on a success, because the executor fills a
  * failed attempt's expected route with `failed`.
+ *
+ * An attempt a later automatic retry of its node replaced is marked `retried`,
+ * by the same helper the trial uses, so a change that needed a retry on a later
+ * run is judged by the retry, exactly as its trial was.
  */
-function replayAttempt(attempt: AutomationStudioNodeAttemptTrace, input: AutomationStudioAdaptationReplayInput): AutomationStudioChangeVerdictAttempt {
+function replayAttempt(attempt: AutomationStudioNodeAttemptTrace, input: AutomationStudioAdaptationReplayInput, retried: ReadonlySet<string>): AutomationStudioChangeVerdictAttempt {
   const declared = attempt.transitionComparison?.expected;
   const succeeded = attempt.status === "succeeded";
   const expectedRoute = succeeded ? declared?.expectedRoute : undefined;
@@ -207,6 +213,7 @@ function replayAttempt(attempt: AutomationStudioNodeAttemptTrace, input: Automat
     ...(expectedOutputIds.length ? { expectedOutputIds } : {}),
     ...(declaresState ? { expectedState: "unknown" as const } : {}),
     ...(records ? { records } : {}),
-    ...(verifiesState ? { verifiesState } : {})
+    ...(verifiesState ? { verifiesState } : {}),
+    ...(retried.has(attempt.attemptId) ? { retried: true as const } : {})
   };
 }

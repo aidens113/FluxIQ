@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 3367
+- Public declarations: 3368
 - Class: 106
 - Interface: 2
 - Object: 430
 - Type: 1834
 - Type Alias: 1
-- Value: 994
+- Value: 995
 
 ## Public Declarations
 
@@ -717,7 +717,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioChangeVerdict` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/contracts.ts` | - |
 | `AutomationStudioChangeVerdictAttempt` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/contracts.ts` | One trial attempt, as the verdict reads it. The trial projects each executor attempt into this shape; every field is a fact the trial observed, and an absent optional field means the node declared nothing of that kind. |
 | `AutomationStudioChangeVerdictCheck` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/contracts.ts` | - |
-| `AutomationStudioChangeVerdictCheckKind` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/contracts.ts` | What one verdict check looked at. - `changed_node_succeeded`: every attempt of a node the change wrote, where the trial reached it. - `expected_state`: the host's evaluation of a changed node's declared `expectedState`. - `expected_route`: a changed node took the route it declares. Never the route the failure being repaired took. - `expected_outputs`: a changed node produced every output id it declares. - `records`: a changed node that saves records captured at least its minimum. With no minimum declared it passes on rows alone and carries the code `records_minimum_undeclared`, which the resume decision reads as unknown: nothing said how many rows the extraction owed. - `downstream_assertion`: a node whose definition declares `metadata.verifiesState`, run after the first changed attempt, succeeded. - `continuation`: the route the last changed node took led to a node that started, or to a successful end. |
+| `AutomationStudioChangeVerdictCheckKind` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/contracts.ts` | What one verdict check looked at. - `changed_node_succeeded`: every attempt of a node the change wrote, where the trial reached it, other than one an automatic retry replaced. - `expected_state`: the host's evaluation of a changed node's declared `expectedState`. - `expected_route`: a changed node took the route it declares. Never the route the failure being repaired took. - `expected_outputs`: a changed node produced every output id it declares. - `records`: a changed node that saves records captured at least its minimum. With no minimum declared it passes on rows alone and carries the code `records_minimum_undeclared`, which the resume decision reads as unknown: nothing said how many rows the extraction owed. - `downstream_assertion`: a node whose definition declares `metadata.verifiesState`, run after the first changed attempt, succeeded. - `continuation`: the route the last changed node took led to a node that started, or to a successful end. |
 | `AutomationStudioChangeVerdictCheckStatus` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/contracts.ts` | `unknown` is never a pass: a check that could not be evaluated proves nothing. |
 | `AutomationStudioChangeVerdictEvidenceKind` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/contracts.ts` | The check kinds that count as evidence. Success alone and continuation never do. |
 | `AutomationStudioChangeVerdictInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/contracts.ts` | - |
@@ -2082,6 +2082,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioResultVerificationStatus` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/verification-status.ts` | - |
 | `automationStudioResultVerificationWithinDeadline` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/result-verification/deadline.ts` | - |
 | `AutomationStudioResumeOutcome` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/resume.ts` | A resume either produces the continued run or moves nothing at all. A refusal leaves the run parked exactly as it was, so a mistaken answer costs nothing and the right one still works. |
+| `automationStudioRetriedAttemptIds` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/attempt-projection.ts` | - |
 | `automationStudioRetryBackoffMs` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/retry-policy.ts` | - |
 | `automationStudioRetryHintMs` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/retry-hint.ts` | - |
 | `AutomationStudioRetryWait` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/retry-wait.ts` | What one wait costs, and whether a bound shortened it. |

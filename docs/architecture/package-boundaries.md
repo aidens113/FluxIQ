@@ -108,6 +108,40 @@ commercial contract templates remain separate owner-controlled release work.
 
 ## Migration Notes
 
+### Next minor (unreleased): a retried step is judged by its retry, and a kept re-author is a durable change (`fluxiq`)
+
+Every node gets a first attempt and up to three automatic retries, and the
+executor records each retry as an attempt of its own, linked to the failed
+attempt it replaced by `retry.previousAttemptId`. A change verdict used to read
+that replaced attempt as the node failing, so a changed step that missed once
+and then held made its trial `contradicted`, and the run neither carried on nor
+kept the change. Read this entry if you build change-verdict attempts yourself,
+or read `durableBehaviorChanged`.
+
+**Added.**
+- `retried?: true` on `AutomationStudioChangeVerdictAttempt`: a later automatic
+  retry of the same node replaced this attempt. Every per-node check and the
+  downstream assertions pass over it. The first changed attempt and the
+  continuation still read the attempts as they ran. A failure that no retry
+  followed still fails, so a node whose retries were all spent is still a
+  contradiction.
+- `automationStudioRetriedAttemptIds(attempts)`: the ids that a later attempt
+  of the same node names as its `retry.previousAttemptId`. The trial and the
+  replay confidence both mark attempts with it, so a change is judged the same
+  way by either.
+
+**Changed.**
+- `automationStudioRunChangedDurableBehavior` is also true when the run's
+  re-author marker (`metadata.resultReauthor`) names its adaptation and says
+  `applied: true`. `run-runtime-session`'s `durableBehaviorChanged` and every
+  run summary saved from now on therefore say a kept re-author changed the
+  Flow. Summaries saved before this are not rewritten.
+- The chat's "run it" asks for `resultCheckCallerPays: "repair_checks"` from
+  any client, not only a paired one. A web-panel conversation's run whose steps
+  all succeed now makes no model call on the person's key. A succeeded run's
+  answer names the Flow in plain words (read with `get-flow`). It no longer
+  carries the run id, a status word or the trace's message.
+
 ### Next minor (unreleased): judges see the page before, and a re-author may find nothing to change (`fluxiq`)
 
 t286 (week review W4, W17, R2-C8). Read this entry if you read a run's

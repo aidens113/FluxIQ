@@ -219,3 +219,40 @@ describe("appending a replay result", () => {
     expect(withAutomationStudioAdaptationReplay(saved, succeededReplay(succeededTrial.runId, 100))).toBe(saved);
   });
 });
+
+// A later run retries a node that fails, up to three times, and each retry is
+// an attempt of its own linked by `retry.previousAttemptId` to the failed one it
+// replaced. A replay asks the same helper the trial does which attempts were
+// replaced, so a change that needed one retry is not demoted for it (t375).
+describe("a replay that needed an automatic retry", () => {
+  const retry = (previousAttemptId: string, attemptNumber: number) => ({ attemptNumber, maxAttempts: 4, backoffMs: 250, rung: "retry_node" as const, previousAttemptId });
+  const failedOnce = () => stamped({ status: "failed", attemptId: `${NODE_ID}.attempt.1` });
+
+  it("records a succeeded replay when the changed node passed on its retry", () => {
+    const outcome = replay(
+      [failedOnce(), stamped({ attemptId: `${NODE_ID}.attempt.2`, retry: retry(`${NODE_ID}.attempt.1`, 2), outputs: { total: 7 }, expectedOutputs: { total: "7" } })],
+      subject({ validationResults: [succeededTrial] })
+    );
+    expect(outcome.verdict).toMatchObject({ outcome: "verified", basis: ["expected_outputs"] });
+    expect(outcome.result).toMatchObject({ status: "succeeded", kind: "replay" });
+    expect(outcome.demoted).toBe(false);
+  });
+
+  it("counts a downstream assertion that passed on its retry", () => {
+    const assert = (overrides: AttemptOverrides) => attempt("node.assert", { definitionId: "definition.assert", ...overrides });
+    const outcome = replay(
+      [stamped(), assert({ status: "failed", attemptId: "node.assert.attempt.2" }), assert({ attemptId: "node.assert.attempt.3", retry: retry("node.assert.attempt.2", 2) })],
+      subject(),
+      { verifiesState: (traced) => traced.nodeId === "node.assert" }
+    );
+    expect(outcome.verdict).toMatchObject({ outcome: "verified", basis: ["downstream_assertion"] });
+    expect(outcome.result).toMatchObject({ status: "succeeded", kind: "replay" });
+  });
+
+  it("still records a failed replay when no retry followed the failure", () => {
+    const outcome = replay([failedOnce(), stamped({ attemptId: `${NODE_ID}.attempt.2`, outputs: { total: 7 }, expectedOutputs: { total: "7" } })], subject({ validationResults: [succeededTrial] }));
+    expect(outcome.verdict?.outcome).toBe("contradicted");
+    expect(outcome.result).toMatchObject({ status: "failed", kind: "replay" });
+    expect(outcome.demoted).toBe(true);
+  });
+});
