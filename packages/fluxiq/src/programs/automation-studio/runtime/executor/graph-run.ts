@@ -638,6 +638,9 @@ async function executeAutomationStudioGraph(
           // carries on down the success route rather than repeating an action
           // that has already happened. The attempt keeps its own failed status:
           // what happened and what the ladder made of it are two facts, not one.
+          // `stateHeld` is the second fact, so every reader of what the node
+          // came to reads it as done (`flow-change/attempt-projection.ts`).
+          attempts[attemptIndex] = { ...attempts[attemptIndex]!, stateHeld: { rung: ladder.rung, route: "success" } };
           recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "continued", 0);
           routeOverride = "success";
         } else {

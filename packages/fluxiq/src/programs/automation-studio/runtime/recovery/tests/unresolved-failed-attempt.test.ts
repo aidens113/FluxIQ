@@ -31,6 +31,14 @@ describe("unresolved recovery cause", () => {
     const unnamed = { status: "failed" };
     expect(automationStudioUnresolvedFailedAttempt([unnamed, { status: "succeeded" }])).toBe(unnamed);
   });
+  // t384: a failed attempt whose state already held is its node done.
+  it("reads a failed attempt whose state already held as its node done", () => {
+    const held = { nodeId: "action", status: "failed", stateHeld: { rung: "skip_satisfied_node" } };
+    expect(automationStudioUnresolvedFailedAttempt([held])).toBeUndefined();
+    expect(automationStudioUnresolvedFailedAttempt([failed("action"), held])).toBeUndefined();
+    const unresolved = failed("other");
+    expect(automationStudioUnresolvedFailedAttempt([unresolved, held])).toBe(unresolved);
+  });
   it("answers nothing for empty or successful history", () => {
     expect(automationStudioUnresolvedFailedAttempt([])).toBeUndefined();
     expect(automationStudioUnresolvedFailedAttempt([succeeded("action")])).toBeUndefined();

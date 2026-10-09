@@ -30,7 +30,7 @@ describe("a tool call in the wrap-up", () => {
     expect(executeTool).toHaveBeenCalledTimes(1);
     expect(result.accounting.toolCalls).toBe(1);
     const answered = (decide.mock.calls[2]![0].evidence as Shown[]).find((entry) => entry.toolId === "core.request_check");
-    expect(answered?.value).toMatchObject({ ok: false, code: "llm_evidence_loop.not_offered", toolId: "inspect", instruction: expect.stringContaining("offer no tools") });
+    expect(answered?.value).toMatchObject({ ok: false, code: "llm_evidence_loop.not_offered", toolId: "inspect", instruction: expect.stringContaining("only the tools offered now can run") });
     expect(result.trace.find((row) => row.iteration === 2)).toMatchObject({ decision: "tool_call", resultCode: "llm_evidence_loop.not_offered" });
   });
 

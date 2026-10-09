@@ -352,6 +352,15 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
     | { reason: "target_absent"; code: string }
     | { reason: "state_routed"; code: string; toNodeId: string; direction: "forward" | "backward" };
   /**
+   * Set when the step failed but the state it was recorded to produce already
+   * held, so the run went on down `success` rather than repeat an act that had
+   * already happened (the executor's `skip_satisfied_node` rung). The record
+   * then reads `status: "succeeded"` down `route: "success"`, because the step
+   * is done, and keeps the attempt's `failure` and `message`, because its
+   * first try did fail.
+   */
+  stateHeld?: { rung: "skip_satisfied_node" };
+  /**
    * What state routing made of the page when this step could not run (t243,
    * `runtime/executor/state-routing/`), as closed words and node ids only:
    * never a reason sentence, page text, a signature or a count.
