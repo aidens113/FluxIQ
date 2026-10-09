@@ -4,6 +4,7 @@
 // nested, nothing quoted, nothing escaped. This module holds only the shapes
 // the parser produces and the acceptor returns; the grammar itself is in
 // `./parse.ts`, and what the model is shown is in `./format.ts`.
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 
@@ -54,6 +55,25 @@ export type AutomationStudioFlowScriptStep = {
   node?: string;
   /** The block this step runs instead of doing anything itself. */
   runsBlock?: string;
+  /**
+   * The step's `call: <part>` line: the step runs the part the label names and
+   * waits for it, passing the part's inputs from its other lines
+   * (`../script-statements/called-parts.ts`). A `step: run subflow <label>`
+   * naming a part says the same.
+   */
+  calls?: AutomationStudioFlowScriptLabelLine;
+  /**
+   * The step's `checkpoint:` line, as written: a handler's `then: go to` may
+   * bring the run back to this step (`../script-statements/entry-points.ts`).
+   */
+  checkpoint?: AutomationStudioFlowScriptOptional;
+  /**
+   * Parameters Core set on a step it derived -- a handler's registration and
+   * the end of its body (`../script-statements/handler-blocks.ts`). Never
+   * written by a model; read before the written lines, which a derived step
+   * has none of.
+   */
+  derivedParameters?: JsonObject;
   entries: AutomationStudioFlowScriptEntry[];
   branches: AutomationStudioFlowScriptBranch[];
   /**
@@ -147,6 +167,12 @@ export type AutomationStudioFlowScriptOnlyAfter = {
   line: number;
 };
 
+/** A line naming a step or a block by label, reduced as a branch target is, and where it was written. */
+export type AutomationStudioFlowScriptLabelLine = {
+  label: string;
+  line: number;
+};
+
 /**
  * What a step's `repeat ...:` lines said, as written: each label already
  * reduced the way a branch target is (`./keys.ts`), `most` as its text. Which
@@ -180,15 +206,68 @@ export type AutomationStudioFlowScriptCondition = {
   line: number;
 };
 
-/** A block of steps: the main sequence, or a named subflow. */
+/** A block of steps: the main sequence, a named subflow or part, or a handler's body. */
 export type AutomationStudioFlowScriptBlock = {
-  /** The label a `subflow <label>:` line gave; absent for the main block. */
+  /**
+   * The label a `subflow <label>:` or `part <label>:` line gave; absent for
+   * the main block. A handler's block has one Core gave it, starting `:`,
+   * which no written label can equal.
+   */
   label?: string;
   name: string;
   role?: AutomationStudioFlowBootstrapPlan["subflows"][number]["role"];
-  /** When the router runs this block; every line must hold. Absent, nothing routes to it by condition. */
+  /**
+   * When the router runs this block; every line must hold. Absent, nothing
+   * routes to it by condition. In a handler's block these are the facts that
+   * must hold for the handler to run (`../script-statements/fact-condition.ts`).
+   */
   when?: AutomationStudioFlowScriptCondition[];
+  /**
+   * The block's `done when:` lines: the facts that prove it worked -- a part's
+   * success check, or a handler's completion check.
+   */
+  done?: AutomationStudioFlowScriptCondition[];
+  /** A part's `input: <name>` lines. */
+  inputs?: AutomationStudioFlowScriptLabelLine[];
+  /** A part's `output: <name> = <binding>` lines. */
+  outputs?: AutomationStudioFlowScriptOutput[];
+  /** The block's `start at: <step>` lines, each with the `when:` lines written after it. */
+  entries?: AutomationStudioFlowScriptEntryPoint[];
+  /** Set on a handler's block: what its `on ...:` line said. */
+  handler?: AutomationStudioFlowScriptHandler;
   steps: AutomationStudioFlowScriptStep[];
+  line: number;
+};
+
+/** A part's `output: <name> = <binding>` line, as written. */
+export type AutomationStudioFlowScriptOutput = {
+  name: string;
+  binding: string;
+  line: number;
+};
+
+/** A `start at: <step>` line and the `when:` lines written after it. */
+export type AutomationStudioFlowScriptEntryPoint = {
+  /** The label of the step the run may start at, reduced as a branch target is. */
+  step: string;
+  when: AutomationStudioFlowScriptCondition[];
+  line: number;
+};
+
+/**
+ * A handler's `on <event> [for ...]: <situation>` line, as written. Its block
+ * holds its `when:` and `done when:` lines and the steps of its body; `then`
+ * is its `then:` line. What each means is
+ * `../script-statements/handler-blocks.ts`'s.
+ */
+export type AutomationStudioFlowScriptHandler = {
+  event: "before" | "retry" | "fail" | "start" | "next";
+  /** The words between the event and the colon: `for <labels>`, `for this part`, `everywhere`, or none. */
+  scope: string;
+  situation: string;
+  then?: AutomationStudioFlowScriptOptional;
+  /** The index, in `AutomationStudioFlowScript.blocks`, of the block it was written in; absent when that block holds no step. */
+  parent?: number;
   line: number;
 };
 

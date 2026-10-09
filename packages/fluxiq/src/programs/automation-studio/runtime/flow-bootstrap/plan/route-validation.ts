@@ -7,13 +7,13 @@
 //     and the fallback can never run -- the collapse every live-built Flow had
 //     on 2026-09-18;
 //   - two rules with the same condition, where the second can never be taken;
-//   - a Subflow no rule and no fallback reaches, which is steps that can never
-//     run however the page looks.
+//   - a Subflow no rule, no fallback and no calling step reaches, which is
+//     steps that can never run however the page looks.
 //
 // Each is refused here, before anything is built, rather than left to become
 // a Flow that silently always does one thing.
 import type { AutomationConditionExpression } from "../../../model/index.ts";
-import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "./contracts.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, type AutomationStudioFlowBootstrapIssue, type AutomationStudioFlowBootstrapPlan } from "./contracts.ts";
 import { error } from "./issues.ts";
 import { automationStudioRouteConditionIssues, automationStudioRouteConditionKey } from "./route-condition.ts";
 
@@ -39,6 +39,13 @@ export function automationStudioFlowBootstrapRouteIssues(plan: AutomationStudioF
   }
   const reached = new Set(plan.router.rules.map((rule) => rule.targetSubflowKey));
   if (plan.router.fallback.kind === "subflow") reached.add(plan.router.fallback.targetSubflowKey);
+  // A part is reached by the step that calls it, and the recovery Subflow by
+  // the handlers it registers, never by the router (contract C1, C4).
+  for (const subflow of plan.subflows) for (const node of subflow.nodes) {
+    const called = node.parameters?.subflowId;
+    if (node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.callSubflow && typeof called === "string") reached.add(called);
+    if (subflow.role === "recovery" && node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.handler) reached.add(subflow.key);
+  }
   for (const [index, subflow] of plan.subflows.entries()) {
     if (reached.has(subflow.key)) continue;
     issues.push(error("bootstrap.subflow_unreachable", "No route and no fallback runs this Subflow, so its steps could never run.", `plan.subflows.${index}`));

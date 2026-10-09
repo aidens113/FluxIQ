@@ -8,9 +8,10 @@ import {
   AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA,
   AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE,
   AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT,
-  AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT
+  AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT
 } from "../index.ts";
-import { webDomainNodeDefinitionsFixture } from "./index.ts";
+import { stateNodeDefinitionsFixture, webDomainNodeDefinitionsFixture } from "./index.ts";
 
 // What the model is told about the run its Flow will have. The only Flow the
 // first end-to-end panel campaign created kept none of the dismissals its
@@ -302,8 +303,12 @@ function exampleRegistry(): AutomationStudioNodeRegistry {
   };
   const registry = new AutomationStudioNodeRegistry();
   for (const definition of [...fixture.map((definition) => definition.id === click.id ? { ...definition, inputs: [...definition.inputs, ROW_INPUT] } : definition), nextPage]) registry.register(definition);
+  // The call, handler and handler-end nodes the state-aware examples lower into (t388).
+  for (const definition of stateNodeDefinitionsFixture(registry, EXAMPLE_RESOLUTION)) registry.register(definition);
   return registry;
 }
+
+const EXAMPLE_RESOLUTION = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
 
 /** Each `Example...:` block of a constant, as the script it shows. */
 function exampleBlocks(text: string): Array<[string, string]> {
@@ -318,13 +323,14 @@ function exampleBlocks(text: string): Array<[string, string]> {
 describe("every example in the Flow script format", () => {
   const registry = exampleRegistry();
   const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
-  const blocks = [AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT].flatMap(exampleBlocks);
+  const blocks = [AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT].flatMap(exampleBlocks);
 
-  it("finds every example of the three constants", () => {
+  it("finds every example of the four constants", () => {
     expect(blocks.map(([name]) => name)).toEqual([
       "Example:", "Example, narrowing before reading:", "Example, two situations the run can start in:",
       "Example, acting on one item:",
-      "Example, reading every page of a list:", "Example, acting on each row a listing kept:", "Example, a loop the site asked to slow down:"
+      "Example, reading every page of a list:", "Example, acting on each row a listing kept:", "Example, a loop the site asked to slow down:",
+      "Example, starting where the page already is:", "Example, an interruption that can come at any pass:", "Example, a second known way, checked the same:"
     ]);
   });
 
@@ -356,5 +362,86 @@ describe("every example in the Flow script format", () => {
   it.each(blocks)("%s shows no realistic Lab scenario's site or task", (_name, script) => {
     const LAB_TASK_WORDS = /friend|request|earbud|kettle|basket|cart\b|towel|napkin|dish soap|pickup|watchlist|bid\b|auction|coupon|connection|invitation|saved item|classified|giveaway|glaze|moon jar|quote|gas engineer|job|rust role|group post|feed|digest|open day|rating|shirt|colour|size\b|quantity|brightaisle|farbazaar|valueridge|kerbfind|guildline|hammerline|circleway|voltbay|tidewell/iu;
     expect(script.match(LAB_TASK_WORDS)?.[0]).toBeUndefined();
+  });
+});
+
+// The state-aware statements (t388, contract C12): one line each, with a
+// one-line example, then three worked examples -- an entry where the page
+// already is, an interruption that can come at any pass, and a second known way
+// checked the same -- each assembled here to the graph shape the contract
+// stores. Candidate-only, so the legacy schema the digests above pin is
+// untouched.
+describe("the state-aware Flow script format", () => {
+  const registry = exampleRegistry();
+  const examples = new Map(exampleBlocks(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT));
+  const planOf = (name: string) => {
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: examples.get(name)! }, registry, resolution: EXAMPLE_RESOLUTION });
+    if (!accepted.ok) throw new Error(JSON.stringify(accepted.issues));
+    return accepted.plan;
+  };
+
+  it("stays out of the format and the legacy completion schema", () => {
+    for (const words of ["start at:", "call:", "checkpoint: yes", "on retry for", "done when:", "then: carry on"]) {
+      expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).not.toContain(words);
+      expect(JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA)).not.toContain(words);
+    }
+  });
+
+  it("gives every new statement a one-line example", () => {
+    for (const example of ["`call: payment`", "`card: $input.card = 4111`", "`start at: search` then `when: exists t4`", "`checkpoint: yes`", "`done when: text t11 contains \"Booked\"`", "`on retry for open: a notice covers the list`", "`then: carry on`", "`then: give up`", "`dialog <kind> \"<name>\"`"]) {
+      expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT).toContain(example);
+    }
+  });
+
+  it("keeps t378's rule for an interruption at one place, and sends one that can come anywhere to a handler", () => {
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT).toContain("An interruption that can only come at one place is an `optional: yes` step there, with its `only after:` steps.");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT).toContain("One that can come at several places, or at any pass of a loop, is one handler instead");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT).toContain("A loop the site asked to slow down still takes `repeat pace:` as well.");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT).toContain("never one you imagine");
+    // The loop text t378 wrote is unchanged.
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT).toContain("`repeat pace: <time>` goes beside `repeat over:` or `repeat while:`");
+  });
+
+  it("starting where the page already is: the renewal step carries its entry and the Flow requires facts", () => {
+    const plan = planOf("Example, starting where the page already is:");
+    const main = plan.subflows[0]!;
+    expect(main.nodes.map((node) => node.metadata ? `${node.key} ${Object.keys(node.metadata).join(",")}` : node.key)).toEqual(["s1", "s2", "s3 fluxiq.entry", "s4", "s5"]);
+    expect(main.nodes[2]!.metadata?.["fluxiq.entry"]).toEqual({ id: "renew", order: 1, when: [{ fact: "exists", op: "exists", target: "t6" }], requires: [] });
+    expect(plan.metadata).toEqual({ requires: ["web.facts@1"] });
+  });
+
+  it("an interruption that can come at any pass: one automation-scope handler in the recovery Subflow, beside the loop", () => {
+    const plan = planOf("Example, an interruption that can come at any pass:");
+    expect(plan.subflows.map((subflow) => [subflow.key, subflow.role])).toEqual([["main", "primary"], ["recovery", "recovery"]]);
+    const recovery = plan.subflows[1]!;
+    expect(recovery.nodes.map((node) => node.definitionId)).toEqual(["builtin.control.handler", "web.output.dom-click", "builtin.control.handler-end"]);
+    expect(recovery.nodes[0]!.parameters).toMatchObject({
+      event: "before",
+      scope: { kind: "automation" },
+      when: [{ fact: "dialog", op: "visible", target: { kind: "dialog", role: "alertdialog", name: "Session expiring" } }],
+      completionCheck: [{ fact: "dialog", op: "absent", target: { kind: "dialog", role: "alertdialog", name: "Session expiring" } }]
+    });
+    expect(recovery.nodes[2]!.parameters).toEqual({ disposition: "resume" });
+    expect(plan.subflows[0]!.nodes.map((node) => node.definitionId)).toContain("builtin.control.for-each");
+    expect(plan.metadata).toEqual({ requires: ["flow.handlers@1", "web.facts@1"] });
+  });
+
+  it("a second known way, checked the same: two parts with one success check, the call, and a fail handler that calls the other and resolves", () => {
+    const plan = planOf("Example, a second known way, checked the same:");
+    expect(plan.subflows.map((subflow) => [subflow.key, subflow.role])).toEqual([["main", "primary"], ["calendar", "utility"], ["floorplan", "utility"]]);
+    const [main, calendar, floorplan] = plan.subflows;
+    expect(main!.nodes.map((node) => `${node.key} ${node.definitionId}`)).toEqual([
+      "s1 web.output.browser-navigate", "s2 builtin.control.call-subflow",
+      "h1-s1 builtin.control.handler", "h1-s2 builtin.control.call-subflow", "h1-s3 builtin.control.handler-end"
+    ]);
+    expect(main!.nodes[1]!.parameters).toEqual({ subflowId: "calendar", inputs: {}, outputs: { reference: "reference" } });
+    expect(main!.nodes[2]!.parameters).toMatchObject({ event: "fail", scope: { kind: "nodes", nodeIds: ["s2"] }, when: [], completionCheck: [] });
+    expect(main!.nodes[3]!.parameters).toMatchObject({ subflowId: "floorplan" });
+    expect(main!.nodes[4]!.parameters).toEqual({ disposition: "resolve", outputs: { reference: { $state: { path: "$node.h1-s2.reference" } } } });
+    const check = [{ fact: "text", op: "contains", value: "Booked", target: "t11" }];
+    expect(calendar!.metadata?.["fluxiq.successCheck"]).toEqual(check);
+    expect(floorplan!.metadata?.["fluxiq.successCheck"]).toEqual(check);
+    expect(calendar!.interface?.outputs.map((port) => port.metadata?.binding)).toEqual([{ $state: { path: "$node.s2.records" } }]);
+    expect(plan.metadata).toEqual({ requires: ["flow.handlers@1", "flow.subflow-calls@1", "web.facts@1"] });
   });
 });

@@ -29,12 +29,13 @@ import {
   type AutomationStudioNodeParameterContract,
   type AutomationStudioNodeRegistryResolution
 } from "../../../nodes/index.ts";
-import type {
-  AutomationStudioFlowBootstrapIssue,
-  AutomationStudioFlowBootstrapNode,
-  AutomationStudioFlowBootstrapPlan,
-  AutomationStudioFlowBootstrapSubflow,
-  AutomationStudioValidatedFlowBootstrapPlan
+import {
+  AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS,
+  type AutomationStudioFlowBootstrapIssue,
+  type AutomationStudioFlowBootstrapNode,
+  type AutomationStudioFlowBootstrapPlan,
+  type AutomationStudioFlowBootstrapSubflow,
+  type AutomationStudioValidatedFlowBootstrapPlan
 } from "./contracts.ts";
 import { error } from "./issues.ts";
 import { layoutNodes } from "./layout.ts";
@@ -204,7 +205,8 @@ function validateSubflow(
     }
   }
   validateRequiredInputConnections(subflow, nodes, issues, path);
-  validateConnectivityAndDepth(nodes, adjacency, indegree, undirected, joined, scope.size, issues, path);
+  const handlers = new Set([...nodes].filter(([, item]) => item.node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.handler).map(([key]) => key));
+  validateConnectivityAndDepth(nodes, adjacency, indegree, undirected, joined, handlers, scope.size, issues, path);
 }
 
 function validateParameters(values: JsonObject, definition: AutomationStudioNodeDefinition, path: string, scope: ValidationScope, issues: AutomationStudioFlowBootstrapIssue[]): void {
@@ -347,6 +349,14 @@ function validateRequiredInputConnections(
 /**
  * Every node in one graph, no cycle a run could not leave, and a bounded depth.
  *
+ * **A handler's body is a graph of its own.** A handler registration has no way
+ * in: the run enters its body when the event it registers for fires (contract
+ * C4), so the registration and the steps its `body` port leads to are apart
+ * from the steps the Subflow runs in order. Each such group holds exactly one
+ * registration; every other node still belongs to the one graph the Subflow
+ * runs, and a Subflow that only registers handlers -- the recovery Subflow --
+ * has no such graph at all.
+ *
  * **Why a cycle is asked about twice.** A Flow that repeats a span is a cycle,
  * and refusing every cycle refused every loop -- so a draft could say "do this
  * for each row" and the plan it made was rejected for the shape that sentence
@@ -364,22 +374,30 @@ function validateConnectivityAndDepth(
   indegree: Map<string, number>,
   undirected: Map<string, string[]>,
   joined: ReadonlyArray<readonly [string, string]>,
+  handlers: ReadonlySet<string>,
   size: AutomationStudioFlowBootstrapSizeLimits,
   issues: AutomationStudioFlowBootstrapIssue[],
   path: string
 ): void {
   if (!nodes.size) return;
-  const first = nodes.keys().next().value as string;
-  const seen = new Set<string>([first]);
-  const queue = [first];
-  while (queue.length) {
-    const key = queue.shift()!;
-    for (const next of undirected.get(key) ?? []) if (!seen.has(next)) {
-      seen.add(next);
-      queue.push(next);
+  const seen = new Set<string>();
+  let ordinary = 0;
+  let disconnected = false;
+  for (const start of nodes.keys()) {
+    if (seen.has(start)) continue;
+    const component = [start];
+    seen.add(start);
+    for (let at = 0; at < component.length; at += 1) {
+      for (const next of undirected.get(component[at]!) ?? []) if (!seen.has(next)) {
+        seen.add(next);
+        component.push(next);
+      }
     }
+    const registrations = component.filter((key) => handlers.has(key)).length;
+    if (registrations > 1) disconnected = true;
+    else if (registrations === 0 && (ordinary += 1) > 1) disconnected = true;
   }
-  if (seen.size !== nodes.size) issues.push(error("bootstrap.disconnected_graph", "Every node in a Subflow must belong to one connected graph.", `${path}.nodes`));
+  if (disconnected) issues.push(error("bootstrap.disconnected_graph", "Every node in a Subflow must belong to one connected graph, apart from each handler's own body.", `${path}.nodes`));
   let ordered = topologicalOrder(nodes, adjacency, indegree);
   if (ordered.visited !== nodes.size && joined.length) ordered = topologicalOrder(nodes, withoutJoins(adjacency, joined), withoutJoinDegrees(indegree, joined));
   if (ordered.visited !== nodes.size) issues.push(error("bootstrap.cyclic_graph", "Bootstrap Subflow graphs must be acyclic except where a loop closes through a join.", `${path}.edges`));

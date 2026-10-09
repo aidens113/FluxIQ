@@ -45,7 +45,7 @@ import {
   type AutomationStudioNodeRegistry,
   type AutomationStudioNodeRegistryResolution
 } from "../../../nodes/index.ts";
-import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan, AutomationStudioFlowBootstrapSubflow } from "../plan/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, type AutomationStudioFlowBootstrapIssue, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../plan/index.ts";
 import { authoringError } from "./issue.ts";
 
 /** The node a list is walked with, and the port its body leaves on (`./draft-routing.ts`). */
@@ -150,6 +150,11 @@ function outputPortIds(
     if (seen.has(node.definitionId)) continue;
     seen.add(node.definitionId);
     for (const port of registry.get(node.definitionId, resolution)?.outputs ?? []) names.add(port.id);
+  }
+  // A call to a part puts the part's outputs into state by name, as a node's ports are.
+  for (const node of plan.subflows.flatMap((subflow) => subflow.nodes)) {
+    const outputs = node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.callSubflow ? node.parameters?.outputs : undefined;
+    if (outputs && typeof outputs === "object" && !Array.isArray(outputs)) for (const name of Object.keys(outputs)) names.add(name);
   }
   return names;
 }

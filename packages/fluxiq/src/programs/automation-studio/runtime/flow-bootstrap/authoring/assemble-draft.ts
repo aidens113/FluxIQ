@@ -61,7 +61,7 @@ import {
 } from "../../flow-draft/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import { automationStudioFlowBootstrapInstructionColumns } from "../answerability/index.ts";
-import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapNode, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS, type AutomationStudioFlowBootstrapIssue, type AutomationStudioFlowBootstrapNode, type AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { assembleAutomationStudioFlowScriptPlan } from "./assemble.ts";
 import type { AutomationStudioFlowScript, AutomationStudioFlowScriptStep } from "./contracts.ts";
 import { authoringDraftBindingIssues, authoringPlanGraph } from "./draft-bindings.ts";
@@ -307,6 +307,12 @@ type EarlierOutputSubject = {
   repeatsApart(source: number, reader: number): boolean;
 };
 
+/** The outputs a call to a part hands back, by name: none for any other node. */
+function calledOutputs(node: AutomationStudioFlowBootstrapNode): string[] {
+  const outputs = node.definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.callSubflow ? node.parameters?.outputs : undefined;
+  return outputs && typeof outputs === "object" && !Array.isArray(outputs) ? Object.keys(outputs) : [];
+}
+
 /** The one earlier-output checker (see the header and `EarlierOutputSubject`). */
 function earlierOutputBindingIssues(
   subject: EarlierOutputSubject,
@@ -331,8 +337,9 @@ function earlierOutputBindingIssues(
         continue;
       }
       const sourceNode = subject.nodes[found.index]!;
-      const outputs = registry.get(sourceNode.definitionId, resolution)?.outputs ?? [];
-      if (!outputs.some((port) => port.id === found.output)) {
+      // A call to a part gives the part's outputs, which its own parameters name (`../script-statements/called-parts.ts`).
+      const outputs = [...(registry.get(sourceNode.definitionId, resolution)?.outputs ?? []).map((port) => port.id), ...calledOutputs(sourceNode)];
+      if (!outputs.includes(found.output)) {
         refuse("flow_draft.step_binding_unknown_output", `reads the output "${found.output}" of ${source}, and its node "${sourceNode.definitionId}" declares no output by that name. Read an output that node declares.`);
         continue;
       }

@@ -25,9 +25,16 @@ export function parseAutomationStudioFlowBootstrapPlan(
 } {
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   if (!isRecord(value)) return { issues: [error("bootstrap.invalid_plan", "Bootstrap plan must be an object.", "plan")] };
-  rejectFields(value, ["schemaVersion", "router", "subflows"], "plan", issues);
+  rejectFields(value, ["schemaVersion", "router", "subflows", "metadata"], "plan", issues);
   if (value.schemaVersion !== "0.1") issues.push(error("bootstrap.invalid_schema_version", "Bootstrap plan schemaVersion must be 0.1.", "plan.schemaVersion"));
   parseRouter(value.router, issues);
+  if (value.metadata !== undefined) {
+    if (!isRecord(value.metadata)) issues.push(error("bootstrap.invalid_metadata", "Plan metadata must be an object.", "plan.metadata"));
+    else {
+      rejectFields(value.metadata, ["requires"], "plan.metadata", issues);
+      parseRequires(value.metadata.requires, "plan.metadata.requires", issues);
+    }
+  }
   if (!Array.isArray(value.subflows)) issues.push(error("bootstrap.invalid_subflows", "Bootstrap subflows must be an array.", "plan.subflows"));
   else if (value.subflows.length > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS.maxSubflows) issues.push(error("bootstrap.too_many_subflows", "Bootstrap plan exceeds the Subflow limit.", "plan.subflows"));
   else {
@@ -83,7 +90,7 @@ function parseSubflow(value: unknown, index: number, size: AutomationStudioFlowB
     issues.push(error("bootstrap.invalid_subflow", "Subflow must be an object.", path));
     return;
   }
-  rejectFields(value, ["key", "name", "role", "nodes", "edges"], path, issues);
+  rejectFields(value, ["key", "name", "role", "nodes", "edges", "interface", "metadata"], path, issues);
   symbolic(value.key, `${path}.key`, issues);
   boundedText(value.name, `${path}.name`, issues);
   if (!["primary", "integration", "recovery", "fallback", "utility"].includes(String(value.role))) issues.push(error("bootstrap.invalid_subflow_role", "Subflow role is invalid.", `${path}.role`));
@@ -97,6 +104,15 @@ function parseSubflow(value: unknown, index: number, size: AutomationStudioFlowB
   } else if (value.edges.length > size.maxEdgesPerSubflow) {
     issues.push(error("bootstrap.invalid_edges", automationStudioFlowBootstrapSizeRefusal(`Subflow has ${value.edges.length} edges`, "maxEdgesPerSubflow", size), `${path}.edges`));
   } else value.edges.forEach((edge, edgeIndex) => parseEdge(edge, `${path}.edges.${edgeIndex}`, issues));
+  if (value.interface !== undefined) parseInterface(value.interface, `${path}.interface`, issues);
+  if (value.metadata !== undefined) {
+    if (!isRecord(value.metadata)) issues.push(error("bootstrap.invalid_metadata", "Subflow metadata must be an object.", `${path}.metadata`));
+    else {
+      rejectFields(value.metadata, ["fluxiq.successCheck", "requires"], `${path}.metadata`, issues);
+      if (value.metadata.requires !== undefined) parseRequires(value.metadata.requires, `${path}.metadata.requires`, issues);
+      if (value.metadata["fluxiq.successCheck"] !== undefined) parseFacts(value.metadata["fluxiq.successCheck"], `${path}.metadata.fluxiq.successCheck`, issues);
+    }
+  }
 }
 
 function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {
@@ -104,7 +120,7 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
     issues.push(error("bootstrap.invalid_node", "Bootstrap node must be an object.", path));
     return;
   }
-  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences", "routeSignatures", "label", "paceMs"], path, issues);
+  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences", "routeSignatures", "label", "paceMs", "metadata"], path, issues);
   symbolic(value.key, `${path}.key`, issues);
   identifier(value.definitionId, `${path}.definitionId`, issues);
   boundedText(value.definitionVersion, `${path}.definitionVersion`, issues);
@@ -132,6 +148,7 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
       || value.paceMs < AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.minPaceMs || value.paceMs > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.maxPaceMs)) {
     issues.push(error("bootstrap.invalid_pace", `Node paceMs must be a whole number of milliseconds from ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.minPaceMs} to ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.maxPaceMs}.`, `${path}.paceMs`));
   }
+  if (value.metadata !== undefined) parseNodeMetadata(value.metadata, `${path}.metadata`, issues);
 }
 
 function parseEdge(value: unknown, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {
@@ -155,3 +172,109 @@ function parseEndpoint(value: unknown, path: string, issues: AutomationStudioFlo
   identifier(value.portId, `${path}.portId`, issues);
 }
 
+
+// The state-aware recovery declarations a script's statements write
+// (`../script-statements/`): an entry or checkpoint on a node, a part's
+// interface, a Subflow's success check and what the Flow requires. Shape and
+// bounds only; what each means is the runtime's (C2, C9, C10).
+
+/** Most facts one condition list may hold, most requirement ids a Flow may name, and most ports an interface may declare. */
+const MAX_FACTS = 16;
+const MAX_REQUIRES = 16;
+const MAX_INTERFACE_PORTS = 16;
+const FACT_OPS = new Set(["exists", "absent", "visible", "enabled", "equals", "contains", "matches", "count"]);
+const REQUIREMENT = /^[a-z][a-z0-9.-]{0,63}@[0-9]{1,4}$/u;
+const PORT_NAME = /^[a-z][A-Za-z0-9]{0,31}$/u;
+
+function parseRequires(value: unknown, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {
+  if (!Array.isArray(value) || value.length > MAX_REQUIRES || !value.every((item) => typeof item === "string" && REQUIREMENT.test(item))) {
+    issues.push(error("bootstrap.invalid_requires", "Requires must be a bounded list of capability ids, each `<id>@<major>`.", path));
+  }
+}
+
+function parseFacts(value: unknown, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_FACTS || !value.every(isFact)) {
+    issues.push(error("bootstrap.invalid_fact_condition", "Fact conditions must be a nonempty bounded list of { fact, op, value?, target? }.", path));
+  }
+}
+
+function isFact(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.fact !== "string" || !value.fact || value.fact.length > 64 || !FACT_OPS.has(String(value.op))) return false;
+  if (Object.keys(value).some((key) => !["fact", "op", "value", "target"].includes(key))) return false;
+  if (value.value !== undefined && !isFactValue(value.value)) return false;
+  if (value.target === undefined) return true;
+  if (typeof value.target === "string") return value.target.length > 0 && value.target.length <= 200;
+  return isRecord(value.target) && value.target.kind === "dialog" && typeof value.target.role === "string" && typeof value.target.name === "string"
+    && value.target.name.length <= 200 && value.target.role.length <= 40;
+}
+
+function isFactValue(value: unknown): boolean {
+  if (typeof value === "string") return value.length <= 2_000;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "boolean") return true;
+  if (!isRecord(value) || Object.keys(value).length !== 1) return false;
+  return (typeof value.input === "string" && PORT_NAME.test(value.input)) || (typeof value.value === "string" && value.value.length > 0 && value.value.length <= 200);
+}
+
+function parseNodeMetadata(value: unknown, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {
+  if (!isRecord(value)) {
+    issues.push(error("bootstrap.invalid_metadata", "Node metadata must be an object.", path));
+    return;
+  }
+  rejectFields(value, ["fluxiq.entry", "fluxiq.checkpoint"], path, issues);
+  const entry = value["fluxiq.entry"];
+  if (entry !== undefined) {
+    const at = `${path}.fluxiq.entry`;
+    if (!isRecord(entry)) issues.push(error("bootstrap.invalid_entry", "An entry must be { id, order, when, requires }.", at));
+    else {
+      rejectFields(entry, ["id", "order", "when", "requires"], at, issues);
+      symbolic(entry.id, `${at}.id`, issues);
+      if (typeof entry.order !== "number" || !Number.isSafeInteger(entry.order) || entry.order < 1) issues.push(error("bootstrap.invalid_entry", "An entry's order must be a whole number from 1.", `${at}.order`));
+      parseFacts(entry.when, `${at}.when`, issues);
+      parseNames(entry.requires, `${at}.requires`, issues);
+    }
+  }
+  const checkpoint = value["fluxiq.checkpoint"];
+  if (checkpoint !== undefined) {
+    const at = `${path}.fluxiq.checkpoint`;
+    if (!isRecord(checkpoint)) issues.push(error("bootstrap.invalid_checkpoint", "A checkpoint must be { id, when?, requires }.", at));
+    else {
+      rejectFields(checkpoint, ["id", "when", "requires"], at, issues);
+      symbolic(checkpoint.id, `${at}.id`, issues);
+      if (checkpoint.when !== undefined) parseFacts(checkpoint.when, `${at}.when`, issues);
+      parseNames(checkpoint.requires, `${at}.requires`, issues);
+    }
+  }
+}
+
+function parseNames(value: unknown, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {
+  if (!Array.isArray(value) || value.length > MAX_INTERFACE_PORTS || !value.every((item) => typeof item === "string" && PORT_NAME.test(item))) {
+    issues.push(error("bootstrap.invalid_requires", "Requires must be a bounded list of input names.", path));
+  }
+}
+
+function parseInterface(value: unknown, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {
+  if (!isRecord(value)) {
+    issues.push(error("bootstrap.invalid_interface", "A Subflow interface must be { inputs, outputs }.", path));
+    return;
+  }
+  rejectFields(value, ["inputs", "outputs"], path, issues);
+  for (const side of ["inputs", "outputs"] as const) {
+    const ports = value[side];
+    if (!Array.isArray(ports) || ports.length > MAX_INTERFACE_PORTS) {
+      issues.push(error("bootstrap.invalid_interface", `A Subflow interface's ${side} must be a bounded array.`, `${path}.${side}`));
+      continue;
+    }
+    ports.forEach((port, index) => {
+      const at = `${path}.${side}.${index}`;
+      if (!isRecord(port) || typeof port.id !== "string" || !PORT_NAME.test(port.id) || typeof port.name !== "string" || !isRecord(port.valueType)) {
+        issues.push(error("bootstrap.invalid_interface", "An interface port must be { id, name, valueType }.", at));
+        return;
+      }
+      rejectFields(port, ["id", "name", "valueType", "required", "metadata"], at, issues);
+      if (port.metadata !== undefined && !(isRecord(port.metadata) && isJsonObject(port.metadata.binding) && Object.keys(port.metadata).length === 1)) {
+        issues.push(error("bootstrap.invalid_interface", "An interface port's metadata holds only its binding.", `${at}.metadata`));
+      }
+    });
+  }
+}
