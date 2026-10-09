@@ -6,6 +6,7 @@ const validateSession = vi.fn();
 const snapshot = vi.fn();
 const authorizeToken = vi.fn();
 const endpoints = vi.fn();
+const assertProjectDomainAccess = vi.fn();
 let cookieValue: string | undefined = "authenticated-session";
 
 vi.mock("next/headers", () => ({
@@ -20,6 +21,7 @@ vi.mock("../../../../../../lib/fluxiq", () => ({
       api: { call, endpoints },
       identityAccess: { validateSession, snapshot },
       clientGateway: { authorizeToken },
+      automationStudio: { assertProjectDomainAccess },
     },
   }),
   getFluxIQWebRuntimeStatus: vi.fn(),
@@ -31,7 +33,7 @@ const TOKEN = "pairing-token-secret-value";
 
 const ALLOWLISTED = [
   "get-runtime-build-identity",
-    "list-conversations",
+  "list-conversations",
   "open-conversation",
   "get-conversation",
   "append-turn",
@@ -39,6 +41,9 @@ const ALLOWLISTED = [
   "list-runtime-sessions",
   "cancel-runtime-session",
   "cancel-flow-bootstrap",
+  "pause-runtime-session",
+  "resume-runtime-session",
+  "get-runtime-run-control",
   "list-flow-summaries",
   "list-flow-runs",
   "get-flow-run-detail",
@@ -60,6 +65,9 @@ const CLASSIFICATIONS: Record<string, string> = {
   "list-runtime-sessions": "read",
   "cancel-runtime-session": "authoring",
   "cancel-flow-bootstrap": "authoring",
+  "pause-runtime-session": "authoring",
+  "resume-runtime-session": "authoring",
+  "get-runtime-run-control": "read",
   "list-flow-summaries": "read",
   "list-flow-runs": "read",
   "get-flow-run-detail": "read",
@@ -95,6 +103,9 @@ function resetMocks() {
   snapshot.mockReset();
   authorizeToken.mockReset();
   endpoints.mockReset();
+  assertProjectDomainAccess.mockReset();
+  // Every project is in the domain asked about unless a test says otherwise.
+  assertProjectDomainAccess.mockResolvedValue(undefined);
 }
 
 describe("program endpoint route", () => {
@@ -266,6 +277,89 @@ describe("a paired client's bearer token", () => {
 
     expect(response.status).toBe(200);
     expect(call).toHaveBeenCalledWith(expect.objectContaining({ scope: { domainId: "web-automation" } }));
+  });
+
+  // A pairing approves a browser for a person's account, not for a project
+  // (t379; `lib/program-route.ts`, "What a pairing approves"), and Core has no
+  // per-person project. So the line a token must never cross is another
+  // person: whatever project its call names, it reaches it as its approver.
+  describe("reaches a project only as the person who approved the pairing", () => {
+    const otherPerson = "user:other";
+
+    beforeEach(() => {
+      authorizeToken.mockResolvedValue({ sessionId: "gateway-session-2", operatorUserId: "user:approver", projectId: "project-of-approver", metadata: { domainId: "web-automation" } });
+      snapshot.mockResolvedValue({
+        users: [
+          { id: "user:approver", roleId: "role:author", enabled: true },
+          { id: otherPerson, roleId: "role:admin", enabled: true },
+        ],
+        roles: [
+          { id: "role:author", permissions: ["programs.read", "programs.write", "runtime.control"] },
+          { id: "role:admin", permissions: ["programs.read", "programs.write", "flows.write", "runtime.control", "identity.manage", "data.manage"] },
+        ],
+      });
+    });
+
+    it.each(["get-conversation", "append-turn", "answer-ask", "cancel-runtime-session", "pause-runtime-session", "resume-runtime-session", "list-flow-runs", "export-run-dataset"])(
+      "%s naming another person's project and identity still speaks only for the approver",
+      async (endpoint) => {
+        const body = {
+          projectId: "project-of-other",
+          runId: "run-of-other",
+          actorId: otherPerson,
+          userId: otherPerson,
+          operatorUserId: otherPerson,
+          authSessionId: "session-of-other",
+        };
+        const response = await POST(tokenRequest(endpoint, { body }), params(endpoint));
+
+        expect(response.status).toBe(200);
+        const forwarded = call.mock.calls[0]?.[0];
+        expect(forwarded.actor).toEqual({
+          sessionId: "client-gateway:gateway-session-2",
+          userId: "user:approver",
+          roleId: "role:author",
+          permissions: ["programs.read", "programs.write", "runtime.control"],
+        });
+        expect(forwarded.scope).toEqual({ domainId: "web-automation" });
+        // Body fields naming a person are data for Core's handler, which reads
+        // who acts from `actor` only; the auth session is never passed on.
+        expect(forwarded.payload).not.toHaveProperty("authSessionId");
+        expect(JSON.stringify(forwarded.actor)).not.toContain(otherPerson);
+      },
+    );
+
+    it("cannot review a proposal in another person's name", async () => {
+      const response = await POST(
+        tokenRequest("review-recording-flow-proposal", { body: { projectId: "project-of-other", proposalId: "x", decision: "approved", reviewerId: otherPerson } }),
+        params("review-recording-flow-proposal"),
+      );
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's review may not carry reviewerId." });
+      expect(call).not.toHaveBeenCalled();
+    });
+
+    it("is not bound to the session's current project: a call naming another one reaches Core as the approver would", async () => {
+      const response = await POST(tokenRequest("list-flow-summaries", { body: { projectId: "project-elsewhere" } }), params("list-flow-summaries"));
+
+      expect(response.status).toBe(200);
+      expect(call).toHaveBeenCalledWith(expect.objectContaining({ payload: { projectId: "project-elsewhere" }, actor: expect.objectContaining({ userId: "user:approver" }) }));
+    });
+
+    it("reaches nothing once its approver can reach nothing, even with another person still enabled", async () => {
+      snapshot.mockResolvedValue({
+        users: [
+          { id: "user:approver", roleId: "role:author", enabled: false },
+          { id: otherPerson, roleId: "role:admin", enabled: true },
+        ],
+        roles: [{ id: "role:admin", permissions: ["programs.read", "programs.write", "runtime.control"] }],
+      });
+      const response = await POST(tokenRequest("get-conversation", { body: { projectId: "project-of-other" } }), params("get-conversation"));
+
+      expect(response.status).toBe(401);
+      expect(call).not.toHaveBeenCalled();
+    });
   });
 
   it("is refused without a bearer header or cookie", async () => {

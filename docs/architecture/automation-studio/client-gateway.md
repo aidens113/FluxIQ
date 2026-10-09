@@ -322,9 +322,14 @@ The web shell exposes global client-gateway endpoints:
 - `POST /api/client-gateway/approve-pairing`
 - `POST /api/client-gateway/dismiss-pairing`
 
-A paired client's credential is also an HTTP bearer token, on two routes only.
-`GET /api/recordings` accepts it for the extension's recordings list. The
-program route, `/api/programs/<programId>/<endpoint>`, accepts it on exactly
+A paired client's credential is also an HTTP bearer token, on three routes
+only, and each holds it to the domain its pairing bound (below).
+`GET /api/recordings` accepts it for the extension's recordings list, and lists
+for a token only the recordings of that domain's projects
+(`listRecordingSummaries({ domainId })`); a URL naming another domain is
+refused. `PUT /api/programs/automation-studio/state-assets/<projectId>/<sha256>`
+accepts it for a recording's screenshots, and stores nothing in a project
+outside that domain. The program route, `/api/programs/<programId>/<endpoint>`, accepts it on exactly
 these endpoints, which are what the extension's panel needs to talk to FluxIQ,
 stop a run, and use its automation and recording controls:
 
@@ -339,12 +344,33 @@ stop a run, and use its automation and recording controls:
   `takeControl` / `afterManualAction` flags and the person's own short note,
   so they are not narrowed, and their answer is the run's control and progress,
   so it is not projected. A token reaches a run the way it reaches Stop: by the
-  project and run ids it names, as the approving person, in its own domain
+  project and run ids it names, as the approving person, and only in a project
+  of the domain its pairing bound (below)
 - Automation Studio, automation panel: `list-flow-summaries`, `list-flow-runs`,
   `get-flow-run-detail`, `list-flow-adaptations`, `export-run-dataset`,
   `run-runtime-session`, `generate-recording-proposal`,
   `review-recording-flow-proposal`, `remove-recording-entry`
 - Secret Keys: `snapshot`, projected (below)
+
+**What a pairing approves.** A person approves a browser for their own
+account in one domain, not for one project. The approval carries only the
+pairing reference and the approving person (`POST
+/api/client-gateway/approve-pairing` reads `pairingCode` and nothing else), and
+the durable trust record holds the client, its type and name, that person and
+the domain the client declared when they approved it (`domainId`, null for
+none), with no project (`client-gateway/service/pairing-flow.ts`,
+`trusted-clients.ts`). A session's `projectId` is its current context, the
+project a recording started under; it moves, and is not restored from the
+trust record on reconnect. The extension follows the project the person has
+open in the web panel and names a project explicitly when the person picks one
+in its panel. Core has no per-person project either: every project belongs to
+a domain, and any person whose role holds an endpoint's permission reaches it.
+So a token call may name any project in its bound domain, and reaches it
+exactly as the approving person's own login would on that endpoint, with fewer
+permissions. Nothing in a request makes a token speak for anyone
+else: the actor comes from the session alone, an `authSessionId` the caller
+names is removed, and a review may not name a `reviewerId`. A token's reach is
+its approver's, in its bound domain, never another person's.
 
 The allowlist lives in `apps/web/src/lib/program-route.ts`, and four rules
 bound it:
@@ -355,8 +381,29 @@ bound it:
   `flows.write`. `flows.write` is there only because
   `generate-recording-proposal` and `review-recording-flow-proposal` require it.
   A disabled or deleted person's clients reach nothing.
-- It is scoped to the domain the client declared in `client.hello`
-  (`metadata.domainId`). A URL that names another domain is refused with 403.
+- It is gated to the domain its pairing bound. The trust record keeps the
+  domain the client declared in `client.hello` (`metadata.domainId`) when the
+  person approved it. A later connection that declares another domain is not
+  resumed: it is audited as `session.domain_rejected` and gets
+  `server.pairing_required`, the same path as an expired credential, so a
+  person approves it again (which binds the new domain) or not. Trust minted
+  before the domain was bound has no `domainId` and goes through the same new
+  approval once. `authorizeToken` answers only a ready session whose declared
+  domain is its trust's. On the program route, a URL that names another domain
+  is refused with 403, and every Automation Studio token call reaches its
+  project -- the body's `projectId`, or the session's current project when the
+  body names none -- only when `assertProjectDomainAccess` finds that project
+  in the bound domain. This holds on every allowlisted endpoint, run, pause,
+  Flow and recording endpoints included, so no handler has to remember. A
+  project in another domain, one that does not exist and a `projectId` that is
+  not a string are all refused with 403 before any handler runs. A project
+  refused for its domain answers `errorCode: "authorization.project_domain"`
+  and a sentence a person can act on ("This browser was paired for web
+  automation projects, and this project is not one. Open a web automation
+  project in FluxIQ, then try again."), so a client can show why instead of
+  treating it as a refused token (`apps/web/src/lib/paired-client-project-domain.ts`,
+  shared by all three routes). The web panel's cookie calls are not gated:
+  for a signed-in person the domain is only what the URL says.
 - The route refuses any endpoint the registry classifies as other than `read`
   or `authoring`, so a mistaken allowlist entry still cannot reach a delete, a
   payment or a program-gated credential check. Deletes and money movement keep
@@ -371,7 +418,9 @@ refusal is 403 with a sentence naming the field, never its value:
 
 - `run-runtime-session` must name a saved Flow by `flowId`, and may not carry an
   inline `flow`, `inputs`, `permittedConsequences`, `dryRunLlm`,
-  `useReusableContext`, or `authorizedExternalSideEffects` other than `false`.
+  `useReusableContext`, `authorizedDomainIds` (which would let the run act in
+  domains beyond the bound one), or `authorizedExternalSideEffects` other than
+  `false`.
   Its `adaptiveMode` must be `no_llm_intervention` or `deterministic`; an absent
   mode, which would mean fully adaptive, is set to `no_llm_intervention`. A
   paired token never allows a consequence on the person's behalf.
@@ -650,8 +699,9 @@ Extension/client connection flow:
 6. If the user approves, FluxIQ pairs the waiting socket directly.
 7. Replace the saved token with every token returned by
    `server.session_ready`; reconnect consumes and rotates it. The persisted
-   trust record is bound to the approving operator and stable `clientId`, while
-   each socket connection receives a new session ID.
+   trust record is bound to the approving operator, the stable `clientId` and
+   the domain declared at approval, so a reconnect must declare the same
+   domain, while each socket connection receives a new session ID.
 8. Stream `client.state_update`, `client.snapshot`,
    `client.recording_event`, `client.action_result`, and `client.error` as
    appropriate. Execute incoming `server.execute_action`,

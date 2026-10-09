@@ -707,7 +707,7 @@ their own:
 | `POST /api/framework/setup` (`setup`) | permission only | Initializes storage |
 | `POST /api/client-gateway/approve-pairing` | `runtime.control` | Grants a browser client trust — the granting direction of `revoke-client-trust` |
 | `POST /api/client-gateway/dismiss-pairing` | `runtime.control` | Dismisses a pairing request |
-| `PUT .../state-assets/[projectId]/[sha256]` | `programs.write` **or** a gateway bearer token | Uploads a binary state asset with no operator session |
+| `PUT .../state-assets/[projectId]/[sha256]` | `programs.write` **or** a gateway bearer token, held to the project the session is recording and to its pairing's bound domain | Uploads a binary state asset with no operator session |
 | `POST /api/auth/login` | rate limiting | Session and attempt trackers (by design) |
 
 The recommendation is to route the three `framework/setup` actions and
