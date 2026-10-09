@@ -35,7 +35,6 @@
       "apps/web/src/features/automation-studio/live/view-host/direct-view-connector.tsx": 4,
       "apps/web/src/features/automation-studio/views/view-host-registry.tsx": 4,
       "apps/web/src/features/automation-studio/workspace/shell/tests/shell.test.tsx": 4,
-      "packages/fluxiq/src/programs/automation-studio/runtime/activity/tests/call-context.test.ts": 4,
       "packages/fluxiq/src/programs/automation-studio/runtime/llm/stages/tests/registry.test.ts": 4,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/flow-bootstrap-commands/tests/evidence-trace.test.ts": 4,
       "apps/web/src/features/automation-studio/workspace/overlays/tests/overlay-hardening.test.ts": 3,
@@ -106,7 +105,6 @@
       "packages/fluxiq/src/programs/automation-studio/runtime/executor/state-routing/tests/could-not-run.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/executor/tests/attempt-trace.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/executor/tests/node-execution.test.ts": 1,
-      "packages/fluxiq/src/programs/automation-studio/runtime/executor/tests/optional-failed-route.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/authoring/tests/routes.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/tests/trial-gate.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/generation-failure/tests/provider-refusal.test.ts": 1,
@@ -308,7 +306,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4381,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4380,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "import-cycles": {
