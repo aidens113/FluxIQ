@@ -25,8 +25,11 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
       return built;
     } catch (error) {
       const ending = buildEndingOf(error);
-      const title = (error as { name?: string } | null)?.name === "AbortError" ? "Build stopped" : ending ? ENDING_TITLES[ending.kind] : "Build failed";
-      emitAutomationStudioActivity({ phase: "failed", label: title, detail: { kind: "step", title, status: "failed", ...(ending ? { text: ending.message } : {}) }, final: true });
+      // A cancelled build ends in the AbortError its cancellation throws
+      // (`../service/flow-bootstrap-commands/cancellation.ts`): that, not a label, is what says it was stopped.
+      const stopped = (error as { name?: string } | null)?.name === "AbortError";
+      const title = stopped ? "Build stopped" : ending ? ENDING_TITLES[ending.kind] : "Build failed";
+      emitAutomationStudioActivity({ phase: "failed", label: title, detail: { kind: "step", title, status: "failed", ...(ending ? { text: ending.message } : {}) }, final: true, ...(stopped ? { stopped: true as const } : {}) });
       throw error;
     }
   });

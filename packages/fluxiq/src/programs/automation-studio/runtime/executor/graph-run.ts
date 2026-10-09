@@ -29,7 +29,7 @@ import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { automationStudioStopAfterNode } from "./partial-run/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
-import { automationStudioActivityAskResolution, automationStudioActivityInBuild, automationStudioActivityLoopWords, automationStudioActivityRecoveryChoice, automationStudioActivityStepNumbers, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
+import { automationStudioActivityAskResolution, automationStudioActivityHold, automationStudioActivityInBuild, automationStudioActivityLoopWords, automationStudioActivityRecoveryChoice, automationStudioActivityStepNumbers, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -396,11 +396,11 @@ async function executeAutomationStudioGraph(
     if (options.signal?.aborted) {
       return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
     }
-    // A pause holds here, before the node executes, and never inside it. The
-    // run resumes at this same node with everything it had computed.
+    // A pause holds here, before the node executes, and never inside it. The run resumes at this same node with
+    // everything it had computed; the hold and its release are each said once (`activity/hold.ts`).
     const held = options.runControl?.checkpoint({ nodeId: currentNode.id, step });
     if (held) {
-      const released = await held;
+      const released = await automationStudioActivityHold(held, { nodeId: currentNode.id, label: currentNode.label, index: stepNumbers.numberOf(currentNode.id), count: stepNumbers.count, byPerson: options.runControl?.heldBy?.() === "person", signal: options.signal });
       await options.commandRun?.checkpoint();
       if (released.outcome === "stop" || options.signal?.aborted) {
         return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: released.outcome === "stop" ? released.message : "Run cancelled." };

@@ -70,6 +70,12 @@ export const PAIRED_CLIENT_ENDPOINTS: Readonly<Record<string, readonly string[]>
     "list-runtime-sessions",
     "cancel-runtime-session",
     "cancel-flow-bootstrap",
+    // Take over and Hand back on a live run, `authoring` under `runtime.control`, like Stop: holding a run removes
+    // nothing and acts nowhere. Not narrowed: the bodies carry only the run's ids, a flag and the person's own note.
+    "pause-runtime-session",
+    "resume-runtime-session",
+    // Reading a live run's hold, `read`. Not projected: it is the run's control and progress, nothing secret.
+    "get-runtime-run-control",
     // Simple Mode's Flow picker, `read`.
     "list-flow-summaries",
     // Simple Mode's run history for a Flow, `read`.

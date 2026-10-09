@@ -19,7 +19,7 @@ export type AutomationStudioActivityScope = {
 export type AutomationStudioActivityInput = Omit<ClientGatewayActivity, "sequence" | "at">;
 
 /** What an emission site says; the scope it runs under supplies the rest. */
-export type AutomationStudioActivityEmission = Pick<ClientGatewayActivity, "phase" | "label" | "step" | "detail" | "final" | "request">;
+export type AutomationStudioActivityEmission = Pick<ClientGatewayActivity, "phase" | "label" | "step" | "detail" | "final" | "stopped" | "request">;
 
 export type AutomationStudioActivityListener = (event: ClientGatewayActivity) => void;
 

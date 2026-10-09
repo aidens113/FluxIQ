@@ -105,6 +105,23 @@ describe("withAutomationStudioBuildActivity", () => {
     expect(seen[5]!.label).not.toMatch(/model/u);
   });
 
+  it("marks only a cancelled build's ending as stopped, from the cancellation's AbortError (t376)", async () => {
+    const cancelled = new DOMException("Build stopped. The Flow was not promoted.", "AbortError");
+    await expect(withAutomationStudioBuildActivity({ projectId: "p1", flowId: "f1" }, async () => { throw cancelled; })).rejects.toBe(cancelled);
+    expect(seen[1]).toMatchObject({ phase: "failed", final: true, stopped: true, label: "Build stopped" });
+
+    // A build that failed, or ran out of budget ("Build stopped: ..." in its words), was not stopped by anyone.
+    const budget = Object.assign(new Error("y"), { diagnostic: { ending: { kind: "budget_exhausted", message: "The build stopped at its spending limit." } } });
+    await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw budget; })).rejects.toBe(budget);
+    await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw new Error("refused"); })).rejects.toThrow("refused");
+    await withAutomationStudioBuildActivity({ projectId: "p1" }, async () => "built");
+    expect(seen.slice(2).map((event) => [event.label, "stopped" in event])).toEqual([
+      ["Building the Flow", false], ["Build stopped: a budget ran out", false],
+      ["Building the Flow", false], ["Build failed", false],
+      ["Building the Flow", false], ["Your Flow is ready", false]
+    ]);
+  });
+
   it("runs unobserved without a usable project", async () => {
     expect(await withAutomationStudioBuildActivity({ projectId: 42 }, async () => 1)).toBe(1);
     expect(seen).toEqual([]);
@@ -126,6 +143,18 @@ describe("withAutomationStudioRunActivity", () => {
     expect(seen.filter((event) => event.label !== "Run started").map((event) => [event.phase, event.final ?? false])).toEqual([
       ["done", true], ["failed", true], ["failed", true], ["waiting_permission", false]
     ]);
+  });
+
+  it("marks only a cancelled run's ending as stopped, from the session's own status (t376)", async () => {
+    await settle("cancelled");
+    await settle("failed");
+    await settle("succeeded");
+    await settle("waiting");
+    const settled = seen.filter((event) => event.label !== "Run started");
+    expect(settled.map((event) => [event.phase, event.final ?? false, event.stopped ?? false])).toEqual([
+      ["failed", true, true], ["failed", true, false], ["done", true, false], ["waiting_permission", false, false]
+    ]);
+    expect(settled.slice(1).some((event) => "stopped" in event)).toBe(false);
   });
 
   it("emits nothing for a run that returns before it is bound", async () => {

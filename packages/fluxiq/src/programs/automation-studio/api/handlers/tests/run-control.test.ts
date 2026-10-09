@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_shared/api.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioRuntimeSession } from "../../../model/index.ts";
+import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
+import { automationStudioActivityHub } from "../../../runtime/activity/index.ts";
 import { AutomationStudioRunControlRegistry, runAutomationStudioGraph } from "../../../runtime/index.ts";
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
 import { registerAutomationStudioApi } from "../index.ts";
@@ -192,6 +194,9 @@ describe("pausing a real service run", () => {
 
   it("ends a held run as stopped when it is cancelled", async () => {
     const { service, projectId, flowId, call, start, until } = await realWorld();
+    const seen: ClientGatewayActivity[] = [];
+    const unsubscribe = automationStudioActivityHub.subscribe((event) => seen.push(event));
+    cleanups.push(async () => unsubscribe());
     const runId = await start();
     const running = service.runRuntimeSession({ projectId, flowId, runId, adaptiveMode: "no_llm_intervention" });
     await until(() => service.runControl.snapshot(projectId, runId) !== null, "the run to open");
@@ -202,5 +207,10 @@ describe("pausing a real service run", () => {
     await running;
     expect((await service.getRuntimeSession(projectId, runId))?.status).toBe("cancelled");
     expect(service.runControl.snapshot(projectId, runId)).toBeNull();
+    // On the run's own activity: held once as a takeover, never "continuing", and ended as stopped (t376).
+    const own = seen.filter((event) => event.subject.kind === "run" && event.subject.id === runId);
+    expect(own.filter((event) => event.phase === "paused").map((event) => event.label)).toEqual(["Paused: you have the page"]);
+    expect(own.some((event) => event.label.startsWith("Continuing"))).toBe(false);
+    expect(own.at(-1)).toMatchObject({ phase: "failed", final: true, stopped: true, label: "Run cancelled" });
   }, 60_000);
 });

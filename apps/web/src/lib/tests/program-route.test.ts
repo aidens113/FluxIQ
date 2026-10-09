@@ -56,6 +56,9 @@ describe("a paired client on the program route", () => {
         "list-runtime-sessions",
         "cancel-runtime-session",
         "cancel-flow-bootstrap",
+        "pause-runtime-session",
+        "resume-runtime-session",
+        "get-runtime-run-control",
         "list-flow-summaries",
         "list-flow-runs",
         "get-flow-run-detail",
@@ -74,6 +77,10 @@ describe("a paired client on the program route", () => {
     expect(isPairedClientEndpoint("automation-studio", "append-turn")).toBe(true);
     expect(isPairedClientEndpoint("automation-studio", "run-runtime-session")).toBe(true);
     expect(isPairedClientEndpoint("secret-keys", "snapshot")).toBe(true);
+    // Take over, Hand back and reading the hold (t376).
+    expect(isPairedClientEndpoint("automation-studio", "pause-runtime-session")).toBe(true);
+    expect(isPairedClientEndpoint("automation-studio", "resume-runtime-session")).toBe(true);
+    expect(isPairedClientEndpoint("automation-studio", "get-runtime-run-control")).toBe(true);
     expect(isPairedClientEndpoint("automation-studio", "delete-run-datasets")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "delete-recording")).toBe(false);
     expect(isPairedClientEndpoint("automation-studio", "review-flow-adaptation")).toBe(false);

@@ -330,7 +330,16 @@ stop a run, and use its automation and recording controls:
 
 - Automation Studio: `list-conversations`, `open-conversation`,
   `get-conversation`, `append-turn`, `answer-ask`
-- Automation Studio: `list-runtime-sessions`, `cancel-runtime-session`
+- Automation Studio: `list-runtime-sessions`, `cancel-runtime-session`,
+  `cancel-flow-bootstrap`
+- Automation Studio, Take over and Hand back: `pause-runtime-session` and
+  `resume-runtime-session` (`runtime.control`, `authoring`, like Stop: holding
+  a run removes nothing and acts nowhere), and `get-runtime-run-control`
+  (`programs.read`, `read`). Their bodies carry only the run's ids, the
+  `takeControl` / `afterManualAction` flags and the person's own short note,
+  so they are not narrowed, and their answer is the run's control and progress,
+  so it is not projected. A token reaches a run the way it reaches Stop: by the
+  project and run ids it names, as the approving person, in its own domain
 - Automation Studio, automation panel: `list-flow-summaries`, `list-flow-runs`,
   `get-flow-run-detail`, `list-flow-adaptations`, `export-run-dataset`,
   `run-runtime-session`, `generate-recording-proposal`,
@@ -559,6 +568,29 @@ and never shows its advice (`runtime/result-verification/check-words.ts`). A
 run failed by its result check ends "Run failed: <what came back, why that
 failed it, and how the repair ended>", read from the run's own record
 (`runtime/activity/wording/run-ending.ts`).
+
+Two activity fields say how a unit of work stopped or holds (t376):
+
+- `stopped: true` is set only on the final event of work a person or caller
+  cancelled: a run whose session settled `cancelled` (Stop, Stop on a held
+  run, or a hold past its 15-minute limit, `runtime/activity/run.ts`) and a
+  build that ended in its cancellation's `AbortError`
+  (`runtime/activity/build.ts`). It comes from the cancellation itself, never
+  from the label, so a client says "Run stopped" or "Build stopped" by
+  reading the field. A build that ran out of budget is not `stopped`, though
+  its own words say "Build stopped: ...".
+- Phase `paused` is a run held at a step boundary by run control
+  (`runtime/run-control/`). When the run holds, Core sends one event with
+  `phase: "paused"`, `label` "Paused: you have the page" for a takeover
+  (`takeControl: true`) or "Paused" for a plain pause, and `step` naming the
+  node the run executes first when it goes on (absent for a Merge, which has no
+  number). When it is let go to continue, Core sends one `running` event,
+  "Continuing from step N" ("Continuing the run" without a number). Neither
+  carries a `detail` row, and nothing is sent while the hold lasts. A held run
+  that is stopped sends no "continuing": it ends through the ordinary
+  cancelled ending, with `stopped`. The executor emits both inside the run's
+  own activity scope (`runtime/activity/hold.ts`, from the checkpoint in
+  `runtime/executor/graph-run.ts`).
 
 A wait opens an ask activity row and settles through another ask row with the
 same `ref` and `detail.resolution`. The closed resolutions are:

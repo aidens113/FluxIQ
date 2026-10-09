@@ -21,6 +21,8 @@ export type ConversationActivityPhase =
   | "verifying"
   | "repairing"
   | "waiting_permission"
+  /** A run held because the person took the page; it resumes as `running` or ends stopped. */
+  | "paused"
   | "done"
   | "failed";
 
@@ -54,6 +56,8 @@ export type ConversationActivity = {
   detail?: ConversationActivityDetail;
   conversationId?: string;
   final?: boolean;
+  /** On the final event of a run or build the person cancelled. Read only when Core sends `true`. */
+  stopped?: true;
   /** ISO timestamp, as Core stamped it. */
   at: string;
   /** `at` in epoch milliseconds, read once so the thread can order by it. */
@@ -62,7 +66,7 @@ export type ConversationActivity = {
 
 export type ConversationActivitySnapshot = { current: ConversationActivity | null; recent: ConversationActivity[] };
 
-const PHASES: readonly string[] = ["thinking", "exploring", "building", "running", "extracting", "verifying", "repairing", "waiting_permission", "done", "failed"];
+const PHASES: readonly string[] = ["thinking", "exploring", "building", "running", "extracting", "verifying", "repairing", "waiting_permission", "paused", "done", "failed"];
 const DETAIL_KINDS: readonly string[] = ["thought", "tool", "step", "check", "ask", "note"];
 const DETAIL_STATUSES: readonly string[] = ["started", "succeeded", "failed"];
 const RESOLUTIONS: readonly string[] = ["waited_out", "answered", "allowed", "declined", "timed_out", "cancelled"];
@@ -115,6 +119,7 @@ function parseActivity(value: unknown): ConversationActivity | null {
     ...(detail === undefined ? {} : { detail }),
     ...(conversationId === undefined ? {} : { conversationId }),
     ...(record.final === true ? { final: true } : {}),
+    ...(record.stopped === true ? { stopped: true as const } : {}),
     at,
     atMs
   };
