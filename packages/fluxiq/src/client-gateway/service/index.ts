@@ -4,6 +4,7 @@ export * from "./audit-log.ts";
 export * from "./command-answer-margin.ts";
 export * from "./commands.ts";
 export * from "./config.ts";
+export * from "./declared-domain.ts";
 export * from "./facade-ports.ts";
 export * from "./event-bus.ts";
 export * from "./inbound.ts";

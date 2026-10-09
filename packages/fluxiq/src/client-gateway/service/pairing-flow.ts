@@ -1,6 +1,7 @@
 import type { ClientGatewayPairingChallenge, ClientGatewaySession } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
 import type { ClientGatewayConfig } from "./config.ts";
+import { declaredDomainId } from "./declared-domain.ts";
 import type { ClientGatewayEventBus } from "./event-bus.ts";
 import type { ClientGatewayPairingRegistry } from "./pairings.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
@@ -134,7 +135,9 @@ export class ClientGatewayPairingFlow {
       clientId: session.clientId,
       clientType: session.clientType,
       name: session.name,
-      approvedByUserId
+      approvedByUserId,
+      // The domain the person saw this client declare when they approved it.
+      domainId: declaredDomainId(session.metadata)
     });
     const now = trustedClient.approvedAt;
     pairing.consumedAt = now;

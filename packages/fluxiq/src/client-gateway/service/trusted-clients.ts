@@ -70,6 +70,7 @@ export class ClientGatewayTrustedClientRegistry {
     clientType: ClientGatewayTrustedClient["clientType"];
     name: string;
     approvedByUserId: string;
+    domainId: string | null;
   }): Promise<{ trustedClient: ClientGatewayTrustedClient; token: string }> {
     const token = this.config.createToken();
     const now = this.config.now();
@@ -80,6 +81,7 @@ export class ClientGatewayTrustedClientRegistry {
       name: input.name,
       tokenHash: this.hashToken(token),
       approvedByUserId: input.approvedByUserId,
+      domainId: input.domainId,
       approvedAt: now,
       createdAt: now,
       updatedAt: now,

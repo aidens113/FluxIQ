@@ -1,6 +1,7 @@
 import type { ClientGatewayClientHello, ClientGatewaySession, ClientGatewaySocket } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
 import type { ClientGatewayConfig } from "./config.ts";
+import { declaredDomainId } from "./declared-domain.ts";
 import type { ClientGatewayEventBus } from "./event-bus.ts";
 import type { ClientGatewayPairingFlow } from "./pairing-flow.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
@@ -100,6 +101,19 @@ export class ClientGatewayLifecycle {
       this.audit.record("session.credential_rejected", "Client credential was not accepted; pairing is required.", {
         sessionId: session.sessionId,
         clientId: session.clientId
+      });
+      return false;
+    }
+    // The trust was approved for the domain the client declared then. A
+    // connection declaring another one, or trust minted before the domain was
+    // bound, goes back through pairing: a person approves it again or not.
+    const declared = declaredDomainId(session.metadata);
+    if (trustedClient.domainId === undefined || trustedClient.domainId !== declared) {
+      this.audit.record("session.domain_rejected", "Client declared a domain its trust was not approved for; pairing is required.", {
+        sessionId: session.sessionId,
+        clientId: session.clientId,
+        boundDomainId: trustedClient.domainId ?? null,
+        declaredDomainId: declared
       });
       return false;
     }

@@ -166,6 +166,13 @@ describe("a paired client on the program route", () => {
   // The extension's Automations Run (t267): a saved Flow the person runs may be
   // repaired with their own key when its page changed. That one intent, under
   // the Flow's own mode: no mode is pinned, and none may be named beside it.
+  it("refuses a run naming authorizedDomainIds, whatever it names, because it widens the run beyond the bound domain", () => {
+    const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "run-runtime-session", payload);
+    for (const authorizedDomainIds of [["desktop-automation"], ["web-automation"], [], null]) {
+      expect(narrow({ projectId: "p", flowId: "flow.one", authorizedDomainIds })).toEqual({ ok: false, errorCode: "authorization.forbidden", error: "A paired client's run may not carry authorizedDomainIds." });
+    }
+  });
+
   it("lets a paired client's run carry the explore_and_adapt intent, alone, under the Flow's own mode", () => {
     const narrow = (payload: unknown) => narrowPairedClientRequest("automation-studio", "run-runtime-session", payload);
     expect(narrow({ projectId: "p", flowId: "flow.one", runIntent: "explore_and_adapt" })).toEqual({ ok: true, payload: { projectId: "p", flowId: "flow.one", runIntent: "explore_and_adapt" } });
