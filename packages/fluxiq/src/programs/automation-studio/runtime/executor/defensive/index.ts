@@ -13,6 +13,7 @@ export * from "./credited-hint.ts";
 export * from "./lasting-act.ts";
 export * from "./ledger.ts";
 export * from "./node-side-effect.ts";
+export * from "./output-reads.ts";
 export * from "./planned-retry-wait.ts";
 export * from "./result-message.ts";
 export * from "./retry-hint.ts";

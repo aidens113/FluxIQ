@@ -1,10 +1,11 @@
 import type { AutomationStudioAdaptiveFailureClass } from "@fluxiq/contracts/automation-studio";
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
-import { getAutomationNodeDefinition, isAutomationNodeParameterStateBinding } from "../../../nodes/index.ts";
+import { getAutomationNodeDefinition } from "../../../nodes/index.ts";
 import { chooseAutomationStudioEdge } from "../graph-navigation.ts";
 import type { AutomationStudioFaultAssessment } from "./contracts.ts";
 import { automationStudioNodeMutates } from "./node-side-effect.ts";
+import { automationStudioOutputReads } from "./output-reads.ts";
 
 /**
  * Whether a failure of this class leaves the rest of the Flow standing, class by
@@ -49,9 +50,6 @@ export type AutomationStudioFailureContinuation = {
   continues: boolean;
   reason: string;
 };
-
-/** How deep a downstream node's parameter values are walked looking for a binding onto the failed node. */
-const MAXIMUM_BINDING_DEPTH = 16;
 
 /** The value an author writes to decide this themselves. */
 const CONTINUE = "continue";
@@ -148,24 +146,14 @@ function carriesAnswer(node: AutomationStudioFlowNode): boolean {
 
 /**
  * The first node reachable from this one that reads what it produces, or nothing
- * when none does.
- *
- * Both ways a value travels are checked: a data edge, which names the output port
- * directly, and a state binding, which names `${nodeId}.${outputId}` or the bare
- * output id the run also keys values under.
+ * when none does: a data edge naming one of its output ports, or a state binding
+ * naming one of its values. The check is shared with state routing, which asks
+ * it of the steps a forward route passes over (`./output-reads.ts`). Every data
+ * edge's target is reachable from its source, so reading only reachable nodes
+ * leaves the data-edge half exactly as it was.
  */
 function dependentNodeId(flow: AutomationStudioFlowDocument, node: AutomationStudioFlowNode, outputIds: readonly string[]): string | undefined {
-  for (const edge of flow.edges) {
-    if (edge.sourceNodeId !== node.id || !edge.targetPortId || edge.targetPortId === "in") continue;
-    return edge.targetNodeId;
-  }
-  const reachable = reachableFrom(flow, node.id);
-  const paths = new Set<string>([node.id, ...outputIds, ...outputIds.map((outputId) => `${node.id}.${outputId}`)]);
-  for (const candidate of flow.nodes) {
-    if (candidate.id === node.id || !reachable.has(candidate.id)) continue;
-    if (readsAnyPath(candidate.parameterValues ?? {}, paths, 0)) return candidate.id;
-  }
-  return undefined;
+  return automationStudioOutputReads(flow, node, outputIds, reachableFrom(flow, node.id))[0]?.readerNodeId;
 }
 
 /** Every node the run could still reach from here, by any route. */
@@ -181,15 +169,4 @@ function reachableFrom(flow: AutomationStudioFlowDocument, nodeId: string): Set<
     }
   }
   return reachable;
-}
-
-/** Whether any state binding below this value names one of the paths the failed node writes. */
-function readsAnyPath(value: JsonValue, paths: ReadonlySet<string>, depth: number): boolean {
-  if (isAutomationNodeParameterStateBinding(value)) {
-    const path = value.$state.path.trim();
-    return paths.has(path) || [...paths].some((candidate) => path.startsWith(`${candidate}.`));
-  }
-  if (!value || typeof value !== "object" || depth >= MAXIMUM_BINDING_DEPTH) return false;
-  const entries = Array.isArray(value) ? value : Object.values(value);
-  return entries.some((entry) => readsAnyPath(entry, paths, depth + 1));
 }
