@@ -1,6 +1,7 @@
-// The two questions the verdict cannot answer from an executed attempt's own
-// fields: whether the attempt saved records, and whether its node is a
-// verification step whose success counts as a downstream assertion.
+// The three questions the verdict cannot answer from an executed attempt's own
+// fields: whether the attempt saved records, whether its node is a
+// verification step whose success counts as a downstream assertion, and
+// whether a later automatic retry of the same node replaced it.
 //
 // A trial asks them of its throwaway run, and a replay asks them of a later
 // ordinary run. Both must answer them the same way or the same change would
@@ -45,6 +46,30 @@ export function automationStudioAttemptVerifiesState(attempt: Pick<AutomationStu
   const definition = getAutomationNodeDefinition(attempt.definitionId);
   const metadata: unknown = definition && "metadata" in definition ? definition.metadata : undefined;
   return isJsonObject(metadata) && automationStudioDefinitionVerifiesState(metadata);
+}
+
+/**
+ * The ids of the attempts an automatic retry replaced: each id that a later
+ * attempt of the same node names as its `retry.previousAttemptId`. Attempts are
+ * supplied in execution order.
+ *
+ * Every node gets a first attempt and up to three retries, and the executor
+ * pushes each retry as an attempt of its own, leaving the one it replaces
+ * `failed` (`executor/graph-run.ts`). A node that failed once and passed on its
+ * retry did what it was for, so the verdict reads the retry, not the failure
+ * it replaced. An id named by an attempt of another node, or by no earlier
+ * attempt, is not a retry of anything and is left out. A failed attempt with no
+ * retry after it is never in the set, so it still counts as the failure it is.
+ */
+export function automationStudioRetriedAttemptIds(attempts: readonly Pick<AutomationStudioNodeAttemptTrace, "attemptId" | "nodeId" | "retry">[]): ReadonlySet<string> {
+  const nodeOf = new Map<string, string>();
+  const retried = new Set<string>();
+  for (const attempt of attempts) {
+    const previous = attempt.retry?.previousAttemptId;
+    if (previous !== undefined && nodeOf.get(previous) === attempt.nodeId) retried.add(previous);
+    nodeOf.set(attempt.attemptId, attempt.nodeId);
+  }
+  return retried;
 }
 
 // Present and not null declares a record output, as the executor reads it.

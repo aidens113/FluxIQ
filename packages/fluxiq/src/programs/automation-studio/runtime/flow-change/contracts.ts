@@ -13,7 +13,7 @@ import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecut
  * What one verdict check looked at.
  *
  * - `changed_node_succeeded`: every attempt of a node the change wrote, where
- *   the trial reached it.
+ *   the trial reached it, other than one an automatic retry replaced.
  * - `expected_state`: the host's evaluation of a changed node's declared
  *   `expectedState`.
  * - `expected_route`: a changed node took the route it declares. Never the
@@ -163,6 +163,14 @@ export type AutomationStudioChangeVerdictAttempt = {
   records?: { captured: number; minimum?: number };
   /** True when the node's definition declares `metadata.verifiesState === true`. */
   verifiesState?: boolean;
+  /**
+   * A later automatic retry of the same node replaced this attempt, so the
+   * verdict reads that retry instead. The attempt still counts where the run
+   * went (the first changed attempt, the continuation); only the per-node and
+   * downstream-assertion checks pass over it. Absent on an attempt no retry
+   * followed, which is how a node's final failure still fails.
+   */
+  retried?: true;
 };
 
 export type AutomationStudioChangeVerdictInput = {

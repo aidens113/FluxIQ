@@ -85,9 +85,11 @@ afterEach(async () => {
   await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
 });
 
-async function harness(options: { verdict: "yes" | "no" }) {
+async function harness(options: { verdict: "yes" | "no"; reAimedFailsOnce?: boolean }) {
   /** The press step's target in the stored Flow, read at each moment the judge was asked. */
   const storedAtJudgement: unknown[] = [];
+  /** Whether each press aimed at the replacement control succeeded, in the order they ran. */
+  const reAimedPresses: boolean[] = [];
   let readStoredTarget: (() => Promise<unknown>) | undefined;
   const io = new IoRegistry();
   io.registerOutput("example", {
@@ -102,9 +104,16 @@ async function harness(options: { verdict: "yes" | "no" }) {
       packageVersion: "1.0.0",
       implementations: {
         "extract-list": ({ parameters }) => ({ status: "success", outputs: { success: true }, effects: [{ type: "policy.output.dispatch", payload: { outputId: "extract-list", parameters: {}, recordOutput: parameters.recordOutput ?? null } }] }),
-        press: ({ parameters }) => JSON.stringify(parameters.target) === JSON.stringify(REPLACEMENT_TARGET)
-          ? { status: "success", route: "success", outputs: { success: true } }
-          : { status: "failed", route: "failed", outputs: { error: "The control was not found." } }
+        press: ({ parameters }) => {
+          if (JSON.stringify(parameters.target) !== JSON.stringify(REPLACEMENT_TARGET)) return { status: "failed", route: "failed", outputs: { error: "The control was not found." } };
+          // A page still settling: the first press at the re-aimed control finds no control yet, which a
+          // domain reports as a retryable miss before anything was pressed, and its automatic retry lands.
+          const lands = !options.reAimedFailsOnce || reAimedPresses.length > 0;
+          reAimedPresses.push(lands);
+          return lands
+            ? { status: "success", route: "success", outputs: { success: true } }
+            : { status: "failed", route: "failed", outputs: { error: "The control was not ready." }, failure: { category: "target_not_found", code: "example.target.not_found", retryable: true, stage: "target_resolution" } };
+        }
       }
     }
   );
@@ -186,7 +195,7 @@ async function harness(options: { verdict: "yes" | "no" }) {
   const run = await service.runRuntimeSession({ projectId: project.id, flowId: created.flowId });
   const detail = await service.getFlowRunDetail(project.id, run.runId);
   const adaptation = detail?.adaptationIds[0] ? await service.getFlowAdaptation(project.id, created.flowId, detail.adaptationIds[0]) : null;
-  return { service, run, detail, adaptation, storedAtJudgement, storedTarget: await readStoredTarget() };
+  return { service, run, detail, adaptation, storedAtJudgement, reAimedPresses, storedTarget: await readStoredTarget() };
 }
 
 describe("a target override on a Flow that declares no evidence", () => {
@@ -219,6 +228,33 @@ describe("a target override on a Flow that declares no evidence", () => {
       metadata: { approvalDecision: { autoApply: true, applied: true, judgedRunId: found.run.runId }, applicationRecord: { durable: true } }
     });
     expect(found.adaptation?.metadata?.approvalDecision).not.toHaveProperty("notAppliedReason");
+  });
+
+  // Every node gets a first attempt and three automatic retries. A re-aimed
+  // press that misses once and lands on its retry is a correct repair, and its
+  // trial must not read the missed attempt as a contradiction (t375).
+  it("carries on and is applied when the re-aimed press needs one automatic retry in its trial", { timeout: 180_000 }, async () => {
+    const found = await harness({ verdict: "yes", reAimedFailsOnce: true });
+    const receipts = found.detail?.metadata?.runtimePatchAttempts as Array<Record<string, unknown>> | undefined;
+
+    // The trial's first press at the re-aimed control missed, and its retry landed.
+    expect(found.reAimedPresses.slice(0, 2)).toEqual([false, true]);
+    expect(receipts?.[0]).toMatchObject({
+      kind: "temporary_target_override",
+      resumable: false,
+      notResumableCode: "no_evidence",
+      verification: { status: "unverifiable", awaitsJudgedRun: true },
+      retryOriginalAction: true,
+      approvalDecision: { autoApply: true, applyAt: "judged_whole_run", evidence: "judged_whole_run" }
+    });
+    expect(found.run.status).toBe("succeeded");
+    expect(found.run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
+    expect(found.detail?.metadata?.adaptiveRetry).toMatchObject({ attempted: true, status: "succeeded" });
+    expect(found.storedTarget).toEqual(REPLACEMENT_TARGET);
+    expect(found.adaptation).toMatchObject({
+      status: "applied",
+      validationResults: [{ runId: found.run.runId, status: "succeeded", kind: "trial", basis: ["judged_whole_run"] }]
+    });
   });
 
   it("stays unapplied, with no evidence recorded, when that whole run is refuted", { timeout: 180_000 }, async () => {

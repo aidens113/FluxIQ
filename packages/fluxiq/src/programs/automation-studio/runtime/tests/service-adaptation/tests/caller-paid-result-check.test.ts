@@ -227,24 +227,27 @@ describe("a run whose caller pays only for the checks that judge a repair", () =
   });
 });
 
-// The chat's "Run it" for a paired extension: the command's calls reach the
-// run endpoint as the person's unlocked session (`api/handlers/conversations.ts`
-// `commandContext`), so the endpoint sees no paired client, and the command
-// asks for `repair_checks` itself. Real registry, real handlers, real service.
+// The chat's "Run it": the command's calls reach the run endpoint as the
+// person's own session -- a paired token's actor becomes the person under their
+// unlocked session (`api/handlers/conversations.ts` `commandContext`), and a
+// web-panel conversation is the person already -- so the endpoint cannot tell a
+// chat's run from a direct caller's, and the command asks for `repair_checks`
+// itself, paired or not. Real registry, real handlers, real service.
+
+/** The person's actor, as a command's calls carry it. */
+const asPerson: ProgramApiActor = { sessionId: "session.live", userId: "user.aiden", roleId: "operator", permissions: ["programs.read", "programs.write", "runtime.control", "flows.write"] };
+
+async function runFromChat(found: Harness, options: { paired: boolean } = { paired: true }) {
+  const registry = new GlobalProgramApiRegistry();
+  registerAutomationStudioApi(registry, found.service);
+  const host = { async appendAutomationTurn(): Promise<never> { throw new Error("Run it writes no turn of its own"); }, async pendingAsks() { return []; }, async getAsk() { return null; } };
+  return await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run({
+    port: automationStudioConversationCommandPort({ registry, actor: asPerson, scope: { domainId: "example" } }),
+    host, projectId: found.projectId, conversationId: "conversation.chat", sessionId: asPerson.sessionId, keyLocked: false, paired: options.paired, startLocation: null
+  }, { flowId: found.flowId });
+}
+
 describe("the chat's Run it, asked from a paired extension", () => {
-  /** What a paired token's actor becomes for a command: the person, under their unlocked session. */
-  const asPerson: ProgramApiActor = { sessionId: "session.live", userId: "user.aiden", roleId: "operator", permissions: ["programs.read", "programs.write", "runtime.control", "flows.write"] };
-
-  async function runFromChat(found: Harness) {
-    const registry = new GlobalProgramApiRegistry();
-    registerAutomationStudioApi(registry, found.service);
-    const host = { async appendAutomationTurn(): Promise<never> { throw new Error("Run it writes no turn of its own"); }, async pendingAsks() { return []; }, async getAsk() { return null; } };
-    return await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run({
-      port: automationStudioConversationCommandPort({ registry, actor: asPerson, scope: { domainId: "example" } }),
-      host, projectId: found.projectId, conversationId: "conversation.chat", sessionId: asPerson.sessionId, keyLocked: false, paired: true, startLocation: null
-    }, { flowId: found.flowId });
-  }
-
   it("makes no routine result-check call on the person's key", { timeout: 180_000 }, async () => {
     const found = await harness({ clean: true, schedule: EVERY_RUN });
     const outcome = await runFromChat(found);
@@ -257,6 +260,30 @@ describe("the chat's Run it, asked from a paired extension", () => {
   it("lets the model repair a broken step, and judges that repair with the person's key", { timeout: 180_000 }, async () => {
     const found = await harness({ standing: true });
     const outcome = await runFromChat(found);
+
+    expect(outcome.status, outcome.summary).toBe("done");
+    expect(found.callerCalls.some((call) => call.taskKind === "runtime_patch" && call.hasCaller)).toBe(true);
+    expect(verifications(found)).toEqual([{ taskKind: "loop_verification", hasCaller: true }]);
+    expect(found.standingCalls).toEqual([]);
+  });
+});
+
+// MVP item 23 for the web panel: a conversation there has no pairing, and its
+// Run it pays the person's key only for the checks that judge a repair, too.
+describe("the chat's Run it, asked from a session that is not paired", () => {
+  it("makes no model call at all on the person's key when the run succeeded with nothing repaired", { timeout: 180_000 }, async () => {
+    const found = await harness({ clean: true });
+    const outcome = await runFromChat(found, { paired: false });
+
+    expect(outcome.status, outcome.summary).toBe("done");
+    expect(outcome.summary).toBe("\"Caller-paid check Flow\" ran all the way through.");
+    expect(found.callerCalls).toEqual([]);
+    expect(found.standingCalls).toEqual([]);
+  });
+
+  it("still judges a repaired run with the person's key", { timeout: 180_000 }, async () => {
+    const found = await harness({ standing: true });
+    const outcome = await runFromChat(found, { paired: false });
 
     expect(outcome.status, outcome.summary).toBe("done");
     expect(found.callerCalls.some((call) => call.taskKind === "runtime_patch" && call.hasCaller)).toBe(true);
