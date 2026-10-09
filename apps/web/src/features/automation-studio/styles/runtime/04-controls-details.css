@@ -440,6 +440,35 @@
   margin-bottom: 4px;
 }
 
+/* What the runtime did for an attempt, in plain words (runtime/attempt-story). */
+.automation-runtime-attempt-story {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0 0 2px 52px;
+  list-style: none;
+}
+
+.automation-runtime-attempt-story li,
+.automation-runtime-action-story li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-runtime-action-story {
+  display: grid;
+  gap: var(--space-compact);
+  margin: 0;
+  padding-left: 1.4em;
+}
+
+.automation-runtime-action-story li {
+  color: var(--color-text);
+}
+
 @media (max-width: 900px) {
   .automation-runtime-action-workspace.has-detail {
     grid-template-columns: minmax(0, 1fr);
