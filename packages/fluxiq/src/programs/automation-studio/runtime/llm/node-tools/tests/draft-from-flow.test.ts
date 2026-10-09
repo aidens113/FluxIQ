@@ -284,6 +284,26 @@ describe("a re-authored Flow keeps the routing it inherited", () => {
     expect(automationStudioFlowDraftPlanNodeIds({ steps, nodeIdByStepId: seed.nodeIdByStepId }))
       .toEqual({ s1: "node.s1", s2: "node.s2", s3: "node.s3", s4: "node.s4", s5: "node.s5" });
   });
+
+  // t378 (W17): a repair read the saved Flow back as a draft and dropped the
+  // pace a trial had learned, so the repaired Flow ran the node unpaced again.
+  it("keeps a node's authored pace on the same node once the draft is assembled", () => {
+    const nodes = built().nodes.map((each) => each.id === "node.s3" ? { ...each, metadata: { paceMs: 6000 } } : each);
+    const seed = automationStudioFlowDraftSeedFromFlow({ ...built(), nodes });
+    expect(seed.steps.map((step) => step.paceMs ?? null)).toEqual([null, null, 6000, null, null, null]);
+    const assembled = assemble(seed.steps);
+    expect(assembled.issues.filter((item) => item.severity === "error")).toEqual([]);
+    const paced = assembled.plan!.subflows[0]!.nodes.filter((item) => item.paceMs !== undefined);
+    expect(paced.map((item) => item.paceMs)).toEqual([6000]);
+    expect(seed.nodeIdByStepId[assembled.draftStepIdByNodeKey![paced[0]!.key]!]).toBe("node.s3");
+  });
+
+  it("carries no pace that is not a positive whole number of milliseconds", () => {
+    for (const paceMs of [0, -5, 1.5, "6000", null]) {
+      const nodes = built().nodes.map((each) => ({ ...each, metadata: { paceMs } }));
+      expect(automationStudioFlowDraftSeedFromFlow({ ...built(), nodes }).steps.every((each) => each.paceMs === undefined)).toBe(true);
+    }
+  });
 });
 
 // C4 (t269): a repair that left a row loop untouched was refused at completion

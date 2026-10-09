@@ -86,6 +86,7 @@ import { automationNodeOutputReference, rewriteAutomationNodeStatePaths } from "
 import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRouting } from "../../flow-draft/index.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_STEP_OUTPUT_ROOT, automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsProposed } from "../../flow-draft/index.ts";
 import { automationStudioFlowDraftScheduleCandidate } from "../../flow-draft/scheduled-candidate/index.ts";
+import { automationStudioAuthoredPaceMs } from "../../executor/pacing/index.ts";
 // A type only, so nothing is imported back out of the directory this one is read by.
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "./run-node.ts";
@@ -198,7 +199,10 @@ export function automationStudioFlowDraftSeedFromFlow(input: {
       // re-authored Flow would run it unconditionally.
       ...(repeat ? { routing: repeat } : optional.has(node.id) ? { routing: { kind: "optional" as const } } : {}),
       // What state routing recorded on the node, carried unread (see below).
-      ...routeSignaturesOf(node)
+      ...routeSignaturesOf(node),
+      // The pace the node was authored with -- a trial's learned pace, kept
+      // by promotion -- so the re-authored node keeps it (t378).
+      ...paceOf(node)
     });
     nodeIdByStepId[id] = node.id;
     const startedOn = input.startPages?.[node.id];
@@ -312,6 +316,12 @@ function routeSignaturesOf(node: AutomationStudioFlowNode): { routeSignatures?: 
   const value = node.metadata?.[ROUTE_SIGNATURES_KEY];
   if (!value || typeof value !== "object" || Array.isArray(value) || !Object.keys(value).length) return {};
   return { routeSignatures: structuredClone(value) };
+}
+
+/** A node's authored pace, for its seeded step, or nothing when it has none that is a positive whole number of milliseconds. */
+function paceOf(node: AutomationStudioFlowNode): { paceMs?: number } {
+  const paceMs = automationStudioAuthoredPaceMs(node);
+  return paceMs === undefined ? {} : { paceMs };
 }
 
 /**

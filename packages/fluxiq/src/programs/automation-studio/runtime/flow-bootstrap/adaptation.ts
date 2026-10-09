@@ -24,6 +24,7 @@ import type { AutomationStudioBootstrapExistingTopology } from "./extend.ts";
 import { isAutomationStudioAdaptationId, withAutomationStudioNodeAdaptationId } from "../flow-change/index.ts";
 import { AUTOMATION_STUDIO_ROUTE_SIGNATURES_METADATA_KEY, automationStudioRouteSignaturesValue } from "../route-state/signatures/index.ts";
 import { AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY as DECLARED_CONSEQUENCES_METADATA_KEY } from "../executor/defensive/index.ts";
+import { AUTOMATION_STUDIO_PACE_METADATA_KEY as PACE_METADATA_KEY } from "../executor/pacing/index.ts";
 
 /**
  * `create` builds a whole topology on a blank Flow; `extend` only adds to an
@@ -226,7 +227,11 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
           // it finds (`../route-state/signatures/`).
           ...routeSignaturesMetadata(node.routeSignatures),
           // The step's declaration survives storage, `[]` included (t252, D5). A run reads it to tell a lasting act from one it may repeat (t359, `../executor/defensive/lasting-act.ts`).
-          ...(node.consequences ? { [DECLARED_CONSEQUENCES_METADATA_KEY]: [...node.consequences] } : {})
+          ...(node.consequences ? { [DECLARED_CONSEQUENCES_METADATA_KEY]: [...node.consequences] } : {}),
+          // The least time between two starts of the node in one run: a span's
+          // `repeat pace:`, or the pace a judged trial learned (t378). Every
+          // graph run reads it, trial and playback alike (`../executor/pacing/`).
+          ...(node.paceMs !== undefined ? { [PACE_METADATA_KEY]: node.paceMs } : {})
         }, input.adaptationId)
       })),
       edges: entry.edges.map((edge) => ({

@@ -23,8 +23,12 @@ describe("activityActionFailureReason", () => {
     ["web.action.refused_by_page", "the page turned it down"],
     ["llm_evidence_loop.rejected.refused_by_page", "the page turned it down"],
     // t174-w85 D8 (run-murwd8le, 0081): a press the page answered as busy read "the page turned it down".
-    ["web.action.rate_limited", "the page was busy"],
-    ["web.action.throttled", "the page was busy"],
+    // Lane D (run-mv0fuual-f9e6f089, finding 1): the site's "You're going too fast" notice is
+    // the site asking FluxIQ to slow down, which "the page was busy" did not say.
+    ["web.action.rate_limited", "the site asked FluxIQ to slow down"],
+    ["web.action.throttled", "the site asked FluxIQ to slow down"],
+    ["web.action.too_many_requests", "the site asked FluxIQ to slow down"],
+    ["web.page.busy", "the page was busy"],
     ["bootstrap.invalid_parameter_value", "the step wasn't accepted"],
     ["llm_evidence_loop.rejected.repeat_without_progress", "it made no progress"],
     // t174-w111 D21 (run-musq0b1m): "Didn't work: it didn't work the same way again" said the result twice and no reason.

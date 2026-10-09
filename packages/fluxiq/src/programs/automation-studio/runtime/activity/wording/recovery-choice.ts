@@ -7,6 +7,19 @@ const RETRY: Readonly<Record<string, Choice>> = Object.freeze({
   clear_interference: { title: "Clearing what was in the way", text: "Something on the page was in the way of the step, so FluxIQ dealt with it and is trying the step again." }
 });
 
+/**
+ * A retry the site itself asked to wait for: a slow-down notice ("You're going
+ * too fast") or a wait it named (`retryAfterMs`). Lane D (`run-mv0fuual-f9e6f089`)
+ * read "The step didn't work, and a step like this often works on a second
+ * try" while the site's own notice stood on the page and the run waited on
+ * purpose, for a time nobody was told (t378).
+ */
+function slowedDown(seconds: number | undefined, presses: boolean): Choice {
+  const again = presses ? "pressing again" : "trying the step again";
+  const wait = seconds === undefined ? "waiting a moment" : `waiting ${seconds} ${seconds === 1 ? "second" : "seconds"}`;
+  return { title: "Waiting: the site asked to slow down", text: `The site asked FluxIQ to slow down, so it is ${wait} before ${again}.` };
+}
+
 const SATISFIED: Choice = { title: "Moving on: the step's result is already there", text: "What this step was meant to do has already happened on the page, so FluxIQ carries on without repeating it." };
 
 /**
@@ -36,13 +49,21 @@ const STOPPED: Readonly<Record<"uncertain" | "tried_again" | "out_of_time" | "no
  * lasting act's outcome unknown; how many times it was attempted at this
  * arrival, the failed attempt included; whether the run may still wait and try
  * again; whether a retry may absorb the failure; and whether the run is a
- * build's test of its Flow. Without it, a stop says nothing of why.
+ * build's test of its Flow. Without it, a stop says nothing of why. A retry
+ * whose failure carries the site's own wait (`siteWaitMs`, from `retryAfterMs`
+ * or a header) or a slow-down notice (`slowedDown`) says the site asked to slow
+ * down and how long FluxIQ waits, "pressing again" for a step that presses
+ * (`presses`).
  */
 export function automationStudioActivityRecoveryChoice(
   outcome: { kind: string; rung?: string | undefined },
-  run: { attempts?: number; actUncertain?: boolean; mayAbsorb?: boolean; retryable?: boolean; test?: boolean } = {}
+  run: { attempts?: number; actUncertain?: boolean; mayAbsorb?: boolean; retryable?: boolean; test?: boolean; siteWaitMs?: number | undefined; slowedDown?: boolean; presses?: boolean } = {}
 ): Choice {
-  if (outcome.kind === "retry") return RETRY[outcome.rung ?? "retry_node"] ?? RETRY.retry_node!;
+  if (outcome.kind === "retry") {
+    const waitMs = typeof run.siteWaitMs === "number" && Number.isFinite(run.siteWaitMs) && run.siteWaitMs > 0 ? run.siteWaitMs : undefined;
+    if (waitMs !== undefined || run.slowedDown === true) return slowedDown(waitMs === undefined ? undefined : Math.max(1, Math.ceil(waitMs / 1000)), run.presses === true);
+    return RETRY[outcome.rung ?? "retry_node"] ?? RETRY.retry_node!;
+  }
   if (outcome.kind === "satisfied") return SATISFIED;
   const stop = run.actUncertain === true ? STOPPED.uncertain
     : (run.attempts ?? 1) > 1 ? STOPPED.tried_again

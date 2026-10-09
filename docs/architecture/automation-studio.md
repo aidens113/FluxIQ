@@ -731,6 +731,40 @@ every failure is swallowed. Each deterministic ladder rung leaves the candidate
 list once it has run, so an already-consumed deterministic answer does not
 suppress escalation forever.
 
+**Waits, retry waits and pace** (since t378; `runtime/executor/pacing/`).
+Retry waits, pace waits and Wait pauses share one wait,
+`automationStudioRunWait`, which ends at once when the run is aborted.
+
+- **A Wait node pauses and the run goes on.** A node that answers `waiting`
+  with a numeric `outputs.durationMs` and no ask to a person -- the
+  `builtin.timing.wait` node -- is a timed pause (`timed-pause.ts`): the run
+  sleeps the duration, held to the attempt's deadline, the region's remaining
+  time and the signal, and the attempt settles `succeeded` with `pause:
+  { requestedMs, waitedMs, bounded? }` and continues down `success`. Before,
+  the run ended `waiting` on it with nothing parked. Anything else that waits
+  (an approval, any ask) parks as before.
+- **A retry wait credits the time already passed.** A failure's wait hint
+  (`retryAfterMs`, a `retry-after` header) is counted from when the failure
+  settled, not from when the retry was decided, so a slow snapshot between the
+  two is not waited again (`defensive/credited-hint.ts`, in whole tenths of a
+  second). The wait is still at least the backoff table and still bounded;
+  the retry record carries `hintedWaitMs` and `creditedMs`. Its recovery
+  words say the site asked FluxIQ to slow down and how long it waits before
+  pressing again.
+- **Pace.** A Flow node's `metadata.paceMs` (a positive integer) is the least
+  time between two starts of that node within one run
+  (`pace-metadata.ts`, `pace-keeper.ts`). The executor holds an arrival at
+  the node until the pace has passed since its last start, on every path
+  (playback and a build's trial alike); retries of one arrival are not paced,
+  since their own wait already honours the hint. After an attempt whose
+  failure carries a wait hint, the run raises that node's pace to at least the
+  hint, and by half again on each further hint, up to 60 s
+  (`AUTOMATION_STUDIO_MAX_LEARNED_PACE_MS`); an authored pace is never
+  lowered. Each attempt records `pace: { inForceMs, waitedMs, raisedToMs? }`
+  and the trace lists each paced node under `trace.pace`. A candidate script
+  writes the pace with `repeat pace:`, and promotion keeps a pace a trial
+  learned ([LLM Flow Bootstrap Contract](automation-studio/llm-flow-bootstrap.md#script-statements-a-candidate-may-write)).
+
 **A lasting act is checked, never blindly repeated** (the user's rule of
 2026-10-07; t359). One owner decides it for every path, graph or not:
 `automationStudioAssessAttemptFault` (`runtime/executor/defensive/assess.ts`),
@@ -903,7 +937,7 @@ budget (`recovery-budget.ts` does not count it): a Flow with many optional
 steps goes on past every one that cannot be done, and the budgets stay bounded
 for real failures. A candidate trial reads the same rule, with budgets equal to
 its written `on failed:` branches only (t371;
-`runtime/executor/tests/optional-failed-route.test.ts`, `absent-step.test.ts`,
+`runtime/executor/step-skip/tests/optional-failed-route.test.ts`, `absent-step.test.ts`,
 `flow-bootstrap/verification/tests/detached-execution.test.ts`).
 
 **The recorded state is read while the Flow runs.** Every node a recording

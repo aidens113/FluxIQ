@@ -41,6 +41,16 @@ export type AutomationStudioFlowBootstrapNode = {
    * (`../adaptation.ts`, `../../activity/step/`).
    */
   label?: string;
+  /**
+   * The least time, in whole milliseconds, between two starts of this node in
+   * one run (t378): a span's `repeat pace:` on its first step, or the larger
+   * pace a judged trial learned, which promotion keeps
+   * (`../../service/candidate-trial/promotion.ts`). Written to the Flow node's
+   * `metadata.paceMs` (`../adaptation.ts`), which every graph run honours
+   * (`../../executor/pacing/`). Bounded by
+   * `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS` (`./limits.ts`).
+   */
+  paceMs?: number;
 };
 
 export type AutomationStudioFlowBootstrapEdge = {

@@ -14,6 +14,7 @@ import { automationStudioDeepSeekCacheHitInputTokens, estimateAutomationStudioDe
 import { AUTOMATION_STUDIO_EVIDENCE_DECISION_MAX_SUMMARY_LENGTH } from "./output-schema.ts";
 import type { AutomationStudioDeepSeekModel } from "./models.ts";
 import { isRecord } from "./json-record.ts";
+import { automationStudioDeepSeekClosedContent } from "./unclosed-content.ts";
 
 /** The answer and what it cost, read out of the reply the provider sent. */
 export function parseAutomationStudioDeepSeekEnvelope(
@@ -112,6 +113,14 @@ function parseDeepSeekStructuredResponse(structured: unknown, request: Automatio
  * whitespace may follow. Trailing text, a second value, or an object that does
  * not itself parse is still malformed, and the value is fully validated by the
  * caller either way.
+ *
+ * The mirror shape is repaired too (lane C, `run-mv0fuotv-805294d7`, C3): an
+ * object that never closes, only closing brackets short at its end, has the
+ * closers its open brackets need appended (`./unclosed-content.ts`). Only on a
+ * reply that stopped of its own accord: this runs after `length` was refused.
+ * The closed text must then parse, and is validated as any reply is. Like the
+ * surplus case, the repair adds nothing to the answer: the reply as sent stays
+ * in the step log.
  */
 function parseDeepSeekJsonContent(content: string, paid: AutomationStudioLlmProviderReplyAccount["usage"]): unknown {
   try {
@@ -119,7 +128,16 @@ function parseDeepSeekJsonContent(content: string, paid: AutomationStudioLlmProv
   } catch {
     const end = firstTopLevelJsonObjectEnd(content);
     const refused: () => never = () => malformed({ case: automationStudioDeepSeekContentCase(content, end), finishReason: "stop", contentChars: content.length }, paid);
-    if (end === undefined || !/^[\s}\]]*$/u.test(content.slice(end))) refused();
+    if (end === undefined) {
+      const closed = automationStudioDeepSeekClosedContent(content);
+      if (closed === undefined) refused();
+      try {
+        return JSON.parse(closed) as unknown;
+      } catch {
+        refused();
+      }
+    }
+    if (!/^[\s}\]]*$/u.test(content.slice(end))) refused();
     try {
       return JSON.parse(content.slice(0, end)) as unknown;
     } catch {

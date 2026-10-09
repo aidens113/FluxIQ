@@ -6,10 +6,13 @@ import { activityActionReplayFailing } from "./replay-failing.ts";
 import { activityActionTested } from "./tested.ts";
 import { ACTIVITY_RESULT_CHECK_LABELS } from "./result-check-labels.ts";
 import { activityActionResultCheckRow } from "./result-check-row.ts";
-import type { ActivityAction, ActivityActionEvent, ActivityActionKind, ActivityActionOutcome } from "./types.ts";
+import type { ActivityAction, ActivityActionEvent, ActivityActionKind, ActivityActionOutcome, ActivityActionVerb } from "./types.ts";
 import { activityActionVerb } from "./verb.ts";
+import { ACTIVITY_ACTION_VERB_NAMES } from "./verb-names.ts";
 
 type Detail = NonNullable<ActivityActionEvent["detail"]>;
+/** What a card is: its kind, and the verb that named it when one did. */
+type Act = { kind: ActivityActionKind; verb?: ActivityActionVerb };
 
 const CORE_PREFIX = "core.";
 /**
@@ -36,6 +39,14 @@ const CORE_TOOL_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
   ["core.submit_candidate", "draft"],
   ["core.test_candidate", "test"]
 ]);
+/** A candidate build's submission of its whole Flow (t373). */
+const SUBMIT_CANDIDATE = "core.submit_candidate";
+/**
+ * The name of a submission refused as a repeat: the same Flow sent again
+ * unchanged. It read "Change the Flow · run the step again" (lane C,
+ * `run-mv0fuotv-805294d7`, defect 4).
+ */
+const RESENT_NAME = "Send the Flow again";
 
 /**
  * Core's own control nodes, by definition id, and the kind each one is. They
@@ -151,56 +162,60 @@ function formsOf(word: string): string[] {
   return forms;
 }
 
-function kindOfWords(words: readonly string[], inflected: boolean): ActivityActionKind | undefined {
+function actOfWords(words: readonly string[], inflected: boolean): Act | undefined {
   for (const word of words) {
     for (const form of inflected ? formsOf(word) : [word]) {
       const verb = activityActionVerb(form);
-      if (verb) return verb.kind;
+      if (verb) return verb;
     }
   }
   return undefined;
 }
 
 /** The verb an id's last segment names: "web.output.dom-click" is `dom`, `click`. */
-function kindOfId(id: string | undefined): ActivityActionKind | undefined {
-  return id ? kindOfWords(wordsOf(id.split(".").at(-1) ?? ""), false) : undefined;
+function actOfId(id: string | undefined): Act | undefined {
+  return id ? actOfWords(wordsOf(id.split(".").at(-1) ?? ""), false) : undefined;
 }
 
 /** A result code's action word, past its namespace: "example.opened" is `opened`. */
-function kindOfCode(code: string | undefined): ActivityActionKind | undefined {
-  return code ? kindOfWords(wordsOf(code.split(".").slice(1).join(" ")), true) : undefined;
+function actOfCode(code: string | undefined): Act | undefined {
+  return code ? actOfWords(wordsOf(code.split(".").slice(1).join(" ")), true) : undefined;
 }
 
 /** A title already said in words: its first word as the wording opens a sentence ("Checking the page"), else any verb in it. */
-function kindOfTitle(title: string): ActivityActionKind | undefined {
+function actOfTitle(title: string): Act | undefined {
   const words = wordsOf(title);
   const opening = words[0] ? activityActionVerb(words[0], "gerund") : undefined;
-  return opening?.kind ?? kindOfWords(words, true);
+  return opening ?? actOfWords(words, true);
 }
 
-function kindOf(event: ActivityActionEvent, detail: Detail, code: string | undefined, node: string | undefined): ActivityActionKind | null {
+function kindOfTitle(title: string): ActivityActionKind | undefined {
+  return actOfTitle(title)?.kind;
+}
+
+function actOf(event: ActivityActionEvent, detail: Detail, code: string | undefined, node: string | undefined): Act | null {
   const ref = detail.ref;
   const core = ref ? CORE_TOOL_KINDS.get(ref) : undefined;
-  if (core === "draft") return "draft";
+  if (core === "draft") return { kind: "draft" };
   // A wait on the person before the repair phase: the row that settles one is
   // said in the phase the work returns to, which may be `repairing`.
   if (event.phase === "waiting_permission" || detail.kind === "ask") {
-    return PERSON_TITLE.test(detail.title) || (code !== undefined && PERSON_CODE.test(code)) ? "person_check" : "permission";
+    return { kind: PERSON_TITLE.test(detail.title) || (code !== undefined && PERSON_CODE.test(code)) ? "person_check" : "permission" };
   }
-  if (event.phase === "repairing") return "repair";
-  if (code !== undefined && PERSON_CODE.test(code)) return "person_check";
-  if (code !== undefined && PERMISSION_CODE.test(code)) return "permission";
-  if (activityActionResultCheckRow(detail)) return "result_check";
+  if (event.phase === "repairing") return { kind: "repair" };
+  if (code !== undefined && PERSON_CODE.test(code)) return { kind: "person_check" };
+  if (code !== undefined && PERMISSION_CODE.test(code)) return { kind: "permission" };
+  if (activityActionResultCheckRow(detail)) return { kind: "result_check" };
   // A test run's step is named by its action, as a build's own step is; one
   // that names no action stays a test run.
-  if (testStep(event, detail, core)) return actionKindOf(event, detail, code, node) ?? "test";
-  if (detail.kind === "check" || event.phase === "verifying" || core === "test") return "test";
-  if (core) return core;
-  const verb = actionKindOf(event, detail, code, node);
-  if (verb) return verb;
+  if (testStep(event, detail, core)) return actionActOf(event, detail, code, node) ?? { kind: "test" };
+  if (detail.kind === "check" || event.phase === "verifying" || core === "test") return { kind: "test" };
+  if (core) return { kind: core };
+  const act = actionActOf(event, detail, code, node);
+  if (act) return act;
   // A tool call, or a step the executor ran, is an action even when nothing
   // names its verb. A note or a bare status step ("Build started") is not.
-  if (detail.kind === "tool" || (detail.kind === "step" && (event.step !== undefined || ref !== undefined))) return "other";
+  if (detail.kind === "tool" || (detail.kind === "step" && (event.step !== undefined || ref !== undefined))) return { kind: "other" };
   return null;
 }
 
@@ -209,16 +224,16 @@ function testStep(event: ActivityActionEvent, detail: Detail, core: ActivityActi
   return event.phase === "verifying" && detail.kind === "tool" && core === undefined;
 }
 
-/** The kind of action a control node, a node id, a tool id, a label, a result code or a title names; undefined when none names one. */
-function actionKindOf(event: ActivityActionEvent, detail: Detail, code: string | undefined, node: string | undefined): ActivityActionKind | undefined {
+/** The action a control node, a node id, a tool id, a label, a result code or a title names, and its verb; undefined when none names one. */
+function actionActOf(event: ActivityActionEvent, detail: Detail, code: string | undefined, node: string | undefined): Act | undefined {
   const ref = detail.ref;
   const control = node ? CORE_NODE_KINDS.get(node) : undefined;
-  if (control) return control;
-  return kindOfId(node)
-    ?? (ref && !ref.startsWith(CORE_PREFIX) ? kindOfId(ref) : undefined)
-    ?? (event.step?.label ? kindOfWords(wordsOf(event.step.label), true) : undefined)
-    ?? kindOfCode(code)
-    ?? kindOfTitle(detail.title);
+  if (control) return { kind: control };
+  return actOfId(node)
+    ?? (ref && !ref.startsWith(CORE_PREFIX) ? actOfId(ref) : undefined)
+    ?? (event.step?.label ? actOfWords(wordsOf(event.step.label), true) : undefined)
+    ?? actOfCode(code)
+    ?? actOfTitle(detail.title);
 }
 
 /** A failing code, unless it is a replay's for a step the test passes over (`excused`), which did not stand in the way. */
@@ -313,16 +328,27 @@ function lookedFor(title: string): string | undefined {
   return anchor?.whole ? `the list around "${anchor.words}"` : "the repeating list on the page";
 }
 
+/**
+ * What a card acted on, and the row it was on inside a repeat. The row is the
+ * step's own (`step.row`, Core's plain name of it), else, for a repeated test
+ * step, the one Core names after the step's own words ("Clicking “Confirm”
+ * for “Jonas Weber”"): three passes read as three identical "Click · Confirm"
+ * cards (U1, `run-muw6144a-e56f945d`), and a run's passes still did (lane D,
+ * `run-mv0fuual-f9e6f089`, finding 2).
+ */
 function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActionKind, testing: boolean): string | null {
-  // A repeated test step's row, which Core names after the step's own words
-  // ("Clicking “Confirm” for “Jonas Weber”"): three passes read as three
-  // identical "Click · Confirm" cards (U1, `run-muw6144a-e56f945d`).
-  const row = testing ? FOR_ROW.exec(detail.title) : null;
+  const own = plain(event.step?.row);
+  const forRow = testing || own !== undefined ? FOR_ROW.exec(detail.title) : null;
+  const row = own ?? (forRow ? plain(forRow[1]) : undefined);
   if (row) {
-    const step = targetOf(event, { ...detail, title: detail.title.slice(0, row.index) }, kind, testing);
-    const name = plain(row[1]);
-    if (name) return step ? `${step} · ${name}` : name;
+    const step = targetOfStep(event, forRow ? { ...detail, title: detail.title.slice(0, forRow.index) } : detail, kind, testing);
+    return step ? `${step} · ${row}` : row;
   }
+  return targetOfStep(event, detail, kind, testing);
+}
+
+/** What a card acted on, without the row it was on. */
+function targetOfStep(event: ActivityActionEvent, detail: Detail, kind: ActivityActionKind, testing: boolean): string | null {
   if (kind === "look") {
     const looked = lookedFor(detail.title.trim());
     if (looked) return looked;
@@ -405,7 +431,15 @@ function targetOf(event: ActivityActionEvent, detail: Detail, kind: ActivityActi
  * edit to the draft refused in whole or in part -- is `refused`, read from its
  * record's code (`./refusal.ts`): failed when nothing of it was done, with
  * Core's plain reason as `why`, and done when part of an edit was. An edit
- * that asked for a step to run again is named that ("run the step again").
+ * that asked for a step to run again is named that ("run the step again"); a
+ * candidate build's whole Flow sent again unchanged is "Send the Flow again",
+ * with no target, and its reason says the same Flow was sent before.
+ *
+ * `name` is set when the verb that named the action is narrower than its kind
+ * (`./verb-names.ts`): "Choose" for an option chosen, "Tick" for a box ticked,
+ * "Next page" for a list's next page; a target that would only repeat it is
+ * left out. A step inside a repeat adds the row it was on, its own `step.row`
+ * or a test's title's ("Confirm · Jonas Weber").
  *
  * `result` says what a finished action came to, where its row says it: an
  * edit's changes in Core's words, a list read's rows and pages, a run's saved
@@ -415,9 +449,12 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const detail = event.detail;
   if (!detail || detail.kind === "thought") return null;
   const record = activityActionRecordOf(detail.text);
-  const kind = kindOf(event, detail, record.resultCode, record.node);
-  if (!kind) return null;
-  const refusal = detail.kind === "tool" ? activityActionRefusal(record) : null;
+  const act = actOf(event, detail, record.resultCode, record.node);
+  if (!act) return null;
+  const kind = act.kind;
+  // A candidate build's submission sends the whole Flow: one refused as a repeat is that Flow sent again unchanged.
+  const submitted = detail.ref === SUBMIT_CANDIDATE;
+  const refusal = detail.kind === "tool" ? activityActionRefusal(record, submitted) : null;
   const outcome = refusal ? (refusal.all ? "failed" : "done") : outcomeOf(event, detail, record.resultCode, record.excused);
   const unconfirmed = kind === "result_check" && outcome === "failed" && event.label !== undefined && NOT_CONFIRMED.has(event.label.trim());
   const why = outcome !== "failed" || unconfirmed ? null
@@ -431,9 +468,14 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   // step is named by its action (`testing`), and one that names none by the verb of its title.
   const tested = outcome === "done" && record.resultCode && !refusal ? activityActionTested(record.resultCode, { excused: record.excused, kind: kind === "test" ? kindOfTitle(detail.title) : kind }) : null;
   const result = resultOf(event, detail, kind, outcome, record);
+  const resent = kind === "draft" && submitted && refusal?.rerun === true;
+  const name = resent ? RESENT_NAME : act.verb === undefined ? undefined : ACTIVITY_ACTION_VERB_NAMES[act.verb];
+  const target = resent ? null : kind === "draft" && refusal?.rerun ? "run the step again" : targetOf(event, detail, kind, testing);
   return {
     kind,
-    target: kind === "draft" && refusal?.rerun ? "run the step again" : targetOf(event, detail, kind, testing),
+    ...(name === undefined ? {} : { name }),
+    // A target that only says the name again says nothing: "Next page · Next page".
+    target: name !== undefined && target !== null && target.toLowerCase() === name.toLowerCase() ? null : target,
     outcome,
     why,
     ...(testing ? { testing: true as const } : {}),

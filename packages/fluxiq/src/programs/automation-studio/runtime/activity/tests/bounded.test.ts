@@ -33,4 +33,12 @@ describe("the bounds on one activity event", () => {
     expect(bounded.detail!.text).toHaveLength(1_000);
     expect(bounded.detail).not.toHaveProperty("resolution");
   });
+
+  it("cuts a step's row to the title's bound and leaves a step without one without it", () => {
+    const step = { index: 2, count: 4, nodeId: "confirm" };
+    const long = boundedAutomationStudioActivity({ ...base, step: { ...step, row: "y".repeat(500) } });
+    expect(long.step!.row).toHaveLength(160);
+    expect(boundedAutomationStudioActivity({ ...base, step: { ...step, row: "Jonas Weber" } }).step).toEqual({ ...step, row: "Jonas Weber" });
+    expect(boundedAutomationStudioActivity({ ...base, step }).step).not.toHaveProperty("row");
+  });
 });

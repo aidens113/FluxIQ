@@ -53,7 +53,7 @@ describe("the Flow script loop format", () => {
   });
 
   it("shows one example of each loop", () => {
-    expect([...examples().keys()]).toEqual(["Example, reading every page of a list:", "Example, acting on each row a listing kept:"]);
+    expect([...examples().keys()]).toEqual(["Example, reading every page of a list:", "Example, acting on each row a listing kept:", "Example, a loop the site asked to slow down:"]);
   });
 
   it("builds the pages example as written: a Repeat around the read and the next page, left when the list ends", () => {
@@ -65,7 +65,7 @@ describe("the Flow script loop format", () => {
       "web.output.browser-navigate", "builtin.control.merge", "builtin.control.repeat", "web.output.dom-extract_list", "web.output.dom-next_page", "builtin.control.merge"
     ]);
     expect(subflow.edges.some((edge) => edge.source.nodeKey === "s5" && edge.source.portId === "ended" && edge.target.nodeKey === "s6")).toBe(true);
-    expect(subflow.nodes[3]!.parameters?.recordOutput).toMatchObject({ process: { where: [{ field: "price", lessThan: 50 }] } });
+    expect(subflow.nodes[3]!.parameters?.recordOutput).toMatchObject({ process: { where: [{ field: "year", atLeast: 2015 }] } });
     expect(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: accepted.plan, registry, resolution })).toEqual([]);
   });
 
@@ -80,7 +80,49 @@ describe("the Flow script loop format", () => {
     ]);
     expect(subflow.edges.some((edge) => edge.source.nodeKey === "s4" && edge.source.portId === "item" && edge.target.nodeKey === "s5" && edge.target.portId === "item")).toBe(true);
     expect(subflow.nodes[4]!.consequences).toEqual(["modify_existing"]);
-    expect(subflow.nodes[5]!.parameters?.text).toEqual({ $state: { path: "item.name" } });
+    // t378: the rows the repeat visits are the rows the listing kept, so the
+    // narrowing is the listing's own `where`, inside its request.
+    expect(subflow.nodes[1]!.parameters?.extractList).toMatchObject({ where: [{ field: "status", contains: "overdue" }], minItems: 0 });
+    expect(subflow.edges.some((edge) => edge.source.nodeKey === "s2" && edge.source.portId === "records" && edge.target.nodeKey === "s4" && edge.target.portId === "items")).toBe(true);
+    expect(subflow.nodes[5]!.parameters?.text).toEqual({ $state: { path: "item.number" } });
+    expect(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: accepted.plan, registry, resolution })).toEqual([]);
+  });
+
+  // t378, lane D (`run-mv0fuual-f9e6f089`) and lane C: the text said "keep some"
+  // was `recordOutput.process`, which shapes only the saved answer, and showed no
+  // place for `repeat most:`.
+  it("says the rows a repeat acts on are narrowed on the listing, and where repeat most goes", () => {
+    const text = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT;
+    expect(text).toContain("The rows a `repeat over` acts on are the rows its listing kept. To act on only some, put the condition on the listing step: `extractList.where:");
+    expect(text).toContain("It never changes which rows a repeat visits.");
+    expect(text).toContain("`repeat most:` goes beside `repeat while:`, on the span's first step, never under its last: `repeat while: next` then `repeat most: 20`.");
+    expect(text).toContain("A span whose last step answers ended -- a next-page step -- needs none.");
+  });
+
+  // t378 W8, lane D (`run-mv0fuual-f9e6f089`): a trial that met the site's
+  // request to slow down is answered in the Flow's own lines -- a guarded
+  // dismissal and wait inside the span, and a pace between passes.
+  it("teaches how a loop adapts when a trial says the site asked it to slow down", () => {
+    const text = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT;
+    expect(text).toContain("An `optional: yes` step may stand inside a span");
+    expect(text).toContain("with `only after: <its label>` runs only on the passes where that step was done");
+    expect(text).toContain("`repeat pace: <time>` goes beside `repeat over:` or `repeat while:`, on the span's first step");
+    expect(text).toContain("a `builtin.timing.wait` step with `only after: <that step's label>` that waits at least the wait the feedback named; and `repeat pace:` of at least that wait on the span's first step.");
+  });
+
+  it("builds the slow-down example as written: the notice's way past and the wait meet at a join that closes the loop, and the press keeps its pace", () => {
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: examples().get("Example, a loop the site asked to slow down:")! }, registry, resolution });
+    expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
+    if (!accepted.ok) return;
+    const subflow = accepted.plan.subflows[0]!;
+    expect(subflow.nodes.map((node) => node.definitionId)).toEqual([
+      "web.output.browser-navigate", "web.output.dom-extract_list", "builtin.control.merge", "builtin.control.for-each",
+      "web.output.dom-click", "web.output.dom-click", "builtin.timing.wait", "builtin.control.merge", "builtin.control.merge"
+    ]);
+    const edges = subflow.edges.map((edge) => `${edge.source.nodeKey}.${edge.source.portId} -> ${edge.target.nodeKey}.${edge.target.portId}`);
+    expect(edges).toEqual(expect.arrayContaining(["s6.failed -> s8.in", "s6.success -> s7.in", "s7.success -> s8.branches", "s8.success -> s3.branches"]));
+    expect(subflow.nodes[4]!.paceMs).toBe(6_000);
+    expect(subflow.nodes[6]!.parameters).toMatchObject({ duration: 6, unit: "seconds" });
     expect(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: accepted.plan, registry, resolution })).toEqual([]);
   });
 });

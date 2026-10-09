@@ -30,7 +30,16 @@
 // now carries `handles`: each handle (and the location beside it, when one was
 // written) that the refused node's parameter holds. They are tokens the model
 // itself wrote, never page content.
+//
+// **An issue says what to write instead, where Core can (t378).** Lane B
+// (`run-mv0fu9pb-57454dc4`, 0058) was refused `web.step.consequences_undeclared`
+// for two steps that typed a search and sent it (`submit: true`); nothing said
+// that sending a form is a press, so the model looked for presses. An issue
+// whose code says a step's consequences are undeclared now carries `instead`:
+// one fixed sentence, quoting nothing but the step's own `submit: true` and
+// Core's consequence classes, once per step.
 import type { JsonObject } from "../../../../../core/index.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "./contracts.ts";
 import { automationStudioFlowBootstrapParameterText } from "./parameter-text.ts";
@@ -113,7 +122,21 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   "flow_script.repeat_body_branches",
   "flow_script.branch_into_repeat",
   "flow_script.repeat_while_never_ends",
-  "flow_script.repeat_not_after_its_source"
+  "flow_script.repeat_not_after_its_source",
+  // A `repeat most:` or `repeat pace:` no span can take, or a pace that is not
+  // a time (`../script-statements/`): each sentence names only the
+  // lines the model wrote, and the pace's own value cut to 40 characters.
+  "flow_script.repeat_most_misplaced",
+  "flow_script.repeat_pace_misplaced",
+  "flow_script.repeat_pace_invalid",
+  // An optional step, or a step that runs only after one, where it cannot
+  // stand (`../script-statements/guarded-steps.ts`): each sentence is
+  // Core's own and names only lines, labels and node ids the model wrote, and
+  // says what to write instead.
+  "flow_script.optional_invalid",
+  "flow_script.optional_misplaced",
+  "flow_script.optional_unavailable",
+  "flow_script.only_after_misplaced"
 ]);
 
 const ROUTE_CODES: ReadonlySet<string> = new Set([
@@ -153,12 +176,15 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
   resolution?: AutomationStudioNodeRegistryResolution | undefined;
 }): JsonObject[] {
   const described = new Set<string>();
+  const instructed = new Set<string>();
   return input.issues.map((issue) => {
     const entry: JsonObject = {
       code: issue.code,
       ...(issue.path ? { path: printablePath(issue.path) } : {}),
       ...(AUTHORED_CODES.has(issue.code) && issue.message ? { message: issue.message } : {})
     };
+    const instead = insteadOf(issue, input.plan, instructed);
+    if (instead) entry.instead = instead;
     if (ROUTE_CODES.has(issue.code)) {
       return { ...entry, accepted: { condition: AUTOMATION_STUDIO_ROUTE_CONDITION_FORM } };
     }
@@ -172,6 +198,28 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
     described.add(target.key);
     return { ...entry, accepted };
   });
+}
+
+/** Codes saying a step's consequences are undeclared, from any domain (`web.step.consequences_undeclared`, `web.step.expected.consequences_classes_or_none`). */
+const CONSEQUENCES_UNDECLARED = /^[a-z0-9_]+(?:\.[a-z0-9_]+)*\.(?:consequences_undeclared|expected\.consequences_classes_or_none)$/u;
+const NODE_PATH = /^plan\.subflows\.(\d+)\.nodes\.(\d+)(?:\.|$)/u;
+const CLASSES = AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ");
+/** What a step that sends its form, or one that presses, writes instead. Fixed sentences; the classes are Core's own. */
+const SENDS_INSTEAD = `This step sends its form (submit: true), which is a press, and does not say what that does. Add \`consequences: none\` to it when the press only searches, filters or navigates; otherwise add \`consequences: <classes>\`, naming those of ${CLASSES} it causes.`;
+const PRESSES_INSTEAD = `This step presses something and does not say what that does. Add \`consequences: none\` to it when the press only reveals, searches, filters or navigates; otherwise add \`consequences: <classes>\`, naming those of ${CLASSES} it causes.`;
+
+/**
+ * What to write instead, for an issue Core knows the answer to; once per step,
+ * so the two codes a domain refuses one step with carry one sentence.
+ */
+function insteadOf(issue: AutomationStudioFlowBootstrapIssue, plan: unknown, instructed: Set<string>): string | undefined {
+  if (!CONSEQUENCES_UNDECLARED.test(issue.code)) return undefined;
+  const at = issue.path ? NODE_PATH.exec(issue.path) : null;
+  const key = at ? `${at[1]}.${at[2]}` : issue.path ?? "";
+  if (instructed.has(key)) return undefined;
+  instructed.add(key);
+  const parameters = at ? nodeAt(plan, Number(at[1]), Number(at[2]))?.parameters : undefined;
+  return isRecord(parameters) && parameters.submit === true ? SENDS_INSTEAD : PRESSES_INSTEAD;
 }
 
 type ParameterTarget = {

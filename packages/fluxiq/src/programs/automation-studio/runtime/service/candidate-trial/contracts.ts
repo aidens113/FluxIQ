@@ -29,6 +29,9 @@ export type AutomationStudioCandidateTrialStart =
   | { status: "not_reset" }
   | { status: "failed"; code: string; failure: string };
 
+/** A pace a trial learned for one node of the candidate plan, in milliseconds between two starts of it. */
+export type AutomationStudioCandidateTrialLearnedPace = { subflowKey: string; nodeKey: string; paceMs: number };
+
 /** One trial as Core keeps it: the audit record behind the verdict the model was given. */
 export type AutomationStudioCandidateTrialRecord = {
   candidateId: string;
@@ -41,6 +44,13 @@ export type AutomationStudioCandidateTrialRecord = {
   verdict: AutomationStudioCandidateTrialVerdict;
   /** Why the trial was not judged yes, as a code; absent on a yes. */
   code?: string;
+  /**
+   * The paces the trial's run learned from failures that asked it to wait
+   * (`trace.pace`, executor `pacing/`), by the candidate plan's own subflow and
+   * node keys, so a promotion of this trial can keep them. Absent when it
+   * learned none.
+   */
+  learnedPaces?: AutomationStudioCandidateTrialLearnedPace[];
   judge: { calls: number; inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number };
 };
 

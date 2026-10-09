@@ -3,7 +3,7 @@
 // through the host and goes on at the node whose recorded pre-state matches,
 // before any recovery rung (user, 2026-10-01 and 2026-10-02; t243). The
 // declared way on past a sometimes-present step is its first case, and is
-// covered beside this in `absent-step.test.ts`.
+// covered in `../step-skip/tests/absent-step.test.ts`.
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

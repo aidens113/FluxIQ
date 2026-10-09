@@ -141,7 +141,9 @@ export function assembleAutomationStudioFlowDraftPlan(input: {
         entries: (written.entries ?? []).map((entry) => ({ key: entry.key, lines: entry.value.split("\n"), line: 0 }))
       },
       ...(routeSignatures ? { routeSignatures } : {}),
-      ...(nodeLabel ? { nodeLabel } : {})
+      ...(nodeLabel ? { nodeLabel } : {}),
+      // A carried step's authored pace, so the node it becomes keeps it (t378).
+      ...(step.paceMs !== undefined ? { paceMs: step.paceMs } : {})
     });
   }
   // What each step says about when it runs becomes the steps, ports and edges

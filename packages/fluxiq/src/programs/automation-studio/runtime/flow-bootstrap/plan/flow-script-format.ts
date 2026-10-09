@@ -125,6 +125,28 @@
 // no longer ends with an invented check, and the guidance says why one is not
 // needed -- the build-test judge reads the page the run ends on -- and what a
 // wait may wait for when the Flow needs one.
+//
+// t378 made the text match the checks it is held to. The consequence sentence
+// said a typing step never needs the line, but the web domain asks it of a
+// `web.dom.type` with `submit: true`, which sends its form
+// (`step-permission.ts`), and lane B's script was refused for exactly that; the
+// legacy text changed by that one clause, and the act example now searches
+// with such a step. The loop text now says where `repeat most:` goes (lane C
+// wrote it under the span's last step), and that the rows a `repeat over`
+// visits are the ones its listing's `extractList.where` kept: lane D filtered
+// with `recordOutput.process`, which shapes only the saved answer at the end
+// of the run, and confirmed all eight requests where four were asked
+// (`run-mv0fuual-f9e6f089`).
+//
+// **No example is a Lab task (t378).** The candidate examples had drifted into
+// the live lanes' own tasks: two shirts with a colour and size into a basket
+// (the everything-store kettles, lanes A and B), earbuds under 50 on every
+// page (lane C's task), and friend requests confirmed per row, twice (lane
+// D's). A lane passing on an example of its own answer measures the example,
+// not the build. Each now keeps its exact shape -- the same nodes, edges,
+// bindings and numbers the tests hold -- on a site and an act none of the ten
+// realistic scenarios' tasks has: a task tracker, a library catalogue, a
+// billing tool and a mail inbox. A new example is held to the same rule.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 
@@ -138,7 +160,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT = [
   "Every other line in a step sets one of that node's parameters by its id, `url: https://example.test/a`. Reach inside a structured parameter with a dotted key, `extractList.fields.name: product-name`. A list is comma separated. Leave a parameter out and its default is used.",
   "A key a parameter takes is written inside it: `extractList.minItems: 0`, `target.location: https://shop.test/members`.",
   "A step may act, not only read: choose an option, enter text, set a control, press one. The tools you were given while gathering evidence are for looking; one refusing to act, or not existing, says nothing about what the Flow may contain.",
-  `A step that presses something says what pressing it would lastingly do: \`consequences: <classes>\`, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}, comma separated; \`consequences: none\` when it only reveals, opens, expands, filters, sorts, ticks, dismisses or navigates. Every press needs the line, and it says what that one press would cause, not what the Flow is for: the press that applies a filter is none, the press that publishes is send_or_publish. A step that types, chooses, waits or reads never needs it.`,
+  `A step that presses something says what pressing it would lastingly do: \`consequences: <classes>\`, from ${AUTOMATION_STUDIO_ACTION_CONSEQUENCES.join(", ")}, comma separated; \`consequences: none\` when it only reveals, opens, expands, filters, sorts, ticks, dismisses or navigates. Every press needs the line, and it says what that one press would cause, not what the Flow is for: the press that applies a filter is none, the press that publishes is send_or_publish. A typing step with \`submit: true\` sends its form, so it presses and needs the line too: \`consequences: none\` for a search. Any other step that types, chooses, waits or reads never needs it.`,
   "The Flow runs later on its own, with no model, from the page the run starts on, and nothing you did while gathering evidence is still in effect then: a notice you closed, a consent you answered, a search you ran and a filter you chose are all as they were before you touched them. So every change the answer depended on is a step, in the order you made it, including closing a notice, prompt or banner that stood in front of a control. Arriving at an address changes nothing else: whatever that page puts in front of its content on arrival is still there.",
   "When the instruction asks for part of a collection -- a count, a range, a status -- narrow it first with the steps that set the target's own controls, then read what is left. Returning everything is a wrong answer. Where the answer may be no rows, write `extractList.minItems: 0`.",
   "Steps run and connect in the order written: never write ids, versions, keys or edges.",
@@ -215,31 +237,41 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
   "A choice is written as the state it leaves, not as a press. A press toggles: pressing an option the page already shows chosen un-chooses it.",
   "An option in a dropdown is `node: web.dom.select` with the option's `value:`. A checkbox, a radio, or an option the page draws itself and shows chosen -- a colour swatch or size chip drawn apart from the others (`marked`), a `selected` tab, a `pressed` toggle -- is `node: web.dom.check` on that control itself, `checked: true` to choose it or `checked: false` to clear it; it presses only when the state differs, so it is right however the page arrives. Never look for a hidden box behind a swatch or chip: check the swatch or chip itself.",
   "Every option the instruction asks for gets its own step, even one the page arrives with already chosen: write it with `web.dom.check` or `web.dom.select`, which change nothing when the state is already right, so the Flow is right however a later run's page arrives. Press an option with `node: web.dom.click` only when the page shows no chosen state for it at all; `web.dom.check` refuses such a control and says so. A press is right for a control that does something each time it is pressed: apply, add, send, open, next.",
-  "`optional: yes` marks a step that is only sometimes needed -- closing a cookie banner, a popup or a notice the page may not show -- and the run goes on past it when it cannot be done. Use it only on such a step, never on one the answer depends on, never inside a repeat and never beside an `on <port>:` line.",
+  "`optional: yes` marks a step that is only sometimes needed -- closing a cookie banner, a popup or a notice the page may not show -- and the run goes on past it when it cannot be done. Use it only on such a step, never on one the answer depends on, and never beside an `on <port>:` line.",
   "Do not end the Flow with a check you invented to confirm it worked: whether the run did what was asked is judged from the page it ends on, so the last step is the last act the instruction needs. A wait or check step belongs in the Flow only where a later step needs the page to be ready, or where the instruction asks for the check. It waits only for something the page visibly showed after that act while you gathered evidence, never for text inside a closed panel or menu, or a notice that has already gone.",
   "Example, acting on one item:",
-  "flow: Put two medium blue shirts in the basket",
-  "step: open the shirt's page",
+  "flow: Set the budget review task to high priority, in progress, with a 3 hour estimate",
+  "step: open the task board",
   "  node: web.browser.navigate",
-  "  url: https://shop.test/shirts/oxford",
+  "  url: https://tasks.test/board",
   "step: close the cookie banner if it shows",
   "  node: web.dom.click",
   "  target: t2",
   "  consequences: none",
   "  optional: yes",
-  "step: choose the colour swatch",
+  "step: search for the task",
+  "  node: web.dom.type",
+  "  target: t1",
+  "  text: budget review",
+  "  submit: true",
+  "  consequences: none",
+  "step: open the task from the results",
+  "  node: web.dom.click",
+  "  target: t14",
+  "  consequences: none",
+  "step: choose the High priority chip",
   "  node: web.dom.check",
   "  target: t3",
   "  checked: true",
-  "step: choose the size",
+  "step: choose the status",
   "  node: web.dom.select",
   "  target: t6",
-  "  value: M",
-  "step: set the quantity",
+  "  value: in-progress",
+  "step: set the estimate",
   "  node: web.dom.type",
   "  target: t8",
-  "  text: 2",
-  "step: add it to the basket",
+  "  text: 3",
+  "step: save the task",
   "  node: web.dom.click",
   "  target: t11",
   "  consequences: modify_existing"
@@ -248,55 +280,97 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
 /**
  * How a candidate repeats a span and binds a value, with an example of each
  * loop (t346): reading every page of a list and processing the rows at the end
- * of the run (lane C's shape), and acting on each row a listing kept (lane
- * D's). Candidate-only, beside the act example and for the same reason: the
+ * of the run, and acting on each row a listing kept. Candidate-only, beside the act example and for the same reason: the
  * legacy completion schema carries `AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT` and
  * stays byte for byte what the baseline ran with.
  *
  * Every line is the grammar `../authoring/parse.ts` reads and every loop the
  * one a drafted repeat becomes (`../authoring/draft-routing.ts`), so the
  * examples build the graph shape the legacy path builds for the same loop.
+ *
+ * The third example (t378) is how a loop adapts when a trial says the site
+ * asked the run to slow down (lane D, `run-mv0fuual-f9e6f089`: the seventh
+ * confirm in a row met "you're going too fast"). The trial's feedback names the
+ * pass, its row and the wait (`../../service/candidate-trial/absorbed.ts`), and
+ * the Flow answers in its own lines: a step closing the site's notice when it
+ * shows (`optional: yes`, now allowed inside a span), a wait that runs only on
+ * the passes where it did (`only after:`), and a pace between passes
+ * (`repeat pace:`), which the saved Flow keeps
+ * (`../script-statements/`).
  */
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "Repetitive work is a loop, never the same steps written again. A step starts a span that repeats with lines beside its node:",
   "`repeat over: <label>` runs the span once for each row the labelled listing step read. The listing is written before the span and runs once; it never repeats itself. A step inside the span that presses a row's control finds that row's own control on each pass.",
   "`repeat through: <label>` names the span's last step; without it the span is the step that says repeat, alone.",
   "`repeat while: <label>` runs the span from this step through the labelled step, then again while that step succeeds. The loop ends when that step answers ended -- a next-page step does when there is no further page -- or after `repeat most: <passes>`; a last step that cannot answer ended needs repeat most.",
+  "`repeat most:` goes beside `repeat while:`, on the span's first step, never under its last: `repeat while: next` then `repeat most: 20`. A span whose last step answers ended -- a next-page step -- needs none.",
   "A span holds no `on <port>:` line and no second repeat, and no branch goes into it.",
+  "An `optional: yes` step may stand inside a span: it is done on the passes that need it and gone past on the others. A step written directly after an optional step with `only after: <its label>` runs only on the passes where that step was done, and so does each step after it with the same line; then the pass goes on where it was. Keep them in the same span, its `repeat through:` naming the last of them.",
+  "`repeat pace: <time>` goes beside `repeat over:` or `repeat while:`, on the span's first step: each pass then starts at least that long after the one before. Write `6 s`, `1500 ms` or `1 min`; a bare number is seconds.",
+  "When a trial says a step in a loop met the site's request to slow down -- its feedback names the pass, the row and the wait -- adapt the Flow rather than send it again: right after that step, inside the span, a step that closes the site's notice when it shows, with `optional: yes`; directly after it, a `builtin.timing.wait` step with `only after: <that step's label>` that waits at least the wait the feedback named; and `repeat pace:` of at least that wait on the span's first step.",
   "A value that changes between rows or runs is bound, never typed in: `$row.<field>` is a field the listing reads, of the row the pass is on, and only inside a repeat over that listing; `$input.<name> = <value>` is a Flow input, written with the value the person gave; `$step.<label>.<output>` is an output of an earlier step, by its label.",
-  "Rows a Flow reads are collected over the whole run; what is done with them at the end -- keep some, drop repeats, sort, limit -- is `recordOutput.process` on the reading step, over the columns `recordOutput.columns` saves.",
+  "The rows a `repeat over` acts on are the rows its listing kept. To act on only some, put the condition on the listing step: `extractList.where: [{\"field\": \"amount\", \"atLeast\": 100}]`.",
+  "Rows a Flow reads are also collected over the whole run, and `recordOutput.process` on the reading step only shapes that saved answer at the end -- keep some, drop repeats, sort, limit -- over the columns `recordOutput.columns` saves. It never changes which rows a repeat visits.",
   "Example, reading every page of a list:",
-  "flow: Earbuds under 50 on every page of the results",
-  "step: open the results",
+  "flow: Gardening books published since 2015 on every page of the catalogue search",
+  "step: open the search results",
   "  node: web.browser.navigate",
-  "  url: https://shop.test/search?q=earbuds",
+  "  url: https://library.test/search?q=gardening",
   "step page: read this page",
   "  node: web.dom.extract_list",
   "  extractList: extraction.1",
   "  extractList.minItems: 0",
-  "  recordOutput.columns: [\"name\", \"price\"]",
-  "  recordOutput.process: {\"where\": [{\"field\": \"price\", \"lessThan\": 50}]}",
+  "  recordOutput.columns: [\"title\", \"year\"]",
+  "  recordOutput.process: {\"where\": [{\"field\": \"year\", \"atLeast\": 2015}]}",
   "  repeat while: next",
   "step next: go to the next page",
   "  node: web.dom.next_page",
   "  nextPage: extraction.1",
   "  consequences: none",
   "Example, acting on each row a listing kept:",
-  "flow: Confirm every friend request from a colleague",
-  "step: open the requests",
+  "flow: Mark every overdue invoice as reminded",
+  "step: open the invoices",
   "  node: web.browser.navigate",
-  "  url: https://social.test/friends/requests",
-  "step requests: list the requests from colleagues",
+  "  url: https://billing.test/invoices",
+  "step invoices: list the overdue invoices",
   "  node: web.dom.extract_list",
   "  extractList: extraction.2",
+  "  extractList.where: [{\"field\": \"status\", \"contains\": \"overdue\"}]",
   "  extractList.minItems: 0",
-  "step: confirm the request",
+  "step: mark the invoice as reminded",
   "  node: web.dom.click",
   "  target: t21",
   "  consequences: modify_existing",
-  "  repeat over: requests",
-  "  repeat through: confirmed",
-  "step confirmed: check it was confirmed",
+  "  repeat over: invoices",
+  "  repeat through: settled",
+  "step settled: wait for the invoice's row before the next one",
   "  node: web.dom.wait_for_text",
-  "  text: $row.name"
+  "  text: $row.number",
+  "Example, a loop the site asked to slow down:",
+  "flow: Archive every message from the Garden Club newsletter, as slowly as the mail service asks",
+  "step: open the inbox",
+  "  node: web.browser.navigate",
+  "  url: https://mail.test/inbox",
+  "step messages: list the Garden Club messages",
+  "  node: web.dom.extract_list",
+  "  extractList: extraction.2",
+  "  extractList.where: [{\"field\": \"sender\", \"contains\": \"Garden Club\"}]",
+  "  extractList.minItems: 0",
+  "step: archive the message",
+  "  node: web.dom.click",
+  "  target: t21",
+  "  consequences: modify_existing",
+  "  repeat over: messages",
+  "  repeat through: cooldown",
+  "  repeat pace: 6 s",
+  "step notice: close the mail service's slow-down notice if it shows",
+  "  node: web.dom.click",
+  "  target: t30",
+  "  consequences: none",
+  "  optional: yes",
+  "step cooldown: wait as long as the site asked",
+  "  node: builtin.timing.wait",
+  "  duration: 6",
+  "  unit: seconds",
+  "  only after: notice"
 ].join("\n");

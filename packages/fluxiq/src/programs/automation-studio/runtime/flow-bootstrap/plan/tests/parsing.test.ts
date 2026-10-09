@@ -48,3 +48,31 @@ describe("a plan node's route signatures", () => {
     expect(parseAutomationStudioFlowBootstrapPlan(plan).issues).toEqual([]);
   });
 });
+
+// A plan node's pace (t378): the least time between two of its starts in one
+// run, in whole milliseconds. Until t378 the field was `bootstrap.unexpected_field`,
+// so neither a script's `repeat pace:` nor a pace a trial learned could reach the
+// saved Flow.
+describe("a plan node's pace", () => {
+  function pacedPlan(paceMs: unknown): Record<string, unknown> {
+    const plan = planWith(undefined);
+    const node = (plan.subflows as Array<{ nodes: Array<Record<string, unknown>> }>)[0]!.nodes[0]!;
+    delete node.routeSignatures;
+    node.paceMs = paceMs;
+    return plan;
+  }
+
+  it("accepts a whole number of milliseconds from 1 ms to ten minutes, and keeps it", () => {
+    for (const paceMs of [1, 6_000, 600_000]) {
+      const parsed = parseAutomationStudioFlowBootstrapPlan(pacedPlan(paceMs));
+      expect(parsed.issues).toEqual([]);
+      expect(parsed.plan?.subflows[0]?.nodes[0]?.paceMs).toBe(paceMs);
+    }
+  });
+
+  it("refuses anything else, naming the node's field", () => {
+    for (const paceMs of [0, -5, 1.5, 600_001, "6 s", null]) {
+      expect(parseAutomationStudioFlowBootstrapPlan(pacedPlan(paceMs)).issues.map((issue) => `${issue.code} ${issue.path}`), String(paceMs)).toEqual(["bootstrap.invalid_pace plan.subflows.0.nodes.0.paceMs"]);
+    }
+  });
+});

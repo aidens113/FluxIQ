@@ -7,15 +7,16 @@ import { nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
 import {
   automationStudioAssessAttemptFault,
-  automationStudioBoundedRetryWaitMs,
   automationStudioContinuationAfterFailure,
   automationStudioFaultFromThrownError,
+  automationStudioPlannedRetryWait,
   automationStudioRunMayStillAbsorb, automationStudioStopMessage,
   automationStudioThrownErrorText,
   type AutomationStudioFaultAssessment
 } from "./defensive/index.ts";
 import { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder } from "./ladder-run.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
+import { automationStudioRunWait, automationStudioTimedPause } from "./pacing/index.ts";
 import { automationStudioTraceWithSharedInputs } from "./node-execution/index.ts";
 import { automationStudioIsPersonNeededAsk, automationStudioPersonNeededEnding, automationStudioPersonNeededStep } from "./person-needed.ts";
 import { automationStudioRecordedState } from "./recorded-state.ts";
@@ -177,8 +178,9 @@ async function runGraphToTrace(
   // What the run survived rides on the trace, so a host that persists a run
   // persists the faults it absorbed without a store of its own. A fault computed
   // and discarded is the shape of bug this repository keeps meeting.
-  const defence = runState.defence.summary();
-  const defended = defence ? { ...executed, defence } : executed;
+  // The paces it held nodes to ride beside it: a learned one is what a promotion writes back.
+  const defence = runState.defence.summary(), pace = runState.pace.summary();
+  const defended = defence || pace ? { ...executed, ...(defence ? { defence } : {}), ...(pace ? { pace } : {}) } : executed;
   const saved = withholding.apply(automationStudioWithholdRunInputs(runState.records.apply(automationStudioTraceWithSharedInputs(defended, options.inputs ?? {})), options.inputs ?? {}));
   withheldBySavedTrace.set(saved, withholding.values());
   capturedBySavedTrace.set(saved, runState.records.captured());
@@ -254,25 +256,6 @@ function stepsPerIteration(node: AutomationStudioFlowNode): number {
     if (typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 1) return Math.floor(candidate);
   }
   return 1;
-}
-
-/**
- * The wait between two attempts of the same node.
- *
- * A caller may supply its own `delay`, so a test or a simulator spends no wall
- * clock on a backoff. The default timer is unreferenced: a backoff must never
- * be the reason a process stays alive.
- */
-async function automationStudioRetryDelay(options: AutomationStudioGraphExecutionOptions, backoffMs: number): Promise<void> {
-  if (backoffMs <= 0) return;
-  if (options.delay) {
-    await options.delay(backoffMs, options.signal);
-    return;
-  }
-  await new Promise<void>((resolve) => {
-    const timer: ReturnType<typeof setTimeout> = setTimeout(resolve, backoffMs);
-    (timer as { unref?: () => void }).unref?.();
-  });
 }
 
 /**
@@ -426,6 +409,8 @@ async function executeAutomationStudioGraph(
       arrival.attempts += 1;
       const retryPolicy = automationStudioNodeRetryPolicy(flow, currentNode, options);
       const recordedState = automationStudioRecordedState(currentNode);
+      // A node's pace holds each arrival at it, never a retry of one (`pacing/pace-keeper.ts`).
+      const paced = arrival.attempts === 1 ? await runState.pace.before(currentNode, now, (ms) => automationStudioRunWait(options, ms)) : undefined;
       // The wait ceiling, gated by the state the node expects to find. It never
       // fails the node: an unsatisfied gate is a mark on the attempt, because the
       // recording is evidence the action was possible at that point. A gate
@@ -440,6 +425,7 @@ async function executeAutomationStudioGraph(
       if (stepNumber !== undefined) emitAutomationStudioActivityStep({ index: stepNumber, count: stepNumbers.count, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues, pass: loopWords.passOf(currentNode.id, attempts) });
       const notShown: AutomationStudioNodeAttemptTrace | undefined = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? automationStudioNotShownAttempt(currentNode, `${currentNode.id}.attempt.${nextAttemptNumber()}`, now()) : undefined;
       let routing: AutomationStudioStateRouteDecision | undefined = notShown ? await decideAutomationStudioStateRoute({ flow, node: currentNode, attempt: notShown, attempts, options, guard: routeGuard }) : undefined;
+      if (!notShown || routing?.kind === "none") runState.pace.started(currentNode, now());
       const executed = notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
         ? await executeAutomationStudioNode(flow, currentNode, values, options, nextAttemptNumber(), withholding, runState)
         : await executeWithRegionTimeout(
@@ -457,6 +443,7 @@ async function executeAutomationStudioGraph(
         ...(readiness ? { readiness } : {}),
         ...(Object.keys(recordedState).length ? { recordedState } : {}),
         ...(pendingRetry ? { retry: pendingRetry } : {}),
+        ...(paced ? { pace: paced } : {}),
         ...(routing?.kind === "none" ? { stateRouting: routing.record } : {})
       };
       pendingRetry = undefined;
@@ -545,7 +532,11 @@ async function executeAutomationStudioGraph(
           routeOverride = settlement.route;
         }
       }
-      if (routeOverride === undefined && attempt.status === "waiting") {
+      // A timed pause -- a Wait node's -- is taken and the run goes on (`pacing/timed-pause.ts`); any other wait parks the run.
+      const paused = routeOverride === undefined && attempt.status === "waiting" ? await automationStudioTimedPause({ attempt: attempts[attemptIndex]!, options, now, regionRemainingMs: remainingMs }) : undefined;
+      if (paused) attempts[attemptIndex] = paused;
+      if (paused && options.signal?.aborted) return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
+      if (routeOverride === undefined && attempt.status === "waiting" && !paused) {
         return {
           status: "waiting",
           startedAt,
@@ -589,6 +580,9 @@ async function executeAutomationStudioGraph(
         // assessment. Every fault lands on the run's defence ledger below,
         // whichever way the ladder goes.
         const fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now());
+        // A failure that asked for a wait raises this node's pace for the rest of the run (`pacing/`), and its attempt says so.
+        const raisedToMs = fault?.hintedWaitMs === undefined ? undefined : runState.pace.learn(failedNode, fault.hintedWaitMs);
+        if (raisedToMs !== undefined) attempts[attemptIndex] = { ...attempts[attemptIndex]!, pace: { ...(attempts[attemptIndex]!.pace ?? { inForceMs: 0, waitedMs: 0 }), raisedToMs } };
         const mayAbsorb = automationStudioRunMayStillAbsorb(runState.defence.runWaitedMs());
         // Settles the step as failed, with its failure's code, so a card can say
         // why ("the page was busy", D8); it opens no "Recovery started" row of
@@ -619,25 +613,22 @@ async function executeAutomationStudioGraph(
           }
         });
         const recoveryDecision = ladder.decision;
-        const choice = automationStudioActivityRecoveryChoice(ladder, { attempts: arrival.attempts, actUncertain: fault?.actUncertain === true, mayAbsorb, retryable: automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode), test: automationStudioActivityInBuild() }); emitAutomationStudioActivityThought({ phase: "repairing", title: choice.title, text: choice.text, ref: failedNode.id });
+        // A retry's wait, bounded and with a hint's elapsed time credited, settled before the recovery is worded (`defensive/planned-retry-wait.ts`).
+        const settled = attempts[attemptIndex]!;
+        const { wait, hint, siteAsked } = automationStudioPlannedRetryWait({
+          retryBackoffMs: ladder.kind === "retry" ? ladder.backoffMs : undefined, hintedWaitMs: fault?.hintedWaitMs, settledAt: settled.finishedAt ?? settled.startedAt, now: now(),
+          nodeWaitedMs: runState.defence.nodeWaitedMs(failedNode.id), runWaitedMs: runState.defence.runWaitedMs(), node: failedNode
+        });
+        const choice = automationStudioActivityRecoveryChoice(ladder, { attempts: arrival.attempts, actUncertain: fault?.actUncertain === true, mayAbsorb, retryable: automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode), test: automationStudioActivityInBuild(), ...siteAsked }); emitAutomationStudioActivityThought({ phase: "repairing", title: choice.title, text: choice.text, ref: failedNode.id });
         attempts[attemptIndex] = {
           ...attempts[attemptIndex]!,
           recoveryDecision
         };
-        if (ladder.kind === "retry") {
-          // The wait, bounded: the longer of the backoff table and whatever the
-          // failing source itself asked for, held to one wait, to this arrival's
-          // allowance, and to the run's.
-          const wait = automationStudioBoundedRetryWaitMs({
-            backoffMs: ladder.backoffMs,
-            ...(fault?.hintedWaitMs === undefined ? {} : { hintedWaitMs: fault.hintedWaitMs }),
-            nodeWaitedMs: runState.defence.nodeWaitedMs(failedNode.id),
-            runWaitedMs: runState.defence.runWaitedMs()
-          });
+        if (ladder.kind === "retry" && wait) {
           recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "retried", wait.waitMs);
-          pendingRetry = { attemptNumber: arrival.attempts + 1, maxAttempts: retryPolicy.maxAttempts, backoffMs: wait.waitMs, rung: ladder.rung, previousAttemptId: attempt.attemptId };
+          pendingRetry = { attemptNumber: arrival.attempts + 1, maxAttempts: retryPolicy.maxAttempts, backoffMs: wait.waitMs, rung: ladder.rung, previousAttemptId: attempt.attemptId, ...(hint ? { hintedWaitMs: hint.askedMs, creditedMs: hint.creditedMs } : {}) };
           await options.commandRun?.checkpoint();
-          await automationStudioRetryDelay(options, wait.waitMs);
+          await automationStudioRunWait(options, wait.waitMs);
           await options.commandRun?.checkpoint();
           if (options.signal?.aborted) return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: failedNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
           continue;

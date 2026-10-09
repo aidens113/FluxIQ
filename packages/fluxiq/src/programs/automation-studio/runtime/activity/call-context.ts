@@ -29,6 +29,15 @@
 //   card says "Look · the “Search results” list" rather than "the repeating
 //   list on the page" (R2-U-9, `run-muwansvz-a2b4a987`). Read by shape, kept
 //   only as a short plain label.
+// - **What control a handle names.** A call that acts on a handle the page
+//   view printed (`t12 link "Friends"`) names that control by the words the
+//   view printed for it, the latest view first. Lane D's exploration "Click"
+//   cards named no control (t378, `run-mv0fuual-f9e6f089`): the call carries
+//   only `target: { handle }`, never the `element` a resolved node keeps, and
+//   the candidate build's loop then had no domain `describeCall` (it has one
+//   since t378 W15, `../service.ts`). Only a name the evidence printed in quotes
+//   is used; the domain's own words, when it gives them, still come first
+//   (`./observer.ts`).
 //
 // Reads only: a call and its result pass through the observer unchanged.
 
@@ -53,6 +62,18 @@ const MAX_ROW_NAME = 40;
 const LIST = "list";
 /** The most of a list's name a title carries. */
 const MAX_LIST_NAME = 60;
+/** The most of a control's name a title carries, as `./wording/action.ts` holds a target. */
+const MAX_TARGET_NAME = 60;
+/**
+ * A line of a page view that names a control: a handle (a lower-case letter,
+ * then digits), what the view says it is, and its name in double quotes
+ * (`t12 link "Friends" ~/friends/`, `t857 button "Close chat"`).
+ */
+const PRINTED_LINE = /^([a-z]\d{1,7})\b[^"\n]*?"([^"\n]{1,300})"/gmu;
+/** How deep into an evidence value its printed text is looked for. */
+const MAX_DEPTH = 4;
+/** A handle as a call names it. */
+const HANDLE = /^[a-z]\d{1,7}$/u;
 
 const record = (value: unknown): Record<string, unknown> | undefined => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined);
 const address = (value: unknown): string | undefined => (typeof value === "string" && /^https?:\/\//iu.test(value.trim()) ? value.trim() : undefined);
@@ -108,10 +129,35 @@ function labelColumn(result: unknown): string | undefined {
   return keys.length === 1 ? keys[0] : undefined;
 }
 
+/** Each handle a value's text printed with a name, in the order printed, into `into`. */
+function printedNames(value: unknown, into: Map<string, string>, depth = 0): void {
+  if (typeof value === "string") {
+    if (!value.includes("\n") && !HANDLE.test(value.split(" ")[0] ?? "")) return;
+    for (const found of value.matchAll(PRINTED_LINE)) {
+      const name = automationStudioActivityHumanLabel(found[2], MAX_TARGET_NAME);
+      if (name) into.set(found[1]!, name);
+    }
+    return;
+  }
+  if (depth >= MAX_DEPTH || !value || typeof value !== "object") return;
+  for (const member of Array.isArray(value) ? value : Object.values(value)) printedNames(member, into, depth + 1);
+}
+
+/** The handle a call acts on: its parameters' `target` (a handle, or `{ handle }`), else its own. */
+function handleOf(value: Record<string, unknown> | undefined): string | undefined {
+  for (const holder of [record(value?.parameters), value]) {
+    const target = holder?.target;
+    const handle = typeof target === "string" ? target : record(target)?.handle ?? holder?.handle;
+    if (typeof handle === "string" && HANDLE.test(handle)) return handle;
+  }
+  return undefined;
+}
+
 /**
  * The observer's memory of one round: `decided` with each decision's evidence,
  * `sent` before a call goes out (it answers what the call's words need), and
- * `answered` with its result (it answers the rows it kept).
+ * `answered` with its result (it answers the rows it kept). `target` is the
+ * name the evidence printed for the control a call acts on.
  */
 export function automationStudioActivityCallContext(): {
   decided(evidence: Evidence): void;
@@ -119,11 +165,21 @@ export function automationStudioActivityCallContext(): {
   answered(call: Call, result: unknown): { rows?: number; pages?: number; list?: string };
   /** The address the work starts at, where it is known yet. */
   start(): string | undefined;
+  /** What the latest page view that printed the call's handle named it, or nothing. */
+  target(call: { value?: unknown }): string | undefined;
 } {
   let start: string | undefined;
   let column: string | undefined;
+  /** Each handle's name, as the evidence last printed it. */
+  let names = new Map<string, string>();
   return {
-    decided: (evidence) => { start = draftStart(evidence) ?? start; },
+    decided: (evidence) => {
+      start = draftStart(evidence) ?? start;
+      // Read afresh from what this decision was shown, in order, so the latest view of a handle wins.
+      const next = new Map<string, string>();
+      for (const entry of evidence) printedNames(entry.value, next);
+      names = next;
+    },
     sent: (call) => {
       const value = record(call.value);
       if (call.callId.startsWith(OPENING_PREFIX)) start = opens(value) ?? start;
@@ -141,6 +197,10 @@ export function automationStudioActivityCallContext(): {
       const list = listOf(result);
       return { ...(rows !== undefined ? { rows } : {}), ...(pages !== undefined ? { pages } : {}), ...(list !== undefined ? { list } : {}) };
     },
-    start: () => start
+    start: () => start,
+    target: (call) => {
+      const handle = handleOf(record(call.value));
+      return handle === undefined ? undefined : names.get(handle);
+    }
   };
 }

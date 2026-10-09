@@ -9,12 +9,14 @@ const REPEAT_DEFINITION_ID = "builtin.control.repeat";
  * members are the nodes a pass can run: reached from the Repeat's `body`
  * route without passing the Repeat, and able to come back to it. A step after
  * the loop -- reached by the last step's `ended` route or the Repeat's `done`
- * -- never comes back, so it is no member.
+ * -- never comes back, so it is no member. `head` names another loop's head
+ * whose `body` route begins its passes the same way: a list loop's For Each
+ * (`./row.ts`).
  */
 export function automationStudioActivityLoops(flow: {
   nodes: readonly { id: string; definitionId: string }[];
   edges: readonly { sourceNodeId: string; targetNodeId: string; sourcePortId?: string | undefined }[];
-}): AutomationStudioActivityLoop[] {
+}, head: string = REPEAT_DEFINITION_ID): AutomationStudioActivityLoop[] {
   const definitionOf = new Map(flow.nodes.map((node) => [node.id, node.definitionId]));
   const forward = new Map<string, string[]>();
   const backward = new Map<string, string[]>();
@@ -35,7 +37,7 @@ export function automationStudioActivityLoops(flow: {
     }
     return seen;
   };
-  return flow.nodes.filter((node) => node.definitionId === REPEAT_DEFINITION_ID).map((repeat) => {
+  return flow.nodes.filter((node) => node.definitionId === head).map((repeat) => {
     const body = flow.edges.filter((edge) => edge.sourceNodeId === repeat.id && edge.sourcePortId === "body").map((edge) => edge.targetNodeId);
     const comesBack = reach(backward.get(repeat.id) ?? [], backward, repeat.id);
     const members = new Set([...reach(body, forward, repeat.id)].filter((id) => comesBack.has(id)));

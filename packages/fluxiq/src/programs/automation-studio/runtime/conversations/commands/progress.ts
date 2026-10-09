@@ -6,6 +6,9 @@
 // a second one. So each command records every step that landed, and a failure
 // says why it stopped and how far it had got.
 
+import { automationStudioActivityCheckRefusalReasons, automationStudioActivityIssueWords } from "../../activity/index.ts";
+import { automationStudioActivityRefusedStepIssues } from "../../activity/wording/index.ts";
+import { automationStudioCandidateRefusalCodes } from "../../service/candidate-failure/index.ts";
 import type { AutomationStudioConversationCommandCallResult, AutomationStudioConversationCommandOutcome } from "./command.ts";
 
 /** What the outcome carries however it ends: the ids made, and whose words an instruction it saved were. */
@@ -28,11 +31,16 @@ export type AutomationStudioConversationCommandProgress = {
    * for a command whose landed steps read as the opposite of the failure.
    * `account.kept`, when given, says what the work kept although it failed
    * (a candidate build's draft and its test runs, t362), after the rest.
+   *
+   * The opening never names the command: a person never typed "Create an
+   * automation here", and lanes B-D ended quoting it (t378). A registry
+   * call's own cause ("the build failed: ...") opens the answer as a sentence;
+   * any other says "I stopped because ...".
    */
   failed(cause: string, account?: { ending?: string | undefined; left?: string | undefined; kept?: string | undefined }): AutomationStudioConversationCommandOutcome;
 };
 
-export function automationStudioConversationCommandProgress(title: string, keyLocked: boolean): AutomationStudioConversationCommandProgress {
+export function automationStudioConversationCommandProgress(_title: string, keyLocked: boolean): AutomationStudioConversationCommandProgress {
   const steps: string[] = [];
   const ids: Ids = {};
   return {
@@ -42,7 +50,7 @@ export function automationStudioConversationCommandProgress(title: string, keyLo
     failed: (cause, account = {}) => {
       // What is stored is what an old thread shows again, so it is said plain however the cause was worded (t276).
       const plainCause = automationStudioConversationPlainCause(cause) || "something went wrong inside FluxIQ";
-      const opening = account.ending ? `${account.ending.replace(/\.$/u, "")}.` : `"${title}" stopped because ${plainCause}.`;
+      const opening = account.ending ? `${account.ending.replace(/\.$/u, "")}.` : CALL_CAUSE.test(plainCause) ? `${plainCause.charAt(0).toUpperCase()}${plainCause.slice(1)}.` : `I stopped because ${plainCause}.`;
       const distance = account.left ?? (steps.length ? `Before that I ${joined(steps)}.` : "Nothing was changed.");
       const kept = account.kept ? ` ${account.kept}` : "";
       const locked = keyLocked ? " Your model key is locked for this browser: unlock your keys in FluxIQ, then ask again." : "";
@@ -61,14 +69,15 @@ export function automationStudioConversationCommandProgress(title: string, keyLo
  * (pre_provider_validation: flow_bootstrap.blank_target_required)" (t276).
  */
 export function automationStudioConversationCallCause(what: string, response: AutomationStudioConversationCommandCallResult): string {
-  const diagnostic = (response.payload as { diagnostic?: { code?: unknown; stage?: unknown; ending?: { message?: unknown }; evidenceLoop?: { exhausted?: { bound?: unknown; budgetBound?: unknown } } } } | undefined)?.diagnostic;
+  const diagnostic = (response.payload as { diagnostic?: Diagnostic } | undefined)?.diagnostic;
   // A build that could not finish carries a message written for the person --
   // not doable and why, or the budget that ran out -- which says more than any
   // code, so it is what they read (`flow-bootstrap/generation-failure/build-ending.ts`).
   const ending = diagnostic?.ending?.message;
   if (typeof ending === "string" && ending.trim()) return `${what} could not finish. ${ending.trim().replace(/\.$/u, "")}`;
   const code = typeof diagnostic?.code === "string" ? diagnostic.code : codesIn(response.error ?? "")[0];
-  const meant = (code && ITERATION_LIMIT.test(code) ? exhaustedWords(diagnostic?.evidenceLoop?.exhausted) : undefined)
+  const meant = (code && NO_PROGRESS.test(code) ? refusedWords(diagnostic) : undefined)
+    ?? (code && ITERATION_LIMIT.test(code) ? exhaustedWords(diagnostic?.evidenceLoop?.exhausted) : undefined)
     ?? (code ? CODE_WORDS.find(([pattern]) => pattern.test(code))?.[1] : undefined)
     ?? (typeof diagnostic?.stage === "string" && Object.hasOwn(STAGE_WORDS, diagnostic.stage) ? STAGE_WORDS[diagnostic.stage] : undefined);
   const said = meant ?? (automationStudioConversationPlainCause(response.error ?? "") || (code ? "something went wrong inside FluxIQ" : "no reason was given"));
@@ -81,6 +90,47 @@ const DOTTED = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)*(?:\.[a-z0-9]+(?:_[a-z0-9]+)*)+\b
 /** The codes in `text`, in order: dotted names holding an underscore, so an address such as "example.com" is not one. */
 function codesIn(text: string): string[] {
   return [...text.matchAll(DOTTED)].map((found) => found[0]).filter((name) => name.includes("_"));
+}
+
+/** What a failed build's diagnostic is read for here. */
+type Diagnostic = {
+  code?: unknown;
+  stage?: unknown;
+  ending?: { message?: unknown };
+  evidenceLoop?: { exhausted?: { bound?: unknown; budgetBound?: unknown } };
+  issueCodes?: unknown;
+  candidate?: { revision?: unknown; trialCount?: unknown };
+  refusedSteps?: unknown;
+};
+
+/** A candidate build that stopped for no progress: what its last refused submission was refused for says why (`refusedWords`). */
+const NO_PROGRESS = /evidence_repeat_without_progress$/u;
+
+/**
+ * Why a candidate build stopped for no progress, in words that finish
+ * "failed: ...", from the last refused submission its failure carries
+ * (`../../service/candidate-failure/refusal-codes.ts`, t378): that the Flow it
+ * wrote was refused, how many times in a row, why the last time in each issue's
+ * own words, how often it was then sent again unchanged, and, where no version
+ * was ever accepted or tested, that nothing was tested. A step the failure
+ * carries the model's words for (`refusedSteps`) is named by them: lane D's
+ * ending said "a step was given a setting it doesn't take" of the step "keep
+ * requests with 5 or more mutual friends". Lane C ended "it kept
+ * trying without getting any further, so it was stopped" over a Flow refused
+ * for a misplaced repeat and then sent again unchanged three times. Nothing
+ * when the failure carries no refused submission.
+ */
+function refusedWords(diagnostic: Diagnostic | undefined): string | undefined {
+  const refusal = automationStudioCandidateRefusalCodes.decode(Array.isArray(diagnostic?.issueCodes) ? diagnostic.issueCodes : []);
+  if (!refusal) return undefined;
+  const named = automationStudioActivityIssueWords(automationStudioActivityRefusedStepIssues(refusal.issues, diagnostic?.refusedSteps), true, true).reasons;
+  const reasons = named.length ? named : automationStudioActivityCheckRefusalReasons({ refusal: refusal.family });
+  const times = refusal.refusals > 1 ? ` ${refusal.refusals} times in a row` : "";
+  const because = reasons.length ? `${refusal.refusals > 1 ? ", the last time" : ""} because ${joined(reasons)}` : "";
+  const again = refusal.sentAgain === 1 ? ", and then it was sent again unchanged" : refusal.sentAgain > 1 ? `, and then it was sent again unchanged ${refusal.sentAgain} times` : "";
+  const candidate = diagnostic?.candidate;
+  const untested = candidate && candidate.revision === undefined && candidate.trialCount === 0 ? ", so nothing was tested" : "";
+  return `the Flow it wrote was refused${times}${because}${again}${untested}`;
 }
 
 /** A build that ran out of an allowance: what ran out says why (`exhaustedWords`). */
@@ -155,6 +205,9 @@ export function automationStudioConversationPlainCause(text: string): string {
     .replace(/[\s:.]+$/u, "");
   return codesIn(said).length ? "" : said;
 }
+
+/** A cause `automationStudioConversationCallCause` wrote: "<what> failed: <why>", or "<what> could not finish. <ending>". */
+const CALL_CAUSE = /^[a-z][A-Za-z ]* (?:failed: |could not finish\. )/u;
 
 function joined(steps: readonly string[]): string {
   if (steps.length <= 1) return steps[0] ?? "";

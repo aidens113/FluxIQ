@@ -13,6 +13,11 @@ type Entry = { verb: ActivityActionVerb; kind: ActivityActionKind; word: RegExp;
 const VERBS: readonly Entry[] = [
   { verb: "navigate", kind: "navigate", word: /^(navigate|nav|goto|visit|open|load)$/u, gerund: "opening" },
   { verb: "back", kind: "navigate", word: /^back$/u, gerund: "going" },
+  // A list's next page (`web.output.dom-next_page`): its step read "Dom next
+  // page" on its card and the overlay, the id's words from the first one, as no
+  // word of it named a verb (lane C, `run-mv0fuotv-805294d7`). The activity
+  // wording has no sentence for it, so its step is named from here: "Next page".
+  { verb: "next", kind: "navigate", word: /^next$/u, gerund: "going" },
   { verb: "click", kind: "click", word: /^(click|press|tap)$/u, gerund: "clicking" },
   { verb: "type", kind: "type", word: /^(type|fill|enter)$/u, gerund: "typing" },
   { verb: "search", kind: "type", word: /^search$/u, gerund: "searching" },

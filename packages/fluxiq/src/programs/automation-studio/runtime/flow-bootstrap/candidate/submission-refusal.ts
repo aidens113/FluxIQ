@@ -28,6 +28,16 @@
 // resolve. A handle still refused is one no view printed (or not on the page
 // its `location` names), and the recovery says so rather than telling the model
 // a handle belongs only to the page it is on.
+//
+// **Each refused step is named, and a run of refusals is one of the same
+// issues (t378).** Lane B (`run-mv0fu9pb-57454dc4`) was refused at plan node
+// indices, could not find the steps, and resent its script unchanged; every
+// issue now carries its step and line (`../authoring/locate-issue.ts`), and
+// `next` opens by naming each refused step by line and name. Lane D's three
+// different filter-list defects ended its build as "the same refusal" because
+// the run was keyed on the refusal's category alone; it is now keyed on the
+// issues themselves -- their codes and the lines they are about -- so only a
+// submission refused for exactly what refused the last one continues a run.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
@@ -52,16 +62,62 @@ export function automationStudioCandidateSubmissionRefusal(submitted: Extract<Au
   const feedback = submitted.check.feedback ?? {};
   const handles = refusedHandles(feedback);
   return {
-    evidence: { ok: false, revision: submitted.revision, diagnostics: feedback, issueCodes: [...submitted.check.issueCodes], next: handles.length ? handleNext(handles) : GENERAL_NEXT },
+    evidence: { ok: false, revision: submitted.revision, diagnostics: feedback, issueCodes: [...submitted.check.issueCodes], next: refusedSteps(feedback) + (handles.length ? handleNext(handles) : GENERAL_NEXT) },
     resultCode: refusalCode(feedback, submitted.check.issueCodes),
     draft: { proposes: true }
   };
 }
 
-/** The refusal's own code: what makes two refusals "the same" for the run of refusals. */
+/** How long a digest of the refused issues is, in hex digits. */
+const ISSUES_DIGEST_LENGTH = 8;
+
+/**
+ * What makes two refusals "the same" for the run of refusals: the refusal's own
+ * category and a digest of its issues -- each code with the line (or, with
+ * none, the path) it is about. Two submissions refused for different defects
+ * are different refusals, however alike their category (header).
+ */
 function refusalCode(feedback: JsonObject, issueCodes: readonly string[]): string {
   const named = [feedback.refusal, feedback.code, issueCodes[0]].find((code): code is string => typeof code === "string" && CLOSED_CODE.test(code));
-  return named ?? AUTOMATION_STUDIO_CANDIDATE_SUBMISSION_REFUSED_CODE;
+  const category = named ?? AUTOMATION_STUDIO_CANDIDATE_SUBMISSION_REFUSED_CODE;
+  const keys = [...new Set(issuesOf(feedback).map((issue) => `${String(issue.code)}@${typeof issue.line === "number" ? issue.line : typeof issue.path === "string" ? issue.path : ""}`))].sort();
+  if (!keys.length) return category;
+  return `${category.slice(0, 100 - ISSUES_DIGEST_LENGTH - 1)}:${digest(keys.join("\n"))}`;
+}
+
+/** FNV-1a over the text, as hex: stable across processes, and only ever compared for equality. */
+function digest(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(ISSUES_DIGEST_LENGTH, "0");
+}
+
+/** The longest a step's own words are quoted back in `next`. */
+const STEP_WORDS_LIMIT = 120;
+
+/** Each refused step by its line and the model's own words for it, once each, in script order; empty when no issue names a step. */
+function refusedSteps(feedback: JsonObject): string {
+  const named = new Map<string, { line: number | undefined; text: string }>();
+  for (const issue of issuesOf(feedback)) {
+    if (typeof issue.step !== "string" || !issue.step.trim()) continue;
+    const line = typeof issue.line === "number" ? issue.line : undefined;
+    const words = JSON.stringify(issue.step.replace(/\s+/gu, " ").trim().slice(0, STEP_WORDS_LIMIT));
+    const label = typeof issue.label === "string" && issue.label ? ` (${issue.label})` : "";
+    const text = line === undefined ? `${words}${label}` : `line ${line}, ${words}${label}`;
+    if (!named.has(text)) named.set(text, { line, text });
+  }
+  if (!named.size) return "";
+  const ordered = [...named.values()].sort((a, b) => (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER));
+  return `${ordered.length === 1 ? "The refused step is" : "The refused steps are"} ${ordered.map((entry) => entry.text).join("; ")}: correct ${ordered.length === 1 ? "that step" : "those steps"}, where each issue says. `;
+}
+
+/** The issue entries a refusal's feedback carries, as objects. */
+function issuesOf(feedback: JsonObject): JsonObject[] {
+  const issues: JsonValue[] = Array.isArray(feedback.issues) ? feedback.issues : [];
+  return issues.filter((issue): issue is JsonObject => Boolean(issue) && typeof issue === "object" && !Array.isArray(issue));
 }
 
 /** Every handle a handle issue names (`../plan/issue-feedback.ts`, `handles`), once each, as written. */

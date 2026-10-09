@@ -82,6 +82,8 @@ describe("a refused candidate submission", () => {
     expect(decided()).toBe(4);
     expect("value" in outcome && outcome.value.loop).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
     const warning = latestOf("core.refusal_run", seen[3]!);
+    // The same refusal is one of the same issues: it is counted under the category and a digest of its codes and
+    // places (t378), but the warning the model reads names the category only, never the digest.
     expect(warning).toMatchObject({ code: "llm_evidence_loop.refused_in_a_row", refusal: "call:flow_bootstrap.evidence_completion_parameters_unresolved", inARow: 2 });
   });
 

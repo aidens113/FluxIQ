@@ -120,6 +120,19 @@
 // a run of looks, but records no outcome for its key: the identical plain
 // call is the first attempt of that input there, and runs.
 //
+// **A refused candidate submission sent again is answered with its issues.**
+// Lane C (`run-mv0fuotv-805294d7`, C2) resent one refused script three times
+// and was told each time to amend a draft that candidate mode does not have.
+// A refusal's issues, as it listed them, are kept with its outcome (`issues`),
+// and the note for an identical submission repeats them
+// (`./candidate-feedback.ts`).
+//
+// **A submission is keyed on its Flow, not its summary.** Lane B
+// (`run-mv0fu9pb-57454dc4`, 0058-0060) sent a refused script again without its
+// `summary`: the whole input differed, so it ran and was refused once more
+// instead of being refused unrun. A `core.submit_candidate` call is keyed on its
+// `flow` (or `plan`) alone (`keyedInput`).
+//
 // **What still runs.**
 //
 // - Anything after the page changed: the key holds the page.
@@ -134,7 +147,7 @@
 //   forgotten (`moved`), and nothing is refused until the page is seen again.
 
 import { createHash } from "node:crypto";
-import type { JsonObject } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioLlmEvidenceCanonicalJson } from "../evidence-loop-decision.ts";
 import { automationStudioLlmEvidenceRetriesLater } from "./retry-later.ts";
 import { automationStudioLlmEvidenceSearchStreak, type AutomationStudioLlmEvidenceSearchStreak } from "./searching.ts";
@@ -169,6 +182,12 @@ export type AutomationStudioLlmEvidenceRepeatedOutcome = {
   handleUnshown?: true;
   /** `same_amendment` only: the decision's rerun ran and did not work, rather than putting back an identical step. */
   rerunFailed?: true;
+  /**
+   * `failed` only: the issues the refusal listed, as it gave them (its
+   * `diagnostics.issues`, or its own `issues`), so a refused candidate
+   * submission sent again is answered with them (`./candidate-feedback.ts`).
+   */
+  issues?: JsonValue[];
 };
 
 /** One call as it ran, for the record. */
@@ -242,7 +261,7 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
   let latest: string | undefined;
   let refusedInARow = 0;
   let lastRefused = Number.NEGATIVE_INFINITY;
-  const key = (toolId: string, input: JsonObject, state: string): string => `${toolId}\u0000${state}\u0000${options.draftOf?.(toolId) ?? ""}\u0000${automationStudioLlmEvidenceCanonicalJson(input)}`;
+  const key = (toolId: string, input: JsonObject, state: string): string => `${toolId}\u0000${state}\u0000${options.draftOf?.(toolId) ?? ""}\u0000${automationStudioLlmEvidenceCanonicalJson(keyedInput(toolId, input))}`;
   // A decision is keyed on the draft it was sent on, which a call key never starts with (a call's starts with its tool id, never empty).
   const amendmentKey = (signature: string, draft: string): string => `\u0000amend_draft\u0000${draft}\u0000${signature}`;
   return {
@@ -292,12 +311,14 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       const handleUnshown = failed && HANDLE_UNSHOWN.test(call.resultReason ?? "");
       if (handleUnshown) unshown.set(at, state);
       else unshown.delete(at);
+      const issues = call.refused ? refusalIssues(call.answer) : undefined;
       outcomes.set(at, {
         callId: call.callId,
         outcome: failed ? "failed" : !changedNothing ? "same_result" : runsDraft ? "same_draft" : "changed_nothing",
         ...(call.resultCode ? { resultCode: call.resultCode } : {}),
         ...(call.resultReason ? { resultReason: call.resultReason } : {}),
-        ...(handleUnshown ? { handleUnshown: true as const } : {})
+        ...(handleUnshown ? { handleUnshown: true as const } : {}),
+        ...(issues ? { issues } : {})
       });
     },
     blocks(toolId, input, at) {
@@ -329,4 +350,42 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       return refusedInARow;
     }
   };
+}
+
+/** The tool whose input is a whole candidate Flow, keyed on that Flow alone (header). */
+const SUBMIT_CANDIDATE = "core.submit_candidate";
+/** The members of a submission that are its Flow: the script, or the plan. */
+const SUBMISSION_FLOW_KEYS = ["flow", "plan"] as const;
+
+/**
+ * What a call is keyed on: its whole input, but for a candidate submission its
+ * Flow alone (`flow`, `plan`), so one sent again with another `summary`, or
+ * none, is the same submission (header). A submission naming neither is keyed
+ * on all of it.
+ */
+function keyedInput(toolId: string, input: JsonObject): JsonObject {
+  if (toolId !== SUBMIT_CANDIDATE) return input;
+  const flow: JsonObject = {};
+  for (const name of SUBMISSION_FLOW_KEYS) if (input[name] !== undefined) flow[name] = input[name];
+  return Object.keys(flow).length ? flow : input;
+}
+
+/** The issues a refusal listed, as it gave them: its `diagnostics.issues`, or else its own `issues`; nothing when it listed none. */
+function refusalIssues(answer: string | undefined): JsonValue[] | undefined {
+  if (answer === undefined) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(answer);
+  } catch (error) {
+    // The one failure that means "listed none": an answer in plain words, not JSON. Anything else is rethrown.
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
+  }
+  if (!isObject(value)) return undefined;
+  const issues = isObject(value.diagnostics) && Array.isArray(value.diagnostics.issues) ? value.diagnostics.issues : value.issues;
+  return Array.isArray(issues) && issues.length > 0 ? issues as JsonValue[] : undefined;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

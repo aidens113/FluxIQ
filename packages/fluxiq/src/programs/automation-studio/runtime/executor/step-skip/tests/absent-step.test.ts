@@ -5,9 +5,9 @@
 
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
-import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../activity/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../../model/index.ts";
+import { automationStudioActivityHub, runWithAutomationStudioActivity } from "../../../activity/index.ts";
+import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../../index.ts";
 
 let seen: ClientGatewayActivity[] = [];
 let unsubscribe: () => void = () => undefined;

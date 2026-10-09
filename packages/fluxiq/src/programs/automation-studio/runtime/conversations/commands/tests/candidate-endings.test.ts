@@ -17,6 +17,7 @@ import { automationStudioConversationCandidateKeptSaid } from "../build.ts";
 import { executeAutomationStudioConversationCommand } from "../execute.ts";
 import { automationStudioConversationCallCause } from "../progress.ts";
 import { automationStudioConversationCommandWork } from "../work.ts";
+import { automationStudioCandidateRefusalCodes } from "../../../service/candidate-failure/index.ts";
 
 const PROJECT = "project.candidate-endings";
 const DIGEST = "a".repeat(64);
@@ -60,6 +61,59 @@ describe("each candidate ending names its real cause", () => {
     // Only an unusable reply is worded as one (round 4 said it of a no-progress stop).
     for (const [key, text] of Object.entries(said)) if (key !== "unusable" && key !== "unreadable") expect(text).not.toContain("could not be used");
     for (const text of Object.values(said)) expectPlain(text);
+  });
+});
+
+// Lanes B-D (t378) ended "it kept trying without getting any further" over a Flow that had been
+// refused for a named reason and, in lane C, sent again unchanged three times.
+describe("a candidate build stopped for no progress names why its Flow was refused", () => {
+  const NO_PROGRESS = { code: "flow_bootstrap.evidence_repeat_without_progress", stage: "provider_output_validation" };
+  const refused = (refusal: Parameters<typeof automationStudioCandidateRefusalCodes.encode>[0], loop: string[] = ["llm_evidence_loop.repeat_refused"]) => [...automationStudioCandidateRefusalCodes.encode(refusal), ...loop];
+  const never = { candidateId: "candidate.c", draft: "none", trialCount: 0, trials: [] };
+
+  it("lane C: a repeat written in the wrong place, then the same Flow sent again unchanged, and nothing tested", () => {
+    const said = cause({ ...NO_PROGRESS, candidate: never, issueCodes: refused({ refusals: 1, sentAgain: 3, family: "flow_bootstrap.evidence_completion_plan_invalid",
+      issues: [{ code: "flow_script.repeat_body_is_routed", line: 23 }, { code: "flow_script.repeat_invalid", line: 23 }] }) });
+    expect(said).toBe("the build failed: the Flow it wrote was refused because a repeat was written where the Flow can't run it, and then it was sent again unchanged 3 times, so nothing was tested");
+    expectPlain(said);
+  });
+
+  it("lane B: two steps that send without saying what sending does, counted", () => {
+    const said = cause({ ...NO_PROGRESS, issueCodes: refused({ refusals: 1, sentAgain: 1, family: "flow_bootstrap.evidence_completion_parameters_unresolved",
+      issues: [{ code: "web.step.consequences_undeclared", path: "plan.subflows.0.nodes.2.parameters" }, { code: "web.step.consequences_undeclared", path: "plan.subflows.0.nodes.4.parameters" }] }) });
+    expect(said).toBe("the build failed: the Flow it wrote was refused because two steps that press or send something didn't say what doing that does, and then it was sent again unchanged");
+    expect(said).not.toContain("weren't seen");
+    expectPlain(said);
+  });
+
+  it("lane D: refused three times in a row, said by the last refusal, with nothing claimed of tests it ran", () => {
+    const said = cause({ ...NO_PROGRESS, candidate: { candidateId: "candidate.d", draft: "saved", revision: 4, digest: DIGEST, trialCount: 2, trials: [] },
+      issueCodes: refused({ refusals: 3, sentAgain: 0, family: "flow_bootstrap.evidence_completion_plan_invalid", issues: [{ code: "bootstrap.unknown_parameter", path: "plan.subflows.0.nodes.8.parameters.items" }] }, ["flow_bootstrap.evidence_completion_plan_invalid"]) });
+    expect(said).toBe("the build failed: the Flow it wrote was refused 3 times in a row, the last time because a step was given a setting it doesn't take");
+    expectPlain(said);
+  });
+
+  it("lane D, with the refused step's own words: the ending names the step, never its line, path or code (t378)", () => {
+    const path = "plan.subflows.0.nodes.8.parameters.minimumMutualFriendsCount";
+    const said = cause({ ...NO_PROGRESS, candidate: { candidateId: "candidate.d", draft: "saved", revision: 4, digest: DIGEST, trialCount: 2, trials: [] },
+      issueCodes: refused({ refusals: 3, sentAgain: 0, family: "flow_bootstrap.evidence_completion_plan_invalid", issues: [{ code: "bootstrap.unknown_parameter", path }] }, ["flow_bootstrap.evidence_completion_plan_invalid"]),
+      refusedSteps: [{ step: "keep requests with 5 or more mutual friends", path, code: "bootstrap.unknown_parameter" }] });
+    expect(said).toBe("the build failed: the Flow it wrote was refused 3 times in a row, the last time because the step 'keep requests with 5 or more mutual friends' was given a setting it doesn't take");
+    expectPlain(said);
+  });
+
+  it("lane B, with each refused step's words by its line: both steps are named", () => {
+    const said = cause({ ...NO_PROGRESS, issueCodes: refused({ refusals: 1, sentAgain: 1, family: "flow_bootstrap.evidence_completion_parameters_unresolved",
+      issues: [{ code: "web.step.consequences_undeclared", line: 32 }, { code: "web.step.consequences_undeclared", line: 58 }] }),
+      refusedSteps: [{ step: "search for the paper towels", line: 32 }, { step: "search for the dinner napkins", line: 58 }] });
+    expect(said).toBe("the build failed: the Flow it wrote was refused because the steps 'search for the paper towels' and 'search for the dinner napkins' press or send something but didn't say what doing that does, and then it was sent again unchanged");
+    expectPlain(said);
+  });
+
+  it("falls back to the refusal's own family, and to the old words with no refusal carried", () => {
+    expect(cause({ ...NO_PROGRESS, issueCodes: refused({ refusals: 1, sentAgain: 0, family: "flow_bootstrap.evidence_completion_plan_invalid", issues: [{ code: "x.y" }] }) }))
+      .toBe("the build failed: the Flow it wrote was refused because some steps weren't written in a way the Flow can run");
+    expect(cause({ ...NO_PROGRESS, issueCodes: ["llm_evidence_loop.already_observed"] })).toBe("the build failed: it kept trying without getting any further, so it was stopped");
   });
 });
 
@@ -128,7 +182,7 @@ describe("a failed candidate build in the chat", () => {
     const text = await createHere({ code: "flow_bootstrap.evidence_repeat_without_progress", stage: "provider_output_validation",
       candidate: { candidateId: "candidate.4a", draft: "saved", revision: 7, digest: DIGEST, trialCount: 2,
         trials: [{ revision: 2, verdict: "execution_failed", trialRunId: "trial.1", code: "web.target.not_found" }, { revision: 4, verdict: "execution_failed", trialRunId: "trial.2", code: "web.action.rate_limited" }] } });
-    expect(text).toBe("\"Create an automation here\" stopped because the build failed: it kept trying without getting any further, so it was stopped. "
+    expect(text).toBe("The build failed: it kept trying without getting any further, so it was stopped. "
       + "I kept the latest version of the Flow's steps that I wrote as a draft, but nothing was put into the Flow. A version of it was test-run from the start twice, and the last test run did not get to the end. "
       + "The Flow \"Hubs\" keeps your instruction, so you can build it again.");
     expect(text).not.toContain("no steps yet");
@@ -136,9 +190,18 @@ describe("a failed candidate build in the chat", () => {
     expect(text).not.toMatch(/revision|candidate\.|trial\.|web\./iu);
   });
 
+  it("lane C's ending opens on why, never on the command's name, and says nothing was tested", async () => {
+    const issueCodes = [...automationStudioCandidateRefusalCodes.encode({ refusals: 1, sentAgain: 3, family: "flow_bootstrap.evidence_completion_plan_invalid", issues: [{ code: "flow_script.repeat_invalid", line: 23 }] }), "llm_evidence_loop.repeat_refused"];
+    const text = await createHere({ code: "flow_bootstrap.evidence_repeat_without_progress", stage: "provider_output_validation", issueCodes, candidate: { candidateId: "candidate.c", draft: "none", trialCount: 0, trials: [] } });
+    expect(text).toBe("The build failed: the Flow it wrote was refused because a repeat was written where the Flow can't run it, and then it was sent again unchanged 3 times, so nothing was tested. "
+      + "The Flow \"Hubs\" has no steps yet, but it keeps your instruction, so you can build it again.");
+    expect(text).not.toContain("Create an automation here");
+    expect(text).not.toContain("kept trying");
+  });
+
   it("a build that never had a version accepted still says the Flow has no steps", async () => {
     const text = await createHere({ code: "flow_bootstrap.evidence_unusable_decision", stage: "provider_output_validation", candidate: { candidateId: "candidate.4a", draft: "none", trialCount: 0, trials: [] } });
-    expect(text).toContain("the build failed: the model's answer could not be used.");
+    expect(text).toContain("The build failed: the model's answer could not be used.");
     expect(text).toContain('The Flow "Hubs" has no steps yet, but it keeps your instruction, so you can build it again.');
   });
 });

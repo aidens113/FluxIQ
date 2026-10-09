@@ -13,6 +13,8 @@ import type { AutomationStudioActivityLoopPass } from "./types.ts";
  */
 export function automationStudioActivityPassWords(input: { action: string | undefined; definitionId: string | undefined; pass: AutomationStudioActivityLoopPass }): { action?: string; after: string } {
   const { pass } = input;
+  // A list loop's pass is its row, which the step carries for its card (`../step/started.ts`): no number of its own.
+  if (pass.unit === "row") return input.action === undefined ? { after: "" } : { action: input.action, after: "" };
   if (pass.unit === "page" && automationStudioActivityReads(input.definitionId)) return { action: `Reading page ${pass.pass}`, after: "" };
   const after = pass.unit === "page" ? ` on page ${pass.pass}` : ` (pass ${pass.pass})`;
   return input.action === undefined ? { after } : { action: `${input.action}${after}`, after: "" };

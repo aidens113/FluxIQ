@@ -131,7 +131,14 @@ describe("Automation Studio Flow bootstrap contract", () => {
     // folding two sentences into one -- `run-node.ts` tells a build that
     // explores the same thing on the call that makes the declaration, so this
     // is the wording for a script or a nested plan, where nothing else says it.
-    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(6_000);
+    //
+    // Raised to 6,100 on 2026-10-09 (t378): the same sentence said a step that
+    // types never needs the line, while the domain asks it of a type with
+    // `submit: true`, which sends its form; lane B's script
+    // (`run-mv0fu9pb-57454dc4`) followed the text and was refused for it. The
+    // correction costs 131 bytes over the false clause (5,943 to 6,074); every
+    // shorter wording tried still crossed 6,000 or dropped the search example.
+    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(6_100);
 
     const minimalWebPlan: AutomationStudioFlowBootstrapPlan = {
       schemaVersion: "0.1",

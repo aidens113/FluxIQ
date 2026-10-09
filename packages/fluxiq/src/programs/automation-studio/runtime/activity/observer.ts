@@ -12,7 +12,10 @@
 // the caller (`./decision-reason.ts`) and shown whitespace-collapsed, with
 // token-shaped runs hidden, within 240 characters, and without the sentences
 // that name an act id or the draft's mechanics, or a line that is only codes
-// (`./wording/reason-text.ts`, t174-w116 D3 and D15).
+// (`./wording/reason-text.ts`, t174-w116 D3 and D15). The reason of a call
+// that repeats one decided before, or of a candidate's saving or testing of its
+// Flow, is held until Core has answered the call, and said in Core's words of
+// what happened where that contradicts it (`./decision-answer/narration.ts`, t378).
 // Beside those, three things Core reads off what the loop already showed it
 // (`./call-context.ts`): which page the work starts on, so only that page is
 // "the start page"; the plain name of the row a test's pass of a repeated step
@@ -34,10 +37,9 @@ import type { AutomationStudioLlmEvidenceLoopInput } from "../llm/index.ts";
 import { emitAutomationStudioActivityWaitedOut } from "./ask/index.ts";
 import { automationStudioActivityCallContext } from "./call-context.ts";
 import { automationStudioActivityDecisionReason } from "./decision-reason.ts";
-import { automationStudioActivityDraftEdit, automationStudioActivityRefusedCall } from "./decision-answer/index.ts";
+import { automationStudioActivityDraftEdit, automationStudioActivityNarration, automationStudioActivityRefusedCall } from "./decision-answer/index.ts";
 import { emitAutomationStudioActivity } from "./emit.ts";
 import { automationStudioActivityRepeatedReason } from "./repeated-reason.ts";
-import { emitAutomationStudioActivityThought } from "./thought.ts";
 import { automationStudioActivityCandidateResult } from "./candidate/index.ts";
 import { automationStudioActivityCompletionRefusal, automationStudioActivityDecision, automationStudioActivityReasonText, automationStudioActivityToolCall, type AutomationStudioActivityCallWords } from "./wording/index.ts";
 
@@ -126,6 +128,16 @@ function namedAtEnd(describe: AutomationStudioLlmEvidenceLoopInput["describeCall
  * is said in words, and that it is being asked again: during an outage every
  * request of live run `run-muq05kas-058193f0` waited out its deadline while the
  * chat said only that it was thinking.
+ *
+ * The closing row keeps the decision row's own title, failed, which is what
+ * closes it for every client that pairs a row's start and end by title
+ * (`../tests/service-bootstrap/tests/provider-unavailable.test.ts`). A client
+ * heads it in the present tense, as status and never as a decision made: lane C
+ * (`run-mv0fuotv-805294d7`, steps 0017, 0025 and 0033) read "Decided the next
+ * step — The AI model's reply couldn't be read or used" three times. Its words
+ * say what FluxIQ does about it, in plain English (t378). t378 first retitled
+ * the row "Asking the AI model again", which left the decision row open for
+ * any client that pairs by title.
  */
 function decisionFailed(error: unknown): void {
   // Read by shape (`AutomationStudioLlmUnusableDecisionError.providerUnanswered`
@@ -138,9 +150,9 @@ function decisionFailed(error: unknown): void {
   const unusable = !unanswered && Array.isArray(shape?.issueCodes);
   const title = "Deciding the next step";
   emitAutomationStudioActivity(unanswered
-    ? { phase: "thinking", label: "The AI model provider did not answer", detail: { kind: "thought", title, status: "failed", text: "The AI model provider did not answer this request. Asking it again; the build stops if it keeps not answering." } }
+    ? { phase: "thinking", label: "The AI model provider did not answer", detail: { kind: "thought", title, status: "failed", text: "The AI model provider didn't answer, so FluxIQ is asking it again. If it keeps not answering, the build stops." } }
     : unusable
-      ? { phase: "thinking", label: "The AI model's reply couldn't be used", detail: { kind: "thought", title, status: "failed", text: "The AI model's reply couldn't be read or used. Asking it again; the build stops if its replies keep being unusable." } }
+      ? { phase: "thinking", label: "The AI model's answer couldn't be used", detail: { kind: "thought", title, status: "failed", text: "The AI model's answer didn't make sense, so FluxIQ is asking it again. If that keeps happening, the build stops." } }
       : { phase: "thinking", label: `${title} — stopped`, detail: { kind: "thought", title, status: "failed" } });
 }
 
@@ -266,9 +278,20 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
   const context = automationStudioActivityCallContext();
   // A refusal's cause, carried onto the same refusal given again (`./repeated-reason.ts`).
   const causes = automationStudioActivityRepeatedReason();
+  // A call's stated reason, held to what came of it where the call repeats one or is a candidate's own (`./decision-answer/narration.ts`).
+  const narration = automationStudioActivityNarration();
+  // The domain's words for a call, with the control named as the evidence printed it where they name none (`./call-context.ts`, t378).
+  const describedOf = (call: { toolId: string; value?: unknown }): AutomationStudioActivityCallWords | undefined => {
+    const words = describeSafely(input.describeCall, call);
+    if (words?.target !== undefined) return words;
+    const target = context.target(call);
+    return target === undefined ? words : { ...words, target };
+  };
   return {
     ...input,
     decide: async (request) => {
+      // The reason of a held call the loop moved on from without running it, said before its card.
+      narration.unrun();
       context.decided(request.evidence);
       edit.decided(request.evidence);
       calls.decided(request.evidence);
@@ -280,21 +303,23 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         decisionFailed(error);
         throw error;
       }
-      const chose = automationStudioActivityDecision(decision, input.describeCall && ((call) => describeSafely(input.describeCall, call)), context.start());
+      const chose = automationStudioActivityDecision(decision, (call) => describedOf(call), context.start());
       const reason = automationStudioActivityReasonText(automationStudioActivityDecisionReason.of(decision), undefined, { decision: true });
       if (chose && (decision as { kind?: unknown }).kind === "amend_draft") {
         edit.hold({ iteration: request.iteration, phase: "building", title: chose.title, text: reason, amendments: (decision as { amendments?: unknown }).amendments, shown: request.evidence });
-      } else if (chose) emitAutomationStudioActivityThought({ phase: chose.phase, title: chose.title, text: reason });
+      }
       const call = decidedCall(decision);
-      if (call) calls.hold({ iteration: request.iteration, call, described: describeSafely(input.describeCall, call), start: context.start() });
+      if (chose && (decision as { kind?: unknown }).kind !== "amend_draft") narration.decided({ phase: chose.phase, title: chose.title, text: reason }, call);
+      if (call) calls.hold({ iteration: request.iteration, call, described: describedOf(call), start: context.start() });
       return decision;
     },
     executeTool: async (sent): Promise<JsonValue | Awaited<ReturnType<AutomationStudioLlmEvidenceLoopInput["executeTool"]>>> => {
       edit.ran();
       calls.ran();
       const { call, excusable } = excusableOf(sent);
-      const described = describeSafely(input.describeCall, call);
+      const described = describedOf(call);
       const said = context.sent(call);
+      narration.ran(call);
       toolActivity(call, "started", { code: undefined }, described, said);
       try {
         const result = await executeTool.call(input, call);
@@ -305,15 +330,17 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
         const named = namedAtEnd(input.describeCall, call, described);
         // Saving or testing a candidate's steps ends with its own words and status: a test the judge refused is no "done" (t373).
         const candidate = automationStudioActivityCandidateResult(call.toolId, result);
+        narration.ended(call, candidate?.status !== "failed" ? undefined : candidate.part === "Declined" ? "declined" : "failed");
         toolActivity(call, candidate?.status ?? "succeeded", { ...ended, reason: causes.of(call, ended), ...answered }, list === undefined ? named : { ...named, list }, said, excusable, candidate);
         return result;
       } catch (error) {
+        narration.ended(call, "declined");
         toolActivity(call, "failed", { code: undefined }, described, said);
         throw error;
       }
     },
     ...(unusableDecisions ? {
-      unusableDecisions: { ...unusableDecisions, stalled: (stall) => { edit.stalled(stall); calls.stalled(stall); return unusableDecisions.stalled(stall); } }
+      unusableDecisions: { ...unusableDecisions, stalled: (stall) => { narration.unrun(); edit.stalled(stall); calls.stalled(stall); return unusableDecisions.stalled(stall); } }
     } satisfies Pick<AutomationStudioLlmEvidenceLoopInput, "unusableDecisions"> : {}),
     ...(checkCompletion ? {
       checkCompletion: Object.assign(async (result: Parameters<typeof checkCompletion>[0], context: Parameters<typeof checkCompletion>[1]) => {
