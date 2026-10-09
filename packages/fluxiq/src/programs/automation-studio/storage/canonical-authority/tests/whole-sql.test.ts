@@ -1,5 +1,5 @@
-import { expect, it, vi } from "vitest";
-import { wholeFixture } from "./whole-fixture.ts";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { disposeWholeFlowTemplate, wholeFixture, wholeFlowFromTemplate, wholeFlowTemplate, type WholeFlowTemplate } from "./whole-fixture.ts";
 import { CanonicalAuthorityWholeSql } from "../whole-sql.ts";
 import type { CanonicalWholeSqlCapability } from "../contracts.ts";
 
@@ -33,9 +33,16 @@ it("never issues privilege from a copied or caller-shaped whole admission", () =
   expect(() => CanonicalAuthorityWholeSql.fromAdmission({} as never)).toThrow("capability");
 });
 
+// The twelve probes below share one created Flow, copied per probe: each probe
+// corrupts and holds its own copy, and only the save after creation is tested.
+let created: WholeFlowTemplate | undefined;
+const refusal = { owner: "authority_guard.corrupt_claim", operation: "authority_guard.corrupt_claim", predecessor: "authority_guard.corrupt_claim", mutation: "authority_guard.corrupt_mutation_join", "request-size": "canonical_whole.sql_parent_bounds", "claim-size": "canonical_whole.sql_parent_bounds" } as const;
+beforeAll(async () => { created = await wholeFlowTemplate("sql"); });
+afterAll(async () => { await disposeWholeFlowTemplate(created); });
+
 for (const effect of ["metadata", "feed"] as const) for (const corruption of ["owner", "operation", "predecessor", "mutation", "request-size", "claim-size"] as const) it(`refuses ${corruption} parent corruption before actual ${effect} effect`, async () => {
-  await wholeFixture("sql", async f => {
-    const flow = await f.creation.createFlow({ projectId: f.project.id, name: "Original" }); let effectError: unknown;
+  await wholeFlowFromTemplate(created!, async f => {
+    const flow = f.flow; let effectError: unknown;
     try {
       await f.authority.saveFlow(f.project.id, flow.flowId, {}, async () => {
         const lease = await f.pool.acquire(f.project.id);
@@ -67,5 +74,7 @@ for (const effect of ["metadata", "feed"] as const) for (const corruption of ["o
       expect(await lease.database.get("select count(*) as count from canonical_whole_effect_receipts")).toMatchObject({ count: 2 });
     } finally { await lease.release(); }
     expect(effectError, "actual owning SQL call must refuse before physical effect").toBeDefined();
+    // The guard that refuses is named, so a probe that fails for another reason (a copy the owners cannot open, say) cannot pass.
+    expect(String(effectError)).toContain(refusal[corruption]);
   });
 });
