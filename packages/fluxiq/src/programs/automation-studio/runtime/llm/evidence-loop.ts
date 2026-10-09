@@ -83,7 +83,7 @@ import { automationStudioLlmEvidenceLookNeedsAttempt, automationStudioLlmEvidenc
 // (`loop-configuration.ts`). Re-exported below, so the loop's public
 // surface is unchanged.
 import { automationStudioLlmEvidenceLoopSeedSteps, resolveLimits, type AutomationStudioLlmEvidenceLoopInput } from "./loop-configuration.ts";
-import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS, automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopBudgetValid, automationStudioLlmEvidenceLoopRemaining, type AutomationStudioLlmEvidenceLoopBudget, type AutomationStudioLlmEvidenceLoopRemaining } from "./loop-budget.ts";
+import { automationStudioLlmEvidenceBudgetEntry, automationStudioLlmEvidenceLoopBudgetValid, automationStudioLlmEvidenceLoopRemaining, automationStudioLlmEvidenceLoopWrapUp, type AutomationStudioLlmEvidenceLoopBudget, type AutomationStudioLlmEvidenceLoopRemaining } from "./loop-budget.ts";
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_DECISION_FEEDBACK_TOOL_ID, AutomationStudioLlmUnusableDecisionError,
   automationStudioLlmUnusableDecisionFeedback,
@@ -637,9 +637,8 @@ export async function runAutomationStudioLlmEvidenceLoop(
     if (remaining && remaining.decisionsLeft === 0) { accounting.iterations = iteration - 1; return exhausted("budget"); } // This decision was never asked for, so it is not counted.
     finalDecision = remaining !== undefined && remaining.decisionsLeft === 1 && canComplete;
     // The wrap-up (`./loop-budget.ts`): the last few decisions offer finishing
-    // and amending, so a refused completion still has turns to be answered in.
-    const wrappingUp = remaining !== undefined && remaining.decisionsLeft <= AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS && canComplete;
-    const offered = wrappingUp ? [] : eligibleTools;
+    // and amending, so a refused completion still has turns to be answered in; a candidate's keeps submitting and testing, without which it cannot complete (t383).
+    const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining, canComplete, candidate: input.discoveryOnly === true, tools: eligibleTools }); const { wrappingUp, offered } = wrapUp;
     const offers = (): AutomationStudioLlmUnusableDecisionOffers => ({ tools: offered.length > 0, complete: canComplete, amend: canAmend });
     // A reply read and still not a decision this iteration offered (`./evidence-loop/decision-refusal.ts`).
     let refusal: ReturnType<typeof automationStudioLlmEvidenceDecisionRefusal> = undefined;
@@ -647,7 +646,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       canAmend = drafting && !finalDecision && counters.draftAmendments < limits.maxDraftAmendments && draftSteps.some(automationStudioFlowDraftStepIsProposable);
       const decisionSchema = buildAutomationStudioLlmEvidenceLoopDecisionSchema(offered, input.completionSchema, canComplete, canAmend, drafting && authoring);
       // From the second decision, when there is spending to measure it by; the first only when it is the last.
-      const budgetEntry = remaining && (iteration > 1 || wrappingUp) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining, wrappingUp) : undefined;
+      const budgetEntry = remaining && (iteration > 1 || wrappingUp) ? automationStudioLlmEvidenceBudgetEntry(iteration, remaining, wrappingUp, input.discoveryOnly === true) : undefined;
       // Every evidence entry, and beside them the history, the draft and the
       // budget, each whole; the draft measured as it goes out
       // (`decision-context/shown.ts` says why each is where it is).
@@ -755,13 +754,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
     const toolRequestSignature = automationStudioLlmEvidenceRequestSignature({ tool, mutationEpoch: counters.mutationEpoch, attemptEpoch: counters.attemptEpoch, input: draftKey ? { ...decision.input, draftKey } : decision.input });
     const answeredBy = answeredRequests.get(toolRequestSignature);
     // Not offered this iteration: an observation nothing has happened since (its latest call is always recorded with its epoch),
-    // or, in the wrap-up, any tool at all -- the wrap-up offers none, and a call it was not offered is answered, never run.
-    const reobservation = !eligibleToolIds.has(decision.toolId);
+    // or, in the wrap-up, any tool it withholds -- all of them, or all but a candidate's submission and trial -- answered, never run (`withheld`).
+    const reobservation = !eligibleToolIds.has(decision.toolId); const withheld = wrapUp.withholds(decision.toolId);
     // The same call that already failed or changed nothing on this same page -- a part run, on this same draft -- is refused unrun,
     // before the repeat policy runs it again, so every action repeat is refused in one place and stalls the round at the third in a
     // row; a look that answered the same twice here is too, unless the policy answers it from memory (`repeat-guard/outcomes.ts`).
     // Never a rerun: it runs from its step's own page, where the amendment handler checked it, not the one the last call left (`same_amendment` too).
-    const blocked = wrappingUp || rerunning ? undefined : handling.repeats.blocks(decision.toolId, decision.input);
+    const blocked = withheld || rerunning ? undefined : handling.repeats.blocks(decision.toolId, decision.input);
     const triedHere = blocked?.outcome === "same_answer" && (answeredBy !== undefined || reobservation) ? undefined : blocked;
     if (triedHere) {
       const next = automationStudioLlmEvidenceHandleRefusedRepeat(handling, iteration, decision, triedHere);
@@ -769,13 +768,13 @@ export async function runAutomationStudioLlmEvidenceLoop(
       if (next.kind === "end") return next.result;
       continue;
     }
-    if (!rerunning && (answeredBy !== undefined || reobservation || wrappingUp)) {
-      const code = wrappingUp ? "llm_evidence_loop.not_offered" : answeredBy !== undefined ? "llm_evidence_loop.already_answered" : "llm_evidence_loop.already_observed";
-      const by = wrappingUp ? latestObservations.get(decision.toolId) ?? "" : answeredBy ?? latestObservations.get(decision.toolId)!;
+    if (!rerunning && (answeredBy !== undefined || reobservation || withheld)) {
+      const code = withheld ? "llm_evidence_loop.not_offered" : answeredBy !== undefined ? "llm_evidence_loop.already_answered" : "llm_evidence_loop.already_observed";
+      const by = withheld ? latestObservations.get(decision.toolId) ?? "" : answeredBy ?? latestObservations.get(decision.toolId)!;
       // A look asked again for the first time is run once more, to see whether
       // the page is as its answer left it; every other repeat is answered from
       // memory, with no capture (`decision-handlers/answer-check.ts`).
-      const check: AutomationStudioLlmEvidenceAnswerCheckOutcome = wrappingUp ? { kind: "answer" } : automationStudioLlmEvidenceAnswerCheck(handling, { answeredByCallId: by, requestSignature: toolRequestSignature });
+      const check: AutomationStudioLlmEvidenceAnswerCheckOutcome = withheld ? { kind: "answer" } : automationStudioLlmEvidenceAnswerCheck(handling, { answeredByCallId: by, requestSignature: toolRequestSignature });
       if (check.kind === "answer") {
         const next = automationStudioLlmEvidenceHandleAnsweredRequest(handling, iteration, decision, code, by, toolRequestSignature);
         if (next.kind === "end") return next.result;

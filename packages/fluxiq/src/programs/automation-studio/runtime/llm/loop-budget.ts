@@ -51,6 +51,18 @@
 // decisions left, the loop stops offering new tools and offers completion and
 // amendments, so a refusal still has two decisions to be answered in -- one to
 // amend what it names, one to finish again -- before the last.
+//
+// **A candidate's wrap-up keeps the tools that finish it (t383).** In candidate
+// mode (`discoveryOnly`) completing needs a submitted revision and, where a
+// trial runs, a yes for it, so a wrap-up that offered no tools withdrew
+// `core.submit_candidate` and made every completion fail:
+// `run-mv0pa79q-ef91811b` explored until three decisions were left, never
+// submitted, and spent all four of its last decisions on completions refused
+// `candidate.latest_submission_required`. So a candidate's wrap-up offers its
+// submission and its trial beside completion, and starts at
+// `AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS`: a submit,
+// its trial and the completion, with one more submit and trial for a refusal.
+// Its last decision is completion alone, as the legacy wrap-up's is.
 
 import type { JsonObject } from "../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopBudgetBound } from "./evidence-loop/index.ts";
@@ -61,6 +73,20 @@ import type { AutomationStudioLlmEvidenceLoopBudgetBound } from "./evidence-loop
  * decision to amend and one to finish again.
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS = 3;
+
+/**
+ * Decisions left from which a candidate loop offers only finishing: submitting,
+ * testing and completing. Five: a submission, its trial and the completion,
+ * and one more submission and trial for a refusal or a failed trial.
+ */
+export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS = 5;
+
+/**
+ * The tools that finish a candidate (`../flow-bootstrap/candidate/authoring-loop.ts`
+ * and `trial-gate.ts` beside it), named as plain strings so this module does
+ * not reach into the candidate loop.
+ */
+const CANDIDATE_FINISHING_TOOL_IDS: ReadonlySet<string> = new Set(["core.submit_candidate", "core.test_candidate"]);
 
 /** The bounds a loop is given, each optional. */
 export type AutomationStudioLlmEvidenceLoopBudget = {
@@ -133,6 +159,34 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID = "core.budget";
 const BUDGET_INSTRUCTION = "What this exploration has left, this decision included. Plan to complete while it is enough: running out ends the exploration without a result.";
 const FINAL_INSTRUCTION = "This is your last decision, so only complete is offered: write the result now from the evidence you have.";
 const WRAP_UP_INSTRUCTION = "Only a few decisions are left, so new tools are no longer offered: complete now from the draft you have. If completing is refused, amend the draft as the refusal says and complete again.";
+const CANDIDATE_BUDGET_INSTRUCTION = `What this exploration has left, this decision included. Plan to finish while it is enough: submit the whole candidate, test that revision, and complete once its trial answers yes. From ${AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS} decisions left only those are offered, and running out ends the exploration without a result.`;
+const CANDIDATE_FINAL_INSTRUCTION = "This is your last decision, so only complete is offered: complete with the revision and digest of your latest submission. It completes only if that revision's trial answered yes, or no trial runner is available.";
+const CANDIDATE_WRAP_UP_INSTRUCTION = "Only a few decisions are left, so exploring tools are no longer offered; submitting, testing and completing are. If your latest Flow is not submitted, submit the whole candidate now with core.submit_candidate; test that exact revision with core.test_candidate; complete with its revision and digest once the trial answers yes. If a submission or a trial is refused, correct what it names, submit again and test the new revision.";
+
+/** Decisions left from which the loop wraps up: a candidate's wrap-up starts earlier, since it has a submission and a trial to make before it completes. */
+function wrapUpDecisions(candidate: boolean): number {
+  return candidate ? AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS : AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS;
+}
+
+/**
+ * Whether this decision is in the wrap-up, the tools it offers, and whether a
+ * call to a tool is one the wrap-up withholds. Outside the wrap-up every
+ * eligible tool is offered. In it, a draft loop offers none; a candidate loop
+ * (`candidate`, the loop's `discoveryOnly`) offers its submission and its
+ * trial until its last decision, which offers completion alone.
+ */
+export function automationStudioLlmEvidenceLoopWrapUp<Tool extends { toolId: string }>(input: {
+  remaining: AutomationStudioLlmEvidenceLoopRemaining | undefined | false;
+  canComplete: boolean;
+  candidate: boolean;
+  tools: readonly Tool[];
+}): { wrappingUp: boolean; offered: Tool[]; withholds: (toolId: string) => boolean } {
+  const left = input.remaining ? input.remaining.decisionsLeft : undefined;
+  const wrappingUp = left !== undefined && left <= wrapUpDecisions(input.candidate) && input.canComplete;
+  const offered = !wrappingUp ? [...input.tools] : input.candidate && left! > 1 ? input.tools.filter((tool) => CANDIDATE_FINISHING_TOOL_IDS.has(tool.toolId)) : [];
+  const offeredIds = new Set(offered.map((tool) => tool.toolId));
+  return { wrappingUp, offered, withholds: (toolId) => wrappingUp && !offeredIds.has(toolId) };
+}
 
 /** How many decisions each bound still allows, and the smallest of them with `decisionsLeft` from the iteration backstop. */
 export function automationStudioLlmEvidenceLoopRemaining(budget: AutomationStudioLlmEvidenceLoopBudget, spent: AutomationStudioLlmEvidenceLoopSpending, iterationsLeft: number): AutomationStudioLlmEvidenceLoopRemaining {
@@ -185,16 +239,22 @@ export function automationStudioLlmEvidenceBudgetEntry(
   iteration: number,
   remaining: AutomationStudioLlmEvidenceLoopRemaining,
   /** Whether the loop is withholding new tools this decision; absent, read from what is left. */
-  wrappingUp = remaining.decisionsLeft <= AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_WRAP_UP_DECISIONS
+  wrappingUp?: boolean,
+  /** Whether the loop authors a candidate (`discoveryOnly`), which finishes by submitting, testing and completing. */
+  candidate = false
 ): { callId: string; toolId: string; value: JsonObject } {
   const { limitedBy: _limitedBy, ...shown } = remaining;
+  const wrapping = wrappingUp ?? remaining.decisionsLeft <= wrapUpDecisions(candidate);
+  const instruction = candidate
+    ? remaining.decisionsLeft <= 1 ? CANDIDATE_FINAL_INSTRUCTION : wrapping ? CANDIDATE_WRAP_UP_INSTRUCTION : CANDIDATE_BUDGET_INSTRUCTION
+    : remaining.decisionsLeft <= 1 ? FINAL_INSTRUCTION : wrapping ? WRAP_UP_INSTRUCTION : BUDGET_INSTRUCTION;
   return {
     callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID}.${iteration}`,
     toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_BUDGET_TOOL_ID,
     value: {
       code: "llm_evidence_loop.budget",
       ...shown,
-      instruction: remaining.decisionsLeft <= 1 ? FINAL_INSTRUCTION : wrappingUp ? WRAP_UP_INSTRUCTION : BUDGET_INSTRUCTION
+      instruction
     }
   };
 }
