@@ -26,7 +26,7 @@ import {
   type AutomationStudioTransitionComparison
 } from "../executor/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
-import { automationStudioAttemptCapturedRecords, automationStudioAttemptVerifiesState, automationStudioRetriedAttemptIds } from "./attempt-projection.ts";
+import { automationStudioAttemptCapturedRecords, automationStudioAttemptDeclaredRoute, automationStudioAttemptSettled, automationStudioAttemptVerifiesState, automationStudioRetriedAttemptIds } from "./attempt-projection.ts";
 import type { AutomationStudioChangeTrialInput, AutomationStudioChangeTrialResult, AutomationStudioChangeVerdictAttempt } from "./contracts.ts";
 import { decideAutomationStudioChangeVerdict } from "./verdict.ts";
 
@@ -173,7 +173,9 @@ function verdictAttempt(
   // the failed comparison's `failed` is that default, not a declaration,
   // whatever route the failure itself took.
   const failedDeclaredRoute = failed?.expectedRoute === FAILED_ROUTE && comparison?.actual.status === "failed" ? undefined : failed?.expectedRoute;
-  const expectedRoute = attempt.status === "succeeded" ? own?.expectedRoute ?? failedDeclaredRoute : undefined;
+  // What the node came to: an attempt whose state already held reads as done (`attempt-projection.ts`).
+  const settled = automationStudioAttemptSettled(attempt);
+  const expectedRoute = settled.status === "succeeded" ? automationStudioAttemptDeclaredRoute(attempt) ?? failedDeclaredRoute : undefined;
   const outputIds = Object.keys(attempt.outputs).filter((outputId) => attempt.outputs[outputId] !== undefined);
   const expectedOutputIds = declaredOutputIds(own, failed, changed.has(attempt.nodeId) ? comparison?.expected : undefined, outputIds);
   const declaresState = Object.keys(own?.expectedState ?? {}).length > 0;
@@ -181,8 +183,8 @@ function verdictAttempt(
   const verifiesState = automationStudioAttemptVerifiesState(attempt) || (node !== undefined && request.verifiesState?.(node) === true);
   return {
     nodeId: attempt.nodeId,
-    status: attempt.status,
-    ...(attempt.route !== undefined ? { route: attempt.route } : {}),
+    status: settled.status,
+    ...(settled.route !== undefined ? { route: settled.route } : {}),
     outputIds,
     ...(expectedRoute !== undefined ? { expectedRoute } : {}),
     ...(expectedOutputIds.length ? { expectedOutputIds } : {}),

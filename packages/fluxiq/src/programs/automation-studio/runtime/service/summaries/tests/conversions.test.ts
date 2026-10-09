@@ -225,3 +225,24 @@ describe("flowRunSummaryWithInterventionSummaries durableBehaviorChanged", () =>
     expect(adaptiveRuntimeMetricsFromRunDetail(held)).toMatchObject({ durableBehaviorChanged: false, adaptationApplyCount: 0 });
   });
 });
+
+// t384: a step whose try failed where the state it was to produce already held
+// is done, and the run went on down `success`. The run's detail is what the Lab
+// and the web UI read, so it says done, and keeps the failure the try met.
+describe("runtimeSessionToFlowRunDetail attempt whose state already held", () => {
+  const failure = { category: "unexpected_state", code: "web.action.blocked_by_dialog", retryable: false, stage: "execution" } as const;
+
+  it("reads the step as succeeded down success, with the mark and the failure kept", () => {
+    const held = { ...failedAttempt(), message: "Blocked.", failure, stateHeld: { rung: "skip_satisfied_node", route: "success" } } as AutomationStudioNodeAttemptTrace;
+    const record = runtimeSessionToFlowRunDetail(session([held]), "project.conversions").actionAttempts?.[0];
+
+    expect(record).toMatchObject({ status: "succeeded", route: "success", stateHeld: { rung: "skip_satisfied_node" }, failure: { code: "web.action.blocked_by_dialog" }, message: "Blocked." });
+  });
+
+  it("still reads a failed step without the mark as failed", () => {
+    const record = runtimeSessionToFlowRunDetail(session([{ ...failedAttempt(), failure }]), "project.conversions").actionAttempts?.[0];
+
+    expect(record).toMatchObject({ status: "failed", route: "failed" });
+    expect(record).not.toHaveProperty("stateHeld");
+  });
+});

@@ -35,6 +35,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
+import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
@@ -79,14 +80,17 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
     const node = nodes.get(attempt.nodeId);
     const failure = attempt.failure;
     const step = compact({
-      step: index + 1, definitionId: attempt.definitionId, label: node?.label, control: controlWords(node?.parameterValues), status: attempt.status,
+      step: index + 1, definitionId: attempt.definitionId, label: node?.label, control: controlWords(node?.parameterValues), status: automationStudioAttemptSettled(attempt).status,
       attempts: attempts > 1 ? attempts : undefined,
       ...(attempt.skipped ? { skipped: attempt.skipped.reason === "target_absent" ? "Its control was not on the page, so the step was skipped." : "The page was already at another step, so the run went on from there." } : {}),
+      // Done, though its try failed: the page already showed what the step does (`stateHeld`).
+      ...(attempt.stateHeld ? { stateHeld: "The step's try failed, but the page already showed what the step does, so the run went on without doing it again." } : {}),
       failureCode: failure?.code, happened: failure ? automationStudioTrialFailureHappened(failure.category) : undefined,
       expected: failure?.expected, actual: failure?.actual
     });
     const withAbsorbed = absorbed.length ? { ...step, absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass }) } : step;
-    return failure ? { ...withAbsorbed, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt) } : withAbsorbed;
+    // A step whose state already held is done: no retry or check advice for a failure the run went past.
+    return failure && !attempt.stateHeld ? { ...withAbsorbed, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt) } : withAbsorbed;
   });
   const paces = learnedPaces(trace, nodes);
   return { steps: listed, ...(ran.length > MAX_STEPS ? { stepsLeftOut: ran.length - MAX_STEPS } : {}), ...(paces.length ? { paces } : {}) };
@@ -125,7 +129,7 @@ function executedSteps(attempts: readonly AutomationStudioNodeAttemptTrace[]): E
   let pass: ExecutedStep["pass"];
   for (const attempt of attempts) {
     const last = folded.at(-1);
-    if (last && last.attempt.nodeId === attempt.nodeId && last.attempt.status === "failed") {
+    if (last && last.attempt.nodeId === attempt.nodeId && automationStudioAttemptSettled(last.attempt).status === "failed") {
       folded[folded.length - 1] = { ...last, attempt, attempts: last.attempts + 1, absorbed: [...last.absorbed, { failed: last.attempt, retry: attempt }] };
       continue;
     }
