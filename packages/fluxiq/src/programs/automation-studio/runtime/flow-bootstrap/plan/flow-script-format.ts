@@ -147,6 +147,11 @@
 // bindings and numbers the tests hold -- on a site and an act none of the ten
 // realistic scenarios' tasks has: a task tracker, a library catalogue, a
 // billing tool and a mail inbox. A new example is held to the same rule.
+//
+// The state-aware statements (t388) are a fourth candidate-only constant,
+// `AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT`, at the end of this file: parts,
+// other entries, checkpoints, handlers and page facts, and when an
+// interruption is a handler rather than an optional step.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 
@@ -373,4 +378,123 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "  duration: 6",
   "  unit: seconds",
   "  only after: notice"
+].join("\n");
+
+/**
+ * How a candidate writes a Flow that knows where it is (t388, contract C12):
+ * parts a step calls, a block's other entries, checkpoints, handlers and the
+ * page facts they test, each with a one-line example, then three worked
+ * examples -- starting where the page already is, an interruption that can
+ * appear at any pass, and a second known way that is checked the same way.
+ * Candidate-only, beside the loop text and for the same reason: the legacy
+ * completion schema carries `AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT` and stays
+ * byte for byte what the baseline ran with. Candidate mode shows it after the
+ * loop text (`../candidate/authoring-loop.ts`).
+ *
+ * Every line is the grammar `../authoring/parse.ts` reads and assembles
+ * (`../script-statements/`), which the guard test holds each example to. The
+ * interruption guidance keeps t378's rule for one place -- `optional:` and
+ * `only after:` -- and its pace rules, and adds the handler for an
+ * interruption that can come at several places or at any pass of a loop.
+ *
+ * No example is a Lab task (t378's rule): a city permit portal, a weather
+ * network's station list and a meeting-room planner are sites and acts none of
+ * the ten realistic scenarios has, and no example closes an email or
+ * newsletter offer, which two of them show.
+ */
+export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
+  "A part is steps another step runs by name, written once: `part <label>: <what it does>`, its steps, then `end`. It has no `when:` line. A step runs it and waits for it with `call: <label>` in place of `node:`: `step pay: pay for the order` then `call: payment`.",
+  "`input: <name>` in a part names a value it is given; its steps read it as `$input.<name>`, and the step that calls it gives it a line of its own, `card: $input.card = 4111`. `output: <name> = $step.<label>.<output>` names a value the part hands back, which a later step reads as `$step.<the calling step's label>.<name>`. Nothing else crosses: a `$step` names a step of its own block or part only.",
+  "`start at: <step label>`, with its `when:` lines right after it, lets a block begin further on when the page already shows what that step needs: `start at: search` then `when: exists t4`. Otherwise the block starts at its first step, as always.",
+  "`checkpoint: yes` on a step marks a place a handler may send the run back to.",
+  "`done when: <fact>` in a part, or in a handler, says what the page shows once it worked: `done when: text t11 contains \"Booked\"`.",
+  "A fact is `exists <handle>`, `absent <handle>`, `visible <handle>`, `enabled <handle>`, `text <handle> contains \"<words>\"` (or `is`, `matches`), `value <handle> is <value>` (a value may be `$input.<name>`), `count <handle> is <number>`, or `dialog <kind> \"<name>\"`, with `absent` after it when it should be gone. The handle is one the evidence printed, as on any step.",
+  "A handler is what the run does when something it recognises gets in the way: `on <event> [for <step labels> | for this part | everywhere]: <the situation>`, then its `when:` facts, its steps, `then: <what next>` and `end`. Without `for`, it covers the block it is written in. Events: `before` a step is tried, `retry` before it is tried again, `fail` once it has failed, `start` as the part begins, `next` after it succeeded: `on retry for open: a notice covers the list`.",
+  "`then: carry on` goes on with the step (never after `fail`); `then: go to <checkpoint step>` goes back to a checkpoint; `then: use <output> = <value>`, only after `fail`, stands in for the failed step's results; `then: give up` lets the failure stand. A `before` or `retry` handler needs `done when:`, unless its `when:` says something is showing, whose going away is the proof.",
+  "An interruption that can only come at one place is an `optional: yes` step there, with its `only after:` steps. One that can come at several places, or at any pass of a loop, is one handler instead -- `on before everywhere:` or `on retry for <steps>:` -- so one rule covers every place. A loop the site asked to slow down still takes `repeat pace:` as well.",
+  "A second known way to do a step is a `fail` handler for it whose steps call another part and end `then: use <output> = $step.<label>.<output>`. Give both parts the same `done when:`, so either way is checked the same.",
+  "Write a handler only for an interruption you met while gathering evidence or in a trial, or one the instruction names; never one you imagine.",
+  "Example, starting where the page already is:",
+  "flow: Renew the parking permit for the plate the person gave",
+  "step: open the permit portal",
+  "  node: web.browser.navigate",
+  "  url: https://permits.test/",
+  "step: sign in with the saved account",
+  "  node: web.dom.click",
+  "  target: t2",
+  "  consequences: none",
+  "start at: renew",
+  "when: exists t6",
+  "step renew: open the renewal form",
+  "  node: web.dom.click",
+  "  target: t6",
+  "  consequences: none",
+  "step: enter the plate",
+  "  node: web.dom.type",
+  "  target: t7",
+  "  text: $input.plate = KX12ABC",
+  "step: confirm the renewal",
+  "  node: web.dom.click",
+  "  target: t9",
+  "  consequences: modify_existing",
+  "Example, an interruption that can come at any pass:",
+  "flow: Export the daily readings of every station on the network page",
+  "step: open the station list",
+  "  node: web.browser.navigate",
+  "  url: https://weather.test/stations",
+  "step stations: list the stations",
+  "  node: web.dom.extract_list",
+  "  extractList: extraction.1",
+  "  extractList.minItems: 0",
+  "step: export the station's readings",
+  "  node: web.dom.click",
+  "  target: t12",
+  "  consequences: none",
+  "  repeat over: stations",
+  "on before everywhere: a session-expiry dialog can cover any page",
+  "  when: dialog alertdialog \"Session expiring\"",
+  "  step: keep the session",
+  "    node: web.dom.click",
+  "    target: t40",
+  "    consequences: none",
+  "  then: carry on",
+  "end",
+  "Example, a second known way, checked the same:",
+  "flow: Book the Juniper meeting room for Thursday at 10:00",
+  "step: open the room planner",
+  "  node: web.browser.navigate",
+  "  url: https://rooms.test/planner",
+  "step book: book through the room's calendar",
+  "  call: calendar",
+  "on fail for book: the calendar would not take the booking",
+  "  step other: book through the floor plan",
+  "    call: floorplan",
+  "  then: use reference = $step.other.reference",
+  "end",
+  "part calendar: book from the room's calendar",
+  "  output: reference = $step.calendar-ref.records",
+  "  step: choose the 10:00 slot on Thursday",
+  "    node: web.dom.click",
+  "    target: t8",
+  "    consequences: create_new",
+  "  step calendar-ref: read the booking reference",
+  "    node: web.dom.extract_list",
+  "    extractList: extraction.1",
+  "  done when: text t11 contains \"Booked\"",
+  "end",
+  "part floorplan: book from the floor plan",
+  "  output: reference = $step.plan-ref.records",
+  "  step: choose the Juniper room on the floor plan",
+  "    node: web.dom.click",
+  "    target: t15",
+  "    consequences: none",
+  "  step: choose Thursday at 10:00 and book",
+  "    node: web.dom.click",
+  "    target: t16",
+  "    consequences: create_new",
+  "  step plan-ref: read the booking reference",
+  "    node: web.dom.extract_list",
+  "    extractList: extraction.1",
+  "  done when: text t11 contains \"Booked\"",
+  "end"
 ].join("\n");

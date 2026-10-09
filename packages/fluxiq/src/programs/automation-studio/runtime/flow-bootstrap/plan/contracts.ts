@@ -9,6 +9,30 @@ import type { AutomationStudioFlowBootstrapRoutingContext } from "./routing-cont
 
 export type AutomationStudioFlowBootstrapRisk = "low" | "medium" | "high";
 
+/**
+ * The nodes the state-aware recovery grammar is lowered into (contract C1, C4):
+ * a step that calls a part, a handler's registration, and the end of a
+ * handler's body. Reached only through the script's own statements
+ * (`../script-statements/`), never by a step naming one, and read here so the
+ * plan's validation can tell a handler's body and a called part from steps
+ * nothing reaches.
+ */
+export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS = {
+  callSubflow: "builtin.control.call-subflow",
+  handler: "builtin.control.handler",
+  handlerEnd: "builtin.control.handler-end"
+} as const;
+
+/**
+ * The capability ids a Flow declares under `metadata.requires` (contract C10)
+ * when it uses a handler, a part call, or a fact a run observes on the page.
+ */
+export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_REQUIREMENTS = {
+  handlers: "flow.handlers@1",
+  subflowCalls: "flow.subflow-calls@1",
+  facts: "web.facts@1"
+} as const;
+
 export type AutomationStudioFlowBootstrapNode = {
   key: string;
   definitionId: string;
@@ -51,6 +75,80 @@ export type AutomationStudioFlowBootstrapNode = {
    * `AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS` (`./limits.ts`).
    */
   paceMs?: number;
+  /**
+   * Where a run may begin or come back to this node, as the state-aware
+   * recovery contract stores it on the Flow node (C2): `fluxiq.entry`, an
+   * alternative entry a script's `start at:` declared, and `fluxiq.checkpoint`,
+   * a step a script marked `checkpoint: yes`, which a handler's `go to` may
+   * route to. Core-derived from the script (`../script-statements/`), never
+   * from a model's JSON plan, and written to the Flow node's metadata under
+   * the same keys.
+   */
+  metadata?: AutomationStudioFlowBootstrapNodeMetadata;
+};
+
+/**
+ * A fact a run observes on the page, as the state-aware recovery contract
+ * names it (C9): what to check (`fact`, a check kind the host interprets), how
+ * (`op`), against what (`value`, a literal or a Flow input by name) and where
+ * (`target`, the handle the evidence printed, or a dialog by its kind and
+ * name). Core never interprets `fact` or `target`; the host evaluates the
+ * condition and answers true, false or unknown, and unknown never holds.
+ *
+ * Mirrors the contract's `FactCondition` by name and shape, so the runtime's own
+ * type (R1, `executor/lifecycle/`) can replace it without the plan changing.
+ */
+export type AutomationStudioFlowBootstrapFactCondition = {
+  fact: string;
+  op: "exists" | "absent" | "visible" | "enabled" | "equals" | "contains" | "matches" | "count";
+  value?: string | number | boolean | { input: string } | { value: string };
+  target?: { handle: string } | { kind: "dialog"; role: string; name: string };
+};
+
+/** An alternative entry (C2): taken at invocation, by ascending `order`, when every `when` holds and every `requires` is bound. */
+export type AutomationStudioFlowBootstrapEntry = {
+  id: string;
+  order: number;
+  when: AutomationStudioFlowBootstrapFactCondition[];
+  requires: string[];
+};
+
+/** A recovery checkpoint (C2): the only node a handler's route may move to. */
+export type AutomationStudioFlowBootstrapCheckpoint = {
+  id: string;
+  when?: AutomationStudioFlowBootstrapFactCondition[];
+  requires: string[];
+};
+
+export type AutomationStudioFlowBootstrapNodeMetadata = {
+  "fluxiq.entry"?: AutomationStudioFlowBootstrapEntry;
+  "fluxiq.checkpoint"?: AutomationStudioFlowBootstrapCheckpoint;
+};
+
+/**
+ * A callable part's interface (C2): the values a calling step passes in by
+ * name and the values it hands back. An output carries the binding it is read
+ * from inside the part, under `metadata.binding` -- the `$state` binding of
+ * one of the part's own steps' outputs -- since nothing else in the part
+ * crosses to its caller.
+ */
+export type AutomationStudioFlowBootstrapInterface = {
+  inputs: AutomationStudioFlowBootstrapInterfacePort[];
+  outputs: AutomationStudioFlowBootstrapInterfacePort[];
+};
+
+export type AutomationStudioFlowBootstrapInterfacePort = {
+  id: string;
+  name: string;
+  valueType: { kind: "unknown" };
+  required?: true;
+  metadata?: { binding: JsonObject };
+};
+
+/** Graph-level declarations of one Subflow: what proves it worked (C2) and what a runtime must support to run it (C10). */
+export type AutomationStudioFlowBootstrapSubflowMetadata = {
+  "fluxiq.successCheck"?: AutomationStudioFlowBootstrapFactCondition[];
+  requires?: string[];
 };
 
 export type AutomationStudioFlowBootstrapEdge = {
@@ -65,6 +163,9 @@ export type AutomationStudioFlowBootstrapSubflow = {
   role: "primary" | "integration" | "recovery" | "fallback" | "utility";
   nodes: AutomationStudioFlowBootstrapNode[];
   edges: AutomationStudioFlowBootstrapEdge[];
+  /** A callable part's interface; absent for a Subflow the router runs, whose interface is the Flow's. */
+  interface?: AutomationStudioFlowBootstrapInterface;
+  metadata?: AutomationStudioFlowBootstrapSubflowMetadata;
 };
 
 export type AutomationStudioFlowBootstrapRouter = {
@@ -89,6 +190,13 @@ export type AutomationStudioFlowBootstrapPlan = {
   schemaVersion: "0.1";
   router: AutomationStudioFlowBootstrapRouter;
   subflows: AutomationStudioFlowBootstrapSubflow[];
+  /**
+   * What a runtime must support to run this Flow (C10), written to the Flow's
+   * `metadata.requires`. Present only on a Flow that uses a handler, a part
+   * call or a page fact; a Flow without them declares nothing and runs as
+   * before.
+   */
+  metadata?: { requires: string[] };
 };
 
 export type AutomationStudioFlowBootstrapCatalogEntry = {

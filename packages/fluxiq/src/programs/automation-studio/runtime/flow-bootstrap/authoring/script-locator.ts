@@ -48,6 +48,15 @@ export function automationStudioFlowScriptLocator(input: {
 }): AutomationStudioFlowBootstrapIssueLocator {
   const byLine = new Map<number, AutomationStudioFlowScriptStep>();
   for (const block of input.script.blocks) for (const step of block.steps) if (step.line > 0) byLine.set(step.line, step);
+  // A handler's registration and end are derived from its `on` and `then:`
+  // lines, so a refusal about either is said about the handler as written.
+  for (const block of input.script.blocks) {
+    const handler = block.handler;
+    if (!handler) continue;
+    const written: AutomationStudioFlowScriptStep = { description: handler.situation || block.name, entries: [], branches: [], line: handler.line };
+    byLine.set(handler.line, written);
+    if (handler.then) byLine.set(handler.then.line, written);
+  }
   const written = (step: AutomationStudioFlowScriptStep): AutomationStudioFlowScriptPlace | undefined => {
     const line = step.line || step.cause;
     const found = line ? byLine.get(line) : undefined;
@@ -89,10 +98,21 @@ function scriptLines(script: AutomationStudioFlowScript): AutomationStudioFlowBo
   const lines: AutomationStudioFlowBootstrapIssueLocator["lines"] = [];
   for (const block of script.blocks) {
     for (const step of block.steps) if (step.line > 0) lines.push({ line: step.line, place: stepPlace(step) });
+    const own = ownPlace(block);
+    // A block's own statements (t388) are said about the block, or about the
+    // handler: its interface, its other entries, its success check, a
+    // handler's `then:`. Never about whichever step happens to stand above.
+    const statements = [
+      ...(block.inputs ?? []).map((written) => written.line),
+      ...(block.outputs ?? []).map((written) => written.line),
+      ...(block.entries ?? []).flatMap((entry) => [entry.line, ...entry.when.map((condition) => condition.line)]),
+      ...(block.done ?? []).map((condition) => condition.line),
+      ...(block.handler?.then ? [block.handler.then.line] : [])
+    ];
+    for (const line of statements) lines.push({ line, place: { ...own, line }, exact: true });
     // The steps outside every block have no line of their own; a `when:` among
     // them belongs to the step it is written in, which the step entries say.
     if (block.label === undefined) continue;
-    const own = ownPlace(block);
     if (block.line > 0) lines.push({ line: block.line, place: own, exact: true });
     for (const condition of block.when ?? []) lines.push({ line: condition.line, place: { ...own, line: condition.line }, exact: true });
   }
@@ -114,7 +134,8 @@ function ownPlace(block: AutomationStudioFlowScriptBlock): AutomationStudioFlowS
     const first = block.steps.find((step) => step.line > 0);
     if (first) return stepPlace(first);
   }
-  return { step: block.name, ...(block.label === undefined ? {} : { label: block.label }), ...(block.line > 0 ? { line: block.line } : {}) };
+  // A handler's block carries a label Core gave it (`:on<n>`), which is not the model's.
+  return { step: block.name, ...(block.label === undefined || block.label.startsWith(":") ? {} : { label: block.label }), ...(block.line > 0 ? { line: block.line } : {}) };
 }
 
 /** The nearest placed entry before `index`, else after it. */

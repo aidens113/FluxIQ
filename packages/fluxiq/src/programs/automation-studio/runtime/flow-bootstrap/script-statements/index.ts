@@ -11,7 +11,17 @@
 // only, and a step's node through the matcher the assembler passes in, so the
 // two directories form no module cycle. `./statement-refusal.ts` is
 // deliberately absent: it is how these refuse, not what they offer.
+//
+// Since t388 the block-level statements of the state-aware grammar live here
+// too: a part a step calls (`./called-parts.ts`), a block's other entries and
+// its checkpoints (`./entry-points.ts`), a handler (`./handler-blocks.ts`), and
+// the page facts all three test (`./fact-condition.ts`).
+export * from "./called-parts.ts";
+export * from "./entry-points.ts";
+export * from "./fact-condition.ts";
+export * from "./flow-requires.ts";
 export * from "./guarded-steps.ts";
+export * from "./handler-blocks.ts";
 export * from "./repeat-bound.ts";
 export * from "./repeat-pace.ts";
 export * from "./script-spans.ts";

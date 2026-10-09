@@ -2,3 +2,5 @@
 // them through a barrel, and the web domain's real definitions are what the
 // catalog, the validation and the plan authoring tests all need to be true.
 export * from "./web-domain-definitions-fixture.ts";
+export * from "./state-node-definitions-fixture.ts";
+export * from "./saved-flow-validation-fixture.ts";

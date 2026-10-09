@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import type { JsonObject } from "../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
+import { AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS } from "../../nodes/control-flow/index.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "./plan/index.ts";
 import {
   createBlankAutomationStudioFlowArtifact,
   type AutomationStudioFlowAdaptationValidationResult,
@@ -55,6 +57,14 @@ export type AutomationStudioBootstrapTopology = {
     subflow: AutomationStudioFlowSubflow;
     graphFlow: AutomationStudioFlowArtifact;
   }>;
+  /**
+   * What the Flow as a whole requires a runtime to support (contract C10): a
+   * handler, a call to a part, or a page fact anywhere in it. Each graph that
+   * uses one also says so in its own `metadata.requires`, which the requirement
+   * gate reads (`../service/runtime-session/requirement-gate.ts`); this is the
+   * parent Flow's copy, for apply to write. Absent when nothing is required.
+   */
+  requires?: string[];
 };
 
 export type AutomationStudioBootstrapApplication = {
@@ -198,7 +208,10 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
         parentSubflowId: subflowId,
         subflowGraph: true,
         bootstrapAdaptationId: input.adaptationId,
-        bootstrapSymbolicKey: entry.key
+        bootstrapSymbolicKey: entry.key,
+        // What proves the part finished, and what running it requires (C2, C10).
+        ...(entry.metadata?.["fluxiq.successCheck"]?.length ? { [AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS.successCheck]: structuredClone(entry.metadata["fluxiq.successCheck"]) as JsonValue } : {}),
+        ...(entry.metadata?.requires?.length ? { requires: [...entry.metadata.requires] } : {})
       }
     });
     const nodeIds = new Map(entry.nodes.map((node) => [
@@ -207,14 +220,17 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
     ]));
     const materializedGraph: AutomationStudioFlowArtifact = {
       ...graphFlow,
-      interface: primary ? structuredClone(input.parentFlow.interface) : { inputs: [], outputs: [] },
+      // A part's own interface (C2); a Subflow the router runs takes the Flow's.
+      interface: primary ? structuredClone(input.parentFlow.interface) : entry.interface ? structuredClone(entry.interface) as AutomationStudioFlowArtifact["interface"] : { inputs: [], outputs: [] },
       nodes: entry.nodes.map((node) => ({
         id: nodeIds.get(node.key)!,
         definitionId: node.definitionId,
         definitionVersion: node.definitionVersion,
         // What its draft step did, in the domain's words: what a run's step card names it by (R3-U-12).
         ...(node.label ? { label: node.label } : {}),
-        ...(node.parameters ? { parameterValues: structuredClone(node.parameters) } : {}),
+        // A call names its part, and a handler its steps, by plan key; the
+        // saved graph names them by the ids minted here.
+        ...(node.parameters ? { parameterValues: mintedReferences(node.definitionId, structuredClone(node.parameters), subflowIds, nodeIds) } : {}),
         position: { ...node.position },
         // `adaptationIds` is the neutral provenance every change stamps on the
         // nodes it writes; `bootstrapAdaptationId` stays for ownership checks.
@@ -231,7 +247,9 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
           // The least time between two starts of the node in one run: a span's
           // `repeat pace:`, or the pace a judged trial learned (t378). Every
           // graph run reads it, trial and playback alike (`../executor/pacing/`).
-          ...(node.paceMs !== undefined ? { [PACE_METADATA_KEY]: node.paceMs } : {})
+          ...(node.paceMs !== undefined ? { [PACE_METADATA_KEY]: node.paceMs } : {}),
+          // Where a run may start or be brought back to (C2): `fluxiq.entry`, `fluxiq.checkpoint`.
+          ...(node.metadata ? structuredClone(node.metadata) as JsonObject : {})
         }, input.adaptationId)
       })),
       edges: entry.edges.map((edge) => ({
@@ -324,7 +342,25 @@ export function normalizeAutomationStudioFlowBuildPlan(input: {
     updatedAt: input.now,
     metadata: { bootstrapAdaptationId: input.adaptationId }
   };
-  return { router, subflows };
+  const requires = input.buildPlan.plan.metadata?.requires;
+  return { router, subflows, ...(requires?.length ? { requires: [...requires] } : {}) };
+}
+
+/**
+ * A node's parameters with the plan keys it names replaced by the ids this
+ * topology minted: a Call Subflow's `subflowId` (C1), and a node-scoped
+ * handler's `scope.nodeIds` (C4). A key that names nothing is kept as written,
+ * so the Flow's validation refuses it rather than this guessing.
+ */
+function mintedReferences(definitionId: string, parameters: JsonObject, subflowIds: ReadonlyMap<string, string>, nodeIds: ReadonlyMap<string, string>): JsonObject {
+  if (definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.callSubflow && typeof parameters.subflowId === "string") {
+    return { ...parameters, subflowId: subflowIds.get(parameters.subflowId) ?? parameters.subflowId };
+  }
+  const scope = parameters.scope;
+  if (definitionId === AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.handler && scope && typeof scope === "object" && !Array.isArray(scope) && Array.isArray(scope.nodeIds)) {
+    return { ...parameters, scope: { ...scope, nodeIds: scope.nodeIds.map((key) => typeof key === "string" ? nodeIds.get(key) ?? key : key) } };
+  }
+  return parameters;
 }
 
 /**
