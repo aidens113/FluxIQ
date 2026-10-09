@@ -651,11 +651,11 @@ export class AutomationStudioService {
     };
   }
 
-  async listRecordingSummaries(input: { page?: unknown; pageSize?: unknown } = {}): Promise<RecordingSummaryList> {
+  async listRecordingSummaries(input: { page?: unknown; pageSize?: unknown; domainId?: string | null } = {}): Promise<RecordingSummaryList> {
     await this.ready;
     const page = normalizePositiveInteger(input.page, 1, 1, 1_000_000);
     const pageSize = normalizePositiveInteger(input.pageSize, 10, 1, 100);
-    const { projects } = await this.listProjects();
+    const { projects } = await this.listProjects(input.domainId);
     const summaries: RecordingSummaryItem[] = [];
     const seen = new Set<string>();
 

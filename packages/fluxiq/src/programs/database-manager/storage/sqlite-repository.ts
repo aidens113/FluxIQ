@@ -42,6 +42,30 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     });
   }
 
+  /**
+   * The records whose id starts with `prefix`, found through the primary-key
+   * index. `select` decides from the id alone, so a row it does not choose,
+   * and every row outside the prefix, is never read or parsed: the cost
+   * follows the rows asked for, not the size of the table.
+   */
+  async listByIdPrefix(prefix: string, options: { scope?: RepositoryScope; select?: (id: string) => boolean } = {}): Promise<Array<RecordEnvelope<T>>> {
+    return this.withDatabase(options.scope ?? {}, async (db, normalizedScope) => {
+      const ids = (await idsWithPrefix(db, this.tableName, prefix)).filter((id) => !options.select || options.select(id));
+      const records: Array<RecordEnvelope<T>> = [];
+      for (let start = 0; start < ids.length; start += ID_BATCH_SIZE) {
+        const batch = ids.slice(start, start + ID_BATCH_SIZE);
+        const rows = await all<SQLiteRecordRow>(db, `select id, kind, data, created_at_ms as createdAtMs, updated_at_ms as updatedAtMs from ${this.tableName} where id in (${batch.map(() => "?").join(", ")}) order by id`, batch);
+        records.push(...rows.map((row) => rowToRecord<T>(row, normalizedScope)));
+      }
+      return records;
+    });
+  }
+
+  /** The ids starting with `prefix`, read from the primary-key index alone; no row's data is read. */
+  async listIdsByPrefix(prefix: string, scope: RepositoryScope = {}): Promise<string[]> {
+    return this.withDatabase(scope, async (db) => idsWithPrefix(db, this.tableName, prefix));
+  }
+
   async listPage(scope: RepositoryScope = {}, options: SQLiteListPageOptions = {}): Promise<SQLiteListPage<T>> {
     const limit = clampInteger(options.limit, 1, 100, 25);
     const offset = clampInteger(options.offset, 0, 1_000_000, 0);
@@ -259,6 +283,35 @@ type RunResult = {
 };
 
 const databaseOperationLocks = new Map<string, Promise<void>>();
+
+// Far below SQLite's bound-parameter limit on every supported build.
+const ID_BATCH_SIZE = 200;
+
+/** Ids starting with `prefix`, in id order, from a range scan of the primary-key index. */
+async function idsWithPrefix(db: sqlite3.Database, tableName: string, prefix: string): Promise<string[]> {
+  const upper = prefixUpperBound(prefix);
+  const rows = upper === null
+    ? await all<{ id: string }>(db, `select id from ${tableName} where id >= ? order by id`, [prefix])
+    : await all<{ id: string }>(db, `select id from ${tableName} where id >= ? and id < ? order by id`, [prefix, upper]);
+  return rows.map((row) => row.id).filter((id) => id.startsWith(prefix));
+}
+
+/**
+ * A string above every string that starts with `prefix`, or null when there
+ * is none (an empty prefix, or one made only of U+10FFFF). Text ids compare by their UTF-8 bytes,
+ * which order as code points do, so raising the last code point that can be
+ * raised bounds the range; a range that is too wide is still filtered by
+ * `startsWith`, so a bound can cost a few extra ids but never drop one.
+ */
+function prefixUpperBound(prefix: string): string | null {
+  const points = [...prefix];
+  while (points.length) {
+    let next = points.pop()!.codePointAt(0)! + 1;
+    if (next >= 0xd800 && next <= 0xdfff) next = 0xe000;
+    if (next <= 0x10ffff) return points.join("") + String.fromCodePoint(next);
+  }
+  return null;
+}
 
 export function createRecord<T extends JsonObject>(params: {
   id: string;

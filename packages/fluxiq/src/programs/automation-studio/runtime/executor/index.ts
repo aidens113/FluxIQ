@@ -18,5 +18,7 @@ export { automationStudioDispatchWithNodeRetries, type AutomationStudioLastingAc
 export { AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY, automationStudioAttemptIsRetryable, automationStudioNodeRetryPolicy, automationStudioRetryBackoffMs, type AutomationStudioNodeRetryPolicy } from "./retry-policy.ts";
 export { chooseAutomationStudioStartNode, type AutomationStudioStartNodeChoice } from "./start-node.ts";
 export { automationStudioTraceSummary } from "./trace-summary.ts";
+// A saved trace keeps each value once; this reads an attempt's inputs back whole (t377).
+export { automationStudioAttemptInputs, automationStudioWithWholeAttemptInputs } from "./node-execution/index.ts";
 export { AUTOMATION_STUDIO_WITHHELD_VALUE } from "./trace-withholding.ts";
 export { automationStudioExpectationSatisfiedAfterFailure, compareAutomationStudioTransition } from "./transition-comparison.ts";

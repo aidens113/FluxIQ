@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { createBlankAutomationStudioFlowArtifact, withAutomationStudioFlowRepresentation } from "../../../../model/index.ts";
 import { generateFlowTypeScript } from "../../../../dsl/index.ts";
-import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../executor/index.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioAttemptInputs } from "../../../executor/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).
@@ -399,7 +399,11 @@ describe("Automation Studio live-patch reruns and run inputs", () => {
         verification: { status: "unverifiable", reason: "expectation_empty" }
       })]);
       const saved = await service.getRuntimeSession(project.id, run.runId);
-      expect(saved?.trace?.attempts.find((attempt) => attempt.nodeId === "gate")).toMatchObject({ status: "failed", inputs: { left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE, note: AUTOMATION_STUDIO_WITHHELD_VALUE } });
+      const savedAttempts = saved?.trace?.attempts ?? [];
+      const gate = savedAttempts.findIndex((attempt) => attempt.nodeId === "gate");
+      expect(savedAttempts[gate]?.status).toBe("failed");
+      // The saved trace keeps each value once; the attempt's inputs are read back whole.
+      expect(automationStudioAttemptInputs(savedAttempts, gate)).toMatchObject({ left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE, note: AUTOMATION_STUDIO_WITHHELD_VALUE });
       expect(await filesHolding(service, dataDir, LIVE_PATCH_NOTE)).toEqual([]);
     });
   }

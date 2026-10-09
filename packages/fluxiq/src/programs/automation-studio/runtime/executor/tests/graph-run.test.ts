@@ -4,6 +4,7 @@ import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../
 import { automationNodeStateBinding } from "../../../nodes/index.ts";
 import {
   AUTOMATION_STUDIO_WITHHELD_VALUE,
+  automationStudioAttemptInputs,
   runAutomationStudioGraph,
   type AutomationStudioGraphExecutionOptions,
   type AutomationStudioGraphExecutionTrace
@@ -65,7 +66,7 @@ describe("a run input no node reads, and the persisted trace", () => {
     expect(executedCopy?.outputs.object).toEqual({ copied: SUPPLIED, tally: SUPPLIED_NUMBER });
 
     const savedCopy = trace.attempts.find((attempt) => attempt.nodeId === "copy");
-    expect(savedCopy?.inputs.object).toEqual({ secret: AUTOMATION_STUDIO_WITHHELD_VALUE, count: AUTOMATION_STUDIO_WITHHELD_VALUE, flag: true });
+    expect(automationStudioAttemptInputs(trace.attempts, trace.attempts.indexOf(savedCopy!)).object).toEqual({ secret: AUTOMATION_STUDIO_WITHHELD_VALUE, count: AUTOMATION_STUDIO_WITHHELD_VALUE, flag: true });
     expect(savedCopy?.outputs.object).toEqual({ copied: AUTOMATION_STUDIO_WITHHELD_VALUE, tally: AUTOMATION_STUDIO_WITHHELD_VALUE });
     expect(JSON.stringify(trace)).not.toContain(SUPPLIED);
     expect(JSON.stringify(trace)).not.toContain(String(SUPPLIED_NUMBER));
@@ -155,7 +156,7 @@ describe("captured records and the saved trace", () => {
     expect(JSON.stringify(saved)).not.toContain(ROW);
     expect(saved.values["extract.records"]).toEqual(extractedDataset);
     expect(saved.values.records).toEqual(extractedDataset);
-    expect(saved.attempts[1]?.inputs["extract.records"]).toEqual(extractedDataset);
+    expect(automationStudioAttemptInputs(saved.attempts, 1)["extract.records"]).toEqual(extractedDataset);
     expect(saved.attempts[0]?.outputs.result).toEqual({ items: extractedDataset });
   });
 
@@ -177,7 +178,7 @@ describe("captured records and the saved trace", () => {
     expect(executed[0]?.attempts[1]?.inputs.items).toBe(extracted);
     expect(executed[0]?.attempts[1]?.outputs.items).toEqual([{ name: ROW, price: 3 }]);
     expect((executed[0]?.attempts[1]?.outputs.items as JsonValue[])[0]).toBe(extracted[0]);
-    expect(saved.attempts[1]?.inputs.items).toEqual(extractedDataset);
+    expect(automationStudioAttemptInputs(saved.attempts, 1).items).toEqual(extractedDataset);
     expect(saved.attempts[1]?.outputs.items).toEqual([{ $datasetRow: { datasetId: "products", ordinal: 1 } }]);
     expect(JSON.stringify(saved)).not.toContain(ROW);
   });
@@ -466,7 +467,7 @@ describe("For Each in a graph run", () => {
     expect(bodyItems(executed[0])[0]).toBe(rows[0]);
     expect(bodyItems(executed[0])[1]).toBe(rows[1]);
     expect(bodyItems(saved)).toEqual(rowMarkers);
-    expect(saved.attempts.find((attempt) => attempt.nodeId === "visit")?.inputs.item).toEqual(rowMarkers[0]);
+    expect(automationStudioAttemptInputs(saved.attempts, saved.attempts.findIndex((attempt) => attempt.nodeId === "visit")).item).toEqual(rowMarkers[0]);
     expect(saved.values.item).toEqual(rowMarkers[1]);
     expect(JSON.stringify(saved)).not.toContain(ROW);
   });

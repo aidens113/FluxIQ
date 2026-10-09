@@ -48,10 +48,36 @@ export function withProgramAuthSession(programId: string, payload: unknown, sess
 //   another reviewer -- `narrowPairedClientRequest` refuses that field, and
 //   where its answer holds more than a token should read,
 //   `projectPairedClientResponse` cuts it down.
-// - **The session's own domain.** A paired client is scoped to the domain it
-//   declared when it connected. A request whose URL names a different domain is
-//   refused, so a web-automation client cannot point itself at another
-//   domain's projects.
+// - **The domain its pairing bound, for every project it names.** A pairing
+//   binds the domain the client declared when the person approved it, and a
+//   later connection declaring another is not resumed: it goes back through
+//   pairing (`client-gateway/service/lifecycle.ts`), and `authorizeToken`
+//   answers only a session whose declared domain is its trust's. A request
+//   whose URL names another domain is refused. And every Automation Studio
+//   token call reaches its project -- the body's `projectId`, or the session's
+//   current project when the body names none -- only when that project's
+//   domain is the bound one (`pairedClientProjectTarget`, then
+//   `assertProjectDomainAccess` in the route), on every allowlisted endpoint,
+//   so no handler has to remember. A project that does not exist is refused the
+//   same way. A signed-in person's cookie calls are not gated: for them the
+//   domain is only what the URL says.
+//
+// What a pairing approves (t379). A person approves a browser for their own
+// account in one domain, not for one project: the approval carries only the
+// pairing reference and the approving person
+// (`/api/client-gateway/approve-pairing`), and the durable trust record holds
+// the client, that person and the bound domain, no project
+// (`client-gateway/service/pairing-flow.ts`, `trusted-clients.ts`). The
+// session's `projectId` is the current context -- the project a recording
+// started under -- and it moves; the extension follows the project the person
+// has open and names projects explicitly. Core has no per-person project
+// either: every project belongs to a domain, and any person whose role holds
+// the permission reaches it. So a token call may name any project in its
+// domain, and reaches it exactly as its approver's own login would on that
+// endpoint, with fewer permissions; nothing in a request makes it speak for
+// anyone else (the actor comes from the session alone, a named auth session is
+// removed, a review may not name a reviewer). Its reach is therefore its
+// approver's, in its bound domain, never another person's.
 //
 // No auth session is injected into a token call's payload: the gateway session
 // is not an identity session, so a PIN check a handler runs against it fails
@@ -178,6 +204,32 @@ export function pairedClientDomainScope(requestUrl: string, session: PairedSessi
   return { domainId };
 }
 
+/** The project a token call reaches, which the route checks against the bound domain, or the refusal of a malformed one. */
+export type PairedClientProjectTarget =
+  | { ok: true; projectId: string | null }
+  | { ok: false; errorCode: "authorization.forbidden"; error: string };
+
+/**
+ * The project a paired client's call reaches: the body's `projectId`, or, when
+ * the body names none, the session's current project. The route refuses the
+ * call unless that project's domain is the one the pairing bound, so no
+ * allowlisted handler has to remember to assert it. Null when neither names a
+ * project (the build identity; a thread list across the domain, which its
+ * handler already scopes to the domain). A `projectId` that is not a string is
+ * refused rather than read, since handlers would coerce it.
+ */
+export function pairedClientProjectTarget(programId: string, payload: unknown, currentProjectId: string | null | undefined): PairedClientProjectTarget {
+  // Projects are Automation Studio's; the secret-keys snapshot names none.
+  if (programId.trim().toLowerCase() !== "automation-studio") return { ok: true, projectId: null };
+  const named = payloadRecord(payload)?.projectId;
+  if (named !== undefined && named !== null && typeof named !== "string") {
+    return { ok: false, errorCode: "authorization.forbidden", error: "A paired client must name its project by a string projectId." };
+  }
+  // Checked exactly as sent, untrimmed, because that is the id the handler reads.
+  if (typeof named === "string" && named !== "") return { ok: true, projectId: named };
+  return { ok: true, projectId: typeof currentProjectId === "string" && currentProjectId !== "" ? currentProjectId : null };
+}
+
 /** A token call's payload after narrowing, or the refusal that names the field it may not carry. */
 export type PairedClientRequestNarrowing =
   | { ok: true; payload: unknown }
@@ -234,7 +286,9 @@ export function narrowPairedClientRequest(programId: string, endpoint: string, p
 function narrowRunRuntimeSession(payload: unknown): PairedClientRequestNarrowing {
   const body = payloadRecord(payload);
   if (!body || typeof body.flowId !== "string" || !body.flowId.trim()) return forbidden("A paired client's run must name a saved Flow by a string flowId.");
-  for (const field of ["flow", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs"] as const) {
+  // `authorizedDomainIds` would let the run act in domains beyond the one the
+  // pairing bound (`runtime/composite-execution/owner.ts`), so a token never names any.
+  for (const field of ["flow", "permittedConsequences", "dryRunLlm", "useReusableContext", "inputs", "authorizedDomainIds"] as const) {
     if (field in body) return forbidden(`A paired client's run may not carry ${field}.`);
   }
   if ("authorizedExternalSideEffects" in body && body.authorizedExternalSideEffects !== false) {

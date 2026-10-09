@@ -2,6 +2,8 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { FLUXIQ_SESSION_COOKIE } from "../../../../../../../lib/auth";
 import { getFluxIQ } from "../../../../../../../lib/fluxiq";
+import { pairedClientProjectDomainRefusal } from "../../../../../../../lib/paired-client-project-domain";
+import { pairedClientDomainScope } from "../../../../../../../lib/program-route";
 
 type RouteParams = {
   params: Promise<{
@@ -45,7 +47,7 @@ export async function PUT(request: Request, context: RouteParams) {
   const decodedProjectId = decodeURIComponent(projectId);
   const fluxiq = getFluxIQ();
   const uploadAuth = await authorizeStateAssetUpload(request, fluxiq, decodedProjectId);
-  if (!uploadAuth.ok) return NextResponse.json({ ok: false, error: uploadAuth.error }, { status: uploadAuth.status });
+  if (!uploadAuth.ok) return NextResponse.json({ ok: false, error: uploadAuth.error, ...(uploadAuth.errorCode ? { errorCode: uploadAuth.errorCode } : {}) }, { status: uploadAuth.status });
   const normalizedSha = sha256.toLowerCase();
   if (!/^[a-f0-9]{64}$/i.test(normalizedSha)) return NextResponse.json({ ok: false, error: "Invalid object digest" }, { status: 400 });
 
@@ -90,7 +92,7 @@ async function authorizeStateAssetUpload(
   request: Request,
   fluxiq: ReturnType<typeof getFluxIQ>,
   projectId: string
-): Promise<{ ok: true; recordingId?: string } | { ok: false; status: number; error: string }> {
+): Promise<{ ok: true; recordingId?: string } | { ok: false; status: number; error: string; errorCode?: string }> {
   const bearerToken = readBearerToken(request.headers.get("authorization"));
   if (bearerToken) {
     const clientSession = await fluxiq.programs.clientGateway.authorizeToken(bearerToken);
@@ -98,6 +100,11 @@ async function authorizeStateAssetUpload(
     if (clientSession.projectId != null && clientSession.projectId !== projectId) {
       return { ok: false, status: 403, error: "Client is not authorized for this Automation Studio project." };
     }
+    // The project must also be in the domain the pairing bound (t379), as on the program route.
+    const scope = pairedClientDomainScope(request.url, clientSession);
+    if (!scope) return { ok: false, status: 403, error: "A paired client may only reach its own domain." };
+    const refusal = await pairedClientProjectDomainRefusal(fluxiq.programs.automationStudio, projectId, scope.domainId);
+    if (refusal) return { ok: false, status: 403, error: refusal.error, errorCode: refusal.errorCode };
     return { ok: true, ...(clientSession.activeRecordingId ? { recordingId: clientSession.activeRecordingId } : {}) };
   }
 

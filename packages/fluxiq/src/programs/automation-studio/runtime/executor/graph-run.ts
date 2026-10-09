@@ -17,6 +17,7 @@ import {
 import { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder } from "./ladder-run.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
 import { automationStudioRunWait, automationStudioTimedPause } from "./pacing/index.ts";
+import { automationStudioTraceWithSharedInputs } from "./node-execution/index.ts";
 import { automationStudioIsPersonNeededAsk, automationStudioPersonNeededEnding, automationStudioPersonNeededStep } from "./person-needed.ts";
 import { automationStudioRecordedState } from "./recorded-state.ts";
 import { recoveryBudgetState } from "./recovery-budget.ts";
@@ -172,16 +173,15 @@ async function runGraphToTrace(
     const childCaptured = attempt.childTrace ? capturedBySavedTrace.get(attempt.childTrace) : undefined;
     if (childCaptured) runState.records.include(childCaptured);
   }
-  // Rows are replaced first, while the trace still holds the very arrays and
-  // objects capture produced: the rewrites after this one copy what they change,
-  // and a copy can no longer be found by identity.
+  // Each value is kept once (`node-execution/shared-inputs.ts`), then rows are replaced, while the trace
+  // holds the run's very objects: the rewrites after these copy what they change, found by identity no more.
   // What the run survived rides on the trace, so a host that persists a run
   // persists the faults it absorbed without a store of its own. A fault computed
   // and discarded is the shape of bug this repository keeps meeting.
   // The paces it held nodes to ride beside it: a learned one is what a promotion writes back.
   const defence = runState.defence.summary(), pace = runState.pace.summary();
   const defended = defence || pace ? { ...executed, ...(defence ? { defence } : {}), ...(pace ? { pace } : {}) } : executed;
-  const saved = withholding.apply(automationStudioWithholdRunInputs(runState.records.apply(defended), options.inputs ?? {}));
+  const saved = withholding.apply(automationStudioWithholdRunInputs(runState.records.apply(automationStudioTraceWithSharedInputs(defended, options.inputs ?? {})), options.inputs ?? {}));
   withheldBySavedTrace.set(saved, withholding.values());
   capturedBySavedTrace.set(saved, runState.records.captured());
   onExecutedTrace?.(defended, saved);

@@ -278,6 +278,13 @@ export type ClientGatewayTrustedClient = {
   name: string;
   tokenHash: string;
   approvedByUserId: string;
+  /**
+   * The domain the client declared (`client.hello` `metadata.domainId`) when
+   * the person approved it, or null for none. A later connection declaring
+   * another domain is not resumed and must be approved again. Absent on trust
+   * minted before the domain was bound, which therefore needs a new approval.
+   */
+  domainId?: string | null;
   approvedAt: number;
   createdAt: number;
   updatedAt: number;

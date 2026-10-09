@@ -61,7 +61,7 @@ import {
   type AutomationStudioFlowGraphJudgement,
   type AutomationStudioFlowGraphVersion
 } from "../flow-version/index.ts";
-import type { AutomationStudioGraphExecutionTrace } from "../executor/index.ts";
+import { automationStudioAttemptInputs, type AutomationStudioGraphExecutionTrace, type AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
 import type { AutomationStudioLlmProvider, AutomationStudioLlmTokenLimits } from "../llm/index.ts";
 
 import {
@@ -418,7 +418,7 @@ async function repairFailedStep(input: AutomationStudioRuntimeSessionVerificatio
   if (input.session.trace && !automationStudioStepFailureTarget(input.session.trace.attempts)?.targetLevel) return input.session;
   const detail = await input.ports.getFlowRunDetail(input.projectId, input.session.runId);
   if (!detail) return input.session;
-  const failedTraceAttempt = [...(input.session.trace?.attempts ?? [])].reverse().find((attempt) => attempt.status === "failed");
+  const failedTraceAttempt = lastFailedAttempt(input.session.trace?.attempts ?? []);
   const repaired = await port({
     detail,
     ...(failedTraceAttempt ? { failedTraceAttempt } : {}),
@@ -432,6 +432,23 @@ async function repairFailedStep(input: AutomationStudioRuntimeSessionVerificatio
   const rerun = await input.ports.rerunRepairedFlow({ detail: repaired.detail, ...(input.subflowId ? { subflowId: input.subflowId } : {}) });
   if (!rerun) return input.session;
   return await verifyAutomationStudioRuntimeSessionResult({ ...input, session: rerun.session, resultCheck: rerun.resultCheck ?? input.resultCheck, ...(rerun.flow ? { flow: rerun.flow } : {}) });
+}
+
+/**
+ * The run's last failed attempt with every input it executed with: a saved
+ * trace keeps on it only what changed since the attempt before
+ * (`executor/node-execution/shared-inputs.ts`), and the repair is handed the
+ * attempt alone.
+ */
+function lastFailedAttempt(attempts: readonly AutomationStudioNodeAttemptTrace[]): AutomationStudioNodeAttemptTrace | undefined {
+  for (let index = attempts.length - 1; index >= 0; index -= 1) {
+    const attempt = attempts[index]!;
+    if (attempt.status !== "failed") continue;
+    if (!attempt.inputsSince) return attempt;
+    const { inputsSince: _kept, ...whole } = attempt;
+    return { ...whole, inputs: automationStudioAttemptInputs(attempts, index) };
+  }
+  return undefined;
 }
 
 /** How a repair ends when the answer its re-run gave is not repaired again. */

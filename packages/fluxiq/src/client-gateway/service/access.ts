@@ -1,5 +1,6 @@
 import type { ClientGatewaySession } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
+import { declaredDomainId } from "./declared-domain.ts";
 import type { ClientGatewayLifecycle } from "./lifecycle.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
@@ -40,7 +41,11 @@ export class ClientGatewayAccess {
     this.facade = collaborators.facade;
   }
 
-  /** The ready session a bearer token speaks for, or null if it speaks for none. */
+  /**
+   * The ready session a bearer token speaks for, or null if it speaks for none.
+   * The session's declared domain is always the one its trust was approved
+   * for, so a caller may scope the token by `metadata.domainId`.
+   */
   async authorizeToken(token: string | null | undefined): Promise<ClientGatewaySession | null> {
     await this.facade.ready();
     const normalizedToken = typeof token === "string" ? token.trim() : "";
@@ -49,6 +54,7 @@ export class ClientGatewayAccess {
     if (!trustedClient || !this.trustedClients.isActive(trustedClient)) return null;
     const session = this.sessions.findReadyByTrustedClient(trustedClient.trustedClientId);
     if (!session) return null;
+    if (trustedClient.domainId === undefined || trustedClient.domainId !== declaredDomainId(session.metadata)) return null;
     this.sessions.touch(session);
     return this.sessions.toPublic(session);
   }

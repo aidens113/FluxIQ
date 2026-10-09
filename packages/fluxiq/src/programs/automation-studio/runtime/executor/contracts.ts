@@ -194,7 +194,30 @@ export type AutomationStudioNodeAttemptTrace = {
   finishedAt?: number;
   status: AutomationStudioGraphRunStatus;
   route?: string;
+  /**
+   * Every run value the node saw when it executed, with what its edges brought
+   * on top under their port names (`node-inputs.ts`). On a saved trace an
+   * attempt with `inputsSince` keeps only what changed since the attempt
+   * before it: read the whole set with `automationStudioAttemptInputs`.
+   */
   inputs: Record<string, JsonValue>;
+  /**
+   * Set on an attempt of a saved trace whose `inputs` hold only the values that
+   * changed since the attempt before it in the trace (`attemptId`) and that no
+   * earlier attempt keeps. Without it a saved trace kept every earlier step's
+   * outputs -- page snapshots included -- once more on every later attempt, so
+   * it grew with the square of its steps (lane A round 8: 10.9 MB of one
+   * 15.2 MB trial session). The executed trace keeps whole `inputs`
+   * (`node-execution/shared-inputs.ts`).
+   */
+  inputsSince?: {
+    /** The attempt just before this one in the trace: this attempt saw what that one saw, except as below. */
+    attemptId: string;
+    /** Values that changed to one an earlier attempt of the trace keeps in its `outputs`, under `output`. */
+    shared?: Array<{ input: string; attemptId: string; output: string }>;
+    /** Values the attempt before saw that this attempt did not. */
+    removed?: string[];
+  };
   outputs: Record<string, JsonValue>;
   effects: Array<{ type: string; payload?: JsonValue }>;
   message?: string;

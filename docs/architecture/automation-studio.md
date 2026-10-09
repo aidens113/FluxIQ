@@ -1028,6 +1028,28 @@ run executed it. So the trace still explains a failure without carrying the
 credential that caused it. The rules and the reasoning are in
 [Automation Studio native and importer nodes](automation-studio-native-nodes.md#a-resolved-value-never-reaches-the-persisted-trace).
 
+The saved trace also keeps each value once. An attempt's `inputs` are every value
+the run held when its node executed, every earlier step's outputs and page
+snapshots included, so copying them onto each attempt made a persisted trace grow
+with the square of its steps (lane A round 8: 15.2 MB for 19 attempts). Before rows
+become markers and values are withheld, `automationStudioTraceWithSharedInputs`
+(`executor/node-execution/shared-inputs.ts`) rewrites every attempt after the first
+to hold in `inputs` only what changed since the attempt before it, and records in
+`inputsSince` that attempt, each changed value an earlier attempt keeps in its
+`outputs` (by attempt id and output key), and the keys that were dropped. A value
+is named only when it is that very object (or the same text of 128 characters or
+more), and a run input at its own key stays in place for positional withholding, so
+the rewrite is exact. A reader of a saved trace reads an attempt's whole inputs
+with `automationStudioAttemptInputs(attempts, index)` against the whole attempt
+list; the executed trace, which live-patch and a Call Flow parent read, keeps
+whole `inputs`. Traces saved before this hold whole `inputs` and no `inputsSince`,
+and read back unchanged. The shared form never leaves Core: every endpoint that answers
+with a saved trace -- `get-runtime-session`, `list-runtime-sessions`,
+`start-`, `run-` and `cancel-runtime-session`, `get-flow-run-detail` (a repair's
+`completedTrace`) and `export-flow-run-audit` -- hands its answer through
+`automationStudioWithWholeAttemptInputs` (`node-execution/whole-inputs.ts`), so a
+client reads each attempt's whole `inputs` and no `inputsSince`.
+
 Whether an expected state actually holds is the host's decision, not Core's. A
 host runtime boundary may bind `expectationEvaluator(conditions, mode,
 timeoutMs, context)` beside `captureStateSnapshot`, `inspectStateDiff`, and
