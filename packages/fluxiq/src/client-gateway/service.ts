@@ -93,7 +93,7 @@ export class ClientGatewayService {
     this.lifecycle = lifecycle;
     this.commands = commands;
     this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, facade });
-    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands });
+    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, audit, facade });
     this.activity = new ClientGatewayActivityPublisher(sessions, transport);
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit });
   }

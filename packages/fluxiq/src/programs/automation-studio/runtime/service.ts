@@ -219,7 +219,7 @@ import { AutomationStudioConversations } from "./conversations/index.ts";
 import { AutomationStudioRunControlRegistry, automationStudioMarkRunAdapting } from "./run-control/index.ts";
 import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/index.ts";
 import { automationStudioRunEndViewReader } from "./service/end-view/index.ts";
-import { AutomationStudioParkedRunExpiry, admitAutomationStudioRuntimeSession, automationStudioRunGraphOptions, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
+import { AutomationStudioParkedRunExpiry, admitAutomationStudioRuntimeSession, assertAutomationStudioRunRequirements, automationStudioRunGraphOptions, automationStudioSubflowGraphIsOwned, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
 import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
@@ -2601,12 +2601,10 @@ export class AutomationStudioService {
         const selectedFlow = selectedFlowId
           ? await this.getFlow(input.projectId, selectedFlowId).then((flow) => this.materializeRecordingDerivedFlow(input.projectId!, flow)).catch(() => undefined)
           : undefined;
-        const selectedFlowIsOwned = Boolean(route.selectedSubflow && selectedFlow
-          && this.flowWriter.persistedFlowRepresentation(selectedFlow) === "subflow_graph"
-          && selectedFlow.metadata?.subflowGraph === true
-          && selectedFlow.metadata?.parentFlowId === runtimeCanonical.flowId
-          && selectedFlow.metadata?.parentSubflowId === route.selectedSubflow.subflowId);
+        const selectedFlowIsOwned = automationStudioSubflowGraphIsOwned(route.selectedSubflow, selectedFlow, runtimeCanonical.flowId, (flow) => this.flowWriter.persistedFlowRepresentation(flow));
         let routedFailedTraceAttempt: AutomationStudioNodeAttemptTrace | undefined;
+        // C10: refused before any step when a graph requires what neither the executor nor the client offers.
+        if (route.selectedSubflow && selectedFlow && selectedFlowIsOwned) assertAutomationStudioRunRequirements({ flows: [runtimeCanonical, selectedFlow], graphOptions, runtimeService: this.runtimeService, domainId: this.ioRuntime?.domainId ?? null });
         const trace = route.selectedSubflow && selectedFlow && selectedFlowIsOwned
           ? await commands.execute(async () => runCanonicalAutomationStudioFlow(selectedFlow, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { routedFailedTraceAttempt = automationStudioUnresolvedFailedAttempt(executed.attempts); }))
           : {
@@ -2683,6 +2681,7 @@ export class AutomationStudioService {
       ? { code: "flow.legacy_single_graph_execution", message: "Executed through bounded legacy single-graph compatibility. Migrate this Flow to a Router and Subflow graph." }
       : undefined;
     let failedTraceAttempt: AutomationStudioNodeAttemptTrace | undefined;
+    if (!runtimeCanonical || directRepresentation === "legacy_single_graph") assertAutomationStudioRunRequirements({ flows: [runtimeCanonical ?? runtimeFlow], graphOptions, runtimeService: this.runtimeService, domainId: this.ioRuntime?.domainId ?? null });
     const trace = runtimeCanonical && directRepresentation !== "legacy_single_graph"
       ? {
         status: "failed" as const,

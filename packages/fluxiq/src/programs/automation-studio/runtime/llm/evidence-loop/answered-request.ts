@@ -19,11 +19,13 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID = "core.reques
 const ANSWERED_REQUEST = {
   "llm_evidence_loop.already_answered": "This exact request was already answered, so it was not run again. Its result is the evidence entry named by answeredByCallId: use it, choose a different tool or input, or complete.",
   "llm_evidence_loop.already_observed": "This observation was already made, so it was not run again. Its latest result is the evidence entry named by answeredByCallId: use it, change something first, or complete.",
-  // The wrap-up (`../loop-budget.ts`) offers no tools, and a call it was not
-  // offered used to run anyway: the check was against the tools the loop could
-  // run, not the ones it had offered. answeredByCallId is the tool's latest
-  // call where there is one, and empty where there is none.
-  "llm_evidence_loop.not_offered": "The build is in its last decisions, which offer no tools, so this call was not run. Complete from your draft, or amend it and complete.",
+  // The wrap-up (`../loop-budget.ts`) offers only finishing tools -- none in
+  // the legacy build, submitting and testing the candidate in candidate mode --
+  // and a call it was not offered used to run anyway: the check was against
+  // the tools the loop could run, not the ones it had offered.
+  // answeredByCallId is the tool's latest call where there is one, and empty
+  // where there is none.
+  "llm_evidence_loop.not_offered": "The build is in its last decisions, so only the tools offered now can run and this call was not run. Finish with those: submit and test your Flow if they are offered, then complete; otherwise complete from your draft, or amend it and complete.",
   // The first time one look is asked again, Core runs it once more rather than
   // taking a digest of its own to check it (`../decision-handlers/answer-check.ts`);
   // when the page is exactly as before, this is what the model is told.
