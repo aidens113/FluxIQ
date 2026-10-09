@@ -188,7 +188,18 @@ export type ClientGatewayActivity = {
   phase: ClientGatewayActivityPhase;
   /** Core's one-line status sentence, e.g. "Running step 2 of 5". */
   label: string;
-  step?: { index: number; count: number; nodeId?: string; label?: string };
+  step?: {
+    index: number;
+    count: number;
+    nodeId?: string;
+    label?: string;
+    /**
+     * On a step a list loop's pass runs: that pass's row as a person reads it
+     * ("Jonas Weber"), so a card can say "Confirm · Jonas Weber". Optional; a
+     * client that does not know it ignores it.
+     */
+    row?: string;
+  };
   /** A row for the chat stream; absent for a pure status change. */
   detail?: {
     kind: "thought" | "tool" | "step" | "check" | "ask" | "note";

@@ -40,7 +40,13 @@ const REASONS: readonly Reason[] = [
   // (`page_busy_try_later`): checked before `refused_by_page`, whose "the page
   // turned it down" was said of a press the page was only too busy to take
   // (t174-w85 D8, `run-murwd8le-79e735a8`).
-  { words: /_(busy|try_later|rate_limited|throttled|too_many_requests)_/u, why: "the page was busy" },
+  //
+  // A site that said FluxIQ was going too fast (`web.action.rate_limited`, the
+  // site's "You're going too fast" notice with a wait in it) asked it to slow
+  // down, which "the page was busy" did not say (lane D, `run-mv0fuual-f9e6f089`,
+  // finding 1). Before the busy page, whose `try_later` it may also carry.
+  { words: /_(rate_limited|throttled|too_many_requests|too_fast|slow_down)_/u, why: "the site asked FluxIQ to slow down" },
+  { words: /_(busy|try_later)_/u, why: "the page was busy" },
   // The page's own answer to a press, not a permission: "Please select a
   // Color." beside Add to cart would read "it wasn't allowed" (crossborder
   // `run-muqk4u32-0b36e58f`, t174 F40). Checked before `refused`.

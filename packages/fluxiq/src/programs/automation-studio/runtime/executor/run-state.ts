@@ -2,6 +2,7 @@ import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationNodeIterationState } from "../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "./contracts.ts";
 import { automationStudioDefenceLedger, type AutomationStudioDefenceLedger } from "./defensive/index.ts";
+import { automationStudioPaceKeeper, type AutomationStudioPaceKeeper } from "./pacing/index.ts";
 import { automationStudioRecordTraceSummary, type AutomationStudioRecordTraceSummary } from "./record-summary.ts";
 
 /**
@@ -27,6 +28,8 @@ export type AutomationStudioRunState = {
    * of nodes a Flow arrives at.
    */
   defence: AutomationStudioDefenceLedger;
+  /** Each node's pace between starts, authored or learned from a wait hint, for this run only (`pacing/pace-keeper.ts`). */
+  pace: AutomationStudioPaceKeeper;
 };
 
 export function automationStudioRunState(options: Pick<AutomationStudioGraphExecutionOptions, "variables"> = {}): AutomationStudioRunState {
@@ -34,6 +37,7 @@ export function automationStudioRunState(options: Pick<AutomationStudioGraphExec
     records: automationStudioRecordTraceSummary(),
     variables: new Map(Object.entries(options.variables ?? {})),
     loops: new Map(),
-    defence: automationStudioDefenceLedger()
+    defence: automationStudioDefenceLedger(),
+    pace: automationStudioPaceKeeper()
   };
 }

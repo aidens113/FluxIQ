@@ -84,6 +84,9 @@ export function automationStudioLlmEvidenceRerunReplaced(
   // own run recorded none.
   rerun.standsFor = replaced.standsFor ?? automationStudioFlowDraftStepId(replaced);
   if (replaced.routeSignatures && !rerun.routeSignatures) rerun.routeSignatures = replaced.routeSignatures;
+  // The node's pace too (t378): a trial's learned pace is saved on the node, and a repair that reruns the step must
+  // not drop the spacing the site asked for.
+  if (replaced.paceMs !== undefined && rerun.paceMs === undefined) rerun.paceMs = replaced.paceMs;
   delete replaced.standsFor;
   const from = automationStudioFlowDraftStepId(replaced);
   const to = automationStudioFlowDraftStepId(rerun);

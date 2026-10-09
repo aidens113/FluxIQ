@@ -57,7 +57,8 @@ const USAGE = { prompt_tokens: 21_424, completion_tokens: 571, total_tokens: 21_
 
 describe("the account of a reply Core could not read", () => {
   it.each([
-    ["the object never closes", DECISION.slice(0, -3), "content_unclosed"],
+    // Cut inside a string: only brackets short at the end are closed (`../unclosed-content.ts`), and this is not that.
+    ["the object never closes", DECISION.slice(0, DECISION.indexOf("replacement") + 4), "content_unclosed"],
     ["prose after the object", `${DECISION}\nThis reruns step 12.`, "content_trailing"],
     ["one brace too many mid-object, so a brace closes the array", DECISION.replace('"maxPages":50}', '"maxPages":50}}'), "content_mismatched"],
     ["a selector's quotes left unescaped", DECISION.replaceAll('\\"offers\\"', '"offers"'), "content_invalid"],
@@ -153,7 +154,7 @@ describe("what a refused reply cost", () => {
   });
 
   it("carries it on a malformed reply as well as in the reply's account", async () => {
-    const error = await refusal({ choices: [{ finish_reason: "stop", message: { content: DECISION.slice(0, -3) } }], usage: USAGE });
+    const error = await refusal({ choices: [{ finish_reason: "stop", message: { content: DECISION.slice(0, DECISION.indexOf("replacement") + 4) } }], usage: USAGE });
     expect(error.paid).toEqual(PAID);
     expect(error.reply?.usage).toEqual(PAID);
   });

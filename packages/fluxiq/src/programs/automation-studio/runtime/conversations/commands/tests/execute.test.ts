@@ -233,7 +233,9 @@ describe("conversation commands", () => {
     expect(calls.map((call) => call.endpoint)).not.toContain("review-flow-adaptation");
     const result = (await turnsOf(conversations, conversationId)).at(-1);
     // Said in plain words, never the code with its stage (t276).
-    expect(result?.text).toContain('"Create an automation here" stopped because the build failed: the request to the model was refused.');
+    // Opening on why, never on the command's name (t378: lanes B-D quoted "Create an automation here").
+    expect(result?.text).toMatch(/^The build failed: the request to the model was refused\./u);
+    expect(result?.text).not.toContain("Create an automation here");
     expect(result?.text).not.toMatch(/flow_bootstrap|Flow Bootstrap/u);
     // What is left, said plainly and never as work done after a build that failed (t195,
     // `run-murdouox-c5294247`: "I could not build this Flow ... Before that I created the Flow").

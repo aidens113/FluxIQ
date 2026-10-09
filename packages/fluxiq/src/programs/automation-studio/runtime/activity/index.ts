@@ -22,10 +22,13 @@ export { automationStudioActivityStepNumbers, emitAutomationStudioActivityStep, 
 export { emitAutomationStudioActivityThought } from "./thought.ts";
 export {
   automationStudioActivityAction,
+  automationStudioActivityCheckRefusalReasons,
   automationStudioActivityCompletionRefusal,
   automationStudioActivityDecision,
   automationStudioActivityDraftEditCard,
   automationStudioActivityHumanLabel,
+  automationStudioActivityIssuesOf,
+  automationStudioActivityIssueWords,
   automationStudioActivityPersonWords,
   automationStudioActivityReasonText,
   automationStudioActivityRecoveryChoice,

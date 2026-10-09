@@ -334,6 +334,14 @@ export type AutomationStudioFlowDraftStep = {
    */
   routeSignatures?: JsonObject;
   /**
+   * The pace the Flow node a carried step stands for was authored with
+   * (`metadata.paceMs`: the least time, in whole milliseconds, between two
+   * starts of that node in one run), carried from the re-seed onto the plan
+   * node the step becomes (t378). Without it a repaired Flow lost the pace a
+   * trial had learned and ran the node unpaced again.
+   */
+  paceMs?: number;
+  /**
    * The step was written, not run (`core.run_node` with `write: true`, design
    * t252): the domain checked its node and parameters, froze what it names and
    * performed nothing. Set only when the domain answered that it wrote it, so a

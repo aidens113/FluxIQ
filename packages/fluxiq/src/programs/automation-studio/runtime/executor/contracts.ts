@@ -254,11 +254,30 @@ export type AutomationStudioNodeAttemptTrace = {
   retry?: {
     attemptNumber: number;
     maxAttempts: number;
+    /** The wait actually taken before this attempt. */
     backoffMs: number;
     /** The ladder rung that asked for this attempt. */
     rung: AutomationStudioLadderRungKind;
     previousAttemptId: string;
+    /** The wait the failing source itself asked for, when it asked for one. */
+    hintedWaitMs?: number;
+    /** How much of that hint had already passed when the failed attempt settled and the wait began (`defensive/credited-hint.ts`). */
+    creditedMs?: number;
   };
+  /**
+   * The pace this node's start was held to (`pacing/pace-keeper.ts`):
+   * `inForceMs` the least time between two starts of it in this run, and
+   * `waitedMs` what holding to it cost before this start. `raisedToMs` is set
+   * on an attempt whose failure carried a wait hint: the pace the run holds
+   * the node to from then on.
+   */
+  pace?: { inForceMs: number; waitedMs: number; raisedToMs?: number };
+  /**
+   * A timed pause the node asked for -- a Wait node answers `waiting` with its
+   * `durationMs` -- and the run took before going on (`pacing/timed-pause.ts`).
+   * `bounded` is set when the run's own limits cut it short.
+   */
+  pause?: { requestedMs: number; waitedMs: number; bounded?: true };
   /**
    * What the run did about the state this node expected to find before it ran.
    * `satisfied: false` is a mark, not a failure: the recording is evidence the
@@ -319,6 +338,21 @@ export type AutomationStudioNodeAttemptTrace = {
   adaptationIds?: string[];
 };
 
+/**
+ * One node's pace over a run: the least time between two successive starts of
+ * it. `authoredMs` is the node's own `metadata.paceMs`; `learnedMs` is present
+ * once a failure's wait hint raised the pace past it, `raisedCount` times;
+ * `waitedMs` is what holding to the pace cost the run in total.
+ */
+export type AutomationStudioNodePace = {
+  nodeId: string;
+  paceMs: number;
+  authoredMs?: number;
+  learnedMs?: number;
+  raisedCount: number;
+  waitedMs: number;
+};
+
 export type AutomationStudioGraphExecutionTrace = {
   status: AutomationStudioGraphRunStatus;
   startedAt: number;
@@ -351,6 +385,13 @@ export type AutomationStudioGraphExecutionTrace = {
    * from a list of attempt records.
    */
   defence?: AutomationStudioDefenceSummary;
+  /**
+   * Every node this run held to a pace: authored on the node
+   * (`metadata.paceMs`) or learned from a failure's wait hint. Absent when no
+   * node was paced. A learned pace is what a promotion writes back to the
+   * saved Flow, so playback starts paced.
+   */
+  pace?: AutomationStudioNodePace[];
   /** Present only on a partial run that ended at its stop node (`AutomationStudioGraphExecutionOptions.stopAfterNodeId`). */
   stopReason?: AutomationStudioGraphRunStopReason;
   message?: string;

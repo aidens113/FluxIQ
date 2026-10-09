@@ -2,7 +2,8 @@
 // reads it, and the one acceptor that turns any accepted reply into a plan.
 //
 // `assemble.ts`, `draft-bindings.ts`, `instruction-record-columns.ts`,
-// `json-plan.ts`, `issue.ts`, `keys.ts`, `matching.ts`, `normalise.ts`,
+// `json-plan.ts`, `issue.ts`, `keys.ts`, `matching.ts`, `normalise.ts`, `plan-locator.ts`,
+// `script-locator.ts`,
 // `record-output.ts` and `values.ts` are deliberately absent: they are how the acceptor works, not what it offers,
 // and publishing them would invite a second place that normalises a plan.
 //
@@ -25,3 +26,7 @@ export * from "./assemble-draft.ts";
 export * from "./contracts.ts";
 export { automationStudioFlowBootstrapDraftUnreadColumnsSentence, automationStudioFlowBootstrapUnreadColumnsSentence } from "./instruction-record-columns.ts";
 export * from "./parse.ts";
+// The one lookup of where a refusal is in what the model wrote, so every check
+// after authoring names the step the same way (`./script-locator.ts` and
+// `./plan-locator.ts` build what it reads, and stay unpublished).
+export * from "./locate-issue.ts";

@@ -519,3 +519,53 @@ describe("activityActionOf: a candidate build's own calls (t373)", () => {
     }
   });
 });
+
+// t378: the words a card says are the act a person would name, never a node's
+// id or a command's name.
+describe("activityActionOf: a card names the act, the row and a Flow sent again (t378)", () => {
+  // Lane A U1: an option chosen and a box ticked read "Click".
+  it("names an option chosen and a box ticked by their act, keeping the click's kind and icon", () => {
+    const chose = activityActionOf(tool("Choosing an option in “Size”", "Result: web.select.succeeded · Node: web.output.dom-select"));
+    expect([chose?.kind, chose?.name, chose?.target]).toEqual(["click", "Choose", "Size"]);
+    const ticked = activityActionOf(tool("Ticking “Gift wrap”", "Result: web.check.succeeded · Node: web.output.dom-check"));
+    expect([ticked?.kind, ticked?.name, ticked?.target]).toEqual(["click", "Tick", "Gift wrap"]);
+    const clicked = activityActionOf(tool("Clicking “Add to cart”", "Result: web.click.succeeded · Node: web.output.dom-click"));
+    expect([clicked?.kind, clicked?.target]).toEqual(["click", "Add to cart"]);
+    expect(clicked).not.toHaveProperty("name");
+  });
+
+  // Lane C (run-mv0fuotv-805294d7): "Action · Dom next page".
+  it("reads a list's next page as Next page, never the node's id words", () => {
+    const next = activityActionOf(tool("Running the “Next page” step", "Result: web.next_page.succeeded · Node: web.output.dom-next_page"));
+    expect([next?.kind, next?.name, next?.target, next?.outcome]).toEqual(["navigate", "Next page", null, "done"]);
+    const named = activityActionOf(tool("Running the “Next page” step", "Result: web.next_page.succeeded · Node: web.output.dom-next_page"));
+    expect(JSON.stringify(named)).not.toMatch(/Dom/u);
+  });
+
+  // Lane D (run-mv0fuual-f9e6f089, finding 2): every pass read "Click · Confirm".
+  it("names the row a step inside a repeat acted on, from the step's own row", () => {
+    const pass = (row: string | undefined): ActivityActionEvent => ({
+      phase: "running",
+      step: { nodeId: "n8", label: "Confirm", ...(row === undefined ? {} : { row }) },
+      detail: { kind: "step", title: "Step 8 of 9: Confirm", status: "started", ref: "n8", text: "Node: web.output.dom-click" }
+    });
+    expect(activityActionOf(pass("Jonas Weber"))?.target).toBe("Confirm · Jonas Weber");
+    expect(activityActionOf(pass(undefined))?.target).toBe("Confirm");
+    expect(activityActionOf(pass("  "))?.target).toBe("Confirm");
+    // A test's title that names the same row says it once.
+    const tested = activityActionOf({ ...tool("Clicking “Confirm” for “Jonas Weber”", "Result: web.click.succeeded", "succeeded", "web.output.dom-click", "verifying"), step: { row: "Jonas Weber" } });
+    expect(tested?.target).toBe("Confirm · Jonas Weber");
+  });
+
+  // Lane C defect 4: "Change the Flow · run the step again" for a whole Flow resent unchanged.
+  it("reads a candidate's Flow refused as sent again unchanged, never as a step run again", () => {
+    const resent = activityActionOf(tool("Saving the Flow's steps", "Result: llm_evidence_loop.repeat_refused · Reason: failed", "failed", "core.submit_candidate", "building"));
+    expect(resent).toMatchObject({ kind: "draft", name: "Send the Flow again", target: null, outcome: "failed", refused: { all: true } });
+    expect(resent?.why).toBe("the same Flow was already sent exactly like this and was not accepted");
+    expect(JSON.stringify(resent)).not.toMatch(/run the step again|tried exactly this way/u);
+    // An edit to the draft asking a step to run again is still named so.
+    const rerun = activityActionOf(tool("Changing the Flow", "Result: llm_evidence_loop.repeat_refused · Reason: failed", "failed", "core.flow_draft", "building"));
+    expect([rerun?.target, rerun?.why]).toEqual(["run the step again", "it was already tried exactly this way and did not work"]);
+    expect(rerun).not.toHaveProperty("name");
+  });
+});

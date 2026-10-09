@@ -11,10 +11,11 @@
 // Flow. What the script means -- which node, which parameter, which port --
 // is decided against the registry in `./assemble.ts`, not here.
 //
-// A step's `repeat over:`, `repeat through:`, `repeat while:` and `repeat
-// most:` lines are read onto the step as written (t346); whether they make a
-// loop, and which, is `./draft-routing.ts`'s question. Its `optional:` line is
-// read the same way (t357); what it means is `./assemble.ts`'s.
+// A step's `repeat over:`, `repeat through:`, `repeat while:`, `repeat most:`
+// and `repeat pace:` lines are read onto the step as written (t346, t378);
+// whether they make a loop, and which, is `./draft-routing.ts`'s question. Its
+// `optional:` and `only after:` lines are read the same way (t357, t378); what
+// they mean is `../script-statements/guarded-steps.ts`'s.
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type {
   AutomationStudioFlowScript,
@@ -48,13 +49,19 @@ const GO_TO = /^(?:go\s*to|goto|->|=>|jump\s+to|then)\s+/iu;
  * parameter is ever read as one: a key with a space in it names none.
  */
 const REPEAT_WORD = "repeat";
-const REPEAT_PARTS = new Set(["over", "through", "while", "most"]);
+const REPEAT_PARTS = new Set(["over", "through", "while", "most", "pace"]);
 /**
  * A step's `optional:` line (`AutomationStudioFlowScriptOptional`): the step is
  * only sometimes needed. Reserved, as `node:` is, so it is never read as a node
  * parameter; no node declares a parameter by either name.
  */
 const OPTIONAL_WORDS = new Set(["optional", "sometimespresent"]);
+/**
+ * A step's `only after: <label>` line (`AutomationStudioFlowScriptOnlyAfter`):
+ * the step runs only when the optional step it names was done. Two words, so,
+ * as a repeat line's, it can never be a node parameter's name.
+ */
+const ONLY_AFTER_WORDS = new Set(["onlyafter"]);
 
 export function parseAutomationStudioFlowScript(text: string): {
   script: AutomationStudioFlowScript;
@@ -124,6 +131,11 @@ class ScriptReader {
       this.open = undefined;
       return;
     }
+    if (ONLY_AFTER_WORDS.has(authoringKey(head))) {
+      step.onlyAfter = { label: authoringLabel(value), line };
+      this.open = undefined;
+      return;
+    }
     const entry: AutomationStudioFlowScriptEntry = { key: head, lines: [value], line };
     step.entries.push(entry);
     this.open = entry.lines;
@@ -181,8 +193,13 @@ class ScriptReader {
 
   private repeat(step: AutomationStudioFlowScriptStep, part: string, value: string, line: number): void {
     const repeat: AutomationStudioFlowScriptRepeat = step.repeat ?? { line };
-    if (part === "most") repeat.most = value;
-    else if (part === "over") repeat.over = authoringLabel(value);
+    if (part === "most") {
+      repeat.most = value;
+      repeat.mostLine = line;
+    } else if (part === "pace") {
+      repeat.pace = value;
+      repeat.paceLine = line;
+    } else if (part === "over") repeat.over = authoringLabel(value);
     else if (part === "through") repeat.through = authoringLabel(value);
     else repeat.while = authoringLabel(value);
     step.repeat = repeat;

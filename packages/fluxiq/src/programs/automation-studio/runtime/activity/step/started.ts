@@ -1,3 +1,4 @@
+import type { AutomationStudioActivityEmission } from "../contracts.ts";
 import { emitAutomationStudioActivity } from "../emit.ts";
 import { automationStudioActivityPassWords, type AutomationStudioActivityLoopPass } from "../loop/index.ts";
 import { automationStudioActivityAction, automationStudioActivityHumanLabel } from "../wording/index.ts";
@@ -23,6 +24,11 @@ import { automationStudioActivityAction, automationStudioActivityHumanLabel } fr
  * A step that runs as a pass of a do-while loop (`pass`, from
  * `../loop/words.ts`) says which: "Reading page 3", "Clicking “Next” on
  * page 3" (`../loop/pass-words.ts`).
+ *
+ * A step a list loop's pass runs carries that pass's row in `step.row`, as a
+ * person reads it ("Jonas Weber", `../loop/row.ts`), so its card can say
+ * "Confirm · Jonas Weber" (t378, lane D); the wire contract
+ * (`ClientGatewayActivity.step.row`) declares it optional.
  */
 export function emitAutomationStudioActivityStep(input: { index: number; count: number; nodeId: string; label?: string | undefined; definitionId?: string | undefined; parameters?: unknown; pass?: AutomationStudioActivityLoopPass | undefined }): void {
   const label = automationStudioActivityHumanLabel(input.label, 160);
@@ -33,10 +39,12 @@ export function emitAutomationStudioActivityStep(input: { index: number; count: 
   const passed = input.pass ? automationStudioActivityPassWords({ action: own, definitionId: input.definitionId, pass: input.pass }) : { action: own, after: "" };
   const action = passed.action;
   const where = `${counted}${passed.after}`;
+  const row = input.pass?.row;
+  const step: NonNullable<AutomationStudioActivityEmission["step"]> = { index: input.index, count: input.count, nodeId: input.nodeId, ...(label ? { label } : {}), ...(row ? { row } : {}) };
   emitAutomationStudioActivity({
     phase: "running",
     label: `Running ${where}${action ? `: ${action}` : ""}`,
-    step: { index: input.index, count: input.count, nodeId: input.nodeId, ...(label ? { label } : {}) },
+    step,
     // `Node: <definition>` is the record a tool row carries (`ui/activity-action/
     // record.ts`), so a card can tell what the step is from what it runs: a
     // merge step otherwise read "Action · the page" (U-A2). A chat shows no

@@ -143,6 +143,17 @@ describe("a rerun taking the replaced step's place", () => {
     expect(steps[0]!.routeSignatures).toEqual(own);
   });
 
+  // t378: a saved Flow keeps the pace a trial learned on a node (`metadata.paceMs`), read back as the draft step's
+  // `paceMs`; a repair that reruns that step must keep it, and a rerun given its own pace keeps its own.
+  it("carries the replaced step's pace onto the rerun, and keeps a rerun's own", () => {
+    const steps = [step("f1", 1, { paceMs: 6000 }), step("d1", 2, { disposition: "taken" })];
+    automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });
+    expect(steps[0]).toMatchObject({ id: "d1", disposition: "kept", paceMs: 6000 });
+    const own = [step("f2", 1, { paceMs: 6000 }), step("d2", 2, { disposition: "taken", paceMs: 9000 })];
+    automationStudioLlmEvidenceRerunReplaced(own, own[0], { takesItsPlace: true });
+    expect(own[0]).toMatchObject({ id: "d2", paceMs: 9000 });
+  });
+
   it("carries the acts onto a rerun that changes something", () => {
     const steps = [step("d1", 1, { acts: ["a1"] }), step("d2", 2, { disposition: "taken" })];
     automationStudioLlmEvidenceRerunReplaced(steps, steps[0], { takesItsPlace: true });

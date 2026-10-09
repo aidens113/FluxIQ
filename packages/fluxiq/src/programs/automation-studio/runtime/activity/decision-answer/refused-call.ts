@@ -26,6 +26,18 @@ type Held = { iteration: number; call: Call; described: AutomationStudioActivity
 /** The refusal entry's tool id and the loop's code (`../../llm/repeat-guard/feedback.ts`), read as plain strings so this module does not reach into the loop. */
 const REPEAT_CHECK = "core.repeat_check";
 const REPEAT_REFUSED = "llm_evidence_loop.repeat_refused";
+/**
+ * A candidate build's own calls refused as sent again unchanged, in Core's
+ * words, carried as the record's `Declined` part (the shared card reads it,
+ * `../../../../../ui/activity-action/record.ts`) and as the status line's
+ * reason. Lane C (`run-mv0fuotv-805294d7`) read "Not done: it was already tried
+ * exactly this way and did not work" for a whole Flow sent again unchanged,
+ * which says nothing of a Flow (t378).
+ */
+const SENT_AGAIN: Readonly<Record<string, string>> = Object.freeze({
+  "core.submit_candidate": "the same Flow was sent again unchanged, so it was not checked again",
+  "core.test_candidate": "the same test was asked for again with nothing in the Flow changed, so it was not run again"
+});
 /** An earlier outcome as the record may carry it: a code, never a sentence. */
 const OUTCOME_SHAPED = /^[a-z0-9_]{1,64}$/u;
 
@@ -53,9 +65,10 @@ function refusedInTrace(trace: Stalled["trace"], iteration: number): string | un
  */
 function card(held: Held, outcome: string): void {
   const words = automationStudioActivityToolCall(held.call, held.described, { start: held.start });
-  const text = [`Result: ${REPEAT_REFUSED}`, OUTCOME_SHAPED.test(outcome) ? `Reason: ${outcome}` : "", words.node ? `Node: ${words.node}` : ""].filter(Boolean).join(" · ");
+  const own = SENT_AGAIN[held.call.toolId];
+  const text = [`Result: ${REPEAT_REFUSED}`, OUTCOME_SHAPED.test(outcome) ? `Reason: ${outcome}` : "", words.node ? `Node: ${words.node}` : "", own ? `Declined: ${own}` : ""].filter(Boolean).join(" · ");
   const detail = { kind: words.kind, title: words.title, status: "failed" as const, ref: held.call.toolId, text };
-  const because = activityActionOf({ phase: words.phase, detail })?.refused?.because;
+  const because = own ?? activityActionOf({ phase: words.phase, detail })?.refused?.because;
   const action = `${words.title.charAt(0).toLowerCase()}${words.title.slice(1)}`;
   emitAutomationStudioActivity({ phase: words.phase, label: `Not done: ${action}${because ? ` — ${because}` : ""}`, detail });
 }

@@ -56,14 +56,14 @@ describe("trial feedback counts steps, not attempts", () => {
     attemptId, nodeId: "coupon", definitionId: "web.output.dom-click", startedAt: 2, status: failure ? "failed" : "succeeded", inputs: {}, outputs: {}, effects: [], ...(failure ? { failure } : {})
   });
 
-  it("reads a press refused busy and then accepted as one succeeded step that took 2 attempts", () => {
+  it("reads a press refused busy and then accepted as one succeeded step that took 2 attempts, and says what it got past", () => {
     const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph,
       trace: { status: "failed", startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, coupon("a2", busy), coupon("a3")] } });
     expect(feedback.steps).toEqual([
       { step: 1, definitionId: "web.output.browser-navigate", status: "succeeded" },
-      { step: 2, definitionId: "web.output.dom-click", control: "Get coupons", status: "succeeded", attempts: 2 }
+      { step: 2, definitionId: "web.output.dom-click", control: "Get coupons", status: "succeeded", attempts: 2,
+        absorbed: [{ failureCode: "web.action.rate_limited", happened: "The step ran and did not work.", said: "The step ran and did not work. The run tried the step again and it went through." }] }
     ]);
-    expect(JSON.stringify(feedback)).not.toContain("rate_limited");
   });
 
   it("reads a step that failed after all its attempts as one failed step with its final reason", () => {
@@ -73,7 +73,8 @@ describe("trial feedback counts steps, not attempts", () => {
     expect(feedback.steps).toEqual([
       { step: 1, definitionId: "web.output.browser-navigate", status: "succeeded" },
       { step: 2, definitionId: "web.output.dom-click", control: "Get coupons", status: "failed", attempts: 4, failureCode: "web.target.not_found",
-        happened: "The step's control was not found on the page.", retryable: false }
+        happened: "The step's control was not found on the page.", retryable: false,
+        absorbed: [1, 2, 3].map(() => ({ failureCode: "web.action.rate_limited", happened: "The step ran and did not work.", said: "The step ran and did not work." })) }
     ]);
   });
 
@@ -81,6 +82,52 @@ describe("trial feedback counts steps, not attempts", () => {
     const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph,
       trace: { status: "failed", startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, coupon("a2"), coupon("a3")] } });
     expect((feedback.steps as Array<{ step: number; attempts?: number }>).map((step) => [step.step, step.attempts])).toEqual([[1, undefined], [2, undefined], [3, undefined]]);
+  });
+});
+
+// t378, lane D (`run-mv0fuual-f9e6f089`, 0036): two Confirm presses in a loop were refused by the site's "you're going
+// too fast" notice, waited out and pressed again, and the model was told only `attempts: 2`. The step now says what
+// interrupted it, on which pass and row, the wait taken, that the step then went through, and the pace now in force.
+describe("trial feedback for a refusal the run waited out", () => {
+  type Attempt = AutomationStudioGraphExecutionTrace["attempts"][number];
+  const loopGraph = {
+    nodes: [
+      { id: "each", definitionId: "builtin.control.for-each" },
+      { id: "confirm", definitionId: "web.output.dom-click", label: "Confirm the follow", parameterValues: { element: { tagName: "button", accessibleName: "Confirm" } } }
+    ]
+  } as unknown as AutomationStudioFlowArtifact;
+  const pass = (index: number, item: Attempt["outputs"][string]): Attempt => ({ attemptId: `each.${index}`, nodeId: "each", definitionId: "builtin.control.for-each", startedAt: 1, status: "succeeded", route: "body", inputs: {}, outputs: { item, index, count: 8 }, effects: [] });
+  const confirm = (attemptId: string, extra: Partial<Attempt> = {}): Attempt => ({ attemptId, nodeId: "confirm", definitionId: "web.output.dom-click", startedAt: 2, status: "succeeded", inputs: {}, outputs: {}, effects: [], ...extra });
+  const refused = (attemptId: string, raisedToMs: number): Attempt => confirm(attemptId, { status: "failed", message: "Slow down! You can confirm again in 5 seconds (page words)",
+    failure: { category: "action_failed", code: "web.action.rate_limited", retryable: true, stage: "execution", effect: "unacted", retryAfterMs: 5_500 }, pace: { inForceMs: 0, waitedMs: 0, raisedToMs } });
+  const trial: AutomationStudioGraphExecutionTrace = {
+    status: "succeeded", startedAt: 1, values: {}, effects: [],
+    attempts: [pass(2, { name: "Freya" }), confirm("c3"), pass(3, { name: "  Jonas\n" }), refused("c4", 5_500),
+      confirm("c5", { retry: { attemptNumber: 2, maxAttempts: 4, backoffMs: 2_500, rung: "retry_node", previousAttemptId: "c4", hintedWaitMs: 5_500, creditedMs: 3_000 } })],
+    pace: [{ nodeId: "confirm", paceMs: 5_500, learnedMs: 5_500, raisedCount: 1, waitedMs: 0 }]
+  };
+
+  it("names the refusal in plain words with its pass and row, the wait taken, that the step went through, and the pace now held", () => {
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph: loopGraph, trace: trial });
+    const steps = feedback.steps as JsonObject[];
+    expect(steps.map((step) => [step.definitionId, step.status, step.attempts])).toEqual([
+      ["builtin.control.for-each", "succeeded", undefined], ["web.output.dom-click", "succeeded", undefined], ["builtin.control.for-each", "succeeded", undefined], ["web.output.dom-click", "succeeded", 2]
+    ]);
+    expect(steps[1]).not.toHaveProperty("absorbed");
+    expect(steps[3]!.absorbed).toEqual([{
+      failureCode: "web.action.rate_limited", happened: "The site asked the run to slow down on pass 4 (Jonas), and to try again in 5.5 s.", pass: 4, row: "Jonas", askedWaitMs: 5_500, waitedMs: 2_500, paceMs: 5_500,
+      said: "The site asked the run to slow down on pass 4 (Jonas), and to try again in 5.5 s. The run waited 2.5 s (3.0 s had already passed since the refusal) and tried the step again: it went through, so what the site had shown no longer stood in its way. From then on the run started this step at most once every 5.5 s."
+    }]);
+    expect(feedback.paces).toEqual([{ definitionId: "web.output.dom-click", label: "Confirm the follow", control: "Confirm", paceMs: 5_500,
+      said: "The run learned to start this step at most once every 5.5 s after the site asked it to slow down, and held every later pass to it." }]);
+    expect(JSON.stringify(feedback)).not.toContain("Slow down!");
+  });
+
+  it("names a pass by its number alone when its row has no words of its own, or they were withheld", () => {
+    const withheld = { ...trial, attempts: [pass(0, { [`$datasetRow`]: { datasetId: "people", ordinal: 1 } }), refused("c1", 5_500), confirm("c2")] };
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph: loopGraph, trace: withheld });
+    expect((feedback.steps as JsonObject[])[1]!.absorbed).toEqual([expect.objectContaining({ pass: 1, happened: "The site asked the run to slow down on pass 1, and to try again in 5.5 s." })]);
+    expect((feedback.steps as JsonObject[])[1]!.absorbed).toEqual([expect.not.objectContaining({ row: expect.anything() })]);
   });
 });
 

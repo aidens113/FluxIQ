@@ -1,6 +1,13 @@
 import { durationFromUnit } from "./shared.ts";
 import { defineBuiltinNode } from "../shared/definition.ts";
 
+/**
+ * Wait answers `waiting` with the pause it asks for in `durationMs`, and a
+ * graph run takes that pause and goes on down `success`
+ * (`runtime/executor/pacing/timed-pause.ts`). Until t378 the run stopped
+ * `waiting` on it instead, with nothing parked to resume from, so the node after
+ * a Wait never ran.
+ */
 export const waitNode = defineBuiltinNode({
   id: "builtin.timing.wait",
   label: "Wait",

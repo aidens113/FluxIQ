@@ -574,6 +574,12 @@ run failed by its result check ends "Run failed: <what came back, why that
 failed it, and how the repair ended>", read from the run's own record
 (`runtime/activity/wording/run-ending.ts`).
 
+A step a list loop's pass runs carries that pass's row in `step.row`, as a
+person reads it ("Jonas Weber", `runtime/activity/loop/row.ts`), cut to the
+title's bound, so its card can say "Confirm · Jonas Weber" (t378). The field is
+optional: steps outside a list loop, and the recovering and settled rows, do
+not carry it, and a client that does not know it reads the step without it.
+
 Two activity fields say how a unit of work stopped or holds (t376):
 
 - `stopped: true` is set only on the final event of work a person or caller

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
-import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioNodeAttemptTrace } from "../index.ts";
-import { recoveryBudgetState } from "../recovery-budget.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../../model/index.ts";
+import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioNodeAttemptTrace, type AutomationStudioRecoveryCandidateKind } from "../../index.ts";
+import { recoveryBudgetState } from "../../recovery-budget.ts";
 
 // Live run `run-munv53gt-a0e6f545`: a re-authored Flow pressed a store's
 // one-time "Continue shopping" check, optional by its graph (both `success` and
@@ -152,7 +152,7 @@ describe("a failure the skip does not cover keeps the recovery ladder", () => {
 });
 
 describe("what the recovery budgets count", () => {
-  const attempt = (nodeId: string, kind: string | undefined, index: number): AutomationStudioNodeAttemptTrace => ({
+  const attempt = (nodeId: string, kind: AutomationStudioRecoveryCandidateKind | undefined, index: number): AutomationStudioNodeAttemptTrace => ({
     attemptId: `${nodeId}.attempt.${index}`,
     nodeId,
     definitionId: "builtin.policy.action",
@@ -162,7 +162,7 @@ describe("what the recovery budgets count", () => {
     inputs: {},
     outputs: {},
     effects: [],
-    ...(kind ? { recoveryDecision: { lookup: { nodeId, definitionId: "builtin.policy.action", attemptId: `${nodeId}.attempt.${index}`, comparisonStatus: "unknown" }, candidates: [], selected: { kind: kind as never, priority: 1, label: kind, reason: kind } } } : {})
+    ...(kind ? { recoveryDecision: { lookup: { nodeId, definitionId: "builtin.policy.action", attemptId: `${nodeId}.attempt.${index}`, comparisonStatus: "unknown" }, candidates: [], selected: { kind, priority: 1, label: kind, reason: kind } } } : {})
   });
 
   it("does not count a node sending itself round again, by any ladder rung, as a recovery", () => {

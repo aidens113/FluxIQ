@@ -126,6 +126,18 @@ describe("the judge is told what the rows a condition left out by itself are", (
   });
 });
 
+// t378, lane D (`run-mv0fuual-f9e6f089`): a Flow confirmed all eight friend
+// requests where four were asked, and both judges advised a condition on the
+// for-each and the press, which sent the model to a filter node a script cannot
+// wire. The rows a repeat visits are the rows its listing kept.
+describe("the judges send too many rows acted on to the listing's where", () => {
+  it("says the fix is the listing's where, not a condition on the repeat or the press, in both judges' prompts", () => {
+    const sentence = "A Flow that acts on more rows of a listing than the request asks -- a press repeated over every row where only some qualify -- is fixed with a where condition on the listing step the repeat goes over, which decides the rows each pass visits, not with a condition on the repeat or the press: name that listing step in changed.";
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain(sentence);
+    for (const buildTest of [false, true]) expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest })).toContain(sentence);
+  });
+});
+
 // Live run `run-muqk713g` (C3, C5): the build-test judge saw a replayed read as
 // counts only, and both judges read an item "with Wireless Charging Case" as the
 // accessory the request left out. The build-test judge is now told what a

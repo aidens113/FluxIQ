@@ -16,6 +16,7 @@ const RERUN_REASONS: ReadonlySet<string> = new Set(["changes_nothing", "rerun_ho
 
 const AMENDMENT: Readonly<Record<string, string>> = ACTIVITY_ACTION_REFUSAL_WORDS.amendment;
 const REPEATED: Readonly<Record<string, string>> = ACTIVITY_ACTION_REFUSAL_WORDS.repeated;
+const RESENT: Readonly<Record<string, string>> = ACTIVITY_ACTION_REFUSAL_WORDS.resent;
 
 /** The most reasons one card says. */
 const MAX_REASONS = 2;
@@ -31,13 +32,18 @@ const MAX_REASONS = 2;
  * - `because`: why, in Core's words (`./refusal-words.ts`), at most two
  *   reasons joined; never a code. A reason with no words is left out, and a
  *   refusal with none left says the Flow is as it was.
+ *
+ * `flow` is true for a call that sends the whole Flow (a candidate build's
+ * submission): one refused as a repeat is the same Flow sent again unchanged,
+ * and `because` says so (`resent`), never that a step was tried.
  */
-export function activityActionRefusal(record: { resultCode: string | undefined; reason?: string | undefined; applied?: number | undefined; declined?: string | undefined }): { all: boolean; rerun: boolean; because: string } | null {
+export function activityActionRefusal(record: { resultCode: string | undefined; reason?: string | undefined; applied?: number | undefined; declined?: string | undefined }, flow = false): { all: boolean; rerun: boolean; because: string } | null {
   // A call Core declined and said why in words (`./record.ts`, `Declined`): nothing of it was done.
   if (record.declined) return { all: true, rerun: false, because: record.declined };
   const code = record.resultCode?.trim().toLowerCase();
   if (code === REPEAT_REFUSED) {
-    return { all: true, rerun: true, because: REPEATED[record.reason?.trim().toLowerCase() ?? ""] ?? REPEATED.same_result! };
+    const words = flow ? RESENT : REPEATED;
+    return { all: true, rerun: true, because: words[record.reason?.trim().toLowerCase() ?? ""] ?? words.same_result! };
   }
   if (code === AMENDMENT_UNDONE) return { all: true, rerun: false, because: "the Flow would only be back as it was before" };
   if (code !== AMENDMENTS_REFUSED) return null;

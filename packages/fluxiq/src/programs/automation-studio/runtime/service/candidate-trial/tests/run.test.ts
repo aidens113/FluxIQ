@@ -40,6 +40,22 @@ describe("one candidate trial", () => {
     expect(fixture.sessions.at(-1)).toMatchObject({ runId: "trial.1", trace: { status: "succeeded" }, metadata: { candidateTrial: { candidateId: "candidate.1", revision: 1, start: "not_reset", execution: "succeeded" } } });
   });
 
+  it("keeps the pace a refusal that asked the run to wait taught it, by the plan's keys, and tells the model what the press got past", async () => {
+    const fixture = trialFixture();
+    let presses = 0;
+    fixture.ports.graphOptions = ({ signal }) => ({ signal, now: () => 100, delay: async () => undefined, nativeNodeExecutor: async () => {
+      presses++;
+      return { result: presses === 1
+        ? { status: "failed", route: "failed", outputs: {}, failure: { category: "action_failed", code: "press.slow_down", retryable: true, stage: "execution", effect: "unacted", retryAfterMs: 5_500 } }
+        : { status: "success", route: "success", outputs: {} } };
+    } } as ReturnType<typeof fixture.ports.graphOptions>);
+    const { result, record } = await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports);
+
+    expect(presses).toBe(2);
+    expect(record.learnedPaces).toEqual([{ subflowKey: "primary", nodeKey: "press", paceMs: 5_500 }]);
+    expect((result.feedback.steps as Array<{ absorbed?: unknown }>).at(-1)!.absorbed).toEqual([expect.objectContaining({ failureCode: "press.slow_down", askedWaitMs: 5_500, waitedMs: 5_500, paceMs: 5_500 })]);
+  });
+
   it("with no start hook records not_reset; with one, calls it first and records what it answered; a failing hook runs nothing", async () => {
     const order: string[] = [];
     const fixture = trialFixture(); pressing(fixture, "success", () => order.push("press"));

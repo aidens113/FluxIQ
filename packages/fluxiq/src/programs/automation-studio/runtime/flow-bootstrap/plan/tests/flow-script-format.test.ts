@@ -1,10 +1,15 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../../action-permissions/index.ts";
-import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
+import { AutomationStudioNodeRegistry, type AutomationNodeParameter, type AutomationNodePort, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import { automationStudioPlanStepConsequences } from "../../../llm/harness-options/index.ts";
-import { acceptAutomationStudioFlowBootstrapResult } from "../../authoring/index.ts";
-import { AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA, AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT } from "../index.ts";
+import { acceptAutomationStudioFlowBootstrapResult, parseAutomationStudioFlowScript } from "../../authoring/index.ts";
+import {
+  AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT
+} from "../index.ts";
 import { webDomainNodeDefinitionsFixture } from "./index.ts";
 
 // What the model is told about the run its Flow will have. The only Flow the
@@ -163,8 +168,9 @@ describe("the Flow script format's consequence declaration", () => {
 // had no way to say a banner may not show.
 describe("the Flow script act-on-one-item example", () => {
   // The real web library beside Core's built-in nodes: an optional step joins at the built-in Merge.
+  // Typing takes the domain's `submit` (t378), which the fixture's copy predates.
   const registry = new AutomationStudioNodeRegistry();
-  for (const definition of webDomainNodeDefinitionsFixture()) registry.register(definition);
+  for (const definition of webDefinitionsWithSubmit()) registry.register(definition);
   const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
   const lines = AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE.split("\n");
   const heading = lines.indexOf("Example, acting on one item:");
@@ -179,18 +185,23 @@ describe("the Flow script act-on-one-item example", () => {
     }
   });
 
-  it("builds as written: a banner closed if it shows, a swatch set, a size chosen, a quantity typed, and last a press that declares modify_existing", () => {
+  it("builds as written: a banner closed if it shows, a search sent, a result opened, a swatch set, a size chosen, a quantity typed, and last a press that declares modify_existing", () => {
     const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: example }, registry, resolution });
     expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
     const nodes = accepted.ok ? accepted.plan.subflows[0]?.nodes ?? [] : [];
     expect(nodes.map((node) => node.definitionId)).toEqual([
-      "web.output.browser-navigate", "web.output.dom-click", "builtin.control.merge", "web.output.dom-check",
-      "web.output.dom-select", "web.output.dom-type", "web.output.dom-click"
+      "web.output.browser-navigate", "web.output.dom-click", "builtin.control.merge", "web.output.dom-type", "web.output.dom-click",
+      "web.output.dom-check", "web.output.dom-select", "web.output.dom-type", "web.output.dom-click"
     ]);
     const presses = nodes.filter((node) => node.definitionId === "web.output.dom-click");
-    expect(presses.map((node) => node.consequences)).toEqual([[], ["modify_existing"]]);
+    expect(presses.map((node) => node.consequences)).toEqual([[], [], ["modify_existing"]]);
+    // t378: the search sends its form, so it declares, and declares none.
+    expect(nodes[3]?.parameters).toMatchObject({ submit: true });
+    expect(nodes[3]?.consequences).toEqual([]);
+    // The quantity is typed and not sent, so it declares nothing.
+    expect(nodes[7]?.consequences).toBeUndefined();
     // The swatch is set, never pressed: a press would toggle a colour the page arrived with.
-    expect(nodes[3]?.parameters).toMatchObject({ checked: true });
+    expect(nodes[5]?.parameters).toMatchObject({ checked: true });
     // The banner's failed way out joins the path its success takes, which is what the runtime skips past.
     const edges = accepted.ok ? accepted.plan.subflows[0]?.edges ?? [] : [];
     expect(edges.filter((edge) => edge.source.nodeKey === "s2").map((edge) => `${edge.source.portId}->${edge.target.nodeKey}`).sort()).toEqual(["failed->s3", "success->s3"]);
@@ -198,8 +209,8 @@ describe("the Flow script act-on-one-item example", () => {
 
   it("carries the consequence line on every press in the example, because a model copies the example", () => {
     const steps = example.split(/\n(?=step)/u);
-    const presses = steps.filter((step) => step.includes("node: web.dom.click"));
-    expect(presses.length).toBe(2);
+    const presses = steps.filter((step) => step.includes("node: web.dom.click") || step.includes("submit: true"));
+    expect(presses.length).toBe(4);
     for (const step of presses) expect(step).toMatch(/consequences: /u);
   });
 
@@ -237,7 +248,9 @@ describe("the Flow script act-on-one-item example", () => {
 
   it("teaches the optional line for a step only sometimes needed, and where it cannot stand", () => {
     expect(guidance).toContain("`optional: yes` marks a step that is only sometimes needed");
-    expect(guidance).toContain("never inside a repeat and never beside an `on <port>:` line");
+    // t378: an optional step may now stand inside a repeat (`loop-format.test.ts`).
+    expect(guidance).toContain("never on one the answer depends on, and never beside an `on <port>:` line");
+    expect(guidance).not.toContain("never inside a repeat");
     expect(example).toContain("  optional: yes");
   });
 });
@@ -250,8 +263,89 @@ describe("the Flow script act-on-one-item example", () => {
 describe("the legacy format and completion schema bytes", () => {
   const digest = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
+  // t378 changed legacy deliberately, by one clause: the consequence sentence
+  // said a typing step never needs the line, and the web domain asks it of one
+  // with `submit: true` (lane B's refused script). Both digests moved with it.
   it("are unchanged by candidate-only text", () => {
-    expect(digest(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT)).toBe("1209b6dd3c48a87d8d5366b38b4c3061114cbdb99a64cbc99697a2de67f480cc");
-    expect(digest(JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA))).toBe("85c8a062a18c40ba32b650a02b8cc3936e3df549565f664113f97efa9187f575");
+    expect(digest(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT)).toBe("fbc8bfdb47b58003017b09e7fbe52daed7607db1a00bcae3ff8cae958987f87d");
+    expect(digest(JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA))).toBe("4158085b471a9c70072be180acdfaca04fb79787ede5f56e42635709b5176965");
+  });
+});
+
+// Every example a model is shown, in all three constants, against the checks
+// it will meet (t378). A model copies the example, and lanes copied text the
+// checks then refused: lane B's sent search had no consequence line, because
+// the format said a typing step never needs one. So each block must parse and
+// assemble with no error, and each step that presses -- a click, or typing that
+// sends its form -- must carry the line.
+const ROW_INPUT: AutomationNodePort = { id: "item", label: "Item", valueType: "any", role: "data", required: false };
+const SUBMIT: AutomationNodeParameter = { id: "submit", label: "Send Form After Typing", valueType: "boolean", defaultValue: false };
+
+/** The fixture's web library, with typing taking the domain's `submit` (`domain/src/output-nodes/definitions.ts`). */
+function webDefinitionsWithSubmit(): AutomationStudioNodeDefinition[] {
+  return webDomainNodeDefinitionsFixture().map((definition) => definition.id === "web.output.dom-type" ? { ...definition, parameters: [...definition.parameters, SUBMIT] } : definition);
+}
+
+/** That library with a press taking a row and Next page as the domain declares it, as `loop-format.test.ts` builds it. */
+function exampleRegistry(): AutomationStudioNodeRegistry {
+  const fixture = webDefinitionsWithSubmit();
+  const click = fixture.find((definition) => definition.id === "web.output.dom-click")!;
+  const nextPage: AutomationStudioNodeDefinition = {
+    ...click,
+    id: "web.output.dom-next_page",
+    label: "Next Page",
+    description: "Go to the list's next page, and answer ended when there is none.",
+    source: { kind: "importer", domainId: "web-automation", packageId: "@fluxiq-web-extension/domain", implementationKey: "web.dom.next_page" },
+    outputAction: { fixedOutputId: "web.dom.next_page" },
+    parameters: [{ id: "nextPage", label: "Next page", valueType: "object", ui: { control: "value" } }],
+    outputs: [...click.outputs, { id: "ended", label: "Ended", valueType: "any", role: "branch" }]
+  };
+  const registry = new AutomationStudioNodeRegistry();
+  for (const definition of [...fixture.map((definition) => definition.id === click.id ? { ...definition, inputs: [...definition.inputs, ROW_INPUT] } : definition), nextPage]) registry.register(definition);
+  return registry;
+}
+
+/** Each `Example...:` block of a constant, as the script it shows. */
+function exampleBlocks(text: string): Array<[string, string]> {
+  const found: Array<[string, string[]]> = [];
+  for (const line of text.split("\n")) {
+    if (/^Example\b.*:$/u.test(line)) found.push([line, []]);
+    else found.at(-1)?.[1].push(line);
+  }
+  return found.map(([name, lines]) => [name, lines.join("\n")]);
+}
+
+describe("every example in the Flow script format", () => {
+  const registry = exampleRegistry();
+  const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
+  const blocks = [AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT].flatMap(exampleBlocks);
+
+  it("finds every example of the three constants", () => {
+    expect(blocks.map(([name]) => name)).toEqual([
+      "Example:", "Example, narrowing before reading:", "Example, two situations the run can start in:",
+      "Example, acting on one item:",
+      "Example, reading every page of a list:", "Example, acting on each row a listing kept:", "Example, a loop the site asked to slow down:"
+    ]);
+  });
+
+  it.each(blocks)("%s parses and assembles with no error", (_name, script) => {
+    expect(parseAutomationStudioFlowScript(script).issues.filter((issue) => issue.severity === "error")).toEqual([]);
+    // The acceptor is the one door that assembles a parsed script; `assemble.ts` stays behind the barrel.
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: script }, registry, resolution });
+    expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
+  });
+
+  it.each(blocks)("%s declares consequences on every step that presses or sends a form", (_name, script) => {
+    for (const step of script.split(/\n(?=\s*step)/u)) {
+      const lines = step.split("\n").map((line) => line.trim());
+      const presses = lines.includes("node: web.dom.click") || (lines.includes("node: web.dom.type") && lines.includes("submit: true"));
+      if (presses) expect(lines.some((line) => line.startsWith("consequences:")), step).toBe(true);
+    }
+  });
+
+  it("no longer says a typing step never needs the line, and says one that sends its form does", () => {
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).not.toContain("A step that types, chooses, waits or reads never needs it.");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).toContain("A typing step with `submit: true` sends its form, so it presses and needs the line too: `consequences: none` for a search.");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE).toMatch(/node: web\.dom\.type\n {2}target: t1\n {2}text: oxford shirt\n {2}submit: true\n {2}consequences: none/u);
   });
 });

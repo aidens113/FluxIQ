@@ -1,6 +1,6 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion } from "../../llm/harness-options/index.ts";
-import { automationStudioFlowBootstrapWrittenPlanBindingIssues } from "../authoring/index.ts";
+import { automationStudioFlowBootstrapIssuePlace, automationStudioFlowBootstrapWrittenPlanBindingIssues, type AutomationStudioFlowBootstrapIssueLocator } from "../authoring/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
@@ -47,7 +47,7 @@ export class AutomationStudioFlowCandidateSubmissionController {
     // statement by statement are asked of the submitted graph (t346).
     const bindings = automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: verdict.buildPlan.plan, registry: this.input.registry, resolution: this.input.resolution })
       .filter((issue) => issue.severity === "error");
-    if (bindings.length) return { ok: false, revision, check: bindingRefusal(bindings) };
+    if (bindings.length) return { ok: false, revision, check: bindingRefusal(bindings, verdict.locator) };
     const plan = structuredClone(verdict.buildPlan);
     const candidate: AutomationStudioFlowCandidate = {
       revision, digest: fingerprint.candidate({ buildPlan: plan, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "",
@@ -66,17 +66,27 @@ export class AutomationStudioFlowCandidateSubmissionController {
 /**
  * A candidate refused for its loops or bindings. Every sentence is Core's own
  * (`../authoring/`) and quotes only node keys, labels, field names and output
- * ids the model wrote, so each travels whole with its code and path.
+ * ids the model wrote, so each travels whole with its code and path, and with
+ * the step it is about as the model wrote it (t378): a node key such as "s11"
+ * is Core's, and names no step the model can find in its script.
  */
-function bindingRefusal(issues: readonly AutomationStudioFlowBootstrapIssue[]): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] {
+function bindingRefusal(issues: readonly AutomationStudioFlowBootstrapIssue[], locator: AutomationStudioFlowBootstrapIssueLocator | undefined): Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>["check"] {
   return {
     ok: false,
     issueCodes: [...new Set(issues.map((issue) => issue.code))],
     feedback: {
       ok: false,
       code: "candidate.loop_or_binding_refused",
-      issues: issues.map((issue) => ({ code: issue.code, ...(issue.path ? { path: issue.path } : {}), message: issue.message })),
-      instruction: "Each issue names the node and parameter it is about. Correct every one and resubmit the entire candidate."
+      issues: issues.map((issue) => {
+        const place = automationStudioFlowBootstrapIssuePlace(locator, issue.path);
+        return {
+          code: issue.code,
+          ...(issue.path ? { path: issue.path } : {}),
+          message: issue.message,
+          ...(place ? { step: place.step, ...(place.label === undefined ? {} : { label: place.label }), ...(place.line === undefined ? {} : { line: place.line }) } : {})
+        };
+      }),
+      instruction: "Each issue names the step it is about, by its line where the script has one. Correct every one and resubmit the entire candidate."
     }
   };
 }

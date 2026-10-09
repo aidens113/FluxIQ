@@ -16,6 +16,7 @@ import type { AutomationStudioFlowBootstrapEvidenceStep } from "../evidence-loop
 import type { AutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
 import type { AutomationStudioFlowBootstrapCandidateKept } from "./candidate-kept.ts";
 import type { AutomationStudioFlowBootstrapFailureStage } from "./codes.ts";
+import type { AutomationStudioFlowBootstrapRefusedStep } from "./refused-steps.ts";
 
 export type AutomationStudioFlowBootstrapFailureDiagnostic = {
   /** Actual logical provider calls of this build, including reader and judges. */
@@ -169,6 +170,17 @@ export type AutomationStudioFlowBootstrapFailureDiagnostic = {
    * that is still the code.
    */
   candidate?: AutomationStudioFlowBootstrapCandidateKept;
+  /**
+   * Present only beside `flow_bootstrap.evidence_repeat_without_progress`
+   * (t378): a few of the steps the last refused submission was refused at, as
+   * the model described them, screened and clipped, each with the script line
+   * or plan path its issue code in `issueCodes` is placed at
+   * (`./refused-steps.ts`). The one place this record carries words the model
+   * wrote: the chat's ending names the step ("the step 'keep requests with 5
+   * or more mutual friends' was given a setting it doesn't take") where codes
+   * alone said "a step".
+   */
+  refusedSteps?: AutomationStudioFlowBootstrapRefusedStep[];
 };
 
 export const MAX_DIAGNOSTIC_ISSUE_CODES = 16;

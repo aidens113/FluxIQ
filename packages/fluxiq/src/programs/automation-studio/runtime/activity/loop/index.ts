@@ -6,6 +6,7 @@ export { emitAutomationStudioActivityLoopEnded } from "./ended.ts";
 export { automationStudioActivityLoops } from "./loops.ts";
 export { automationStudioActivityLoopPass } from "./pass.ts";
 export { automationStudioActivityPassWords } from "./pass-words.ts";
+export { automationStudioActivityLoopRow } from "./row.ts";
 export { automationStudioActivityReads } from "./reads.ts";
 export type { AutomationStudioActivityLoop, AutomationStudioActivityLoopPass } from "./types.ts";
 export { automationStudioActivityLoopWords } from "./words.ts";

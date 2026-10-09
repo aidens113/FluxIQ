@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
-import type { AutomationStudioLlmEvidenceLoopInput } from "../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/index.ts";
 import { activityActionOf } from "../../../../../ui/index.ts";
 import { automationStudioActivityHub } from "../default-hub.ts";
 import { observeAutomationStudioEvidenceLoop } from "../observer.ts";
@@ -25,7 +25,7 @@ const ROWS = [
 const CONFIRM = { node: "web.output.dom-click", parameters: { element: { role: "button", accessibleName: "Confirm" } }, consequences: ["modify_existing"], replay: "verify" };
 
 /** What the host answers each call with, by call id: a replay's code, and for the list read its rows. */
-function answer(call: { callId: string }): unknown {
+function answer(call: { callId: string }): AutomationStudioLlmEvidenceToolExecutionResult {
   if (call.callId === "dryrun.1.13") {
     return {
       kind: "llm_evidence_tool_execution",
@@ -40,7 +40,7 @@ function answer(call: { callId: string }): unknown {
 }
 
 function loopInput(): AutomationStudioLlmEvidenceLoopInput {
-  return { tools: [], decide: async () => ({ kind: "complete", result: {} }), executeTool: async (call) => answer(call) as never };
+  return { tools: [], decide: async () => ({ kind: "complete", result: {} }), executeTool: async (call) => answer(call) };
 }
 
 const ended = () => seen.filter((event) => event.detail?.kind === "tool" && event.detail.status !== "started");
@@ -70,8 +70,8 @@ describe("the start page is the address the work starts at", () => {
     expect(ended().at(-1)?.detail?.title).toBe("Opening the start page");
 
     seen = [];
-    const drafted = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => ({ kind: "tool_call", callId: "go-1", toolId: "core.run_node", input: { node: "web.output.browser-navigate", parameters: { url: START } } }) as never });
-    const draft = { callId: "core.flow_draft", toolId: "core.flow_draft", value: { steps: [{ step: 1, actionId: "web.output.browser-navigate", input: { node: "web.output.browser-navigate", parameters: { url: START } }, inResult: true }] } as never };
+    const drafted = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => ({ kind: "tool_call", callId: "go-1", toolId: "core.run_node", input: { node: "web.output.browser-navigate", parameters: { url: START } } }) });
+    const draft = { callId: "core.flow_draft", toolId: "core.flow_draft", value: { steps: [{ step: 1, actionId: "web.output.browser-navigate", input: { node: "web.output.browser-navigate", parameters: { url: START } }, inResult: true }] } };
     await inScope(async () => {
       await drafted.decide({ iteration: 1, tools: [], evidence: [draft], decisionSchema: {}, canComplete: true });
       await drafted.executeTool({ callId: "go-1", toolId: "core.run_node", value: { node: "web.output.browser-navigate", parameters: { url: START } } });
@@ -132,10 +132,48 @@ describe("a build's own list read says how many rows it kept, and from how many 
         evidence: { ok: true, node: "web.output.dom-extract_list", status: "succeeded", read: { status: "succeeded", extraction: { recordCount: 20, pagesRead: 1, truncated: true } } },
         effectApplied: false,
         resultCode: "web.inspect.succeeded"
-      }) as never
+      }) satisfies AutomationStudioLlmEvidenceToolExecutionResult
     });
     await inScope(() => observed.executeTool({ callId: "extract-results-page1", toolId: "core.run_node", value: read }));
     expect(ended()[0]!.detail?.text).toBe("Result: web.inspect.succeeded · Rows: 20 · Pages: 1 · Node: web.output.dom-extract_list");
     expect(activityActionOf(ended()[0]!)).toMatchObject({ kind: "read", outcome: "done", result: "20 rows from 1 page" });
+  });
+});
+
+// Lane D (t378, `run-mv0fuual-f9e6f089`): the candidate build's exploration
+// "Click" cards named no control. Its calls carry only `target: { handle }`,
+// and its loop has no domain `describeCall`; the page view it was shown named
+// each handle.
+describe("an exploration press names the control the page view printed for its handle", () => {
+  const view = (lines: string[]) => ({ callId: "initial.core.run_node", toolId: "core.run_node", value: { evidence: { page: `PAGE "Circleway"\nURL ~/\n\n[banner]\n${lines.join("\n")}` } } });
+  const click = (callId: string, handle: string) => ({ kind: "tool_call", callId, toolId: "core.run_node", input: { node: "web.output.dom-click", parameters: { target: { handle } }, consequences: [] } });
+
+  it("names it by the latest view, and says the plain words for a handle no view printed", async () => {
+    let next = click("nav-friends-2", "t12");
+    const observed = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => next });
+    const first = view(["t9 link \"Home\" current marked ~/", "t12 link \"Friends\" ~/friends/", "t857 button \"Close chat\"", "t106 \"Privacy · Terms\""]);
+    await inScope(async () => {
+      await observed.decide({ iteration: 1, tools: [], evidence: [first], decisionSchema: {}, canComplete: false });
+      await observed.executeTool({ callId: next.callId, toolId: next.toolId, value: next.input });
+      next = click("close-chat-1", "t857");
+      const later = { ...view(["t857 button \"Close the chat\""]), callId: "nav-friends-2" };
+      await observed.decide({ iteration: 2, tools: [], evidence: [first, later], decisionSchema: {}, canComplete: false });
+      await observed.executeTool({ callId: next.callId, toolId: next.toolId, value: next.input });
+      next = click("nav-requests-1", "t542");
+      await observed.decide({ iteration: 3, tools: [], evidence: [first], decisionSchema: {}, canComplete: false });
+      await observed.executeTool({ callId: next.callId, toolId: next.toolId, value: next.input });
+    });
+    expect(ended().map((event) => event.detail?.title)).toEqual(["Clicking “Friends”", "Clicking “Close the chat”", "Clicking on the page"]);
+    expect(activityActionOf(ended()[0]!)?.target).toBe("Friends");
+  });
+
+  it("keeps the domain's own words first", async () => {
+    const call = click("nav-friends-2", "t12");
+    const observed = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => call, describeCall: () => ({ target: "Friends tab" }) });
+    await inScope(async () => {
+      await observed.decide({ iteration: 1, tools: [], evidence: [view(["t12 link \"Friends\" ~/friends/"])], decisionSchema: {}, canComplete: false });
+      await observed.executeTool({ callId: call.callId, toolId: call.toolId, value: call.input });
+    });
+    expect(ended().at(-1)?.detail?.title).toBe("Clicking “Friends tab”");
   });
 });

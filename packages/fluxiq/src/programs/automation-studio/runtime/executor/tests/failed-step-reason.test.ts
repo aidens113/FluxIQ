@@ -87,7 +87,7 @@ describe("a failed playback step's row", () => {
     expect(settle.detail!.text).not.toContain("busy;");
     const read = activityActionOf(settle);
     expect(read?.outcome).toBe("failed");
-    expect(read?.why).toBe("the page was busy");
+    expect(read?.why).toBe("the site asked FluxIQ to slow down");
   });
 
   it("still opens no bare \"Recovery started\" row", async () => {

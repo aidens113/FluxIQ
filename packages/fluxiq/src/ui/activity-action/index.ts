@@ -15,3 +15,4 @@ export { activityActionSentences } from "./sentences.ts";
 export { activityActionTested } from "./tested.ts";
 export type { ActivityAction, ActivityActionEvent, ActivityActionKind, ActivityActionOutcome, ActivityActionVerb } from "./types.ts";
 export { activityActionVerb } from "./verb.ts";
+export { ACTIVITY_ACTION_VERB_NAMES } from "./verb-names.ts";

@@ -6,8 +6,9 @@
 // What is checked is the graph the line assembles to and what the runtime does
 // with it, never a field copied back out of the line: the optional shape a
 // drafted `optional` step becomes, which the absent-step skip goes past when
-// the target is not there. The refusals are the one checker's, and each names
-// the line that said optional.
+// the target is not there. The refusals are the one checker's
+// (`../../script-statements/guarded-steps.ts`), and each names the line that said
+// optional.
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDocument } from "../../../../model/index.ts";
 import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
@@ -148,7 +149,11 @@ describe("an optional line where it cannot stand", () => {
     expect(accepted.issues.find((issue) => issue.code === "flow_script.optional_misplaced")?.message).toContain("on failed:");
   });
 
-  it("refuses an optional step inside a repeat, which runs it on every pass", () => {
+  // t378 W8: an optional step inside a repeat is now taken (it is done on the
+  // passes that need it), and its way past joins inside the span; the shape is
+  // checked in `./guarded-loop.test.ts`. Only the one ending a `repeat while`
+  // span, the check that repeats it, is still refused (below).
+  it("takes an optional step inside a repeat, which it once refused", () => {
     const accepted = accept([
       "flow: Confirm every request",
       "step: open the requests",
@@ -169,11 +174,11 @@ describe("an optional line where it cannot stand", () => {
       "  consequences: none",
       "  optional: yes"
     ]);
-    expect(accepted.ok).toBe(false);
-    expect(errors(accepted)).toEqual([{ code: "flow_script.optional_misplaced", path: "flow.line.18" }]);
+    expect(errors(accepted)).toEqual([]);
+    expect(accepted.ok).toBe(true);
   });
 
-  it("refuses the step that says repeat being optional too", () => {
+  it("refuses the step that says repeat being optional too, when it alone is a repeat while span", () => {
     const accepted = accept([
       "flow: Read every page",
       "step: open the results",

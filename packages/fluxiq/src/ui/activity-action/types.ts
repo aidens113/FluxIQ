@@ -53,6 +53,15 @@ export type ActivityActionOutcome = "working" | "done" | "failed" | "waiting";
  */
 export type ActivityAction = {
   kind: ActivityActionKind;
+  /**
+   * The card's own short name, present when the act is narrower than its
+   * kind's name says (`./verb-names.ts`): an option chosen is "Choose" and a box
+   * ticked is "Tick", never "Click" (lane A U1); a list's next page is "Next
+   * page"; a whole Flow sent again unchanged is "Send the Flow again". A client
+   * shows it in place of the kind's name (`./names.ts`); the kind still picks
+   * the icon.
+   */
+  name?: string;
   target: string | null;
   outcome: ActivityActionOutcome;
   why: string | null;
@@ -119,7 +128,13 @@ export type ActivityActionEvent = {
      */
     resolution?: string | undefined;
   } | undefined;
-  step?: { nodeId?: string | undefined; label?: string | undefined } | undefined;
+  /**
+   * `row`: the plain name of the row a step inside a repeat acted on ("Jonas
+   * Weber"), when Core says it. A card names it after the step's own target
+   * ("Confirm · Jonas Weber"): every pass of a repeat read "Click · Confirm"
+   * with no name (lane D, `run-mv0fuual-f9e6f089`, finding 2).
+   */
+  step?: { nodeId?: string | undefined; label?: string | undefined; row?: string | undefined } | undefined;
 };
 
 /**
@@ -130,6 +145,7 @@ export type ActivityActionEvent = {
 export type ActivityActionVerb =
   | "navigate"
   | "back"
+  | "next"
   | "click"
   | "type"
   | "search"

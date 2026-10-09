@@ -9,7 +9,7 @@ import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapP
 import { automationStudioRouteSignaturesValue } from "../../route-state/signatures/index.ts";
 import { boundedText, error, identifier, rejectFields, symbolic } from "./issues.ts";
 import { isJsonObject, isRecord, safeByteLength } from "./json-guards.ts";
-import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS } from "./limits.ts";
+import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_LIMITS, AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS } from "./limits.ts";
 import {
   automationStudioFlowBootstrapSizeLimits,
   automationStudioFlowBootstrapSizeRefusal,
@@ -104,7 +104,7 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
     issues.push(error("bootstrap.invalid_node", "Bootstrap node must be an object.", path));
     return;
   }
-  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences", "routeSignatures", "label"], path, issues);
+  rejectFields(value, ["key", "definitionId", "definitionVersion", "parameters", "outputActionId", "consequences", "routeSignatures", "label", "paceMs"], path, issues);
   symbolic(value.key, `${path}.key`, issues);
   identifier(value.definitionId, `${path}.definitionId`, issues);
   boundedText(value.definitionVersion, `${path}.definitionVersion`, issues);
@@ -124,6 +124,14 @@ function parseNode(value: unknown, path: string, issues: AutomationStudioFlowBoo
     issues.push(error("bootstrap.invalid_route_signatures", "Node routeSignatures must hold a before and/or an after, each a small JSON object.", `${path}.routeSignatures`));
   }
   if (value.label !== undefined) boundedText(value.label, `${path}.label`, issues);
+  // A whole number of milliseconds within the bound, as the run reads a node's
+  // pace (`../../executor/pacing/pace-metadata.ts`): a plan never carries a pace
+  // the run would read as none.
+  if (value.paceMs !== undefined
+    && (typeof value.paceMs !== "number" || !Number.isSafeInteger(value.paceMs)
+      || value.paceMs < AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.minPaceMs || value.paceMs > AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.maxPaceMs)) {
+    issues.push(error("bootstrap.invalid_pace", `Node paceMs must be a whole number of milliseconds from ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.minPaceMs} to ${AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS.maxPaceMs}.`, `${path}.paceMs`));
+  }
 }
 
 function parseEdge(value: unknown, path: string, issues: AutomationStudioFlowBootstrapIssue[]): void {

@@ -102,6 +102,135 @@ receipts, command/subject acknowledgements and durable promotion reconciliation
 remain separate integration work. Static candidate submission does not prove
 the user's requested outcome, and this facade never accepts or promotes it.
 
+### What a refused candidate is told
+
+**Every issue names the step it is about** (since t378). A script's steps do
+not become plan nodes one for one, so a refusal that named only a plan path
+("nodes 10 and 17") sent the model to the wrong lines. Each issue a refused
+candidate shows the model is `{code, path?, message?, step?, label?, line?,
+instead?, ...}`:
+
+- `step` is the step's description as the model wrote it, `label` its label
+  when it wrote one, and `line` the 1-based script line the issue is about:
+  the step's own `step:` line for an issue about the node, the specific line
+  (a `repeat most:`, an `only after:`) for one about a line.
+- The acceptor builds a locator from what assembly actually built
+  (`flow-bootstrap/authoring/script-locator.ts`), so indexes are never
+  recounted. A node Core derived -- the join after an optional step, a loop
+  head -- maps through its `cause` to the written step whose line made it.
+  `automationStudioFlowBootstrapIssuePlace` (`authoring/locate-issue.ts`)
+  resolves a path to its place. Both acceptance answers and the completion
+  verdict carry the map as `locator`, so assembly, the domain's parameter
+  resolution, registry validation and the binding check after it
+  (`candidate/submission.ts`) all place their issues the same way
+  (`llm/harness-options/bootstrap-completion.ts`).
+- A JSON-plan submission has no lines: its issues carry the node's name as
+  `step` and its key as `label` (`authoring/plan-locator.ts`).
+- Only issues about the whole Flow carry no line, and they are one explicit
+  list: `flow_script.no_steps`, `flow_script.too_many_lines`,
+  `flow_script.repeat_unavailable` and `bootstrap.invalid_plan`
+  (`WHOLE_FLOW`).
+- `instead` is one fixed sentence saying what to write, given where Core
+  knows it. A step whose consequences are undeclared gets it on its first
+  issue; a typing step with `submit: true` is told it sends its form, which is
+  a press, so it needs `consequences: none` or its classes
+  (`plan/issue-feedback.ts`).
+- The refusal's `next` names the refused steps by line and words ("line 32,
+  "search for the paper towels""), each held to 120 characters
+  (`candidate/submission-refusal.ts`).
+
+The contract is enforced by
+`flow-bootstrap/candidate/tests/refusal-locator-corpus.test.ts`: a corpus of
+scripts, each refused at one stage, goes through the real submission
+controller and is read back as the model is shown it, and every issue must
+have a `line` and a `step` unless its code is in `WHOLE_FLOW`. A source scan
+of `authoring/` and `script-statements/` requires every refusal code they can
+raise to be met by a case, be in `WHOLE_FLOW`, or be listed, with its reason,
+as one a written script never reaches (`NOT_FROM_A_SCRIPT`).
+
+**A run of refusals is counted by its issues.** A refused submission's kind is
+`<category>:<8-hex digest>` over the sorted set of `code@line` (`code@path`
+where an issue has no line). An identical resubmission is the same refusal;
+correcting one step makes a different one and breaks the run. The refused-in-a-
+row warning shows the category without the digest and lists the recurring
+issues ("..., the same issues each time: <code> at line <n>",
+`llm/decision-handlers/refusal-run.ts`).
+
+**An identical resubmission is told so in candidate terms.** The repeat guard
+keys `core.submit_candidate` on its `flow` (or `plan`) alone, so a changed
+`summary` does not make an unchanged script a new call
+(`llm/repeat-guard/outcomes.ts`). A refused script sent again is not checked
+again: its note says so, carries the earlier refusal's `issues` as given, tells
+the model to change the lines they name and keep the rest, and says what one
+more unchanged send does -- the build ends with nothing tested at three repeats
+refused in a row (`llm/repeat-guard/candidate-feedback.ts`). Candidate mode is
+`discoveryOnly`; the note and the refusal-run warning never mention the draft,
+a rerun, marking a step optional or the Flow being tested and judged as it
+stands, which the legacy notes still say.
+
+### Script statements a candidate may write
+
+These are taught in `AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT`
+(`flow-bootstrap/plan/flow-script-format.ts`) and assembled by
+`flow-bootstrap/script-statements/`:
+
+- **`repeat most: <n>`** bounds a `repeat while` span and goes on the span's
+  first step, beside `repeat while:`. Written under a later member of the
+  span, it is moved to the first step, since nesting is refused and it can
+  bound only that span. Written where no `while` span takes it, or on a span
+  that already has a bound, it is refused `flow_script.repeat_most_misplaced`
+  at its own line (`repeat-bound.ts`).
+- **`optional: yes` inside a span.** A step inside a repeat span may be
+  optional (an optional step that is the last step of a `repeat while` span,
+  the check that repeats it, is still refused `flow_script.optional_misplaced`).
+- **`only after: <label>`** on the steps written directly after an optional
+  step makes them a guarded group: they run only when the optional step was
+  done, and the pass then continues where it was. The optional step's `failed`
+  edge goes to a Merge after the group (a `guard` branch, which a span
+  allows), and a span that ended on the group's last step closes at that
+  Merge. So "if the notice shows, close it, wait, and go on with the loop" is
+  an optional dismiss plus an `only after:` wait. Every misplacement -- no
+  such step, another block or span, a step that is not optional, not written
+  directly after the group, on an optional or branching step, on the last
+  step of a `while` span -- is refused `flow_script.only_after_misplaced` at
+  that line (`guarded-steps.ts`).
+- **`repeat pace: <time>`** on a span's first step is the least time between
+  two passes: a number with `ms`, `s` or `min` (a bare number is seconds),
+  from 1 ms to 10 min. A pace under a later member moves to the first step; a
+  second pace, or one no span takes, is `flow_script.repeat_pace_misplaced`,
+  and one that cannot be read or is out of range
+  `flow_script.repeat_pace_invalid` (`repeat-pace.ts`). It lands on that
+  step's plan node as `paceMs`.
+
+A plan node's `paceMs` is a whole number of milliseconds from 1 to 600,000
+(`AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS`; anything else is
+`bootstrap.invalid_pace`), and adaptation writes it to the Flow node as
+`metadata.paceMs`, which the executor honours (Core's
+[Router Runtime](../automation-studio.md#router-runtime) section).
+
+The executor skips a guarded group's optional step as it skips any optional
+step (`executor/step-skip/optional-step.ts`): besides a step whose `failed`
+and `success` edges enter the same Merge, it accepts one whose `failed` edge
+enters a Merge that its success path reaches through at most 32 steps that do
+not branch, and the `failed` edge stays the way on. So on a pass where the
+site's notice is absent the group is gone past without spending retries or
+recovery (`executor/step-skip/tests/guarded-group-run.test.ts`).
+
+### What a trial says it absorbed
+
+A candidate trial's feedback lists, for each step, every refused attempt it
+got past (`absorbed`, `service/candidate-trial/absorbed.ts`): the failure
+code, what happened ("The site asked the run to slow down on pass 4 (Jonas),
+and to try again in 5.5 s." when the failure carried a wait hint, else Core's
+category sentence), the pass and row, the wait asked, the wait taken and the
+pace, and a `said` sentence ending "From then on the run started this step at
+most once every 5.5 s." when a pace was learned. The paces a run learned are
+also said once at the top level under `paces`. The failure's own message is
+never read. Promotion keeps a learned pace: the deciding trial's learned pace
+raises the matching plan node's `paceMs` (never lowers an authored one, held
+to the plan's bound), and the `candidateTrial` audit detail names
+`learnedPaces` and `raisedPaces` (`service/candidate-trial/promotion.ts`).
+
 ## Context boundary
 
 A bootstrap request carries the existing effective active instruction
@@ -584,6 +713,14 @@ extra branches are excluded unless an active instruction explicitly requests
 them. The bootstrap directives are absent from the untrusted user context and
 other task messages. Requests disable thinking and set temperature to zero;
 the strict Bootstrap response schema remains authoritative.
+
+A reply that stopped of its own accord (`finish_reason: stop`) but never
+closes its object, short only of closing brackets at its end, has the closers
+its open brackets need appended (`llm/deepseek/unclosed-content.ts`, since
+t378). The closed text must parse and is validated as any reply; content that
+does not start with `{`, ends inside a string or closes the wrong bracket is
+still refused `content_unclosed`, and a `length` reply is refused as
+truncated before this runs. The reply as sent stays in the step log.
 
 ### Domain system instructions
 

@@ -1,0 +1,16 @@
+{
+  "note": "Live reply, lab run run-mv0fuotv-805294d7 step 0017-decide (lane C, C3): finish_reason stop, content one closing brace short at its root. Usage as billed.",
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "message": {
+        "content": "{\"kind\":\"evidence_tool_decision\",\"summary\":\"Reading the search results list into the dataset with the fields the instruction needs, so the Flow can filter and page through them.\",\"decision\":{\"kind\":\"tool_call\",\"callId\":\"extract-list-2\",\"toolId\":\"core.run_node\",\"input\":{\"node\":\"web.output.dom-extract_list\",\"parameters\":{\"extractList\":{\"handle\":\"extraction.1\",\"fields\":{\"name\":\"div_css-1h13pfs_h2_css-0lh1x1m_a_css-1ahy6rs_span\",\"price\":\"div_css-1h13pfs_div_itemprop_offers_a_css-1wwnizn_span_css-00egoa7_span_css-1f32dgn_currency_amount\",\"rating\":\"div_css-1h13pfs_div_css-1bc9pgf_span_css-11xfgav_span_css-14idg5p_number\",\"url\":\"div_css-1h13pfs_h2_css-0lh1x1m_a_css-1ahy6rs_url@href\",\"sponsored\":\"div_css-1f5vozn_span\",\"plus\":\"brightaisle_plus\"}},\"consequences\":[]}}}"
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 17801,
+    "completion_tokens": 275,
+    "total_tokens": 18076
+  }
+}
