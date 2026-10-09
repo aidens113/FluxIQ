@@ -1,8 +1,11 @@
 import type { ClientGatewayClientMessage } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayAuditLog } from "./audit-log.ts";
 import type { ClientGatewayCommands } from "./commands.ts";
 import type { ClientGatewayEventBus } from "./event-bus.ts";
+import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 import type { ClientGatewayLifecycle } from "./lifecycle.ts";
 import type { ClientGatewayPairingFlow } from "./pairing-flow.ts";
+import { clientGatewayProtocolVersionVerdict } from "./protocol-version.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
 
@@ -13,6 +16,9 @@ type InboundCollaborators = {
   lifecycle: ClientGatewayLifecycle;
   pairingFlow: ClientGatewayPairingFlow;
   commands: ClientGatewayCommands;
+  audit: ClientGatewayAuditLog;
+  // Disconnecting a refused session is a public service method, so it goes through the facade (./facade-ports.ts).
+  facade: ClientGatewayFacadePorts;
 };
 
 /**
@@ -27,6 +33,8 @@ export class ClientGatewayInbound {
   private readonly lifecycle: ClientGatewayLifecycle;
   private readonly pairingFlow: ClientGatewayPairingFlow;
   private readonly commands: ClientGatewayCommands;
+  private readonly audit: ClientGatewayAuditLog;
+  private readonly facade: ClientGatewayFacadePorts;
 
   constructor(collaborators: InboundCollaborators) {
     this.sessions = collaborators.sessions;
@@ -35,6 +43,8 @@ export class ClientGatewayInbound {
     this.lifecycle = collaborators.lifecycle;
     this.pairingFlow = collaborators.pairingFlow;
     this.commands = collaborators.commands;
+    this.audit = collaborators.audit;
+    this.facade = collaborators.facade;
   }
 
   async receiveRaw(sessionId: string, rawMessage: string): Promise<void> {
@@ -46,6 +56,7 @@ export class ClientGatewayInbound {
     const session = this.sessions.require(sessionId);
     this.sessions.touch(session);
     if (message.type === "client.hello") {
+      if (!await this.admitProtocolVersion(sessionId, message.protocolVersion)) return;
       await this.lifecycle.handleHello(sessionId, message.payload);
       return;
     }
@@ -97,5 +108,26 @@ export class ClientGatewayInbound {
       return;
     }
     if (message.type === "client.error") await this.events.emit({ type: "client.error", session: this.sessions.toPublic(session), message });
+  }
+
+  /**
+   * A hello under another major protocol version is refused before it can
+   * pair: the client is told why and the session is closed. A hello with no
+   * version is let through with a recorded warning, because a client built
+   * before the version was checked may send none (C10).
+   */
+  private async admitProtocolVersion(sessionId: string, protocolVersion: unknown): Promise<boolean> {
+    const session = this.sessions.require(sessionId);
+    const verdict = clientGatewayProtocolVersionVerdict(protocolVersion);
+    if (verdict.kind === "accepted") return true;
+    if (verdict.kind === "missing") {
+      this.audit.record("session.protocol_version_missing", "Client hello carried no protocol version; accepted as compatible.", { sessionId, clientId: session.clientId });
+      return true;
+    }
+    this.audit.record("session.protocol_version_refused", verdict.reason, { sessionId, clientId: session.clientId, protocolVersion: verdict.version });
+    await this.transport.send(sessionId, this.transport.message("server.error", { code: "protocol_version_mismatch", message: verdict.reason }, session));
+    await this.transport.send(sessionId, this.transport.message("server.disconnect", { reason: verdict.reason }, session));
+    this.facade.disconnect(sessionId, "protocol version mismatch");
+    return false;
   }
 }
