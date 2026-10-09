@@ -7,19 +7,22 @@
 
 import type { ConversationActivity } from "./contracts";
 
-export type ConversationActivityOutcome = "done" | "failed" | "waiting" | null;
+export type ConversationActivityOutcome = "done" | "failed" | "waiting" | "paused" | null;
 
-/** How the event leaves its unit of work: settled, waiting on the person, or still working (null). */
+/** How the event leaves its unit of work: settled, waiting on the person, held while the person has the page, or still working (null). */
 export function conversationActivityOutcome(event: ConversationActivity): ConversationActivityOutcome {
   if (event.phase === "failed") return "failed";
   if (event.phase === "waiting_permission") return "waiting";
+  if (event.phase === "paused") return "paused";
   if (event.phase === "done" || event.final === true) return "done";
   return null;
 }
 
-/** "Building your Flow", "Fixing your Flow", "Flow ready", "Run failed", and the rest. */
-export function conversationActivityHeadline(kind: ConversationActivity["subject"]["kind"], outcome: ConversationActivityOutcome, repairing = false): string {
+/** "Building your Flow", "Fixing your Flow", "Flow ready", "Run failed", and the rest; `stopped` turns a failure into "Run stopped". */
+export function conversationActivityHeadline(kind: ConversationActivity["subject"]["kind"], outcome: ConversationActivityOutcome, repairing = false, stopped = false): string {
   if (outcome === "waiting") return "Waiting for your answer";
+  if (outcome === "paused") return "Paused: your turn on the page";
+  if (outcome === "failed" && stopped) return kind === "run" ? "Run stopped" : "Build stopped";
   if (outcome === "done") return kind === "run" ? "Run finished" : "Flow ready";
   if (outcome === "failed") return repairing ? "Couldn't fix your Flow" : kind === "run" ? "Run failed" : "Build failed";
   if (repairing) return "Fixing your Flow";

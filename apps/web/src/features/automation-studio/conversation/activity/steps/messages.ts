@@ -193,7 +193,7 @@ export function conversationStepMessages(events: readonly ConversationActivity[]
     // here as well showed the same ending twice (U-B2).
     const answeredInThread = event.subject.kind === "build" && event.conversationId !== undefined;
     if (drafts.length === before && conversationActivityOutcome(event) === "failed" && !answeredInThread) {
-      const title = conversationActivityHeadline(event.subject.kind, "failed", unit.repairing);
+      const title = conversationActivityHeadline(event.subject.kind, "failed", unit.repairing, event.stopped === true);
       add(event, "ended", title, humanText(event.label.split(" — ")[0]));
     }
   }

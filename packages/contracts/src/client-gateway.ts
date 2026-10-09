@@ -118,12 +118,22 @@ export type ClientGatewayActionResult = {
  */
 export const CLIENT_GATEWAY_ACTIVITY_CAPABILITY_ID = "fluxiq.activity";
 
-/** What FluxIQ is doing now. Each value is set only by a real Core event. */
+/**
+ * What FluxIQ is doing now. Each value is set only by a real Core event.
+ *
+ * `paused` is a run held at a step boundary because it was paused, usually
+ * because the person took the page (Take over): nothing is dispatched to the
+ * page until it is resumed or stopped. Core sends it once when the run holds,
+ * with `step` naming the node the run will execute first, and once more as
+ * `running` when the run is let go to continue. A held run that is stopped
+ * ends through the ordinary final event instead.
+ */
 export type ClientGatewayActivityPhase =
   | "thinking"
   | "exploring"
   | "building"
   | "running"
+  | "paused"
   | "extracting"
   | "verifying"
   | "repairing"
@@ -205,6 +215,13 @@ export type ClientGatewayActivity = {
   request?: string;
   /** True on the last event of the unit of work (`done` or `failed`). */
   final?: boolean;
+  /**
+   * True only on the final event of work a person or caller cancelled (Stop
+   * on a run or a build), set from the cancellation itself and never from the
+   * label. Absent on every other event, so a client says "stopped" rather than
+   * "failed" by reading this field, not Core's words.
+   */
+  stopped?: true;
   /** ISO timestamp. */
   at: string;
 };

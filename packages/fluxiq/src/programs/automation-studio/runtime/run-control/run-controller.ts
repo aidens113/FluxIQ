@@ -136,6 +136,10 @@ export class AutomationStudioRunController implements AutomationStudioRunControl
     return new Promise((resolve) => { this.release = resolve; });
   }
 
+  heldBy(): AutomationStudioRunControlHolder | null {
+    return this.state === "paused" ? this.holder ?? "fluxiq" : null;
+  }
+
   snapshot(): AutomationStudioRunControlSnapshot {
     return {
       projectId: this.projectId,

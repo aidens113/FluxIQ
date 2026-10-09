@@ -83,4 +83,11 @@ export type AutomationStudioRunCheckpointOutcome =
  */
 export type AutomationStudioRunControlGate = {
   checkpoint(at: AutomationStudioRunCheckpoint): Promise<AutomationStudioRunCheckpointOutcome> | null;
+  /**
+   * Who has the page while the run is held, read straight after a checkpoint
+   * that held it, so the run can say "you have the page" only for a takeover.
+   * Null while the run is not held. Optional: a gate that cannot say is read
+   * as a plain pause.
+   */
+  heldBy?(): AutomationStudioRunControlHolder | null;
 };

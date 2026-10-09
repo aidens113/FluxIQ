@@ -10,6 +10,7 @@ export { automationStudioActivityDecisionReason } from "./decision-reason.ts";
 export type { AutomationStudioActivityEmission, AutomationStudioActivityFrame, AutomationStudioActivityInput, AutomationStudioActivityListener, AutomationStudioActivityScope, AutomationStudioActivitySnapshot } from "./contracts.ts";
 export { automationStudioActivityHub } from "./default-hub.ts";
 export { emitAutomationStudioActivity } from "./emit.ts";
+export { automationStudioActivityHold } from "./hold.ts";
 export { AutomationStudioActivityHub } from "./hub.ts";
 export { automationStudioActivityInBuild } from "./in-build.ts";
 export { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "./limits.ts";

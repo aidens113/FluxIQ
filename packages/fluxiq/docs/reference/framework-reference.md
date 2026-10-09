@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 3368
+- Public declarations: 3369
 - Class: 106
 - Interface: 2
 - Object: 430
 - Type: 1834
 - Type Alias: 1
-- Value: 995
+- Value: 996
 
 ## Public Declarations
 
@@ -539,6 +539,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioActivityDraftEditCard` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/draft-edit-card.ts` | - |
 | `AutomationStudioActivityEmission` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/contracts.ts` | What an emission site says; the scope it runs under supplies the rest. |
 | `AutomationStudioActivityFrame` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/activity/contracts.ts` | What the scope storage holds for one unit of work. A run's id is known only once its session is admitted, so a run frame starts `pending` and emits nothing until it is bound. |
+| `automationStudioActivityHold` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/hold.ts` | - |
 | `automationStudioActivityHub` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/activity/default-hub.ts` | The one hub every emission in this process publishes to. |
 | `AutomationStudioActivityHub` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/activity/hub.ts` | The process's activity stream: numbers and stamps each event, bounds it, keeps the last few per project, and hands it to every subscriber. Activity is ephemeral (D2): nothing here is persisted, and a subscriber that throws loses its own copy of the event, never the work that emitted it. |
 | `automationStudioActivityHumanLabel` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/activity/wording/human-label.ts` | - |
@@ -2415,7 +2416,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `ClientGatewayActionResponse` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayActionResult` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayActivity` | Type | `packages/contracts/src/client-gateway.ts` | One activity event: the current status of one unit of work (a build or a run) plus an optional detail row for the chat stream. Bounded, and content-free beyond what the person's own panel already shows: labels and titles are Core's own sentences, the actions a step's own input names, tool and node ids, and authored step labels; never raw evidence a tool gathered, tokens or secrets. A `thought` row's `text` is the model's own stated reason for that step (what it does next, on what, and why) or its diagnosis or verdict, whitespace-collapsed, with token-shaped runs hidden, and bounded (240 characters for a decision's reason). Core truncates `label` to 160 characters, `detail.title` to 160 and `detail.text` to 1,000. A wait on the person is one `ask` row pair for one card. The wait opens as `phase: "waiting_permission"`, `detail: { kind: "ask", ref: <askId>, status: "started" }`. When it is settled, Core sends one more `ask` row for the same unit of work with the same `ref` and `title`, the phase the work returns to, `status` `succeeded` (answered, allowed, waited out) or `failed` (declined, timed out, cancelled), `resolution`, and `text`, a sentence such as "You pressed Continue.". A client marks the card from that row alone and never infers the answer from later events. Every wait Core announced gets that row, including one whose work stopped first (`cancelled`); a wait Core never announced is never resolved. A run parked durably is still waiting until it is resumed. |
-| `ClientGatewayActivityPhase` | Type | `packages/contracts/src/client-gateway.ts` | What FluxIQ is doing now. Each value is set only by a real Core event. |
+| `ClientGatewayActivityPhase` | Type | `packages/contracts/src/client-gateway.ts` | What FluxIQ is doing now. Each value is set only by a real Core event. `paused` is a run held at a step boundary because it was paused, usually because the person took the page (Take over): nothing is dispatched to the page until it is resumed or stopped. Core sends it once when the run holds, with `step` naming the node the run will execute first, and once more as `running` when the run is let go to continue. A held run that is stopped ends through the ordinary final event instead. |
 | `ClientGatewayActivityResolution` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayAppendRecordingEntryRequest` | Type | `packages/contracts/src/client-gateway.ts` | - |
 | `ClientGatewayAuditEntry` | Type | `packages/contracts/src/client-gateway.ts` | - |

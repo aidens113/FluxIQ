@@ -79,7 +79,7 @@ export class ConversationActivityPacer {
 
   private displayFor(event: ConversationActivity): ConversationActivityDisplay {
     const outcome = conversationActivityOutcome(event);
-    const headline = conversationActivityHeadline(event.subject.kind, outcome, this.repairingUnit === event.activityId);
+    const headline = conversationActivityHeadline(event.subject.kind, outcome, this.repairingUnit === event.activityId, event.stopped === true);
     const sentence = conversationActivitySentence(event);
     return {
       activityId: event.activityId,

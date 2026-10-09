@@ -3,13 +3,14 @@ import { emitAutomationStudioActivity } from "./emit.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
 import { automationStudioActivityRunEnding, automationStudioActivityRunObjection } from "./wording/index.ts";
 
-type Settled = { phase: ClientGatewayActivityPhase; label: string; kind: "step" | "ask"; status: "started" | "succeeded" | "failed"; final: boolean };
+type Settled = { phase: ClientGatewayActivityPhase; label: string; kind: "step" | "ask"; status: "started" | "succeeded" | "failed"; final: boolean; stopped?: true };
 
 /** What each settled session status says, and whether it ends the run. */
 const SETTLED: Readonly<Record<string, Settled>> = {
   succeeded: { phase: "done", label: "Run finished", kind: "step", status: "succeeded", final: true },
   failed: { phase: "failed", label: "Run failed", kind: "step", status: "failed", final: true },
-  cancelled: { phase: "failed", label: "Run cancelled", kind: "step", status: "failed", final: true },
+  // The session's own `cancelled` status is the cancellation itself: Stop, a held run stopped, or one held past its limit.
+  cancelled: { phase: "failed", label: "Run cancelled", kind: "step", status: "failed", final: true, stopped: true },
   waiting: { phase: "waiting_permission", label: "Run is waiting for an answer", kind: "ask", status: "started", final: false }
 };
 
@@ -62,7 +63,8 @@ export async function withAutomationStudioRunActivity<T extends { status: string
       phase: settled.phase,
       label: ending ? `${settled.label}: ${ending}` : settled.label,
       detail: { kind: settled.kind, title: settled.label, status: settled.status, ...(text ? { text } : {}) },
-      ...(settled.final ? { final: true } : {})
+      ...(settled.final ? { final: true } : {}),
+      ...(settled.stopped ? { stopped: true as const } : {})
     });
     return session;
   }, { pending: true });
