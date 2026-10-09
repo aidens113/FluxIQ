@@ -16,7 +16,7 @@ import type { AutomationStudioFlowDraftStep, AutomationStudioFlowDraftStepRoutin
 import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { validateAutomationStudioFlowBootstrapPlan } from "../../plan/index.ts";
 import type { AutomationStudioFlowDocument } from "../../../../model/index.ts";
-import { runAutomationStudioGraph } from "../../../executor/index.ts";
+import { automationStudioAttemptInputs, runAutomationStudioGraph } from "../../../executor/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { assembleAutomationStudioFlowDraftPlan, type AutomationStudioFlowDraftWrittenStep } from "../assemble-draft.ts";
 
@@ -208,7 +208,8 @@ describe("a pass the page refuses as too fast", () => {
     expect(clicks.map((attempt) => attempt.status)).toEqual(["succeeded", "succeeded", "succeeded", "failed", "succeeded"]);
     // Pass 4 has two attempts, both on its own row.
     expect(pressed).toEqual([rows[0], rows[1], rows[2], rows[3], rows[3]]);
-    expect(clicks.slice(3).map((attempt) => attempt.inputs.item)).toEqual([rows[3], rows[3]]);
+    // The saved trace keeps each row once; the attempt's inputs are read back whole.
+    expect(clicks.slice(3).map((attempt) => automationStudioAttemptInputs(trace.attempts, trace.attempts.indexOf(attempt)).item)).toEqual([rows[3], rows[3]]);
     expect(delays).toEqual([11_500]);
   });
 });

@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 3369
+- Public declarations: 3371
 - Class: 106
 - Interface: 2
 - Object: 430
 - Type: 1834
 - Type Alias: 1
-- Value: 996
+- Value: 998
 
 ## Public Declarations
 
@@ -606,6 +606,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `automationStudioAssessAttemptFault` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/assess.ts` | - |
 | `automationStudioAttemptCapturedRecords` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/attempt-projection.ts` | - |
 | `automationStudioAttemptFaultIsAbsorbed` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/defensive/assess.ts` | - |
+| `automationStudioAttemptInputs` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/node-execution/attempt-inputs.ts` | - |
 | `automationStudioAttemptIsRetryable` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/retry-policy.ts` | - |
 | `automationStudioAttemptNeedsPerson` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/person-needed.ts` | - |
 | `automationStudioAttemptVerifiesState` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-change/attempt-projection.ts` | - |
@@ -2350,6 +2351,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioWalCheckpointMode` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts` | - |
 | `AutomationStudioWalCheckpointResult` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/database.ts` | - |
 | `automationStudioWithoutLocators` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/locator-text.ts` | - |
+| `automationStudioWithWholeAttemptInputs` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/executor/node-execution/whole-inputs.ts` | - |
 | `AutomationStudioWorkspacePreference` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/hierarchy/repository.ts` | - |
 | `AutomationStudioWorkspaceSummary` | Type | `packages/fluxiq/src/programs/automation-studio/storage/file-store.ts` | - |
 | `AutomationStudioWriteProjectObjectAssetInput` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/service/object-documents.ts` | - |

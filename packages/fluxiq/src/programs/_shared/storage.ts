@@ -181,11 +181,12 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
     if (!sqlite) return null;
     const suffix = `/${documentFileName.replace(/\.json$/i, "")}`;
     const prefix = `${sqlite.id.replace(/\/$/, "")}/`;
-    const records = await sqlite.repository.list();
-    return records
-      .filter((record) => record.id.startsWith(prefix) && record.id.endsWith(suffix))
-      .filter((record) => !record.id.slice(prefix.length, -suffix.length).includes("/"))
-      .map((record) => structuredClone(record.data) as TDocument);
+    // Only this directory's documents are read: the rest of the table (run
+    // sessions of many megabytes each) is never loaded or parsed.
+    const records = await sqlite.repository.listByIdPrefix(prefix, {
+      select: (id) => id.endsWith(suffix) && !id.slice(prefix.length, -suffix.length).includes("/"),
+    });
+    return records.map((record) => record.data as TDocument);
   }
 
   static async deletePath(targetPath: string): Promise<boolean> {
@@ -194,11 +195,10 @@ export class ProgramJsonStore<T extends JsonObject = JsonObject> {
     const isDocument = path.extname(targetPath).toLowerCase() === ".json";
     if (isDocument) return await sqlite.repository.delete(sqlite.id);
     const prefix = `${sqlite.id.replace(/\/$/, "")}/`;
-    const records = await sqlite.repository.list();
+    // The ids come from the primary-key index; no row's data is read.
+    const ids = [sqlite.id, ...(await sqlite.repository.listIdsByPrefix(prefix))];
     let deleted = false;
-    for (const record of records) {
-      if (record.id === sqlite.id || record.id.startsWith(prefix)) deleted = (await sqlite.repository.delete(record.id)) || deleted;
-    }
+    for (const id of ids) deleted = (await sqlite.repository.delete(id)) || deleted;
     return deleted;
   }
 
