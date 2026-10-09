@@ -419,3 +419,25 @@ describe("a change that needed an automatic retry", () => {
     expect(result.verdict.checks).toContainEqual({ kind: "changed_node_succeeded", status: "failed", nodeId: "changed", code: "changed_node_failed" });
   });
 });
+
+// t384: the changed node's try failed where the state it was to produce already
+// held, so the run went on down `success` without repeating it (the ladder's
+// `skip_satisfied_node` rung). The trial reads that node as done
+// (`attempt-projection.ts`); the attempt keeps its failure.
+describe("a trial whose changed node found its state already held", () => {
+  it("reads the node as done, judges its expected state and continues from it", async () => {
+    const { hostRuntime } = evaluatingHost(() => ({ passed: true, checkedConditionCount: 1 }));
+    const changed: FixtureNode = { id: "changed", definitionId: "builtin.policy.action", parameterValues: { outputId: "output.changed", expectedState: { conditions: [{ path: "order.placed" }] } } };
+    const result = await trial({
+      candidate: flowOf([changed, constant("next"), END], [["changed", "next"], ["next", "end"]]),
+      options: {
+        hostRuntime: { ...hostRuntime, capabilities: ["expectation-evaluation"] },
+        effectDispatcher: () => ({ status: "failed", route: "failed", outputs: {}, message: "Blocked.", failure: { category: "unexpected_state", code: "web.action.blocked_by_dialog", retryable: false, stage: "execution" } })
+      }
+    });
+
+    expect(result.executedTrace.attempts[0]).toMatchObject({ nodeId: "changed", status: "failed", failure: { code: "web.action.blocked_by_dialog" }, stateHeld: { rung: "skip_satisfied_node" } });
+    expect(result.verdict.checks).toContainEqual({ kind: "changed_node_succeeded", status: "passed", nodeId: "changed" });
+    expect(result.verdict).toMatchObject({ outcome: "verified", basis: ["expected_state"], resumeFrom: { nodeId: "next", route: "success" } });
+  });
+});

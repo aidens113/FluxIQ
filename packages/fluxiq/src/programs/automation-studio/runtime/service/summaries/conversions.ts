@@ -15,6 +15,7 @@ import type {
 import type { AutomationStudioRuntimeRunSummary } from "../../../storage/index.ts";
 import { automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithFlowVersions } from "../../flow-version/index.ts";
 import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure } from "../../adaptive-orchestrator.ts";
+import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import type { AutomationStudioInstructionSummary } from "../indexes/index.ts";
 import { automationStudioDecisionAppliedAutomatically, automationStudioRunChangedDurableBehavior } from "../../durable-behavior/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
@@ -170,13 +171,15 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
     const hostTargetResolution = hostTargetResolutionFromOutputs(attempt.outputs);
     const extraction = extractionSummaryFromOutputs(attempt.outputs);
     const stateRouting = automationStudioRunDetailStateRouting(attempt, failure?.code);
+    // A step whose state already held reads as done, with its failure kept (`flow-change/attempt-projection.ts`).
+    const settled = automationStudioAttemptSettled(attempt);
     return {
       attemptId: attempt.attemptId,
       nodeId: attempt.nodeId,
       definitionId: attempt.definitionId,
       order: index + 1,
-      status: graphStatusToFlowRunStatus(attempt.status),
-      ...(attempt.route ? { route: attempt.route } : {}),
+      status: graphStatusToFlowRunStatus(settled.status),
+      ...(settled.route ? { route: settled.route } : {}),
       startedAt: attempt.startedAt,
       ...(attempt.finishedAt !== undefined ? { finishedAt: attempt.finishedAt } : {}),
       ...(durationMs !== undefined ? { durationMs } : {}),
@@ -196,6 +199,7 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
       // routing found no way on otherwise reads like one that never consulted
       // it (`state-routing.ts`).
       ...(stateRouting ? { stateRouting } : {}),
+      ...(attempt.stateHeld && attempt.status === "failed" ? { stateHeld: { rung: attempt.stateHeld.rung } } : {}),
       metadata: {
         ...(attempt.regionId ? { regionId: attempt.regionId } : {}),
         ...(attempt.transitionComparison?.diffSummary ? { diffSummary: attempt.transitionComparison.diffSummary } : {}),

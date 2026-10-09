@@ -173,6 +173,31 @@ describe("the recorded state the run reads", () => {
     expect(trace.status).toBe("succeeded");
   });
 
+  // t384: the attempt keeps its failure and the ledger its fault, and says the
+  // state already held, so a reader of what the node came to reads it as done.
+  it("marks the attempt whose state already held, and keeps its failure and the fault on the ledger", async () => {
+    const flow = flowOf(
+      [actionNode("act", { expectedState: { conditions: [{ path: "order.placed" }] } }), actionNode("after")],
+      [{ id: "e", sourceNodeId: "act", targetNodeId: "after", sourcePortId: "success" }]
+    );
+    const trace = await runWith(flow, {
+      effectDispatcher: onlyFails("output.act", BLOCKED_FAILURE, []),
+      hostRuntime: { capabilities: ["expectation-evaluation"], expectationEvaluator: () => ({ passed: true, checkedConditionCount: 1 }) }
+    }, []);
+
+    expect(trace.attempts[0]).toMatchObject({ nodeId: "act", status: "failed", failure: { code: "web.action.blocked_by_dialog" }, stateHeld: { rung: "skip_satisfied_node", route: "success" } });
+    expect(trace.attempts[1]).toMatchObject({ nodeId: "after", status: "succeeded" });
+    expect(trace.attempts[1]).not.toHaveProperty("stateHeld");
+    expect(trace.defence?.entries).toEqual([expect.objectContaining({ nodeId: "act", attemptId: trace.attempts[0]!.attemptId, outcome: "continued" })]);
+  });
+
+  it("marks no attempt that failed on through the ladder's other rungs", async () => {
+    const trace = await runWith(flowOf([actionNode("act")]), { effectDispatcher: failingDispatcher(TIMEOUT_FAILURE, 2) }, []);
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.map((attempt) => attempt.stateHeld)).toEqual([undefined, undefined]);
+  });
+
   it("runs the Flow's own interference node, then attempts again", async () => {
     const dispatches: string[] = [];
     const flow = flowOf([actionNode("act"), actionNode("dismiss", {}, { clearsInterference: true })]);

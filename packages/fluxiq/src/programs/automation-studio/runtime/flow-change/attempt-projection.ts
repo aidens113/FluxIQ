@@ -1,7 +1,7 @@
-// The three questions the verdict cannot answer from an executed attempt's own
-// fields: whether the attempt saved records, whether its node is a
-// verification step whose success counts as a downstream assertion, and
-// whether a later automatic retry of the same node replaced it.
+// The questions the verdict cannot answer from an executed attempt's own
+// fields: what the node came to, whether the attempt saved records, whether its
+// node is a verification step whose success counts as a downstream assertion,
+// and whether a later automatic retry of the same node replaced it.
 //
 // A trial asks them of its throwaway run, and a replay asks them of a later
 // ordinary run. Both must answer them the same way or the same change would
@@ -9,8 +9,34 @@
 // answered once, here, rather than copied into each caller.
 import type { JsonObject } from "../../../../core/index.ts";
 import { getAutomationNodeDefinition } from "../../nodes/index.ts";
-import type { AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
+import type { AutomationStudioGraphRunStatus, AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
 import { automationStudioDefinitionVerifiesState } from "./contracts.ts";
+
+/**
+ * What the node came to at this attempt: its own status and route, except for
+ * an attempt that failed where the state its node was recorded to produce
+ * already held (`stateHeld`, the ladder's `skip_satisfied_node` rung). The run
+ * went on down `success` from that one, so it reads as done. The attempt itself
+ * still says `failed`, and keeps its failure and fault, so nothing hides that
+ * the first try failed; only a reader asking what the node came to reads past it.
+ */
+export function automationStudioAttemptSettled(attempt: Pick<AutomationStudioNodeAttemptTrace, "status" | "route" | "stateHeld">): { status: AutomationStudioGraphRunStatus; route?: string } {
+  if (attempt.stateHeld && attempt.status === "failed") return { status: "succeeded", route: attempt.stateHeld.route };
+  return { status: attempt.status, ...(attempt.route !== undefined ? { route: attempt.route } : {}) };
+}
+
+/**
+ * The route the attempt's node declares it takes, off the attempt's own
+ * transition comparison. A comparison built for a failed attempt holds `failed`
+ * where the node declared nothing (`executor/expected-transition.ts`); that is
+ * the executor's default, not a declaration, and an attempt whose state already
+ * held went on down `success` past it. A reader judges a route only for an
+ * attempt that settled as a success.
+ */
+export function automationStudioAttemptDeclaredRoute(attempt: Pick<AutomationStudioNodeAttemptTrace, "status" | "transitionComparison">): string | undefined {
+  const declared = attempt.transitionComparison?.expected.expectedRoute;
+  return attempt.status === "failed" && declared === "failed" ? undefined : declared;
+}
 
 /**
  * The rows an attempt saved, for a node that saves records: a policy output

@@ -199,3 +199,30 @@ describe("trial feedback for a check step that failed", () => {
     expect(step).not.toHaveProperty("waitedFor");
   });
 });
+
+// t384: a press whose try failed where the page already showed what the press
+// does is done, and the run went on without pressing again. The model is told it
+// is done and why, with what the try met, and no advice to retry or fix it.
+describe("trial feedback for a step whose state already held", () => {
+  type Attempt = AutomationStudioGraphExecutionTrace["attempts"][number];
+  const open: Attempt = { attemptId: "a1", nodeId: "open", definitionId: "web.output.browser-navigate", startedAt: 1, status: "succeeded", inputs: {}, outputs: {}, effects: [] };
+  const held: Attempt = { attemptId: "a2", nodeId: "coupon", definitionId: "web.output.dom-click", startedAt: 2, status: "failed", inputs: {}, outputs: {}, effects: [],
+    failure: { category: "unexpected_state", code: "web.action.blocked_by_dialog", retryable: false }, stateHeld: { rung: "skip_satisfied_node", route: "success" } };
+
+  it("lists the step as succeeded, says the page already showed it, and keeps the failure code", () => {
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph,
+      trace: { status: "succeeded", startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, held] } });
+    const step = (feedback.steps as JsonObject[])[1]!;
+    expect(step).toMatchObject({ step: 2, control: "Get coupons", status: "succeeded", failureCode: "web.action.blocked_by_dialog",
+      stateHeld: "The step's try failed, but the page already showed what the step does, so the run went on without doing it again." });
+    expect(step).not.toHaveProperty("retryable");
+    expect(step).not.toHaveProperty("attempts");
+  });
+
+  it("lists the same node reached again afterwards as a new step, not a retry of a done one", () => {
+    const again: Attempt = { ...open, attemptId: "a3", nodeId: "coupon", definitionId: "web.output.dom-click", startedAt: 3 };
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph,
+      trace: { status: "succeeded", startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, held, again] } });
+    expect((feedback.steps as JsonObject[]).map((step) => step.status)).toEqual(["succeeded", "succeeded", "succeeded"]);
+  });
+});
