@@ -65,7 +65,7 @@ describe("the Flow script loop format", () => {
       "web.output.browser-navigate", "builtin.control.merge", "builtin.control.repeat", "web.output.dom-extract_list", "web.output.dom-next_page", "builtin.control.merge"
     ]);
     expect(subflow.edges.some((edge) => edge.source.nodeKey === "s5" && edge.source.portId === "ended" && edge.target.nodeKey === "s6")).toBe(true);
-    expect(subflow.nodes[3]!.parameters?.recordOutput).toMatchObject({ process: { where: [{ field: "price", lessThan: 50 }] } });
+    expect(subflow.nodes[3]!.parameters?.recordOutput).toMatchObject({ process: { where: [{ field: "year", atLeast: 2015 }] } });
     expect(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: accepted.plan, registry, resolution })).toEqual([]);
   });
 
@@ -82,9 +82,9 @@ describe("the Flow script loop format", () => {
     expect(subflow.nodes[4]!.consequences).toEqual(["modify_existing"]);
     // t378: the rows the repeat visits are the rows the listing kept, so the
     // narrowing is the listing's own `where`, inside its request.
-    expect(subflow.nodes[1]!.parameters?.extractList).toMatchObject({ where: [{ field: "team", contains: "colleague" }], minItems: 0 });
+    expect(subflow.nodes[1]!.parameters?.extractList).toMatchObject({ where: [{ field: "status", contains: "overdue" }], minItems: 0 });
     expect(subflow.edges.some((edge) => edge.source.nodeKey === "s2" && edge.source.portId === "records" && edge.target.nodeKey === "s4" && edge.target.portId === "items")).toBe(true);
-    expect(subflow.nodes[5]!.parameters?.text).toEqual({ $state: { path: "item.name" } });
+    expect(subflow.nodes[5]!.parameters?.text).toEqual({ $state: { path: "item.number" } });
     expect(automationStudioFlowBootstrapWrittenPlanBindingIssues({ plan: accepted.plan, registry, resolution })).toEqual([]);
   });
 

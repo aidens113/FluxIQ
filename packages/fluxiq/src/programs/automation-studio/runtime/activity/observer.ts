@@ -122,9 +122,6 @@ function namedAtEnd(describe: AutomationStudioLlmEvidenceLoopInput["describeCall
   return target === undefined ? before : { ...before, target };
 }
 
-/** The heading of a decision asked for again: what FluxIQ does, never "the next step" decided. */
-const ASKING_AGAIN = "Asking the AI model again";
-
 /**
  * A decision that never came closes its own row, so the chat is not left
  * "Thinking about the next step". A model provider that gave no answer at all
@@ -132,10 +129,15 @@ const ASKING_AGAIN = "Asking the AI model again";
  * request of live run `run-muq05kas-058193f0` waited out its deadline while the
  * chat said only that it was thinking.
  *
- * Neither is headed as the decision: nothing was decided, and lane C
+ * The closing row keeps the decision row's own title, failed, which is what
+ * closes it for every client that pairs a row's start and end by title
+ * (`../tests/service-bootstrap/tests/provider-unavailable.test.ts`). A client
+ * heads it in the present tense, as status and never as a decision made: lane C
  * (`run-mv0fuotv-805294d7`, steps 0017, 0025 and 0033) read "Decided the next
- * step — The AI model's reply couldn't be read or used" three times. Each is
- * headed by what FluxIQ does about it instead, in plain words (t378).
+ * step — The AI model's reply couldn't be read or used" three times. Its words
+ * say what FluxIQ does about it, in plain English (t378). t378 first retitled
+ * the row "Asking the AI model again", which left the decision row open for
+ * any client that pairs by title.
  */
 function decisionFailed(error: unknown): void {
   // Read by shape (`AutomationStudioLlmUnusableDecisionError.providerUnanswered`
@@ -148,9 +150,9 @@ function decisionFailed(error: unknown): void {
   const unusable = !unanswered && Array.isArray(shape?.issueCodes);
   const title = "Deciding the next step";
   emitAutomationStudioActivity(unanswered
-    ? { phase: "thinking", label: "The AI model provider did not answer", detail: { kind: "thought", title: ASKING_AGAIN, status: "failed", text: "The AI model provider didn't answer, so FluxIQ is asking it again. If it keeps not answering, the build stops." } }
+    ? { phase: "thinking", label: "The AI model provider did not answer", detail: { kind: "thought", title, status: "failed", text: "The AI model provider didn't answer, so FluxIQ is asking it again. If it keeps not answering, the build stops." } }
     : unusable
-      ? { phase: "thinking", label: "The AI model's answer couldn't be used", detail: { kind: "thought", title: ASKING_AGAIN, status: "failed", text: "The AI model's answer didn't make sense, so FluxIQ is asking it again. If that keeps happening, the build stops." } }
+      ? { phase: "thinking", label: "The AI model's answer couldn't be used", detail: { kind: "thought", title, status: "failed", text: "The AI model's answer didn't make sense, so FluxIQ is asking it again. If that keeps happening, the build stops." } }
       : { phase: "thinking", label: `${title} — stopped`, detail: { kind: "thought", title, status: "failed" } });
 }
 

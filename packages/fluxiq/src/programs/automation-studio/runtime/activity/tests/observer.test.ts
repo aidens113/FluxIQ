@@ -186,10 +186,11 @@ describe("observeAutomationStudioEvidenceLoop", () => {
     // unreadable read "Deciding the next step — didn't work", a failed step; it is said as a reply
     // that could not be used and is asked again, and nothing else reads "didn't work" either.
     // Lane C (run-mv0fuotv-805294d7, t378) read "Decided the next step — The AI model's reply couldn't be
-    // read or used": a reply asked for again is headed by what FluxIQ does, never as a decision made.
+    // read or used": a reply asked for again says what FluxIQ does about it, in plain words. The row keeps
+    // the decision row's own title, which is what closes that row (provider-unavailable.test.ts).
     for (const [thrown, label, title, said] of [
-      [new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"]), "The AI model provider did not answer", "Asking the AI model again", "The AI model provider didn't answer, so FluxIQ is asking it again. If it keeps not answering, the build stops."],
-      [new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"]), "The AI model's answer couldn't be used", "Asking the AI model again", "The AI model's answer didn't make sense, so FluxIQ is asking it again. If that keeps happening, the build stops."],
+      [new AutomationStudioLlmUnusableDecisionError(["llm.provider_timeout"]), "The AI model provider did not answer", "Deciding the next step", "The AI model provider didn't answer, so FluxIQ is asking it again. If it keeps not answering, the build stops."],
+      [new AutomationStudioLlmUnusableDecisionError(["llm.provider_malformed_response"]), "The AI model's answer couldn't be used", "Deciding the next step", "The AI model's answer didn't make sense, so FluxIQ is asking it again. If that keeps happening, the build stops."],
       [new Error("anything else"), "Deciding the next step — stopped", "Deciding the next step", undefined]
     ] as const) {
       seen = [];

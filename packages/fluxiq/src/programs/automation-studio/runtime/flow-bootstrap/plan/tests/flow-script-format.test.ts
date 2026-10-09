@@ -185,7 +185,7 @@ describe("the Flow script act-on-one-item example", () => {
     }
   });
 
-  it("builds as written: a banner closed if it shows, a search sent, a result opened, a swatch set, a size chosen, a quantity typed, and last a press that declares modify_existing", () => {
+  it("builds as written: a banner closed if it shows, a search sent, a result opened, a chip set, a status chosen, an estimate typed, and last a press that declares modify_existing", () => {
     const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: example }, registry, resolution });
     expect(accepted.ok ? accepted.issues.filter((issue) => issue.severity === "error") : accepted.issues).toEqual([]);
     const nodes = accepted.ok ? accepted.plan.subflows[0]?.nodes ?? [] : [];
@@ -198,9 +198,9 @@ describe("the Flow script act-on-one-item example", () => {
     // t378: the search sends its form, so it declares, and declares none.
     expect(nodes[3]?.parameters).toMatchObject({ submit: true });
     expect(nodes[3]?.consequences).toEqual([]);
-    // The quantity is typed and not sent, so it declares nothing.
+    // The estimate is typed and not sent, so it declares nothing.
     expect(nodes[7]?.consequences).toBeUndefined();
-    // The swatch is set, never pressed: a press would toggle a colour the page arrived with.
+    // The priority chip is set, never pressed: a press would toggle a chip the page arrived with chosen.
     expect(nodes[5]?.parameters).toMatchObject({ checked: true });
     // The banner's failed way out joins the path its success takes, which is what the runtime skips past.
     const edges = accepted.ok ? accepted.plan.subflows[0]?.edges ?? [] : [];
@@ -346,6 +346,15 @@ describe("every example in the Flow script format", () => {
   it("no longer says a typing step never needs the line, and says one that sends its form does", () => {
     expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).not.toContain("A step that types, chooses, waits or reads never needs it.");
     expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).toContain("A typing step with `submit: true` sends its form, so it presses and needs the line too: `consequences: none` for a search.");
-    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE).toMatch(/node: web\.dom\.type\n {2}target: t1\n {2}text: oxford shirt\n {2}submit: true\n {2}consequences: none/u);
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE).toMatch(/node: web\.dom\.type\n {2}target: t1\n {2}text: budget review\n {2}submit: true\n {2}consequences: none/u);
+  });
+
+  // t378: the candidate examples had become the live lanes' own tasks (a cart with a colour and a size,
+  // earbuds under 50 on every page, friend requests confirmed per row), so a lane could pass on the example's
+  // shape of its own answer. An example teaches a shape on a site and an act no Lab task has; these are the
+  // realistic scenarios' sites, goods and acts, and none may appear in a script the model is shown.
+  it.each(blocks)("%s shows no realistic Lab scenario's site or task", (_name, script) => {
+    const LAB_TASK_WORDS = /friend|request|earbud|kettle|basket|cart\b|towel|napkin|dish soap|pickup|watchlist|bid\b|auction|coupon|connection|invitation|saved item|classified|giveaway|glaze|moon jar|quote|gas engineer|job|rust role|group post|feed|digest|open day|rating|shirt|colour|size\b|quantity|brightaisle|farbazaar|valueridge|kerbfind|guildline|hammerline|circleway|voltbay|tidewell/iu;
+    expect(script.match(LAB_TASK_WORDS)?.[0]).toBeUndefined();
   });
 });
