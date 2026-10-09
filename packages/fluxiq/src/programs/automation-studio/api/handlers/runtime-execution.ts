@@ -3,7 +3,7 @@
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, type InspectStateDiffRequest, type ValidateRecordingDomainEventRequest } from "../contracts.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, automationStudioRunChangedDurableBehavior, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioRuntimeSessionLlm } from "../../runtime/index.ts";
+import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, automationStudioRunChangedDurableBehavior, automationStudioWithWholeAttemptInputs, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioRuntimeSessionLlm } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudioApiDependencies): void {
@@ -15,7 +15,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     classification: "authoring",
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; flow?: AutomationStudioFlowDocument; flowId?: string; targetKind?: any; targetId?: string; inputs?: any; authorizedDomainIds?: string[] } : {};
-      return { ok: true, payload: { runtimeSession: await service.startRuntimeSession(payload) } };
+      return { ok: true, payload: { runtimeSession: automationStudioWithWholeAttemptInputs(await service.startRuntimeSession(payload)) } };
     }
   });
   // Stopping a run. Declared and implemented for as long as runs have been
@@ -37,7 +37,7 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       const runId = typeof payload.runId === "string" ? payload.runId.trim() : "";
       if (!projectId || !runId) return { ok: false, error: "Stopping a run needs its project and run IDs." };
       const reason = typeof payload.reason === "string" && payload.reason.trim() ? payload.reason.trim().slice(0, 500) : undefined;
-      return { ok: true, payload: { runtimeSession: await service.cancelRuntimeSession(projectId, runId, reason) } };
+      return { ok: true, payload: { runtimeSession: automationStudioWithWholeAttemptInputs(await service.cancelRuntimeSession(projectId, runId, reason)) } };
     }
   });
   registry.register({
@@ -90,7 +90,8 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       // own session pays for every check its run makes, as it always has, unless
       // it asked for the paired rule itself (the chat's "Run it").
       const resultCheckCallerPays = llmExecution && (pairedCaller || requestedCallerPays === "repair_checks") ? { resultCheckCallerPays: "repair_checks" as const } : {};
-      const runtimeSession = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays });
+      // A saved trace keeps each value once; a client reads every attempt's whole inputs (t377).
+      const runtimeSession = automationStudioWithWholeAttemptInputs(await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays }));
       const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
       const runDetailLink = { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, runId: runtimeSession.runId };
       let runDetail: AutomationStudioFlowRunDetail | null = null;

@@ -126,3 +126,47 @@ describe("ProgramJsonStore existing read-only state", () => {
     await expect(store.readExistingReadOnly()).resolves.toEqual({ projects: [{ id: "real" }] });
   });
 });
+
+describe("ProgramJsonStore directory reads in layout v2", () => {
+  async function insertMalformed(root: string, id: string) {
+    await new Promise<void>((resolve, reject) => {
+      const db = new sqlite3.Database(path.join(root, "global.sqlite"));
+      db.run(`insert into "automation.state" (id, kind, data, created_at_ms, updated_at_ms) values (?, 'program.state', ?, 0, 0)`, [id, `{not json ${"x".repeat(1024 * 1024)}`], error => db.close(closeError => error || closeError ? reject(error ?? closeError) : resolve()));
+    });
+  }
+  async function layout() {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-program-directory-")); roots.push(root);
+    await initializeFluxIQStorage(root);
+    const project = path.join(root, "artifacts", "automation-studio", "projects", "one");
+    for (const relative of ["flows/a/flow.json", "flows/b/flow.json", "flows/a/candidate-draft.json", "flows/a/nested/x/flow.json", "flows-old/c/flow.json", "manifest.json"]) {
+      await new ProgramJsonStore(path.join(project, relative), () => ({})).write({ relative });
+    }
+    // A large unrelated run session that no Flow listing needs; it is malformed, so reading it would throw.
+    await insertMalformed(root, "projects/one/runtime/sessions/trial.big");
+    await insertMalformed(root, "projects/two/flows/z/flow");
+    return { root, project };
+  }
+
+  it("lists a directory's documents without reading any other row", async () => {
+    const { project } = await layout();
+    const documents = await ProgramJsonStore.listDirectoryDocuments(path.join(project, "flows"), "flow.json");
+    expect(documents).toEqual([{ relative: "flows/a/flow.json" }, { relative: "flows/b/flow.json" }]);
+    expect(await ProgramJsonStore.listDirectoryDocuments(path.join(project, "tasks"), "task.json")).toEqual([]);
+  });
+
+  it("deletes a directory's rows without reading any row's data", async () => {
+    const { root, project } = await layout();
+    expect(await ProgramJsonStore.deletePath(path.join(project, "flows"))).toBe(true);
+    expect(await ProgramJsonStore.listDirectoryDocuments(path.join(project, "flows"), "flow.json")).toEqual([]);
+    expect(await new ProgramJsonStore(path.join(project, "flows", "a", "candidate-draft.json"), () => ({ absent: true })).read()).toEqual({ absent: true });
+    expect(await ProgramJsonStore.listDirectoryDocuments(path.join(project, "flows-old"), "flow.json")).toEqual([{ relative: "flows-old/c/flow.json" }]);
+    expect(await new ProgramJsonStore(path.join(project, "manifest.json"), () => ({})).read()).toEqual({ relative: "manifest.json" });
+    expect(await ProgramJsonStore.deletePath(path.join(project, "flows"))).toBe(false);
+    // The malformed unrelated row survives, untouched.
+    const ids = await new Promise<string[]>((resolve, reject) => {
+      const db = new sqlite3.Database(path.join(root, "global.sqlite"));
+      db.all(`select id from "automation.state" where id like 'projects/%/flows/z/%' or id like '%trial.big'`, (error, rows: Array<{ id: string }>) => db.close(() => error ? reject(error) : resolve(rows.map(row => row.id).sort())));
+    });
+    expect(ids).toEqual(["projects/one/runtime/sessions/trial.big", "projects/two/flows/z/flow"]);
+  });
+});

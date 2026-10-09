@@ -11,7 +11,7 @@
 // belongs on.
 
 import { AUTOMATION_STUDIO_ENDPOINTS, type FlowAdaptationRequest, type FlowExpansionSummaryRequest, type FlowRunActionPageRequest, type FlowRunDetailRequest, type FlowRunEventPageRequest, type ReviewFlowAdaptationRequest } from "../contracts.ts";
-import type { AutomationStudioService } from "../../runtime/index.ts";
+import { automationStudioWithWholeAttemptInputs, type AutomationStudioService } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
 
 export function registerRunEndpoints(dependencies: AutomationStudioApiDependencies): void {
@@ -44,7 +44,8 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowRunDetailRequest : {} as FlowRunDetailRequest;
       const runDetail = await service.getFlowRunDetail(String(payload.projectId ?? ""), String(payload.runId ?? ""), { includeCollections: payload.compact !== true });
-      return { ok: true, payload: { runDetail } };
+      // A repair's `completedTrace` is a saved trace; a client reads its attempts' whole inputs (t377).
+      return { ok: true, payload: { runDetail: automationStudioWithWholeAttemptInputs(runDetail) } };
     }
   });
   // Runtime Debug's Export Audit button reads `payload.audit`; an unknown run
@@ -57,7 +58,7 @@ export function registerRunEndpoints(dependencies: AutomationStudioApiDependenci
     handler: async (request) => {
       const payload = request.payload && typeof request.payload === "object" ? request.payload as FlowRunDetailRequest : {} as FlowRunDetailRequest;
       const audit = await service.exportFlowRunAudit(String(payload.projectId ?? ""), String(payload.runId ?? ""));
-      return { ok: true, payload: { audit } };
+      return { ok: true, payload: { audit: automationStudioWithWholeAttemptInputs(audit) } };
     }
   });
   registry.register({

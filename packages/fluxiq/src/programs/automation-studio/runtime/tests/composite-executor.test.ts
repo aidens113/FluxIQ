@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createBlankAutomationStudioFlowArtifact, createCallFlowNode, createPublishedFlowSnapshot } from "../../model/index.ts";
-import { AUTOMATION_STUDIO_WITHHELD_VALUE, type AutomationStudioGraphExecutionTrace } from "../executor/index.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioAttemptInputs, type AutomationStudioGraphExecutionTrace } from "../executor/index.ts";
 import { runCanonicalAutomationStudioFlow } from "../index.ts";
 
 // Obviously synthetic: every assertion about it is where it must not appear.
@@ -79,7 +79,7 @@ describe("canonical composite Flow executor", () => {
     const childTrace = trace.attempts.find((attempt) => attempt.nodeId === "call")?.childTrace;
     expect(childTrace?.values).toMatchObject({ left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE, result: 5 });
     expect(childTrace?.attempts.length).toBeGreaterThan(0);
-    for (const attempt of childTrace?.attempts ?? []) expect(attempt.inputs).toMatchObject({ left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE });
+    for (const index of childTrace?.attempts.keys() ?? []) expect(automationStudioAttemptInputs(childTrace!.attempts, index)).toMatchObject({ left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE });
   });
 
   it("withholds from a Call Flow parent's saved trace a value its child resolved and handed back, while the parent executes with it", async () => {

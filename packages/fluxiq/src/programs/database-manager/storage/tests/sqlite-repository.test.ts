@@ -67,3 +67,43 @@ it("refuses an oversized SQL row through bounded projection before materializing
   await repository.put(createRecord({ id: "oversize", kind: repository.kind, data: { large: "a".repeat(4 * 1024 * 1024) } })); await deleteJournal(directory);
   await expect(repository.getExistingReadOnly("oversize")).rejects.toThrow("observation_size");
 });
+
+async function insertRaw(directory: string, kind: string, id: string, data: string) {
+  await new Promise<void>((resolve, reject) => {
+    const db = new sqlite3.Database(path.join(directory, "global.sqlite"));
+    db.run(`insert into "${kind}" (id, kind, data, created_at_ms, updated_at_ms) values (?, ?, ?, 0, 0)`, [id, kind, data], error => db.close(closeError => error || closeError ? reject(error ?? closeError) : resolve()));
+  });
+}
+
+it("lists by id prefix without reading rows outside the prefix or rows the selector refuses", async () => {
+  const directory = await root(), repository = new SQLiteRepository({ rootDir: directory, kind: "automation.state", layoutVersion: 2 });
+  for (const id of ["projects/p/flows/a/flow", "projects/p/flows/a/candidate-draft", "projects/p/flows/b/flow", "projects/p/flows/%_/flow", "projects/p/flows/é/flow"]) {
+    await repository.put(createRecord({ id, kind: repository.kind, data: { id } }));
+  }
+  // Malformed JSON: a whole-table read (or a read of an unselected row) would throw while parsing it.
+  for (const id of ["projects/p/flows", "projects/p/flows0", "projects/p/flowsX/a/flow", "projects/p/runtime/sessions/trial.big", "projects/q/flows/a/flow", "projects/p/flows/a/huge"]) {
+    await insertRaw(directory, repository.kind, id, "{not json");
+  }
+  await expect(repository.list()).rejects.toThrow();
+  const records = await repository.listByIdPrefix("projects/p/flows/", { select: id => !id.endsWith("/huge") });
+  expect(records.map(record => record.id)).toEqual(["projects/p/flows/%_/flow", "projects/p/flows/a/candidate-draft", "projects/p/flows/a/flow", "projects/p/flows/b/flow", "projects/p/flows/é/flow"]);
+  expect(records.map(record => record.data)).toEqual(records.map(record => ({ id: record.id })));
+  // Ids come from the index alone, so a malformed row inside the prefix is still named, never parsed.
+  expect(await repository.listIdsByPrefix("projects/p/flows/a/")).toEqual(["projects/p/flows/a/candidate-draft", "projects/p/flows/a/flow", "projects/p/flows/a/huge"]);
+  await expect(repository.listByIdPrefix("projects/p/flows/a/")).rejects.toThrow();
+  // LIKE wildcards in a prefix are literal, and a prefix ending in a non-ASCII character still bounds its range.
+  expect((await repository.listByIdPrefix("projects/p/flows/%")).map(record => record.id)).toEqual(["projects/p/flows/%_/flow"]);
+  expect((await repository.listByIdPrefix("projects/p/flows/é")).map(record => record.id)).toEqual(["projects/p/flows/é/flow"]);
+  expect(await repository.listByIdPrefix("projects/none/")).toEqual([]);
+});
+
+it("lists more prefixed rows than one parameter batch holds", async () => {
+  const directory = await root(), repository = new SQLiteRepository({ rootDir: directory, kind: "automation.state", layoutVersion: 2 });
+  const ids = Array.from({ length: 450 }, (_, index) => `dir/${String(index).padStart(4, "0")}/doc`);
+  await repository.transaction({}, async (transaction) => {
+    for (const id of ids) await transaction.run(`insert into "automation.state" (id, kind, data, created_at_ms, updated_at_ms) values (?, ?, ?, 0, 0)`, [id, repository.kind, JSON.stringify({ id })]);
+  });
+  const records = await repository.listByIdPrefix("dir/");
+  expect(records.map(record => record.id)).toEqual(ids);
+  expect(records.every(record => (record.data as { id: string }).id === record.id)).toBe(true);
+});
