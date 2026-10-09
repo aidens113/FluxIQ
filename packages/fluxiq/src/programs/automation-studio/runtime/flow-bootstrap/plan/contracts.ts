@@ -102,7 +102,7 @@ export type AutomationStudioFlowBootstrapFactCondition = {
   fact: string;
   op: "exists" | "absent" | "visible" | "enabled" | "equals" | "contains" | "matches" | "count";
   value?: string | number | boolean | { input: string } | { value: string };
-  target?: string | { kind: "dialog"; role: string; name: string };
+  target?: { handle: string } | { kind: "dialog"; role: string; name: string };
 };
 
 /** An alternative entry (C2): taken at invocation, by ascending `order`, when every `when` holds and every `requires` is bound. */

@@ -14,8 +14,9 @@
 //   dialog alertdialog "Too fast"  a dialog of that kind and name is showing;
 //                                  `... absent` when it is gone
 //
-// The target is the handle a step would use, copied from the evidence; Core
-// never reads it, and the host resolves it as it resolves a step's target. A
+// The target is the handle a step would use, copied from the evidence, stored
+// as a step's is (`{ handle }`); Core never reads it, and the host resolves it
+// as it resolves a step's target. A
 // line that is none of these is refused with the shape it should have had,
 // because a fact read wrongly is a handler that runs, or does not, quietly.
 import type { AutomationStudioFlowBootstrapFactCondition, AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
@@ -41,6 +42,9 @@ const COMPARISONS: Readonly<Record<string, "equals" | "contains" | "matches">> =
 };
 const INPUT = /^\$input\.([a-z][A-Za-z0-9]{0,31})$/u;
 const DIALOG_KIND = /^[a-z][a-z-]{0,39}$/u;
+/** The handle syntax a step's target is read by (`../authoring/values.ts`, which its barrel does not publish). */
+const HANDLE_TOKEN = /^[A-Za-z0-9](?:[A-Za-z0-9_.:-]*[A-Za-z0-9])?$/u;
+const HANDLE_MAX_LENGTH = 64;
 const MAX_TEXT = 2_000;
 const SHAPES = "`exists <handle>`, `absent <handle>`, `visible <handle>`, `enabled <handle>`, `text <handle> contains \"<words>\"`, `value <handle> is <value>`, `count <handle> is <number>`, or `dialog <kind> \"<name>\"`";
 
@@ -149,9 +153,15 @@ function tokenize(text: string): Token[] | undefined {
   return tokens;
 }
 
-/** A target handle: one unquoted word, as a step's `target:` is written. */
-function handle(token: Token | undefined): string | undefined {
-  return token && !token.quoted && token.text.length <= 200 && !token.text.startsWith("$") ? token.text : undefined;
+/**
+ * A target handle -- one unquoted word, as a step's `target:` is written -- in
+ * the form a step's target takes once read (`{ handle }`, `../authoring/values.ts`):
+ * an object, because the runtime keeps only an object as a fact's target
+ * (`executor/lifecycle/fact-conditions-parse.ts`), and the same object, so the
+ * host resolves a fact's handle exactly as it resolves a step's.
+ */
+function handle(token: Token | undefined): { handle: string } | undefined {
+  return token && !token.quoted && HANDLE_TOKEN.test(token.text) && token.text.length <= HANDLE_MAX_LENGTH ? { handle: token.text } : undefined;
 }
 
 /** A fact's value: quoted words, a `$input.<name>`, a number, or the bare words left. */

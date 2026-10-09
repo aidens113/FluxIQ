@@ -33,12 +33,13 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowBootstrapFactCondition, AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS } from "../plan/index.ts";
+import { automationStudioDispositionAllowedAt, type AutomationStudioLifecycleEvent } from "../../../nodes/control-flow/index.ts";
 import type { AutomationStudioFlowScriptBlock, AutomationStudioFlowScriptEntry, AutomationStudioFlowScriptStep } from "../authoring/index.ts";
 import { automationStudioFlowScriptFactGone, automationStudioFlowScriptFacts } from "./fact-condition.ts";
 import { scriptStatementRefusal } from "./statement-refusal.ts";
 
 /** The event each `on <event>` word registers for (C3). */
-const EVENTS: Readonly<Record<string, string>> = { before: "before", retry: "retry", fail: "fail", start: "start", next: "before_next" };
+const EVENTS: Readonly<Record<string, AutomationStudioLifecycleEvent>> = { before: "before", retry: "retry", fail: "fail", start: "start", next: "before_next" };
 const HERE = new Set(["for this part", "for this block", "for this subflow", "here"]);
 const EVERYWHERE = new Set(["everywhere", "anywhere", "for everything", "for the whole flow"]);
 const RESUME = /^(?:carry\s+on|continue|resume)\b/iu;
@@ -103,10 +104,12 @@ export function automationStudioFlowScriptHandlerSteps(input: {
   const disposition = readDisposition(then.text);
   const thenAt = `The \`then:\` at line ${then.line}`;
   if (!disposition) return refused("flow_script.handler_then_invalid", `${thenAt} says ${JSON.stringify(then.text.slice(0, 60))}. Write \`carry on\`, \`go to <checkpoint step>\`, \`use <output> = <value>\` or \`give up\`.`, then.line);
-  if (disposition.kind === "resume" && handler.event === "fail") {
+  // The static half of C5's table is the handler-end node's own (`nodes/control-flow/handler-end.ts`).
+  const allowed = automationStudioDispositionAllowedAt(EVENTS[handler.event]!, disposition.kind);
+  if (!allowed && disposition.kind === "resume") {
     return refused("flow_script.handler_then_invalid", `${thenAt} says carry on after a failure, but the step failed, so there is nothing to carry on from. After a failure, \`go to\` a checkpoint step, \`use\` the values the step should have given, or \`give up\`.`, then.line);
   }
-  if (disposition.kind === "resolve" && handler.event !== "fail") {
+  if (!allowed) {
     return refused("flow_script.handler_then_invalid", `${thenAt} says use, which stands in for a step's results after it failed; this handler is \`on ${handler.event}\`. Use \`carry on\` or \`go to <checkpoint step>\` here.`, then.line);
   }
   const parameters: JsonObject = { disposition: disposition.kind };
@@ -145,7 +148,7 @@ export function automationStudioFlowScriptHandlerSteps(input: {
     branches: [],
     derivedParameters: {
       event: EVENTS[handler.event]!,
-      scope: scope.kind === "nodes" ? { kind: "nodes", nodeIds: nodeIds! } : { kind: scope.kind },
+      scope: scope.kind === "nodes" ? { kind: "nodes", nodeIds: nodeIds! } : scope.kind === "subflow" ? { kind: "subflow", inherit: true } : { kind: "automation" },
       when,
       order: input.orderIn(scope.kind === "automation"),
       completionCheck

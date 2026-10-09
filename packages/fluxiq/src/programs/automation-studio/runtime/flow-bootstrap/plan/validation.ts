@@ -458,7 +458,10 @@ function parameterValueMatches(value: JsonValue, parameter: AutomationNodeParame
     || ((type === "string" || type === "expression") && typeof value !== "string")
     || (type === "boolean" && typeof value !== "boolean")
     || (type === "array" && !Array.isArray(value))
-    || ((type === "object" || type === "json") && (value === null || typeof value !== "object" || Array.isArray(value)))) return false;
+    || (type === "object" && (value === null || typeof value !== "object" || Array.isArray(value)))
+    // A `json` parameter holds any JSON value: a handler's `when` and
+    // `completionCheck` are lists (`nodes/control-flow/handler.ts`).
+    || (type === "json" && value === null)) return false;
   const constraints = parameter.constraints;
   if (!constraints) return true;
   if (typeof value === "number") {

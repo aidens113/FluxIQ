@@ -7,8 +7,8 @@
 // built from. Each refusal names the script line it is about.
 import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
-import { validateAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../../plan/index.ts";
-import { stateNodeRegistryFixture, webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
+import { type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../../plan/index.ts";
+import { savedFlowValidation, stateNodeRegistryFixture, webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, automationStudioFlowBootstrapIssuePlace, parseAutomationStudioFlowScript } from "../index.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
@@ -23,8 +23,8 @@ function planOf(lines: readonly string[]): AutomationStudioFlowBootstrapPlan {
   const accepted = accept(lines);
   if (!accepted.ok) throw new Error(JSON.stringify(accepted.issues, null, 2));
   expect(accepted.issues.filter((issue) => issue.severity === "error")).toEqual([]);
-  const validation = validateAutomationStudioFlowBootstrapPlan({ plan: accepted.plan, registry, resolution });
-  expect(validation.issues.filter((issue) => issue.severity === "error")).toEqual([]);
+  // Held to the plan validator, then saved as the Flow apply writes and held to the Flow's own validation (C4).
+  expect(savedFlowValidation(accepted.plan, registry, resolution).errors).toEqual([]);
   return accepted.plan;
 }
 
@@ -174,6 +174,7 @@ describe("a part a step calls", () => {
   });
 
   it("is refused at the call line when the library offers no Call Subflow", () => {
+    // Core's built-ins and the web library: the handler nodes, and no Call Subflow yet (R1-call-subflow).
     const library = new AutomationStudioNodeRegistry();
     for (const definition of webDomainNodeDefinitionsFixture()) library.register(definition);
     expect(refusals([...open, "step: renew", "  call: renewal", "  card: 1", ...part], library).map((issue) => [issue.code, issue.line]))
@@ -211,7 +212,7 @@ describe("a handler", () => {
       completionCheck: [{ fact: "dialog", op: "absent", target: { kind: "dialog", role: "alertdialog", name: "Please wait" } }],
       maxRuns: 1
     });
-    expect(main.nodes[5]!.parameters).toEqual({ disposition: "resume" });
+    expect(main.nodes[5]!.parameters).toEqual({ disposition: "resume", checkpointId: "", outputs: {} });
     expect(plan.metadata).toEqual({ requires: ["flow.handlers@1", "web.facts@1"] });
   });
 
@@ -246,9 +247,9 @@ describe("a handler", () => {
     expect(main.nodes.find((node) => node.key === "s2")!.metadata).toEqual({ "fluxiq.checkpoint": { id: "loans", requires: [] } });
     const ends = main.nodes.filter((node) => node.definitionId === "builtin.control.handler-end").map((node) => node.parameters);
     expect(ends).toEqual([
-      { disposition: "resolve", outputs: { loans: { $state: { path: "$node.h1-s2.loans" } } } },
-      { disposition: "route", checkpointId: "loans" },
-      { disposition: "unhandled" }
+      { disposition: "resolve", checkpointId: "", outputs: { loans: { $state: { path: "$node.h1-s2.loans" } } } },
+      { disposition: "route", checkpointId: "loans", outputs: {} },
+      { disposition: "unhandled", checkpointId: "", outputs: {} }
     ]);
     const registrations = main.nodes.filter((node) => node.definitionId === "builtin.control.handler").map((node) => node.parameters);
     expect(registrations.map((parameters) => [parameters?.event, parameters?.scope, parameters?.order])).toEqual([
@@ -267,7 +268,7 @@ describe("a handler", () => {
     const recovery = plan.subflows.find((subflow) => subflow.role === "recovery")!;
     expect(recovery.key).toBe("recovery");
     expect(recovery.nodes.map((node) => node.definitionId)).toEqual(["builtin.control.handler", "web.output.dom-click", "builtin.control.handler-end"]);
-    expect(recovery.nodes[0]!.parameters).toMatchObject({ event: "before", scope: { kind: "automation" }, completionCheck: [{ fact: "absent", op: "absent", target: "t70" }] });
+    expect(recovery.nodes[0]!.parameters).toMatchObject({ event: "before", scope: { kind: "automation" }, completionCheck: [{ fact: "absent", op: "absent", target: { handle: "t70" } }] });
     expect(plan.router.fallback).toEqual({ kind: "subflow", targetSubflowKey: "main" });
   });
 
@@ -280,8 +281,8 @@ describe("a handler", () => {
     expect(handler(["on fail for loans: no list", "  then: go to loans", "end"])).toEqual([{ code: "flow_script.handler_then_invalid", line: 10, step: "no list" }]);
     expect(handler(["on retry for loans: a notice", "  when: text t1 contains \"wait\"", "  then: carry on", "end"])).toEqual([{ code: "flow_script.handler_check_missing", line: 9, step: "a notice" }]);
     expect(handler(["on retry for loans: a notice", "  when: somewhere t1", "  then: carry on", "end"])).toEqual([{ code: "flow_script.fact_invalid", line: 10, step: "a notice" }]);
-    const library = new AutomationStudioNodeRegistry();
-    for (const definition of webDomainNodeDefinitionsFixture()) library.register(definition);
+    // The web library alone, with none of Core's built-ins: no handler nodes.
+    const library = new AutomationStudioNodeRegistry(webDomainNodeDefinitionsFixture());
     expect(refusals([...open, ...read("loans"), "on fail for loans: no list", "  then: give up", "end"], library)).toEqual([{ code: "flow_script.handler_unavailable", line: 9, step: "no list" }]);
   });
 
@@ -312,7 +313,7 @@ describe("a block's other entries and its checkpoints", () => {
       "fluxiq.entry": {
         id: "search",
         order: 1,
-        when: [{ fact: "exists", op: "exists", target: "t4" }, { fact: "text", op: "contains", value: "Signed in", target: "t2" }],
+        when: [{ fact: "exists", op: "exists", target: { handle: "t4" } }, { fact: "text", op: "contains", value: "Signed in", target: { handle: "t2" } }],
         requires: ["title"]
       }
     });
@@ -336,6 +337,6 @@ describe("a block's other entries and its checkpoints", () => {
 
   it("writes a block's `done when:` as its success check", () => {
     const plan = planOf([...open, ...press("go"), "done when: text t8 contains \"Renewed\""]);
-    expect(plan.subflows[0]!.metadata).toEqual({ "fluxiq.successCheck": [{ fact: "text", op: "contains", value: "Renewed", target: "t8" }], requires: ["web.facts@1"] });
+    expect(plan.subflows[0]!.metadata).toEqual({ "fluxiq.successCheck": [{ fact: "text", op: "contains", value: "Renewed", target: { handle: "t8" } }], requires: ["web.facts@1"] });
   });
 });

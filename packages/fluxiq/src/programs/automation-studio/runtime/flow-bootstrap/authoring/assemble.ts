@@ -502,6 +502,11 @@ function buildSubflow(input: {
       unplaced.push({ path: `${nodePath}.definitionId`, step });
       continue;
     }
+    if (!definition && step.node !== undefined && STATE_NODE_IDS.has(step.node.trim())) {
+      issues.push(authoringError("flow_script.unknown_node", `The step at line ${step.line} names "${step.node.trim()}", which a script writes with its own lines rather than as a step's node: \`call: <part>\` runs a part, and \`on <event> ...:\` to \`end\` is a handler.`, `${nodePath}.definitionId`));
+      unplaced.push({ path: `${nodePath}.definitionId`, step });
+      continue;
+    }
     if (!definition) {
       issues.push(authoringError("flow_script.unknown_node", candidates.length
         ? `The step at line ${step.line} could mean any of ${candidates.join(", ")}; name one nodeCatalog id on a "node:" line.`

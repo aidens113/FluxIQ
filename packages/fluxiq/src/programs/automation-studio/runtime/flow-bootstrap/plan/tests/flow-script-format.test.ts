@@ -11,7 +11,7 @@ import {
   AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT,
   AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT
 } from "../index.ts";
-import { stateNodeDefinitionsFixture, webDomainNodeDefinitionsFixture } from "./index.ts";
+import { callSubflowDefinitionFixture, savedFlowValidation, webDomainNodeDefinitionsFixture } from "./index.ts";
 
 // What the model is told about the run its Flow will have. The only Flow the
 // first end-to-end panel campaign created kept none of the dismissals its
@@ -303,8 +303,8 @@ function exampleRegistry(): AutomationStudioNodeRegistry {
   };
   const registry = new AutomationStudioNodeRegistry();
   for (const definition of [...fixture.map((definition) => definition.id === click.id ? { ...definition, inputs: [...definition.inputs, ROW_INPUT] } : definition), nextPage]) registry.register(definition);
-  // The call, handler and handler-end nodes the state-aware examples lower into (t388).
-  for (const definition of stateNodeDefinitionsFixture(registry, EXAMPLE_RESOLUTION)) registry.register(definition);
+  // The Call Subflow the state-aware examples lower into (t388); the handler nodes are built-ins.
+  registry.register(callSubflowDefinitionFixture(registry, EXAMPLE_RESOLUTION));
   return registry;
 }
 
@@ -406,7 +406,7 @@ describe("the state-aware Flow script format", () => {
     const plan = planOf("Example, starting where the page already is:");
     const main = plan.subflows[0]!;
     expect(main.nodes.map((node) => node.metadata ? `${node.key} ${Object.keys(node.metadata).join(",")}` : node.key)).toEqual(["s1", "s2", "s3 fluxiq.entry", "s4", "s5"]);
-    expect(main.nodes[2]!.metadata?.["fluxiq.entry"]).toEqual({ id: "renew", order: 1, when: [{ fact: "exists", op: "exists", target: "t6" }], requires: [] });
+    expect(main.nodes[2]!.metadata?.["fluxiq.entry"]).toEqual({ id: "renew", order: 1, when: [{ fact: "exists", op: "exists", target: { handle: "t6" } }], requires: [] });
     expect(plan.metadata).toEqual({ requires: ["web.facts@1"] });
   });
 
@@ -421,7 +421,7 @@ describe("the state-aware Flow script format", () => {
       when: [{ fact: "dialog", op: "visible", target: { kind: "dialog", role: "alertdialog", name: "Session expiring" } }],
       completionCheck: [{ fact: "dialog", op: "absent", target: { kind: "dialog", role: "alertdialog", name: "Session expiring" } }]
     });
-    expect(recovery.nodes[2]!.parameters).toEqual({ disposition: "resume" });
+    expect(recovery.nodes[2]!.parameters).toEqual({ disposition: "resume", checkpointId: "", outputs: {} });
     expect(plan.subflows[0]!.nodes.map((node) => node.definitionId)).toContain("builtin.control.for-each");
     expect(plan.metadata).toEqual({ requires: ["flow.handlers@1", "web.facts@1"] });
   });
@@ -437,11 +437,71 @@ describe("the state-aware Flow script format", () => {
     expect(main!.nodes[1]!.parameters).toEqual({ subflowId: "calendar", inputs: {}, outputs: { reference: "reference" } });
     expect(main!.nodes[2]!.parameters).toMatchObject({ event: "fail", scope: { kind: "nodes", nodeIds: ["s2"] }, when: [], completionCheck: [] });
     expect(main!.nodes[3]!.parameters).toMatchObject({ subflowId: "floorplan" });
-    expect(main!.nodes[4]!.parameters).toEqual({ disposition: "resolve", outputs: { reference: { $state: { path: "$node.h1-s2.reference" } } } });
-    const check = [{ fact: "text", op: "contains", value: "Booked", target: "t11" }];
+    expect(main!.nodes[4]!.parameters).toEqual({ disposition: "resolve", checkpointId: "", outputs: { reference: { $state: { path: "$node.h1-s2.reference" } } } });
+    const check = [{ fact: "text", op: "contains", value: "Booked", target: { handle: "t11" } }];
     expect(calendar!.metadata?.["fluxiq.successCheck"]).toEqual(check);
     expect(floorplan!.metadata?.["fluxiq.successCheck"]).toEqual(check);
     expect(calendar!.interface?.outputs.map((port) => port.metadata?.binding)).toEqual([{ $state: { path: "$node.s2.records" } }]);
     expect(plan.metadata).toEqual({ requires: ["flow.handlers@1", "flow.subflow-calls@1", "web.facts@1"] });
+  });
+});
+
+// Every example, saved as the Flow apply writes and held to the Flow's own
+// validation (t388): the plan validator, then `model/validation/flow.ts` on
+// each graph with its Subflow's role -- a handler's scope, body and end, its
+// disposition at its event, a route's checkpoint (C4, C5). The web fixture asks
+// a press for a `selector`; the real domain takes the handle the examples
+// write instead, so the selector is optional here, and nothing else is eased.
+describe("every example in the Flow script format, saved as a Flow", () => {
+  const base = exampleRegistry();
+  const registry = new AutomationStudioNodeRegistry(base.list(EXAMPLE_RESOLUTION).map((definition) => ({
+    ...definition,
+    parameters: definition.parameters.map((parameter) => parameter.id === "selector" ? { ...parameter, required: false } : parameter)
+  })));
+  const blocks = [AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT].flatMap(exampleBlocks);
+
+  it.each(blocks)("%s passes the plan validator and the Flow validator on every graph", (_name, script) => {
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: script }, registry, resolution: EXAMPLE_RESOLUTION });
+    if (!accepted.ok) throw new Error(JSON.stringify(accepted.issues));
+    const saved = savedFlowValidation(accepted.plan, registry, EXAMPLE_RESOLUTION);
+    expect(saved.errors).toEqual([]);
+    expect(saved.topology).toBeDefined();
+  });
+
+  it("writes the second known way's parts, handler and requirements to the saved graphs, by the ids it minted", () => {
+    const script = new Map(exampleBlocks(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT)).get("Example, a second known way, checked the same:")!;
+    const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: script }, registry, resolution: EXAMPLE_RESOLUTION });
+    if (!accepted.ok) throw new Error(JSON.stringify(accepted.issues));
+    const topology = savedFlowValidation(accepted.plan, registry, EXAMPLE_RESOLUTION).topology!;
+    const byKey = new Map(topology.subflows.map((entry) => [entry.subflow.metadata?.bootstrapSymbolicKey, entry]));
+    const main = byKey.get("main")!.graphFlow;
+    const calls = main.nodes.filter((node) => node.definitionId === "builtin.control.call-subflow").map((node) => node.parameterValues?.subflowId);
+    // The layout orders a graph's nodes, so the calls are compared as a set.
+    expect([...calls].sort()).toEqual([byKey.get("calendar")!.subflow.subflowId, byKey.get("floorplan")!.subflow.subflowId].sort());
+    const handler = main.nodes.find((node) => node.definitionId === "builtin.control.handler")!;
+    const booking = main.nodes.find((node) => node.metadata?.bootstrapSymbolicKey === "s2")!;
+    expect(handler.parameterValues?.scope).toEqual({ kind: "nodes", nodeIds: [booking.id] });
+    const calendar = byKey.get("calendar")!.graphFlow;
+    expect(calendar.interface.outputs.map((port) => [port.id, port.metadata?.binding])).toEqual([["reference", { $state: { path: "$node.s2.records" } }]]);
+    expect(calendar.metadata?.["fluxiq.successCheck"]).toEqual([{ fact: "text", op: "contains", value: "Booked", target: { handle: "t11" } }]);
+    expect(calendar.metadata?.requires).toEqual(["web.facts@1"]);
+    expect(main.metadata?.requires).toEqual(["flow.handlers@1", "flow.subflow-calls@1"]);
+    expect(topology.requires).toEqual(["flow.handlers@1", "flow.subflow-calls@1", "web.facts@1"]);
+    // A part is no router target and not the fallback; the recovery role is not used here.
+    expect(topology.router.rules).toEqual([]);
+    expect(topology.router.fallback).toEqual({ kind: "subflow", subflowId: byKey.get("main")!.subflow.subflowId });
+  });
+
+  it("writes an entry to the saved node, and an everywhere handler to the recovery graph", () => {
+    const examples = new Map(exampleBlocks(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT));
+    const entry = acceptAutomationStudioFlowBootstrapResult({ result: { flow: examples.get("Example, starting where the page already is:")! }, registry, resolution: EXAMPLE_RESOLUTION });
+    if (!entry.ok) throw new Error(JSON.stringify(entry.issues));
+    const renew = savedFlowValidation(entry.plan, registry, EXAMPLE_RESOLUTION).topology!.subflows[0]!.graphFlow.nodes.find((node) => node.metadata?.["fluxiq.entry"]);
+    expect(renew?.metadata?.["fluxiq.entry"]).toEqual({ id: "renew", order: 1, when: [{ fact: "exists", op: "exists", target: { handle: "t6" } }], requires: [] });
+    const anywhere = acceptAutomationStudioFlowBootstrapResult({ result: { flow: examples.get("Example, an interruption that can come at any pass:")! }, registry, resolution: EXAMPLE_RESOLUTION });
+    if (!anywhere.ok) throw new Error(JSON.stringify(anywhere.issues));
+    const recovery = savedFlowValidation(anywhere.plan, registry, EXAMPLE_RESOLUTION).topology!.subflows.find((saved) => saved.subflow.role === "recovery")!;
+    expect(recovery.graphFlow.nodes.map((node) => node.definitionId)).toEqual(["builtin.control.handler", "web.output.dom-click", "builtin.control.handler-end"]);
+    expect(recovery.graphFlow.metadata?.requires).toEqual(["flow.handlers@1", "web.facts@1"]);
   });
 });

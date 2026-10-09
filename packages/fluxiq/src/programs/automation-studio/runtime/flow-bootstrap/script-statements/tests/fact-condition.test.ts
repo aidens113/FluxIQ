@@ -6,16 +6,16 @@ import { automationStudioFlowScriptFactGone, automationStudioFlowScriptFacts, re
 
 describe("a page fact", () => {
   it.each([
-    ["exists t5", { fact: "exists", op: "exists", target: "t5" }],
-    ["absent t5", { fact: "absent", op: "absent", target: "t5" }],
-    ["visible extraction.1", { fact: "visible", op: "visible", target: "extraction.1" }],
-    ["enabled t9", { fact: "enabled", op: "enabled", target: "t9" }],
-    ["text t7 contains \"Signed in\"", { fact: "text", op: "contains", value: "Signed in", target: "t7" }],
-    ["text t7 is Ready", { fact: "text", op: "equals", value: "Ready", target: "t7" }],
-    ["text t7 matches ^Due \\d+", { fact: "text", op: "matches", value: "^Due \\d+", target: "t7" }],
-    ["value t4 is $input.city", { fact: "value", op: "equals", value: { input: "city" }, target: "t4" }],
-    ["count t9 is 3", { fact: "count", op: "count", value: 3, target: "t9" }],
-    ["count t9 0", { fact: "count", op: "count", value: 0, target: "t9" }],
+    ["exists t5", { fact: "exists", op: "exists", target: { handle: "t5" } }],
+    ["absent t5", { fact: "absent", op: "absent", target: { handle: "t5" } }],
+    ["visible extraction.1", { fact: "visible", op: "visible", target: { handle: "extraction.1" } }],
+    ["enabled t9", { fact: "enabled", op: "enabled", target: { handle: "t9" } }],
+    ["text t7 contains \"Signed in\"", { fact: "text", op: "contains", value: "Signed in", target: { handle: "t7" } }],
+    ["text t7 is Ready", { fact: "text", op: "equals", value: "Ready", target: { handle: "t7" } }],
+    ["text t7 matches ^Due \\d+", { fact: "text", op: "matches", value: "^Due \\d+", target: { handle: "t7" } }],
+    ["value t4 is $input.city", { fact: "value", op: "equals", value: { input: "city" }, target: { handle: "t4" } }],
+    ["count t9 is 3", { fact: "count", op: "count", value: 3, target: { handle: "t9" } }],
+    ["count t9 0", { fact: "count", op: "count", value: 0, target: { handle: "t9" } }],
     ["dialog alertdialog \"Please wait\"", { fact: "dialog", op: "visible", target: { kind: "dialog", role: "alertdialog", name: "Please wait" } }],
     ["dialog dialog \"Session expiring\" absent", { fact: "dialog", op: "absent", target: { kind: "dialog", role: "dialog", name: "Session expiring" } }]
   ])("reads %s", (text, fact) => {
@@ -45,11 +45,11 @@ describe("a page fact", () => {
   });
 
   it("states the opposite of something showing, and of something gone, but not of a comparison", () => {
-    expect(automationStudioFlowScriptFactGone({ fact: "visible", op: "visible", target: "t1" })).toEqual({ fact: "absent", op: "absent", target: "t1" });
-    expect(automationStudioFlowScriptFactGone({ fact: "absent", op: "absent", target: "t1" })).toEqual({ fact: "exists", op: "exists", target: "t1" });
+    expect(automationStudioFlowScriptFactGone({ fact: "visible", op: "visible", target: { handle: "t1" } })).toEqual({ fact: "absent", op: "absent", target: { handle: "t1" } });
+    expect(automationStudioFlowScriptFactGone({ fact: "absent", op: "absent", target: { handle: "t1" } })).toEqual({ fact: "exists", op: "exists", target: { handle: "t1" } });
     expect(automationStudioFlowScriptFactGone({ fact: "dialog", op: "visible", target: { kind: "dialog", role: "dialog", name: "x" } }))
       .toEqual({ fact: "dialog", op: "absent", target: { kind: "dialog", role: "dialog", name: "x" } });
-    expect(automationStudioFlowScriptFactGone({ fact: "text", op: "contains", value: "x", target: "t1" })).toBeUndefined();
-    expect(automationStudioFlowScriptFactGone({ fact: "enabled", op: "enabled", target: "t1" })).toBeUndefined();
+    expect(automationStudioFlowScriptFactGone({ fact: "text", op: "contains", value: "x", target: { handle: "t1" } })).toBeUndefined();
+    expect(automationStudioFlowScriptFactGone({ fact: "enabled", op: "enabled", target: { handle: "t1" } })).toBeUndefined();
   });
 });

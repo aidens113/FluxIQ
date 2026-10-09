@@ -202,10 +202,9 @@ function isFact(value: unknown): boolean {
   if (!isRecord(value) || typeof value.fact !== "string" || !value.fact || value.fact.length > 64 || !FACT_OPS.has(String(value.op))) return false;
   if (Object.keys(value).some((key) => !["fact", "op", "value", "target"].includes(key))) return false;
   if (value.value !== undefined && !isFactValue(value.value)) return false;
-  if (value.target === undefined) return true;
-  if (typeof value.target === "string") return value.target.length > 0 && value.target.length <= 200;
-  return isRecord(value.target) && value.target.kind === "dialog" && typeof value.target.role === "string" && typeof value.target.name === "string"
-    && value.target.name.length <= 200 && value.target.role.length <= 40;
+  // A target is the host's own object (`{ handle }` or a dialog), carried and
+  // never read by Core; the runtime keeps no other shape (C9).
+  return value.target === undefined || (isJsonObject(value.target) && safeByteLength(value.target) <= 1_000);
 }
 
 function isFactValue(value: unknown): boolean {
