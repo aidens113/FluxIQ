@@ -7,7 +7,8 @@
 // and `established` was unreachable for the Flows the MVP builds (t176).
 
 import { describe, expect, it } from "vitest";
-import { automationStudioAttemptCapturedRecords, automationStudioRetriedAttemptIds } from "../attempt-projection.ts";
+import type { AutomationStudioTransitionComparison } from "../../executor/index.ts";
+import { automationStudioAttemptCapturedRecords, automationStudioAttemptDeclaredRoute, automationStudioAttemptSettled, automationStudioRetriedAttemptIds } from "../attempt-projection.ts";
 
 const SAVES = [{ type: "policy.output.dispatch", payload: { outputId: "read", recordOutput: { datasetId: "products" } } }];
 
@@ -66,5 +67,35 @@ describe("the attempts an automatic retry replaced", () => {
       { attemptId: "press.attempt.4", nodeId: "press" }
     ]);
     expect(retried.size).toBe(0);
+  });
+});
+
+// t384: an attempt that failed where the state its node was recorded to produce
+// already held (`stateHeld`, the ladder's `skip_satisfied_node` rung) is its node
+// done. The attempt still says `failed`; only what the node came to reads done.
+describe("what the node came to at an attempt", () => {
+  const held = { rung: "skip_satisfied_node" as const, route: "success" as const };
+
+  it("reads a failed attempt whose state already held as done down success", () => {
+    expect(automationStudioAttemptSettled({ status: "failed", route: "failed", stateHeld: held })).toEqual({ status: "succeeded", route: "success" });
+  });
+
+  it("reads every other attempt as it stands", () => {
+    expect(automationStudioAttemptSettled({ status: "failed", route: "failed" })).toEqual({ status: "failed", route: "failed" });
+    expect(automationStudioAttemptSettled({ status: "succeeded", route: "next" })).toEqual({ status: "succeeded", route: "next" });
+    expect(automationStudioAttemptSettled({ status: "waiting" })).toEqual({ status: "waiting" });
+  });
+
+  it("reads the executor's `failed` default on a failed attempt as no declaration, and a node's own route as one", () => {
+    const comparing = (expectedRoute: string): AutomationStudioTransitionComparison => ({
+      comparisonId: "c", nodeId: "n", attemptId: "a", status: "matched",
+      expected: { transitionId: "t.expected", nodeId: "n", definitionId: "d", expectedRoute },
+      actual: { transitionId: "t.actual", nodeId: "n", definitionId: "d", status: "failed", outputs: {}, effects: [], startedAt: 1 },
+      diffSummary: { missingOutputIds: [], unexpectedOutputIds: [], missingEffectTypes: [], unexpectedEffectTypes: [], routeMatched: true, statusMatched: true, stateCheckCount: 0 }
+    });
+    expect(automationStudioAttemptDeclaredRoute({ status: "failed", transitionComparison: comparing("failed") })).toBeUndefined();
+    expect(automationStudioAttemptDeclaredRoute({ status: "failed", transitionComparison: comparing("success") })).toBe("success");
+    expect(automationStudioAttemptDeclaredRoute({ status: "succeeded", transitionComparison: comparing("failed") })).toBe("failed");
+    expect(automationStudioAttemptDeclaredRoute({ status: "succeeded" })).toBeUndefined();
   });
 });

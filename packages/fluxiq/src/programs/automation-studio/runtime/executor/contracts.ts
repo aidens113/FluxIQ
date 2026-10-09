@@ -240,6 +240,17 @@ export type AutomationStudioNodeAttemptTrace = {
   transitionComparison?: AutomationStudioTransitionComparison;
   recoveryDecision?: AutomationStudioRecoveryDecision;
   /**
+   * Set when this attempt failed but the state its node was recorded to
+   * produce already held, so the run went on down `route` instead of repeating
+   * an act that had already happened (the ladder's `skip_satisfied_node` rung).
+   * The attempt keeps `status: "failed"`, its `failure` and its `fault`, and the
+   * run's defence ledger keeps the fault as `continued`: the first try did
+   * fail. What the node came to -- done -- is read with
+   * `automationStudioAttemptSettled` (`flow-change/attempt-projection.ts`), so
+   * a trial verdict, a replay and a run's detail all read the node as done.
+   */
+  stateHeld?: { rung: "skip_satisfied_node"; route: "success" };
+  /**
    * Set when the run skipped this node rather than ran it: a sometimes-present
    * step (a popup, a banner, a consent prompt) whose target was observed not to
    * be on the page (`step-skip/absent-step.ts`). The attempt then reads `status:

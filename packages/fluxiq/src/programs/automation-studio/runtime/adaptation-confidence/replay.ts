@@ -36,6 +36,8 @@ import type { AutomationStudioFlowAdaptation, AutomationStudioFlowAdaptationVali
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../executor/index.ts";
 import {
   automationStudioAttemptCapturedRecords,
+  automationStudioAttemptDeclaredRoute,
+  automationStudioAttemptSettled,
   automationStudioAttemptVerifiesState,
   automationStudioChangeValidationResult,
   automationStudioRetriedAttemptIds,
@@ -198,16 +200,18 @@ function exercisedNodeIds(attempts: readonly AutomationStudioNodeAttemptTrace[],
  */
 function replayAttempt(attempt: AutomationStudioNodeAttemptTrace, input: AutomationStudioAdaptationReplayInput, retried: ReadonlySet<string>): AutomationStudioChangeVerdictAttempt {
   const declared = attempt.transitionComparison?.expected;
-  const succeeded = attempt.status === "succeeded";
-  const expectedRoute = succeeded ? declared?.expectedRoute : undefined;
+  // What the node came to: an attempt whose state already held reads as done, as the trial reads it.
+  const settled = automationStudioAttemptSettled(attempt);
+  const succeeded = settled.status === "succeeded";
+  const expectedRoute = succeeded ? automationStudioAttemptDeclaredRoute(attempt) : undefined;
   const expectedOutputIds = Object.keys(declared?.expectedOutputs ?? {});
   const declaresState = Object.keys(declared?.expectedState ?? {}).length > 0;
   const records = automationStudioAttemptCapturedRecords(attempt);
   const verifiesState = automationStudioAttemptVerifiesState(attempt) || input.verifiesState?.(attempt) === true;
   return {
     nodeId: attempt.nodeId,
-    status: attempt.status,
-    ...(attempt.route !== undefined ? { route: attempt.route } : {}),
+    status: settled.status,
+    ...(settled.route !== undefined ? { route: settled.route } : {}),
     outputIds: Object.keys(attempt.outputs).filter((outputId) => attempt.outputs[outputId] !== undefined),
     ...(expectedRoute !== undefined ? { expectedRoute } : {}),
     ...(expectedOutputIds.length ? { expectedOutputIds } : {}),
