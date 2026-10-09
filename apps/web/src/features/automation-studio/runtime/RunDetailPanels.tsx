@@ -15,6 +15,7 @@ import {
 } from "./run-detail-model";
 import { formatRuntimeDuration, formatRuntimeTimestamp, safeJson } from "./run-format";
 import { RUNTIME_ACTION_PAGE_SIZE } from "./run-queries";
+import { runtimeAttemptStory, runtimeRouteWords, type RuntimeAttemptStoryLine } from "./attempt-story";
 
 export type RuntimePanelTarget = { kind: "router" | "subflow" | "adaptation-detail" | "state"; targetId?: string };
 
@@ -210,6 +211,7 @@ export function RuntimeAttemptRow(props: { attempt: any; index: number; selected
   const attempt = props.attempt;
   const comparisonStatus = attempt.comparisonStatus ?? attempt.transitionComparison?.status;
   const recoverySelected = attempt.metadata?.recoverySelected ?? attempt.recoveryDecision?.selected;
+  const story = runtimeAttemptStory(attempt);
   return (
     <article
       aria-current={props.selected ? "true" : undefined}
@@ -227,21 +229,35 @@ export function RuntimeAttemptRow(props: { attempt: any; index: number; selected
       <strong title={attempt.nodeId}>{attempt.nodeId ?? "-"}</strong>
       <StatusBadge value={attempt.status ?? "unknown"} />
       <span title={attempt.definitionId ?? ""}>{attempt.definitionId ?? "-"}</span>
-      <span>{attempt.route ?? "-"}</span>
+      <span title={attempt.route ?? ""}>{runtimeRouteWords(attempt.route)}</span>
       <span>{formatRuntimeTimestamp(attempt.startedAt)} | {formatRuntimeDuration(attempt.startedAt, attempt.finishedAt)}</span>
       <span>{attempt.regionId ?? "-"}</span>
       <span>{comparisonStatus ? <StatusBadge value={comparisonStatus} /> : "-"}</span>
       <span>{recoverySelected ? `${recoverySelected.kind ?? "-"}${recoverySelected.targetNodeId ? ` -> ${recoverySelected.targetNodeId}` : ""}` : "-"}</span>
       <span title={attempt.message ?? ""}>{attempt.message ?? attempt.policyDecision?.reason ?? (attempt.compositeTarget ? `${attempt.compositeTarget.flowId}@${attempt.compositeTarget.version}` : "-")}</span>
       {props.onSelect ? <ChevronRight aria-label="Open action details" size={16} /> : null}
+      {story.length ? <RuntimeAttemptStoryList className="automation-runtime-attempt-story" label="What the run did" lines={story} /> : null}
     </article>
   );
 }
 
-export function RuntimeActionDetailPanel(props: { attempt: any; index: number; view: "summary" | "data" | "effects" | "state" | "raw"; onClose(): void; onView(view: "summary" | "data" | "effects" | "state" | "raw"): void }) {
+/** The tabs of the action detail panel. */
+export type RuntimeActionDetailView = "summary" | "story" | "data" | "effects" | "state" | "raw";
+
+/** Plain-words lines of what the runtime did, one per record, in the order it did them. */
+function RuntimeAttemptStoryList(props: { className: string; label: string; lines: RuntimeAttemptStoryLine[] }) {
+  return (
+    <ol aria-label={props.label} className={props.className}>
+      {props.lines.map((line, index) => <li data-kind={line.kind} key={`${line.kind}.${index}`}>{line.text}</li>)}
+    </ol>
+  );
+}
+
+export function RuntimeActionDetailPanel(props: { attempt: any; index: number; view: RuntimeActionDetailView; onClose(): void; onView(view: RuntimeActionDetailView): void }) {
   const attempt = props.attempt;
   const stateRefs = attempt.metadata?.stateRefs ?? {};
-  const views = [["summary", "Summary"], ["data", "Data"], ["effects", "Effects"], ["state", "State"], ["raw", "Raw JSON"]] as const;
+  const story = runtimeAttemptStory(attempt);
+  const views = [["summary", "Summary"], ["story", "What happened"], ["data", "Data"], ["effects", "Effects"], ["state", "State"], ["raw", "Raw JSON"]] as const;
   return (
     <aside className="automation-runtime-action-detail" aria-label={`Action ${props.index + 1} details`}>
       <header>
@@ -256,12 +272,15 @@ export function RuntimeActionDetailPanel(props: { attempt: any; index: number; v
           ["Status", <StatusBadge key="status" value={attempt.status ?? "unknown"} />],
           ["Node", attempt.nodeId ?? "-"],
           ["Definition", attempt.definitionId ?? "-"],
-          ["Route", attempt.route ?? "-"],
+          ["Route", runtimeRouteWords(attempt.route)],
           ["Region", attempt.regionId ?? "-"],
           ["Started", formatRuntimeTimestamp(attempt.startedAt)],
           ["Duration", formatRuntimeDuration(attempt.startedAt, attempt.finishedAt)],
           ["Message", attempt.message ?? attempt.policyDecision?.reason ?? "-"]
         ]} empty="No action summary." /> : null}
+        {props.view === "story" ? story.length
+          ? <RuntimeAttemptStoryList className="automation-runtime-action-story" label="What happened" lines={story} />
+          : <p className="automation-runtime-empty">The run recorded nothing beyond running this step: no retry, wait, skip, route or recovery.</p> : null}
         {props.view === "data" ? <div className="automation-runtime-action-detail-stack">{typeof attempt.metadata?.recordCount === "number" ? <section><strong>Records</strong><p className="automation-runtime-message">{attempt.metadata.recordCount} rows captured</p></section> : null}<section><strong>Inputs</strong><JsonPreview value={attempt.inputs ?? {}} /></section><section><strong>Outputs</strong><JsonPreview value={attempt.outputs ?? {}} /></section></div> : null}
         {props.view === "effects" ? <DataTable label="Runtime action effects" columns={["Type", "Payload"]} rows={(attempt.effects ?? []).map((effect: any, index: number) => [effect.type ?? `Effect ${index + 1}`, <JsonToggle key={index} label="Show payload" value={effect.payload ?? effect} />])} empty="No effects were emitted by this action." /> : null}
         {props.view === "state" ? <div className="automation-runtime-action-detail-stack"><section><strong>Before action</strong><JsonPreview value={stateRefs.beforeAction ?? {}} /></section><section><strong>After action</strong><JsonPreview value={stateRefs.afterAction ?? {}} /></section><section><strong>State diff</strong><JsonPreview value={stateRefs.stateDiff ?? attempt.metadata?.diffSummary ?? {}} /></section></div> : null}
@@ -291,6 +310,14 @@ function runtimeAttemptDetailsJson(attempt: any, recoverySelected: any) {
     childTrace: attempt.childTrace,
     policyDecision: attempt.policyDecision,
     compositeTarget: attempt.compositeTarget,
+    // The runtime records the "What happened" tab reads, with their codes.
+    skipped: attempt.skipped,
+    stateRouting: attempt.stateRouting,
+    retry: attempt.retry,
+    readiness: attempt.readiness,
+    pace: attempt.pace,
+    fault: attempt.fault,
+    recoveryDecision: attempt.recoveryDecision,
     metadata: attempt.metadata ?? {}
   };
 }

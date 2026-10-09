@@ -11,7 +11,8 @@ import {
   RuntimeRunStory,
   RuntimeMetricsPanel,
   JsonPreview,
-  RuntimeActionDetailPanel
+  RuntimeActionDetailPanel,
+  type RuntimeActionDetailView
 } from "./RunDetailPanels";
 import {
   runtimeAttemptsForRunDetail,
@@ -86,7 +87,7 @@ function RuntimeLogScope(props: RunActionLogViewProps & { commands: RuntimeDetai
   const eventDetailAbortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
   const actionQueryRef = useRef({ offset: 0, cursor: null as string | null, index: 0 });
-  const [actionDetailView, setActionDetailView] = useState<"summary" | "data" | "effects" | "state" | "raw">("summary");
+  const [actionDetailView, setActionDetailView] = useState<RuntimeActionDetailView>("summary");
   const recoveryAttempts = runDetail?.recoveryAttempts ?? [];
   const interventions = Array.isArray(runDetail?.interventions) ? runDetail.interventions : [];
   const metrics = isRuntimeJsonRecord(runDetail?.metadata?.adaptiveMetrics) ? runDetail.metadata.adaptiveMetrics : {};
