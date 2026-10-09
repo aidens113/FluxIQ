@@ -352,3 +352,70 @@ function comparisonFixture(expected: Partial<AutomationStudioTransitionCompariso
     diffSummary: { missingOutputIds: ["value"], unexpectedOutputIds: ["error"], missingEffectTypes: [], unexpectedEffectTypes: [], routeMatched: false, statusMatched: false, stateCheckCount: 1 }
   };
 }
+
+// Every node gets a first attempt and up to three automatic retries. A press
+// that fails once and passes on its retry leaves a failed attempt in the trace,
+// linked from the retry by `retry.previousAttemptId`; the trial must read the
+// retry, or a correct change that needed one retry is `contradicted` (t375).
+describe("a change that needed an automatic retry", () => {
+  const TIMEOUT = { category: "timeout" as const, code: "web.action.timeout", retryable: true, stage: "execution" as const };
+  const verifiesState = (node: AutomationStudioFlowNode) => node.id === "assert";
+  const press = (id: string): FixtureNode => ({ id, definitionId: "builtin.policy.action", parameterValues: { outputId: `output.${id}` } });
+
+  /** Fails each output the given number of times, then lets it through. */
+  function flaky(failures: Record<string, number>): Pick<AutomationStudioGraphExecutionOptions, "effectDispatcher" | "delay"> {
+    const seen = new Map<string, number>();
+    return {
+      delay: async () => {},
+      effectDispatcher: (effect) => {
+        const outputId = String((effect.payload as { outputId?: unknown } | undefined)?.outputId ?? "");
+        const count = (seen.get(outputId) ?? 0) + 1;
+        seen.set(outputId, count);
+        return count <= (failures[outputId] ?? 0)
+          ? { status: "failed", route: "failed", outputs: {}, message: "The action failed.", failure: TIMEOUT }
+          : { status: "success", route: "success", outputs: { ok: true } };
+      }
+    };
+  }
+
+  it("verifies a changed press that failed once and passed on its retry", async () => {
+    const result = await trial({
+      candidate: flowOf([press("changed"), press("assert"), END], [["changed", "assert"], ["assert", "end"]]),
+      options: flaky({ "output.changed": 1 }),
+      verifiesState
+    });
+
+    const attempts = result.executedTrace.attempts;
+    expect(attempts.map((attempt) => [attempt.nodeId, attempt.status])).toEqual([["changed", "failed"], ["changed", "succeeded"], ["assert", "succeeded"], ["end", "succeeded"]]);
+    expect(attempts[1]?.retry?.previousAttemptId).toBe(attempts[0]?.attemptId);
+    expect(result.verdict).toMatchObject({ outcome: "verified", basis: ["downstream_assertion"], resumable: true, resumeFrom: { nodeId: "assert", route: "success" } });
+    expect(result.verdict.checks).toContainEqual({ kind: "changed_node_succeeded", status: "passed", nodeId: "changed" });
+  });
+
+  // The judged-whole-run marker (`live-patch.ts`) is set only on this answer.
+  it("leaves a retried press that declares no evidence unverifiable with no_evidence, not contradicted", async () => {
+    const result = await trial({ candidate: flowOf([press("changed"), END], [["changed", "end"]]), options: flaky({ "output.changed": 1 }) });
+
+    expect(result.executedTrace.attempts.map((attempt) => attempt.nodeId)).toEqual(["changed", "changed", "end"]);
+    expect(result.verdict).toMatchObject({ outcome: "unverifiable", resumable: false, notResumableCode: "no_evidence", resumeFrom: { nodeId: "end", route: "success" } });
+  });
+
+  it("counts a later assertion that passed on its retry", async () => {
+    const result = await trial({
+      candidate: flowOf([press("changed"), press("assert"), END], [["changed", "assert"], ["assert", "end"]]),
+      options: flaky({ "output.assert": 2 }),
+      verifiesState
+    });
+
+    expect(result.executedTrace.attempts.map((attempt) => attempt.nodeId)).toEqual(["changed", "assert", "assert", "assert", "end"]);
+    expect(result.verdict).toMatchObject({ outcome: "verified", basis: ["downstream_assertion"] });
+  });
+
+  it("contradicts a changed press whose retries were all spent", async () => {
+    const result = await trial({ candidate: flowOf([press("changed"), END], [["changed", "end"]]), options: flaky({ "output.changed": 99 }) });
+
+    expect(result.executedTrace.attempts.filter((attempt) => attempt.nodeId === "changed")).toHaveLength(4);
+    expect(result.verdict.outcome).toBe("contradicted");
+    expect(result.verdict.checks).toContainEqual({ kind: "changed_node_succeeded", status: "failed", nodeId: "changed", code: "changed_node_failed" });
+  });
+});

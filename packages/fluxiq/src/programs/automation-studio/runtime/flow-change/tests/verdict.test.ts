@@ -511,3 +511,97 @@ describe("change validation result", () => {
     expect(verified.basis).toEqual(["expected_state"]);
   });
 });
+
+// Every node gets a first attempt and up to three automatic retries, and each
+// retry is an attempt of its own that leaves the one it replaced `failed`. The
+// verdict reads the retry: a node that failed once and then passed did what it
+// was for. Only a failure no retry followed is a failure (t375).
+describe("change verdict: automatic retries", () => {
+  const evidence = { expectedOutputIds: ["value"], outputIds: ["value"] };
+
+  it("passes a changed node that failed and then succeeded on its retry", () => {
+    const verdict = decide({
+      attempts: [attempt("node.changed", { status: "failed", route: "failed", retried: true }), attempt("node.changed", evidence), attempt("node.next")]
+    });
+    expectWellFormed(verdict);
+    expect(verdict).toMatchObject({ outcome: "verified", basis: ["expected_outputs"], resumable: true, resumeFrom: { nodeId: "node.next", route: "success" } });
+    expect(checkOf(verdict, "changed_node_succeeded")).toEqual({ kind: "changed_node_succeeded", status: "passed", nodeId: "node.changed" });
+  });
+
+  it("passes a changed node that failed twice and then succeeded", () => {
+    const verdict = decide({
+      attempts: [
+        attempt("node.changed", { status: "failed", route: "failed", retried: true }),
+        attempt("node.changed", { status: "failed", route: "failed", retried: true }),
+        attempt("node.changed", evidence)
+      ]
+    });
+    expectWellFormed(verdict);
+    expect(verdict).toMatchObject({ outcome: "verified", resumeFrom: { completed: true } });
+  });
+
+  it("leaves a retried change that proved nothing unverifiable with no_evidence, not contradicted", () => {
+    const verdict = decide({ attempts: [attempt("node.changed", { status: "failed", route: "failed", retried: true }), attempt("node.changed"), attempt("node.next")] });
+    expectWellFormed(verdict);
+    expect(verdict).toMatchObject({ outcome: "unverifiable", resumable: false, notResumableCode: "no_evidence", resumeFrom: { nodeId: "node.next" } });
+  });
+
+  it("contradicts a changed node whose retries were all spent", () => {
+    const verdict = decide({
+      runStatus: "failed",
+      endNodeId: "node.changed",
+      attempts: [
+        attempt("node.changed", { status: "failed", route: "failed", retried: true }),
+        attempt("node.changed", { status: "failed", route: "failed", retried: true }),
+        attempt("node.changed", { status: "failed", route: "failed", retried: true }),
+        attempt("node.changed", { status: "failed", route: "failed" })
+      ]
+    });
+    expectWellFormed(verdict);
+    expect(verdict.outcome).toBe("contradicted");
+    expect(checkOf(verdict, "changed_node_succeeded")).toMatchObject({ status: "failed", code: "changed_node_failed" });
+  });
+
+  it("ignores what a replaced attempt declared, judging each per-node check on the attempt that stood", () => {
+    const verdict = decide({
+      attempts: [
+        attempt("node.changed", { status: "failed", route: "failed", retried: true, expectedState: "failed", records: { captured: 0, minimum: 1 } }),
+        attempt("node.changed", { ...evidence, expectedState: "passed", records: { captured: 2, minimum: 1 } })
+      ]
+    });
+    expectWellFormed(verdict);
+    expect(verdict).toMatchObject({ outcome: "verified", basis: ["expected_state", "expected_outputs", "records"] });
+  });
+
+  it("counts a downstream assertion that passed on its retry as passed", () => {
+    const verdict = decide({
+      attempts: [
+        attempt("node.changed"),
+        attempt("node.assert", { status: "failed", route: "failed", verifiesState: true, retried: true }),
+        attempt("node.assert", { verifiesState: true })
+      ]
+    });
+    expectWellFormed(verdict);
+    expect(verdict).toMatchObject({ outcome: "verified", basis: ["downstream_assertion"] });
+    expect(checkOf(verdict, "downstream_assertion", "node.assert")).toEqual({ kind: "downstream_assertion", status: "passed", nodeId: "node.assert" });
+  });
+
+  it("still contradicts the change on a downstream assertion whose last attempt failed", () => {
+    const verdict = decide({
+      attempts: [
+        attempt("node.changed"),
+        attempt("node.assert", { status: "failed", route: "failed", verifiesState: true, retried: true }),
+        attempt("node.assert", { status: "failed", route: "failed", verifiesState: true })
+      ]
+    });
+    expect(verdict.outcome).toBe("contradicted");
+    expect(checkOf(verdict, "downstream_assertion", "node.assert")).toMatchObject({ status: "failed", code: "downstream_assertion_failed" });
+  });
+
+  it("reads a changed node whose every attempt is marked replaced as unfinished, never as a pass", () => {
+    const verdict = decide({ attempts: [attempt("node.changed", { ...evidence, retried: true })] });
+    expectWellFormed(verdict);
+    expect(verdict.outcome).toBe("unverifiable");
+    expect(checkOf(verdict, "changed_node_succeeded")).toMatchObject({ status: "unknown", code: "changed_node_incomplete" });
+  });
+});

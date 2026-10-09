@@ -353,8 +353,10 @@ describe("Automation Studio conversation API", () => {
         }
       });
       const runs: unknown[] = [];
-      registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, permission: "runtime.control", classification: "authoring", handler: (request) => { runs.push(request.payload); return { ok: true, payload: { runtimeSession: { runId: "run.1", status: "completed" }, terminalReason: "completed" } }; } });
-      const runner = { ...writeActor, permissions: ["programs.write" as const, "runtime.control" as const] };
+      registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, permission: "runtime.control", classification: "authoring", handler: (request) => { runs.push(request.payload); return { ok: true, payload: { runtimeSession: { runId: "run.1", status: "succeeded" }, terminalReason: "Run completed." } }; } });
+      // The answer names what ran, read from the Flow itself (MVP item 24).
+      registry.register({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlow, permission: "programs.read", classification: "read", handler: () => ({ ok: true, payload: { flow: { flowId: "flow.kettle", name: "Kettle price checker" } } }) });
+      const runner = { ...writeActor, permissions: ["programs.read" as const, "programs.write" as const, "runtime.control" as const] };
 
       const response = await registry.call<unknown, { response: { decision: { kind: string }; execution: { status: string } } }>({
         programId: "automation-studio",
@@ -367,10 +369,12 @@ describe("Automation Studio conversation API", () => {
       expect(response.payload?.response.execution.status).toBe("started");
       await automationStudioConversationCommandWork.idle();
 
-      expect(runs).toEqual([{ projectId: "project.one", flowId: "flow.kettle", runIntent: "explore_and_adapt" }]);
+      // Whoever asks, the person's key pays only for the checks that judge a repair (MVP item 23).
+      expect(runs).toEqual([{ projectId: "project.one", flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" }]);
       const turns = (await conversations.getConversation({ projectId: "project.one", conversationId: thread.conversationId }))?.turns ?? [];
       expect(turns.map((turn) => turn.author)).toEqual(["person", "automation", "automation"]);
-      expect(turns[2]).toMatchObject({ text: "The run run.1 ended completed.", attachment: { kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "run.execute" } });
+      expect(turns[2]).toMatchObject({ text: "\"Kettle price checker\" ran all the way through.", attachment: { kind: AUTOMATION_STUDIO_PANEL_CAPABILITY_RESULT_ATTACHMENT, ref: "run.execute" } });
+      expect(turns[2]?.text).not.toContain("run.1");
     } finally {
       await pool.closeAll();
       await rm(rootDir, { recursive: true, force: true });

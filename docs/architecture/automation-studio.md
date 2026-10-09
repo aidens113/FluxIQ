@@ -1329,6 +1329,15 @@ is the permission, and it is false unless all of the following hold:
 `notResumableCode` names which of those refused: `no_checks`, `check_failed`,
 `check_unknown`, `no_resume_point` or `no_evidence`.
 
+Every node gets a first attempt and up to three automatic retries, and each
+retry is an attempt of its own, linked to the failed attempt it replaced by
+`retry.previousAttemptId`. The verdict judges a node by the attempt that
+stood. A replaced attempt is marked `retried`
+(`automationStudioRetriedAttemptIds`, `runtime/flow-change/attempt-projection.ts`),
+and every per-node check and downstream assertion passes over it, in a trial
+and in a replay alike. A changed step that missed once and then held is
+therefore not a contradiction. A failure that no retry followed still fails.
+
 The retry after a patch the gate allowed unattended is what reads that permission.
 `decideAutomationStudioAdaptiveRetry`
 (`runtime/service/adaptations/adaptive-retry.ts`) takes it back off the run’s own

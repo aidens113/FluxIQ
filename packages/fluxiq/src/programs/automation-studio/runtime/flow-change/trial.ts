@@ -26,7 +26,7 @@ import {
   type AutomationStudioTransitionComparison
 } from "../executor/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../host-runtime.ts";
-import { automationStudioAttemptCapturedRecords, automationStudioAttemptVerifiesState } from "./attempt-projection.ts";
+import { automationStudioAttemptCapturedRecords, automationStudioAttemptVerifiesState, automationStudioRetriedAttemptIds } from "./attempt-projection.ts";
 import type { AutomationStudioChangeTrialInput, AutomationStudioChangeTrialResult, AutomationStudioChangeVerdictAttempt } from "./contracts.ts";
 import { decideAutomationStudioChangeVerdict } from "./verdict.ts";
 
@@ -84,9 +84,10 @@ export async function trialAutomationStudioFlowChange(request: AutomationStudioF
   const changed = new Set(request.changedNodeIds);
   // A failed attempt that names no route took `failed`, the executor's default.
   const failureRoute = request.failedAttempt ? request.failedAttempt.route ?? FAILED_ROUTE : comparison?.actual.route;
+  const retried = automationStudioRetriedAttemptIds(executedTrace.attempts);
   const verdict = decideAutomationStudioChangeVerdict({
     changedNodeIds: request.changedNodeIds,
-    attempts: executedTrace.attempts.map((attempt) => verdictAttempt(attempt, request.candidate, request, comparison, changed, evaluations)),
+    attempts: executedTrace.attempts.map((attempt) => verdictAttempt(attempt, request.candidate, request, comparison, changed, evaluations, retried)),
     runStatus: executedTrace.status,
     ...(executedTrace.currentNodeId !== undefined ? { endNodeId: executedTrace.currentNodeId } : {}),
     ...(failureRoute !== undefined ? { failureRoute } : {}),
@@ -154,13 +155,15 @@ function codeEntry(key: string, value: string | undefined): JsonObject {
 
 // One executed attempt, as the verdict reads it. Every field is something the
 // trial observed or a node declared; an absent field means nothing of that kind.
+// `retried` is the run's own record that an automatic retry replaced it.
 function verdictAttempt(
   attempt: AutomationStudioNodeAttemptTrace,
   candidate: AutomationStudioFlowDocument,
   request: AutomationStudioFlowChangeTrialRequest,
   comparison: AutomationStudioTransitionComparison | undefined,
   changed: ReadonlySet<string>,
-  evaluations: ReadonlyMap<string, HostEvaluation>
+  evaluations: ReadonlyMap<string, HostEvaluation>,
+  retried: ReadonlySet<string>
 ): AutomationStudioChangeVerdictAttempt {
   const node = candidate.nodes.find((candidateNode) => candidateNode.id === attempt.nodeId);
   const own = attempt.transitionComparison?.expected;
@@ -185,7 +188,8 @@ function verdictAttempt(
     ...(expectedOutputIds.length ? { expectedOutputIds } : {}),
     ...(declaresState ? { expectedState: evaluations.get(attempt.attemptId) ?? "unknown" } : {}),
     ...(records ? { records } : {}),
-    ...(verifiesState ? { verifiesState } : {})
+    ...(verifiesState ? { verifiesState } : {}),
+    ...(retried.has(attempt.attemptId) ? { retried: true as const } : {})
   };
 }
 

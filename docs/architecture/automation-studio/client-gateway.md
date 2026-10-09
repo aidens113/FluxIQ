@@ -402,7 +402,9 @@ recorder copies from the gateway envelope -- answering
 recording refuses it. Entries appended as domain events carry the event id as
 their entry id and correlation id instead, so they are not matched. Run
 summaries (`list-flow-runs`) carry `durableBehaviorChanged`, computed by the
-same helper as `run-runtime-session`'s answer (`runtime/durable-behavior/`).
+same helper as `run-runtime-session`'s answer (`runtime/durable-behavior/`). It
+is true for a runtime patch the run applied automatically, and for a
+re-author the run kept after its judged whole run.
 
 Every other program endpoint refuses the token with 403 before the token is
 looked up. A valid login cookie always takes precedence over a bearer header.
@@ -491,12 +493,15 @@ same capabilities. The ids are:
 - **"Run it" is the Automations Run** (`runtime/conversations/commands/run-flow.ts`).
   It asks for `runIntent: "explore_and_adapt"`, so a broken step can be
   repaired. The command's port calls as the person's unlocked session, so the
-  run endpoint cannot see the pairing; a paired chat therefore asks for
-  `resultCheckCallerPays: "repair_checks"` itself (`context.paired`), and the
-  endpoint accepts that one value and refuses any other: the person's key pays
-  only for the result checks that judge a repair, as the extension's Run button
-  (MVP item 23). A web-panel chat pays for every check, as that person's own
-  Run does. A run that ended without failing says what it learned, from Core's
+  run endpoint cannot see the pairing. Every chat, paired or not, therefore
+  asks for `resultCheckCallerPays: "repair_checks"` itself. The endpoint
+  accepts that one value and refuses any other. The person's key pays only for
+  the result checks that judge a repair, as with the extension's Run button
+  (MVP item 23), so a run whose steps all succeed makes no model call on it. A
+  run that ended without failing first says, in plain words, what ran and how
+  far it got. It names the Flow, read with `get-flow`, or says "The Flow" when
+  the name cannot be read, and never shows a run id, a status word or the
+  trace's message. It then says what it learned, from Core's
   closed change kinds only (`get-flow-adaptation`: `patch[].kind`, then
   `appliedTo[].kind`), never a diagnosis, page text or selector, and whether
   the next run starts with it or it waits for review. A re-authored Flow is

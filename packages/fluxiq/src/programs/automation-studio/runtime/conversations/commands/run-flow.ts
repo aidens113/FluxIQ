@@ -5,14 +5,19 @@
 // runs in the background and the thread gets the ending when there is one.
 //
 // The run asks for the model (`explore_and_adapt`), so a step that broke can
-// be repaired, under the caller's own session. A paired client's calls reach
-// the endpoint as its person's unlocked session, so the endpoint cannot see
-// the pairing; the command asks for its rule itself: the person's key pays only
-// for the result checks that judge a repair (MVP item 23). A run that ended
-// without failing then says what it learned, in plain words (`runLearned`
-// below): only Core's closed change kinds (`patch[].kind`, then
-// `appliedTo[].kind`), never the model's diagnosis, page text or a selector,
-// and whether the next run starts with it (applied) or it waits for review.
+// be repaired, under the caller's own session. Whatever the chat runs in -- a
+// paired extension or the web panel -- the person's key pays only for the
+// result checks that judge a repair (MVP item 23): a run whose steps all
+// succeed makes no model call on it. The command asks for that itself, because
+// a paired client's calls reach the endpoint as its person's unlocked session
+// and the endpoint cannot tell a chat's run from any other caller's.
+//
+// A run that ended without failing says in plain words what ran and how far it
+// got (MVP item 24): the Flow's name, never a run id, a status word or the
+// trace's message. It then says what it learned (`runLearned` below): only
+// Core's closed change kinds (`patch[].kind`, then `appliedTo[].kind`), never
+// the model's diagnosis, page text or a selector, and whether the next run
+// starts with it (applied) or it waits for review.
 
 import type { AutomationStudioChangeProposalKind, AutomationStudioFlowAdaptation } from "../../../model/index.ts";
 import { automationStudioConversationCommandText } from "./argument.ts";
@@ -48,7 +53,7 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
     const flowId = automationStudioConversationCommandText(args, "flowId");
     if (!flowId) return progress.failed("I could not tell which Flow to run");
     progress.carry({ flowId });
-    const response = await context.port.call("run-runtime-session", { projectId: context.projectId, flowId, runIntent: "explore_and_adapt", ...(context.paired ? { resultCheckCallerPays: "repair_checks" } : {}) });
+    const response = await context.port.call("run-runtime-session", { projectId: context.projectId, flowId, runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" });
     const answer = (response.payload ?? {}) as RunAnswer;
     const runId = typeof answer.runtimeSession?.runId === "string" ? answer.runtimeSession.runId : undefined;
     if (runId) progress.carry({ runId });
@@ -57,20 +62,43 @@ export const AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW: AutomationStudioConversati
       return progress.failed(automationStudioConversationCallCause("the run", response));
     }
     const status = typeof answer.runtimeSession?.status === "string" ? answer.runtimeSession.status : "ended";
-    const reason = typeof answer.terminalReason === "string" && answer.terminalReason && answer.terminalReason !== status ? `: ${answer.terminalReason.replace(/\.$/u, "")}` : "";
     // A run that failed is said in plain words, with no run id and no code, as the thread keeps it (t276).
     if (status === "failed" || status === "cancelled") {
       const why = typeof answer.terminalReason === "string" && answer.terminalReason !== status ? automationStudioConversationPlainCause(answer.terminalReason) : "";
       const ended = status === "failed" ? "failed" : "was cancelled";
       return { ...progress.failed(`it ${ended}${why ? `: ${why}` : ""}`), summary: `The run ${ended}${why ? `: ${why}` : ""}.` };
     }
-    const summary = `The run${runId ? ` ${runId}` : ""} ended ${status}${reason}.`;
+    const summary = await runEnding({ port: context.port, projectId: context.projectId, flowId, status, terminalReason: answer.terminalReason });
     const adaptationIds = Array.isArray(answer.createdAdaptationIds) ? answer.createdAdaptationIds.filter((id): id is string => typeof id === "string" && id.length > 0) : [];
     const reauthored = answer.reauthored === "applied" || answer.reauthored === "not_applied" ? answer.reauthored : undefined;
     const learned = await runLearned({ port: context.port, projectId: context.projectId, flowId, adaptationIds, durableBehaviorChanged: answer.durableBehaviorChanged === true, reauthored });
     return progress.succeeded(learned ? `${summary} ${learned}` : summary);
   }
 };
+
+/**
+ * What ran and how far it got, in plain words: the Flow's name (read from
+ * `get-flow`, or "the Flow" when it cannot be read), whether it ran all the way
+ * through, stopped to wait for the person (with a plain cause when there is
+ * one), or stopped before the end. No run id, status word or trace message.
+ */
+async function runEnding(input: { port: AutomationStudioConversationCommandPort; projectId: string; flowId: string; status: string; terminalReason: unknown }): Promise<string> {
+  const name = await flowName(input);
+  const subject = name ? `"${name}"` : "The Flow";
+  if (input.status === "succeeded") return `${subject} ran all the way through.`;
+  if (input.status === "waiting") {
+    const why = typeof input.terminalReason === "string" && input.terminalReason !== input.status ? automationStudioConversationPlainCause(input.terminalReason) : "";
+    return `${subject} stopped to wait for you${why ? `: ${why}` : ""}.`;
+  }
+  return `${subject} stopped before the end.`;
+}
+
+/** The Flow's own name, or "" when the port answers that it could not be read (the port answers a failure, it does not throw one). */
+async function flowName(input: { port: AutomationStudioConversationCommandPort; projectId: string; flowId: string }): Promise<string> {
+  const response = await input.port.call("get-flow", { projectId: input.projectId, flowId: input.flowId });
+  const name = response.ok ? (response.payload as { flow?: { name?: unknown } | null } | undefined)?.flow?.name : undefined;
+  return typeof name === "string" ? name.trim() : "";
+}
 
 type AppliedTarget = NonNullable<AutomationStudioFlowAdaptation["appliedTo"]>[number]["kind"];
 
@@ -109,6 +137,9 @@ type Learned = { what: string; applied: boolean };
  * The sentences that say what the run's recorded changes taught the Flow, or
  * "" when it recorded none. `durableBehaviorChanged` is the run's own reading
  * of whether a change was applied, used only for a change that cannot be read.
+ * That reading also counts a kept re-author, so once the re-author was kept it
+ * no longer says whether an unread runtime change was applied, and the unread
+ * change is not called applied.
  */
 async function runLearned(input: {
   port: AutomationStudioConversationCommandPort;
@@ -123,7 +154,7 @@ async function runLearned(input: {
   for (const adaptationId of input.adaptationIds) {
     const response = await input.port.call("get-flow-adaptation", { projectId: input.projectId, flowId: input.flowId, adaptationId });
     const adaptation = response.ok ? (response.payload as { adaptation?: Partial<AutomationStudioFlowAdaptation> | null } | undefined)?.adaptation : undefined;
-    const next = adaptation ? { what: changeWords(adaptation), applied: adaptation.status === "applied" } : { what: UNREAD, applied: input.durableBehaviorChanged };
+    const next = adaptation ? { what: changeWords(adaptation), applied: adaptation.status === "applied" } : { what: UNREAD, applied: input.durableBehaviorChanged && input.reauthored !== "applied" };
     if (!learned.some((entry) => entry.what === next.what && entry.applied === next.applied)) learned.push(next);
   }
   const [only] = learned;
