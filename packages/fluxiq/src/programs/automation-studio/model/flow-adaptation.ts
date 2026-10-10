@@ -439,6 +439,21 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
   entry?: AutomationStudioFlowRunEntryRecord;
   /** The lifecycle handler that ran at this attempt, when one did (C3, C5). */
   lifecycle?: AutomationStudioFlowRunLifecycleRecord;
+  /**
+   * On a Call Subflow attempt that ran a part: the part's Subflow, its graph,
+   * and the revision it ran at (C1). The part's attempts follow this one in the
+   * detail, each naming it as `parentAttemptId`, so this attempt is their
+   * container and is not counted as a step of its own.
+   */
+  subflowTarget?: { subflowId: string; graphFlowId: string; graphRevision: number | null };
+  /**
+   * On an attempt a called part's frame ran: the `attemptId` of the Call
+   * Subflow attempt that called the part. Absent on the root frame's attempts,
+   * which are the only ones a reader acting on the Flow's own nodes reads: a
+   * part's node can share an id with one of them. Its `attemptId` is unique in
+   * the run and its id in its own frame's trace is `metadata.traceAttemptId`.
+   */
+  parentAttemptId?: string;
   metadata?: JsonObject;
 };
 

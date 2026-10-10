@@ -4,11 +4,14 @@
  * changed: a graph can fail after every action fault was already recovered.
  * A failed attempt whose state already held (`stateHeld`) is its node done, so
  * it is absorbed like a success, and absorbs that node's earlier failures.
+ * Only the root frame's attempts are read: a called part's (`parentAttemptId`)
+ * are its Call Subflow attempt's, whose own outcome is the root frame's step.
  */
-export function automationStudioUnresolvedFailedAttempt<T extends { nodeId?: string; status: string; stateHeld?: unknown }>(attempts: readonly T[]): T | undefined {
+export function automationStudioUnresolvedFailedAttempt<T extends { nodeId?: string; status: string; stateHeld?: unknown; parentAttemptId?: string | undefined }>(attempts: readonly T[]): T | undefined {
   const succeeded = new Set<string>();
   for (let index = attempts.length - 1; index >= 0; index -= 1) {
     const attempt = attempts[index]!;
+    if (attempt.parentAttemptId !== undefined) continue;
     if (attempt.status === "succeeded" || attempt.stateHeld !== undefined) {
       if (attempt.nodeId) succeeded.add(attempt.nodeId);
     } else if ((attempt.status === "failed" || attempt.status === "unknown") && (!attempt.nodeId || !succeeded.has(attempt.nodeId))) {

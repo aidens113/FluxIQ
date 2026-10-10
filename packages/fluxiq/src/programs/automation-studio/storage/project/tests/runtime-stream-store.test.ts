@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import type { AutomationStudioRecordSchema, AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AutomationStudioFlowRunDetail, StateSnapshot } from "../../../model/index.ts";
-import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../../runtime/executor/index.ts";
+import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession, StateSnapshot } from "../../../model/index.ts";
+import { AUTOMATION_STUDIO_WITHHELD_VALUE, type AutomationStudioNodeAttemptTrace } from "../../../runtime/executor/index.ts";
+import { flowRunSummaryWithInterventionSummaries, runtimeSessionToFlowRunDetail } from "../../../runtime/service/summaries/index.ts";
 import { AutomationStudioProjectAdministration } from "../administration.ts";
 import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AutomationStudioProjectRunDatasetStore, type AutomationStudioRunDatasetBatch } from "../run-dataset-store.ts";
@@ -359,6 +360,61 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
 // byte the store wrote, so a realistic credential would itself be the leak.
 const SUPPLIED_RUN_INPUT = "synthetic-run-input-that-must-never-be-persisted";
 
+// A called part's attempts reach the stored runtime events and the detail read
+// back from them (t406): each with its frame path, entry and lifecycle record,
+// the call's `subflowTarget` on the call's own event, and the run's step count
+// not counting the call twice.
+describe("AutomationStudioProjectRuntimeStreamStore with called parts", () => {
+  beforeEach(async () => {
+    rootDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-studio-runtime-stream-frames-test-"));
+  });
+
+  afterEach(async () => {
+    await Promise.all([...pools].map((pool) => pool.closeAll()));
+    pools.clear();
+    await rm(rootDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  });
+
+  it("stores and reads back every frame's attempts in run order", async () => {
+    const pool = openPool();
+    await seedFlow(pool, "project.frames", "flow.frames");
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.frames" });
+    await store.putRunDetail(projected());
+
+    const events = await store.listRuntimeEvents({ runId: "run.frames", limit: 100 });
+    const actions = events.events.filter((event) => event.eventKind === "action_attempt");
+    expect(actions.map((event) => event.entityId)).toEqual([
+      "open.attempt.1",
+      "call.attempt.1",
+      "call.attempt.1:type.attempt.1",
+      "call.attempt.1:inner.attempt.1",
+      "call.attempt.1:inner.attempt.1:type.attempt.1",
+      "done.attempt.1"
+    ]);
+    expect(actions[1]?.payload).toMatchObject({ subflowTarget: { subflowId: "part.search", graphFlowId: "flow.frames.sub.search", graphRevision: 2 } });
+    expect(actions[2]?.payload).toMatchObject({ parentAttemptId: "call.attempt.1", framePath: ["invocation-1", "invocation-2"], entry: { kind: "entry", id: "entry.search" } });
+    expect(actions[4]?.payload).toMatchObject({ framePath: ["invocation-1", "invocation-2", "invocation-3"], lifecycle: { handlerId: "handler.consent", event: "before" } });
+
+    const detail = await store.getRunDetail("run.frames");
+    expect(detail?.actionAttempts?.map((row) => [row.attemptId, row.parentAttemptId])).toEqual([
+      ["open.attempt.1", undefined],
+      ["call.attempt.1", undefined],
+      ["call.attempt.1:type.attempt.1", "call.attempt.1"],
+      ["call.attempt.1:inner.attempt.1", "call.attempt.1"],
+      ["call.attempt.1:inner.attempt.1:type.attempt.1", "call.attempt.1:inner.attempt.1"],
+      ["done.attempt.1", undefined]
+    ]);
+
+    // Six records, two of them containers: four steps on the run, six rows on its action pages.
+    await expect(store.getRunSummary("run.frames")).resolves.toMatchObject({ actionAttemptCount: 4 });
+    const page = await store.listRunActions({ runId: "run.frames", limit: 50 });
+    expect(page.total).toBe(6);
+    expect(page.actions.map((row) => row.attemptId)).toEqual(actions.map((event) => event.entityId));
+    await expect(store.getRunActionDetail({ runId: "run.frames", attemptId: "call.attempt.1:inner.attempt.1:type.attempt.1" })).resolves.toMatchObject({ nodeId: "type", parentAttemptId: "call.attempt.1:inner.attempt.1" });
+    await store.close();
+  });
+});
+
 async function filesHolding(root: string, literal: string): Promise<string[]> {
   const needles = [Buffer.from(literal, "utf8"), Buffer.from(literal, "utf16le")];
   const holding: string[] = [];
@@ -444,4 +500,45 @@ function stateWithValues(id: string, timestamp: number): StateSnapshot {
       }
     }
   };
+}
+
+function projected(): AutomationStudioFlowRunDetail {
+  const ROOT = ["invocation-1"];
+  const PART = ["invocation-1", "invocation-2"];
+  const INNER = ["invocation-1", "invocation-2", "invocation-3"];
+  const inner = [traced("type.attempt.1", { framePath: INNER, startedAt: 31, lifecycle: { event: "before", handlerId: "handler.consent", occurrence: "occ.1", conditionEvidence: [], disposition: { kind: "resume" }, completionCheck: "true" } })];
+  const part = [
+    traced("type.attempt.1", { framePath: PART, startedAt: 21, entry: { kind: "entry", id: "entry.search", evidence: [] } }),
+    traced("inner.attempt.1", { framePath: PART, startedAt: 30, subflowTarget: { subflowId: "part.filter", graphFlowId: "flow.frames.sub.filter", graphRevision: null }, childTrace: trace(inner) })
+  ];
+  const session: AutomationStudioRuntimeSession = {
+    schemaVersion: "0.1",
+    runId: "run.frames",
+    projectId: "project.frames",
+    targetKind: "flow",
+    targetId: "flow.frames",
+    flowId: "flow.frames",
+    status: "succeeded",
+    queuedAt: 1,
+    startedAt: 5,
+    finishedAt: 90,
+    flow: {} as AutomationStudioFlowDocument,
+    trace: trace([
+      traced("open.attempt.1", { framePath: ROOT, startedAt: 10 }),
+      traced("call.attempt.1", { framePath: ROOT, startedAt: 20, subflowTarget: { subflowId: "part.search", graphFlowId: "flow.frames.sub.search", graphRevision: 2 }, childTrace: trace(part) }),
+      traced("done.attempt.1", { framePath: ROOT, startedAt: 70 })
+    ])
+  };
+  const detail = runtimeSessionToFlowRunDetail(session, "project.frames");
+  // As the run detail writer saves it (`runtime/service/summaries/run-detail-writer.ts`).
+  return { ...detail, summary: flowRunSummaryWithInterventionSummaries(detail) };
+}
+
+function traced(attemptId: string, fields: Record<string, unknown>): AutomationStudioNodeAttemptTrace {
+  const startedAt = typeof fields.startedAt === "number" ? fields.startedAt : 10;
+  return { attemptId, nodeId: attemptId.split(".attempt.")[0]!, definitionId: "builtin.policy.action", startedAt, finishedAt: startedAt + 2, status: "succeeded", inputs: {}, outputs: {}, effects: [], ...fields } as unknown as AutomationStudioNodeAttemptTrace;
+}
+
+function trace(attempts: AutomationStudioNodeAttemptTrace[]): NonNullable<AutomationStudioNodeAttemptTrace["childTrace"]> {
+  return { status: "succeeded", startedAt: 5, finishedAt: 90, attempts, values: {}, effects: [] };
 }

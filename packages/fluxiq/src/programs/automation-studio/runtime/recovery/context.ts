@@ -336,7 +336,7 @@ function recoveryContextSections(
  * was built for.
  */
 function stepParametersSection(input: AutomationStudioRuntimeRecoveryContextInput): AutomationStudioRecoveryContextSectionValue | undefined {
-  const attempts = input.detail.actionAttempts ?? [];
+  const attempts = rootFrameAttempts(input.detail);
   if (!attempts.length) return undefined;
   if (input.deniedEvidenceKeys === undefined) return WITHHELD_SECTION;
   return automationStudioStepParametersSection({
@@ -348,7 +348,17 @@ function stepParametersSection(input: AutomationStudioRuntimeRecoveryContextInpu
 
 /** The last failed or unknown attempt the run recorded: the one the recovery is about. */
 function failedActionRecord(detail: AutomationStudioFlowRunDetail): AutomationStudioFlowRunActionAttemptRecord | undefined {
-  return [...(detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
+  return [...rootFrameAttempts(detail)].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
+}
+
+/**
+ * The root frame's attempts: the Flow's own steps, which every section here is
+ * about. A called part's attempts (`parentAttemptId`) are its Call Subflow
+ * attempt's, whose outcome is the root frame's, and a part's node can share an
+ * id with one of the Flow's.
+ */
+function rootFrameAttempts(detail: AutomationStudioFlowRunDetail): AutomationStudioFlowRunActionAttemptRecord[] {
+  return (detail.actionAttempts ?? []).filter((attempt) => attempt.parentAttemptId === undefined);
 }
 
 function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | undefined, failedAttempt: AutomationStudioNodeAttemptTrace | undefined): JsonObject | undefined {
@@ -494,7 +504,7 @@ function routeContextSection(detail: AutomationStudioFlowRunDetail): JsonObject 
  * that every string in this context passes.
  */
 function recoveredFailuresSection(detail: AutomationStudioFlowRunDetail, record: AutomationStudioFlowRunActionAttemptRecord | undefined): JsonObject | undefined {
-  const attempts = detail.actionAttempts ?? [];
+  const attempts = rootFrameAttempts(detail);
   const survived = attempts.filter((attempt) => attempt.status === "failed" && attempt.attemptId !== record?.attemptId);
   if (!survived.length) return undefined;
   // The run's own start, so an offset is a number a reader can compare across
@@ -532,7 +542,7 @@ function recoveredFailuresSection(detail: AutomationStudioFlowRunDetail, record:
 
 function recentNodesSection(detail: AutomationStudioFlowRunDetail, record: AutomationStudioFlowRunActionAttemptRecord | undefined): JsonObject | undefined {
   const order = record?.order ?? Number.MAX_SAFE_INTEGER;
-  const succeeded = (detail.actionAttempts ?? [])
+  const succeeded = rootFrameAttempts(detail)
     .filter((attempt) => attempt.status === "succeeded" && attempt.order < order)
     .map((attempt) => ({ nodeId: attempt.nodeId, definitionId: attempt.definitionId, order: attempt.order, ...(attempt.route ? { route: attempt.route } : {}) }));
   return succeeded.length ? boundedSection({ succeeded }) : undefined;

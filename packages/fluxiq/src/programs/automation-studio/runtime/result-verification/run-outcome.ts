@@ -557,8 +557,10 @@ async function runVerification(input: AutomationStudioRuntimeSessionVerification
  * A re-run keeps its run's id, so the record read by that id can still hold the
  * attempts of the run it repaired; a read account taken from one of those would
  * describe the Flow that was just replaced. The session's own trace names its
- * attempts. A session with no trace at all has nothing to tell them apart by,
- * and its record is taken as it stands.
+ * root frame's attempts, and a called part's attempt is this session's when the
+ * Call Subflow attempt it ran under (`parentAttemptId`) is. A session with no
+ * trace at all has nothing to tell them apart by, and its record is taken as it
+ * stands.
  */
 function attemptsOfThisSession(
   attempts: NonNullable<AutomationStudioFlowRunDetail["actionAttempts"]>,
@@ -567,7 +569,12 @@ function attemptsOfThisSession(
   const traced = session.trace?.attempts;
   if (!traced) return attempts;
   const ids = new Set(traced.map((attempt) => attempt.attemptId));
-  return attempts.filter((attempt) => ids.has(attempt.attemptId));
+  const parents = new Map(attempts.map((attempt) => [attempt.attemptId, attempt.parentAttemptId]));
+  const ours = (attemptId: string, depth: number): boolean => {
+    const parent = parents.get(attemptId);
+    return parent === undefined ? ids.has(attemptId) : depth < parents.size && ours(parent, depth + 1);
+  };
+  return attempts.filter((attempt) => ours(attempt.attemptId, 0));
 }
 
 /**
