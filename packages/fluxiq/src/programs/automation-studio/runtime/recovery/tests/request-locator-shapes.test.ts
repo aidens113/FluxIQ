@@ -36,14 +36,16 @@ describe("no request body carries a way to address an element", () => {
     }
   });
 
-  it("keeps what the sentence was worth saying", () => {
+  it("keeps the failure's category and code, and nothing of how the control was looked for", () => {
     const packed = packAutomationStudioLlmContext(harnessInput("runtime_patch"));
     const failure = JSON.stringify((packed.recoveryContext?.sections.failure ?? {}) as JsonObject);
-    // The scores, the counts and the visible name are the evidence for
-    // refusing; only the locators are gone.
-    expect(failure).toContain("refused main scoring -0.29");
-    expect(failure).toContain("3 control(s) of the same family");
-    expect(failure).toContain("Link that goes nowhere");
+    // Until t426 the scores, the counts and the refused candidates' names were
+    // kept as the evidence for refusing. Finding a control is the extension's
+    // work, never the model's (user, 2026-10-10), so a target not found now
+    // carries none of the domain's sentence: the category and code say what
+    // happened, and the run record keeps every word.
+    expect(failure).toContain("target_not_found");
+    expect(failure).not.toMatch(/scor|-0\.29|fingerprint|address|Link that goes nowhere|element matching/iu);
     expect(failure).not.toContain("detach-target");
     expect(failure).not.toContain("dead-link");
     expect(failure).not.toContain("data-testid");

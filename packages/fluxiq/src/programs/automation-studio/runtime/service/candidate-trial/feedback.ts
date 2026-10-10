@@ -19,6 +19,12 @@
 // `expected`/`actual`, which its contract keeps free of page content. The
 // failure's free-text message is still never shown.
 //
+// **Nothing says how a control was found (t426).** The producer's
+// `expected`/`actual` pass through the model-facing screen
+// (`../../llm/model-facing/failure-text.ts`): none for a failure about
+// finding the step's target, and otherwise only a text with no locator, score
+// or word for the finding in it. The model names elements by handle only.
+//
 // **A failed check says what it waited for (t368).** A failed wait or assert
 // adds what it waited for, whether the domain found that text hidden or absent,
 // the visible text most like it, and that a check which only confirms the act
@@ -32,9 +38,9 @@
 // asking it to slow down are said once under `paces`.
 //
 // **A control still on the page says so (t420).** A step that could not find
-// its control by the address it was saved with, where the domain measured the
-// control still on the page, says that plainly, that the script need not
-// change, and is retryable (`./target-on-page.ts`); the trial gate reads its
+// its control where it was saved, where the domain measured one like it still
+// on the page, says that plainly, that the script need not change, and is
+// retryable (`./target-on-page.ts`); the trial gate reads its
 // `targetOnPage` to tell the model to test again rather than look for it.
 
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -42,6 +48,7 @@ import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
+import { automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
@@ -87,7 +94,7 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
     const node = nodes.get(attempt.nodeId);
     const failure = attempt.failure;
     const control = controlWords(node?.parameterValues);
-    // A control the step could not find by its saved address, though the domain measured it still on the page (t420).
+    // A control the step could not find where it was saved, though the domain measured one like it on the page (t420).
     const onPage = failure && !attempt.stateHeld ? automationStudioTrialTargetOnPage({ step: index + 1, node, control, attempt, earlier: absorbed.map((entry) => entry.failed) }) : undefined;
     const step = compact({
       step: index + 1, definitionId: attempt.definitionId, label: node?.label, control, status: automationStudioAttemptSettled(attempt).status,
@@ -96,7 +103,7 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
       // Done, though its try failed: the page already showed what the step does (`stateHeld`).
       ...(attempt.stateHeld ? { stateHeld: "The step's try failed, but the page already showed what the step does, so the run went on without doing it again." } : {}),
       failureCode: failure?.code, happened: failure ? automationStudioTrialFailureHappened(failure.category) : undefined,
-      expected: failure?.expected, actual: failure?.actual
+      ...(failure ? automationStudioModelFacingFailureText(failure) : {})
     });
     const withAbsorbed = absorbed.length ? { ...step, absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage !== undefined }) } : step;
     // A step whose state already held is done: no retry or check advice for a failure the run went past.

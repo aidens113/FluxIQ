@@ -25,13 +25,23 @@ describe("buildAutomationStudioRuntimeRecoveryContext", () => {
     expect(context.included[0]?.section).toBe("failure");
   });
 
-  it("carries the failure record's category, code and short texts, and never the attempt's prose", () => {
+  it("carries the failure record's category and code, and never the attempt's prose", () => {
     const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt() });
     expect(context.sections.failure).toMatchObject({
       nodeId: "node.checkout",
-      failure: { category: "target_not_found", code: "web.target.selector_miss", retryable: false, expected: "a Pay button", actual: "no matching control" }
+      failure: { category: "target_not_found", code: "web.target.selector_miss", retryable: false }
     });
     expect(JSON.stringify(context.sections.failure)).not.toContain("Could not click");
+    // t426: a failure about finding the target carries none of the domain's texts, which say how it looked for it.
+    expect(context.sections.failure).not.toHaveProperty("failure.expected");
+    expect(context.sections.failure).not.toHaveProperty("failure.actual");
+  });
+
+  it("carries another failure's short texts when nothing in them says how a control is found", () => {
+    const detail = runDetail();
+    detail.actionAttempts![1]!.failure = { category: "expected_state_missing", code: "web.validation.failed", retryable: false, stage: "verification", expected: "the form lists 2 attendees", actual: "the form lists 1 attendee" };
+    const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: traceAttempt() });
+    expect(context.sections.failure).toMatchObject({ failure: { expected: "the form lists 2 attendees", actual: "the form lists 1 attendee" } });
   });
 
   it("carries a refuted result's screened repair directive structurally beyond the failure prose bound", () => {
@@ -126,10 +136,29 @@ describe("buildAutomationStudioRuntimeRecoveryContext", () => {
     expect(context.omitted).toContainEqual({ section: "state_diff", reason: "withheld", byteCount: 0 });
   });
 
-  it("summarizes the failed target without the candidate id the domain minted", () => {
+  it("summarizes the failed target without the candidate id the domain minted, its scores or its signals (t426)", () => {
     const context = buildAutomationStudioRuntimeRecoveryContext({ detail: runDetail(), failedAttempt: traceAttempt() });
-    expect(context.sections.failed_target).toMatchObject({ status: "no_match", candidateCount: 12, minimumConfidence: 0.6, failedSignals: ["testId"] });
+    expect(context.sections.failed_target).toEqual({ status: "no_match", candidateCount: 12 });
     expect(JSON.stringify(context.sections.failed_target)).not.toContain("candidate.7");
+  });
+
+  // t426: what a repair reads never says how a control was found -- R4a's not-found shapes and an ambiguous target
+  // named by class tokens and scores, from the record and the domain's resolution metadata alike.
+  it.each([
+    ["a not-found target (R4a)", { category: "target_not_found", code: "web.target.not_found", retryable: true, stage: "target_resolution", expected: "an element matching selector #fb1l6ufkg, element fingerprint", actual: "nothing matched; 3 control(s) of the same family are on the page; best scored 0.27" }],
+    ["an ambiguous target", { category: "target_ambiguous", code: "web.target.ambiguous", retryable: false, stage: "target_resolution", expected: "one element matching selector .seat-option, element fingerprint", actual: "no exact match; 3 scored candidate(s) tied: label.seat-option \"Row F seat 12\" (0.41), label.seat-option \"Row F seat 13\" (0.40)" }],
+    ["an assertion that quotes its selector", { category: "expected_state_missing", code: "web.validation.failed", retryable: false, stage: "verification", expected: "an element matching \"#booking-ref\" exists", actual: "nothing matched \"#booking-ref\"" }]
+  ])("tells a repair nothing of how a control was found, for %s", (_name, failure) => {
+    const detail = runDetail();
+    const failing = detail.actionAttempts![1]!;
+    failing.failure = failure as unknown as NonNullable<typeof failing.failure>;
+    failing.metadata = { ...failing.metadata, targetResolution: { status: "no_match", candidateCount: 3, minimumConfidence: 0.6, confidence: 0.6, normalizedScore: 0.27, matchedSignals: ["tagName", "text"], failedSignals: ["selector", "fingerprint"] } };
+    const context = buildAutomationStudioRuntimeRecoveryContext({ detail, failedAttempt: traceAttempt() });
+    const said = JSON.stringify(context.sections);
+    for (const shape of [/(?<![\w.])#[A-Za-z_][\w-]*/u, /(?<![\w.])\.[A-Za-z_][\w-]*/u, /(?<![\w$])-?[01]\.\d{2}(?!\d)/u, /selector|fingerprint|address/iu]) {
+      expect(said).not.toMatch(shape);
+    }
+    expect(context.sections.failure).toMatchObject({ failure: { category: failure.category, code: failure.code } });
   });
 
   it("carries known adaptations as identity and verdict, never as the repair to copy", () => {

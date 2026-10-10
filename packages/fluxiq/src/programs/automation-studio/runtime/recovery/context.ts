@@ -97,6 +97,7 @@ import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunActionAttem
 import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRouter } from "../../model/index.ts";
 import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/harness/index.ts";
+import { automationStudioModelFacingFailureText } from "../llm/model-facing/index.ts";
 import { automationStudioFlowGraphSection, automationStudioScreenedAuthoredState, automationStudioStepParametersSection } from "./repair-context/index.ts";
 
 /**
@@ -375,6 +376,12 @@ function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | und
   // and `selector` inside a free-text field is not a key. Both fields now go
   // through `locator-text.ts` with the rest of the context: the scores and the
   // visible names survive, and anything shaped like a locator does not.
+  //
+  // Since t426 not even that: finding a control is the extension's work, never
+  // the model's (user, 2026-10-10), so a repair reads no score, no word for how
+  // a control was found, and no text at all for a failure about finding the
+  // target (`../llm/model-facing/failure-text.ts`). The record in the
+  // trace and the run log keeps every word.
   const failure = parseAutomationStudioFailureRecord(record.failure);
   return boundedSection({
     attemptId: record.attemptId,
@@ -388,8 +395,7 @@ function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | und
       code: failure.code,
       retryable: failure.retryable,
       stage: failure.stage,
-      expected: failure.expected,
-      actual: failure.actual,
+      ...automationStudioModelFacingFailureText(failure),
       // A refuted result's synthetic live attempt carries the full screened
       // directive here. Unlike the 1,024-character prose fields, this keeps
       // the judge's bounded advice structurally intact for the repair.
@@ -411,23 +417,21 @@ function resultRepairSection(value: JsonValue | undefined): JsonObject | undefin
 }
 
 /**
- * The failed target, as metadata about how resolution went rather than as
- * anything that addresses an element.
+ * The failed target, as how resolution ended rather than as anything that
+ * addresses an element: its status and how many controls were weighed.
  *
  * `candidateId` is not carried. It is minted by whichever domain supplied the
  * candidates, so Core cannot promise it is not a locator, and Phase T's whole
- * point is that no such string reaches the model.
+ * point is that no such string reaches the model. Since t426 neither are the
+ * scores, the confidence bar or the names of the signals that matched or
+ * failed: they say how a control is found, which is the extension's work and
+ * never the model's (user, 2026-10-10). The run record keeps them.
  */
 function targetResolutionSection(value: JsonValue | undefined): JsonObject | undefined {
   if (!isJsonRecordValue(value)) return undefined;
   return boundedSection({
     status: value.status,
-    candidateCount: value.candidateCount,
-    minimumConfidence: value.minimumConfidence,
-    confidence: value.confidence,
-    normalizedScore: value.normalizedScore,
-    matchedSignals: boundedStringList(value.matchedSignals),
-    failedSignals: boundedStringList(value.failedSignals)
+    candidateCount: value.candidateCount
   });
 }
 
