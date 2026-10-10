@@ -614,3 +614,15 @@
     flex-direction: column;
   }
 }
+
+/* A called part's steps, under the step that called them (runtime/action-log-frames.ts). */
+.automation-runtime-attempt-row.in-part {
+  margin-left: calc(var(--automation-runtime-part-depth, 1) * 24px);
+  border-left: 3px solid var(--color-primary);
+}
+
+.automation-runtime-attempt-row > .automation-runtime-attempt-part {
+  grid-column: 1 / -1;
+  color: var(--color-text);
+  font-weight: var(--font-weight-bold);
+}

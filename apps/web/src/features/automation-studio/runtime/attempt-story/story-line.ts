@@ -3,9 +3,10 @@
  * record on the persisted attempt trace (Core's `executor/contracts.ts`,
  * `AutomationStudioNodeAttemptTrace`), never a model's account of the run.
  *
- * The lifecycle records the state-aware recovery plan adds next (C11: frames,
- * handler runs, entry choices, true failure against a planned fail, in-run
- * repair) join this union as their own kinds when Core persists them; see
+ * The state-aware recovery plan's records (C1, C11) each have their own kind:
+ * a called part (`part`), where a frame began (`entry`), a handler's run
+ * (`handler`), the layers the client closed (`cleared_layers`), what a failure
+ * counted as (`failure_class`) and an in-run repair (`repair`); see
  * `lifecycle.ts`.
  */
 export type RuntimeAttemptStoryKind =
@@ -14,10 +15,16 @@ export type RuntimeAttemptStoryKind =
   | "pace"
   | "readiness"
   | "child_run"
+  | "part"
   | "skipped"
   | "state_routed"
   | "state_routing"
   | "defence"
+  | "entry"
+  | "handler"
+  | "cleared_layers"
+  | "failure_class"
+  | "repair"
   | "ladder";
 
 /** One plain-words sentence saying what the runtime did for an attempt. */
@@ -27,9 +34,12 @@ export type RuntimeAttemptStoryLine = {
 };
 
 /**
- * How the story names steps. The trace holds node ids only; a caller that has
- * the Flow in hand names a step by its label instead.
+ * How the story names steps, handlers and parts. The trace holds ids only; a
+ * caller that has the Flow in hand names a step by its label, a handler by its
+ * situation and a part by its name instead.
  */
 export type RuntimeAttemptStoryOptions = {
   stepName?(nodeId: string): string | undefined;
+  handlerName?(handlerId: string): string | undefined;
+  partName?(subflowId: string): string | undefined;
 };

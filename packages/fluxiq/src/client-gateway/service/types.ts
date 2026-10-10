@@ -20,6 +20,12 @@ export type ClientGatewayServiceOptions = {
   publicUrl?: string;
   pairingTtlMs?: number;
   commandTimeoutMs?: number;
+  /**
+   * How long a client is given to answer what became of a command whose own
+   * answer never came (`./command-reconcile/`), and how long a command it says
+   * is still running is waited on before it is asked again. 5,000 ms.
+   */
+  reconcileAnswerMs?: number;
   trustedClientTtlMs?: number;
   trustedClientStore?: ClientGatewayTrustedClientStore;
   createToken?: () => string;

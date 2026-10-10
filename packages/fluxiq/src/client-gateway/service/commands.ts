@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import type {
   ClientGatewayActionCommand,
   ClientGatewayActionResponse,
-  ClientGatewayActionResult
+  ClientGatewayActionResult,
+  ClientGatewayReconcileAnswer
 } from "@fluxiq/contracts/client-gateway";
 import type { JsonObject } from "../../core/index.ts";
 import type { ClientGatewayAuditLog } from "./audit-log.ts";
@@ -16,6 +17,7 @@ import type { ClientGatewayEventBus } from "./event-bus.ts";
 import type { ClientGatewayServiceOptions } from "./types.ts";
 import type { ClientGatewayActionResultReading } from "./action-result-reading.ts";
 import { ClientGatewayCommandHistory, type ClientGatewayLateActionResult, type ClientGatewayLateActionResultListener } from "./command-history.ts";
+import { ClientGatewayCommandReconciler, clientGatewayReconciledResult } from "./command-reconcile/index.ts";
 
 /** What became of a client's action result. `late`: it answered a command Core no longer awaited, and went to the run's evidence. */
 export type ClientGatewayResultDisposition = "settled" | "unknown_command" | "wrong_session" | "suppressed" | "late";
@@ -38,6 +40,7 @@ export class ClientGatewayCommands {
   private readonly pending = new Map<string, PendingCommand>();
   private readonly durable: ClientGatewayDurableDispatch;
   private readonly history: ClientGatewayCommandHistory;
+  private readonly reconciler: ClientGatewayCommandReconciler;
   private readonly commandOwner: ClientGatewayServiceOptions["commandOwner"];
   private closed = false;
   private readonly config: ClientGatewayConfig;
@@ -52,6 +55,7 @@ export class ClientGatewayCommands {
     this.audit = collaborators.audit;
     this.durable = new ClientGatewayDurableDispatch({ ...collaborators, ...(collaborators.resolveCommandLedger ? { resolve: collaborators.resolveCommandLedger } : {}) });
     this.history = new ClientGatewayCommandHistory(collaborators.config.now);
+    this.reconciler = new ClientGatewayCommandReconciler({ sessions: this.sessions, transport: this.transport, audit: this.audit, answerMs: collaborators.config.reconcileAnswerMs });
     this.commandOwner = collaborators.commandOwner;
   }
 
@@ -91,11 +95,7 @@ export class ClientGatewayCommands {
     // answer, so a sent timeout is waited on for the answer margin longer.
     const waitMs = command.timeoutMs === undefined ? this.config.commandTimeoutMs : command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
     const result = new Promise<ClientGatewayActionResult>((resolve) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(commandId);
-        this.history.closed(commandId, "timed_out");
-        resolve({ commandId, status: "timed_out", message: `Client action timed out after ${waitMs}ms.` });
-      }, waitMs);
+      const timeout = setTimeout(() => void this.answerNeverCame(commandId, waitMs), waitMs);
       this.pending.set(commandId, { sessionId, resolve, timeout });
     });
     void this.transport.send(sessionId, message);
@@ -121,6 +121,22 @@ export class ClientGatewayCommands {
     return "settled";
   }
 
+  /**
+   * Asks the client a command was sent to what became of it (C8, B3): answered
+   * from what the client kept, never by acting. `undefined` when no session of
+   * that client answers such a question, or the command is not one this
+   * gateway remembers sending.
+   */
+  async reconcileAction(commandId: string): Promise<ClientGatewayReconcileAnswer | undefined> {
+    const route = this.history.route(commandId);
+    return route ? await this.reconciler.reconcile(route, commandId) : undefined;
+  }
+
+  /** A client's answer to `server.reconcile_command`; false when nobody asked it that. */
+  answerReconcile(senderSessionId: string, payload: unknown): boolean {
+    return this.reconciler.answer(this.sessions.require(senderSessionId).clientId, payload);
+  }
+
   /** Listens for results that arrive after Core stopped waiting for their command. */
   onLateActionResult(listener: ClientGatewayLateActionResultListener): () => void {
     return this.history.onLate(listener);
@@ -129,6 +145,7 @@ export class ClientGatewayCommands {
   isDurableCommand(commandId: string): boolean { return this.durable.has(commandId); }
   async close(): Promise<void> {
     this.closed = true;
+    this.reconciler.abandonAll();
     for (const [commandId, pending] of this.pending) {
       clearTimeout(pending.timeout);
       this.history.closed(commandId, "closed");
@@ -136,6 +153,26 @@ export class ClientGatewayCommands {
     }
     this.pending.clear();
     await this.durable.drain();
+  }
+
+  /**
+   * The wait for a command's answer ran out. Before calling it timed out, the
+   * client it went to is asked what became of it, by command id: its kept
+   * result settles the command as if it had arrived, `not_seen` settles it as a
+   * failure that did nothing, and `running` (after one more wait), `unknown` or
+   * no client to ask leave it `timed_out` (`./command-reconcile/`). The command
+   * stays pending meanwhile, so its own answer, arriving late, still wins.
+   */
+  private async answerNeverCame(commandId: string, waitMs: number): Promise<void> {
+    const pending = this.pending.get(commandId);
+    if (!pending) return;
+    const answer = await this.reconcileAction(commandId);
+    if (this.pending.get(commandId) !== pending) return;
+    this.pending.delete(commandId);
+    const result = clientGatewayReconciledResult(commandId, answer, waitMs);
+    this.history.closed(commandId, result.status === "timed_out" ? "timed_out" : "settled");
+    if (answer) this.audit.record("command.reconciled", "A command whose answer never came was settled from what its client said became of it.", { sessionId: pending.sessionId, commandId, state: answer.state, status: result.status });
+    pending.resolve(result);
   }
 
   private executeDurable(sessionId: string, command: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): ClientGatewayDurableActionResponse {

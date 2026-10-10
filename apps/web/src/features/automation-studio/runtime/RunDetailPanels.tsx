@@ -15,7 +15,8 @@ import {
 } from "./run-detail-model";
 import { formatRuntimeDuration, formatRuntimeTimestamp, safeJson } from "./run-format";
 import { RUNTIME_ACTION_PAGE_SIZE } from "./run-queries";
-import { runtimeAttemptStory, runtimeRouteWords, type RuntimeAttemptStoryLine } from "./attempt-story";
+import { runtimeAttemptStory, runtimePartWords, runtimeRouteWords, type RuntimeAttemptStoryLine } from "./attempt-story";
+import type { RuntimeRunLogFrame } from "./action-log-frames";
 
 export type RuntimePanelTarget = { kind: "router" | "subflow" | "adaptation-detail" | "state"; targetId?: string };
 
@@ -207,15 +208,22 @@ function RuntimeMetric(props: { label: string; value: string }) {
   );
 }
 
-export function RuntimeAttemptRow(props: { attempt: any; index: number; selected?: boolean; onSelect?(): void }) {
+/**
+ * One row of the action log. `frame` places it (`action-log-frames.ts`): a called
+ * part's steps are indented under the step that called them, and the first of
+ * each group is headed with the part's name.
+ */
+export function RuntimeAttemptRow(props: { attempt: any; index: number; selected?: boolean; frame?: RuntimeRunLogFrame | undefined; onSelect?(): void }) {
   const attempt = props.attempt;
+  const depth = props.frame?.depth ?? 0;
   const comparisonStatus = attempt.comparisonStatus ?? attempt.transitionComparison?.status;
   const recoverySelected = attempt.metadata?.recoverySelected ?? attempt.recoveryDecision?.selected;
   const story = runtimeAttemptStory(attempt);
   return (
     <article
       aria-current={props.selected ? "true" : undefined}
-      className={`automation-runtime-attempt-row ${props.selected ? "selected" : ""}`}
+      className={`automation-runtime-attempt-row ${props.selected ? "selected" : ""} ${depth ? "in-part" : ""} ${props.frame?.calls ? "calls-part" : ""}`}
+      data-part-depth={depth || undefined}
       onClick={props.onSelect}
       onKeyDown={(event) => {
         if (!props.onSelect || (event.key !== "Enter" && event.key !== " ")) return;
@@ -223,8 +231,11 @@ export function RuntimeAttemptRow(props: { attempt: any; index: number; selected
         props.onSelect();
       }}
       role={props.onSelect ? "button" : undefined}
+      style={depth ? { ["--automation-runtime-part-depth" as string]: String(depth) } : undefined}
       tabIndex={props.onSelect ? 0 : undefined}
     >
+      {props.frame?.part ? <span className="automation-runtime-attempt-part">Part {runtimePartWords(props.frame.part)}</span>
+        : props.frame?.continued ? <span className="automation-runtime-attempt-part">A called part, continued from the previous page</span> : null}
       <span className="automation-runtime-attempt-index">#{props.index + 1}</span>
       <strong title={attempt.nodeId}>{attempt.nodeId ?? "-"}</strong>
       <StatusBadge value={attempt.status ?? "unknown"} />

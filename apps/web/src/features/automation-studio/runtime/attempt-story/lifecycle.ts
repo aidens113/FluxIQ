@@ -1,18 +1,26 @@
+import { runtimeClearedLayersLine } from "./cleared-layers";
+import { runtimeEntryLine } from "./entry";
+import { runtimeFailureClassLine } from "./failure-class";
+import { runtimeHandlerLine } from "./handler";
+import { runtimeRepairLine } from "./repair";
 import type { RuntimeAttemptStoryLine, RuntimeAttemptStoryOptions } from "./story-line";
 
 /**
- * The place for the lifecycle records the state-aware recovery plan adds next
- * (Core's `docs/working/state-aware-recovery-plan.md`, C11): the frame a step
- * ran in, handler runs, entry choices, a true failure as against a planned
- * fail, and an in-run repair.
- *
- * None of them is on the persisted attempt trace yet, so this reads nothing
- * and returns no lines. When Core persists one, add its kind to
- * `RuntimeAttemptStoryKind`, a module beside this one that reads that record
- * as Core defines it, and its call here; `runtimeAttemptStory` already places
- * these lines after the step's own records and before how its failure was
- * judged. Do not guess at their fields before they exist.
+ * The lifecycle records of state-aware recovery (Core's
+ * `docs/working/state-aware-recovery-plan.md`, C11), in the order the run met
+ * them: where the frame began, the handler that ran at the step, the layers
+ * the client closed while it ran, what its failure counted as (a true failure
+ * against a planned fail), and the in-run repair a true failure asked for.
+ * `runtimeAttemptStory` places these after the step's own records and before
+ * how its failure was judged. Each reads its record's own fields, as Core
+ * defines them, never a model's words.
  */
-export function runtimeLifecycleLines(_attempt: unknown, _options: RuntimeAttemptStoryOptions = {}): RuntimeAttemptStoryLine[] {
-  return [];
+export function runtimeLifecycleLines(attempt: unknown, options: RuntimeAttemptStoryOptions = {}): RuntimeAttemptStoryLine[] {
+  return [
+    runtimeEntryLine(attempt, options),
+    runtimeHandlerLine(attempt, options),
+    runtimeClearedLayersLine(attempt),
+    runtimeFailureClassLine(attempt),
+    runtimeRepairLine(attempt)
+  ].filter((line): line is RuntimeAttemptStoryLine => line !== undefined);
 }
