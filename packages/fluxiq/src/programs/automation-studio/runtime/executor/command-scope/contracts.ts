@@ -15,6 +15,13 @@ export type AutomationStudioExecutorCommandRun = {
    * it) and stops there as Outcome uncertain (`../step-loop/uncertain-stop.ts`).
    */
   receipted(context: ClientGatewayCommandContext): boolean;
+  /**
+   * Withdraws the command issued under `context` when it provably never left:
+   * nothing was claimed for it, so nothing was sent, and from now on nothing
+   * can be. True means the act did not happen and the run is not latched by
+   * it; false means the command was claimed and its outcome is the ledger's.
+   */
+  withdraw(context: ClientGatewayCommandContext): boolean;
 };
 export type AutomationStudioExecutorNodeEntry = {
   readonly run: AutomationStudioExecutorCommandRun; readonly invocationId: string; readonly attemptId: string;

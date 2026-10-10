@@ -40,6 +40,31 @@ describe("ClientGatewayRuntimeTransport", () => {
     await expect(resultPromise).resolves.toMatchObject({ status: "succeeded", message: "clicked" });
   });
 
+  // t434: Automation Studio addresses a policy output by `outputId`, and a gateway
+  // client can only name what it serves as action types, often with the domain
+  // on the capability alone. The runtime and the transport both took that
+  // client for no match, so a run on Core's own transport never sent a command.
+  it("routes an output-addressed command to a client that names the output as an action type and the domain on its capability", async () => {
+    const gateway = new ClientGatewayService({ commandTimeoutMs: 1000 });
+    const paired = await pairGatewayClient(gateway, "extension.capability-domain", "user.web", { sessionDomain: false });
+    const runtime = new RuntimeService();
+    runtime.registerTransport(new ClientGatewayRuntimeTransport({ gateway }));
+
+    const resultPromise = runtime.dispatch({ kind: "execute_action", domainId: "web-automation", outputId: "web.dom.click", actionType: "web.dom.click", parameters: { selector: "#save" } });
+    let executeMessage: ReturnType<ClientGatewayService["outbound"]>[number] | undefined;
+    for (let turn = 0; turn < 50 && !executeMessage; turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      executeMessage = gateway.outbound(paired.sessionId).find((message) => message.type === "server.execute_action");
+    }
+    expect(executeMessage).toMatchObject({ type: "server.execute_action", payload: { actionType: "web.dom.click" } });
+    await gateway.receive(paired.sessionId, clientMessage("client.action_result", {
+      commandId: executeMessage?.type === "server.execute_action" ? executeMessage.payload.commandId : "",
+      status: "succeeded",
+      message: "clicked"
+    }));
+    await expect(resultPromise).resolves.toMatchObject({ status: "succeeded", message: "clicked" });
+  });
+
   it("rejects dispatch when no ready gateway client matches", async () => {
     const gateway = new ClientGatewayService();
     await pairGatewayClient(gateway, "extension.other", "user.web");
@@ -170,7 +195,7 @@ function lastExecuteCommandId(gateway: ClientGatewayService, sessionId: string):
   return last?.type === "server.execute_action" ? last.payload.commandId : "";
 }
 
-async function pairGatewayClient(gateway: ClientGatewayService, clientId: string, approvedByUserId: string) {
+async function pairGatewayClient(gateway: ClientGatewayService, clientId: string, approvedByUserId: string, options: { sessionDomain?: boolean } = {}) {
   const session = gateway.connect();
   await gateway.receive(session.sessionId, clientMessage("client.hello", {
     clientId,
@@ -182,7 +207,7 @@ async function pairGatewayClient(gateway: ClientGatewayService, clientId: string
       actionTypes: ["web.dom.click"],
       metadata: { domainId: "web-automation" }
     }],
-    metadata: { domainId: "web-automation" }
+    ...(options.sessionDomain === false ? {} : { metadata: { domainId: "web-automation" } })
   }));
   const pairingCode = gateway.snapshot().pairings.find((pairing) => pairing.requestedBySessionId === session.sessionId)?.pairingCode ?? "";
   await gateway.approvePairing(pairingCode, { approvedByUserId });
