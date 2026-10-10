@@ -230,7 +230,7 @@ describe("candidate trial gate", () => {
         const { outcome, seen } = await run([submit(), test, test, complete], failingPort([onPage("set the quantity to three")], asked), { looked: true }, { before: "page.one", after: "page.one" });
         const first = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[2]!);
         expect(first).toMatchObject({ verdict: "execution_failed", retestsLeft: 2 });
-        expect(first?.instruction).toBe("Step 9 (\"set the quantity to three\") could not find its control by the address it was saved with, though the control is on the page. Nothing in your script needs to change for this: test this same revision again, with the same revision and digest, before looking for the control or acting on it.");
+        expect(first?.instruction).toBe("Step 9 (\"set the quantity to three\") could not find its control where it was saved, though one like it is on the page. Nothing in your script needs to change for this: test this same revision again, with the same revision and digest, without acting on the control yourself.");
         expect(JSON.stringify(seen[3])).not.toContain("llm_evidence_loop.repeat_refused");
         expect(asked.map((request) => request.revision)).toEqual([1, 1]);
         expect(loopOf(outcome)).toMatchObject({ loop: { ok: true }, trial: { verdict: "yes", revision: 1 } });
@@ -239,19 +239,20 @@ describe("candidate trial gate", () => {
       it("says the same when completion is asked for before the re-test", async () => {
         const { seen } = await run([submit(), test, complete, complete], failingPort([onPage()], []));
         expect(completionFeedback(seen[3]!)).toMatchObject({ code: "candidate.trial_execution_failed",
-          instruction: "Step 9 could not find its control by the address it was saved with, though the control is on the page. Nothing in your script needs to change for this: test this same revision again, with the same revision and digest, before looking for the control or acting on it." });
+          instruction: "Step 9 could not find its control where it was saved, though one like it is on the page. Nothing in your script needs to change for this: test this same revision again, with the same revision and digest, without acting on the control yourself." });
       });
 
-      it("after the same failure twice, names the step and one other way for it to find its control", async () => {
+      it("after the same failure twice, names the step and says to change it, never how to find its control", async () => {
         const asked: AutomationStudioCandidateTrialRequest[] = [];
         const { seen } = await run([submit(), test, test, test, complete, complete], failingPort([onPage("set the quantity to three"), onPage("set the quantity to three")], asked));
         expect(asked.map((request) => request.revision)).toEqual([1, 1]);
         const second = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!);
         expect(second).toMatchObject({ verdict: "execution_failed", retestsLeft: 0, failedStep: { step: 9, definitionId: "web.output.dom-type", failureCode: "web.target.not_found" } });
         const instruction = String(second?.instruction);
-        expect(instruction).toContain("Step 9 (\"set the quantity to three\") could not find its control by the address it was saved with in two trials, though the control was on the page both times");
-        expect(instruction).toContain("Give that one step another way to find its control");
-        expect(instruction).toContain("by its own visible words or the words beside it");
+        expect(instruction).toContain("Step 9 (\"set the quantity to three\") could not find its control where it was saved in two trials, though one like it was on the page both times");
+        expect(instruction).toContain("Change that step, or the steps that lead to it");
+        // Finding a control is the extension's work (user, 2026-10-10; t426): nothing asks the model to find or re-address it.
+        expect(instruction).not.toMatch(/address|selector|fingerprint|another way to find|fresh look|look for the control|handle the evidence/iu);
         expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)).toMatchObject({ ok: false, code: "candidate.trial_same_failure", instruction });
         expect(completionFeedback(seen[5]!)).toMatchObject({ code: "candidate.trial_execution_failed", instruction });
       });

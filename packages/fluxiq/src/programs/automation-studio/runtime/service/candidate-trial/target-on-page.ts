@@ -1,5 +1,5 @@
-// A step that could not find its control by its saved address, though the
-// control is on the page (t420).
+// A step that could not find its control where it was saved, though one like
+// it is on the page (t420).
 //
 // Paid run R4a (`run-mv2nlh9l-52e476da`, step 0038): the single trial stopped
 // at a typing step with `web.target.not_found`, because the address the step
@@ -36,6 +36,14 @@
 // different controls that merely resembled a saved one at 0.010 and 0.088; the
 // bar sits between. A wrong call costs one more trial, which the gate bounds:
 // the same failure at the same step twice closes the revision to re-testing.
+//
+// **What the model reads (t426).** Only that the step could not find its
+// control where it was saved, though one like it is on the page, and to test
+// the step unchanged. The measurement decides; it is never said: no score, no
+// count of look-alikes, and no word for how a control is found. Finding a saved
+// control is the extension's work (user, 2026-10-10), and R4a's wording ("the
+// address is out of date", "matched the saved one at 0.27") sent the model
+// looking for a new handle.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -51,7 +59,10 @@ const NEAR_MISS_MIN_LEAD = 0.1;
 const LABEL_MAX_CHARS = 80;
 
 /** What the model is told to do about it on the step itself; the trial gate says the same as its instruction. */
-const ADVICE = "Nothing in your script needs to change for this: test this same revision again, before looking for the control or acting on it.";
+const ADVICE = "Nothing in your script needs to change for this: test this same revision again, unchanged, without acting on the control yourself.";
+
+/** What happened, in the words every try of such a step says it (`./absorbed.ts` says the same). */
+const ON_PAGE_HAPPENED = "The step could not find its control where it was saved, though one like it is on the page.";
 
 /**
  * The fields a step that could not find a control still on the page adds to its
@@ -76,9 +87,9 @@ export function automationStudioTrialTargetOnPage(input: {
   const named = `Step ${input.step}${label ? ` (${JSON.stringify(label)})` : ""}`;
   const control = input.control ? ` ${JSON.stringify(input.control)}` : "";
   return {
-    happened: "The step could not find its control by the address it was saved with, though the control is on the page.",
+    happened: ON_PAGE_HAPPENED,
     targetOnPage: true,
-    onPage: `${named} could not find its control${control} by the address it was saved with, though the control is on the page: of the ${measured.candidateCount} control(s) like it there, the closest matched the saved one at ${measured.bestScore.toFixed(2)}${measured.runnerUpScore === undefined ? "" : `, well ahead of the next at ${measured.runnerUpScore.toFixed(2)}`}. The address is out of date, not the step.`,
+    onPage: `${named} could not find its control${control} where it was saved, though one like it is on the page. The step itself is right.`,
     advice: ADVICE,
     retryable: true
   };

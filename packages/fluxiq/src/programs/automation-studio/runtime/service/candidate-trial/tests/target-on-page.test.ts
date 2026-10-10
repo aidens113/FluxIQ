@@ -42,13 +42,17 @@ describe("trial feedback for a step that could not find a control still on the p
     const step = lastStep(["t1", "t2", "t3", "t4"].map((id) => typing(id, measured)));
     expect(step).toMatchObject({
       step: 2, definitionId: "web.output.dom-type", label: "set the quantity to three", status: "failed", attempts: 4, failureCode: "web.target.not_found",
-      happened: "The step could not find its control by the address it was saved with, though the control is on the page.",
+      happened: "The step could not find its control where it was saved, though one like it is on the page.",
       targetOnPage: true, retryable: true,
-      onPage: "Step 2 (\"set the quantity to three\") could not find its control by the address it was saved with, though the control is on the page: of the 3 control(s) like it there, the closest matched the saved one at 0.27, well ahead of the next at 0.02. The address is out of date, not the step.",
-      advice: "Nothing in your script needs to change for this: test this same revision again, before looking for the control or acting on it."
+      onPage: "Step 2 (\"set the quantity to three\") could not find its control where it was saved, though one like it is on the page. The step itself is right.",
+      advice: "Nothing in your script needs to change for this: test this same revision again, unchanged, without acting on the control yourself."
     });
     // The tries it absorbed say the same, never that the control was absent.
-    expect((step.absorbed as JsonObject[]).map((entry) => entry.happened)).toEqual(Array(3).fill("The step could not find its control by the address it was saved with, though the control is on the page."));
+    expect((step.absorbed as JsonObject[]).map((entry) => entry.happened)).toEqual(Array(3).fill("The step could not find its control where it was saved, though one like it is on the page."));
+    // t426: nothing says how the control was found -- no score, no address, none of the domain's own texts.
+    expect(step).not.toHaveProperty("expected");
+    expect(step).not.toHaveProperty("actual");
+    expect(JSON.stringify(step)).not.toMatch(/address|selector|fingerprint|scor|0\.27|0\.02|#fb1l6ufkg/iu);
   });
 
   it("marks it retryable even when the domain called the failure not retryable", () => {
@@ -105,10 +109,11 @@ describe("trial feedback for a step that scored no control at all", () => {
     const step = (feedbackWith(addressOnly, R4A_TRIES).steps as JsonObject[]).at(-1)!;
     expect(step).toMatchObject({ step: 2, status: "failed", attempts: 4, failureCode: "web.target.not_found", happened: "The step's control was not found on the page.", retryable: true });
     for (const key of ["targetOnPage", "onPage", "advice"]) expect(step).not.toHaveProperty(key);
-    // Nothing of this feedback's own asks the model to find or re-address the control; `expected` and `actual` are the
-    // domain's failure text, passed through as for every step.
-    const { expected: _expected, actual: _actual, ...said } = step;
-    expect(JSON.stringify(said)).not.toMatch(/fingerprint|read the control again|re-?address|look for the control|another way to find/iu);
+    // Nothing in this feedback asks the model to find or re-address the control, and since t426 the domain's own
+    // `expected` and `actual`, which say how it looked for the control, are not passed on for a target not found.
+    expect(step).not.toHaveProperty("expected");
+    expect(step).not.toHaveProperty("actual");
+    expect(JSON.stringify(step)).not.toMatch(/fingerprint|selector|address|read the control again|look for the control|another way to find/iu);
   });
 
   it("the trial's answer is retry_allowed once, and the same stop again closes the revision to re-testing", async () => {
