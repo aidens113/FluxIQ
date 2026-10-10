@@ -21,9 +21,12 @@ type Phrase = {
  * What a call names, in words a person reads (`AutomationStudioLlmEvidenceCallWords`):
  * the control, and the words it types or looks for. `list` is what the page
  * calls the list a detection found, read off its answer once it has one
- * (`../call-context.ts`, R2-U-9), never off the call.
+ * (`../call-context.ts`, R2-U-9), never off the call. `role` is what the page
+ * view printed the control as, kept only where it tells a box from an option
+ * ("checkbox", "radio", ...; "" for neither, `../call-context.ts`): a call that
+ * carries a handle and no element is read by it.
  */
-export type AutomationStudioActivityCallWords = { target?: string | undefined; text?: string | undefined; list?: string | undefined };
+export type AutomationStudioActivityCallWords = { target?: string | undefined; text?: string | undefined; list?: string | undefined; role?: string | undefined };
 
 /** A control's name, in the curly quotes a card reads its target from (`ui/activity-action/action-of.ts`). */
 const quoted = (name: string): string => `“${name}”`;
@@ -128,13 +131,17 @@ const CHOICE: Phrase = { verb: "select", plain: "Choosing an option", named: (na
  * says neither, as a swatch the page draws as a plain element does. A swatch's
  * step read "Tick · Space Grey" and "Ticking “7-in-1”" (R4a,
  * `run-mv2nlh9l-52e476da`, moment 04). A box says so by its role or input
- * type, and a step that carries no element is a box.
+ * type. A model's exploration call carries a handle and no element, so its
+ * role is the one the page view printed for that handle (`words.role`,
+ * `../call-context.ts`), read by the same rule: its swatches read "Ticking
+ * “Spain”" while the same steps in a test read "Choose" (R4a attempt 2,
+ * `run-mv2pgqkj-f3552c70`, moment 04). A step that carries neither is a box.
  */
-function chosen(parameters: unknown): boolean {
-  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return false;
-  const element = (parameters as { element?: unknown }).element;
-  if (!element || typeof element !== "object" || Array.isArray(element)) return false;
-  const identity = element as { role?: unknown; inputType?: unknown };
+function chosen(parameters: unknown, words: AutomationStudioActivityCallWords | undefined): boolean {
+  const element = parameters && typeof parameters === "object" && !Array.isArray(parameters) ? (parameters as { element?: unknown }).element : undefined;
+  const carried = element && typeof element === "object" && !Array.isArray(element) ? element : undefined;
+  if (!carried && typeof words?.role !== "string") return false;
+  const identity = (carried ?? { role: words?.role }) as { role?: unknown; inputType?: unknown };
   const lower = (value: unknown): string => typeof value === "string" ? value.trim().toLowerCase() : "";
   const role = lower(identity.role);
   const type = lower(identity.inputType);
@@ -187,7 +194,7 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
   const words = (input.id.split(".").at(-1) ?? "").toLowerCase().split(/[-_\s]+/u).filter(Boolean);
   for (const [index, word] of words.entries()) {
     const named = activityActionVerb(word)?.verb;
-    const verb = named === "check" && chosen(input.parameters) ? CHOICE : named ? PHRASES.find((candidate) => candidate.verb === named) : undefined;
+    const verb = named === "check" && chosen(input.parameters, input.words) ? CHOICE : named ? PHRASES.find((candidate) => candidate.verb === named) : undefined;
     if (!verb) continue;
     // The domain's own reading of the call first (the control a handle names,
     // the words it types), then the element a resolved node carries.
