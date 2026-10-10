@@ -26,10 +26,12 @@ import {
   parseAutomationStudioFactConditions,
   automationStudioHandlerOccurrenceKey,
   resolveAutomationStudioHandlerCandidates,
-  type AutomationStudioHandlerCandidate
+  type AutomationStudioHandlerCandidate,
+  type AutomationStudioUnhandledReason
 } from "../lifecycle/index.ts";
 import { automationStudioNodeReadinessState } from "../recorded-state.ts";
 import type { AutomationStudioLifecycleDispatchInput, AutomationStudioLifecycleDispatchOutcome, AutomationStudioLifecycleHandlerRun } from "./dispatch-contracts.ts";
+import { automationStudioHandlerBodyInputs } from "./body-inputs.ts";
 import { automationStudioLifecycleRunRecords } from "./dispatch-records.ts";
 import { observeAutomationStudioFacts, type AutomationStudioFactObservationGroup } from "./fact-observation.ts";
 import { runAutomationStudioHandlerBody, type AutomationStudioHandlerBodyRun } from "./handler-body.ts";
@@ -152,15 +154,15 @@ async function runCandidate(dispatch: Dispatch, candidate: AutomationStudioHandl
   const bodyNodeId = registration.source.kind === "handler_node" ? registration.source.bodyNodeId : undefined;
   const incident = input.incidentId ? state.incidents.get(input.incidentId) : undefined;
   // A refusal of a handler that already ran is kept on the trace but says nothing in the chat: it is not news (`quiet`).
-  const refuse = (reason: string, quiet = false): AutomationStudioLifecycleHandlerRun => finish(dispatch, { candidate, why, occurrence, when, startedAt, decision: { kind: "unhandled", reason }, ran: false, completionCheck: "unknown", quiet });
-  if (!graph || !bodyNodeId) return refuse("The handler has no body to run.");
+  const refuse = (code: AutomationStudioUnhandledReason, reason: string, quiet = false): AutomationStudioLifecycleHandlerRun => finish(dispatch, { candidate, why, occurrence, when, startedAt, decision: { kind: "unhandled", reason, code }, ran: false, completionCheck: "unknown", quiet });
+  if (!graph || !bodyNodeId) return refuse("no_body", "The handler has no body to run.");
   if (input.event === "fail" && incident?.handlersRun.some((key) => key.startsWith(`${registration.handlerId}@`))) {
-    return refuse("This handler was already tried for this incident.", true);
+    return refuse("already_tried", "This handler was already tried for this incident.", true);
   }
   const ledgerKey = input.incidentId ?? `arrival:${automationStudioIncidentArrivalKey({ invocationId: current.invocationId, nodeId: input.nodeId, arrival: input.arrival })}`;
   const alreadyRan = (state.ledger.incidents[ledgerKey]?.occurrences[occurrence] ?? 0) >= Math.max(1, registration.maxRuns);
   const charged = chargeAutomationStudioLifecycleBudget(state.ledger, state.budget!, { kind: "handler_run", incidentId: ledgerKey, occurrenceKey: occurrence, maxRuns: registration.maxRuns });
-  if (!charged.allowed) return refuse(charged.reason, alreadyRan);
+  if (!charged.allowed) return refuse(alreadyRan ? "already_tried" : "budget_spent", charged.reason, alreadyRan);
   state.ledger = charged.ledger;
   incident?.handlersRun.push(occurrence);
   const body = await runAutomationStudioHandlerBody({
@@ -169,7 +171,8 @@ async function runCandidate(dispatch: Dispatch, candidate: AutomationStudioHandl
     graph,
     bodyNodeId,
     options: input.options,
-    inputs: { ...input.values },
+    // Only what the body can read: the frame's inputs and the values its own nodes name (`./body-inputs.ts`).
+    inputs: automationStudioHandlerBodyInputs({ graph: graph.graph, bodyNodeId, frameInputs: current.inputs, values: input.values }),
     ...(input.incidentId ? { incidentId: input.incidentId } : {}),
     ...(input.remainingSteps !== undefined ? { maxSteps: input.remainingSteps } : {}),
     ...(input.priorAttemptCount !== undefined ? { priorAttemptCount: input.priorAttemptCount } : {})
@@ -210,7 +213,7 @@ async function settle(dispatch: Dispatch, candidate: AutomationStudioHandlerCand
   });
   if (body.bodyFailed || coreStop) {
     const decision = decideWith("unknown");
-    return { decision: decision.kind === "unhandled" && body.reason ? { kind: "unhandled", reason: body.reason } : decision, completionCheck: "unknown" };
+    return { decision: decision.kind === "unhandled" && body.reason ? { ...decision, reason: body.reason } : decision, completionCheck: "unknown" };
   }
   const readyConditions = factReadyState(dispatch);
   const routeTarget = body.written.kind === "route"
@@ -231,20 +234,21 @@ async function settle(dispatch: Dispatch, candidate: AutomationStudioHandlerCand
     when: routeTarget ? automationStudioFactConditionsHold(routeTarget.checkpoint.when, observed.get("route") ?? []) : "unknown",
     requiresBound: routeTarget?.requiresBound ?? false,
     passesUncertainAct: guard?.passesUncertainAct ?? false,
-    repeatsCompletedReconcile: guard?.repeatsCompletedReconcile ?? false,
-    ...(guard?.effectCheck ? { effectCheck: guard.effectCheck } : {})
+    ...(guard?.repeatsUnrecordedAct ? { repeatsUnrecordedAct: true } : {})
   };
   let decision = decideWith(completionCheck, route);
+  // A target the step loop cannot reach reads as refused by that guard, not as a checkpoint that does not exist.
+  if (decision.kind === "unhandled" && decision.guard === "checkpoint_not_found" && routeTarget && guard?.unreachable) decision = { ...decision, reason: guard.unreachable, guard: "unreachable" };
   if (decision.kind === "route") decision = routeAllowed(dispatch, decision.checkpointId, Boolean(guard));
   return { decision, completionCheck, ...(readyState ? { readyState } : {}), ...(decision.kind === "route" && routeTarget ? { routeTarget } : {}) };
 }
 
 /** A route the rules allowed, if graph-run vouched for what it would pass and the run has a route left to spend. */
 function routeAllowed(dispatch: Dispatch, checkpointId: string, guarded: boolean): AutomationStudioDispositionDecision {
-  if (!guarded) return { kind: "unhandled", reason: `The route to "${checkpointId}" was not taken: this run could not check what the route would pass or repeat.` };
+  if (!guarded) return { kind: "unhandled", reason: `The route to "${checkpointId}" was not taken: this run could not check what the route would pass.`, code: "route_refused", guard: "unguarded" };
   const state = dispatch.run.lifecycle;
   const charged = chargeAutomationStudioLifecycleBudget(state.ledger, state.budget!, { kind: "route", incidentId: dispatch.input.incidentId ?? "" });
-  if (!charged.allowed) return { kind: "unhandled", reason: charged.reason };
+  if (!charged.allowed) return { kind: "unhandled", reason: charged.reason, code: "budget_spent" };
   state.ledger = charged.ledger;
   return { kind: "route", checkpointId };
 }

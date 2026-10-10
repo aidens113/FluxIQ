@@ -15,7 +15,7 @@ import type { AutomationStudioRunControlGate } from "../run-control/index.ts";
 import type { AutomationStudioRecordedState } from "./recorded-state.ts";
 import type { AutomationStudioDefenceSummary, AutomationStudioFaultAssessment } from "./defensive/index.ts";
 import type { AutomationStudioLifecycleEvent } from "../../nodes/control-flow/index.ts";
-import type { AutomationStudioFactTruth } from "./lifecycle/index.ts";
+import type { AutomationStudioFactTruth, AutomationStudioRouteRefusalGuard, AutomationStudioUnhandledReason } from "./lifecycle/index.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
 
@@ -227,16 +227,15 @@ export type AutomationStudioLifecycleConditionEvidence = {
 };
 
 /**
- * How a handler body ended, as a trace keeps it (C5): `resume`, `route` to a
- * checkpoint, `resolve`, or `unhandled`. A `resolve` keeps no outputs: they
- * are run values, and the attempt's own `outputs` already carry what the run
- * went on with.
+ * How a handler body ended, as a trace keeps it (C5). A `resolve` keeps no
+ * outputs: the attempt's own `outputs` carry them. An `unhandled` keeps its
+ * closed `reason` and route `guard` (`lifecycle/unhandled-reason.ts`).
  */
 export type AutomationStudioLifecycleTraceDisposition =
   | { kind: "resume" }
   | { kind: "route"; checkpointId: string }
   | { kind: "resolve" }
-  | { kind: "unhandled" };
+  | { kind: "unhandled"; reason?: AutomationStudioUnhandledReason; guard?: AutomationStudioRouteRefusalGuard };
 
 /**
  * The lifecycle handler that ran at this attempt (C3, C5, C11), from runtime
@@ -452,7 +451,9 @@ export type AutomationStudioNodeAttemptTrace = {
      * or `message`. `forward` is a page already past the step; `backward` a
      * page that has gone back.
      */
-    | { reason: "state_routed"; code: string; toNodeId: string; direction: AutomationStudioStateRouteDirection };
+    | { reason: "state_routed"; code: string; toNodeId: string; direction: AutomationStudioStateRouteDirection }
+    /** Its lasting act completed earlier in this run (`attemptId`), so it was not dispatched again: it reads `route: "success"`, with that attempt's outputs (`step-loop/already-done.ts`). */
+    | { reason: "already_done"; code: string; attemptId: string; row?: string };
   /**
    * What the run made of the page when this step could not run: whether it
    * read the page, how many nodes recorded a pre-state to compare, how many

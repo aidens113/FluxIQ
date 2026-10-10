@@ -1,7 +1,8 @@
 // Routes to checkpoints (state-aware recovery plan, C2, C5; unit D2): a route
-// never repeats a confirmation, one the checkpoint's facts or the path refuse
-// is refused before any route is charged or any row says it worked, and a
-// route to a calling frame's checkpoint unwinds the child and continues there.
+// never repeats a confirmation -- since t411 a route back past one is taken and
+// the confirmation is skipped as already done -- one the checkpoint's facts
+// refuse is refused before any route is charged or any row says it worked, and
+// a route to a calling frame's checkpoint unwinds the child and continues there.
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
@@ -31,16 +32,29 @@ describe("routes to a checkpoint", () => {
     expect(trace.incidents?.map((incident) => [incident.origin.nodeId, incident.ending, incident.routes])).toEqual([["s3", "planned_fail", [{ checkpointId: "cp.after-confirm", handlerId: "graph.main/h.back" }]]]);
   });
 
-  it("refuses a route back across the completed confirm act, and one whose checkpoint does not hold, before charging or saying it worked", async () => {
+  // t411 changed this case: it was refused before any route (`routesForRun` 0, one `unhandled` row). The guard no longer
+  // refuses a route back past a completed act; the completed-act ledger skips the confirm as already done instead.
+  it("goes back across the completed confirm act without repeating it until the route budget is spent, and refuses one whose checkpoint does not hold before charging or saying it worked", async () => {
     const across = page({ failing: { s3: { retryable: false } } });
     const { result, rows } = await withRows(() => framedRun(confirmFlow("cp.start"), pageOptions(across)));
     expect(result.trace.status).toBe("failed");
     expect(landedCounts(across).confirm).toBe(1);
-    expect(across.landed).toEqual(["s1", "confirm", "cp", "dismiss"]);
-    expect(result.invocation.run.lifecycle.ledger.routesForRun).toBe(0);
-    expect(result.trace.handlerExecutions?.map((record) => [record.outcome, record.disposition])).toEqual([["succeeded", { kind: "unhandled" }]]);
-    expect(recoveryRows(rows)).toEqual([["handler", "failed", undefined]]);
-    expect(result.trace.attempts.find((attempt) => attempt.nodeId === "s3")?.failureClass).toBe("true_failure");
+    expect(across.landed).toEqual(["s1", "confirm", "cp", "dismiss", "s1", "cp", "dismiss", "s1", "cp", "dismiss"]);
+    expect(result.trace.attempts.filter((attempt) => attempt.nodeId === "confirm").map((attempt) => attempt.skipped?.reason ?? attempt.status)).toEqual(["succeeded", "already_done", "already_done"]);
+    expect(result.invocation.run.lifecycle.ledger.routesForRun).toBe(2);
+    expect(result.trace.handlerExecutions?.map((record) => [record.outcome, record.disposition])).toEqual([
+      ["succeeded", { kind: "route", checkpointId: "cp.start" }],
+      ["succeeded", { kind: "route", checkpointId: "cp.start" }],
+      ["succeeded", { kind: "unhandled" }]
+    ]);
+    // The third run of the handler was not taken: the run's two routes were spent, which its record keeps.
+    expect(result.trace.attempts.filter((attempt) => attempt.nodeId === "s3").map((attempt) => attempt.lifecycle?.disposition)).toEqual([
+      { kind: "route", checkpointId: "cp.start" },
+      { kind: "route", checkpointId: "cp.start" },
+      { kind: "unhandled", reason: "budget_spent" }
+    ]);
+    expect(recoveryRows(rows)).toEqual([["handler", "succeeded", "cp.start"], ["handler", "succeeded", "cp.start"], ["handler", "failed", undefined]]);
+    expect(result.trace.attempts.filter((attempt) => attempt.nodeId === "s3").at(-1)?.failureClass).toBe("true_failure");
 
     // The checkpoint after the confirmation, but its facts do not hold.
     const unheld = page({ failing: { s3: { retryable: false } } });
@@ -72,7 +86,9 @@ describe("routes to a checkpoint", () => {
     expect(trace.checkpointRoute).toBeUndefined();
   });
 
-  it("judges the path in the calling frame before anything unwinds, and a refusal of a handler already tried says nothing in the chat", async () => {
+  // t411 changed this case: the route back past the parent's completed `buy` was refused (`routesForRun` 0). It is now taken,
+  // and `buy` is skipped as already done each time the parent passes it again.
+  it("judges the path in the calling frame before anything unwinds, goes back past its completed act without repeating it, and a refusal of a handler already tried says nothing in the chat", async () => {
     const current = page({ failing: { c1: { retryable: false } } });
     const child = line("graph.child", [press("c1", "c1", stop)]);
     const recovery = line("graph.recovery", [], [closer("h.any", { event: "fail", scope: { kind: "automation" }, when: [fact("cleared")] }, { disposition: "route", checkpointId: "cp.p1" })]);
@@ -86,11 +102,12 @@ describe("routes to a checkpoint", () => {
 
     expect(result.trace.status).toBe("failed");
     expect(landedCounts(current).buy).toBe(1);
-    expect(current.landed).toEqual(["p1", "buy", "dismiss"]);
-    expect(result.invocation.run.lifecycle.ledger.routesForRun).toBe(0);
-    // The parent's refusal is kept on the trace, and only the run that happened is said in the chat.
-    expect(result.trace.handlerExecutions?.map((record) => [record.nodeId, record.outcome])).toEqual([["c1", "succeeded"], ["call", "refused"]]);
-    expect(recoveryRows(rows)).toEqual([["handler", "failed", undefined]]);
-    expect(result.trace.incidents?.map((incident) => incident.ending)).toEqual(["true_failure"]);
+    expect(current.landed).toEqual(["p1", "buy", "dismiss", "p1", "dismiss", "p1", "dismiss"]);
+    expect(result.trace.attempts.filter((attempt) => attempt.nodeId === "buy").map((attempt) => attempt.skipped?.reason ?? attempt.status)).toEqual(["succeeded", "already_done", "already_done"]);
+    expect(result.invocation.run.lifecycle.ledger.routesForRun).toBe(2);
+    // The parent's refusal is kept on the trace, and only the runs that happened are said in the chat.
+    expect(result.trace.handlerExecutions?.map((record) => [record.nodeId, record.outcome])).toEqual([["c1", "succeeded"], ["c1", "succeeded"], ["c1", "succeeded"], ["call", "refused"]]);
+    expect(recoveryRows(rows)).toEqual([["handler", "succeeded", "cp.p1"], ["handler", "succeeded", "cp.p1"], ["handler", "failed", undefined]]);
+    expect(result.trace.incidents?.map((incident) => incident.ending)).toEqual(["planned_fail", "planned_fail", "true_failure"]);
   });
 });

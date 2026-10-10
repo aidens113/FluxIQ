@@ -17,6 +17,7 @@ import {
   type AutomationStudioRecoveryIncident,
   type AutomationStudioHandlerRegistration
 } from "../lifecycle/index.ts";
+import type { AutomationStudioCompletedAct } from "./completed-act.ts";
 import type { AutomationStudioRunRepair } from "./incident-repair.ts";
 
 /**
@@ -96,6 +97,11 @@ export type AutomationStudioIncidentHandlerRun = {
  * - `handlerRuns`: the last handler that ran for each incident, by incident id.
  * - `repairs`: each incident's in-run repair (C6 step 8), by incident id; one
  *   per incident, so a second true failure never asks again.
+ * - `completedActs`: the run's completed-act ledger (C5, t411): every lasting
+ *   act that completed in any frame of the run, by its identity
+ *   (`./act-identity.ts`). Before a lasting act executes, a match
+ *   here skips it as already done, so a route back past completed acts never
+ *   repeats one.
  */
 export type AutomationStudioLifecycleRunState = {
   graphs: Map<string, AutomationStudioRegisteredLifecycleGraph>;
@@ -110,6 +116,7 @@ export type AutomationStudioLifecycleRunState = {
   frames: Map<string, AutomationStudioLifecycleFrameView>;
   handlerRuns: Map<string, AutomationStudioIncidentHandlerRun>;
   repairs: Map<string, AutomationStudioRunRepair>;
+  completedActs: Map<string, AutomationStudioCompletedAct>;
   /** Issues the next id of the named kind within the run: `incident-1`, `handler-execution-1`, ... */
   nextId(kind: "incident" | "handler-execution"): string;
 };
@@ -129,6 +136,7 @@ export function automationStudioLifecycleRunState(): AutomationStudioLifecycleRu
     frames: new Map(),
     handlerRuns: new Map(),
     repairs: new Map(),
+    completedActs: new Map(),
     nextId: (kind) => `${kind}-${(issued[kind] += 1)}`
   };
 }
