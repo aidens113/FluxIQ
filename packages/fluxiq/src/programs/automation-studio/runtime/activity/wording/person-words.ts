@@ -20,6 +20,31 @@ const LIST_READER = /\b(?:dom\s+)?(?:extract[\s_-]?list(?:\s+(?:nodes?|steps?|to
  * `run-mux6naez-6c20f26e`). It is said as the list it names.
  */
 const LIST_HANDLE = /\b(?:dom\s+)?(?:extract[\s_-]?list|extraction)\s+handles?\b/giu;
+/**
+ * A control's handle, after the word for the control: "the quantity field
+ * handle", "the current quantity input handle" (R4a, `run-mv2nlh9l-52e476da`,
+ * moment 07). The control is said alone.
+ */
+const CONTROL_HANDLE = /\b(element|control|field|input|box|button|link|checkbox|dropdown|menu|option|swatch|chip|tab|row|target)\s+handle(s?)\b/giu;
+/**
+ * A handle, as a noun after a word that says which: "the handle", "a fresh
+ * handle", "its handles". Said as the control on the page. "handle" as a verb
+ * ("to handle the popup") follows none of these words and is left alone.
+ */
+const HANDLE_NOUN = /\b(the|a|this|that|its|their|each|every|new|fresh|current|stale|old|older|newer|latest|valid|same|right|correct|exact|another|other|which)\s+handle(s?)\b/giu;
+/** "handle id(s)", "handle ref(s)": said as the control on the page. */
+const HANDLE_ID = /\bhandle\s+(?:ids?|refs?|references?|tokens?)\b/giu;
+/**
+ * Sending a Flow again, which the model calls resubmitting: "before
+ * resubmitting", "I drop that optional step and resubmit the Flow" (R4a,
+ * moment 05 and 07). Said as sending it again, with what it sends when the
+ * sentence names it ("send the Flow again", "send it again").
+ */
+const RESUBMIT = /\bre-?submi(t|ts|tted|tting)\b(?:\s+((?:the|this|that|its|my|our|a)\s+(?:[\w-]+(?:'s)?\s+)?(?:flow|plan|script|fix|change|changes|version|steps?)\b|it|them))?/giu;
+const SEND: Readonly<Record<string, string>> = { t: "send", ts: "sends", tted: "sent", tting: "sending" };
+/** "a resubmission", "the resubmission": a Flow sent again. */
+const RESUBMISSION = /\bre-?submission(s?)\b/giu;
+
 /** "extraction", alone. */
 const EXTRACTION = /\bextraction(s?)\b/giu;
 const SCRAPE: Readonly<Record<string, string>> = { e: "read", es: "reads", ed: "read", ing: "reading" };
@@ -58,7 +83,9 @@ function determined(text: string, offset: number): boolean {
  * is "the check"; a "next call" is the "next step"; and a draft step's number
  * ("Step 8", "steps 3 and 4") is "a step" or "some steps", since the person's
  * Flow numbers its steps its own way. A candidate is "the Flow", and its
- * revision number is left out (t362).
+ * revision number is left out (t362). A control's handle is the control ("the
+ * quantity field", "the current control"), and resubmitting is sending it
+ * again ("send the Flow again"), never the model's words (R4a).
  */
 export function automationStudioActivityPersonWords(text: string): string {
   return text
@@ -71,6 +98,11 @@ export function automationStudioActivityPersonWords(text: string): string {
     })
     .replace(CANDIDATE, (found: string, plural: string, owner: string | undefined, offset: number, whole: string) => cased(found, `${determined(whole, offset) ? "" : "the "}Flow${plural}${owner ?? ""}`))
     .replace(LIST_HANDLE, (found: string) => cased(found, "list"))
+    .replace(CONTROL_HANDLE, (found: string, control: string, plural: string) => `${control}${plural}`)
+    .replace(HANDLE_ID, (found: string) => cased(found, "control"))
+    .replace(HANDLE_NOUN, (found: string, which: string, plural: string) => `${which} control${plural}`)
+    .replace(RESUBMIT, (found: string, ending: string, object: string | undefined) => cased(found, `${SEND[ending.toLowerCase()]!} ${object ?? "it"} again`))
+    .replace(RESUBMISSION, (found: string, plural: string, offset: number, whole: string) => cased(found, determined(whole, offset) ? `Flow sent again` : plural ? "Flows sent again" : "sending it again"))
     .replace(LIST_READER, (found: string, offset: number, whole: string) => cased(found, determined(whole, offset) ? "list reader" : "the list reader"))
     .replace(EXTRACTION, (found: string, plural: string, offset: number, whole: string) => cased(found, determined(whole, offset) ? `list reader${plural}` : plural ? "list reads" : "reading the list"))
     .replace(/\b([Aa])n(\s+list reader)/gu, "$1$2")

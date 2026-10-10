@@ -76,7 +76,7 @@ describe("an action card", () => {
     ];
     const [step] = conversationStepMessages(events);
     const markup = renderToStaticMarkup(<>{step!.actions.map((card) => <ConversationActionCard action={card} key={card.key} live={false} />)}</>);
-    expect(markup).toContain("Didn&#x27;t work: it wasn&#x27;t on the page");
+    expect(markup).toContain("Didn&#x27;t work: FluxIQ couldn&#x27;t find it where it was saved");
     // The icon's own markup (its SVG namespace URL) is lucide's, not Core's words.
     expect(markup.replace(/<svg[\s\S]*?<\/svg>/gu, "")).not.toMatch(/[a-z_]+\.[a-z_]+/iu);
   });

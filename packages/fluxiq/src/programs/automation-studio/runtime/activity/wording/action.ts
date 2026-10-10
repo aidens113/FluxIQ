@@ -114,6 +114,34 @@ function elementName(parameters: unknown): string | undefined {
     ?? automationStudioActivityHumanLabel(identity.visibleText, 60);
 }
 
+/** Roles and input types of a box a person ticks; anything else a "check" sets is an option chosen. */
+const BOX_ROLES = new Set(["checkbox", "switch", "menuitemcheckbox"]);
+/** Roles and input types of one option of several, chosen rather than ticked. */
+const CHOICE_ROLES = new Set(["radio", "option", "menuitemradio", "tab"]);
+/** A choice said as one: "Choosing “Space Grey”", which a card reads back as "Choose". */
+const CHOICE: Phrase = { verb: "select", plain: "Choosing an option", named: (name) => `Choosing ${quoted(name)}` };
+
+/**
+ * True when a step that sets something "checked" acts on an option chosen
+ * from several -- a colour swatch, a size chip, a radio button -- rather than
+ * a box ticked: its element is a radio or an option by role or input type, or
+ * says neither, as a swatch the page draws as a plain element does. A swatch's
+ * step read "Tick · Space Grey" and "Ticking “7-in-1”" (R4a,
+ * `run-mv2nlh9l-52e476da`, moment 04). A box says so by its role or input
+ * type, and a step that carries no element is a box.
+ */
+function chosen(parameters: unknown): boolean {
+  if (!parameters || typeof parameters !== "object" || Array.isArray(parameters)) return false;
+  const element = (parameters as { element?: unknown }).element;
+  if (!element || typeof element !== "object" || Array.isArray(element)) return false;
+  const identity = element as { role?: unknown; inputType?: unknown };
+  const lower = (value: unknown): string => typeof value === "string" ? value.trim().toLowerCase() : "";
+  const role = lower(identity.role);
+  const type = lower(identity.inputType);
+  if (BOX_ROLES.has(role) || BOX_ROLES.has(type)) return false;
+  return CHOICE_ROLES.has(role) || CHOICE_ROLES.has(type) || (role === "" && type === "");
+}
+
 /** The pages `./page-name.ts` names in words of its own, said unquoted. */
 const OWN_PAGE = /^the (?:start|home) page$/u;
 
@@ -159,7 +187,7 @@ export function automationStudioActivityAction(input: { id?: string | undefined;
   const words = (input.id.split(".").at(-1) ?? "").toLowerCase().split(/[-_\s]+/u).filter(Boolean);
   for (const [index, word] of words.entries()) {
     const named = activityActionVerb(word)?.verb;
-    const verb = named ? PHRASES.find((candidate) => candidate.verb === named) : undefined;
+    const verb = named === "check" && chosen(input.parameters) ? CHOICE : named ? PHRASES.find((candidate) => candidate.verb === named) : undefined;
     if (!verb) continue;
     // The domain's own reading of the call first (the control a handle names,
     // the words it types), then the element a resolved node carries.

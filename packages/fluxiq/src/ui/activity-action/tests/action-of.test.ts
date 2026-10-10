@@ -129,7 +129,9 @@ describe("activityActionOf: outcome and why", () => {
     ["started", tool("Clicking on the page", undefined, "started"), "working", null],
     ["succeeded", tool("Clicking on the page", "Result: web.action.succeeded"), "done", null],
     ["failed with no code", tool("Clicking on the page", undefined, "failed"), "failed", null],
-    ["a not_found code", tool("Clicking “Buy”", "Result: web.target.not_found · Node: web.output.dom-click"), "failed", "it wasn't on the page"],
+    ["a not_found code", tool("Clicking “Buy”", "Result: web.target.not_found · Node: web.output.dom-click"), "failed", "FluxIQ couldn't find it where it was saved"],
+    // R4a moment 08: a clear the site undid is said of the box, never as a refusal.
+    ["a clear the site undid", tool("Clearing “Quantity”", "Result: web.action.rejected.output_not_observed · Node: web.output.dom-clear"), "failed", "it ran, but the site set the box back"],
     ["a timeout code", tool("Waiting for the page", "Result: web.wait.timeout · Node: web.output.wait"), "failed", "the page took too long"],
     ["a replay that changed", tool("Clicking “Next”", "Result: core.replay.changed", "succeeded", RUN_NODE, "verifying"), "failed", "it did nothing this time, where it did something before"],
     ["a replay the site remembered (t193)", tool("Clicking “Set as my store”", "Result: core.replay.remembered · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying"), "done", null],
@@ -289,7 +291,7 @@ describe("activityActionOf: what each card says (t193 chat wording)", () => {
     expect(outputsOf(activityActionOf(refused))).toEqual(["click", "Add to cart", "failed", "FluxIQ didn't send it, as the step didn't say which control on the page to use"]);
     // A reason with no words of its own leaves the code to say it.
     const unknown = tool("Clicking “Add to cart”", "Result: web.target.not_found · Reason: vendor_specific_thing · Node: web.output.dom-click");
-    expect(activityActionOf(unknown)?.why).toBe("it wasn't on the page");
+    expect(activityActionOf(unknown)?.why).toBe("FluxIQ couldn't find it where it was saved");
   });
 
   // 00019, 00020: the navigate card read "Open page" with no page named.
@@ -529,6 +531,9 @@ describe("activityActionOf: a card names the act, the row and a Flow sent again 
     expect([chose?.kind, chose?.name, chose?.target]).toEqual(["click", "Choose", "Size"]);
     const ticked = activityActionOf(tool("Ticking “Gift wrap”", "Result: web.check.succeeded · Node: web.output.dom-check"));
     expect([ticked?.kind, ticked?.name, ticked?.target]).toEqual(["click", "Tick", "Gift wrap"]);
+    // R4a moment 04: a colour swatch a "check" node set read "Tick · Space Grey".
+    const swatch = activityActionOf(tool("Choosing “Space Grey”", "Result: web.check.succeeded · Node: web.output.dom-check"));
+    expect([swatch?.kind, swatch?.name, swatch?.target]).toEqual(["click", "Choose", "Space Grey"]);
     const clicked = activityActionOf(tool("Clicking “Add to cart”", "Result: web.click.succeeded · Node: web.output.dom-click"));
     expect([clicked?.kind, clicked?.target]).toEqual(["click", "Add to cart"]);
     expect(clicked).not.toHaveProperty("name");

@@ -77,7 +77,7 @@ describe("FluxIQ's step messages", () => {
       thought(1, "Clicking “Buy”", "It adds the item to the basket."),
       tool(2, "Clicking “Buy”", "failed", "Result: web.target.not_found · Node: web.output.dom-click")
     ]);
-    expect(seen(messages[0]!)).toEqual([{ kind: "click", target: "Buy", outcome: "failed", why: "it wasn't on the page" }]);
+    expect(seen(messages[0]!)).toEqual([{ kind: "click", target: "Buy", outcome: "failed", why: "FluxIQ couldn't find it where it was saved" }]);
   });
 
   it("tells a repair and a check as their own messages, each action a card, the check updated in place when it ends", () => {

@@ -449,8 +449,12 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
   const detail = event.detail;
   if (!detail || detail.kind === "thought") return null;
   const record = activityActionRecordOf(detail.text);
-  const act = actOf(event, detail, record.resultCode, record.node);
-  if (!act) return null;
+  const found = actOf(event, detail, record.resultCode, record.node);
+  if (!found) return null;
+  // A "check" node that set an option chosen from several -- a colour swatch,
+  // a size chip -- is said "Choosing" by the wording, which knows its element:
+  // its card read "Tick · Space Grey" (R4a, `run-mv2nlh9l-52e476da`, moment 04).
+  const act = found.verb === "check" && actOfTitle(detail.title)?.verb === "select" ? { ...found, verb: "select" as const } : found;
   const kind = act.kind;
   // A candidate build's submission sends the whole Flow: one refused as a repeat is that Flow sent again unchanged.
   const submitted = detail.ref === SUBMIT_CANDIDATE;

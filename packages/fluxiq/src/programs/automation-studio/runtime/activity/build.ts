@@ -28,8 +28,10 @@ export async function withAutomationStudioBuildActivity<T>(target: { projectId?:
       // A cancelled build ends in the AbortError its cancellation throws
       // (`../service/flow-bootstrap-commands/cancellation.ts`): that, not a label, is what says it was stopped.
       const stopped = (error as { name?: string } | null)?.name === "AbortError";
-      const title = stopped ? "Build stopped" : ending ? ENDING_TITLES[ending.kind] : "Build failed";
-      emitAutomationStudioActivity({ phase: "failed", label: title, detail: { kind: "step", title, status: "failed", ...(ending ? { text: ending.message } : {}) }, final: true, ...(stopped ? { stopped: true as const } : {}) });
+      const cause = stopped || ending ? undefined : await buildFailureCause(error);
+      const title = stopped ? "Build stopped" : ending ? ENDING_TITLES[ending.kind] : cause ? `Build failed: ${cause}` : "Build failed";
+      const text = ending ? ending.message : cause ? `${cause.charAt(0).toUpperCase()}${cause.slice(1)}.` : undefined;
+      emitAutomationStudioActivity({ phase: "failed", label: title, detail: { kind: "step", title, status: "failed", ...(text ? { text } : {}) }, final: true, ...(stopped ? { stopped: true as const } : {}) });
       throw error;
     }
   });
@@ -62,6 +64,33 @@ const ENDING_TITLES = Object.freeze({
   replies_unreadable: "Build stopped: the replies it got back could not be read",
   provider_unavailable: "Build stopped: the AI model provider is not responding"
 });
+
+/** How the chat's ending opens a build's failure, which the overlay's line leaves out under its "Build failed". */
+const CHAT_OPENING = /^the build failed: /u;
+
+/**
+ * Why a build with no ending of its own failed, in the words the chat's ending
+ * says it (`../conversations/commands/progress.ts`): R4a's overlay read a bare
+ * "Build failed" while the chat said "The build failed: it kept trying without
+ * getting any further, so it was stopped" (`run-mv2nlh9l-52e476da`, moment 10).
+ * The failure is read as the build's API answers it -- its diagnostic, and the
+ * error's message, which carries only the code -- so both say the same.
+ * Nothing for a throw that is not a build's own.
+ *
+ * Loaded when a build fails, never at start: the conversation and the build's
+ * failure sit above this module, which everything that reports activity
+ * imports, and a dynamic import is no edge of the module graph.
+ */
+async function buildFailureCause(error: unknown): Promise<string | undefined> {
+  const [{ parseAutomationStudioFlowBootstrapGenerationError }, { automationStudioConversationCallCause }] = await Promise.all([
+    import("../flow-bootstrap/generation-failure/index.ts"),
+    import("../conversations/commands/index.ts")
+  ]);
+  const diagnostic = parseAutomationStudioFlowBootstrapGenerationError(error);
+  if (!diagnostic) return undefined;
+  const said = automationStudioConversationCallCause("the build", { ok: false, error: (error as Error).message, payload: { diagnostic } });
+  return CHAT_OPENING.test(said) ? said.replace(CHAT_OPENING, "") : undefined;
+}
 
 /**
  * The ending a failed build carries for the person, read by shape: this module
