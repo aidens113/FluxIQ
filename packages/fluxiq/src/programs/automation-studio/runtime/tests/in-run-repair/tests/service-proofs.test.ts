@@ -31,7 +31,7 @@ import { IoRegistry } from "../../../../../../io/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../../model/index.ts";
 import { AUTOMATION_STUDIO_IMPORTER_SDK_VERSION, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { AutomationStudioHostRuntimeBoundary } from "../../../host-runtime.ts";
-import type { AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioRuntimePatch } from "../../../llm/index.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioLlmProvider, AutomationStudioLlmTaskRequest, AutomationStudioRuntimePatch } from "../../../llm/index.ts";
 import { AutomationStudioNativeNodeRuntime } from "../../../native-node-runtime.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
@@ -56,7 +56,7 @@ const STEP: AutomationStudioNodeDefinition = {
     { id: "failed", label: "Failed", valueType: "any" },
     { id: "pressed", label: "Pressed", valueType: "string" }
   ],
-  parameters: [{ id: "control", label: "Control", valueType: "string" }]
+  parameters: [{ id: "control", label: "Control", valueType: "string" }, { id: "element", label: "Element", valueType: "any" }]
 };
 
 /** The judge checks every run: a repaired one because it repaired itself, a clean one from the first. */
@@ -80,6 +80,8 @@ type World = {
   storedAtJudgement: unknown[];
   /** What the stored `broken` node presses now, once the Flow is made. */
   readStoredBroken?: () => Promise<unknown>;
+  /** Everything the stored `broken` node holds now. */
+  readStoredBrokenNode?: () => Promise<unknown>;
 };
 
 let tempRoot: string;
@@ -96,7 +98,7 @@ afterEach(async () => {
 });
 
 /** A service whose repair model answers `fix`, whose judge answers yes, and whose host behaves as `controls` say. */
-function world(controls: Record<string, Control>, fix?: AutomationStudioRuntimePatch): World {
+function world(controls: Record<string, Control>, fix?: AutomationStudioRuntimePatch, evidence?: AutomationStudioLlmEvidenceRuntimeBinding): World {
   const requests: AutomationStudioLlmTaskRequest[] = [];
   const presses: string[] = [];
   const storedAtJudgement: unknown[] = [];
@@ -145,6 +147,7 @@ function world(controls: Record<string, Control>, fix?: AutomationStudioRuntimeP
     llmProviderResolver: () => repairModel,
     resultCheckProviderResolver: (request) => ({ provider: judge, maxEstimatedCostUsd: request.maxEstimatedCostUsd })
   }).bindIoRuntime(new IoRegistry(), "example").bindNativeNodeRuntime(native);
+  if (evidence) service.bindLlmEvidenceRuntime(evidence);
   services.add(service);
   state.service = service;
   return state;
@@ -173,6 +176,7 @@ async function flow(found: World, nodes: AutomationStudioFlowNode[], edges: Auto
   await service.saveFlow({ projectId: project.id, flow: { ...blank, nodes, edges } });
   await service.setFlowMapFallback({ projectId: project.id, flowId: created.flowId, kind: "subflow", targetSubflowId: subflow.subflowId });
   found.readStoredBroken = async () => (await service.getFlow(project.id, graphFlowId)).nodes.find((node) => node.id === "broken")?.parameterValues?.control;
+  found.readStoredBrokenNode = async () => (await service.getFlow(project.id, graphFlowId)).nodes.find((node) => node.id === "broken")?.parameterValues;
   return { projectId: project.id, flowId: created.flowId, graphFlowId };
 }
 
@@ -352,5 +356,73 @@ describe("the detached path, after the run", () => {
     expect(detail?.metadata?.runtimePatchAttempts ?? []).toEqual([]);
     expect(detail?.metadata).not.toHaveProperty("adaptiveRetry");
     expect(await found.readStoredBroken?.()).toBe("placed");
+  });
+});
+
+// The fix's step names its control by the handle the failure packet printed,
+// as every step the model writes does (t429). What the Flow keeps after the
+// judged end is what the domain resolved that handle to -- its control and
+// the full identity it is found by again -- never the handle, which means
+// nothing on a later page. A handle the packet never gave refuses the fix.
+describe("in-run repair through the service: a fix that names its control by handle", () => {
+  /** The page at the failing step, and a domain that resolves `control` handles from it alone. */
+  function handleDomain(asked: Array<{ parameters: JsonObject; handleEvidence?: JsonObject | undefined }>): AutomationStudioLlmEvidenceRuntimeBinding {
+    const page: JsonObject = { schemaVersion: "example.page.v1", page: "t7 button Fixed" };
+    const controls: Record<string, JsonObject> = { t7: { tagName: "button", accessibleName: "Fixed", testId: "fixed" } };
+    return {
+      domainId: "example",
+      deniedEvidenceKeys: [],
+      tools: [],
+      executeTool: async () => { throw new Error("No tool runs while the run is held."); },
+      captureSanitizedFailureEvidence: async () => page,
+      resolvePlanNodeParameters: ({ parameters, handleEvidence }) => {
+        asked.push({ parameters: structuredClone(parameters), ...(handleEvidence ? { handleEvidence } : {}) });
+        const written = parameters.control as JsonObject | undefined;
+        if (typeof written?.handle !== "string") return { status: "unchanged" };
+        const identity = handleEvidence?.page === page.page ? controls[written.handle] : undefined;
+        if (!identity) return { status: "refused", issueCodes: ["example.handle.unknown"] };
+        return { status: "resolved", parameters: { control: String(identity.accessibleName).toLowerCase(), element: identity } };
+      }
+    };
+  }
+
+  const replaceByHandle = (handle: string): AutomationStudioRuntimePatch => ({
+    kind: "replace_unit", unit: { kind: "node", nodeId: "broken" }, steps: [{ definitionId: STEP.id, parameters: { control: { handle } } }], consequences: [], reason: "Press the control the page shows where the broken one stood."
+  });
+
+  it("saves the control the handle named, with its full identity, and only after the judged end", async () => {
+    const asked: Array<{ parameters: JsonObject; handleEvidence?: JsonObject | undefined }> = [];
+    const found = world({ broken: { times: "always", retryable: false } }, replaceByHandle("t7"), handleDomain(asked));
+    const { nodes, edges } = line();
+    const ids = await flow(found, nodes, edges);
+    const { session, detail } = await run(found, ids);
+
+    expect(session.status).toBe("succeeded");
+    // The domain was asked about the step with the packet the model was shown.
+    expect(asked).toEqual([{ parameters: { control: { handle: "t7" } }, handleEvidence: expect.objectContaining({ page: "t7 button Fixed" }) }]);
+    // The trial pressed what the handle named, and the run carried on.
+    expect(found.presses).toEqual(["open", "broken", "fixed", "finish"]);
+    expect(found.storedAtJudgement).toEqual(["broken"]);
+    const stored = await found.readStoredBrokenNode?.();
+    expect(stored).toEqual({ control: "fixed", element: { tagName: "button", accessibleName: "Fixed", testId: "fixed" } });
+    expect(JSON.stringify(stored)).not.toMatch(/"handles?":/u);
+    const receipt = (detail?.metadata?.inRunRepairs as JsonObject[] | undefined)?.[0];
+    const adaptation = await found.service.getFlowAdaptation(ids.projectId, ids.flowId, String(receipt?.adaptationId));
+    expect(adaptation?.status).toBe("applied");
+    expect(JSON.stringify(adaptation?.patch)).not.toMatch(/"handles?":/u);
+  });
+
+  it("refuses a fix naming a handle the packet never gave: nothing runs it and nothing is saved", async () => {
+    const found = world({ broken: { times: "always", retryable: false } }, replaceByHandle("t99"), handleDomain([]));
+    const { nodes, edges } = line();
+    const ids = await flow(found, nodes, edges);
+    const { session, detail } = await run(found, ids);
+
+    expect(session.status).toBe("failed");
+    expect(found.presses).toEqual(["open", "broken"]);
+    expect(await found.readStoredBrokenNode?.()).toEqual({ control: "broken" });
+    const receipt = (detail?.metadata?.inRunRepairs as JsonObject[] | undefined)?.[0];
+    expect(receipt).toMatchObject({ outcome: "none", code: "step_unresolved", issueCodes: ["example.handle.unknown"] });
+    expect(String(receipt?.reason)).not.toMatch(/selector|fingerprint|address|score/iu);
   });
 });

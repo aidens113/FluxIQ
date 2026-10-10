@@ -1,4 +1,5 @@
 // Asking a client what became of a command whose answer never came (C8, B3).
+export * from "./allowance.ts";
 export * from "./answer-reading.ts";
 export * from "./reconciled-result.ts";
 export * from "./reconciler.ts";

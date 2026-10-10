@@ -53,7 +53,7 @@ export class ClientGatewayCommands {
     this.sessions = collaborators.sessions;
     this.transport = collaborators.transport;
     this.audit = collaborators.audit;
-    this.durable = new ClientGatewayDurableDispatch({ ...collaborators, ...(collaborators.resolveCommandLedger ? { resolve: collaborators.resolveCommandLedger } : {}) });
+    this.durable = new ClientGatewayDurableDispatch({ ...collaborators, ...(collaborators.resolveCommandLedger ? { resolve: collaborators.resolveCommandLedger } : {}), reconcile: (commandId) => this.reconcileDurable(commandId) });
     this.history = new ClientGatewayCommandHistory(collaborators.config.now);
     this.reconciler = new ClientGatewayCommandReconciler({ sessions: this.sessions, transport: this.transport, audit: this.audit, answerMs: collaborators.config.reconcileAnswerMs });
     this.commandOwner = collaborators.commandOwner;
@@ -173,6 +173,13 @@ export class ClientGatewayCommands {
     this.history.closed(commandId, result.status === "timed_out" ? "timed_out" : "settled");
     if (answer) this.audit.record("command.reconciled", "A command whose answer never came was settled from what its client said became of it.", { sessionId: pending.sessionId, commandId, state: answer.state, status: result.status });
     pending.resolve(result);
+  }
+
+  /** A durable command's answer never came: its client is asked, as for any command, before its ledger entry is called unknown (`./command-ledger/dispatch.ts`). */
+  private async reconcileDurable(commandId: string): Promise<ClientGatewayReconcileAnswer | undefined> {
+    const answer = await this.reconcileAction(commandId);
+    if (answer) this.audit.record("command.reconciled", "A durable command whose answer never came was asked about by command id before its outcome was decided.", { commandId, state: answer.state, durable: true });
+    return answer;
   }
 
   private executeDurable(sessionId: string, command: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): ClientGatewayDurableActionResponse {

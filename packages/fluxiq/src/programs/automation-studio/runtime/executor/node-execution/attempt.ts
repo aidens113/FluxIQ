@@ -1,7 +1,7 @@
 import type { AutomationStudioRunDatasetSummary } from "@fluxiq/contracts/automation-studio";
 import { randomUUID } from "node:crypto";
 import { ClientGatewayCommandLedgerController as Rules, type ClientGatewayCommandContext } from "../../../../../client-gateway/service/command-ledger/index.ts";
-import type { AutomationStudioExecutorCommandRun, AutomationStudioExecutorNodeEntry } from "../command-scope/index.ts";
+import { AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN, type AutomationStudioExecutorCommandRun, type AutomationStudioExecutorNodeEntry } from "../command-scope/index.ts";
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationNodeExecutionContext, AutomationNodeExecutionResult, AutomationNodeExpectationEvaluator, AutomationNodePort } from "../../../nodes/index.ts";
@@ -268,6 +268,13 @@ export class AutomationStudioNodeAttemptExecution {
         // off the dispatch payload before records are captured from it.
         target.cleared?.push(...automationStudioClearedLayersOf(answer.outputs?.result));
         dispatched = await this.withCapturedRecords(effect, answer, options, target);
+        // A required command that answered without a committed receipt left its
+        // outcome unknown and latched the run: nothing is consumed, the attempt
+        // fails with that fact, and the step loop stops there (`../step-loop/uncertain-stop.ts`).
+        if (issued && !options.commandRun!.receipted(issued.context)) {
+          result = this.outcomeUnknownResult(result, dispatched);
+          break;
+        }
         if (issued && (dispatched.failure?.code === "record_output.persist_failed" || dispatched.status !== "success" && dispatched.status !== "failed")) throw new Error("executor.required_result_unhandled");
       }
       const outputs = { ...(result.outputs ?? {}), ...(dispatched.outputs ?? {}) };
@@ -297,6 +304,19 @@ export class AutomationStudioNodeAttemptExecution {
       if (dispatched.status === "failed") break;
     }
     return result;
+  }
+
+  /** A required attempt whose command's outcome stayed unknown: failed with Core's record, keeping what the dispatcher said and saw. */
+  private static outcomeUnknownResult(result: AutomationNodeExecutionResult, dispatched: AutomationNodeExecutionResult): AutomationNodeExecutionResult {
+    return {
+      ...result,
+      outputs: { ...(result.outputs ?? {}), ...(dispatched.outputs ?? {}) },
+      status: "failed",
+      route: "failed",
+      ...(dispatched.targetResolution ? { targetResolution: dispatched.targetResolution } : {}),
+      message: dispatched.message ?? "The command's answer never came, and its outcome is unknown.",
+      failure: { ...AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN }
+    };
   }
 
   /** The ids of the branch outputs a node's definition declares: the only routes a dispatch may answer for it. */
