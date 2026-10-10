@@ -8,6 +8,8 @@ import { FlowOutline } from "./FlowOutline";
 import { FlowGraphStatus } from "./FlowGraphStatus";
 import { FlowGraphToolbar } from "./FlowGraphToolbar";
 import { FlowEditorActionsProvider } from "./FlowEditorActionsContext";
+import { FlowHandlerArea } from "./FlowHandlerArea";
+import { FlowHandlerViewProvider } from "./FlowHandlerViewContext";
 import {
   FlowReconnectPerformanceGuard,
   type FlowReconnectPerformanceGuardHandle
@@ -72,6 +74,8 @@ export function FlowGraphCanvas({ controller, props }: { controller: FlowEditorC
     handleFlowSelectionChange,
     flowDragSelectBoxRef,
     selectFlowOutlineNode,
+    flowHandlerView,
+    focusFlowNodeById,
     palette,
     addFlowNode,
     setPaletteCollapsed
@@ -99,6 +103,7 @@ export function FlowGraphCanvas({ controller, props }: { controller: FlowEditorC
         <div aria-label="Nodes whiteboard" className="automation-react-flow-frame" onContextMenu={suppressFlowPaneContextMenu} onKeyDown={handleFlowCanvasKeyDown} onPointerCancelCapture={cancelFlowDragSelect} onPointerDownCapture={startFlowDragSelect} onPointerMoveCapture={moveFlowDragSelect} onPointerUpCapture={settleFlowDragSelect} ref={flowFrameRef} tabIndex={0}>
           <FlowGraphToolbar controller={controller} outlineId={outlineId} paletteId={paletteId} />
           <FlowEditorActionsProvider actions={{ deleteNode: deleteFlowNode, deleteEdge: deleteFlowEdge, selectEdge: selectFlowEdge, openNodeState: props.onOpenNodeState }}>
+          <FlowHandlerViewProvider view={flowHandlerView} openNode={focusFlowNodeById}>
           <ReactFlow<Node<AutomationFlowNodeData>, Edge>
             fitView
             fitViewOptions={automationGraphFitViewOptions}
@@ -145,7 +150,9 @@ export function FlowGraphCanvas({ controller, props }: { controller: FlowEditorC
             <Background gap={24} size={1} />
             {showMiniMap ? <MiniMap nodeColor={automationGraphMiniMapNodeColor} pannable zoomable /> : null}
             <FlowReconnectPerformanceGuard ref={reconnectPerformanceGuardRef} />
+            <FlowHandlerArea nodes={validatedFlowNodes} />
           </ReactFlow>
+          </FlowHandlerViewProvider>
           </FlowEditorActionsProvider>
           <div className="automation-node-marquee" hidden ref={flowDragSelectBoxRef} />
           {flowOutlineOpen ? <FlowOutline id={outlineId} nodes={flowNodes} selectedNodeId={selectedFlowNodeId} onClose={() => setFlowOutlineOpen(false)} onSelect={selectFlowOutlineNode} /> : null}

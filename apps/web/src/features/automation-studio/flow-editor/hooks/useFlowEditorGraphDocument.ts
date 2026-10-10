@@ -7,7 +7,7 @@ import { rebalanceAutomationEdgeLanes } from "../../graph/edge-routing";
 import { syncGraphNodes } from "../../graph/interaction-geometry";
 import { useAutomationGraphController } from "../../graph/useAutomationGraphController";
 import { scheduleAutomationGraphIdleTask, type AutomationGraphIdleTaskCancel } from "../../graph/worker-tasks";
-import { withAutomationFlowNodeDimensions, type AutomationFlowNodeData } from "../node-types";
+import { AUTOMATION_HANDLER_NODE_TYPE, withAutomationFlowNodeDimensions, type AutomationFlowNodeData } from "../node-types";
 import type { FlowEditorProps } from "../flow-editor-types";
 import {
   automationNativeNodeDefinitionSignature,
@@ -17,6 +17,7 @@ import {
 } from "../graph-signatures";
 import { automationFlowGraphProblems, type AutomationGraphProblem } from "../graph-validation";
 import { legacyPolicyToFlowGraph, taskFlowToEditorGraph } from "../model/flow-graph";
+import { flowHandlerCanvasView, handlerGraphFromEditor, separateFlowHandlerArea, type FlowHandlerCanvasView } from "../../graph/handlers";
 
 type SaveState = "saved" | "unsaved" | "saving" | "failed" | "conflict";
 type GraphDraft = { nodes: Array<Node<AutomationFlowNodeData>>; edges: Edge[] };
@@ -58,7 +59,7 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
   const graph = useMemo(
     () => props.taskGraphDraft
       ?? (props.taskGraph
-        ? taskFlowToEditorGraph(props.taskGraph, "", props.nativeNodeDefinitions)
+        ? withHandlersApart(taskFlowToEditorGraph(props.taskGraph, "", props.nativeNodeDefinitions))
         : legacyPolicyToFlowGraph(props.policy, "")),
     [sourceRevision]
   );
@@ -227,26 +228,45 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
       .map((problem) => problem.targetId)),
     [flowGraphProblems]
   );
+  // The handler views (Handlers area, hook ports, entry and checkpoint
+  // markers) read the graph's nodes' data and its routes, never positions, so
+  // a drag that only moves nodes reuses the view it had.
+  const handlerViewCacheRef = useRef<{ nodes: Array<Node<AutomationFlowNodeData>>; edges: Edge[]; view: FlowHandlerCanvasView } | null>(null);
+  const flowHandlerView = useMemo(() => {
+    const cached = handlerViewCacheRef.current;
+    if (cached && cached.edges === flowEdges && sameNodeData(cached.nodes, flowNodes)) return cached.view;
+    const view = flowHandlerCanvasView(handlerGraphFromEditor(flowNodes, flowEdges, { graphId: String(props.taskGraph?.flowId ?? "") }));
+    handlerViewCacheRef.current = { nodes: flowNodes, edges: flowEdges, view };
+    return view;
+  }, [flowNodes, flowEdges, props.taskGraph?.flowId]);
   const validatedFlowNodes = useMemo(
     () => flowNodes.map((sourceNode) => {
       const node = withAutomationFlowNodeDimensions(sourceNode);
-      return invalidFlowNodeIds.has(node.id)
-      ? {
+      const classNames = [
+        node.className,
+        invalidFlowNodeIds.has(node.id) ? "automation-validation-invalid" : "",
+        flowHandlerView.areaNodeIds.has(node.id) && !flowHandlerView.registrationNodeIds.has(node.id) ? "automation-handler-step" : ""
+      ].filter(Boolean);
+      const registration = flowHandlerView.registrationNodeIds.has(node.id);
+      if (classNames.length === (node.className ? 1 : 0) && !registration) return node;
+      return {
         ...node,
-        className: [node.className, "automation-validation-invalid"].filter(Boolean).join(" ")
-      }
-      : node;
+        ...(registration ? { type: AUTOMATION_HANDLER_NODE_TYPE } : {}),
+        ...(classNames.length ? { className: classNames.join(" ") } : {})
+      };
     }),
-    [flowNodes, invalidFlowNodeIds]
+    [flowNodes, invalidFlowNodeIds, flowHandlerView]
   );
   const validatedFlowEdges = useMemo(
-    () => flowEdges.map((edge) => invalidFlowEdgeIds.has(edge.id)
-      ? {
-        ...edge,
-        className: [edge.className, "automation-validation-invalid"].filter(Boolean).join(" ")
-      }
-      : edge),
-    [flowEdges, invalidFlowEdgeIds]
+    () => flowEdges.map((edge) => {
+      const classNames = [
+        edge.className,
+        invalidFlowEdgeIds.has(edge.id) ? "automation-validation-invalid" : "",
+        flowHandlerView.areaNodeIds.has(edge.source) ? "automation-handler-route" : ""
+      ].filter(Boolean);
+      return classNames.length === (edge.className ? 1 : 0) ? edge : { ...edge, className: classNames.join(" ") };
+    }),
+    [flowEdges, invalidFlowEdgeIds, flowHandlerView]
   );
 
   const saveFlowGraph = useCallback(async (authorizationPin?: string) => {
@@ -303,9 +323,26 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
     reconcileFlowGraphDirty,
     validatedFlowNodes,
     validatedFlowEdges,
+    flowHandlerView,
     codeOwned,
     isFlowMode
   };
+}
+
+/** A loaded graph with its Handlers moved apart from the main path when they overlap it (`../../graph/handlers/area-layout.ts`). */
+function withHandlersApart(graph: GraphDraft): GraphDraft {
+  const view = flowHandlerCanvasView(handlerGraphFromEditor(graph.nodes, graph.edges));
+  if (!view.bodies.size) return graph;
+  const nodes = separateFlowHandlerArea(graph.nodes, view.bodies);
+  return nodes === graph.nodes ? graph : { nodes, edges: graph.edges };
+}
+
+function sameNodeData(left: ReadonlyArray<Node<AutomationFlowNodeData>>, right: ReadonlyArray<Node<AutomationFlowNodeData>>): boolean {
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index]!.id !== right[index]!.id || left[index]!.data !== right[index]!.data) return false;
+  }
+  return true;
 }
 
 export type FlowEditorGraphDocument = ReturnType<typeof useFlowEditorGraphDocument>;

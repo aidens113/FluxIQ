@@ -2,6 +2,8 @@ import type { AutomationSelection } from "../shared/selection-contracts";
 import { buildRecordingEventInspectorSections } from "../recordings";
 import { callFlowInspectorRows, flowSourcePath, inspectorPortSummary, listRows, nodeConditionSections, adaptationChangeArray, adaptationChangeEvidenceRows, adaptationChangeRows } from "./panel-helpers";
 import type { InspectorPanelBuilder, InspectorPanelContext, InspectorPanelModel, InspectorPanelRegistry, InspectorRow, InspectorSectionModel } from "./types";
+import { inspectorEffectiveHandlers } from "./effective-handlers";
+import { EffectiveHandlersSection } from "./EffectiveHandlersSection";
 
 const registry: InspectorPanelRegistry = {
   workspace: (context) => ({
@@ -34,7 +36,8 @@ const registry: InspectorPanelRegistry = {
     if (evidence.length) sections.push({ title: "Evidence", rows: evidence });
     if (metadata["fluxiq.callFlow"]) sections.push({ title: "Pinned Call Flow", rows: callFlowInspectorRows(metadata["fluxiq.callFlow"]) });
     sections.push({ title: "Ports", rows: [["Inputs", inspectorPortSummary(context.node.inputs)], ["Outputs", inspectorPortSummary(context.node.outputs)], ["Privileged", context.node.privileged ? "Yes" : "No"], ["Actions", (context.node.actionTypes ?? []).join(", ") || "-"]] });
-    return { sections };
+    const handlers = inspectorEffectiveHandlers(context.flow, context.selection.id, context.handlerScopes);
+    return { sections, ...(handlers ? { customContent: <EffectiveHandlersSection model={handlers} /> } : {}) };
   },
   "editor-mode": (context) => {
     if (context.selection.kind !== "editor-mode") return { sections: [] };

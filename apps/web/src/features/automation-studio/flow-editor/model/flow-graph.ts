@@ -5,6 +5,7 @@ import { automationEditorPalette } from "../node-palette";
 import type { AutomationEditorNodeSpec, AutomationFlowNodeData } from "../node-types";
 import { chooseAutomationEdgeLane } from "../../graph/edge-routing";
 import { automationVisualInputPorts } from "../../graph/node-parameters";
+import { flowDefaultStartNodeId, flowHandlerBodies, handlerGraphFromSavedFlow } from "../../graph/handlers";
 import {
   automationPortColor,
   automationPortDisplayLabel,
@@ -96,6 +97,7 @@ export function taskFlowToEditorGraph(flow: any, selectedNodeId = "", nodeDefini
     flowNodes.map((node: any) => ({ id: node.id, metadata: { position: node.position } })),
     flowEdges.map((edge: any) => ({ fromNodeId: edge.sourceNodeId, toNodeId: edge.targetNodeId }))
   );
+  const startNodeId = handlerAwareStartNodeId(flow);
   const nodes: Node<AutomationFlowNodeData>[] = flowNodes.map((node: any, index: number) => {
     const definition = automationNodeSpecForDefinition(node.definitionId, nodeDefinitions);
     const parameterValues = node.parameterValues && typeof node.parameterValues === "object" ? node.parameterValues : {};
@@ -125,7 +127,7 @@ export function taskFlowToEditorGraph(flow: any, selectedNodeId = "", nodeDefini
         parameters: definition?.parameters ?? [],
         parameterValues,
         metadata: node.metadata ?? {},
-        isStart: node.definitionId === "builtin.control.start" || index === 0,
+        isStart: node.definitionId === "builtin.control.start" || (startNodeId === undefined ? index === 0 : node.id === startNodeId),
         timeoutMs: typeof parameterValues.timeout?.timeoutMs === "number" ? parameterValues.timeout.timeoutMs : undefined
       }
     };
@@ -137,11 +139,12 @@ export function taskFlowToEditorGraph(flow: any, selectedNodeId = "", nodeDefini
     const target = String(edge.targetNodeId ?? edge.target ?? "");
     const count = outgoingCounts.get(source) ?? 0;
     outgoingCounts.set(source, count + 1);
-    const sourcePorts = nodes.find((node) => node.id === source)?.data.outputs ?? [];
+    const sourceNode = nodes.find((node) => node.id === source);
+    const sourcePorts = sourceNode?.data.outputs ?? [];
     const targetPorts = nodes.find((node) => node.id === target)?.data.inputs ?? [];
     const sourcePort = flowEdgeSourcePort(edge, sourcePorts, count);
     const targetPort = flowEdgeTargetPort(edge, targetPorts);
-    const label = sourcePort ? automationPortDisplayLabel(sourcePort) : String(edge.label ?? edge.metadata?.label ?? "Next");
+    const label = sourcePort ? automationPortDisplayLabel(sourcePort, sourceNode?.data.nodeDefinitionId) : String(edge.label ?? edge.metadata?.label ?? "Next");
     const color = automationPortColor(automationPortTone(sourcePort ?? { id: edge.sourcePortId ?? "next", label, valueType: "any", role: flowOutputRole(edge.sourcePortId ?? "next", label) }, "source"));
     edges.push({
       id: edge.id ?? `${source}-${target}-${index}`,
@@ -157,6 +160,26 @@ export function taskFlowToEditorGraph(flow: any, selectedNodeId = "", nodeDefini
     });
   }
   return { nodes, edges };
+}
+
+/**
+ * Where a graph that holds Handlers begins, by Core's start rule with the
+ * Handlers and their bodies left out (they are entered without a route, so
+ * they are roots that are never the start): `null` when that rule names no
+ * node, and `undefined` for a graph with no Handler, which keeps the editor's
+ * first-node fallback.
+ */
+function handlerAwareStartNodeId(flow: any): string | null | undefined {
+  const graph = handlerGraphFromSavedFlow(flow);
+  if (!graph) return undefined;
+  const bodies = flowHandlerBodies(graph);
+  if (!bodies.size) return undefined;
+  const excluded = new Set<string>();
+  for (const [handlerId, body] of bodies) {
+    excluded.add(handlerId);
+    for (const step of body.steps) excluded.add(step);
+  }
+  return flowDefaultStartNodeId(graph, excluded) ?? null;
 }
 
 function automationNodeSpecForDefinition(definitionId: string | undefined, nodeDefinitions: any[] = []): AutomationEditorNodeSpec | undefined {
