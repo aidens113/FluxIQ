@@ -41,6 +41,15 @@
 // candidate's targets were learned. Without it nothing is sent and nothing
 // beside `status` and `parameters` is accepted, exactly as before.
 //
+// **A repair's steps are resolved here too (t429).** The steps an in-run
+// repair writes -- a handler's body, a unit's replacement, steps inserted
+// before a node -- name controls by handle as a build's do, and are saved to
+// the Flow after the judged run, so they are put to the domain the same way
+// (`../../recovery/annotation/step-evidence-resolution.ts`). Their handles were
+// issued in the packets the repair's model was shown, not in a build's views,
+// so the caller names that one packet (`handleEvidence`) and the domain
+// resolves from it alone.
+//
 // **A page fact's target is resolved here too (t392).** A handler's `when`, an
 // entry's, a checkpoint's and a success check name a control by handle, as a
 // step's target does (`./plan-fact-targets.ts`). Each is put to the domain
@@ -123,6 +132,12 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
   inheritedNodeRefs?: ReadonlySet<string> | undefined;
   /** `view_history` for a candidate submission alone (header); absent, the domain resolves against the page as exploration last saw it. */
   handleReach?: AutomationStudioPlanHandleReach | undefined;
+  /**
+   * The one packet every handle of this plan was issued in, for the steps a
+   * repair wrote (header, t429). Handed to the domain with every node and
+   * every fact; absent for a build, whose handles resolve as they always have.
+   */
+  handleEvidence?: JsonObject | undefined;
 }): Promise<AutomationStudioFlowBootstrapPlanParameterResolution> {
   const plan = structuredClone(input.plan);
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
@@ -198,7 +213,7 @@ type NodeOutcome =
 
 async function resolveNode(
   node: AutomationStudioFlowBootstrapNode,
-  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean; handleReach?: AutomationStudioPlanHandleReach | undefined },
+  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean; handleReach?: AutomationStudioPlanHandleReach | undefined; handleEvidence?: JsonObject | undefined },
   permission: AutomationStudioActionPermissionCheck,
   inherited: boolean
 ): Promise<NodeOutcome> {
@@ -235,7 +250,9 @@ async function resolveNode(
       parameters: structuredClone(parameters),
       permission,
       ...(step.declared ? { declaredConsequences: [...step.declared] } : {}),
-      ...(input.handleReach ? { handleReach: input.handleReach } : {})
+      ...(input.handleReach ? { handleReach: input.handleReach } : {}),
+      // The packet as the caller holds it; the domain reads it and keeps nothing of this copy.
+      ...(input.handleEvidence ? { handleEvidence: structuredClone(input.handleEvidence) } : {})
     });
   } catch {
     return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.failed);

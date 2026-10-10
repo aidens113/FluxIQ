@@ -8,4 +8,5 @@ export * from "./permissions.ts";
 export * from "./ports.ts";
 export * from "./replan.ts";
 export * from "./run-budget.ts";
+export * from "./step-evidence-resolution.ts";
 export * from "./target-evidence-check.ts";

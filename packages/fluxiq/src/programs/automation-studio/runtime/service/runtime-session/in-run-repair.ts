@@ -36,7 +36,7 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../model/index.ts";
-import { automationStudioConsequencesInOrder, type AutomationStudioActionConsequence, type AutomationStudioActionPermissionGate } from "../../action-permissions/index.ts";
+import { automationStudioActionPermissionDenied, automationStudioConsequencesInOrder, type AutomationStudioActionConsequence, type AutomationStudioActionPermissionGate } from "../../action-permissions/index.ts";
 import { emitAutomationStudioActivityThought } from "../../activity/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
 import type { AutomationStudioIncidentRepair, AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../executor/lifecycle-run/index.ts";
@@ -45,6 +45,7 @@ import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, Au
 import {
   annotateAutomationStudioRunDetailWithRuntimeLlm,
   automationStudioInRunRepairSlot,
+  automationStudioRecoveryStepResolution,
   automationStudioRecoveryTargetEvidenceCheck,
   automationStudioRepairUnitContract,
   type AutomationStudioInRunRecovery,
@@ -95,8 +96,8 @@ function repairsInRun(context: AutomationStudioRuntimeAdaptationContext, llmExec
   return context.behavior.invokeLlm && context.behavior.createAdaptations && context.settings.metadata?.dryRunAdaptation !== true;
 }
 
-/** Why an in-run repair ended with no fix: the recovery's own gate code, or the applier's. */
-type Refusal = { code: string; reason: string };
+/** Why an in-run repair ended with no fix: the recovery's own gate code, or the applier's, and the domain's codes when a step was refused. */
+type Refusal = { code: string; reason: string; issueCodes?: string[] };
 
 type Applied = {
   graph: AutomationStudioFlowDocument;
@@ -120,7 +121,7 @@ async function repairIncident(
   const at = { nodeId: request.failedAttempt.nodeId, framePath: request.framePath };
   const base = { repairId, incidentId: request.incident.incidentId, nodeId: at.nodeId, framePath: [...at.framePath], unit: request.unit as unknown as JsonObject };
   const refuse = (refusal: Refusal): AutomationStudioIncidentRepair => {
-    ledger.record(compactJsonObject({ ...base, outcome: "none", code: refusal.code, reason: refusal.reason, ...spent(purse, input.runId) }));
+    ledger.record(compactJsonObject({ ...base, outcome: "none", code: refusal.code, reason: refusal.reason, ...(refusal.issueCodes?.length ? { issueCodes: [...refusal.issueCodes] } : {}), ...spent(purse, input.runId) }));
     return { kind: "none", reason: refusal.reason };
   };
   if (!ledger.ask(request.incident.incidentId, at)) return { kind: "none", reason: "This incident was already asked about once in this run." };
@@ -239,6 +240,15 @@ async function applyPatches(
   const prepared: Applied["prepared"] = [];
   const startedAt = input.now?.() ?? Date.now();
   const targetCheck = automationStudioRecoveryTargetEvidenceCheck({ ports: input.ports, failureEvidence: answer.failureEvidence, explorationEvidence: answer.explorationEvidence });
+  // Each step and fact the fix writes, put to the domain as a build's are, from the packet its handles came from (t429).
+  const resolveSteps = automationStudioRecoveryStepResolution({
+    ports: input.ports,
+    projectId: input.context.projectId,
+    flowId: input.context.flowId,
+    failureEvidence: answer.failureEvidence,
+    explorationEvidence: answer.explorationEvidence,
+    permissionFor: (definitionId) => answer.permissionGate?.checkFor({ kind: "flow_step", id: definitionId, ref: request.failedAttempt.nodeId }) ?? automationStudioActionPermissionDenied
+  });
   for (const [index, patch] of answer.patches.entries()) {
     if (!answer.allowedPatchKinds.includes(patch.kind)) return { code: "patch_refused", reason: `The fix used ${describeKind(patch.kind)}, which is not allowed for this failure.` };
     // C12: the incident's unit only, read off the patch before anyone is asked about it.
@@ -249,13 +259,16 @@ async function applyPatches(
     const subflowId = patch.kind === "replace_unit" && patch.unit.kind === "part" ? patch.unit.subflowId : request.subflowId;
     if (permission.outcome === "undeclared") return { code: "consequences_undeclared", reason: "The fix did not say what it would lastingly do, so it was not used." };
     if (permission.outcome === "required") return { code: "permission_required", reason: permission.sentence };
+    // A handle means nothing to a later run: what is overlaid, and saved after the judged end, is the domain's resolution or nothing.
+    const resolved = await resolveSteps(patch);
+    if (!resolved.ok) return { code: resolved.code, reason: resolved.reason, issueCodes: resolved.issueCodes };
     const result = prepareAutomationStudioInRunRepair({
       projectId: input.context.projectId,
       flowId: input.context.flowId,
       ...(subflowId ? { subflowId } : {}),
       runId: input.runId,
       flow: graph,
-      patch,
+      patch: resolved.patch,
       failedAttempt: request.failedAttempt,
       ...(request.failedAttempt.transitionComparison ? { expectedComparison: request.failedAttempt.transitionComparison } : {}),
       policy: input.context.policy,
