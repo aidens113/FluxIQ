@@ -174,13 +174,31 @@ describe("a press the page refused and said so", () => {
     expect(assessed).toMatchObject({ disposition: "refuse", effect: "ambiguous" });
   });
 
-  it("repeats a timed-out press whose step declared no lasting consequence, though the producer says it may have acted", () => {
+  // Which acts commit is the producer's fact (t430): a step's `consequences:
+  // none` never overrides it, because a model under-declares -- a promotion's
+  // offer button written `none` -- and a declaration must never unlock a
+  // second press. The effect check, the page, decides instead.
+  it("holds back a committing act whose answer was lost, whatever its step declared", () => {
     const timedOut: AutomationStudioFailureRecord = { category: "timeout", code: "web.action.timeout", retryable: true, stage: "execution", effect: "ambiguous" };
 
-    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node({ metadata: { declaredConsequences: [] } }), 0)?.disposition).toBe("retry");
-    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node({ metadata: { declaredConsequences: ["send_or_publish"] } }), 0)).toMatchObject({ disposition: "refuse", actUncertain: true });
-    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node(), 0)).toMatchObject({ disposition: "refuse", actUncertain: true });
-    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node({ metadata: { declaredConsequences: [], destructive: true } }), 0)).toMatchObject({ disposition: "refuse", actUncertain: true });
+    for (const metadata of [{ declaredConsequences: [] }, { declaredConsequences: ["send_or_publish"] }, {}, { declaredConsequences: [], destructive: true }]) {
+      expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node({ metadata }), 0)).toMatchObject({ disposition: "refuse", effect: "ambiguous", actUncertain: true });
+    }
+  });
+
+  it("repeats an act the producer states nothing about when its step declared none, and holds it back when the step declared a lasting one", () => {
+    const timedOut: AutomationStudioFailureRecord = { category: "timeout", code: "web.action.timeout", retryable: true, stage: "execution" };
+
+    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node({ metadata: { declaredConsequences: [] } }), 0)).toMatchObject({ disposition: "retry" });
+    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node(), 0)).toMatchObject({ disposition: "retry" });
+    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node({ metadata: { declaredConsequences: ["modify_existing"] } }), 0)).toMatchObject({ disposition: "refuse", actUncertain: true });
+  });
+
+  it("repeats a committing act whose answer was lost once the effect check showed it did not land", () => {
+    const timedOut: AutomationStudioFailureRecord = { category: "timeout", code: "web.action.timeout", retryable: true, stage: "execution", effect: "ambiguous" };
+    const checked = attempt({ failure: timedOut, effectCheck: { result: "not_landed", checkedAt: 3 } });
+
+    expect(automationStudioAssessAttemptFault(checked, node({ metadata: { declaredConsequences: ["modify_existing"] } }), 0)).toMatchObject({ disposition: "retry", effect: "unacted" });
   });
 
   it("holds the page's wait to the runtime's own bound", () => {
