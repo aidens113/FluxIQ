@@ -1,0 +1,845 @@
+{
+ "source": "Generated from Core flow-bootstrap/plan/flow-script-format.ts AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT worked examples (target: tN read as selector: #tN for the fixture library) plus one checkpoint script, assembled by acceptAutomationStudioFlowBootstrapResult and saved by normalizeAutomationStudioFlowBuildPlan; every graph passed validateAutomationStudioFlow. Regenerate rather than hand-edit.",
+ "examples": {
+  "Example, starting where the page already is:": [
+   {
+    "role": "primary",
+    "name": "Main",
+    "flow": {
+     "flowId": "flow.state.bootstrap.7096cd39ea5e27bc.main.graph",
+     "name": "Main",
+     "nodes": [
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s1",
+       "definitionId": "web.output.browser-navigate",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "url": "https://permits.test/",
+        "newTab": false
+       },
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s1"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t2",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 320,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s2"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s3",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t6",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 640,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s3",
+        "fluxiq.entry": {
+         "id": "renew",
+         "order": 1,
+         "when": [
+          {
+           "fact": "exists",
+           "op": "exists",
+           "target": {
+            "handle": "t6"
+           }
+          }
+         ],
+         "requires": []
+        }
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s4",
+       "definitionId": "web.output.dom-type",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t7",
+        "text": {
+         "$state": {
+          "path": "plate",
+          "fallback": "KX12ABC"
+         }
+        },
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 960,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s4"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s5",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t9",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 1280,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s5"
+       }
+      }
+     ],
+     "edges": [
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e1",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s1",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e2",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s3",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e3",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s3",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s4",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e4",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s4",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s5",
+       "targetPortId": "in"
+      }
+     ]
+    }
+   }
+  ],
+  "Example, an interruption that can come at any pass:": [
+   {
+    "role": "primary",
+    "name": "Main",
+    "flow": {
+     "flowId": "flow.state.bootstrap.7096cd39ea5e27bc.main.graph",
+     "name": "Main",
+     "nodes": [
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s1",
+       "definitionId": "web.output.browser-navigate",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "url": "https://weather.test/stations",
+        "newTab": false
+       },
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s1"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s5",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t12",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 0,
+        "y": 180
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s5"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s6",
+       "definitionId": "builtin.control.merge",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "mergeMode": "first"
+       },
+       "position": {
+        "x": 0,
+        "y": 360
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s6"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "definitionId": "web.output.dom-extract_list",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "extractList": {
+         "handle": "extraction.1",
+         "minItems": 0
+        },
+        "timeoutMs": 10000,
+        "recordOutput": null
+       },
+       "position": {
+        "x": 320,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s2"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s3",
+       "definitionId": "builtin.control.merge",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "mergeMode": "first"
+       },
+       "position": {
+        "x": 640,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s3"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s4",
+       "definitionId": "builtin.control.for-each",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "maxIterations": 100,
+        "maxStepsPerIteration": 50
+       },
+       "position": {
+        "x": 640,
+        "y": 180
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s4"
+       }
+      }
+     ],
+     "edges": [
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e1",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s3",
+       "targetPortId": "branches"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e2",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "sourcePortId": "records",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s4",
+       "targetPortId": "items"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e3",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s4",
+       "sourcePortId": "body",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s5",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e4",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s4",
+       "sourcePortId": "done",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s6",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e5",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s5",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s3",
+       "targetPortId": "branches"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e6",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s1",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e7",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s3",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s4",
+       "targetPortId": "in"
+      }
+     ]
+    }
+   },
+   {
+    "role": "recovery",
+    "name": "Recovery",
+    "flow": {
+     "flowId": "flow.state.bootstrap.7096cd39ea5e27bc.recovery.graph",
+     "name": "Recovery",
+     "nodes": [
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.recovery.h1-s1",
+       "definitionId": "builtin.control.handler",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "event": "before",
+        "scope": {
+         "kind": "automation"
+        },
+        "when": [
+         {
+          "fact": "dialog",
+          "op": "visible",
+          "target": {
+           "kind": "dialog",
+           "role": "alertdialog",
+           "name": "Session expiring"
+          }
+         }
+        ],
+        "order": 1,
+        "completionCheck": [
+         {
+          "fact": "dialog",
+          "op": "absent",
+          "target": {
+           "kind": "dialog",
+           "role": "alertdialog",
+           "name": "Session expiring"
+          }
+         }
+        ],
+        "maxRuns": 1
+       },
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "h1-s1"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.recovery.h1-s2",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t40",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 320,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "h1-s2"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.recovery.h1-s3",
+       "definitionId": "builtin.control.handler-end",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "disposition": "resume",
+        "checkpointId": "",
+        "outputs": {}
+       },
+       "position": {
+        "x": 640,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "h1-s3"
+       }
+      }
+     ],
+     "edges": [
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.recovery.h1-e1",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.recovery.h1-s1",
+       "sourcePortId": "body",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.recovery.h1-s2",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.recovery.h1-e2",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.recovery.h1-s2",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.recovery.h1-s3",
+       "targetPortId": "in"
+      }
+     ]
+    }
+   }
+  ],
+  "Example, a second known way, checked the same:": [
+   {
+    "role": "primary",
+    "name": "Main",
+    "flow": {
+     "flowId": "flow.state.bootstrap.7096cd39ea5e27bc.main.graph",
+     "name": "Main",
+     "nodes": [
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.h1-s1",
+       "definitionId": "builtin.control.handler",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "event": "fail",
+        "scope": {
+         "kind": "nodes",
+         "nodeIds": [
+          "node.bootstrap.7096cd39ea5e27bc.main.s2"
+         ]
+        },
+        "when": [],
+        "order": 1,
+        "completionCheck": [],
+        "maxRuns": 1
+       },
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "h1-s1"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s1",
+       "definitionId": "web.output.browser-navigate",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "url": "https://rooms.test/planner",
+        "newTab": false
+       },
+       "position": {
+        "x": 0,
+        "y": 180
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s1"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.h1-s2",
+       "definitionId": "builtin.control.call-subflow",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "subflowId": "subflow.bootstrap.7096cd39ea5e27bc.floorplan",
+        "inputs": {},
+        "outputs": {
+         "reference": "reference"
+        }
+       },
+       "position": {
+        "x": 320,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "h1-s2"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "definitionId": "builtin.control.call-subflow",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "subflowId": "subflow.bootstrap.7096cd39ea5e27bc.calendar",
+        "inputs": {},
+        "outputs": {
+         "reference": "reference"
+        }
+       },
+       "position": {
+        "x": 320,
+        "y": 180
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s2"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.h1-s3",
+       "definitionId": "builtin.control.handler-end",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "disposition": "resolve",
+        "outputs": {
+         "reference": {
+          "$state": {
+           "path": "$node.h1-s2.reference"
+          }
+         }
+        },
+        "checkpointId": ""
+       },
+       "position": {
+        "x": 640,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "h1-s3"
+       }
+      }
+     ],
+     "edges": [
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e1",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s1",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.h1-e1",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.h1-s1",
+       "sourcePortId": "body",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.h1-s2",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.h1-e2",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.h1-s2",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.h1-s3",
+       "targetPortId": "in"
+      }
+     ]
+    }
+   },
+   {
+    "role": "utility",
+    "name": "book from the room's calendar",
+    "flow": {
+     "flowId": "flow.state.bootstrap.7096cd39ea5e27bc.calendar.graph",
+     "name": "book from the room's calendar",
+     "nodes": [
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.calendar.s1",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t8",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s1"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.calendar.s2",
+       "definitionId": "web.output.dom-extract_list",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "extractList": {
+         "handle": "extraction.1"
+        },
+        "timeoutMs": 10000,
+        "recordOutput": null
+       },
+       "position": {
+        "x": 320,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s2"
+       }
+      }
+     ],
+     "edges": [
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.calendar.e1",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.calendar.s1",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.calendar.s2",
+       "targetPortId": "in"
+      }
+     ]
+    }
+   },
+   {
+    "role": "utility",
+    "name": "book from the floor plan",
+    "flow": {
+     "flowId": "flow.state.bootstrap.7096cd39ea5e27bc.floorplan.graph",
+     "name": "book from the floor plan",
+     "nodes": [
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.floorplan.s1",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t15",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s1"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.floorplan.s2",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t16",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 320,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s2"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.floorplan.s3",
+       "definitionId": "web.output.dom-extract_list",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "extractList": {
+         "handle": "extraction.1"
+        },
+        "timeoutMs": 10000,
+        "recordOutput": null
+       },
+       "position": {
+        "x": 640,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s3"
+       }
+      }
+     ],
+     "edges": [
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.floorplan.e1",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.floorplan.s1",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.floorplan.s2",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.floorplan.e2",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.floorplan.s2",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.floorplan.s3",
+       "targetPortId": "in"
+      }
+     ]
+    }
+   }
+  ],
+  "Example, a checkpoint a handler returns to:": [
+   {
+    "role": "primary",
+    "name": "Main",
+    "flow": {
+     "flowId": "flow.state.bootstrap.7096cd39ea5e27bc.main.graph",
+     "name": "Main",
+     "nodes": [
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.h1-s1",
+       "definitionId": "builtin.control.handler",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "event": "retry",
+        "scope": {
+         "kind": "nodes",
+         "nodeIds": [
+          "node.bootstrap.7096cd39ea5e27bc.main.s3"
+         ]
+        },
+        "when": [
+         {
+          "fact": "exists",
+          "op": "exists",
+          "target": {
+           "handle": "t30"
+          }
+         }
+        ],
+        "order": 1,
+        "completionCheck": [
+         {
+          "fact": "absent",
+          "op": "absent",
+          "target": {
+           "handle": "t30"
+          }
+         }
+        ],
+        "maxRuns": 1
+       },
+       "position": {
+        "x": 0,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "h1-s1"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s1",
+       "definitionId": "web.output.browser-navigate",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "url": "https://library.test/account",
+        "newTab": false
+       },
+       "position": {
+        "x": 0,
+        "y": 180
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s1"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.h1-s2",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t31",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 320,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "h1-s2"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t4",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 320,
+        "y": 180
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s2",
+        "fluxiq.checkpoint": {
+         "id": "search",
+         "requires": []
+        }
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.h1-s3",
+       "definitionId": "builtin.control.handler-end",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "disposition": "route",
+        "checkpointId": "search",
+        "outputs": {}
+       },
+       "position": {
+        "x": 640,
+        "y": 0
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "h1-s3"
+       }
+      },
+      {
+       "id": "node.bootstrap.7096cd39ea5e27bc.main.s3",
+       "definitionId": "web.output.dom-click",
+       "definitionVersion": "1.0.0",
+       "parameterValues": {
+        "selector": "#t5",
+        "timeoutMs": 10000
+       },
+       "position": {
+        "x": 640,
+        "y": 180
+       },
+       "metadata": {
+        "bootstrapSymbolicKey": "s3"
+       }
+      }
+     ],
+     "edges": [
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e1",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s1",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.e2",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s2",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.s3",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.h1-e1",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.h1-s1",
+       "sourcePortId": "body",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.h1-s2",
+       "targetPortId": "in"
+      },
+      {
+       "id": "edge.bootstrap.7096cd39ea5e27bc.main.h1-e2",
+       "sourceNodeId": "node.bootstrap.7096cd39ea5e27bc.main.h1-s2",
+       "sourcePortId": "success",
+       "targetNodeId": "node.bootstrap.7096cd39ea5e27bc.main.h1-s3",
+       "targetPortId": "in"
+      }
+     ]
+    }
+   }
+  ]
+ }
+}

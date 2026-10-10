@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AutomationFlowNodeData } from "../node-types";
 import type { AutomationSelection } from "../../shared/selection-contracts";
 import { sameStringList } from "../../views/view-utils";
+import { subscribeAutomationGraphNodeFocus } from "../../graph/node-focus";
 import type { FlowEditorProps } from "../flow-editor-types";
 import type { AutomationGraphProblem } from "../graph-validation";
 import { flowEditorSelection } from "../selection-model";
@@ -127,6 +128,18 @@ export function useFlowEditorSelection(
     focusFlowGraphProblem(props.focusRequest.problem);
   }, [focusFlowGraphProblem, props.activeRef, props.focusRequest?.revision]);
 
+  // Another view (the Inspector's effective handlers) asks for a node of the
+  // graph this editor shows: select it as the outline does.
+  const focusFlowNodeById = useCallback((nodeId: string) => {
+    const node = graph.flowNodesRef.current.find((item) => item.id === nodeId);
+    if (node) selectFlowOutlineNode(node);
+  }, [graph.flowNodesRef, selectFlowOutlineNode]);
+  useEffect(() => subscribeAutomationGraphNodeFocus((request) => {
+    if (!props.activeRef.current) return;
+    if (request.flowId && props.taskGraph?.flowId && request.flowId !== props.taskGraph.flowId) return;
+    focusFlowNodeById(request.nodeId);
+  }), [focusFlowNodeById, props.activeRef, props.taskGraph?.flowId]);
+
   const handleFlowSelectionChange = useCallback(({
     nodes,
     edges
@@ -171,6 +184,7 @@ export function useFlowEditorSelection(
     publishFlowSelection,
     selectFlowEdge,
     selectFlowOutlineNode,
+    focusFlowNodeById,
     handleFlowSelectionChange
   };
 }

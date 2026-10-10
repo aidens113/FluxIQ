@@ -97,7 +97,13 @@ export function automationPortTitle(port: AutomationNodePort, direction: "source
   return caption ? `${label} - ${caption}` : label;
 }
 
-export function automationPortDisplayLabel(port: AutomationNodePort): string {
+/**
+ * A port's label as the canvas shows it. A loop's `body` route reads "Repeat";
+ * a Handler's `body` route leads to the steps it takes, so it reads "Handler
+ * steps" when the owning node definition is known to be a Handler.
+ */
+export function automationPortDisplayLabel(port: AutomationNodePort, ownerDefinitionId?: string): string {
+  if (port.id === "body" && ownerDefinitionId === "builtin.control.handler") return "Handler steps";
   if (port.id === "body" || port.label.toLowerCase() === "body") return "Repeat";
   return port.label;
 }

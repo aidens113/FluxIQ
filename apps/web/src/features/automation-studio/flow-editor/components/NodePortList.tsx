@@ -5,20 +5,20 @@ import { Handle, Position } from "@xyflow/react";
 import type { AutomationNodePort } from "fluxiq/automation-studio/nodes";
 import { automationPortCaption, automationPortDisplayLabel, automationPortTitle, automationPortTone } from "../../graph/ports";
 import { useFlowEditorActions } from "./FlowEditorActionsContext";
-export function NodePortList(props: { inputs: AutomationNodePort[]; outputs: AutomationNodePort[] }) {
+export function NodePortList(props: { inputs: AutomationNodePort[]; outputs: AutomationNodePort[]; definitionId?: string | undefined }) {
   return (
     <div className="automation-node-port-list">
       <div className={props.inputs.length ? "automation-node-port-column input" : "automation-node-port-column input empty-column"}>
         {props.inputs.length ? props.inputs.map((port) => <AutomationNodePortRow key={port.id} port={port} direction="target" />) : <span className="empty">No inputs</span>}
       </div>
       <div className={props.outputs.length ? "automation-node-port-column output" : "automation-node-port-column output empty-column"}>
-        {props.outputs.length ? props.outputs.map((port) => <AutomationNodePortRow key={port.id} port={port} direction="source" />) : <span className="empty">No outputs</span>}
+        {props.outputs.length ? props.outputs.map((port) => <AutomationNodePortRow key={port.id} port={port} direction="source" definitionId={props.definitionId} />) : <span className="empty">No outputs</span>}
       </div>
     </div>
   );
 }
 
-function AutomationNodePortRow(props: { port: AutomationNodePort; direction: "source" | "target" }) {
+function AutomationNodePortRow(props: { port: AutomationNodePort; direction: "source" | "target"; definitionId?: string | undefined }) {
   const tone = automationPortTone(props.port, props.direction);
   const caption = automationPortCaption(props.port, props.direction);
   return (
@@ -32,7 +32,7 @@ function AutomationNodePortRow(props: { port: AutomationNodePort; direction: "so
         title={automationPortTitle(props.port, props.direction)}
       />
       <i aria-hidden />
-      <strong>{automationPortDisplayLabel(props.port)}</strong>
+      <strong>{automationPortDisplayLabel(props.port, props.definitionId)}</strong>
       {caption ? <small>{caption}</small> : null}
     </span>
   );

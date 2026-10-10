@@ -47,6 +47,19 @@ export type InspectorPanelContext = {
   flowDependencies: InspectorFlowDependencySummary;
   referenceOptions: InspectorReferenceOptions;
   statePanel: InspectorPanelModel | null;
+  /**
+   * The other graphs a selected step's handlers can come from, as saved Flow
+   * documents: the role of the part `flow` is the graph of, the graphs of parts
+   * that call it (nearest first), and the automation's recovery part. Without
+   * it, "Effective handlers" lists what `flow` itself stores.
+   */
+  handlerScopes?: InspectorHandlerScopes;
+};
+
+export type InspectorHandlerScopes = {
+  role?: string;
+  callers?: Array<{ flow: unknown; role?: string }>;
+  automation?: Array<{ flow: unknown; role?: string }>;
 };
 
 export type InspectorSelectionKind = AutomationSelection["kind"];
