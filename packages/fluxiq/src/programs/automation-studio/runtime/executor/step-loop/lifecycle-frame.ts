@@ -20,6 +20,9 @@ import type { AutomationStudioEntryTrace, AutomationStudioLifecycleTrace, Automa
  *   attempt ids number after them.
  * - `overlays`: the graph this frame ran before an in-run repair overlaid a
  *   fix, by incident id, so a trial that fails puts it back (C6 step 8).
+ * - `pendingAct`: the identity of the lasting act the node arrived at now
+ *   would dispatch, taken before it ran, which the run's completed-act
+ *   ledger records once the attempt is done (`./already-done.ts`).
  *
  * What a dispatch could not do is said on the run holder's `problems`, which
  * the root frame's trace carries as `lifecycleNotes`.
@@ -31,6 +34,7 @@ export type AutomationStudioStepLifecycleFrame = {
   bodies: Array<{ at: number; attempts: readonly AutomationStudioNodeAttemptTrace[] }>;
   bodyAttempts: number;
   overlays: Map<string, AutomationStudioFlowDocument>;
+  pendingAct?: { nodeId: string; key: string };
 };
 
 /** A frame's lifecycle bookkeeping with nothing dispatched yet. */

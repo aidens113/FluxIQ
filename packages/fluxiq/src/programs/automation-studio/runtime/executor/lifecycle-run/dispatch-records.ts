@@ -58,7 +58,7 @@ export function automationStudioLifecycleRunRecords(input: {
     framePath: [...input.framePath],
     nodeId: input.nodeId,
     ...(input.incidentId ? { incidentId: input.incidentId } : {}),
-    disposition,
+    disposition: streamDisposition(disposition),
     outcome: !input.ran ? "refused" : input.bodyFailed ? "failed" : "succeeded",
     startedAt: input.startedAt,
     finishedAt: input.finishedAt
@@ -84,7 +84,12 @@ export function automationStudioLifecycleRunRecords(input: {
   return { lifecycle, execution, recovery };
 }
 
-/** The decision as a trace keeps it: a `resolve` keeps no outputs, and a Core stop is not a way on, so it reads `unhandled`. */
+/**
+ * The decision as the attempt's `lifecycle` record keeps it: a `resolve` keeps
+ * no outputs, an `unhandled` keeps its closed code and the guard that refused
+ * a route, and a Core stop is not a way on, so it reads `unhandled` with
+ * `core_stop`.
+ */
 function traceDisposition(decision: AutomationStudioDispositionDecision): AutomationStudioLifecycleTraceDisposition {
   switch (decision.kind) {
     case "resume":
@@ -94,7 +99,13 @@ function traceDisposition(decision: AutomationStudioDispositionDecision): Automa
     case "resolve":
       return { kind: "resolve" };
     case "unhandled":
+      return { kind: "unhandled", reason: decision.code, ...(decision.guard ? { guard: decision.guard } : {}) };
     case "stop":
-      return { kind: "unhandled" };
+      return { kind: "unhandled", reason: "core_stop" };
   }
+}
+
+/** The decision as the runtime stream's `handler_execution` record keeps it, which names the disposition alone (`model/flow-adaptation.ts`). */
+function streamDisposition(disposition: AutomationStudioLifecycleTraceDisposition): AutomationStudioFlowRunHandlerExecutionRecord["disposition"] {
+  return disposition.kind === "unhandled" ? { kind: "unhandled" } : disposition;
 }

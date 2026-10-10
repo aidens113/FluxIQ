@@ -28,6 +28,7 @@ export type {
 } from "./dispatch-contracts.ts";
 export { dispatchAutomationStudioLifecycleEvent } from "./dispatch.ts";
 export { runAutomationStudioHandlerBody, type AutomationStudioHandlerBodyRun } from "./handler-body.ts";
+export { automationStudioHandlerBodyInputs } from "./body-inputs.ts";
 export { automationStudioLifecycleRouteTarget } from "./route-target.ts";
 export { automationStudioLifecycleRunRecords } from "./dispatch-records.ts";
 // The incident ledger (C7) and what a failed attempt counted as.
@@ -42,3 +43,6 @@ export type {
   AutomationStudioRunRepair
 } from "./incident-repair.ts";
 export { automationStudioIncidentHandlerRetrial } from "./handler-retrial.ts";
+// The run's completed-act ledger (C5, t411): a completed lasting act is skipped as already done, never repeated.
+export type { AutomationStudioCompletedAct } from "./completed-act.ts";
+export { automationStudioCompletedActIdentity } from "./act-identity.ts";

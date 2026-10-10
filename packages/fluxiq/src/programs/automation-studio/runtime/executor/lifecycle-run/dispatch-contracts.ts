@@ -27,18 +27,20 @@ export type AutomationStudioLifecycleRouteTarget = {
 
 /**
  * What graph-run knows about a route that the dispatcher cannot: whether it
- * would move past a node whose lasting act is `uncertain`, whether it
- * re-enters a path that would repeat a completed `reconcile` act, and that
- * act's effect check when one was asked (`../lifecycle/dispositions.ts`).
- * `unreachable` says why the step loop could not move to the target at all
- * (its node is not in the frame's graph as it runs), which refuses the route
- * as not found, before any budget is spent or any row says it succeeded.
+ * would move past a node whose lasting act is `uncertain`
+ * (`../lifecycle/dispositions.ts`). A route back past completed acts is not
+ * the guard's concern: the run's completed-act ledger skips each of them as
+ * already done (`../step-loop/already-done.ts`); `repeatsUnrecordedAct` says
+ * the route goes back past a completed act the ledger does not hold, which
+ * nothing would skip. `unreachable` says why the step loop
+ * could not move to the target at all (its node is not in the frame's graph
+ * as it runs), which refuses the route before any budget is spent or any row
+ * says it succeeded.
  */
 export type AutomationStudioLifecycleRouteGuard = (target: AutomationStudioLifecycleRouteTarget) => {
   unreachable?: string;
   passesUncertainAct: boolean;
-  repeatsCompletedReconcile: boolean;
-  effectCheck?: "landed" | "not_landed" | "unknown";
+  repeatsUnrecordedAct?: boolean;
 };
 
 /**
@@ -49,9 +51,9 @@ export type AutomationStudioLifecycleRouteGuard = (target: AutomationStudioLifec
  * - `arrival`: which arrival at `nodeId` this is in that frame (1 for the
  *   first), so the same interruption met again later is a new occurrence.
  * - `attemptNumber`, `outputsSoFar`, `lastingActStatus`: the continuation (C5).
- * - `values`: the run values at the boundary. A body is handed them as its
- *   inputs, and a condition's `{ value }` reads them; `{ input }` reads the
- *   frame's inputs.
+ * - `values`: the run values at the boundary. A condition's `{ value }`
+ *   reads them, and `{ input }` the frame's inputs. A body is handed the
+ *   frame's inputs and only the values its own nodes name (`./body-inputs.ts`).
  * - `incidentId`: the incident open at this node, at `retry` and `fail`.
  * - `requiredOutputIds`: what a `resolve` must cover at `fail`.
  * - `remainingSteps`: what is left of the run's `maxSteps`, which body steps

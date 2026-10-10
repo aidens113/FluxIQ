@@ -4,6 +4,7 @@ import { automationStudioAwaitNodeReadiness, type AutomationStudioReadinessOutco
 import { automationStudioRunWait } from "../pacing/index.ts";
 import { automationStudioRecordedState, type AutomationStudioRecordedState } from "../recorded-state.ts";
 import { automationStudioNodeRetryPolicy, type AutomationStudioNodeRetryPolicy } from "../retry-policy.ts";
+import { automationStudioStepAlreadyDone } from "./already-done.ts";
 import { automationStudioEndedTrace } from "./ended-trace.ts";
 import { automationStudioStepLifecycle } from "./lifecycle-dispatch.ts";
 import { automationStudioStepCloseArrivalIncident } from "./lifecycle-incident.ts";
@@ -14,11 +15,13 @@ type Region = NonNullable<AutomationStudioGraphExecutionOptions["regionRuntime"]
 
 /**
  * Arrives at a node for one attempt: the region's capability and timeout
- * checks, the arrival count, the node's pace, its On Before handlers (C3, C6
- * step 1) and its readiness gate, in that order. What the attempt is stamped
- * with comes back as `arrived`; a region that cannot run the node, a Core
- * stop a handler met, or a run cancelled while it waited, ends the run, and an
- * On Before handler that routed to a checkpoint moves it there (`next`).
+ * checks, the arrival count, the completed-act ledger (C5, t411), the node's
+ * pace, its On Before handlers (C3, C6 step 1) and its readiness gate, in
+ * that order. What the attempt is stamped with comes back as `arrived`; a
+ * region that cannot run the node, a Core stop a handler met, or a run
+ * cancelled while it waited, ends the run; an On Before handler that routed to
+ * a checkpoint moves it there (`next`), and so does a lasting act the run
+ * already completed, which is skipped as already done (`./already-done.ts`).
  */
 export async function automationStudioStepArrival(
   ctx: AutomationStudioStepLoopContext,
@@ -51,6 +54,9 @@ export async function automationStudioStepArrival(
     runState.defence.leaveNode();
   }
   ctx.arrival.attempts += 1;
+  // A lasting act this run already completed is skipped as already done, never dispatched again.
+  const alreadyDone = await automationStudioStepAlreadyDone(ctx, node, regionId);
+  if (alreadyDone) return alreadyDone;
   const retryPolicy = automationStudioNodeRetryPolicy(ctx.flow, node, options);
   const recordedState = automationStudioRecordedState(node);
   // A node's pace holds each arrival at it, never a retry of one (`pacing/pace-keeper.ts`).

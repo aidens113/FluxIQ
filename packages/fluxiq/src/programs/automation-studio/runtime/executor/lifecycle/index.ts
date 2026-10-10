@@ -34,4 +34,10 @@ export { automationStudioNodeReplayRestriction, type AutomationStudioReplayRestr
 export { resolveAutomationStudioHandlerCandidates, type AutomationStudioHandlerCandidate, type AutomationStudioHandlerLevel } from "./scope-resolver.ts";
 export { automationStudioSubflowContract, type AutomationStudioSubflowCheckpoint, type AutomationStudioSubflowContract, type AutomationStudioSubflowEntry } from "./subflow-contract.ts";
 export { automationStudioTraceFailureClass } from "./failure-class-trace.ts";
+export {
+  AUTOMATION_STUDIO_ROUTE_REFUSAL_GUARDS,
+  AUTOMATION_STUDIO_UNHANDLED_REASONS,
+  type AutomationStudioRouteRefusalGuard,
+  type AutomationStudioUnhandledReason
+} from "./unhandled-reason.ts";
 export { classifyAutomationStudioFailure, type AutomationStudioEarlierRung, type AutomationStudioFailureClass, type AutomationStudioOnFailPath } from "./true-failure.ts";

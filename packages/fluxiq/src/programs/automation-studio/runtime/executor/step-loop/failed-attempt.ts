@@ -20,6 +20,7 @@ import { automationStudioRecoveryPathEdge, failureMessageForRecoveryStop } from 
 import { recordRegionTransition } from "../region-execution.ts";
 import { automationStudioAttemptIsRetryable, type AutomationStudioNodeRetryPolicy } from "../retry-policy.ts";
 import { automationStudioHostEffectCheck } from "../transition-comparison.ts";
+import { automationStudioStepRecordCompletedAct } from "./already-done.ts";
 import { automationStudioRecordDefendedFault } from "./defended-fault.ts";
 import { automationStudioEndedTrace } from "./ended-trace.ts";
 import { automationStudioStepRepairIncident } from "./incident-repair.ts";
@@ -158,6 +159,7 @@ export async function automationStudioStepFailedAttempt(
     // `stateHeld` is the second fact, so every reader of what the node
     // came to reads it as done (`flow-change/attempt-projection.ts`).
     attempts[attemptIndex] = { ...attempts[attemptIndex]!, stateHeld: { rung: ladder.rung, route: "success" } };
+    automationStudioStepRecordCompletedAct(ctx, failedNode, attemptIndex);
     automationStudioStepStampFailureClass(ctx, attemptIndex, { uncertainAct: false, movedBy: "satisfied", onFail: [] });
     automationStudioRecordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, ctx.arrival.attempts, fault, "continued", 0);
     return { kind: "proceed", routeOverride: "success" };
@@ -246,6 +248,7 @@ function settledUncertainAct(
   const { attempts, runState } = ctx;
   if (result === "landed") {
     attempts[attemptIndex] = { ...attempts[attemptIndex]!, stateHeld: { rung: "skip_satisfied_node", route: "success" } };
+    automationStudioStepRecordCompletedAct(ctx, node, attemptIndex);
     emitAutomationStudioActivityThought({ phase: "repairing", title: "The step had taken effect", text: "Its answer was lost, but the page shows what the step was to do, so the run goes on without doing it again.", ref: node.id });
     automationStudioStepStampFailureClass(ctx, attemptIndex, { uncertainAct: false, movedBy: "effect_landed", onFail: [] });
     automationStudioRecordDefendedFault(runState, node.id, attempts[attemptIndex]!, ctx.arrival.attempts, { ...fault, reason: `${fault.reason} The effect check then showed it had taken effect, so the run went on.` }, "continued", 0);

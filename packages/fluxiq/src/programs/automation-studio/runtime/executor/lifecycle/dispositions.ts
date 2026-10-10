@@ -11,6 +11,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioDispositionAllowedAt } from "../../../nodes/control-flow/index.ts";
 import type { AutomationStudioFactTruth } from "./fact-condition.ts";
 import type { AutomationStudioHandlerDisposition, AutomationStudioLifecycleContinuation } from "./continuation.ts";
+import type { AutomationStudioRouteRefusalGuard, AutomationStudioUnhandledReason } from "./unhandled-reason.ts";
 
 /** Core outcomes no handler can override. */
 export type AutomationStudioCoreStop = "pause" | "cancel" | "permission" | "outcome_uncertain";
@@ -26,20 +27,27 @@ export type AutomationStudioRouteCheck = {
   when: AutomationStudioFactTruth;
   /** Every `requires` name is bound. */
   requiresBound: boolean;
-  /** The route would move past a node whose lasting act is `uncertain`. */
+  /**
+   * The route would move past a node whose lasting act is `uncertain`. A
+   * route back past acts that completed is not refused: the run's
+   * completed-act ledger skips each of them as already done when the run
+   * reaches it again, so none is repeated (`../step-loop/already-done.ts`).
+   */
   passesUncertainAct: boolean;
-  /** The route re-enters a path that would repeat a completed `reconcile` act. */
-  repeatsCompletedReconcile: boolean;
-  /** That act's effect check, when one was asked. */
-  effectCheck?: "landed" | "not_landed" | "unknown";
+  /** The route goes back past a completed act the ledger does not hold, which nothing would skip. */
+  repeatsUnrecordedAct?: boolean;
 };
 
-/** What the run does next. `unhandled` carries why, so the trace never has to guess. */
+/**
+ * What the run does next. `unhandled` carries why, so the trace never has to
+ * guess: `reason` in words, `code` as a closed code, and `guard` naming the
+ * guard that refused a route (`./unhandled-reason.ts`).
+ */
 export type AutomationStudioDispositionDecision =
   | { kind: "resume" }
   | { kind: "route"; checkpointId: string }
   | { kind: "resolve"; outputs: JsonObject }
-  | { kind: "unhandled"; reason: string }
+  | { kind: "unhandled"; reason: string; code: AutomationStudioUnhandledReason; guard?: AutomationStudioRouteRefusalGuard }
   | { kind: "stop"; stop: AutomationStudioCoreStop; reason: string };
 
 /**
@@ -55,9 +63,10 @@ export type AutomationStudioDispositionDecision =
  *    written. (An empty check holds, which is what a `fail` handler with none
  *    has; `before` and `retry` handlers must declare one at validation.)
  * 5. A `route` needs a checkpoint that exists, whose `when` is `true` and
- *    whose `requires` are bound; it never moves past an uncertain act, and
- *    re-entering a completed `reconcile` act needs its effect check to say
- *    `not_landed`.
+ *    whose `requires` are bound; it never moves past an uncertain act. It may
+ *    go back past completed acts: none is repeated, because the run skips an
+ *    act its completed-act ledger holds as already done. One the ledger does
+ *    not hold (a resumed run's) still refuses it.
  * 6. A `resolve` must cover `requiredOutputIds`, the failed node's (or
  *    frame's) output contract.
  * 7. `unhandled` written is `unhandled`; the ladder continues at the next level.
@@ -76,37 +85,39 @@ export function decideAutomationStudioDisposition(input: {
   if (continuation.lastingActStatus === "uncertain") {
     return { kind: "stop", stop: "outcome_uncertain", reason: `${continuation.nodeId} may already have acted and nothing settled it, so no handler moves the run past it.` };
   }
-  if (input.bodyFailed) return unhandled("The handler's body failed.");
+  if (input.bodyFailed) return unhandled("body_failed", "The handler's body failed.");
   if (!automationStudioDispositionAllowedAt(continuation.event, written.kind)) {
-    return unhandled(`"${written.kind}" is not a disposition a ${continuation.event} handler may end with.`);
+    return unhandled("disposition_not_allowed", `"${written.kind}" is not a disposition a ${continuation.event} handler may end with.`);
   }
-  if (input.completionCheck !== "true") return unhandled(`The handler's completion check is ${input.completionCheck}, not true.`);
+  if (input.completionCheck !== "true") return unhandled("completion_check_not_true", `The handler's completion check is ${input.completionCheck}, not true.`);
   switch (written.kind) {
     case "unhandled":
-      return unhandled("The handler ended unhandled.");
+      return unhandled("written_unhandled", "The handler ended unhandled.");
     case "resume":
       return { kind: "resume" };
     case "route":
       return routeDecision(written.checkpointId, input.route);
     case "resolve": {
       const missing = (input.requiredOutputIds ?? []).filter((outputId) => written.outputs[outputId] === undefined);
-      if (missing.length) return unhandled(`The resolve does not supply the required output${missing.length === 1 ? "" : "s"} ${missing.join(", ")}.`);
+      if (missing.length) return unhandled("resolve_missing_outputs", `The resolve does not supply the required output${missing.length === 1 ? "" : "s"} ${missing.join(", ")}.`);
       return { kind: "resolve", outputs: written.outputs };
     }
   }
 }
 
 function routeDecision(checkpointId: string, check: AutomationStudioRouteCheck | undefined): AutomationStudioDispositionDecision {
-  if (!check?.found) return unhandled(`No checkpoint "${checkpointId}" is in this frame or a frame that called it.`);
-  if (check.when !== "true") return unhandled(`Checkpoint "${checkpointId}" does not hold: its conditions are ${check.when}.`);
-  if (!check.requiresBound) return unhandled(`Checkpoint "${checkpointId}" needs a value that is not bound.`);
-  if (check.passesUncertainAct) return unhandled(`The route to "${checkpointId}" would move past an act whose outcome is uncertain.`);
-  if (check.repeatsCompletedReconcile && check.effectCheck !== "not_landed") {
-    return unhandled(`The route to "${checkpointId}" would repeat a completed act whose effect check says ${check.effectCheck ?? "nothing"}, not not_landed.`);
-  }
+  if (!check?.found) return refused("checkpoint_not_found", `No checkpoint "${checkpointId}" is in this frame or a frame that called it.`);
+  if (check.when !== "true") return refused("checkpoint_not_holding", `Checkpoint "${checkpointId}" does not hold: its conditions are ${check.when}.`);
+  if (!check.requiresBound) return refused("requires_unbound", `Checkpoint "${checkpointId}" needs a value that is not bound.`);
+  if (check.passesUncertainAct) return refused("passes_uncertain_act", `The route to "${checkpointId}" would move past an act whose outcome is uncertain.`);
+  if (check.repeatsUnrecordedAct) return refused("repeats_unrecorded_act", `The route to "${checkpointId}" would go back past a completed act this run has no record of, so it could be done twice.`);
   return { kind: "route", checkpointId };
 }
 
-function unhandled(reason: string): AutomationStudioDispositionDecision {
-  return { kind: "unhandled", reason };
+function unhandled(code: AutomationStudioUnhandledReason, reason: string): AutomationStudioDispositionDecision {
+  return { kind: "unhandled", reason, code };
+}
+
+function refused(guard: AutomationStudioRouteRefusalGuard, reason: string): AutomationStudioDispositionDecision {
+  return { kind: "unhandled", reason, code: "route_refused", guard };
 }

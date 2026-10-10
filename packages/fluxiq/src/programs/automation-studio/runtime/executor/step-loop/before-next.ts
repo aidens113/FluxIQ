@@ -1,4 +1,5 @@
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
+import { automationStudioStepRecordCompletedAct } from "./already-done.ts";
 import { automationStudioStepLifecycle } from "./lifecycle-dispatch.ts";
 import { automationStudioStepStampLifecycle } from "./lifecycle-stamps.ts";
 import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
@@ -12,6 +13,8 @@ import type { AutomationStudioStepOutcome } from "./loop-outcome.ts";
  * the step loop chooses the success edge as it always has: the action is not
  * run again. The caller fires this only on a verified success leaving by
  * `success`, never on a skipped step, a state held or an answered question.
+ * A lasting act that verified success is recorded in the run's completed-act
+ * ledger first, so a route back from here never repeats it (`./already-done.ts`).
  */
 export async function automationStudioStepBeforeNext(
   ctx: AutomationStudioStepLoopContext,
@@ -19,6 +22,7 @@ export async function automationStudioStepBeforeNext(
   attemptIndex: number
 ): Promise<Extract<AutomationStudioStepOutcome, { kind: "return" | "next" }> | undefined> {
   const attempt = ctx.attempts[attemptIndex]!;
+  automationStudioStepRecordCompletedAct(ctx, node, attemptIndex);
   const outcome = await automationStudioStepLifecycle(ctx, {
     event: "before_next",
     node,
