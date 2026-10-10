@@ -91,7 +91,8 @@ export type AutomationStudioFlowBootstrapNode = {
  * A fact a run observes on the page, as the state-aware recovery contract
  * names it (C9): what to check (`fact`, a check kind the host interprets), how
  * (`op`), against what (`value`, a literal or a Flow input by name) and where
- * (`target`, the handle the evidence printed, or a dialog by its kind and
+ * (`target`, the handle the evidence printed, a locator the host interprets,
+ * written by a hand-authored Flow (t402), or a dialog by its kind and
  * name). Core never interprets `fact` or `target`; the host evaluates the
  * condition and answers true, false or unknown, and unknown never holds.
  *
@@ -102,7 +103,7 @@ export type AutomationStudioFlowBootstrapFactCondition = {
   fact: string;
   op: "exists" | "absent" | "visible" | "enabled" | "equals" | "contains" | "matches" | "count";
   value?: string | number | boolean | { input: string } | { value: string };
-  target?: { handle: string } | { kind: "dialog"; role: string; name: string };
+  target?: { handle: string } | { locator: string } | { kind: "dialog"; role: string; name: string };
 };
 
 /** An alternative entry (C2): taken at invocation, by ascending `order`, when every `when` holds and every `requires` is bound. */

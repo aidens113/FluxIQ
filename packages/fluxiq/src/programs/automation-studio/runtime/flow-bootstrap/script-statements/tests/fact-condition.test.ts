@@ -53,3 +53,46 @@ describe("a page fact", () => {
     expect(automationStudioFlowScriptFactGone({ fact: "enabled", op: "enabled", target: { handle: "t1" } })).toBeUndefined();
   });
 });
+
+// A hand-authored or test Flow has no evidence to copy a handle from, so it may
+// name a fact's element by a locator the connected host interprets (t402).
+describe("a page fact naming its element by `at`", () => {
+  it.each([
+    ["exists at \"#sign-in\"", { fact: "exists", op: "exists", target: { locator: "#sign-in" } }],
+    ["absent at \".spinner\"", { fact: "absent", op: "absent", target: { locator: ".spinner" } }],
+    ["visible at \"div[role='alertdialog']\"", { fact: "visible", op: "visible", target: { locator: "div[role='alertdialog']" } }],
+    ["enabled AT \"form > button.submit\"", { fact: "enabled", op: "enabled", target: { locator: "form > button.submit" } }],
+    ["text at \"h1, h2\" contains \"Signed in\"", { fact: "text", op: "contains", value: "Signed in", target: { locator: "h1, h2" } }],
+    ["value at \"input[name='city']\" is $input.city", { fact: "value", op: "equals", value: { input: "city" }, target: { locator: "input[name='city']" } }],
+    ["count at \"li:not(.done)\" is 3", { fact: "count", op: "count", value: 3, target: { locator: "li:not(.done)" } }]
+  ])("reads %s", (text, fact) => {
+    expect(readAutomationStudioFlowScriptFact(text)).toEqual({ ok: true, fact });
+  });
+
+  it("reads a handle fact as before, with no locator", () => {
+    expect(readAutomationStudioFlowScriptFact("exists t5")).toEqual({ ok: true, fact: { fact: "exists", op: "exists", target: { handle: "t5" } } });
+  });
+
+  it.each([
+    ["exists at \"\"", "empty"],
+    ["exists at \"   \"", "empty"],
+    ["exists at", "takes a locator in quotes"],
+    ["exists at #sign-in", "takes a locator in quotes"],
+    [`visible at "${"x".repeat(1_001)}"`, "longer than"],
+    ["exists at \"#a\" now", "takes one handle"],
+    ["text at \"#a\"", "takes a handle, `is`, `contains` or `matches`"],
+    ["count at \"li\" is many", "a whole number"],
+    ["exists at \"#a", "a quote is not closed"]
+  ])("refuses %s, saying why", (text, reason) => {
+    const reading = readAutomationStudioFlowScriptFact(text);
+    expect(reading.ok).toBe(false);
+    if (!reading.ok) expect(reading.reason).toContain(reason);
+  });
+
+  it("refuses an empty locator at its own script line", () => {
+    const issues: Parameters<typeof automationStudioFlowScriptFacts>[1] = [];
+    expect(automationStudioFlowScriptFacts([{ text: "exists at \"#ok\"", line: 3 }, { text: "exists at \"\"", line: 7 }], issues)).toBeUndefined();
+    expect(issues.map((issue) => [issue.code, issue.path])).toEqual([["flow_script.fact_invalid", "flow.line.7"]]);
+    expect(issues[0]!.message).toContain("line at 7");
+  });
+});

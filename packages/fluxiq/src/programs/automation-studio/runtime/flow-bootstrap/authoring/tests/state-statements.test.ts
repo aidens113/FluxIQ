@@ -10,6 +10,8 @@ import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
 import { type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../../plan/index.ts";
 import { savedFlowValidation, stateNodeRegistryFixture, webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, automationStudioFlowBootstrapIssuePlace, parseAutomationStudioFlowScript } from "../index.ts";
+import type { JsonObject } from "../../../../../../core/index.ts";
+import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, resolveAutomationStudioFlowBootstrapPlanParameters } from "../../../llm/index.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
 const registry = stateNodeRegistryFixture(webDomainNodeDefinitionsFixture(), resolution);
@@ -338,5 +340,50 @@ describe("a block's other entries and its checkpoints", () => {
   it("writes a block's `done when:` as its success check", () => {
     const plan = planOf([...open, ...press("go"), "done when: text t8 contains \"Renewed\""]);
     expect(plan.subflows[0]!.metadata).toEqual({ "fluxiq.successCheck": [{ fact: "text", op: "contains", value: "Renewed", target: { handle: "t8" } }], requires: ["web.facts@1"] });
+  });
+
+  // A hand-authored or test Flow names a fact's element by a locator the host interprets (t402).
+  const located = [
+    ...open,
+    "start at: go",
+    "when: visible at \"#renew-form\"",
+    "when: exists t4",
+    ...press("go"),
+    "done when: text at \".notice[data-kind='ok']\" contains \"Renewed\"",
+    "done when: count at \"li.loan\" is 0"
+  ];
+  const locatedEntry = [{ fact: "visible", op: "visible", target: { locator: "#renew-form" } }, { fact: "exists", op: "exists", target: { handle: "t4" } }];
+  const locatedCheck = [
+    { fact: "text", op: "contains", value: "Renewed", target: { locator: ".notice[data-kind='ok']" } },
+    { fact: "count", op: "count", value: 0, target: { locator: "li.loan" } }
+  ];
+  const entryOf = (plan: AutomationStudioFlowBootstrapPlan) => plan.subflows[0]!.nodes.find((node) => node.metadata?.["fluxiq.entry"])!.metadata!["fluxiq.entry"]!.when;
+
+  it("writes a fact naming its element by `at` as a locator target, beside a handle fact unchanged", () => {
+    const plan = planOf(located);
+    expect(entryOf(plan)).toEqual(locatedEntry);
+    expect(plan.subflows[0]!.metadata!["fluxiq.successCheck"]).toEqual(locatedCheck);
+  });
+
+  it("leaves a locator target alone through bootstrap's handle resolution", async () => {
+    const asked: JsonObject[] = [];
+    type Binding = NonNullable<Parameters<typeof resolveAutomationStudioFlowBootstrapPlanParameters>[0]["binding"]>;
+    const resolvePlanNodeParameters: NonNullable<Binding["resolvePlanNodeParameters"]> = (input) => {
+      asked.push(input.parameters);
+      return { status: "resolved" as const, parameters: JSON.parse(JSON.stringify(input.parameters).replace(/\{"handle":"([^"]+)"\}/gu, "\"#$1\"")) as JsonObject };
+    };
+    const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({ plan: planOf(located), projectId: "project.one", flowId: "flow.one", binding: { resolvePlanNodeParameters }, handlesIssued: true, permissionFor: () => async () => ({ permitted: true as const }) });
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+    expect(asked.length).toBeGreaterThan(0);
+    expect(JSON.stringify(asked)).not.toContain("locator");
+    expect(entryOf(resolved.plan)).toEqual(locatedEntry);
+    expect(resolved.plan.subflows[0]!.metadata!["fluxiq.successCheck"]).toEqual(locatedCheck);
+    expect(() => assertAutomationStudioFlowBootstrapPlanHandlesResolved(resolved.plan)).not.toThrow();
+  });
+
+  it("refuses an empty locator, and `at` with no quoted locator, at its line", () => {
+    expect(refusals([...open, ...press("go"), "done when: exists at \"\""]).map(({ code, line }) => ({ code, line }))).toEqual([{ code: "flow_script.fact_invalid", line: 9 }]);
+    expect(refusals([...open, ...press("go"), "done when: visible at #renew-form"]).map(({ code, line }) => ({ code, line }))).toEqual([{ code: "flow_script.fact_invalid", line: 9 }]);
   });
 });

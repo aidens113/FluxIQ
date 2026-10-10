@@ -16,11 +16,18 @@
 //
 // The target is the handle a step would use, copied from the evidence, stored
 // as a step's is (`{ handle }`); Core never reads it, and the host resolves it
-// as it resolves a step's target. A
+// as it resolves a step's target. A hand-authored or test Flow, which has no
+// evidence to copy a handle from, may name the element by a locator in place
+// of the handle -- `exists at "<locator>"`, `text at "<locator>" contains
+// "Ready"` -- stored as `{ locator }`, which the connected host interprets (the
+// web domain reads it as a CSS selector) and nothing resolves
+// (`./fact-locator.ts`, t402). The model-facing script format does not teach
+// it: the model names elements by handle. A
 // line that is none of these is refused with the shape it should have had,
 // because a fact read wrongly is a handler that runs, or does not, quietly.
 import type { AutomationStudioFlowBootstrapFactCondition, AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type { AutomationStudioFlowScriptCondition } from "../authoring/index.ts";
+import { readAutomationStudioFlowScriptFactLocator, type AutomationStudioFlowScriptFactLocator } from "./fact-locator.ts";
 import { scriptStatementRefusal } from "./statement-refusal.ts";
 
 export type AutomationStudioFlowScriptFactReading =
@@ -55,21 +62,24 @@ export function readAutomationStudioFlowScriptFact(text: string): AutomationStud
   const [first, ...rest] = tokens;
   const kind = first && !first.quoted ? first.text.toLowerCase() : "";
   const presence = PRESENCE[kind];
+  const read = presence || kind === "text" || kind === "value" || kind === "count" ? targetOf(rest) : undefined;
+  if (read && "reason" in read) return { ok: false, reason: read.reason };
   if (presence) {
-    const target = handle(rest[0]);
-    if (!target || rest.length !== 1) return { ok: false, reason: `\`${kind}\` takes one handle, copied from the evidence, and nothing after it: \`${kind} t5\`.` };
+    const target = read?.target;
+    if (!target || read.after.length) return { ok: false, reason: `\`${kind}\` takes one handle, copied from the evidence, and nothing after it: \`${kind} t5\`.` };
     return { ok: true, fact: { fact: presence, op: presence, target } };
   }
   if (kind === "text" || kind === "value") {
-    const target = handle(rest[0]);
-    const op = rest[1] && !rest[1].quoted ? COMPARISONS[rest[1].text.toLowerCase()] : undefined;
-    const value = valueOf(rest.slice(2));
+    const target = read?.target;
+    const after = read?.after ?? [];
+    const op = after[0] && !after[0].quoted ? COMPARISONS[after[0].text.toLowerCase()] : undefined;
+    const value = valueOf(after.slice(1));
     if (!target || !op || value === undefined) return { ok: false, reason: `\`${kind}\` takes a handle, \`is\`, \`contains\` or \`matches\`, and a value: \`${kind} t7 contains "Signed in"\`.` };
     return { ok: true, fact: { fact: kind, op, value, target } };
   }
   if (kind === "count") {
-    const target = handle(rest[0]);
-    const words = rest.slice(1);
+    const target = read?.target;
+    const words = read?.after ?? [];
     const number = words.length === 2 && !words[0]!.quoted && COMPARISONS[words[0]!.text.toLowerCase()] === "equals" ? words[1] : words.length === 1 ? words[0] : undefined;
     const count = number && !number.quoted && /^\d{1,6}$/u.test(number.text) ? Number(number.text) : undefined;
     if (!target || count === undefined) return { ok: false, reason: "`count` takes a handle and a whole number: `count t9 is 3`." };
@@ -128,6 +138,23 @@ export function automationStudioFlowScriptFactGone(fact: AutomationStudioFlowBoo
 }
 
 type Token = { text: string; quoted: boolean };
+type ElementTarget = { handle: string } | AutomationStudioFlowScriptFactLocator;
+
+/**
+ * A fact's element target and the words after it: a handle (one word), or
+ * `at` and a quoted locator; the reason an `at` target cannot be read; or
+ * `undefined` when there is no target, which each kind refuses in its own words.
+ */
+function targetOf(tokens: readonly Token[]): { target: ElementTarget; after: Token[] } | { reason: string } | undefined {
+  const [first, second] = tokens;
+  if (first && !first.quoted && first.text.toLowerCase() === "at") {
+    if (!second?.quoted) return { reason: "`at` takes a locator in quotes: `exists at \"<locator>\"`." };
+    const locator = readAutomationStudioFlowScriptFactLocator(second.text);
+    return locator.ok ? { target: locator.target, after: tokens.slice(2) } : { reason: locator.reason };
+  }
+  const target = handle(first);
+  return target ? { target, after: tokens.slice(1) } : undefined;
+}
 
 /** Words and `"quoted words"`, or `undefined` when a quote is left open. */
 function tokenize(text: string): Token[] | undefined {
