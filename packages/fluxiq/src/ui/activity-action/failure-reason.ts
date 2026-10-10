@@ -2,11 +2,11 @@ import { activityActionReplayFailing } from "./replay-failing.ts";
 import type { ActivityActionKind } from "./types.ts";
 
 /**
- * One reason's words: `why`, and `read` where a list read says it in a
- * list's words ("FluxIQ didn't read it"), since a read sends nothing to a
- * control.
+ * One reason's words: `why`, `read` where a list read says it in a list's
+ * words ("FluxIQ didn't read it"), since a read sends nothing to a control,
+ * and `typed` where a step that types into or clears a box says it of the box.
  */
-type Reason = { words: RegExp; why: string; read?: string };
+type Reason = { words: RegExp; why: string; read?: string; typed?: string };
 
 /**
  * Short reasons, each told by the words a result code ends with. Generic words
@@ -29,7 +29,27 @@ const REASONS: readonly Reason[] = [
     why: "FluxIQ didn't send it, as the step named something it hadn't seen on the page",
     read: "FluxIQ didn't read it, as the step named a list it hadn't seen on the page"
   },
-  { words: /_(not_found|missing|no_match|absent|gone)_/u, why: "it wasn't on the page" },
+  // A step that ran and whose effect did not show (`output_not_observed`, or a
+  // state that did not match): a clear the site undid -- the quantity box put
+  // "1" back -- read "Clear field · Didn't work: the step wasn't accepted",
+  // from `rejected`, as if it were refused (R4a, `run-mv2nlh9l-52e476da`,
+  // moment 08). Before the page miss, whose `not` it is not.
+  {
+    words: /_(output_not_observed|not_observed|state_mismatch)_/u,
+    why: "it ran, but the page didn't change the way it should have",
+    read: "it ran, but didn't find the rows it should have",
+    typed: "it ran, but the site set the box back"
+  },
+  // A control looked up by what FluxIQ saved of it and not found that way is
+  // not a control missing from the page: the quantity box stood in plain sight
+  // while its card read "it wasn't on the page", as the page had given it a new
+  // id (R4a, `run-mv2nlh9l-52e476da`, moment 06).
+  {
+    words: /_(not_found|no_match)_/u,
+    why: "FluxIQ couldn't find it where it was saved",
+    read: "FluxIQ couldn't find the list where it was saved"
+  },
+  { words: /_(missing|absent|gone)_/u, why: "it wasn't on the page" },
   { words: /_(timeout|timed_out|too_slow|slow)_/u, why: "the page took too long" },
   { words: /_(ambiguous|multiple_matches|many_matches)_/u, why: "more than one thing on the page matched" },
   { words: /_(not_visible|hidden|offscreen)_/u, why: "it was hidden on the page" },
@@ -145,27 +165,31 @@ const CORE_REASONS: ReadonlyMap<string, string> = new Map([
   ["core.result.verdict_absent", "no verdict came back"]
 ]);
 
-/** `REASONS` without its page miss or its unseen target, for a Core code. */
-const CORE_CODE_REASONS = REASONS.filter((candidate) => !candidate.words.test("_not_found_") && !candidate.words.test("_unobserved_"));
+/** `REASONS` without its page misses or its unseen target, for a Core code. */
+const CORE_CODE_REASONS = REASONS.filter((candidate) => !["_not_found_", "_missing_", "_unobserved_"].some((words) => candidate.words.test(words)));
 
-/** A table's words for a code segment or a reason, written `_like_this_`, in a list's words for a read. */
+/** A table's words for a code segment or a reason, written `_like_this_`, in a list's words for a read and a box's for typing. */
 function reasonFor(table: readonly Reason[], words: string, kind: ActivityActionKind | undefined): string | null {
   const reason = table.find((candidate) => candidate.words.test(words));
   if (!reason) return null;
-  return kind === "read" && reason.read !== undefined ? reason.read : reason.why;
+  if (kind === "read" && reason.read !== undefined) return reason.read;
+  if (kind === "type" && reason.typed !== undefined) return reason.typed;
+  return reason.why;
 }
 
 /**
  * Why an action failed, in a few plain words. A refusal's own `reason` (the
  * caller's code for why the call came to its result) decides first, when its
  * words say something; else the result code's last words do
- * ("web.target.not_found" -> "it wasn't on the page"). Null when neither names
- * a reason this knows; never the code or the reason itself. A Core code
+ * ("web.target.not_found" -> "FluxIQ couldn't find it where it was saved").
+ * Null when neither names a reason this knows; never the code or the reason
+ * itself. A Core code
  * (`core.*`) is never a page miss: Core's own words for it come from
  * `CORE_REASONS`. Nor is a call that named something FluxIQ had not seen
  * (`unobserved`), the same refusal given again, or a step asked to run
  * again unchanged: none of them looked at the page. `kind`, the card's kind
- * where the caller knows it, has a list read said in a list's words.
+ * where the caller knows it, has a list read said in a list's words and a
+ * typing step in a box's.
  */
 export function activityActionFailureReason(resultCode: string, reason?: string, kind?: ActivityActionKind): string | null {
   const code = resultCode.trim().toLowerCase();

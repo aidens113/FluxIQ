@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { bindAutomationStudioActivityRun } from "../bind.ts";
+import { automationStudioConversationCallCause } from "../../conversations/commands/index.ts";
+import { AutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
 import { withAutomationStudioBuildActivity } from "../build.ts";
 import { automationStudioActivityHub } from "../default-hub.ts";
 import { emitAutomationStudioActivity } from "../emit.ts";
@@ -103,6 +105,17 @@ describe("withAutomationStudioBuildActivity", () => {
     await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw unreadable; })).rejects.toBe(unreadable);
     expect(seen[5]).toMatchObject({ label: "Build stopped: the replies it got back could not be read", detail: { title: "Build stopped: the replies it got back could not be read" } });
     expect(seen[5]!.label).not.toMatch(/model/u);
+  });
+
+  // R4a (`run-mv2nlh9l-52e476da`, moment 10): the overlay read a bare "Build failed" while the
+  // chat's ending said why. A build's own failure with no ending says the chat's reason.
+  it("says why a build with no ending failed, in the chat ending's words", async () => {
+    const stuck = new AutomationStudioFlowBootstrapGenerationError({ code: "flow_bootstrap.evidence_repeat_without_progress", stage: "provider_output_validation", retryable: false, providerInvocation: "attempted", providerResponse: "received" });
+    await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw stuck; })).rejects.toBe(stuck);
+    const why = "it kept trying without getting any further, so it was stopped";
+    expect(automationStudioConversationCallCause("the build", { ok: false, error: stuck.message, payload: { diagnostic: stuck.diagnostic } })).toBe(`the build failed: ${why}`);
+    expect(seen[1]).toMatchObject({ phase: "failed", final: true, label: `Build failed: ${why}`, detail: { title: `Build failed: ${why}`, text: "It kept trying without getting any further, so it was stopped.", status: "failed" } });
+    expect(JSON.stringify(seen[1])).not.toMatch(/flow_bootstrap|evidence_repeat/u);
   });
 
   it("marks only a cancelled build's ending as stopped, from the cancellation's AbortError (t376)", async () => {
