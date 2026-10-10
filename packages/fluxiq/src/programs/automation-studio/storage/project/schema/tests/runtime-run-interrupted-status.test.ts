@@ -30,9 +30,10 @@ describe("migration 0024_runtime_run_interrupted_status: a run may be stored int
     await rm(rootDir, { recursive: true, force: true });
   });
 
-  it("is the last of the project migrations", () => {
+  it("is a project migration that sorts after 0024_run_dataset_answers and before 0025", () => {
     expect(MIGRATION.id).toBe("0024_runtime_run_interrupted_status");
-    expect(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.at(-1)).toBe(MIGRATION);
+    expect(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS).toContain(MIGRATION);
+    expect(MIGRATION.id > "0024_run_dataset_answers" && MIGRATION.id < "0025").toBe(true);
   });
 
   it("keeps every run of an existing database, its indexes and guards, and accepts `interrupted`", async () => {
