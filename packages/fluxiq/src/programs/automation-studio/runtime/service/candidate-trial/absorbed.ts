@@ -18,8 +18,9 @@ import { automationStudioTrialFailureHappened } from "./happened.ts";
 /** The most absorbed refusals one step lists; a node makes at most four attempts at one arrival. */
 const MAX_ABSORBED = 4;
 
-/** What a not-found try of a step whose control was measured on the page says happened (t420). */
-const ON_PAGE_HAPPENED = "The step could not find its control by the address it was saved with, though the control is on the page.";
+
+/** What a not-found try of a step whose control was measured on the page says happened (t420, worded t426: never how it is found). */
+const ON_PAGE_HAPPENED = "The step could not find its control where it was saved, though one like it is on the page.";
 
 /** The longest row words a pass is named by. */
 const MAX_ROW_CHARS = 60;

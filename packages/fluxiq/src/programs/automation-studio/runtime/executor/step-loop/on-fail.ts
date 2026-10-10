@@ -1,5 +1,7 @@
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioFaultAssessment } from "../defensive/index.ts";
+import { automationStudioLifecycleEventApplies, resolveAutomationStudioHandlerCandidates } from "../lifecycle/index.ts";
+import { automationStudioActiveLifecycleRegistrations } from "../lifecycle-run/index.ts";
 import { automationStudioStepLifecycle } from "./lifecycle-dispatch.ts";
 import { automationStudioStepOpenIncident } from "./lifecycle-incident.ts";
 import { automationStudioStepStampFailureClass, automationStudioStepStampLifecycle } from "./lifecycle-stamps.ts";
@@ -60,6 +62,27 @@ export async function automationStudioStepOnFail(
   }
   ctx.attempts[attemptIndex] = { ...ctx.attempts[attemptIndex]!, outputs: { ...ctx.attempts[attemptIndex]!.outputs, ...onFail.outputs } };
   return { kind: "proceed", routeOverride: "success" };
+}
+
+/**
+ * Whether an On Fail handler is in scope for `node`'s failure, at any scope
+ * (this frame, a calling frame or the automation's recovery Subflow), read
+ * before On Fail is dispatched, so the recovery ladder's last words can say
+ * the run follows the Flow's own way on from a failure only when the Flow has
+ * one (t428).
+ *
+ * It resolves the candidates the dispatcher resolves, from the same
+ * registrations, and observes nothing: whether a handler's `when` holds is
+ * the dispatcher's to learn. An act whose outcome is uncertain dispatches no
+ * handler, and neither does a step inside a handler body.
+ */
+export async function automationStudioStepFailHandlerInScope(ctx: AutomationStudioStepLoopContext, node: AutomationStudioFlowNode, actUncertain: boolean): Promise<boolean> {
+  const run = ctx.options.invocation?.run;
+  if (!run || actUncertain || !automationStudioLifecycleEventApplies("fail", node)) return false;
+  if (run.stack.some((frame) => frame.cursor.phase === "handler")) return false;
+  const { registrations } = await automationStudioActiveLifecycleRegistrations(run, ctx.options.subflowGraphs);
+  const candidates = resolveAutomationStudioHandlerCandidates({ stack: run.stack, registrations, event: "fail", nodeId: node.id });
+  return candidates.some((candidate) => candidate.registration.source.kind === "handler_node");
 }
 
 /**

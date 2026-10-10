@@ -33,5 +33,6 @@ export {
   automationStudioActivityPersonWords,
   automationStudioActivityReasonText,
   automationStudioActivityRecoveryChoice,
-  automationStudioActivityToolCall
+  automationStudioActivityToolCall,
+  type AutomationStudioRecoveryNext
 } from "./wording/index.ts";

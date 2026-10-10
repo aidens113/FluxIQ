@@ -41,8 +41,7 @@
 //
 // **A control still on the page is tested again (t420).** Paid run R4a
 // (`run-mv2nlh9l-52e476da`, 0038) stopped its one trial at a step that could
-// not find its control by the address it was saved with, though the control
-// was on the page. The answer carried `retry_allowed` and the generic "test it
+// not find its control where it was saved, though one like it was on the page. The answer carried `retry_allowed` and the generic "test it
 // again if retryable", and the model hunted for a new handle and repeated acts
 // on the control instead, until the repeat guard ended the build. When the
 // stopping step's feedback says `targetOnPage`
@@ -51,7 +50,9 @@
 // revision again first; the verdict stays transient, so that re-test carries
 // `retry_allowed` and is never refused as a repeat. If the re-test stops there
 // the same way, the same-failure rule above closes the revision, and the
-// instruction names the step and one other way for it to find its control.
+// instruction names the step and says to change it. Neither ever says how a
+// control is found, nor asks the model to find or re-address one: that is the
+// extension's work (user, 2026-10-10; t426).
 //
 // With no port injected the test tool says `candidate.trial_unavailable` and
 // completion keeps its old meaning: the latest valid submission ends as an
@@ -83,12 +84,12 @@ const SAME_FAILURE_INSTRUCTION = "This revision stopped at the same step with th
 
 /** What the model is told when the step a trial stopped at could not find a control still on the page (header, t420). */
 function testAgainInstruction(step: OnPageStep): string {
-  return `${named(step)} could not find its control by the address it was saved with, though the control is on the page. Nothing in your script needs to change for this: test this same revision again, with the same revision and digest, before looking for the control or acting on it.`;
+  return `${named(step)} could not find its control where it was saved, though one like it is on the page. Nothing in your script needs to change for this: test this same revision again, with the same revision and digest, without acting on the control yourself.`;
 }
 
 /** What the model is told when that happened at the same step in two trials of one revision (header, t420). */
 function stillNotFoundInstruction(step: OnPageStep): string {
-  return `${named(step)} could not find its control by the address it was saved with in two trials, though the control was on the page both times, so testing this revision again would fail the same way. Do not look for the control again or repeat acts on it. Give that one step another way to find its control: take one fresh look at the page, find the control there by its own visible words or the words beside it, and put the handle the evidence prints for it now in the step. Then submit the whole candidate and test the new revision.`;
+  return `${named(step)} could not find its control where it was saved in two trials, though one like it was on the page both times, so testing this revision again would fail the same way. Do not repeat acts on that control. Change that step, or the steps that lead to it, submit the whole candidate, then test the new revision.`;
 }
 
 /** Verdicts after which the same revision may be tested again, within the bound. */

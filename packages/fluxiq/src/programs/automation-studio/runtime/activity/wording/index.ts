@@ -10,7 +10,7 @@ export { automationStudioActivityIssueWords, type AutomationStudioActivityIssue 
 export { automationStudioActivityIssuesOf } from "./issues-of.ts";
 export { automationStudioActivityPersonWords } from "./person-words.ts";
 export { automationStudioActivityReasonText } from "./reason-text.ts";
-export { automationStudioActivityRecoveryChoice } from "./recovery-choice.ts";
+export { automationStudioActivityRecoveryChoice, type AutomationStudioRecoveryNext } from "./recovery-choice.ts";
 export { automationStudioActivityRefusalTally } from "./refusal-tally.ts";
 export { automationStudioActivityRefusedStepIssues } from "./refused-step-issues.ts";
 export { automationStudioActivityRunEnding, automationStudioActivityRunObjection } from "./run-ending.ts";
