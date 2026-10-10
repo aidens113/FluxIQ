@@ -9,11 +9,13 @@
 //
 // **What it carries, and from where.** Only what the run record already holds,
 // through the same screen the recovery's own context passes
-// (`../context.ts`): the failure record's category, code and its short
-// expected/actual text with anything locator-shaped removed; the step's
+// (`../context.ts`): the failure record's category and code, and its short
+// expected/actual text only where nothing in it says how a control was found;
+// the failed step's control by its own words, read from the step's node
+// parameters (t431, `../../llm/model-facing/control-words.ts`); the step's
 // authored parameters, screened against the domain's denied keys (withheld
-// whole when the domain declared none); how the target resolved, as scores and
-// signal names; and what the step was expected to produce, as ids. No page
+// whole when the domain declared none); how the target resolved, as a status
+// and a count; and what the step was expected to produce, as ids. No page
 // content, and nothing the recovery would not already have shown a model.
 //
 // **Whole.** No value and not the brief is cut (user, 2026-09-30: "Remove ANY
@@ -64,11 +66,13 @@ export function automationStudioStepFailureReauthorBrief(input: {
   const target = context.sections.failed_target;
   const definitionId = text(failure?.definitionId) ?? text(step?.definitionId) ?? "unknown";
   const label = text(step?.label);
+  const control = text(failure?.control);
   const lines: string[] = [
     `This build repairs a Flow that failed at a step. The Flow you start from (your draft) is the Flow that ran. The site it acts on has changed since the Flow was built: step ${input.nodeId} could not find what it acts on, and the run's own recovery could not re-point it (${ladderText(input.ladder)}).`,
     "",
     "The failed step, as the run recorded it:",
     `- Step: ${input.nodeId} (${definitionId})${label ? `, labelled "${label}"` : ""}.`,
+    ...(control ? [`- The control it acts on, by its own words: ${JSON.stringify(control)}.`] : []),
     `- Failure: ${text(failed?.category) ?? "unknown"} (${text(failed?.code) ?? "no code"}).`,
     ...(text(failed?.expected) ? [`- Expected: ${rendered(failed!.expected!)}`] : []),
     ...(text(failed?.actual) ? [`- Actual: ${rendered(failed!.actual!)}`] : []),
