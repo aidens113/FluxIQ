@@ -30,6 +30,12 @@
 // tried again is no longer folded into `attempts: 2` alone: the step lists it
 // under `absorbed` (`./absorbed.ts`), and the paces the run learned from a site
 // asking it to slow down are said once under `paces`.
+//
+// **A control still on the page says so (t420).** A step that could not find
+// its control by the address it was saved with, where the domain measured the
+// control still on the page, says that plainly, that the script need not
+// change, and is retryable (`./target-on-page.ts`); the trial gate reads its
+// `targetOnPage` to tell the model to test again rather than look for it.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -40,6 +46,7 @@ import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
 import { automationStudioTrialFailureHappened } from "./happened.ts";
+import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
 
 /** The most steps a feedback lists; a longer Flow says how many it left out. */
 const MAX_STEPS = 40;
@@ -79,8 +86,11 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
   const listed = ran.slice(0, MAX_STEPS).map(({ attempt, attempts, absorbed, pass }, index) => {
     const node = nodes.get(attempt.nodeId);
     const failure = attempt.failure;
+    const control = controlWords(node?.parameterValues);
+    // A control the step could not find by its saved address, though the domain measured it still on the page (t420).
+    const onPage = failure && !attempt.stateHeld ? automationStudioTrialTargetOnPage({ step: index + 1, node, control, attempt, earlier: absorbed.map((entry) => entry.failed) }) : undefined;
     const step = compact({
-      step: index + 1, definitionId: attempt.definitionId, label: node?.label, control: controlWords(node?.parameterValues), status: automationStudioAttemptSettled(attempt).status,
+      step: index + 1, definitionId: attempt.definitionId, label: node?.label, control, status: automationStudioAttemptSettled(attempt).status,
       attempts: attempts > 1 ? attempts : undefined,
       ...(attempt.skipped ? { skipped: attempt.skipped.reason === "target_absent" ? "Its control was not on the page, so the step was skipped." : "The page was already at another step, so the run went on from there." } : {}),
       // Done, though its try failed: the page already showed what the step does (`stateHeld`).
@@ -88,9 +98,9 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
       failureCode: failure?.code, happened: failure ? automationStudioTrialFailureHappened(failure.category) : undefined,
       expected: failure?.expected, actual: failure?.actual
     });
-    const withAbsorbed = absorbed.length ? { ...step, absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass }) } : step;
+    const withAbsorbed = absorbed.length ? { ...step, absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage !== undefined }) } : step;
     // A step whose state already held is done: no retry or check advice for a failure the run went past.
-    return failure && !attempt.stateHeld ? { ...withAbsorbed, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt) } : withAbsorbed;
+    return failure && !attempt.stateHeld ? { ...withAbsorbed, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt), ...onPage } : withAbsorbed;
   });
   const paces = learnedPaces(trace, nodes);
   return { steps: listed, ...(ran.length > MAX_STEPS ? { stepsLeftOut: ran.length - MAX_STEPS } : {}), ...(paces.length ? { paces } : {}) };

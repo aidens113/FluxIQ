@@ -39,6 +39,20 @@
 // feedback, whose `steps` list ends at the step that stopped the run
 // (`../../service/candidate-trial/feedback.ts`).
 //
+// **A control still on the page is tested again (t420).** Paid run R4a
+// (`run-mv2nlh9l-52e476da`, 0038) stopped its one trial at a step that could
+// not find its control by the address it was saved with, though the control
+// was on the page. The answer carried `retry_allowed` and the generic "test it
+// again if retryable", and the model hunted for a new handle and repeated acts
+// on the control instead, until the repeat guard ended the build. When the
+// stopping step's feedback says `targetOnPage`
+// (`../../service/candidate-trial/target-on-page.ts`), the instruction now
+// names the step, says the script need not change, and says to test the same
+// revision again first; the verdict stays transient, so that re-test carries
+// `retry_allowed` and is never refused as a repeat. If the re-test stops there
+// the same way, the same-failure rule above closes the revision, and the
+// instruction names the step and one other way for it to find its control.
+//
 // With no port injected the test tool says `candidate.trial_unavailable` and
 // completion keeps its old meaning: the latest valid submission ends as an
 // unverified draft, which is all a deployment without a trial runner can make.
@@ -66,6 +80,16 @@ const INSTRUCTIONS: Readonly<Record<AutomationStudioCandidateTrialVerdict, strin
 
 /** What the model is told when a revision failed the same way twice. */
 const SAME_FAILURE_INSTRUCTION = "This revision stopped at the same step with the same failure in two trials, so testing it again would fail the same way. Change that step, or remove it if it only checks the act before it (the judge reads the page the run ends on), submit the whole candidate, then test the new revision.";
+
+/** What the model is told when the step a trial stopped at could not find a control still on the page (header, t420). */
+function testAgainInstruction(step: OnPageStep): string {
+  return `${named(step)} could not find its control by the address it was saved with, though the control is on the page. Nothing in your script needs to change for this: test this same revision again, with the same revision and digest, before looking for the control or acting on it.`;
+}
+
+/** What the model is told when that happened at the same step in two trials of one revision (header, t420). */
+function stillNotFoundInstruction(step: OnPageStep): string {
+  return `${named(step)} could not find its control by the address it was saved with in two trials, though the control was on the page both times, so testing this revision again would fail the same way. Do not look for the control again or repeat acts on it. Give that one step another way to find its control: take one fresh look at the page, find the control there by its own visible words or the words beside it, and put the handle the evidence prints for it now in the step. Then submit the whole candidate and test the new revision.`;
+}
 
 /** Verdicts after which the same revision may be tested again, within the bound. */
 const TRANSIENT: ReadonlySet<AutomationStudioCandidateTrialVerdict> = new Set(["unsure", "not_judged", "execution_failed"]);
@@ -113,7 +137,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     const closed = this.closedDigests.get(latest.digest);
     if (closed) return refused("candidate.trial_unchanged_after_no", "This exact Flow was already tried and judged no. Change it to address that feedback, submit it, then test the new revision.", { previousFeedback: closed });
     const repeated = this.repeatedFailures.get(key(latest));
-    if (repeated) return refused("candidate.trial_same_failure", SAME_FAILURE_INSTRUCTION, { failedStep: repeated, ...(this.verdicts.get(key(latest)) ? { previousFeedback: this.verdicts.get(key(latest))!.feedback } : {}) });
+    if (repeated) return refused("candidate.trial_same_failure", repeatedInstruction(this.verdicts.get(key(latest))), { failedStep: repeated, ...(this.verdicts.get(key(latest)) ? { previousFeedback: this.verdicts.get(key(latest))!.feedback } : {}) });
     const tried = this.trials.get(key(latest)) ?? 0;
     if (tried >= AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION) {
       return refused("candidate.trial_retest_limit", `This exact revision has been tested ${tried} times without a yes, so it is not tested again. Read the last trial's feedback, change the step it names (or the Flow), submit the whole candidate, then test the new revision.`,
@@ -130,7 +154,7 @@ export class AutomationStudioFlowCandidateTrialGate {
     const retestsLeft = TRANSIENT.has(answer.verdict) && !repeatedStep ? AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION - (tried + 1) : 0;
     const evidence: JsonObject = {
       ok: answer.verdict === "yes", verdict: answer.verdict, revision: answer.revision, digest: answer.digest,
-      ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback, instruction: repeatedStep ? SAME_FAILURE_INSTRUCTION : INSTRUCTIONS[answer.verdict],
+      ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback, instruction: repeatedStep ? repeatedInstruction(answer) : standingInstruction(answer, retestsLeft > 0),
       ...(repeatedStep ? { failedStep: repeatedStep } : {}),
       ...(TRANSIENT.has(answer.verdict) ? { retestsLeft } : {})
     };
@@ -147,9 +171,10 @@ export class AutomationStudioFlowCandidateTrialGate {
     const closed = this.closedDigests.get(receipt.digest);
     if (closed) return refusal("candidate.trial_unchanged_after_no", "This exact Flow was judged no and has not changed. Change it to address that feedback, submit it, test the new revision, and complete only after a yes.", { previousFeedback: closed });
     const repeated = this.repeatedFailures.get(key(receipt));
-    if (answer && repeated) return refusal(`candidate.trial_${answer.verdict}`, SAME_FAILURE_INSTRUCTION, { verdict: answer.verdict, failedStep: repeated, trialFeedback: answer.feedback });
+    if (answer && repeated) return refusal(`candidate.trial_${answer.verdict}`, repeatedInstruction(answer), { verdict: answer.verdict, failedStep: repeated, trialFeedback: answer.feedback });
     if (!answer) return refusal("candidate.trial_required", `Test this candidate first: call ${AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID} with revision ${receipt.revision} and digest ${receipt.digest}, and complete only after it answers yes for that revision and digest.`);
-    return refusal(`candidate.trial_${answer.verdict}`, INSTRUCTIONS[answer.verdict], { verdict: answer.verdict, trialFeedback: answer.feedback });
+    const retestable = TRANSIENT.has(answer.verdict) && (this.trials.get(key(receipt)) ?? 0) < AUTOMATION_STUDIO_CANDIDATE_MAX_TRIALS_PER_REVISION;
+    return refusal(`candidate.trial_${answer.verdict}`, standingInstruction(answer, retestable), { verdict: answer.verdict, trialFeedback: answer.feedback });
   }
 
   /**
@@ -214,6 +239,34 @@ function stoppingStep(feedback: JsonObject): JsonObject | undefined {
     ...(typeof last.failureCode === "string" ? { failureCode: last.failureCode } : {}),
     ...(typeof feedback.code === "string" ? { code: feedback.code } : {})
   };
+}
+
+/** The step a failed trial stopped at when it could not find a control still on the page (`targetOnPage`, header). */
+type OnPageStep = { step: number; label?: string };
+
+function onPageStep(answer: AutomationStudioCandidateTrialResult | undefined): OnPageStep | undefined {
+  if (answer?.verdict !== "execution_failed") return undefined;
+  const steps = answer.feedback.steps;
+  const last = Array.isArray(steps) ? steps.at(-1) : undefined;
+  if (!isJsonObject(last) || last.status !== "failed" || last.targetOnPage !== true || typeof last.step !== "number" || !Number.isSafeInteger(last.step)) return undefined;
+  return { step: last.step, ...(typeof last.label === "string" && last.label.trim() ? { label: last.label.replace(/\s+/gu, " ").trim().slice(0, 80) } : {}) };
+}
+
+/** The step as the instructions name it: its number in the trial's feedback, and its own label when it has one. */
+function named(step: OnPageStep): string {
+  return `Step ${step.step}${step.label ? ` (${JSON.stringify(step.label)})` : ""}`;
+}
+
+/** What a verdict tells the model to do, when its revision has not failed the same way twice. */
+function standingInstruction(answer: AutomationStudioCandidateTrialResult, retestable: boolean): string {
+  const onPage = retestable ? onPageStep(answer) : undefined;
+  return onPage ? testAgainInstruction(onPage) : INSTRUCTIONS[answer.verdict];
+}
+
+/** What the model is told once a revision stopped at the same step twice, from the latest trial of it. */
+function repeatedInstruction(answer: AutomationStudioCandidateTrialResult | undefined): string {
+  const onPage = onPageStep(answer);
+  return onPage ? stillNotFoundInstruction(onPage) : SAME_FAILURE_INSTRUCTION;
 }
 
 function refused(code: string, instruction: string, detail: JsonObject = {}): AutomationStudioLlmEvidenceToolExecutionResult {
