@@ -28,6 +28,7 @@ import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
 import type { AutomationStudioStepOutcome } from "./loop-outcome.ts";
 import { automationStudioStepOnFail } from "./on-fail.ts";
 import { automationStudioStepOnRetry } from "./on-retry.ts";
+import { automationStudioOutcomeUncertainTrace } from "./uncertain-stop.ts";
 
 /**
  * Decides what a failed attempt comes to: its fault is assessed and the ladder
@@ -203,7 +204,10 @@ export async function automationStudioStepFailedAttempt(
     }
     automationStudioRecordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, attemptsHere, settledFault, "stopped", 0);
     if (repaired) return repaired;
-    return { kind: "return", trace: recoveryStopTrace(ctx, failedNode.id, automationStudioStopMessage(fault, failureMessageForRecoveryStop(recoveryDecision, attempt))) };
+    const stopMessage = automationStudioStopMessage(fault, failureMessageForRecoveryStop(recoveryDecision, attempt));
+    // An act that may have landed stops the run with its closed code (`./uncertain-stop.ts`).
+    if (fault?.actUncertain && stopMessage) return { kind: "return", trace: automationStudioOutcomeUncertainTrace(ctx, failedNode.id, stopMessage) };
+    return { kind: "return", trace: recoveryStopTrace(ctx, failedNode.id, stopMessage) };
   }
   const failedRouteNode = ctx.nodesById.get(executableFailedEdge.targetNodeId);
   const deliberateStop = isDeliberateStop(failedRouteNode);
@@ -251,7 +255,7 @@ function settledUncertainAct(
   emitAutomationStudioActivityThought({ phase: "repairing", title: "Outcome uncertain", text: "The step may already have taken effect and nothing on the page shows whether it did, so it is not done again and the run stops here.", ref: node.id });
   automationStudioStepStampFailureClass(ctx, attemptIndex, { uncertainAct: true, onFail: [] });
   automationStudioRecordDefendedFault(runState, node.id, attempts[attemptIndex]!, ctx.arrival.attempts, settled, "stopped", 0);
-  return { kind: "return", trace: recoveryStopTrace(ctx, node.id, automationStudioStopMessage(settled, attempts[attemptIndex]!.message)) };
+  return { kind: "return", trace: automationStudioOutcomeUncertainTrace(ctx, node.id, automationStudioStopMessage(settled, attempts[attemptIndex]!.message) ?? `Outcome uncertain: ${settled.reason}`) };
 }
 
 /** An authored stop: an End whose result is `failed`, which ends the run on purpose. */
