@@ -44,6 +44,11 @@ export function automationStudioNodeEndsRun(definitionId: string): boolean {
  * the nodes only its `body` leads to are never unvisited, because no run walks
  * into them. A handler's body run, the one whose last attempt is its Handler
  * End, has left nothing behind: the rest of the graph is not its to visit.
+ *
+ * A frame that began at an alternative entry (C2) never walks the steps before
+ * it, so there only the nodes reachable from where it started count; a run of
+ * a Flow without an End read as failed for that (recovery matrix row 2, t404).
+ * A frame that began at its default start keeps the whole-graph rule.
  */
 export function hasUnvisitedAutomationStudioNodes(flow: AutomationStudioFlowDocument, attempts: AutomationStudioNodeAttemptTrace[]): boolean {
   if (attempts[attempts.length - 1]?.definitionId === AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID) return false;
@@ -53,7 +58,10 @@ export function hasUnvisitedAutomationStudioNodes(flow: AutomationStudioFlowDocu
     if (skipped?.reason !== "state_routed" || skipped.direction !== "forward") continue;
     for (const id of passedOver(flow, attempt.nodeId, skipped.toNodeId)) visited.add(id);
   }
-  return flow.nodes.some((node) => !visited.has(node.id));
+  const first = attempts[0];
+  const enteredLater = first?.entry !== undefined && first.entry.kind !== "default";
+  const reachable = enteredLater ? reached(flow, first.nodeId, forward) : undefined;
+  return flow.nodes.some((node) => !visited.has(node.id) && (reachable === undefined || reachable.has(node.id)));
 }
 
 /**
