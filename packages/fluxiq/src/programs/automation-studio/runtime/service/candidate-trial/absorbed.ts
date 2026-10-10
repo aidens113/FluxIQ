@@ -18,6 +18,9 @@ import { automationStudioTrialFailureHappened } from "./happened.ts";
 /** The most absorbed refusals one step lists; a node makes at most four attempts at one arrival. */
 const MAX_ABSORBED = 4;
 
+/** What a not-found try of a step whose control was measured on the page says happened (t420). */
+const ON_PAGE_HAPPENED = "The step could not find its control by the address it was saved with, though the control is on the page.";
+
 /** The longest row words a pass is named by. */
 const MAX_ROW_CHARS = 60;
 
@@ -32,8 +35,11 @@ const ROW_NAME_KEYS: readonly string[] = ["name", "title", "label", "text", "hea
 export function automationStudioTrialAbsorbedFeedback(input: {
   absorbed: ReadonlyArray<{ failed: AutomationStudioNodeAttemptTrace; retry: AutomationStudioNodeAttemptTrace }>;
   pass?: Readonly<Record<string, JsonValue>> | undefined;
+  /** Set when the step's control was measured still on the page (`./target-on-page.ts`): a not-found try then says that, not that it was absent. */
+  targetOnPage?: boolean | undefined;
 }): JsonObject[] {
   const where = passOf(input.pass);
+  const happenedTo = (category: string): string => input.targetOnPage && category === "target_not_found" ? ON_PAGE_HAPPENED : automationStudioTrialFailureHappened(category);
   return input.absorbed.slice(0, MAX_ABSORBED).map(({ failed, retry }) => {
     const askedMs = failed.fault?.hintedWaitMs ?? retry.retry?.hintedWaitMs ?? (failed.failure ? automationStudioRetryHintMs(failed.failure, failed.finishedAt ?? failed.startedAt) : undefined);
     const waitedMs = retry.retry?.backoffMs;
@@ -43,7 +49,7 @@ export function automationStudioTrialAbsorbedFeedback(input: {
     const onPass = where.pass === undefined ? "" : ` on pass ${where.pass}${where.row ? ` (${where.row})` : ""}`;
     const happened = askedMs !== undefined
       ? `The site asked the run to slow down${onPass}, and to try again in ${seconds(askedMs)}.`
-      : `${automationStudioTrialFailureHappened(failed.failure?.category ?? "action_failed").replace(/\.$/u, "")}${onPass}.`;
+      : `${happenedTo(failed.failure?.category ?? "action_failed").replace(/\.$/u, "")}${onPass}.`;
     const then = waitedMs !== undefined
       ? `The run waited ${seconds(waitedMs)}${creditedMs ? ` (${seconds(creditedMs)} had already passed since the refusal)` : ""} and tried the step again${wentThrough ? ": it went through, so what the site had shown no longer stood in its way" : ""}.`
       : wentThrough ? "The run tried the step again and it went through." : undefined;

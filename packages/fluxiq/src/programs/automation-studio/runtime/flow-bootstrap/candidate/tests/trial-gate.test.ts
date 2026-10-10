@@ -213,6 +213,65 @@ describe("candidate trial gate", () => {
       expect(asked.map((request) => request.revision)).toEqual([1, 1, 2]);
       expect(loopOf(outcome)).toMatchObject({ loop: { ok: true }, trial: { verdict: "yes", revision: 2 } });
     });
+
+    // t420, paid run R4a (`run-mv2nlh9l-52e476da`, 0038): the trial stopped at a step that could not find its control
+    // by its saved address, though the control was on the page. The model was told only "test again if retryable",
+    // never re-tested, and looped on the control until the repeat guard ended the build.
+    describe("a step that could not find a control still on the page", () => {
+      const onPage = (label?: string): JsonObject => {
+        const stopped = stoppedAt(9, "web.output.dom-type", "web.target.not_found");
+        const steps = stopped.steps as JsonObject[];
+        steps[1] = { ...steps[1]!, ...(label ? { label } : {}), targetOnPage: true, retryable: true };
+        return stopped;
+      };
+
+      it("tells the model to test the same revision again, and that re-test is never refused as a repeat", async () => {
+        const asked: AutomationStudioCandidateTrialRequest[] = [];
+        const { outcome, seen } = await run([submit(), test, test, complete], failingPort([onPage("set the quantity to three")], asked), { looked: true }, { before: "page.one", after: "page.one" });
+        const first = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[2]!);
+        expect(first).toMatchObject({ verdict: "execution_failed", retestsLeft: 2 });
+        expect(first?.instruction).toBe("Step 9 (\"set the quantity to three\") could not find its control by the address it was saved with, though the control is on the page. Nothing in your script needs to change for this: test this same revision again, with the same revision and digest, before looking for the control or acting on it.");
+        expect(JSON.stringify(seen[3])).not.toContain("llm_evidence_loop.repeat_refused");
+        expect(asked.map((request) => request.revision)).toEqual([1, 1]);
+        expect(loopOf(outcome)).toMatchObject({ loop: { ok: true }, trial: { verdict: "yes", revision: 1 } });
+      });
+
+      it("says the same when completion is asked for before the re-test", async () => {
+        const { seen } = await run([submit(), test, complete, complete], failingPort([onPage()], []));
+        expect(completionFeedback(seen[3]!)).toMatchObject({ code: "candidate.trial_execution_failed",
+          instruction: "Step 9 could not find its control by the address it was saved with, though the control is on the page. Nothing in your script needs to change for this: test this same revision again, with the same revision and digest, before looking for the control or acting on it." });
+      });
+
+      it("after the same failure twice, names the step and one other way for it to find its control", async () => {
+        const asked: AutomationStudioCandidateTrialRequest[] = [];
+        const { seen } = await run([submit(), test, test, test, complete, complete], failingPort([onPage("set the quantity to three"), onPage("set the quantity to three")], asked));
+        expect(asked.map((request) => request.revision)).toEqual([1, 1]);
+        const second = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!);
+        expect(second).toMatchObject({ verdict: "execution_failed", retestsLeft: 0, failedStep: { step: 9, definitionId: "web.output.dom-type", failureCode: "web.target.not_found" } });
+        const instruction = String(second?.instruction);
+        expect(instruction).toContain("Step 9 (\"set the quantity to three\") could not find its control by the address it was saved with in two trials, though the control was on the page both times");
+        expect(instruction).toContain("Give that one step another way to find its control");
+        expect(instruction).toContain("by its own visible words or the words beside it");
+        expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)).toMatchObject({ ok: false, code: "candidate.trial_same_failure", instruction });
+        expect(completionFeedback(seen[5]!)).toMatchObject({ code: "candidate.trial_execution_failed", instruction });
+      });
+
+      it("keeps today's instruction for a step whose control is not on the page", async () => {
+        const { seen } = await run([submit(), test, complete], failingPort([stoppedAt(9, "web.output.dom-type", "web.target.not_found")], []));
+        expect(String(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[2]!)?.instruction)).toMatch(/^The candidate did not run to its end/u);
+      });
+
+      // Model guidance never mirrors a realistic Lab scenario (AGENTS.md): Core's own words here are generic; only the
+      // step's label, the model's own words, is quoted back.
+      it("words its fixed guidance without any realistic scenario's site or task", async () => {
+        const { seen } = await run([submit(), test, test, test], failingPort([onPage(), onPage()], []));
+        const said = [latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[2]!)?.instruction, latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)?.instruction].map(String);
+        expect(said.every((text) => text.startsWith("Step 9 could not find its control"))).toBe(true);
+        const LAB_TASK_WORDS = /friend|request|earbud|kettle|basket|cart\b|towel|napkin|dish soap|pickup|watchlist|bid\b|auction|coupon|connection|invitation|saved item|classified|giveaway|glaze|moon jar|quote|gas engineer|job|rust role|group post|feed|digest|open day|rating|shirt|colour|size\b|quantity|brightaisle|farbazaar|valueridge|kerbfind|guildline|hammerline|circleway|voltbay|tidewell/iu;
+        // "digest" is the test tool's own parameter, named in every trial instruction, not a scenario's word.
+        for (const text of said) expect(text.replace(/with the same revision and digest/u, "")).not.toMatch(LAB_TASK_WORDS);
+      });
+    });
   });
 
   it("after a no, refuses completing or retesting the unchanged Flow until it changes", async () => {
