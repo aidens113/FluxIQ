@@ -22,3 +22,4 @@ export * from "./retry-hint.ts";
 export * from "./retry-wait.ts";
 export * from "./thrown-error.ts";
 export * from "./transient-status.ts";
+export * from "./declared-no-lasting-act.ts";
