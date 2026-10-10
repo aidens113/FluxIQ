@@ -313,15 +313,30 @@ describe("a block's other entries and its checkpoints", () => {
     ]);
     const node = plan.subflows[0]!.nodes.find((candidate) => candidate.key === "s3")!;
     expect(node.metadata).toEqual({
-      "fluxiq.checkpoint": { id: "search", requires: ["title"] },
+      "fluxiq.checkpoint": { id: "search", requires: [] },
       "fluxiq.entry": {
         id: "search",
         order: 1,
         when: [{ fact: "exists", op: "exists", target: { handle: "t4" } }, { fact: "text", op: "contains", value: "Signed in", target: { handle: "t2" } }],
-        requires: ["title"]
+        requires: []
       }
     });
     expect(plan.metadata).toEqual({ requires: ["web.facts@1"] });
+  });
+
+  it("requires only the inputs a start point's step reads without a default", () => {
+    const plan = planOf([
+      ...open,
+      "start at: search",
+      "when: exists t4",
+      ...press("sign-in"),
+      "step search: search for the title by the author",
+      "  node: web.dom.type",
+      "  selector: #t4",
+      "  text: $input.title = Gardening, $input.author"
+    ]);
+    const node = plan.subflows[0]!.nodes.find((candidate) => candidate.key === "s3")!;
+    expect((node.metadata as { "fluxiq.entry": { requires: string[] } })["fluxiq.entry"].requires).toEqual(["author"]);
   });
 
   it("refuses an entry naming no step, the first step, one with no when, and a checkpoint inside a repeat, each at its line", () => {

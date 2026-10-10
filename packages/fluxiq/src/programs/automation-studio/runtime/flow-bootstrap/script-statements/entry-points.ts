@@ -11,8 +11,9 @@
 // than at the block's first step, when every one of its facts holds and every
 // input the step reads is given; entries are tried in the order written. A
 // `checkpoint: yes` becomes the node's `fluxiq.checkpoint`, the only place a
-// handler's route may go. Both carry the inputs their step reads as
-// `requires`, which the runtime checks are bound before it starts there.
+// handler's route may go. Both carry the inputs their step reads without a
+// default as `requires`, which the runtime checks are bound before it starts
+// there.
 //
 // Refused, each at its line: a `start at:` naming no step of its block, its
 // first step, or a step inside a repeat span (whose row would not exist yet);
@@ -117,10 +118,21 @@ export function automationStudioFlowScriptEntryPoints(input: {
   return { metadata, checkpoints, issues, facts };
 }
 
-/** Every input a step's values read by name, in the order first read. */
+/**
+ * Every input a step's values read by name without a default, in the order
+ * first read. A read written with its default (`$input.title = Gardening`) is
+ * always bound, since the step falls back to that value, so it never keeps a
+ * run from starting there (recovery matrix row 2, t404).
+ */
 function inputsRead(step: AutomationStudioFlowScriptStep): string[] {
   const names = new Set<string>();
-  for (const entry of step.entries) for (const match of entry.lines.join("\n").matchAll(INPUT_READ)) names.add(match[1]!);
+  for (const entry of step.entries) {
+    const text = entry.lines.join("\n");
+    for (const match of text.matchAll(INPUT_READ)) {
+      const defaulted = /^\s*=/u.test(text.slice((match.index ?? 0) + match[0].length));
+      if (!defaulted) names.add(match[1]!);
+    }
+  }
   return [...names];
 }
 
