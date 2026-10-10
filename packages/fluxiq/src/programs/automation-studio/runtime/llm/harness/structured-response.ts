@@ -3,6 +3,8 @@ import type { AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/ind
 import type { AutomationStudioChangeProposalPatch } from "../../../model/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { isJsonValue, isRecord } from "./json-bounds.ts";
+import type { AutomationStudioFactCondition } from "../../executor/lifecycle/index.ts";
+import type { AutomationStudioHandlerDispositionKind, AutomationStudioLifecycleEvent } from "../../../nodes/control-flow/index.ts";
 
 import type { AutomationStudioFlowDraftAmendment } from "../../flow-draft/index.ts";
 
@@ -178,6 +180,122 @@ export const AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS = 8;
 /** The bound on one step's serialized size, so a page cannot ride into a graph write inside a parameter. */
 export const AUTOMATION_STUDIO_RUNTIME_PATCH_STEP_MAX_SERIALIZED_LENGTH = 8_000;
 
+// ---------------------------------------------------------------------------
+// The two kinds an in-run repair may write (state-aware recovery plan, C6 step
+// 8 and C12): a scoped handler for an interruption the run met, and the
+// replacement of exactly one unit -- a node, a handler, or a part. Both are
+// declarative JSON: a handler is the registration `builtin.control.handler`
+// stores (`nodes/control-flow/handler.ts`), and its body is the same list of
+// whole steps `temporary_action_sequence` inserts. Nothing is code, and no
+// expression goes beyond the fact-condition grammar (C9).
+
+/**
+ * A lifecycle point a repair may register a handler for: any but `start`. A
+ * run that is already past its frame's start has no use for one, and a repair
+ * is written for the point the run is at.
+ */
+export type AutomationStudioRuntimePatchHandlerEvent = Exclude<AutomationStudioLifecycleEvent, "start">;
+
+/**
+ * Where a repair's handler applies. Never the whole automation: a learned
+ * handler keeps the scope of the place it was learned, and widening it is a
+ * separate repair with its own judged run (C12).
+ */
+export type AutomationStudioRuntimePatchHandlerScope =
+  | { kind: "nodes"; nodeIds: string[] }
+  | { kind: "subflow"; inherit?: boolean };
+
+/**
+ * How the run continues after the handler's body, in the words a model is
+ * given, each mapped to one of C5's dispositions: `resume` and `route` as
+ * written, `resolve` with the outputs it stands in for, and `give_up` as
+ * `unhandled`, which hands the failure on.
+ */
+export type AutomationStudioRuntimePatchHandlerThen =
+  | { kind: "resume" }
+  | { kind: "route"; checkpointId: string }
+  | { kind: "resolve"; outputs: JsonObject }
+  | { kind: "give_up" };
+
+/**
+ * One handler as a repair writes it. `completionCheck` is the evidence that
+ * the body worked; a `before` or `retry` handler must carry one, and must say
+ * in `when` which situation it is for, since it would otherwise run before
+ * every attempt in its scope.
+ */
+export type AutomationStudioRuntimePatchHandlerSpec = {
+  event: AutomationStudioRuntimePatchHandlerEvent;
+  scope: AutomationStudioRuntimePatchHandlerScope;
+  when: AutomationStudioFactCondition[];
+  completionCheck?: AutomationStudioFactCondition[];
+  steps: AutomationStudioRuntimePatchStep[];
+  then: AutomationStudioRuntimePatchHandlerThen;
+};
+
+/**
+ * The one unit a `replace_unit` repair replaces: a node (by its id), a handler
+ * (by its Handler node's id: the registration, its body and its end), or a
+ * part (by its Subflow id: the whole graph a Call Subflow node calls).
+ */
+export type AutomationStudioRuntimePatchUnit =
+  | { kind: "node"; nodeId: string }
+  | { kind: "handler"; nodeId: string }
+  | { kind: "part"; subflowId: string };
+
+/**
+ * A scoped handler for the interruption the run met (C4), written as the
+ * registration it becomes. `consequences` says what its body's steps would
+ * lastingly do, as an inserted sequence's does.
+ */
+export type AutomationStudioRuntimeAddHandlerPatch = AutomationStudioRuntimePatchHandlerSpec & {
+  kind: "add_handler";
+  consequences?: AutomationStudioActionConsequence[];
+  reason: string;
+  metadata?: JsonObject;
+};
+
+/**
+ * The replacement of exactly one unit (C12): steps for a node or a part, a
+ * handler for a handler. A node's replacement may also name an existing node
+ * its failure goes to (`failedEdgeTo`), an authored `failed` edge, so the next
+ * occurrence of the failure is a planned one and calls no model.
+ */
+export type AutomationStudioRuntimeReplaceUnitPatch = {
+  kind: "replace_unit";
+  unit: AutomationStudioRuntimePatchUnit;
+  steps?: AutomationStudioRuntimePatchStep[];
+  handler?: AutomationStudioRuntimePatchHandlerSpec;
+  failedEdgeTo?: string;
+  consequences?: AutomationStudioActionConsequence[];
+  reason: string;
+  metadata?: JsonObject;
+};
+
+/**
+ * The bounds a model's handler is held to. A handler is a few facts and a
+ * step or two, never a second Flow; and a condition is a host path and a
+ * small value, never a page.
+ */
+export const AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_BOUNDS = Object.freeze({
+  /** Conditions in one `when` or `completionCheck`. */
+  maxConditions: 8,
+  /** Characters in a condition's `fact`. */
+  maxFactLength: 200,
+  /** Characters in a condition's string value, or in the name an `{ input }` or `{ value }` reads. */
+  maxValueLength: 1_000,
+  /** Characters in a node id, a Subflow id or a checkpoint id a repair names. */
+  maxIdLength: 200,
+  /** Node ids one `nodes` scope may name. */
+  maxScopeNodeIds: 16,
+  /** Serialized characters of a `resolve`'s outputs. */
+  maxResolveOutputsLength: 4_000
+} as const);
+
+/** The disposition a handler's `then` is stored as on its Handler End (C5). */
+export function automationStudioHandlerThenDisposition(then: AutomationStudioRuntimePatchHandlerThen): AutomationStudioHandlerDispositionKind {
+  return then.kind === "give_up" ? "unhandled" : then.kind;
+}
+
 /**
  * A runtime patch as a model writes it.
  *
@@ -188,13 +306,18 @@ export const AUTOMATION_STUDIO_RUNTIME_PATCH_STEP_MAX_SERIALIZED_LENGTH = 8_000;
  * optional here because it is read forgivingly: a patch that left it out is
  * recorded as undeclared and does not run, rather than the whole answer being
  * refused, and a proposal-only patch never carries it.
+ *
+ * `add_handler` and `replace_unit` are the in-run repair's kinds (above),
+ * offered only to a request that declares one.
  */
 export type AutomationStudioRuntimePatch =
   | { kind: "temporary_action_sequence"; targetNodeId: string; steps: AutomationStudioRuntimePatchStep[]; consequences?: AutomationStudioActionConsequence[]; reason: string; metadata?: JsonObject }
   | { kind: "temporary_wait_retry"; targetNodeId: string; timeoutMs?: number; retryCount?: number; reason: string; metadata?: JsonObject }
   | { kind: "temporary_target_override"; targetNodeId: string; target: AutomationStudioRuntimeTargetOverrideTarget; consequences?: AutomationStudioActionConsequence[]; reason: string; metadata?: JsonObject }
   | { kind: "temporary_recovery_subflow_call"; subflowId: string; reason: string; metadata?: JsonObject }
-  | { kind: "temporary_reroute"; fromNodeId: string; toNodeId: string; reason: string; metadata?: JsonObject };
+  | { kind: "temporary_reroute"; fromNodeId: string; toNodeId: string; reason: string; metadata?: JsonObject }
+  | AutomationStudioRuntimeAddHandlerPatch
+  | AutomationStudioRuntimeReplaceUnitPatch;
 
 /**
  * A target Core will carry: bounded handles, and a domain resolution bounded

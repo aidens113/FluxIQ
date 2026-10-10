@@ -12,7 +12,7 @@ import { timingNodes } from "./timing/index.ts";
 export const automationNodeClassGroups: AutomationNodeClassGroup[] = [
   { id: "control-flow", label: "Control Flow", description: "Graph routing, branching, joining, and lifecycle nodes." },
   { id: "policy", label: "Policy", description: "Task policy action, expectation, and recovery nodes." },
-  { id: "routine", label: "Routine", description: "Routine orchestration nodes that call tasks or subroutines." },
+  { id: "routine", label: "Routine", description: "Routine orchestration nodes that run tasks and wait for approval." },
   { id: "logic", label: "Logic", description: "Boolean and comparison nodes." },
   { id: "math", label: "Math", description: "Numeric transform nodes." },
   { id: "random", label: "Random", description: "Random number, choice, and jitter nodes." },

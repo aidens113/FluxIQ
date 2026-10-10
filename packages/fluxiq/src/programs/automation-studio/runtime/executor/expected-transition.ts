@@ -51,7 +51,6 @@ function expectedEffectsForNode(node: AutomationStudioFlowNode): Array<{ type: s
   if (node.definitionId === "builtin.policy.expectation") return [{ type: "policy.expectation.checked" }];
   if (node.definitionId === "builtin.routine.approval") return [{ type: AUTOMATION_STUDIO_ASK_EFFECT }];
   if (node.definitionId === "builtin.routine.task-policy") return [{ type: "routine.task-policy.requested" }];
-  if (node.definitionId === "builtin.routine.subroutine") return [{ type: "routine.subroutine.requested" }];
   if (node.definitionId.startsWith("builtin.database.")) return [{ type: `${node.definitionId.replace("builtin.", "")}.requested` }];
   return [];
 }

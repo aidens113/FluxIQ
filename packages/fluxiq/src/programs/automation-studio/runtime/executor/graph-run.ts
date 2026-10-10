@@ -2,36 +2,43 @@ import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
 import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } from "../../nodes/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioLadderRungKind, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
-import { announceAutomationStudioStateRoute, automationStudioCouldNotRun, automationStudioNotShownAttempt, automationStudioStateRouteGuard, automationStudioStateRoutedAttempt, decideAutomationStudioStateRoute, type AutomationStudioStateRouteDecision } from "./state-routing/index.ts";
+import { automationStudioCouldNotRun, automationStudioNotShownAttempt, automationStudioStateRouteGuard, decideAutomationStudioStateRoute, type AutomationStudioStateRouteDecision } from "./state-routing/index.ts";
 import { nodeAttemptWithAdaptationIds } from "./attempt-trace.ts";
 import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "./graph-navigation.ts";
-import {
-  automationStudioAssessAttemptFault,
-  automationStudioContinuationAfterFailure,
-  automationStudioFaultFromThrownError,
-  automationStudioPlannedRetryWait,
-  automationStudioRunMayStillAbsorb, automationStudioStopMessage,
-  automationStudioThrownErrorText,
-  type AutomationStudioFaultAssessment
-} from "./defensive/index.ts";
-import { automationStudioAwaitNodeReadiness, runAutomationStudioRecoveryLadder } from "./ladder-run.ts";
+import { automationStudioFaultFromThrownError, automationStudioThrownErrorText } from "./defensive/index.ts";
+import { automationStudioTraceInFrame, runAutomationStudioGraphInFrame } from "./frames/index.ts";
 import { executeAutomationStudioNode } from "./node-execution.ts";
-import { automationStudioRunWait, automationStudioTimedPause } from "./pacing/index.ts";
 import { automationStudioTraceWithSharedInputs } from "./node-execution/index.ts";
-import { automationStudioIsPersonNeededAsk, automationStudioPersonNeededEnding, automationStudioPersonNeededStep } from "./person-needed.ts";
-import { automationStudioRecordedState } from "./recorded-state.ts";
-import { recoveryBudgetState } from "./recovery-budget.ts";
-import { automationStudioRecoveryPathEdge, failureMessageForRecoveryStop } from "./recovery-ladder.ts";
-import { automationStudioAttemptIsRetryable, automationStudioNodeRetryPolicy } from "./retry-policy.ts";
+import { automationStudioPersonNeededEnding } from "./person-needed.ts";
 import type { AutomationStudioCapturedRecords } from "./record-summary.ts";
 import { executeWithRegionTimeout, policyDecisionForAttempt, recordRegionTransition } from "./region-execution.ts";
-import { automationStudioParkedRun, automationStudioAskInEffects, automationStudioAskSettlement, type AutomationStudioAsk, type AutomationStudioAskSettlement, type AutomationStudioCarriedIteration, type AutomationStudioParkedRun } from "../parking/index.ts";
+import type { AutomationStudioCarriedIteration } from "../parking/index.ts";
 import { automationStudioRunState, type AutomationStudioRunState } from "./run-state.ts";
 import { chooseAutomationStudioStartNode } from "./start-node.ts";
 import { automationStudioStopAfterNode } from "./partial-run/index.ts";
+import {
+  automationStudioEndedTrace,
+  automationStudioStepArrival,
+  automationStudioStepAskOrPark,
+  automationStudioStepBeforeNext,
+  automationStudioStepCheckpointRoute,
+  automationStudioStepEndFrameIncident,
+  automationStudioStepEntry,
+  automationStudioStepFailedAttempt,
+  automationStudioStepFrameSucceeded,
+  automationStudioStepLifecycle,
+  automationStudioStepLifecycleFrame,
+  automationStudioStepLifecycleRegister,
+  automationStudioStepRetryBeforeRouting,
+  automationStudioStepStateRoute,
+  automationStudioTraceWithLifecycle,
+  type AutomationStudioStepLifecycleFrame,
+  type AutomationStudioStepLifecycleOutcome,
+  type AutomationStudioStepLoopContext
+} from "./step-loop/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
-import { automationStudioActivityAskResolution, automationStudioActivityHold, automationStudioActivityInBuild, automationStudioActivityLoopWords, automationStudioActivityRecoveryChoice, automationStudioActivityStepNumbers, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought, emitAutomationStudioActivityWaitingOnAsk } from "../activity/index.ts";
+import { automationStudioActivityHold, automationStudioActivityLoopWords, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep } from "../activity/index.ts";
 
 /**
  * What each saved trace this module returned withheld by value, keyed by that
@@ -133,7 +140,8 @@ async function runGraphFromSeed(
   const startedAt = seed?.startedAt ?? options.now?.() ?? Date.now();
   try {
     await options.commandRun?.checkpoint();
-    return await runGraphToTrace(flow, options, seed, onExecutedTrace);
+    // The run executes as its frame, pushed for exactly as long as it runs (`frames/graph-frame.ts`).
+    return await runAutomationStudioGraphInFrame(flow, options, runAutomationStudioGraph, (framed) => runGraphToTrace(flow, framed, seed, onExecutedTrace));
   } catch (error) {
     await options.commandRun?.stop("executor.graph_stopped");
     const fault = automationStudioFaultFromThrownError(error, { now: options.now?.() ?? Date.now(), aborted: options.signal?.aborted === true });
@@ -163,9 +171,13 @@ async function runGraphToTrace(
   // Recorded before the first node, so every dispatch is told to withhold it too.
   withholding.supply(options.inputs ?? {}, options.declaredInputDefaults);
   recordDeclaredStateBindings(flow, options, withholding);
-  const start = () => executeAutomationStudioGraph(flow, options, withholding, runState, seed);
+  // What lifecycle dispatch keeps for this frame's trace: handler bodies' attempts, and the run's records at its root.
+  const lifecycle = automationStudioStepLifecycleFrame();
+  const start = () => executeAutomationStudioGraph(flow, options, withholding, runState, lifecycle, seed);
   const running = options.commandRun ? options.commandRun.own(start) : start();
-  const executed = await running;
+  const executed = automationStudioTraceInFrame(await running, options.invocation);
+  // The incident still open when the frame ends closes here; a Call Subflow child's goes to its node first (C7).
+  automationStudioStepEndFrameIncident(options.invocation, executed);
   await options.commandRun?.checkpoint();
   for (const attempt of executed.attempts) {
     const childWithheld = attempt.childTrace ? withheldBySavedTrace.get(attempt.childTrace) : undefined;
@@ -181,7 +193,8 @@ async function runGraphToTrace(
   // The paces it held nodes to ride beside it: a learned one is what a promotion writes back.
   const defence = runState.defence.summary(), pace = runState.pace.summary();
   const defended = defence || pace ? { ...executed, ...(defence ? { defence } : {}), ...(pace ? { pace } : {}) } : executed;
-  const saved = withholding.apply(automationStudioWithholdRunInputs(runState.records.apply(automationStudioTraceWithSharedInputs(defended, options.inputs ?? {})), options.inputs ?? {}));
+  const withheld = withholding.apply(automationStudioWithholdRunInputs(runState.records.apply(automationStudioTraceWithSharedInputs(defended, options.inputs ?? {})), options.inputs ?? {}));
+  const saved = automationStudioTraceWithLifecycle(withheld, lifecycle, options.invocation);
   withheldBySavedTrace.set(saved, withholding.values());
   capturedBySavedTrace.set(saved, runState.records.captured());
   onExecutedTrace?.(defended, saved);
@@ -258,80 +271,23 @@ function stepsPerIteration(node: AutomationStudioFlowNode): number {
   return 1;
 }
 
-/**
- * Puts one assessed fault on the run's defence ledger.
- *
- * Every fault goes on it, absorbed or not. A fault the run survived and left no
- * mark of is indistinguishable afterwards from a run that met nothing, and a
- * person debugging cannot tell a first-attempt success from a third.
- */
-function recordDefendedFault(
-  runState: AutomationStudioRunState,
-  nodeId: string,
-  attempt: AutomationStudioNodeAttemptTrace,
-  attemptNumber: number,
-  fault: AutomationStudioFaultAssessment | undefined,
-  outcome: "retried" | "continued" | "stopped",
-  waitedMs: number
-): void {
-  if (!fault) return;
-  runState.defence.record({
-    nodeId,
-    attemptId: attempt.attemptId,
-    attemptNumber,
-    outcome,
-    category: fault.category,
-    code: fault.code,
-    source: fault.source,
-    effect: fault.effect,
-    reason: fault.reason,
-    waitedMs,
-    ...(fault.hintedWaitMs === undefined ? {} : { hintedWaitMs: fault.hintedWaitMs }),
-    ...(fault.httpStatus === undefined ? {} : { httpStatus: fault.httpStatus })
-  });
-}
-
-/**
- * The ledger entry for a failure the policy could not classify at all -- a node
- * that failed with no record, no throw and nothing readable in its message.
- *
- * It still has to be recorded. Whether the Flow went on past it or stopped there
- * is a decision somebody will have to understand, and "no fault was recorded"
- * would leave that decision with no reason attached to it.
- */
-function continuationFault(reason: string): AutomationStudioFaultAssessment {
-  return {
-    disposition: "refuse",
-    category: "ambiguous_or_unknown",
-    code: "executor.fault.unclassified",
-    source: "result_message",
-    effect: "ambiguous",
-    reason
-  };
-}
-
 async function executeAutomationStudioGraph(
   flow: AutomationStudioFlowDocument,
   options: AutomationStudioGraphExecutionOptions,
   withholding: AutomationStudioTraceWithholding,
   runState: AutomationStudioRunState,
+  lifecycle: AutomationStudioStepLifecycleFrame,
   seed?: AutomationStudioGraphRunSeed
 ): Promise<AutomationStudioGraphExecutionTrace> {
   const now = options.now ?? Date.now;
   const startedAt = seed?.startedAt ?? now();
   const attempts: AutomationStudioNodeAttemptTrace[] = seed ? [...seed.attempts] : [];
-  // An attempt's id is its node's id and its number in the run. A re-run of the
-  // same run numbers after the attempts its first pass kept, or it would reuse
-  // their ids, and the run store keeps the first record under an id it has seen.
-  const nextAttemptNumber = () => (options.priorAttemptCount ?? 0) + attempts.length + 1;
   // A resumed run keeps what it had computed, with the caller's own inputs put
   // back over it: the seed comes from a saved trace, whose run inputs are
   // withheld, and a host that supplies them again gets the real ones back.
   const values: Record<string, JsonValue> = seed ? { ...seed.values, ...(options.inputs ?? {}) } : { ...(options.inputs ?? {}) };
   const effects: AutomationStudioGraphExecutionTrace["effects"] = seed ? [...seed.effects] : [];
   const regionTransitions: NonNullable<AutomationStudioGraphExecutionTrace["regionTransitions"]> = seed ? [...seed.regionTransitions] : [];
-  const regionStartedAt = new Map<string, number>();
-  const capabilities = new Set(options.runtimeCapabilities ?? []);
   const nodesById = new Map(flow.nodes.map((node) => [node.id, node]));
   const startChoice = options.startNodeId ? undefined : chooseAutomationStudioStartNode(flow);
   let currentNode = options.startNodeId ? nodesById.get(options.startNodeId) : startChoice?.node;
@@ -347,25 +303,48 @@ async function executeAutomationStudioGraph(
     };
   }
 
-  // "Step N of M" numbers a step by its place in the Flow, from the Flow's own
-  // start, so a retry, a route back or a partial run keeps it; a Merge has none
-  // and is not announced (`activity/step/numbers.ts`).
-  const stepNumbers = automationStudioActivityStepNumbers(flow, (startChoice ?? chooseAutomationStudioStartNode(flow)).node?.id);
-  // A do-while pass's step names its page, and the loop's end is said once (`activity/loop/`).
-  const loopWords = automationStudioActivityLoopWords(flow);
-  let maxSteps = seed ? seed.maxSteps : Math.min(AUTOMATION_STUDIO_MAX_RUN_STEPS, Math.max(1, options.maxSteps ?? 250));
-  // One arrival at one node: how many times it has been attempted here, and
-  // which ladder rungs that arrival has already spent. It is reset the moment
-  // the run moves to a different node, so a node reached twice -- inside a For
-  // Each body, say -- gets the whole ladder again on its second arrival.
-  let arrival = { nodeId: currentNode.id, attempts: 0, consumed: new Set<AutomationStudioLadderRungKind>() };
-  let pendingRetry: AutomationStudioNodeAttemptTrace["retry"];
-  // Where state routing has sent this run, so a page that keeps sending it back
-  // to one node without progress ends the run rather than looping it.
-  const routeGuard = automationStudioStateRouteGuard();
-  // A partial run's stop node (`partial-run/`), asked before every move out of a node.
-  const stopAfter = automationStudioStopAfterNode(flow, options.stopAfterNodeId);
-  const stoppedAt = (nodeId: string, message: string): AutomationStudioGraphExecutionTrace => ({ status: "succeeded", startedAt, finishedAt: now(), currentNodeId: nodeId, attempts, values, effects, regionTransitions, stopReason: "stopped_at_node", message });
+  // The run's step-to-step state, handed to each seam of the loop (`step-loop/`).
+  const ctx: AutomationStudioStepLoopContext = {
+    flow, options, withholding, runState, now, startedAt, attempts, values, effects, regionTransitions, nodesById,
+    regionStartedAt: new Map<string, number>(),
+    capabilities: new Set(options.runtimeCapabilities ?? []),
+    // "Step N of M" numbers a step by its place in the Flow, from the Flow's own
+    // start, so a retry, a route back or a partial run keeps it; a Merge has none
+    // and is not announced (`activity/step/numbers.ts`).
+    stepNumbers: automationStudioActivityStepNumbers(flow, (startChoice ?? chooseAutomationStudioStartNode(flow)).node?.id),
+    // A do-while pass's step names its page, and the loop's end is said once (`activity/loop/`).
+    loopWords: automationStudioActivityLoopWords(flow),
+    routeGuard: automationStudioStateRouteGuard(),
+    stopAfter: automationStudioStopAfterNode(flow, options.stopAfterNodeId),
+    // An attempt's id is its node's id and its number in the run. A re-run of the
+    // same run numbers after the attempts its first pass kept, or it would reuse
+    // their ids, and the run store keeps the first record under an id it has seen.
+    nextAttemptNumber: () => (options.priorAttemptCount ?? 0) + attempts.length + 1,
+    stoppedAt: (nodeId, message) => ({ status: "succeeded", startedAt, finishedAt: now(), currentNodeId: nodeId, attempts, values, effects, regionTransitions, stopReason: "stopped_at_node", message }),
+    lifecycle,
+    maxSteps: seed ? seed.maxSteps : Math.min(AUTOMATION_STUDIO_MAX_RUN_STEPS, Math.max(1, options.maxSteps ?? 250)),
+    step: seed?.stepsTaken ?? 0,
+    // Reset the moment the run moves to a different node, so a node reached
+    // twice -- inside a For Each body, say -- gets the whole ladder again on its
+    // second arrival.
+    arrival: { nodeId: currentNode.id, attempts: 0, consumed: new Set<AutomationStudioLadderRungKind>(), ordinal: 1 },
+    pendingRetry: undefined
+  };
+  lifecycle.arrivals.set(currentNode.id, 1);
+  // The frame's graph joins the run's handler registry as the frame starts (C4).
+  automationStudioStepLifecycleRegister(ctx, currentNode.id);
+  // On Start, once per new frame: never on a seed, a resume or a run told where to start (C3).
+  // Then the frame's entry, unless On Start routed it: an alternative entry whose facts hold, or the default (C2).
+  if (!seed && !options.startNodeId) {
+    const started = await automationStudioStepLifecycle(ctx, { event: "start", node: currentNode, attemptNumber: 1 });
+    if (started.kind === "return") return started.trace;
+    if (started.kind === "route") currentNode = started.node;
+    else {
+      if (started.lifecycle) lifecycle.pending = started.lifecycle;
+      currentNode = await automationStudioStepEntry(ctx, currentNode);
+    }
+  }
+  const { stepNumbers, loopWords, stopAfter, stoppedAt } = ctx;
   // Set only on a resumed run's first pass. The parked node is not executed
   // again: that pass does nothing but leave it by the route the answer chose,
   // so whatever the node already did happened once.
@@ -374,11 +353,10 @@ async function executeAutomationStudioGraph(
   // merge the run has passed, those before a park included, which its attempts
   // carry. A resumed run's first pass only leaves the parked node, which its
   // `stepsTaken` already counted, so it is not a second step either.
-  for (let step = seed?.stepsTaken ?? 0; step < maxSteps; step += 1) {
+  for (let step = seed?.stepsTaken ?? 0; step < ctx.maxSteps; step += 1) {
+    ctx.step = step;
     await options.commandRun?.checkpoint();
-    if (options.signal?.aborted) {
-      return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
-    }
+    if (options.signal?.aborted) return automationStudioEndedTrace(ctx, "cancelled", currentNode.id, "Run cancelled.");
     // A pause holds here, before the node executes, and never inside it. The run resumes at this same node with
     // everything it had computed; the hold and its release are each said once (`activity/hold.ts`).
     const held = options.runControl?.checkpoint({ nodeId: currentNode.id, step });
@@ -386,7 +364,7 @@ async function executeAutomationStudioGraph(
       const released = await automationStudioActivityHold(held, { nodeId: currentNode.id, label: currentNode.label, index: stepNumbers.numberOf(currentNode.id), count: stepNumbers.count, byPerson: options.runControl?.heldBy?.() === "person", signal: options.signal });
       await options.commandRun?.checkpoint();
       if (released.outcome === "stop" || options.signal?.aborted) {
-        return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: released.outcome === "stop" ? released.message : "Run cancelled." };
+        return automationStudioEndedTrace(ctx, "cancelled", currentNode.id, released.outcome === "stop" ? released.message : "Run cancelled.");
       }
     }
     const regionId = options.regionRuntime?.nodeRegionIds[currentNode.id] ?? options.nodeRegionIds?.[currentNode.id];
@@ -394,46 +372,36 @@ async function executeAutomationStudioGraph(
     let route = resumedRoute;
     resumedRoute = undefined;
     if (route === undefined) {
-      if (regionId && !regionStartedAt.has(regionId)) regionStartedAt.set(regionId, now());
-      const missingCapability = region?.requiredRuntimeCapabilities?.find((capability) => !capabilities.has(capability));
-      if (missingCapability) return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: `Region ${regionId} requires runtime capability ${missingCapability}.` };
-      const elapsed = region?.timeoutMs === undefined ? 0 : now() - (regionStartedAt.get(regionId!) ?? now());
-      if (region?.timeoutMs !== undefined && elapsed >= region.timeoutMs) return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: `Region ${regionId} exceeded its ${region.timeoutMs}ms timeout.` };
-      const remainingMs = region?.timeoutMs === undefined ? undefined : region.timeoutMs - elapsed;
-      if (arrival.nodeId !== currentNode.id) {
-        arrival = { nodeId: currentNode.id, attempts: 0, consumed: new Set<AutomationStudioLadderRungKind>() };
-        // A fresh arrival gets a fresh waiting allowance, the same way it gets the
-        // whole ladder again. The whole-run allowance is not reset by anything.
-        runState.defence.leaveNode();
+      // The region's checks, the arrival count, the node's pace and its readiness gate (`step-loop/arrival.ts`).
+      const arrived = await automationStudioStepArrival(ctx, currentNode, regionId, region);
+      if (arrived.kind === "return") return arrived.trace;
+      if (arrived.kind === "next") {
+        currentNode = arrived.node;
+        continue;
       }
-      arrival.attempts += 1;
-      const retryPolicy = automationStudioNodeRetryPolicy(flow, currentNode, options);
-      const recordedState = automationStudioRecordedState(currentNode);
-      // A node's pace holds each arrival at it, never a retry of one (`pacing/pace-keeper.ts`).
-      const paced = arrival.attempts === 1 ? await runState.pace.before(currentNode, now, (ms) => automationStudioRunWait(options, ms)) : undefined;
-      // The wait ceiling, gated by the state the node expects to find. It never
-      // fails the node: an unsatisfied gate is a mark on the attempt, because the
-      // recording is evidence the action was possible at that point. A gate
-      // that judged the state and found it not met asks state routing first,
-      // and a way on skips the dispatch entirely (`state-routing/`).
-      const readiness = await automationStudioAwaitNodeReadiness(currentNode, options, `${currentNode.id}.attempt.${nextAttemptNumber()}`);
-      await options.commandRun?.checkpoint();
-      if (options.signal?.aborted) {
-        return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
+      const { remainingMs, retryPolicy, recordedState, paced, readiness } = arrived;
+      const node: AutomationStudioFlowNode = currentNode;
+      const stepNumber = stepNumbers.numberOf(node.id);
+      if (stepNumber !== undefined) emitAutomationStudioActivityStep({ index: stepNumber, count: stepNumbers.count, nodeId: node.id, label: node.label, definitionId: node.definitionId, parameters: node.parameterValues, pass: loopWords.passOf(node.id, attempts) });
+      let notShown: AutomationStudioNodeAttemptTrace | undefined = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? automationStudioNotShownAttempt(node, `${node.id}.attempt.${ctx.nextAttemptNumber()}`, now()) : undefined;
+      // On Retry before safe state routing; a handler that cleared the way lets the node run now (`step-loop/could-not-run-retry.ts`).
+      const cleared: AutomationStudioStepLifecycleOutcome | undefined = notShown ? (await automationStudioStepRetryBeforeRouting(ctx, { node, attempt: notShown, attemptIndex: undefined, retryPolicy }))?.outcome : undefined;
+      if (cleared?.kind === "return") return cleared.trace;
+      if (cleared?.kind === "route") {
+        currentNode = cleared.node;
+        continue;
       }
-      const stepNumber = stepNumbers.numberOf(currentNode.id);
-      if (stepNumber !== undefined) emitAutomationStudioActivityStep({ index: stepNumber, count: stepNumbers.count, nodeId: currentNode.id, label: currentNode.label, definitionId: currentNode.definitionId, parameters: currentNode.parameterValues, pass: loopWords.passOf(currentNode.id, attempts) });
-      const notShown: AutomationStudioNodeAttemptTrace | undefined = readiness?.satisfied === false && readiness.checkedConditionCount > 0 ? automationStudioNotShownAttempt(currentNode, `${currentNode.id}.attempt.${nextAttemptNumber()}`, now()) : undefined;
-      let routing: AutomationStudioStateRouteDecision | undefined = notShown ? await decideAutomationStudioStateRoute({ flow, node: currentNode, attempt: notShown, attempts, options, guard: routeGuard }) : undefined;
-      if (!notShown || routing?.kind === "none") runState.pace.started(currentNode, now());
+      if (cleared && cleared.kind !== "pass") notShown = undefined;
+      const routing: AutomationStudioStateRouteDecision | undefined = notShown ? await decideAutomationStudioStateRoute({ flow: ctx.flow, node, attempt: notShown, attempts, options, guard: ctx.routeGuard }) : undefined;
+      if (!notShown || routing?.kind === "none") runState.pace.started(node, now());
       const executed = notShown && routing?.kind !== "none" ? notShown : remainingMs === undefined
-        ? await executeAutomationStudioNode(flow, currentNode, values, options, nextAttemptNumber(), withholding, runState)
+        ? await executeAutomationStudioNode(ctx.flow, node, values, options, ctx.nextAttemptNumber(), withholding, runState)
         : await executeWithRegionTimeout(
-          (signal) => executeAutomationStudioNode(flow, currentNode!, values, { ...options, signal }, nextAttemptNumber(), withholding, runState),
+          (signal) => executeAutomationStudioNode(ctx.flow, node, values, { ...options, signal }, ctx.nextAttemptNumber(), withholding, runState),
           remainingMs,
           options.signal,
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
-          () => nodeAttemptWithAdaptationIds(currentNode!, { attemptId: `${currentNode!.id}.attempt.${nextAttemptNumber()}`, nodeId: currentNode!.id, definitionId: currentNode!.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } }), options.commandRun
+          () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } }), options.commandRun
         );
       await options.commandRun?.checkpoint();
       // What the ladder and the recorded state contributed is stamped once, here,
@@ -442,353 +410,99 @@ async function executeAutomationStudioGraph(
         ...executed,
         ...(readiness ? { readiness } : {}),
         ...(Object.keys(recordedState).length ? { recordedState } : {}),
-        ...(pendingRetry ? { retry: pendingRetry } : {}),
+        ...(ctx.pendingRetry ? { retry: ctx.pendingRetry } : {}),
         ...(paced ? { pace: paced } : {}),
-        ...(routing?.kind === "none" ? { stateRouting: routing.record } : {})
+        ...(routing?.kind === "none" ? { stateRouting: routing.record } : {}),
+        ...(lifecycle.pending ? { lifecycle: lifecycle.pending } : {}),
+        ...(lifecycle.entry ? { entry: lifecycle.entry } : {})
       };
-      pendingRetry = undefined;
-      const tracedAttempt = region?.kind === "policy" ? { ...attempt, policyDecision: policyDecisionForAttempt(currentNode, attempt) } : attempt;
+      ctx.pendingRetry = undefined;
+      delete lifecycle.pending;
+      delete lifecycle.entry;
+      const tracedAttempt = region?.kind === "policy" ? { ...attempt, policyDecision: policyDecisionForAttempt(node, attempt) } : attempt;
       const attemptIndex = attempts.length;
       attempts.push(regionId ? { ...tracedAttempt, regionId } : tracedAttempt);
-      maxSteps = withIterationAllowance(maxSteps, currentNode, attempt);
+      // A child that handed the run back to a checkpoint: here, or in a frame that called this one (`step-loop/checkpoint-route.ts`).
+      const handedBack = automationStudioStepCheckpointRoute(ctx, node, attemptIndex);
+      if (handedBack?.kind === "return") return handedBack.trace;
+      if (handedBack?.kind === "next") {
+        currentNode = handedBack.node;
+        continue;
+      }
+      ctx.maxSteps = withIterationAllowance(ctx.maxSteps, node, attempt);
       loopWords.settled(attempt, attempts);
       for (const [key, value] of Object.entries(attempt.outputs)) {
-        values[`${currentNode.id}.${key}`] = value;
+        values[`${node.id}.${key}`] = value;
         values[key] = value;
       }
-      for (const effect of attempt.effects) effects.push({ ...effect, nodeId: currentNode.id });
-      if (options.signal?.aborted) return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
-      // The question the attempt raised, from wherever inside it -- the node, a
-      // domain answering a dispatch, a gate. It is read here rather than at the
-      // node, which is what makes asking a property of a run and not of one node
-      // definition.
-      const raised = automationStudioAskInEffects(attempt.effects, {
-        askId: attempt.attemptId,
-        stage: "execution",
-        nodeId: currentNode.id,
-        definitionId: currentNode.definitionId,
-        attemptId: attempt.attemptId
-      });
-      // A step only a person can get past asks one (`person-needed.ts`), and
-      // neither the ladder nor a repair runs on it.
-      const personStep = automationStudioPersonNeededStep({ attempt, node: currentNode, attempts, raised, parkingBound: Boolean(options.parking) });
-      if (personStep.kind === "exhausted") {
-        recordDefendedFault(runState, currentNode.id, attempt, arrival.attempts, automationStudioAssessAttemptFault(attempt, currentNode, now()), "stopped", 0);
-        return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: personStep.message };
-      }
-      const ask = raised ?? (personStep.kind === "ask" ? personStep.ask : undefined);
-      const personNeeded = automationStudioIsPersonNeededAsk(ask);
-      let routeOverride: string | undefined;
-      if (ask) {
-        const parked = automationStudioParkedRun({
-          ask,
-          nodeId: currentNode.id,
-          definitionId: currentNode.definitionId,
-          attemptId: attempt.attemptId,
-          parkedAtMs: now(),
-          carried: {
-            variables: Object.fromEntries(runState.variables),
-            loops: Object.fromEntries(runState.loops),
-            stepsTaken: step + 1,
-            maxSteps,
-            ...(options.callFlowAttemptPath?.length ? { callFlowAttemptPath: [...options.callFlowAttemptPath] } : {})
-          }
-        });
-        attempts[attemptIndex] = { ...attempts[attemptIndex]!, ask: { askId: ask.askId, kind: ask.kind, parks: ask.parks, status: "pending", ...(personNeeded ? { personNeeded: true as const } : {}) } };
-        await options.commandRun?.checkpoint();
-        const undelivered = await openAutomationStudioAsk(options, ask);
-        if (undelivered) {
-          return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: undelivered };
-        }
-        if (ask.parks) {
-          emitAutomationStudioActivityWaitingOnAsk(ask);
-          let settlement: Awaited<ReturnType<typeof settleAskInPlace>>;
-          try {
-            settlement = await settleAskInPlace(options, parked);
-            await options.commandRun?.checkpoint();
-          } catch (error) {
-            // The thread could not be read: the wait is over, and nobody answered.
-            emitAutomationStudioActivityAskResolved(ask, "cancelled", "running");
-            throw error;
-          }
-          if (!settlement) {
-            return { status: "waiting", startedAt, currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, parked, ...(attempt.message ? { message: attempt.message } : {}) };
-          }
-          if (settlement.outcome === "refused") {
-            emitAutomationStudioActivityAskResolved(ask, "cancelled", "running");
-            return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: settlement.message };
-          }
-          // Said where the wait settles; a run cancelled while it waited was answered by nobody and timed out on nothing.
-          emitAutomationStudioActivityAskResolved(ask, settlement.outcome === "answered" ? automationStudioActivityAskResolution(ask, settlement.answer) : options.signal?.aborted ? "cancelled" : "timed_out", "running");
-          attempts[attemptIndex] = { ...attempts[attemptIndex]!, ask: settledAskRecord(ask, settlement) };
-          // What the person said is data the rest of the Flow can read, put
-          // where every other node output goes so a binding reaches it the
-          // ordinary way. Not "Continue" on a person-needed ask: that is no data,
-          // and written under the bare `answer` key it would overwrite an output.
-          if (settlement.outcome === "answered" && settlement.answer.value !== null && !personNeeded) {
-            values[`${currentNode.id}.answer`] = settlement.answer.value;
-            values.answer = settlement.answer.value;
-          }
-          routeOverride = settlement.route;
-        }
-      }
-      // A timed pause -- a Wait node's -- is taken and the run goes on (`pacing/timed-pause.ts`); any other wait parks the run.
-      const paused = routeOverride === undefined && attempt.status === "waiting" ? await automationStudioTimedPause({ attempt: attempts[attemptIndex]!, options, now, regionRemainingMs: remainingMs }) : undefined;
-      if (paused) attempts[attemptIndex] = paused;
-      if (paused && options.signal?.aborted) return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
-      if (routeOverride === undefined && attempt.status === "waiting" && !paused) {
-        return {
-          status: "waiting",
-          startedAt,
-          currentNodeId: currentNode.id,
-          attempts,
-          values,
-          effects, regionTransitions,
-          ...(attempt.message ? { message: attempt.message } : {})
-        };
-      }
-      // A step that cannot run continues where the page is, before any fault,
-      // ladder rung, budget or recovery (`state-routing/`). The Flow's
-      // declared way past a sometimes-present step is its first case; with no
-      // way on, the attempt keeps its routing record and the ladder runs.
+      for (const effect of attempt.effects) effects.push({ ...effect, nodeId: node.id });
+      if (options.signal?.aborted) return automationStudioEndedTrace(ctx, "cancelled", node.id, "Run cancelled.");
+      // The question the attempt raised, and the wait it asked for (`step-loop/ask-or-park.ts`).
+      const asked = await automationStudioStepAskOrPark(ctx, { node, attempt, attemptIndex, stepIndex: step, remainingMs });
+      if (asked.kind === "return") return asked.trace;
+      let routeOverride = asked.routeOverride;
+      // A step that cannot run continues where the page is (`step-loop/state-route.ts`).
       if (routeOverride === undefined && automationStudioCouldNotRun(attempt)) {
-        routing ??= await decideAutomationStudioStateRoute({ flow, node: currentNode, attempt, attempts, options, guard: routeGuard });
-        attempts[attemptIndex] = automationStudioStateRoutedAttempt(attempts[attemptIndex]!, routing);
-        if (routing.kind === "stopped") return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: routing.message };
-        const routedTo = routing.kind === "routed" ? { toNodeId: routing.node.id, stateRoute: { direction: routing.direction } } : routing.kind === "declared" ? { toNodeId: routing.edge.targetNodeId, stateRoute: {} } : undefined;
-        const stopsHere = routedTo ? stopAfter?.stops({ fromNodeId: currentNode.id, ...routedTo }) : undefined;
-        if (stopsHere) return stoppedAt(currentNode.id, stopsHere);
-        announceAutomationStudioStateRoute(flow, currentNode, routing);
-        if (routing.kind === "routed") {
-          if (routing.edge) recordRegionTransition(routing.edge, regionId, options, regionTransitions, now());
-          currentNode = routing.node;
-          continue;
-        }
-        if (routing.kind === "declared") {
-          const skipEdge = routing.edge;
-          currentNode = nodesById.get(skipEdge.targetNodeId);
-          if (!currentNode) return missingTargetTrace(startedAt, now(), skipEdge, attempts, values, effects);
-          recordRegionTransition(skipEdge, regionId, options, regionTransitions, now());
+        const routed = await automationStudioStepStateRoute(ctx, { node, attempt, attemptIndex, regionId, routing, retryPolicy });
+        if (routed.kind === "return") return routed.trace;
+        if (routed.kind === "retry") continue;
+        if (routed.kind === "next") {
+          currentNode = routed.node;
           continue;
         }
       }
+      // The fault, the ladder and the way the run goes on from a failure (`step-loop/failed-attempt.ts`).
       if (routeOverride === undefined && attempt.status === "failed") {
-        const failedEdge = chooseAutomationStudioEdge(flow, currentNode.id, attempt.route ?? "failed");
-        const failedNode = currentNode;
-        // Classified before the ladder is consulted, because the ladder asks
-        // whether this failure may be attempted again and the answer is this
-        // assessment. Every fault lands on the run's defence ledger below,
-        // whichever way the ladder goes.
-        const fault = automationStudioAssessAttemptFault(attempts[attemptIndex]!, failedNode, now());
-        // A failure that asked for a wait raises this node's pace for the rest of the run (`pacing/`), and its attempt says so.
-        const raisedToMs = fault?.hintedWaitMs === undefined ? undefined : runState.pace.learn(failedNode, fault.hintedWaitMs);
-        if (raisedToMs !== undefined) attempts[attemptIndex] = { ...attempts[attemptIndex]!, pace: { ...(attempts[attemptIndex]!.pace ?? { inForceMs: 0, waitedMs: 0 }), raisedToMs } };
-        const mayAbsorb = automationStudioRunMayStillAbsorb(runState.defence.runWaitedMs());
-        // Settles the step as failed, with its failure's code, so a card can say
-        // why ("the page was busy", D8); it opens no "Recovery started" row of
-        // its own (D5): the recovery thought below says what recovery chose.
-        emitAutomationStudioActivityStepRecovering({ nodeId: failedNode.id, label: failedNode.label, definitionId: failedNode.definitionId, parameters: failedNode.parameterValues, failureCode: attempts[attemptIndex]!.failure?.code });
-        await options.commandRun?.checkpoint();
-        const ladder = await runAutomationStudioRecoveryLadder({
-          flow,
-          node: failedNode,
-          attempt: attempts[attemptIndex]!,
-          failedEdge,
-          options,
-          budgetState: recoveryBudgetState(attempts, attemptIndex, failedNode.id, options.currentSubflowId, flow),
-          policy: retryPolicy,
-          attemptsForNode: arrival.attempts,
-          consumed: arrival.consumed,
-          mayAbsorb,
-          executeNode: async (interference) => {
-            const cleared = await executeAutomationStudioNode(flow, interference, values, options, nextAttemptNumber(), withholding, runState);
-            await options.commandRun?.checkpoint();
-            attempts.push(regionId ? { ...cleared, regionId } : cleared);
-            for (const [key, value] of Object.entries(cleared.outputs)) {
-              values[`${interference.id}.${key}`] = value;
-              values[key] = value;
-            }
-            for (const effect of cleared.effects) effects.push({ ...effect, nodeId: interference.id });
-            return cleared;
-          }
-        });
-        const recoveryDecision = ladder.decision;
-        // A retry's wait, bounded and with a hint's elapsed time credited, settled before the recovery is worded (`defensive/planned-retry-wait.ts`).
-        const settled = attempts[attemptIndex]!;
-        const { wait, hint, siteAsked } = automationStudioPlannedRetryWait({
-          retryBackoffMs: ladder.kind === "retry" ? ladder.backoffMs : undefined, hintedWaitMs: fault?.hintedWaitMs, settledAt: settled.finishedAt ?? settled.startedAt, now: now(),
-          nodeWaitedMs: runState.defence.nodeWaitedMs(failedNode.id), runWaitedMs: runState.defence.runWaitedMs(), node: failedNode
-        });
-        const choice = automationStudioActivityRecoveryChoice(ladder, { attempts: arrival.attempts, actUncertain: fault?.actUncertain === true, mayAbsorb, retryable: automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode), test: automationStudioActivityInBuild(), ...siteAsked }); emitAutomationStudioActivityThought({ phase: "repairing", title: choice.title, text: choice.text, ref: failedNode.id });
-        attempts[attemptIndex] = {
-          ...attempts[attemptIndex]!,
-          recoveryDecision
-        };
-        if (ladder.kind === "retry" && wait) {
-          recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "retried", wait.waitMs);
-          pendingRetry = { attemptNumber: arrival.attempts + 1, maxAttempts: retryPolicy.maxAttempts, backoffMs: wait.waitMs, rung: ladder.rung, previousAttemptId: attempt.attemptId, ...(hint ? { hintedWaitMs: hint.askedMs, creditedMs: hint.creditedMs } : {}) };
-          await options.commandRun?.checkpoint();
-          await automationStudioRunWait(options, wait.waitMs);
-          await options.commandRun?.checkpoint();
-          if (options.signal?.aborted) return { status: "cancelled", startedAt, finishedAt: now(), currentNodeId: failedNode.id, attempts, values, effects, regionTransitions, message: "Run cancelled." };
+        const recovered = await automationStudioStepFailedAttempt(ctx, { node, attempt, attemptIndex, regionId, retryPolicy });
+        if (recovered.kind === "return") return recovered.trace;
+        if (recovered.kind === "retry") continue;
+        if (recovered.kind === "next") {
+          currentNode = recovered.node;
           continue;
         }
-        if (ladder.kind === "satisfied") {
-          // The state the node was recorded to produce already holds, so the run
-          // carries on down the success route rather than repeating an action
-          // that has already happened. The attempt keeps its own failed status:
-          // what happened and what the ladder made of it are two facts, not one.
-          // `stateHeld` is the second fact, so every reader of what the node
-          // came to reads it as done (`flow-change/attempt-projection.ts`).
-          attempts[attemptIndex] = { ...attempts[attemptIndex]!, stateHeld: { rung: ladder.rung, route: "success" } };
-          recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "continued", 0);
-          routeOverride = "success";
-        } else {
-          const executableFailedEdge = automationStudioRecoveryPathEdge(flow, failedNode, recoveryDecision, failedEdge);
-          if (!executableFailedEdge) {
-            // The ladder is spent and the Flow has no failed route of its own.
-            // Before this, that ended the run -- every time, for every node,
-            // whatever the node was for. A Flow does not stop for a node whose
-            // failure is not fatal to what the Flow is for, and the continuation
-            // rule says which those are and why.
-            const continuation = automationStudioContinuationAfterFailure(flow, failedNode, fault);
-            if (continuation.continues) {
-              runState.defence.continuePast(failedNode.id);
-              recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault ?? continuationFault(continuation.reason), "continued", 0);
-              route = "success";
-              const onwardEdge = chooseAutomationStudioEdge(flow, failedNode.id, route, failedNode.definitionId);
-              const stopsOnward = onwardEdge ? stopAfter?.stops({ fromNodeId: failedNode.id, toNodeId: onwardEdge.targetNodeId }) : undefined;
-              if (stopsOnward) return stoppedAt(failedNode.id, stopsOnward);
-              if (onwardEdge) {
-                const leftRegionId = regionId;
-                currentNode = nodesById.get(onwardEdge.targetNodeId);
-                if (!currentNode) return missingTargetTrace(startedAt, now(), onwardEdge, attempts, values, effects);
-                recordRegionTransition(onwardEdge, leftRegionId, options, regionTransitions, now());
-                continue;
-              }
-            }
-            recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault ?? continuationFault(continuation.reason), "stopped", 0);
-            const recoveryStopMessage = automationStudioStopMessage(fault, failureMessageForRecoveryStop(recoveryDecision, attempt));
-            return {
-              status: "failed",
-              startedAt,
-              finishedAt: now(),
-              currentNodeId: failedNode.id,
-              attempts,
-              values,
-              effects, regionTransitions,
-              ...(recoveryStopMessage ? { message: recoveryStopMessage } : {})
-            };
-          }
-          recordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, arrival.attempts, fault, "continued", 0);
-          const stopsFailedRoute = stopAfter?.stops({ fromNodeId: failedNode.id, toNodeId: executableFailedEdge.targetNodeId });
-          if (stopsFailedRoute) return stoppedAt(failedNode.id, stopsFailedRoute);
-          currentNode = nodesById.get(executableFailedEdge.targetNodeId);
-          if (!currentNode) return missingTargetTrace(startedAt, now(), executableFailedEdge, attempts, values, effects);
-          recordRegionTransition(executableFailedEdge, regionId, options, regionTransitions, now());
-          continue;
-        }
+        routeOverride = recovered.routeOverride;
       }
       route = routeOverride ?? attempt.route ?? "success";
+      // Before Next, on a verified success only, before the edge is chosen (`step-loop/before-next.ts`).
+      if (routeOverride === undefined && route === "success" && attempt.status === "succeeded" && !attempt.skipped) {
+        const onward = await automationStudioStepBeforeNext(ctx, node, attemptIndex);
+        if (onward?.kind === "return") return onward.trace;
+        if (onward?.kind === "next") {
+          currentNode = onward.node;
+          continue;
+        }
+      }
     }
 
-    const nextEdge = chooseAutomationStudioEdge(flow, currentNode.id, route, currentNode.definitionId);
+    // The frame's graph as it runs now: an in-run repair may have overlaid a fix on it (`step-loop/incident-repair.ts`).
+    const nextEdge = chooseAutomationStudioEdge(ctx.flow, currentNode.id, route, currentNode.definitionId);
     if (!nextEdge) {
       // Stop, or nobody answering, on a person-needed ask the Flow has no failed
       // route for. Checked first: a last node must not "succeed" by it.
       const personEnding = automationStudioPersonNeededEnding(attempts, currentNode, route);
-      if (personEnding) return { status: "failed", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions, message: personEnding };
+      if (personEnding) return automationStudioEndedTrace(ctx, "failed", currentNode.id, personEnding);
       // The stop node has run: a partial run ends here, whatever edge it lacks.
       const stopsWithoutEdge = stopAfter?.stops({ fromNodeId: currentNode.id, toNodeId: currentNode.id });
       if (stopsWithoutEdge) return stoppedAt(currentNode.id, stopsWithoutEdge);
-      const outgoingRoutes = flow.edges
+      const outgoingRoutes = ctx.flow.edges
         .filter((edge) => edge.sourceNodeId === currentNode!.id)
         .map((edge) => edge.sourcePortId ?? "success")
         .filter((candidate, index, routes) => routes.indexOf(candidate) === index);
-      if (currentNode.definitionId === "builtin.control.end" || !outgoingRoutes.length && !hasUnvisitedAutomationStudioNodes(flow, attempts)) {
-        return { status: "succeeded", startedAt, finishedAt: now(), currentNodeId: currentNode.id, attempts, values, effects, regionTransitions };
+      // The frame reached its End: its success check, when the graph declares one, decides (`step-loop/success-check.ts`).
+      if (currentNode.definitionId === "builtin.control.end" || !outgoingRoutes.length && !hasUnvisitedAutomationStudioNodes(ctx.flow, attempts)) {
+        return await automationStudioStepFrameSucceeded(ctx, currentNode.id);
       }
-      return {
-        status: "failed",
-        startedAt,
-        finishedAt: now(),
-        currentNodeId: currentNode.id,
-        attempts,
-        values,
-        effects,
-        regionTransitions,
-        message: outgoingRoutes.length
-          ? `Node ${currentNode.id} completed on route ${route}, but no matching outgoing edge exists. Available routes: ${outgoingRoutes.join(", ")}.`
-          : `Node ${currentNode.id} completed without an outgoing edge before the Flow visited every node. Add an edge to continue or an End node to finish explicitly.`
-      };
+      return automationStudioEndedTrace(ctx, "failed", currentNode.id, outgoingRoutes.length
+        ? `Node ${currentNode.id} completed on route ${route}, but no matching outgoing edge exists. Available routes: ${outgoingRoutes.join(", ")}.`
+        : `Node ${currentNode.id} completed without an outgoing edge before the Flow visited every node. Add an edge to continue or an End node to finish explicitly.`);
     }
     const stopsOnEdge = stopAfter?.stops({ fromNodeId: currentNode.id, toNodeId: nextEdge.targetNodeId });
     if (stopsOnEdge) return stoppedAt(currentNode.id, stopsOnEdge);
     const previousRegionId = regionId;
-    currentNode = nodesById.get(nextEdge.targetNodeId);
+    currentNode = ctx.nodesById.get(nextEdge.targetNodeId);
     if (!currentNode) return missingTargetTrace(startedAt, now(), nextEdge, attempts, values, effects);
     recordRegionTransition(nextEdge, previousRegionId, options, regionTransitions, now());
   }
 
-  return {
-    status: "failed",
-    startedAt,
-    finishedAt: now(),
-    currentNodeId: currentNode.id,
-    attempts,
-    values,
-    effects, regionTransitions,
-    message: `Maximum step count exceeded: ${maxSteps}.`
-  };
-}
-
-/**
- * Puts the ask where a person will see it. Returns the failure message when
- * nobody could be told, and nothing when the ask was opened or no port is bound.
- *
- * A port that throws fails the run rather than parking it. The product's rule
- * is that a blocked action reaches the person, and a run left waiting on a
- * question that was never delivered is exactly the silent refusal that rule
- * exists to stop. With no port bound at all the run still parks and is still
- * resumable by whoever holds its trace: a host that has not wired a
- * conversation up yet should not have its runs fail for asking.
- */
-async function openAutomationStudioAsk(options: AutomationStudioGraphExecutionOptions, ask: AutomationStudioAsk): Promise<string | undefined> {
-  if (!options.parking) return undefined;
-  try {
-    await options.parking.open(ask);
-    return undefined;
-  } catch {
-    return `Run stopped: it needed to ask a person something (${ask.askId}), and the question could not be delivered.`;
-  }
-}
-
-/**
- * Waits for the answer without returning from the run, for a port that can hold
- * one open. Nothing back means this run parks instead and is resumed from its
- * trace later, which is the shape that survives a restart.
- */
-async function settleAskInPlace(options: AutomationStudioGraphExecutionOptions, parked: AutomationStudioParkedRun): Promise<AutomationStudioAskSettlement | undefined> {
-  const port = options.parking;
-  if (!port?.awaitAnswer) return undefined;
-  const answer = await port.awaitAnswer(parked.ask, {
-    ...(parked.expiresAtMs !== undefined ? { expiresAtMs: parked.expiresAtMs } : {}),
-    ...(options.signal ? { signal: options.signal } : {})
-  });
-  // A port that waited as long as it was told and came back with nothing has
-  // established the expiry by having waited, so no clock is consulted here.
-  return automationStudioAskSettlement(parked, answer, options.now?.() ?? Date.now());
-}
-
-/** What the attempt records once its ask is settled: how it ended, and the way the run left the node. */
-function settledAskRecord(ask: AutomationStudioAsk, settlement: Extract<AutomationStudioAskSettlement, { outcome: "answered" | "expired" }>): NonNullable<AutomationStudioNodeAttemptTrace["ask"]> {
-  return {
-    askId: ask.askId,
-    kind: ask.kind,
-    parks: ask.parks,
-    status: settlement.outcome === "answered" ? "answered" : "expired",
-    route: settlement.route,
-    settledAtMs: settlement.settledAtMs,
-    ...(automationStudioIsPersonNeededAsk(ask) ? { personNeeded: true as const } : {})
-  };
+  return automationStudioEndedTrace(ctx, "failed", currentNode.id, `Maximum step count exceeded: ${ctx.maxSteps}.`);
 }

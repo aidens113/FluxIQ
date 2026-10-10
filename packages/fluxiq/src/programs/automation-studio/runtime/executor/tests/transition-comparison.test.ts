@@ -58,6 +58,16 @@ describe("compareAutomationStudioTransition", () => {
     expect(compareAutomationStudioTransition(stateNode, succeeded, { passed: true }).status).toBe("matched");
   });
 
+  // A held in-run repair is validated only on a comparison the host judged
+  // (`service/runtime-adaptation/held-fix-validation.ts`).
+  it("marks a comparison the host judged, and never one read off the route", () => {
+    const stateNode: AutomationStudioFlowNode = { id: "click", definitionId: "builtin.policy.action", parameterValues: { expectedState: { conditions: [{ path: "cart.items" }] } } };
+    const succeeded = failedAttempt({ status: "succeeded", route: "success", effects: [{ type: "policy.output.dispatch" }] });
+
+    expect(compareAutomationStudioTransition(stateNode, succeeded, { passed: true }).metadata).toEqual({ hostEvaluated: true });
+    expect(compareAutomationStudioTransition(stateNode, succeeded).metadata).toBeUndefined();
+  });
+
   it("reads the category from the rejecting evaluator's own failure record", () => {
     const stateNode: AutomationStudioFlowNode = { id: "click", definitionId: "builtin.policy.action", parameterValues: { expectedState: { conditions: [] } } };
     const succeeded = failedAttempt({ status: "succeeded", route: "success", effects: [{ type: "policy.output.dispatch" }] });

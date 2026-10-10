@@ -11,7 +11,7 @@ import {
   AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT,
   AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT
 } from "../index.ts";
-import { callSubflowDefinitionFixture, savedFlowValidation, webDomainNodeDefinitionsFixture } from "./index.ts";
+import { savedFlowValidation, webDomainNodeDefinitionsFixture } from "./index.ts";
 
 // What the model is told about the run its Flow will have. The only Flow the
 // first end-to-end panel campaign created kept none of the dismissals its
@@ -303,8 +303,7 @@ function exampleRegistry(): AutomationStudioNodeRegistry {
   };
   const registry = new AutomationStudioNodeRegistry();
   for (const definition of [...fixture.map((definition) => definition.id === click.id ? { ...definition, inputs: [...definition.inputs, ROW_INPUT] } : definition), nextPage]) registry.register(definition);
-  // The Call Subflow the state-aware examples lower into (t388); the handler nodes are built-ins.
-  registry.register(callSubflowDefinitionFixture(registry, EXAMPLE_RESOLUTION));
+  // The Call Subflow and handler nodes the state-aware examples lower into (t388) are built-ins.
   return registry;
 }
 
@@ -434,7 +433,7 @@ describe("the state-aware Flow script format", () => {
       "s1 web.output.browser-navigate", "s2 builtin.control.call-subflow",
       "h1-s1 builtin.control.handler", "h1-s2 builtin.control.call-subflow", "h1-s3 builtin.control.handler-end"
     ]);
-    expect(main!.nodes[1]!.parameters).toEqual({ subflowId: "calendar", inputs: {}, outputs: { reference: "reference" } });
+    expect(main!.nodes[1]!.parameters).toEqual({ subflowId: "calendar", inputs: {}, outputs: { reference: "reference" }, errors: {} });
     expect(main!.nodes[2]!.parameters).toMatchObject({ event: "fail", scope: { kind: "nodes", nodeIds: ["s2"] }, when: [], completionCheck: [] });
     expect(main!.nodes[3]!.parameters).toMatchObject({ subflowId: "floorplan" });
     expect(main!.nodes[4]!.parameters).toEqual({ disposition: "resolve", checkpointId: "", outputs: { reference: { $state: { path: "$node.h1-s2.reference" } } } });

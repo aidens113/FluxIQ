@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FluxIQRuntimeClient } from "../../../../../../runtime/index.ts";
 import {
+  AUTOMATION_STUDIO_EXECUTOR_GRANTED_REQUIREMENTS,
   AUTOMATION_STUDIO_REQUIREMENT_IDS,
   AutomationStudioRunRequirementError,
   assertAutomationStudioRunRequirements,
@@ -58,6 +59,22 @@ describe("the run requirement gate", () => {
     }));
     expect(error.missing).toEqual({ id: ids.flowSubflowCalls, side: "executor", plainName: "calls to reusable parts" });
     expect(error.message).toContain("which this version of FluxIQ doesn't offer yet");
+  });
+
+  it("grants calls to reusable parts by default, since this executor runs Call Subflow", () => {
+    expect(AUTOMATION_STUDIO_EXECUTOR_GRANTED_REQUIREMENTS).toContain(ids.flowSubflowCalls);
+    expect(() => assertAutomationStudioRunRequirements({
+      flows: [{ metadata: { requires: [ids.flowSubflowCalls] } }],
+      graphOptions: {}, runtimeService: runtime()
+    })).not.toThrow();
+  });
+
+  it("grants situation handlers by default, since this executor dispatches them", () => {
+    expect(AUTOMATION_STUDIO_EXECUTOR_GRANTED_REQUIREMENTS).toContain(ids.flowHandlers);
+    expect(() => assertAutomationStudioRunRequirements({
+      flows: [{ metadata: { requires: [ids.flowHandlers, ids.flowSubflowCalls] } }],
+      graphOptions: {}, runtimeService: runtime()
+    })).not.toThrow();
   });
 
   it("grants an executor id the run's executor options carry", () => {

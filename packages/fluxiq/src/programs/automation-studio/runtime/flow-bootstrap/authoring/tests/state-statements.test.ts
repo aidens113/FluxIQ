@@ -6,7 +6,7 @@
 // plan passes the plan validator, so the graph shape is one a Flow can be
 // built from. Each refusal names the script line it is about.
 import { describe, expect, it } from "vitest";
-import { AutomationStudioNodeRegistry } from "../../../../nodes/index.ts";
+import { AutomationStudioNodeRegistry, canonicalBuiltinAutomationNodeDefinitions } from "../../../../nodes/index.ts";
 import { type AutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSubflow } from "../../plan/index.ts";
 import { savedFlowValidation, stateNodeRegistryFixture, webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { acceptAutomationStudioFlowBootstrapResult, automationStudioFlowBootstrapIssuePlace, parseAutomationStudioFlowScript } from "../index.ts";
@@ -14,7 +14,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { assertAutomationStudioFlowBootstrapPlanHandlesResolved, resolveAutomationStudioFlowBootstrapPlanParameters } from "../../../llm/index.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
-const registry = stateNodeRegistryFixture(webDomainNodeDefinitionsFixture(), resolution);
+const registry = stateNodeRegistryFixture(webDomainNodeDefinitionsFixture());
 
 function accept(lines: readonly string[], library: AutomationStudioNodeRegistry = registry) {
   return acceptAutomationStudioFlowBootstrapResult({ result: { flow: lines.join("\n") }, registry: library, resolution });
@@ -127,7 +127,9 @@ describe("a part a step calls", () => {
     expect(main!.nodes[1]!.parameters).toEqual({
       subflowId: "renewal",
       inputs: { card: { $state: { path: "card", fallback: 4417 } } },
-      outputs: { loans: "loans" }
+      outputs: { loans: "loans" },
+      // Call Subflow's own default: the call routes no declared error.
+      errors: {}
     });
     // The caller reads the part's output off the call node, by the call step's label.
     expect(main!.nodes[2]!.parameters?.text).toEqual({ $state: { path: "$node.s2.loans" } });
@@ -176,8 +178,8 @@ describe("a part a step calls", () => {
   });
 
   it("is refused at the call line when the library offers no Call Subflow", () => {
-    // Core's built-ins and the web library: the handler nodes, and no Call Subflow yet (R1-call-subflow).
-    const library = new AutomationStudioNodeRegistry();
+    // Core's built-ins and the web library, with Call Subflow taken out.
+    const library = new AutomationStudioNodeRegistry(canonicalBuiltinAutomationNodeDefinitions.filter((definition) => definition.id !== "builtin.control.call-subflow"));
     for (const definition of webDomainNodeDefinitionsFixture()) library.register(definition);
     expect(refusals([...open, "step: renew", "  call: renewal", "  card: 1", ...part], library).map((issue) => [issue.code, issue.line]))
       .toContainEqual(["flow_script.call_unavailable", 6]);
@@ -377,7 +379,10 @@ describe("a block's other entries and its checkpoints", () => {
     if (!resolved.ok) return;
     expect(asked.length).toBeGreaterThan(0);
     expect(JSON.stringify(asked)).not.toContain("locator");
-    expect(entryOf(resolved.plan)).toEqual(locatedEntry);
+    // The handle fact beside them is a page fact's handle, put to the domain as its target since t392 (G,
+    // `llm/harness-options/plan-fact-targets.ts`); its target is what the stand-in answers, and the locator stays as written.
+    expect(asked).toContainEqual({ target: { handle: "t4" } });
+    expect(entryOf(resolved.plan)).toEqual([locatedEntry[0], { ...locatedEntry[1], target: { target: "#t4" } }]);
     expect(resolved.plan.subflows[0]!.metadata!["fluxiq.successCheck"]).toEqual(locatedCheck);
     expect(() => assertAutomationStudioFlowBootstrapPlanHandlesResolved(resolved.plan)).not.toThrow();
   });

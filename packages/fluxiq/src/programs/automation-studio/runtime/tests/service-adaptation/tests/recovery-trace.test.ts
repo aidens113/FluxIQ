@@ -85,7 +85,9 @@ describe("AutomationStudioService runtime recovery stages", () => {
   // The diagnosis call is the loop protocol's "gather" stage and the patch call
   // is "implement", with the plan between them costing no provider call. These
   // are the first production calls that name a stage at all, so the prompt
-  // version each intervention records changes with them.
+  // version each intervention records changes with them. This run adapts, so
+  // the patch is asked while the run is held at its failing step (C6 step 8):
+  // the same request, carrying the incident's unit, which its version names.
   it("stages the diagnosis as gather and the patch as implement, with a deterministic plan between them", async () => {
     const stages: Array<string | undefined> = [];
     const promptVersions: string[] = [];
@@ -110,7 +112,7 @@ describe("AutomationStudioService runtime recovery stages", () => {
     const detail = await service.getFlowRunDetail(project.id, run.runId);
 
     expect(stages).toEqual(["gather", "implement"]);
-    expect(promptVersions).toEqual(["automation-studio.runtime-diagnosis.v1+stage.gather", "automation-studio.runtime-patch.v1+stage.implement"]);
+    expect(promptVersions).toEqual(["automation-studio.runtime-diagnosis.v1+stage.gather", "automation-studio.runtime-patch.v1+stage.implement+in_run_repair"]);
     expect(detail?.interventions.flatMap((intervention) => intervention.promptVersion ? [intervention.promptVersion] : [])).toEqual(promptVersions);
     expect(traceStages(detail).map((stage) => [stage.stage, stage.loopStage ?? null, stage.providerCalled])).toEqual([
       ["diagnosis", "gather", true],

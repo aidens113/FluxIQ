@@ -133,6 +133,135 @@ export type AutomationStudioLlmExploredEvidencePacket = {
   packet: JsonObject;
 };
 
+/**
+ * The unit an in-run repair is held to (state-aware recovery plan, C6 step 8,
+ * C12): the failing node, the handler that failed, or the part whose contract
+ * the failure broke, by its kind and its id.
+ */
+export type AutomationStudioLlmInRunRepairUnit = { kind: "node" | "handler" | "part"; id: string };
+
+/** One step as a unit's contract names it: authored identity, never a resolved value. */
+export type AutomationStudioLlmInRunRepairStep = {
+  nodeId: string;
+  definitionId: string;
+  definitionVersion?: string;
+  label?: string;
+  description?: string;
+};
+
+/** One port of a part's interface, by name and type. */
+export type AutomationStudioLlmInRunRepairPort = { id: string; name?: string; valueType?: string; required?: true };
+
+/**
+ * What the unit promised, as the model is shown it. Authored data only, screened
+ * by the builder (`recovery/in-run-repair/unit-contract.ts`). `absent` says the
+ * unit could not be found in the graph the run holds.
+ *
+ * - A node: its definition and parameters, and where each of its ports leads.
+ * - A handler: its event, scope, `when`, completion check, order, and its body.
+ * - A part: its interface, its success check, its entries and checkpoints, and its steps.
+ *
+ * `withheld` is the packet's: a contract that carries a credential, or a key
+ * the bound domain denies, is not sent (`./context-packet.ts`).
+ */
+export type AutomationStudioLlmInRunRepairContract =
+  | { kind: "node" | "handler" | "part"; withheld: "screened" }
+  | { kind: "node"; nodeId: string; absent: true }
+  | (AutomationStudioLlmInRunRepairStep & {
+    kind: "node";
+    parameters: { values: JsonObject; withheld?: string[] } | { withheld: "no_denied_keys_declared" };
+    routes: Array<{ port: string; to: string }>;
+  })
+  | { kind: "handler"; handlerNodeId: string; absent: true }
+  | {
+    kind: "handler";
+    handlerNodeId: string;
+    event: string;
+    scope: JsonValue;
+    when: JsonValue;
+    completionCheck: JsonValue;
+    order: number;
+    maxRuns: number;
+    body: AutomationStudioLlmInRunRepairStep[];
+  }
+  | { kind: "part"; subflowId: string; absent: true }
+  | {
+    kind: "part";
+    subflowId: string;
+    name: string;
+    interface: { inputs: AutomationStudioLlmInRunRepairPort[]; outputs: AutomationStudioLlmInRunRepairPort[] };
+    successCheck: JsonValue;
+    entries: Array<{ id: string; nodeId: string; order: number; requires: string[] }>;
+    checkpoints: Array<{ id: string; nodeId: string; requires: string[] }>;
+    steps: AutomationStudioLlmInRunRepairStep[];
+  };
+
+/** The incident that became a true failure: ids and codes only. */
+export type AutomationStudioLlmInRunRepairIncident = {
+  incidentId: string;
+  origin: { framePath: string[]; nodeId: string; failureCode: string };
+  handlersRun: string[];
+  routes: Array<{ checkpointId: string; handlerId: string }>;
+  alternatives: Array<{ handlerId: string; subflowId?: string }>;
+  trueFailure: boolean;
+};
+
+/** The attempt whose failure made the incident true. */
+export type AutomationStudioLlmInRunRepairAttempt = {
+  attemptId: string;
+  nodeId: string;
+  definitionId: string;
+  status: string;
+  route?: string;
+  failure?: { category: string; code: string; retryable?: boolean };
+  failureClass?: string;
+  framePath?: string[];
+};
+
+/**
+ * One recovery the run already tried: a retry, a handler, a state route, a
+ * ladder rung, an earlier repair, or a counted failure. Ids, codes, counts and
+ * outcomes beside the three fields every kind carries.
+ */
+export type AutomationStudioLlmInRunRepairRecovery = {
+  attemptId: string;
+  nodeId: string;
+  kind: "retry" | "handler" | "state_route" | "ladder" | "repair" | "counted";
+  [detail: string]: JsonValue;
+};
+
+/** One act the run already completed, which a fix must not repeat. */
+export type AutomationStudioLlmInRunRepairAct = {
+  attemptId: string;
+  nodeId: string;
+  definitionId: string;
+  framePath?: string[];
+  effectCheck?: string;
+};
+
+/**
+ * What an in-run repair request is told about the repair: the unit and its
+ * contract, the incident, and what the run already tried and did. Filled by
+ * `recovery/in-run-repair/request.ts`; a runtime patch only. Its presence is
+ * what makes a request an in-run repair, and what adds the in-run repair
+ * instruction (`./instruction.ts`).
+ *
+ * The two histories grow with the run, so the packet keeps the newest entries
+ * of each up to a fixed count and says how many it left out
+ * (`./context-packet.ts`); every attempt stays whole in `recentActions`.
+ */
+export type AutomationStudioLlmInRunRepairContext = {
+  unit: AutomationStudioLlmInRunRepairUnit;
+  contract: AutomationStudioLlmInRunRepairContract;
+  incident: AutomationStudioLlmInRunRepairIncident;
+  failedAttempt: AutomationStudioLlmInRunRepairAttempt;
+  recoveriesTried: AutomationStudioLlmInRunRepairRecovery[];
+  actsCompleted: AutomationStudioLlmInRunRepairAct[];
+  /** How many entries the packet left out, per list (the oldest past its count,
+   * and any that failed the screen); absent when none. */
+  omitted?: { recoveriesTried?: number; actsCompleted?: number };
+};
+
 export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolutionInput & {
   taskKind: AutomationStudioLlmTaskKind;
   /** Which stage of the loop's fixed order this call belongs to. Naming one
@@ -184,6 +313,10 @@ export type AutomationStudioLlmHarnessInput = AutomationStudioInstructionResolut
    * bounded, never spread: the channel is a fixed set of keys, and an
    * unrecognized one is dropped rather than carried. */
   diagnosis?: AutomationStudioLlmDiagnosisFields;
+  /** The in-run repair this patch is for: present only when the run is held at
+   * the failing step. Runtime patch only: any other task carrying it leaves it,
+   * and the instruction that explains it, out of the packet. */
+  inRunRepair?: AutomationStudioLlmInRunRepairContext;
   /** What a finished run produced, already bounded and screened by
    * `summarizeAutomationStudioRunResult`. Read by the verification that judges
    * a result and by the runtime diagnosis and patch that repair one judged

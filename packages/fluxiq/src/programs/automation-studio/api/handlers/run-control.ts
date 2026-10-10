@@ -36,7 +36,7 @@ export type AutomationStudioRunControlAnswer = {
 type RunTarget = { projectId: string; runId: string };
 
 /** A run in one of these states has no control left to hold, whatever a stale controller says. */
-const ENDED: ReadonlySet<AutomationStudioRuntimeSession["status"]> = new Set(["succeeded", "failed", "cancelled"]);
+const ENDED: ReadonlySet<AutomationStudioRuntimeSession["status"]> = new Set(["succeeded", "failed", "cancelled", "interrupted"]);
 
 export function registerRunControlEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;

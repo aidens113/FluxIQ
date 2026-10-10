@@ -1,7 +1,7 @@
 // Barrel for Automation Studio's live activity stream: the hub a build or run
 // publishes to, the scope that says which unit of work an emission belongs to,
 // the emitters, the evidence-loop observer, and the model's stated reason kept
-// beside each decision.
+// beside each decision; and which run the current context belongs to.
 export { automationStudioActivityAskPort, automationStudioActivityAskResolution, emitAutomationStudioActivityAskResolved, emitAutomationStudioActivityClearedWait, emitAutomationStudioActivityWaitedOut, emitAutomationStudioActivityWaitingOnAsk } from "./ask/index.ts";
 export { bindAutomationStudioActivityRun } from "./bind.ts";
 export { boundedAutomationStudioActivity } from "./bounded.ts";
@@ -17,8 +17,9 @@ export { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "./limits.ts";
 export { automationStudioActivityLoopWords, type AutomationStudioActivityLoopPass } from "./loop/index.ts";
 export { observeAutomationStudioEvidenceLoop } from "./observer.ts";
 export { withAutomationStudioRunActivity } from "./run.ts";
+export { automationStudioActivityRunScope } from "./run-scope.ts";
 export { runWithAutomationStudioActivity } from "./scope.ts";
-export { automationStudioActivityStepNumbers, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepRecovering } from "./step/index.ts";
+export { automationStudioActivityStepNumbers, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepInterference, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityStepRecovery } from "./step/index.ts";
 export { emitAutomationStudioActivityThought } from "./thought.ts";
 export {
   automationStudioActivityAction,

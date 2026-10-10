@@ -33,6 +33,10 @@ import {
 } from "./service/index.ts";
 
 export type {
+  ClientGatewayCommandClosure,
+  ClientGatewayCommandOwnerRef,
+  ClientGatewayLateActionResult,
+  ClientGatewayLateActionResultListener,
   ClientGatewayItemKind,
   ClientGatewayServiceOptions,
   ClientGatewaySummaryItem,
@@ -40,7 +44,7 @@ export type {
   ClientGatewayTrustedClientStore
 } from "./service/index.ts";
 
-import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayServiceOptions, ClientGatewaySummaryPage } from "./service/index.ts";
+import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayLateActionResultListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -83,7 +87,7 @@ export class ClientGatewayService {
     };
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, facade });
     const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, facade });
-    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger });
+    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner });
 
     this.trustedClients = trustedClients;
     this.audit = audit;
@@ -155,6 +159,16 @@ export class ClientGatewayService {
 
   onEvent(handler: ClientGatewayEventHandler): () => void {
     return this.events.subscribe(handler);
+  }
+
+  /**
+   * Hears every action result that arrives after Core stopped waiting for its
+   * command -- timed out, marked uncertain, closed or already settled -- from
+   * the client the command was sent to. Such a result resolves nothing; this is
+   * how it reaches the run's evidence.
+   */
+  onLateActionResult(listener: ClientGatewayLateActionResultListener): () => void {
+    return this.commands.onLateActionResult(listener);
   }
 
   async receiveRaw(sessionId: string, rawMessage: string): Promise<void> {

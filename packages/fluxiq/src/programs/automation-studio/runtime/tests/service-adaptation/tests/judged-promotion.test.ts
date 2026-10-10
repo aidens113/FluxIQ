@@ -9,6 +9,12 @@
 // candidate, its result is judged under the Flow's standing authorization, and
 // only an `answers` verdict applies the patch. Every other ending leaves it
 // unapplied, with the reason on the adaptation and on the run's receipt.
+//
+// An adapting run now holds in place at the failing step, has the step fixed
+// and tries it again there (state-aware recovery plan, C6 step 8), so the run
+// that is judged is the run itself, and its receipt is in `inRunRepairs`. The
+// refuted result's own repair still writes detached patches, re-run from the
+// Flow's start.
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -195,17 +201,32 @@ describe("a runtime patch and the whole run that judges it", () => {
     // The judge was asked while the stored Flow still had no retry setting:
     // the run it judged ran the candidate, not a Flow the patch had changed.
     expect(found.storedAtJudgement).toEqual([undefined]);
-    // The run went from the Flow's start to its end, the patch's step included.
-    expect(found.detail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded", candidateAdaptationIds: [found.adaptation?.adaptationId] } });
+    // The run went from the Flow's start to its end, with the fix held at the
+    // patch's step and that step tried again where the run stood (C6 step 8).
+    expect(found.detail?.metadata).not.toHaveProperty("adaptiveRetry");
+    expect(found.detail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({ repairId: found.run.trace?.repairs?.[0], adaptationId: found.adaptation?.adaptationId })]);
     expect(found.run.trace?.attempts[0]?.nodeId).toBe("start");
+    expect(found.run.trace?.attempts.map((attempt) => attempt.nodeId)).toEqual(["start", "extract", "drift", "drift", "end"]);
     // Then, and only then, the patch reached the stored Flow.
     expect(found.storedDrift).toBe(2);
     expect(found.adaptation).toMatchObject({
       status: "applied",
       metadata: { approvalDecision: { autoApply: true, applyAt: "judged_whole_run", applied: true, judgedRunId: found.run.runId }, applicationRecord: { durable: true } }
     });
-    expect(found.detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({ approvalDecision: expect.objectContaining({ applied: true, judgedRunId: found.run.runId }) })]);
-    expect(found.detail?.metadata?.adaptiveMetrics).toMatchObject({ durableBehaviorChanged: true, adaptationApplyCount: 1 });
+    expect(found.detail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({ approvalDecision: expect.objectContaining({ applied: true, judgedRunId: found.run.runId }) })]);
+  });
+
+  // The run's metrics and summary read an in-run fix's receipt,
+  // `inRunRepairs`, as they read a detached patch's, `runtimePatchAttempts`
+  // (`service/summaries/adaptive-metrics.ts` `adaptiveRuntimeMetricsFromRunDetail`;
+  // `durable-behavior/durable-behavior-changed.ts`): counted once the judged
+  // end kept it, and not before.
+  it("counts a fix held in the run and kept at its judged end as a durable change in the run's metrics and summary", { timeout: 180_000 }, async () => {
+    const found = await harness();
+
+    expect(found.adaptation?.status).toBe("applied");
+    expect(found.detail?.metadata?.adaptiveMetrics).toMatchObject({ durableBehaviorChanged: true, adaptationApplyCount: 1, deterministicSuccessAfterAdaptation: true });
+    expect(found.detail?.summary.durableBehaviorChanged).toBe(true);
   });
 
   it("stays unapplied when the run that ran it is refuted, and says so", { timeout: 180_000 }, async () => {
@@ -238,24 +259,26 @@ describe("a runtime patch and the whole run that judges it", () => {
     expect(found.adaptation?.status).toBe("validated");
     expect(found.adaptation?.metadata?.approvalDecision).toMatchObject({ autoApply: true, applied: false, notAppliedReason: "not_judged" });
   });
-  // t249 follow-up: a trial that ran the Flow to its end began at the Flow's
-  // start and finished on the candidate, so it is the whole run. Its pass is
-  // adopted as the resumed pass and judged; nothing runs again.
-  it("judges a trial that ran the Flow to its end as the whole run, and keeps the patch when it answers", { timeout: 180_000 }, async () => {
+  // t249 follow-up, in the run (C6 step 8): a fix held at a Flow's only step
+  // is re-attempted there, and that re-attempt finishes the run, so the run
+  // itself is the whole run that is judged; nothing runs again. The detached
+  // adoption of a completed trial is covered by `repair-rerun.test.ts`.
+  it("judges a held fix's re-attempt that ran the Flow to its end as the whole run, and keeps the patch when it answers", { timeout: 180_000 }, async () => {
     const found = await harness({ driftOnly: true });
 
     expect(found.run.status).toBe("succeeded");
     expect(found.run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
     expect(found.storedAtJudgement).toEqual([undefined]);
-    expect(found.detail?.metadata?.adaptiveRetry).toMatchObject({ attempted: true, status: "succeeded", trialCompleted: true, candidateAdaptationIds: [found.adaptation?.adaptationId] });
-    // The run's own trace holds the failed first attempt and the trial's pass, under distinct ids.
+    expect(found.detail?.metadata).not.toHaveProperty("adaptiveRetry");
+    expect(found.detail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({ repairId: found.run.trace?.repairs?.[0], adaptationId: found.adaptation?.adaptationId })]);
+    // The run's own trace holds the failed first attempt and the re-attempt's pass, under distinct ids.
     const ids = found.run.trace?.attempts.map((attempt) => attempt.attemptId) ?? [];
     expect(found.run.trace?.attempts.map((attempt) => [attempt.nodeId, attempt.status])).toEqual([["drift", "failed"], ["drift", "succeeded"]]);
     expect(new Set(ids).size).toBe(ids.length);
     expect(found.storedDrift).toBe(2);
     expect(found.adaptation).toMatchObject({ status: "applied", metadata: { approvalDecision: { applied: true, judgedRunId: found.run.runId } } });
     expect(found.adaptation?.metadata?.approvalDecision).not.toHaveProperty("notAppliedReason");
-    expect(found.detail?.metadata?.runtimePatchAttempts).toEqual([expect.not.objectContaining({ completedTrace: expect.anything() })]);
+    expect(found.detail?.metadata?.inRunRepairs).toEqual([expect.not.objectContaining({ completedTrace: expect.anything() })]);
   });
 
   it("leaves a trial that ran the Flow to its end unapplied when its run is refuted, never as not re-run", { timeout: 180_000 }, async () => {

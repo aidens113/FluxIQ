@@ -7,23 +7,27 @@
 // an apply later stores cannot disagree about what a patch does.
 //
 // Only the patches that change one graph Flow have a form here: an expectation
-// or an action target on a node, and a reroute edge out of a node. Every other
-// kind -- a Router or Subflow edit, a created Subflow, a recovery path with no
-// durable form -- is refused, as its durable applier would refuse it here.
+// or an action target on a node, a reroute edge out of a node, and a unit
+// repair (a new handler, or one unit replaced: `./unit-repair-change.ts`).
+// Every other kind -- a Router or Subflow edit, a created Subflow, a recovery
+// path with no durable form -- is refused, as its durable applier would refuse
+// it here.
 
 import { safeSegment } from "../../../../_shared/storage.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowArtifact } from "../../../model/index.ts";
 import { actionTargetParameterValues } from "../../flow-change/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord } from "../json-values.ts";
+import { automationStudioGraphWithUnitRepair, automationStudioIsUnitRepairChange } from "./unit-repair-change.ts";
 
 /** The graph Flow with `patch` written onto it. Throws, naming why, for a patch it cannot write. */
 export function automationStudioGraphFlowWithAdaptationPatch(
   graphFlow: AutomationStudioFlowArtifact,
-  adaptation: Pick<AutomationStudioFlowAdaptation, "adaptationId">,
+  adaptation: Pick<AutomationStudioFlowAdaptation, "adaptationId" | "sourceRunId">,
   patch: AutomationStudioFlowAdaptation["patch"][number],
   now: number
 ): AutomationStudioFlowArtifact {
+  if (automationStudioIsUnitRepairChange(patch)) return automationStudioGraphWithUnitRepair({ graph: graphFlow, adaptation, patch, now });
   if (patch.kind === "edit_expectation" || patch.kind === "edit_action_target") {
     if (!patch.targetId) throw new Error(`Patch ${patch.kind} is missing a target node.`);
     const nodeIndex = graphFlow.nodes.findIndex((node) => node.id === patch.targetId);

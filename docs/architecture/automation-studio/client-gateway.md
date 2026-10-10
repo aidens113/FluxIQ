@@ -629,6 +629,35 @@ title's bound, so its card can say "Confirm · Jonas Weber" (t378). The field is
 optional: steps outside a list loop, and the recovering and settled rows, do
 not carry it, and a client that does not know it reads the step without it.
 
+A `step` row may carry `detail.recovery`, the recovery it reports (state-aware
+recovery, C11), so a client draws its card from closed fields rather than by
+parsing Core's label: `kind` (`handler`, `entry`, `route`, `alternative` or
+`interference`),
+`subject`, the plain words the card shows (an authored label or Core's own
+words, never page data, cut to the title's bound), `outcome` (`succeeded`,
+`failed` or `refused`), `event` (the C3 boundary, on a `handler` recovery only)
+and `targetId` (the checkpoint, entry, node or Subflow it led to). Core's
+emitter is `emitAutomationStudioActivityStepRecovery`
+(`runtime/activity/step/recovery.ts`): the row is titled with the subject,
+`ref` is the recovered node, the live line reads "Recovered: ...", "Recovery
+did not work: ..." or "Recovery not tried: ...", and it opens no step of its
+own. The hub keeps `recovery` only on a `step` row and only in the contract's
+shape (`runtime/activity/bounded.ts`). The field is optional and additive, so
+the protocol version is unchanged; a client that does not know it reads the
+row as a plain step.
+
+An `interference` recovery says the client closed layers the page put over
+itself while a step's output ran: a consent notice, a rate-limit notice, a
+promotion, an assistant, or a dialog no classifier named. Core says one row per
+node attempt that closed any, from the attempt's `clearedLayers`
+(`runtime/activity/step/interference.ts`), with `outcome: "succeeded"` and no
+`event` or `targetId`. Its `subject` is Core's own words by layer kind ("Closed
+a notice the page put in the way", "Closed a promotion the page put in the
+way"), or "Closed N notices the page put in the way" for several; it never
+carries the dismiss control's words or any other page text, which stay on the
+attempt trace. The kind is additive like the field: a client that does not
+know it reads the row as a plain step.
+
 Two activity fields say how a unit of work stopped or holds (t376):
 
 - `stopped: true` is set only on the final event of work a person or caller
@@ -767,3 +796,34 @@ the restrictive stored marker, and skip model diagnosis/result judging/promotion
 Stopped runs retain/drain owned work; framework teardown drains gateway then run
 owners before project SQL closes. Structural receipt handling does not attest
 semantic completion or enable candidate promotion/native web execution.
+
+### Interrupted and late action results
+
+A client that lost a command in flight -- its background worker stopped, or its
+channel to the page closed -- reports it with `status: "interrupted"`
+(`ClientGatewayReportedActionResult`). A client built before that status existed
+sends `unknown` (a committing act) or `failed` (any other) with
+`payload.status: "interrupted"`, which is still accepted. Core reads
+`interrupted` before anything waits on it (`client-gateway/service/action-result-reading.ts`):
+when the result's failure record parses and states `effect: "unacted"`, it is
+`failed`; otherwise -- `ambiguous`, no record, an unparseable record -- it is
+`unknown`, the act's outcome uncertain, because a missing acknowledgement is
+never "did not happen". Which acts commit is the domain's fact, carried on that
+record. No caller, ledger or event listener meets `interrupted`: the durable
+ledger and `ClientGatewayActionResult` keep their five statuses.
+
+A result for a command the gateway sent but no longer awaits -- timed out,
+marked uncertain on the durable path, closed with the gateway, or already
+settled -- is late (`client-gateway/service/command-history.ts`). The gateway
+remembers its last 512 commands for this. A late result resolves nothing and
+nobody's wait, is never committed to the durable ledger, and is still published
+as the `client.action_result` diagnostic event as before. When it comes from the
+client the command was sent to, on any session it reconnected on, it is also
+audited (`command.late_result`) and handed to every `onLateActionResult`
+listener as a `ClientGatewayLateActionResult`: closed fields only, never the
+client's message, payload or target. It names the run that sent the command:
+a durable command's own context, or what the optional
+`ClientGatewayServiceOptions.commandOwner` hook answered when the command was
+sent. The Automation Studio service records it on that run's detail
+(`AutomationStudioService.lateActionResults.record`, see
+[persistence](./persistence.md)).

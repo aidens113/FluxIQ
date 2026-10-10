@@ -1,7 +1,7 @@
 # State-Aware Recovery Plan - Core contracts
 
 Status: Active
-Status detail: Planned 2026-10-09 from the consultant's handler/entry/recovery proposal, adjusted to the code and revised so model repair runs inside the live run on a true failure only; nothing implemented; R1 is next and R2's graph-run wiring waits for t388.
+Status detail: Planned 2026-10-09; R1-R4 implemented across t385-t392 (t392 uncommitted at this writing), provider-free proofs pass; live validation is next.
 Created: 2026-10-09
 Last updated: 2026-10-09
 Owner: Senior supervisor agent
@@ -20,9 +20,14 @@ quoted in the downstream document) was checked against Core `dcaf8f9f` by four c
 adjustments are listed downstream under "Adjustments to the consultant plan". This document owns the contracts
 below; the downstream document owns the schedule, the browser side, the acceptance matrix and the briefs.
 
-**Nothing is implemented.** No task branch exists. Phase R1 (contracts, frames, Call Subflow, pure dispatcher,
-requirement gate, validation) is next. Its graph-run wiring belongs to R2 and waits for t388, which owns
-`runtime/executor/graph-run.ts` until it merges.
+**Implemented through t392 (uncommitted on `task/t392-executor-integration` at this writing).** On dev: t385 (types,
+frames, pure lifecycle functions, validation), t386 (requirement gate), t387 (state-routing guards), t388 (script
+grammar). t392 adds Call Subflow (C1), the trace and activity contract (C11), graph-run wiring of the five events with
+handler bodies, dispositions and the shared incident budget (C3-C7), entries, checkpoint routes across frames and the
+success check (C2), checkpoint-preferring safe routing, the effect check before any rung (C8), lost-command
+reconciliation and the orphan sweep, and in-run repair at the failing step through today's diagnosis -> patch
+pipeline (C6 step 8, C12). Its lane report is downstream, in the plan's `reports/` folder,
+`t392-executor-integration.md`. Nothing has run live yet.
 
 **Baseline facts this plan builds on (verified by code maps, 2026-10-09; AS = `packages/fluxiq/src/programs/automation-studio/`).**
 - One cursor, no frames: `AS/runtime/executor/graph-run.ts:337` (`currentNode`), `run-state.ts:8-33` (in memory).
@@ -295,6 +300,15 @@ carries `recovery = { kind: "handler" | "entry" | "route" | "alternative", subje
 render a card without parsing Core's sentence. The trace explains what ran from runtime events, never from a model.
 Contract changes stay synchronised with `packages/contracts/src/client-gateway.ts`, the extension's protocol and docs.
 
+**Note (t392, decided 2026-10-09, confirmed by the supervisor).** The attempt's `failureClass` (`true_failure`,
+`planned_fail`, `retry`, `skip`, `state_route`, `uncertain`) is stamped only when a Handler is in scope, so a Flow with
+no Handlers keeps a trace identical to before. Incidents are opened and marked true failure in every run, which keeps
+the in-run repair trigger universal, and the run summary counts `retries`, `plannedFails`, `trueFailures` (repaired
+ones included) and `repairedInRun` for every run from the root trace's incident records, never from the attempt stamp.
+The recovery kinds gained `interference` (a layer the extension cleared, t401). Attempts also carry `effectCheck`,
+`clearedLayers` and `repair`; the root trace carries `handlerExecutions`, `lifecycleNotes`, incident records and
+`repairs`.
+
 ## C12. Authoring and unit repair
 
 **Candidate script additions** (`flow-bootstrap/plan/flow-script-format.ts`, `authoring/parse.ts`, `assemble.ts`):
@@ -360,10 +374,23 @@ Briefs are written downstream before dispatch; one owner for the contracts and t
 - Outcome: Accepted
 - Follow-up: R4b (in-run repair) joins the MVP cut; the architecture document's model-placement sentence is rewritten when R4b lands
 
+### 2026-10-09 - t392 executor integration (waves 2-3), uncommitted
+- Agent: t392 lane lead (Claude), through workers
+- Changed: Core executor (frames, Call Subflow, step-loop seams, lifecycle-run, entries, checkpoints, success check,
+  effect check, in-run repair hold), composite boundary, contracts (trace, `detail.recovery`, `interrupted`), run
+  session (subflow frames, in-run repair supplier through the after-run pipeline, held-repair verification, orphan
+  sweep, late results), durable `add_handler` / `replace_unit` applier, summaries (failure counts), architecture docs;
+  downstream extension activity reader and `gateway-session.ts`
+- Why: the user's direction that repair happens at the failing step, plus waves 2-3 of this plan
+- Validation: see the lane report's ledger (the final tsc, audit and narrow-vitest results are quoted there)
+- Outcome: Accepted by the lead; awaiting supervisor integration
+- Follow-up: live validation on the ten realistic scenarios; the decisions listed in the lane report
+
 ## Open Questions
 
 - Supervisor: whether automation-scope handlers should also be allowed in the primary Subflow when an automation has
   no recovery Subflow yet (decided no for R1: created on demand; revisit if the editor finds it confusing).
 - Supervisor, at R3: whether `fluxiq.successCheck` should default to the End node's `expectedState` when absent.
+  Decided no in t392 (D2): absent means no check and no fact call.
 - Supervisor, post-MVP: resuming a frame stack after a Core process restart (today an orphaned run is only swept to
   `interrupted`); depends on `mvp-final-month-plan.md`'s rule that same-process consumption is not restart clearance.

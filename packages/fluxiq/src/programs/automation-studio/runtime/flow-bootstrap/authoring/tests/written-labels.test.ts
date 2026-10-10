@@ -9,7 +9,7 @@ import { savedFlowValidation, stateNodeRegistryFixture, webDomainNodeDefinitions
 import { acceptAutomationStudioFlowBootstrapResult } from "../index.ts";
 
 const resolution = { scope: { kind: "domain" as const, domainId: "web-automation" }, runtimeCapabilities: ["web.actions"], permissions: ["web-automation.action"] };
-const registry = stateNodeRegistryFixture(webDomainNodeDefinitionsFixture(), resolution);
+const registry = stateNodeRegistryFixture(webDomainNodeDefinitionsFixture());
 
 function topologyOf(lines: readonly string[]) {
   const accepted = acceptAutomationStudioFlowBootstrapResult({ result: { flow: lines.join("\n") }, registry, resolution });

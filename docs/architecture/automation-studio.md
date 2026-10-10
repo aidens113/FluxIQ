@@ -894,8 +894,12 @@ attempt's failure code); the record's reason sentence and counts stay on the
 trace. With no way on, the record stays on the
 failed attempt and the ladder runs exactly as before. Each failed attempt goes
 through ask and park handling, the waiting status, state routing, the ladder,
-the continuation rule, then failure, and a model is only ever called after the
-run, so routing always precedes it. Before dispatch, a readiness gate that did
+the continuation rule, then failure. A model is called in the run, at the
+failing step, and only on a true failure: when retries are spent and no On Fail
+path, handler, state route or alternative moved the run on. Retries and planned
+fails never call it, routing always precedes it, and the fix it writes is saved
+to the Flow only after a judged whole run (see
+[Repairing a true failure in the run](#repairing-a-true-failure-in-the-run)). Before dispatch, a readiness gate that did
 not hold asks the same decision: a way on skips the dispatch entirely, and none
 attempts the node as before, the dispatch reusing that decision if it fails as
 `target_not_found`. Flows without pre-states (built before t243, recorded
@@ -903,6 +907,85 @@ Flows, nodes an extend re-seeds) keep the declared way on, record
 `no_pre_states` without observing the page, and run the ladder as before; a Flow
 gains state routing when it is next built or repaired
 (`runtime/executor/tests/state-routing-run.test.ts`).
+
+**Recovery traces (state-aware recovery, C11).** The attempt trace
+(`runtime/executor/contracts.ts`) explains what recovery ran from runtime
+events alone, never from a model, in ids, closed codes and times:
+
+- `framePath`: the invocation ids of the frames the attempt ran in, outermost
+  first.
+- `lifecycle`: the handler that ran at the attempt: its C3 `event`,
+  `handlerId`, `occurrence` key, `conditionEvidence` (each `when` condition's
+  `truth`, `evidenceRef` and `capturedAt`, never page text), the decided
+  `disposition` (`resume`, `route` with its `checkpointId`, `resolve` without
+  its outputs, or `unhandled`) and its `completionCheck`.
+- `entry`: on a frame's first attempt, where it began: `default`, an
+  alternative `entry` or a `checkpoint`, with `id` and the chosen `when`'s
+  evidence.
+- `failureClass`: what a failed attempt counted as: `true_failure`,
+  `planned_fail` (a deliberate stop included), `retry`, `skip`, `state_route`
+  or `uncertain`, mapped from the classifier's verdict by
+  `lifecycle/failure-class-trace.ts`; a pending On Fail dispatch is never
+  recorded.
+- `stateRouting.refused`: every matched way on a safety guard refused (t387),
+  as `{ toNodeId, guard, nodeId }` with `guard` `unbound_value` or
+  `repeats_lasting_act`.
+- `lifecycle.selection`: why this handler and not another, in plain words: its
+  scope level, the scope order, and what nearer or earlier candidates
+  answered. Handler ids, levels and truths only; it stays on the trace and the
+  run detail does not carry it.
+- `failureClass` is stamped only in a run with a Handler in scope, where the
+  dispatcher classifies each failure. The counts every run reports come from
+  its incident records instead (below), so a run with no handler still counts
+  its retries, planned fails and true failures.
+- `effectCheck`: the reconciliation of a lasting act whose outcome was
+  uncertain, before any retry, route or alternative (C6 step 4): `landed`
+  carries the run on as done, `not_landed` makes the act unacted, `unknown`
+  stops the run as Outcome uncertain, with `checkedAt`. A missing
+  acknowledgement is `unknown`, never `not_landed`.
+- `repair`: the in-run repair a true failure asked for (C6 step 8): its
+  `repairId` (absent when there was none), the `unit` it was for, and its
+  `outcome` -- `held` (the fix was overlaid and the unit attempted again),
+  `dropped` (that attempt failed too, the overlay was removed and the run
+  ended) or `none` -- with a plain-words `reason`.
+- A **Call Subflow** attempt (`builtin.control.call-subflow`, C1) names the
+  sibling Subflow graph it ran, at the revision it ran, as `subflowTarget`,
+  carries the child frame's trace as `childTrace`, and carries a
+  `checkpointRoute` marker up through each calling frame when a handler routed
+  to a checkpoint outside the child (C5). The graphs a run called are named in
+  its `metadata.flowVersions` beside the Router-selected one.
+
+The root frame's trace also carries what the run as a whole met:
+`handlerExecutions` (every handler the run ran or refused, in order, whichever
+frame it fired in), `lifecycleNotes` (plain words for what dispatch could not
+do: a recovery Subflow that would not load, a host that could not answer a
+fact, a route the run could not take yet), `incidents` (each recovery
+incident of C7 with its origin, the handlers, routes and alternatives it ran,
+whether it became a true failure, how it ended -- `ending`: `passed`,
+`planned_fail`, `true_failure`, `uncertain`, `state_route`, `skip` or `ended`
+-- and the retries it spent), `repairs` (the ids of the in-run repairs whose
+overlay the run kept), and, at a frame's End, `successCheck`: what the graph's
+`fluxiq.successCheck` answered, each condition's answer in order. A frame whose
+success check is `false` or `unknown` fails with
+`executor.success_check.false` or `executor.success_check.unknown` as its own
+`failure`, and a Call Subflow attempt carries that failure as its own. The run
+summary and detail carry `failureCounts` (`retries`, `plannedFails`,
+`trueFailures`, and `repairedInRun`, the true failures a fix held in the run
+took the run past), counted from `incidents` and `repairs` for every run
+(`service/summaries/failure-counts.ts`). A run whose process ended under it is
+`interrupted`, neither failed nor succeeded
+([persistence](automation-studio/persistence.md)).
+
+The run detail's action attempt carries `framePath`, `failureClass`, `entry`
+and `lifecycle` as parsed from the stored trace
+(`service/summaries/recovery-trace.ts`; a field outside the closed shapes is
+dropped whole), and its `stateRouting` carries `refused` as `{ guard, toNodeId }`
+only. Each handler execution is one `handler_execution` event on the run's
+runtime stream, beside `recovery_attempt`: `executionId`, `handlerId`,
+`event`, `framePath`, `nodeId`, `incidentId`, `disposition`, `outcome`
+(`succeeded`, `failed` or `refused`), `startedAt` and `finishedAt`. The stream
+store folds them into the run detail's `handlerExecutions`, written only when
+a handler ran (`storage/project/runtime-stream-store.ts`).
 
 **A sometimes-present step that is not shown is skipped, not recovered.** A
 popup, banner or consent prompt is only sometimes on the page, so finding it
@@ -991,6 +1074,20 @@ threshold, and the best candidate's score and signals. An attempt dispatched
 without runtime candidates records `unresolved_no_candidates` with a count of
 zero and no threshold: Core scored nothing and enforced no floor, and resolving
 the element was left to the output's adapter.
+
+An attempt also records `clearedLayers` when a dispatch says the client closed
+layers the page put over itself while the output ran (state-aware recovery,
+C11): each entry is `{ kind, control }`, where `kind` is a closed word
+(`consent`, `rate_limit`, `promotion`, `assistant` or `dialog`) and `control`
+is the dismiss control's words, whitespace-collapsed, with token-shaped runs
+hidden and held to 40 characters. Core reads the field from the top of the
+dispatch payload, as `clearedLayers: [{ kind, control }]`, the same place it
+reads a dispatched `route` (`runtime/executor/node-execution/cleared-layers.ts`);
+an entry with an unknown kind or unreadable words is dropped, and at most twelve
+are kept from one dispatch. A failed dispatch carries them too. An attempt that
+closed no layer has no field. Each attempt that closed any also says one step
+`interference` recovery row (see the client gateway's activity contract); the
+dismiss words stay on the trace and never reach the chat.
 
 The trace a run persists withholds every value that run resolved out of a
 parameter state binding, and every input the run was given. `runAutomationStudioGraph`
@@ -1192,12 +1289,180 @@ plain object is refused rather than recorded as applied, and so is any
 promotion never applies an adaptation; see
 [What the shipped app reaches](#what-the-shipped-app-reaches).
 
+### Repairing a true failure in the run
+
+A model repairs a Flow in the run, at the step that failed, and the run carries
+on (state-aware recovery plan, C6 step 8 and C12; user, 2026-10-09: "call model
+to analyze situation and fix the flow at the step it fails at rather than
+having to do it detached from the live runtime"). It is reached only on a
+**true failure**: retries spent and no On Fail path, handler, state route or
+alternative moved the run on. A retry, a planned fail (an On Fail path that took
+the run elsewhere, an authored stop), a skipped optional step and a state route
+never reach it, and an uncertain lasting act stops as Outcome uncertain
+instead.
+
+**The executor holds the run.** On a true failure the step loop does not return
+(`runtime/executor/step-loop/incident-repair.ts`): frames, values, loop
+positions, pace and the defence ledger stay as they are, the chat shows "Fixing
+a step", and the executor asks `options.repairIncident` once for the incident,
+with the incident, its smallest unit (the failing node, the handler that
+failed, or the called part whose contract broke), the graph of that unit's
+frame, the failed attempt and every attempt so far
+(`runtime/executor/lifecycle-run/incident-repair.ts`). An overlay it gets back
+replaces that frame's graph, or the called part's graph, for the rest of the
+run, and the failing node is attempted again from where the run stood, at the
+same loop pass and row, with a fresh retry floor. That attempt is the fix's
+trial: if the node's expected state, the handler's completion check or the
+part's success check holds, the run simply goes on; if not, the overlay is
+dropped and the run ends failed with its incident record.
+
+**The run session supplies the callback**
+(`runtime/service/runtime-session/in-run-repair.ts`), bound in
+`runRuntimeSession` once the run's adaptation context is resolved. It is
+supplied only to a run whose context invokes the model and creates adaptations,
+and not to a dry run or to the `diagnosis_only` and `diagnose_and_adapt`
+lanes, whose fix must never run; any other run has no callback, and a true
+failure ends it as before. For each incident the callback:
+
+1. **Runs the one recovery pipeline, held in place.** It calls the after-run
+   pipeline (`runtime/recovery/annotation/annotate.ts`) on the run so far,
+   with `inRun` (`runtime/recovery/annotation/in-run.ts`). The pipeline is
+   today's, with all its gates: the invocation gate, the training-mode and
+   budget refusals, provider resolution, the standing authority, the
+   failure-evidence capture, the diagnosis at `gather`, the deterministic
+   plan, exploration, and the patch at `implement`. `inRun` changes three
+   things. Its `slot` is the typed `inRunRepair` packet slot, on the
+   `runtime_patch` request only (`runtime/recovery/in-run-repair/slot.ts`):
+   the unit and its contract (a node's definition, screened parameters and
+   routes; a handler's registration and body; a part's interface, success
+   check, entries and checkpoints,
+   `runtime/recovery/in-run-repair/unit-contract.ts`), the incident, the
+   recoveries already tried and the acts already completed (`history.ts`), as
+   ids, codes and authored data only, never a run value. The plan built for
+   it, and its re-plan after exploration, offer `add_handler` and
+   `replace_unit` beside the two ordinary kinds that change only the failing
+   node (a target override and a wait-retry); a reroute, a step insert or a
+   recovery-Subflow call leaves the unit, so it is never offered in the run
+   (`runtime/recovery/plan.ts`). Its `apply` overlays the patches on
+   the held run in place of the detached trial on a cloned Flow. Its `purse`
+   is the run's one purse (below).
+2. **Asks the person in the run's thread.** An exploration step, or a fix,
+   that needs a permission the run does not hold asks for it in the run's own
+   thread while the run is held, as the after-run recovery does; a refusal is
+   `none`, recorded as a not-run attempt with its code.
+3. **Stays under one purse per run.** Every incident of the run draws on one
+   purse, `{ budget, ledger }`: the run's cost ceiling, lowered by the Flow's
+   limit and the resolver's, as the detached recovery's is. The diagnosis,
+   exploration and patch calls of every incident count against it. Once it is
+   spent the pipeline refuses before its call (`llm_budget.run_cost_limit`)
+   and the callback answers `none`.
+4. **Checks and overlays the fix.** Each patch must be a kind the plan allows,
+   and must change the incident's unit and nothing else (C12): the failing
+   node's own target override, wait-retry or `replace_unit`, an `add_handler`
+   scoped to that node or its part, or, for a handler or part unit, a change
+   to that unit; a handler scoped to more nodes widens its scope, which is a
+   separate repair (`runtime/service/runtime-session/in-run-repair-unit.ts`,
+   checked on the patch and again on the overlay's changed unit, before any
+   trial). A fix that would lastingly
+   act asks the run's permission gate, and one that does not say what it would
+   do is refused; a target override is judged against the failure evidence
+   and the explored evidence the patch request carried
+   (`runtime/recovery/annotation/target-evidence-check.ts`); then the
+   detached path's preflight, and `overlayAutomationStudioRuntimePatch`, whose
+   unit digest guard refuses a change to any other unit. A refusal anywhere is
+   `none`, with its reason.
+5. **Records it, unsaved.** Each fix is saved as a pending adaptation of this
+   run (`prepareAutomationStudioInRunRepair`, `runtime/live-patch.ts`): it is
+   `testing`, its verification is `unverifiable` with reason `in_run_trial`
+   and `awaitsJudgedRun`, a structural fix links its change proposal (the
+   review record), and the promotion gate holds any unattended apply for the
+   run's judged end. The run detail carries one receipt per fix and per
+   incident that got none as `metadata.inRunRepairs` (`repairId`,
+   `incidentId`, `outcome` `overlaid` or `none` with its `code`, the
+   adaptation, its `approvalDecision`, and what the purse has spent). What
+   each in-run recovery recorded joins the run detail as an after-run
+   recovery's would (`runtime/service/runtime-adaptation/context.ts`): its
+   interventions, so their usage rolls into the run's summary; its adaptation
+   and proposal ids; the latest `llmGate`, `recoveryTrace` and
+   `permissionRequest`; and its `runtimePatchAttempts`.
+
+**A deliberate stop never calls the model.** A failed attempt of an End whose
+`resultStatus` is `failed` ends the run with the End's authored message before
+the effect check, the ladder, On Retry, On Fail, any incident or the callback
+(`runtime/executor/step-loop/failed-attempt.ts`). The recovery after the run
+refuses it too, as `llmGate.code: "llm.gate.deliberate_stop"`, and asks no
+model (`runtime/recovery/annotation/early-refusal.ts`).
+
+**A held fix is validated, and saved only after a judged whole run.** The run
+is the fix's pass: it began at the Flow's start and ran the fix where it
+failed. The fix's trial is the executor's re-attempt of the unit, the in-run
+equivalent of a passed live trial. When the run has ended, a fix the run kept
+(the root trace's `repairs`) whose re-attempt succeeded on positive evidence
+moves from `testing` to `validated`, with the re-attempt recorded as its
+succeeded `trial` (basis `in_run_trial`,
+`runtime/service/runtime-adaptation/held-fix-validation.ts`), whether or not
+the run may promote. Positive evidence is a declared expected state the host
+judged and found holding (the comparison's `metadata.hostEvaluated`, set only
+where the host's evaluator answered, so an evaluator that threw proves
+nothing), or, where no expected state is declared, every declared output
+observed. A match read off the route, or off the effects alone, and a step
+that declares nothing, prove nothing on their own: the fix stays `testing`, as
+a detached target override with no evidence does, and the run still carries on
+with it held. A dropped fix stays `testing`. The judged verification of a
+repaired run reads the Flow the run ran, with its kept fixes overlaid
+(`runtime/service/runtime-session/held-repair-verification.ts`), and a kept
+fix counts as a durable change in the run's metrics once the judged end keeps
+it. Validated is not saved:
+the judged-promotion gate below settles each in-run adaptation like any
+pending patch, reading which fixes the run kept from `repairs`
+(`automationStudioRunInRunRepairAdaptationIds`): a dropped fix did not run and
+stays unapplied as `not_rerun`. A kept fix is applied only when the run ended
+`succeeded` and its result was judged to answer, and the judged run is
+recorded as its evidence. A run whose fix held is judged as a repaired run,
+under the result check's `after_repair` rule, as the detached resume is.
+
+**The detached path is for a run that could not hold.** The recovery that runs
+after the run (`runtime/recovery/annotation/annotate.ts`) and the resume it can
+lead to (`runtime/service/adaptations/adaptive-retry.ts`) stay for a run whose
+session supplied no callback or whose executor never asked it
+(`runtime/executor/step-loop/incident-repair.ts`): a failure inside a
+handler's body, a failure of a permission category, a run held by a pause, or
+one with an uncertain act behind it. An incident
+the run already asked about in place, fixed or not, is never sent to a model
+again: the detail already carries that recovery's record, and otherwise the
+recovery records `llmGate.code: "llm.gate.repaired_in_run"`; either way it asks
+nothing. A held recovery that threw (a read it deliberately does not catch,
+such as the run's thread) is thrown again by the step after the run, which
+ends the run on it. A refuted result is a different question and is not held
+to this.
+
+**The durable form.** `add_handler` and `replace_unit` are change kinds of their
+own (`model/flow-adaptation.ts`), structural and gated like every recovery path
+(`runtime/service/adaptations/gates.ts`). The graph transaction does not claim
+them; the file-backed applier writes them through the unit repair applier
+(`runtime/service/adaptations/unit-repair-apply.ts`), with the same overlay the
+run used (`unit-repair-change.ts`), so the saved graph gets exactly what the
+judged run ran:
+
+- a node or handler fix goes to the Subflow graph the adaptation names, a part
+  fix to the part's own graph, and a handler of automation scope to the
+  automation's `recovery` Subflow graph (C4), created on demand and deleted
+  again by a rollback;
+- a replaced unit records the digest it had when the repair was made
+  (`before.unitDigest`), and the apply is refused when the saved unit no longer
+  has it;
+- an adaptation carrying a unit repair carries nothing else, a `replace_unit`
+  whose target and unit disagree is refused, and the overlay refuses any change
+  to a second unit;
+- the written graph is validated with its Subflow's role before it is saved.
+
 ### Applying a runtime patch waits for a judged whole run
 
 A runtime patch reaches the stored Flow only after a whole run that ran it, from
 the Flow's start, was judged to answer the request (user, 2026-10-02: the loop
-"must test the entire flow & have that judged success at least one time"). The
-order, as built:
+"must test the entire flow & have that judged success at least one time"). An
+in-run repair is settled by the same rule (step 5), its run being its pass. The
+order below is the detached path's, as built:
 
 1. **The run fails at a step.** It began at the Flow's start; a run never takes
    a `startNodeId` from `runRuntimeSession`.
@@ -1247,7 +1512,8 @@ order, as built:
    `endAutomationStudioRuntimeSessionAfterThrow`'s `settleAfterThrow` port after
    the session is marked failed), or `apply_failed` (judged to answer; the
    apply refused). The decision on the adaptation and on the run's
-   `runtimePatchAttempts` receipt carry `judgedRunId` and `settledAt`. A
+   `runtimePatchAttempts` (or `inRunRepairs`) receipt carry `judgedRunId` and
+   `settledAt`. A
    settle is final: no Core path continues a parked run, and a continuation
    would run the stored Flow rather than the candidate, so it could not be the
    judged whole run for the patch.
@@ -1308,8 +1574,11 @@ task kinds. Each path reaches a model as follows:
   the diagnosis and the patch only, never to these calls.
 - **Runtime patch requests:** a `diagnose_and_adapt` or `explore_and_adapt`
   run. The `diagnose_and_adapt` lane saves its one target override as a
-  high-risk proposal and never executes it. The `explore_and_adapt` lane sends
-  each patch to live patch testing. A `diagnosis_only` run sends no patch
+  high-risk proposal and never executes it, and gets no in-run repair. The
+  `explore_and_adapt` lane asks once per true failure at the failing step and
+  overlays the fix on the held run
+  ([Repairing a true failure in the run](#repairing-a-true-failure-in-the-run));
+  a run that could not hold sends each patch to live patch testing. A `diagnosis_only` run sends no patch
   request, because its lane turns adaptation creation off.
 - **Live patch testing:** an `explore_and_adapt` run, which Runtime Debug does
   not offer and an API caller must request. Its patches run against a cloned Flow

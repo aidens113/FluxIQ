@@ -17,10 +17,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
-import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
-import { callSubflowDefinitionFixture, webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
+import type { AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
+import { webDomainNodeDefinitionsFixture } from "../../plan/tests/index.ts";
 import { AutomationStudioFlowCandidateSubmissionController, automationStudioCandidateSubmissionRefusal } from "../index.ts";
-import { REFUSAL_TEST_RESOLUTION, refusalTestRegistry, refusalTestSubmission } from "./refusal-domain-fixture.ts";
+import { refusalTestRegistry, refusalTestSubmission } from "./refusal-domain-fixture.ts";
 
 /** Codes about the whole Flow, or the library, rather than one step: they are the only ones that may reach the model without a line. */
 const WHOLE_FLOW: ReadonlySet<string> = new Set([
@@ -76,10 +76,10 @@ type CorpusCase = { name: string; lines: string[]; codes: string[]; registry?: R
 
 /**
  * The state-aware statements (t388): a library that can call a part -- Call
- * Subflow stands in until R1-call-subflow defines it -- and a part with one
+ * Subflow is a built-in, so every default library can -- and a part with one
  * input, and a handler for the step labelled `rows`.
  */
-const calling = () => refusalTestRegistry([callSubflowDefinitionFixture(new AutomationStudioNodeRegistry(), REFUSAL_TEST_RESOLUTION)]);
+const calling = () => refusalTestRegistry();
 const part = (label: string, extra: string[] = []) => [`part ${label}: renew one loan`, "  input: card", ...extra, ...click(`${label}-go`).map((line) => `  ${line}`), "end"];
 const handler = (header: string, lines: string[]) => [...list("rows"), header, ...lines, "end"];
 
@@ -98,7 +98,7 @@ const CORPUS: CorpusCase[] = [
   // Assembly: blocks and routes.
   { name: "a step running a block nobody declared", lines: [...open, "step: run subflow nowhere"], codes: ["flow_script.unknown_block"] },
   // Since t388 a step that runs a block with no `when:` calls it as a part, which this library cannot.
-  { name: "a step calling a part in a library with no Call Subflow", lines: [...open, "step: run subflow sale", "subflow sale: The sale", ...click("deal")], codes: ["flow_script.call_unavailable"] },
+  { name: "a step calling a part in a library with no Call Subflow", lines: [...open, "step: run subflow sale", "subflow sale: The sale", ...click("deal")], codes: ["flow_script.call_unavailable"], registry: refusalTestRegistry([], ["builtin.control.call-subflow"]) },
   { name: "a block with no condition that no step calls", lines: [...open, "subflow sale: The sale", ...click("deal")], codes: ["flow_script.subflow_unreachable"] },
   { name: "a condition outside every block", lines: [...open, "when: state.page.url contains /sale", ...click("buy")], codes: ["flow_script.when_outside_block"] },
   { name: "a condition that cannot be read", lines: [...open, "subflow sale: The sale", "  when: the sale is on", ...click("deal")], codes: ["flow_script.invalid_condition"] },
