@@ -43,4 +43,13 @@ describe("unresolved recovery cause", () => {
     expect(automationStudioUnresolvedFailedAttempt([])).toBeUndefined();
     expect(automationStudioUnresolvedFailedAttempt([succeeded("action")])).toBeUndefined();
   });
+
+  // t406: a called part's attempts follow its Call Subflow attempt in the run
+  // detail; the recovery is about the root frame's step, the call.
+  it("reads the root frame alone: a called part's failure is its call's", () => {
+    const call = failed("call");
+    const part = { nodeId: "type", status: "failed", parentAttemptId: "call.attempt.1" };
+    expect(automationStudioUnresolvedFailedAttempt([call, part])).toBe(call);
+    expect(automationStudioUnresolvedFailedAttempt([succeeded("call"), part])).toBeUndefined();
+  });
 });

@@ -1,8 +1,9 @@
 // What an attempt trace says of state-aware recovery, projected onto the run
 // detail (state-aware recovery plan, C11): the frames the attempt ran in, what
 // its failure counted as, where its frame began, and the lifecycle handler
-// that ran at it. Ids, closed codes and times only: a handler's resolved
-// outputs and any page text never reach the run detail.
+// that ran at it, and on a Call Subflow attempt the part it ran (C1). Ids,
+// closed codes and times only: a handler's resolved outputs and any page text
+// never reach the run detail.
 //
 // Session traces are read back from storage, so each field is parsed, not
 // typed, and a field with anything outside Core's closed shapes is dropped
@@ -16,7 +17,7 @@ import type {
 } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 
-type RecoveryFields = Pick<AutomationStudioFlowRunActionAttemptRecord, "framePath" | "failureClass" | "entry" | "lifecycle">;
+type RecoveryFields = Pick<AutomationStudioFlowRunActionAttemptRecord, "framePath" | "failureClass" | "entry" | "lifecycle" | "subflowTarget">;
 
 /** An id: no whitespace, at most 200 characters. */
 const ID = /^[^\s]{1,200}$/u;
@@ -34,11 +35,13 @@ export function automationStudioRunDetailRecoveryTrace(attempt: AutomationStudio
   const failureClass = FAILURE_CLASSES.has(trace.failureClass) ? trace.failureClass as RecoveryFields["failureClass"] : undefined;
   const entry = entryOf(trace.entry);
   const lifecycle = lifecycleOf(trace.lifecycle);
+  const subflowTarget = subflowTargetOf(trace.subflowTarget);
   return {
     ...(framePath ? { framePath } : {}),
     ...(failureClass ? { failureClass } : {}),
     ...(entry ? { entry } : {}),
-    ...(lifecycle ? { lifecycle } : {})
+    ...(lifecycle ? { lifecycle } : {}),
+    ...(subflowTarget ? { subflowTarget } : {})
   };
 }
 
@@ -97,4 +100,13 @@ function lifecycleOf(value: unknown): RecoveryFields["lifecycle"] {
     disposition,
     completionCheck: fields.completionCheck as AutomationStudioFlowRunFactTruth
   };
+}
+
+/** The part a Call Subflow attempt ran: its Subflow id, its graph's id, and the revision it ran at, or null when its graph has none. */
+function subflowTargetOf(value: unknown): RecoveryFields["subflowTarget"] {
+  const fields = record(value);
+  if (!fields || typeof fields.subflowId !== "string" || !ID.test(fields.subflowId) || typeof fields.graphFlowId !== "string" || !ID.test(fields.graphFlowId)) return undefined;
+  const revision = fields.graphRevision;
+  if (revision !== null && !(typeof revision === "number" && Number.isFinite(revision))) return undefined;
+  return { subflowId: fields.subflowId, graphFlowId: fields.graphFlowId, graphRevision: revision };
 }

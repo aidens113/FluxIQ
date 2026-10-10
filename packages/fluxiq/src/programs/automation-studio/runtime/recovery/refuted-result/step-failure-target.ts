@@ -50,12 +50,13 @@ const TARGET_LEVEL_FAILURE_CATEGORIES: ReadonlySet<AutomationStudioAdaptiveFailu
 /**
  * The last attempt that failed (or ended unknown), its failure as parsed, and
  * whether that failure is target-level. Nothing when no attempt failed, or the
- * last one's failure record does not parse.
+ * last one's failure record does not parse. Only the root frame's attempts are
+ * read: a called part's (`parentAttemptId`) is a node of the part, not the Flow.
  */
-export function automationStudioStepFailureTarget<T extends { status: string; failure?: unknown }>(
+export function automationStudioStepFailureTarget<T extends { status: string; failure?: unknown; parentAttemptId?: string | undefined }>(
   attempts: readonly T[] | undefined
 ): { attempt: T; failure: AutomationStudioFailureRecord; targetLevel: boolean } | undefined {
-  const attempt = [...(attempts ?? [])].reverse().find((candidate) => candidate.status === "failed" || candidate.status === "unknown");
+  const attempt = [...(attempts ?? [])].reverse().find((candidate) => candidate.parentAttemptId === undefined && (candidate.status === "failed" || candidate.status === "unknown"));
   const failure = attempt ? parseAutomationStudioFailureRecord(attempt.failure) : null;
   if (!attempt || !failure) return undefined;
   return { attempt, failure, targetLevel: TARGET_LEVEL_FAILURE_CATEGORIES.has(failure.category) };

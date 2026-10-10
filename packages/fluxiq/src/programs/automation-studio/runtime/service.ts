@@ -2940,7 +2940,7 @@ export class AutomationStudioService {
       await this.summaries.writeJsonLines(this.flowPaths.flowRunActionsFile(input.projectId, input.runId), recoveredActions);
       actions = recoveredActions.slice(offset, offset + limit);
     }
-    return { actions, total: summary.actionAttemptCount ?? 0, limit, offset };
+    return { actions, total: Number(summary.metadata?.actionRecordCount ?? summary.actionAttemptCount ?? 0), limit, offset };
   }
 
   async getFlowRunActionDetail(input: { projectId: string; runId: string; attemptId: string }): Promise<AutomationStudioFlowRunActionAttemptRecord | null> {
