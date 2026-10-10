@@ -43,6 +43,16 @@ describe("the run requirement gate", () => {
     expect(error.message).toBe("This automation needs page facts, which Synthetic Client doesn't offer yet. Update Synthetic Client and run it again.");
   });
 
+  it("grants a versioned host id to a client that declares the bare id at that version or later", () => {
+    const declared = (version: number | string | undefined) => client([], { capabilities: [{ id: "web.facts", kind: "custom" as const, metadata: version === undefined ? {} : { version } }] });
+    for (const version of [1, 2, "1"]) {
+      expect(() => assertAutomationStudioRunRequirements({ flows: [{ metadata: { requires: [ids.webFacts] } }], graphOptions: {}, runtimeService: runtime(declared(version)) })).not.toThrow();
+    }
+    for (const version of [0, undefined, "one"]) {
+      expect(refusal(() => assertAutomationStudioRunRequirements({ flows: [{ metadata: { requires: [ids.webFacts] } }], graphOptions: {}, runtimeService: runtime(declared(version)) })).missing.id).toBe(ids.webFacts);
+    }
+  });
+
   it("refuses a host requirement when no ready client of the run's domain is connected", () => {
     const error = refusal(() => assertAutomationStudioRunRequirements({
       flows: [{ metadata: { requires: [ids.webFacts] } }],
