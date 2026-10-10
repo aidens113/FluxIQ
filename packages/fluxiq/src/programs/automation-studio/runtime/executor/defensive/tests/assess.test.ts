@@ -172,6 +172,15 @@ describe("a press the page refused and said so", () => {
     expect(assessed).toMatchObject({ disposition: "refuse", effect: "ambiguous" });
   });
 
+  it("repeats a timed-out press whose step declared no lasting consequence, though the producer says it may have acted", () => {
+    const timedOut: AutomationStudioFailureRecord = { category: "timeout", code: "web.action.timeout", retryable: true, stage: "execution", effect: "ambiguous" };
+
+    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node({ metadata: { declaredConsequences: [] } }), 0)?.disposition).toBe("retry");
+    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node({ metadata: { declaredConsequences: ["send_or_publish"] } }), 0)).toMatchObject({ disposition: "refuse", actUncertain: true });
+    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node(), 0)).toMatchObject({ disposition: "refuse", actUncertain: true });
+    expect(automationStudioAssessAttemptFault(attempt({ failure: timedOut }), node({ metadata: { declaredConsequences: [], destructive: true } }), 0)).toMatchObject({ disposition: "refuse", actUncertain: true });
+  });
+
   it("holds the page's wait to the runtime's own bound", () => {
     const assessed = automationStudioAssessAttemptFault(attempt({ failure: { ...refused, retryAfterMs: 600_000 } }), node(), 0);
 

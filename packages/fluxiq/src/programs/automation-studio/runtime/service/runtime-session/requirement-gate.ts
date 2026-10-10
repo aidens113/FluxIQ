@@ -77,13 +77,30 @@ export function automationStudioRequirementRefusal(input: {
   clients: ReadonlyArray<Pick<FluxIQRuntimeClient, "label" | "capabilities">>;
 }): AutomationStudioRequirementRefusal | null {
   const executorIds = new Set(input.executorIds);
-  const hostIds = new Set(input.clients.flatMap((client) => client.capabilities.map((capability) => capability.id)));
+  const hostCapabilities = input.clients.flatMap((client) => client.capabilities);
   for (const id of input.required) {
     const missing: AutomationStudioRequirement = { id, side: id.startsWith("flow.") ? "executor" : "host", plainName: PLAIN_NAMES[id] ?? id };
-    if (missing.side === "executor" ? executorIds.has(id) : hostIds.has(id)) continue;
+    if (missing.side === "executor" ? executorIds.has(id) : hostCapabilities.some((capability) => hostCapabilityGrants(capability, id))) continue;
     return { missing, reason: refusalReason(missing, input.clients) };
   }
   return null;
+}
+
+/**
+ * Whether one declared client capability grants a required host id. A required
+ * id may carry a minimum version, `name@N`; a client declares a capability by
+ * its bare id with the version in `metadata.version` (the web extension's
+ * `web.facts` with version 1 grants `web.facts@1`). The exact id also grants.
+ */
+function hostCapabilityGrants(capability: { id: string; metadata?: unknown }, required: string): boolean {
+  if (capability.id === required) return true;
+  const at = required.lastIndexOf("@");
+  if (at <= 0) return false;
+  const minimum = Number(required.slice(at + 1));
+  if (!Number.isInteger(minimum) || capability.id !== required.slice(0, at)) return false;
+  const metadata = capability.metadata;
+  const declared = metadata !== null && typeof metadata === "object" ? Number((metadata as { version?: unknown }).version) : Number.NaN;
+  return Number.isFinite(declared) && declared >= minimum;
 }
 
 /** A run refused before any step because a requirement is missing; `message` is the plain reason. */
