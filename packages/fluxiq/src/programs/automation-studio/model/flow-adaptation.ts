@@ -391,10 +391,16 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
    * state (`state_routed`, t243): the attempt reads `route: "state_routed"`,
    * and names the node the run went on to and whether that was `forward` or
    * `backward` in the Flow.
+   *
+   * Or a lasting act the run already completed (`already_done`, t411): the
+   * attempt reads `route: "success"` with the first attempt's outputs, names
+   * that attempt, and the row it was done for when the step runs per row
+   * (as a person reads it, "Lin Zhao"). It is no failure.
    */
   skipped?:
     | { reason: "target_absent"; code: string }
-    | { reason: "state_routed"; code: string; toNodeId: string; direction: "forward" | "backward" };
+    | { reason: "state_routed"; code: string; toNodeId: string; direction: "forward" | "backward" }
+    | { reason: "already_done"; code: string; attemptId: string; row?: string };
   /**
    * Set when the step failed but the state it was recorded to produce already
    * held, so the run went on down `success` rather than repeat an act that had
@@ -639,12 +645,22 @@ export type AutomationStudioFlowRunFactTruth = "true" | "false" | "unknown";
 /** What one condition answered: its truth, a reference to the evidence kept, and when it was captured. */
 export type AutomationStudioFlowRunConditionEvidence = { truth: AutomationStudioFlowRunFactTruth; evidenceRef?: string; capturedAt: number };
 
-/** How a handler body ended once the dispatcher decided it (C5). */
+/**
+ * How a handler body ended once the dispatcher decided it (C5). An
+ * `unhandled` keeps why, as the executor's closed codes
+ * (`runtime/executor/lifecycle/unhandled-reason.ts`, t411): the body's own
+ * ending, a check that did not hold, a refused route and the `guard` that
+ * refused it, a spent budget. Absent on a record from before t411.
+ */
 export type AutomationStudioFlowRunHandlerDisposition =
   | { kind: "resume" }
   | { kind: "route"; checkpointId: string }
   | { kind: "resolve" }
-  | { kind: "unhandled" };
+  | {
+    kind: "unhandled";
+    reason?: "written_unhandled" | "body_failed" | "completion_check_not_true" | "disposition_not_allowed" | "resolve_missing_outputs" | "route_refused" | "budget_spent" | "already_tried" | "no_body" | "core_stop";
+    guard?: "checkpoint_not_found" | "checkpoint_not_holding" | "requires_unbound" | "passes_uncertain_act" | "unreachable" | "unguarded" | "repeats_unrecorded_act";
+  };
 
 /** The lifecycle handler that ran at an attempt. */
 export type AutomationStudioFlowRunLifecycleRecord = {

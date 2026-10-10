@@ -182,9 +182,17 @@ handler dispatch inside it (no nesting); a failure inside the body returns `unha
 
 After any body that changed the page, the facts the continuation needs (the node's `readyState`, the checkpoint's
 `when`, the `completionCheck`) are re-observed before resuming. A `completionCheck` that is not `true` makes the run
-`unhandled` regardless of the disposition written. Pause, cancel, permissions and `Outcome uncertain` stops remain
-Core outcomes that no handler can override. A Route may never move past a node whose lasting act is `uncertain`, and
-re-entering a path that would repeat a completed `reconcile` act requires its effect check to say `not_landed`.
+`unhandled` regardless of the disposition written, and every `unhandled` keeps where it came from as a closed code on
+the attempt's lifecycle record (`written_unhandled`, `body_failed`, `completion_check_not_true`,
+`disposition_not_allowed`, `resolve_missing_outputs`, `route_refused` with the refusing guard, `budget_spent`,
+`already_tried`, `no_body`, `core_stop`). Pause, cancel, permissions and `Outcome uncertain` stops remain Core outcomes
+that no handler can override. The goal is that a completed act is never repeated, not that the run never goes back
+(t411): the run keeps a ledger of completed lasting acts, keyed by node and the act's identity (the list loop's row
+when the node runs per row, otherwise its resolved target and inputs), and a lasting act the ledger holds is skipped as
+`already_done` ("Already done for <row>"), never dispatched; a route that leaves a list loop restarts it, so the rows
+already done are skipped and the rest are done. A Route may therefore go back past completed acts, and is refused only
+past a node whose lasting act is `uncertain`, on the way forward or on the way back, or past a completed act the ledger
+does not hold (a run resumed from a saved trace starts with an empty ledger, so nothing would skip it).
 
 ## C6. The integrated recovery ladder
 

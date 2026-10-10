@@ -41,6 +41,18 @@ describe("the run detail's recovery trace", () => {
     expect(JSON.stringify(fields)).not.toContain("£12.99");
   });
 
+  it("keeps why a handler did not help: an unhandled reason and the guard that refused its route", () => {
+    const unhandled = (disposition: Record<string, unknown>) => automationStudioRunDetailRecoveryTrace({ ...attempt(), lifecycle: { ...lifecycle, disposition, completionCheck: "false" } } as unknown as AutomationStudioNodeAttemptTrace).lifecycle?.disposition;
+    expect(unhandled({ kind: "unhandled", reason: "completion_check_not_true" })).toEqual({ kind: "unhandled", reason: "completion_check_not_true" });
+    expect(unhandled({ kind: "unhandled", reason: "route_refused", guard: "passes_uncertain_act" })).toEqual({ kind: "unhandled", reason: "route_refused", guard: "passes_uncertain_act" });
+    // A code outside Core's lists is dropped, never the disposition; a record from before t411 has none.
+    expect(unhandled({ kind: "unhandled", reason: "gave up", guard: "nope" })).toEqual({ kind: "unhandled" });
+    expect(unhandled({ kind: "unhandled" })).toEqual({ kind: "unhandled" });
+    // The reason rides on the action record the runtime stream stores whole (`action_attempt`), so it survives a write and a read back.
+    const record = project({ ...attempt(), lifecycle: { ...lifecycle, disposition: { kind: "unhandled", reason: "budget_spent" } } } as unknown as AutomationStudioNodeAttemptTrace);
+    expect(JSON.parse(JSON.stringify(record)).lifecycle.disposition).toEqual({ kind: "unhandled", reason: "budget_spent" });
+  });
+
   it("keeps a default entry without an id", () => {
     expect(automationStudioRunDetailRecoveryTrace({ ...attempt(), entry: { kind: "default", id: "ignored", evidence: [] } } as unknown as AutomationStudioNodeAttemptTrace))
       .toEqual({ entry: { kind: "default", evidence: [] } });

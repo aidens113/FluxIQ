@@ -19,6 +19,7 @@ import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatab
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import { AutomationStudioProjectEventChunkStore, type AutomationStudioChunkEvent } from "./event-chunk-store.ts";
 import { runDatasetSummariesForRun } from "./run-dataset-store.ts";
+import { automationStudioRuntimeActionRowFrame } from "./action-rows/index.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../runtime/executor/index.ts";
 
@@ -360,7 +361,7 @@ export class AutomationStudioProjectRuntimeStreamStore {
     if (cursor) { where.push("(sequence > ? or (sequence = ? and attempt_id > ?))"); params.push(cursor.sequence, cursor.sequence, cursor.attemptId); }
     const [totalRow, rows] = await Promise.all([
       this.lease.database.get<{ total: number }>("select count(*) as total from runtime_action_summaries where run_id = ?", [runId]),
-      this.lease.database.all<RuntimeActionSummaryRow>(`select run_id, sequence, attempt_id, node_id, definition_id, status, route, comparison_status, message_summary, started_at_ms, finished_at_ms, duration_ms, evidence_count, error_summary from runtime_action_summaries where ${where.join(" and ")} order by sequence, attempt_id limit ? offset ?`, [...params, limit + 1, offset])
+      this.lease.database.all<RuntimeActionSummaryRow>(`select run_id, sequence, attempt_id, node_id, definition_id, status, route, comparison_status, message_summary, started_at_ms, finished_at_ms, duration_ms, evidence_count, error_summary, ${automationStudioRuntimeActionRowFrame.select} from runtime_action_summaries where ${where.join(" and ")} order by sequence, attempt_id limit ? offset ?`, [...params, limit + 1, offset])
     ]);
     const pageRows = rows.slice(0, limit);
     const last = pageRows.at(-1);
@@ -529,7 +530,8 @@ export class AutomationStudioProjectRuntimeStreamStore {
 }
 
 type RuntimeRunRow = { run_id: string; flow_id: string; flow_revision: number; status: AutomationStudioFlowRunStatus; queued_at_ms: number; started_at_ms: number | null; finished_at_ms: number | null; action_count: number; effect_count: number; error_count: number; adaptation_count: number; last_event_sequence: number; updated_at_ms: number; summary_json: string };
-type RuntimeActionSummaryRow = { run_id: string; sequence: number; attempt_id: string; node_id: string; definition_id: string; status: string; route: string | null; comparison_status: string | null; message_summary: string | null; started_at_ms: number; finished_at_ms: number | null; duration_ms: number | null; evidence_count: number; error_summary: string | null };
+// The frame columns are read only by a page (`listRunActions`); other reads leave them absent.
+type RuntimeActionSummaryRow = Parameters<typeof automationStudioRuntimeActionRowFrame.fields>[0] & { run_id: string; sequence: number; attempt_id: string; node_id: string; definition_id: string; status: string; route: string | null; comparison_status: string | null; message_summary: string | null; started_at_ms: number; finished_at_ms: number | null; duration_ms: number | null; evidence_count: number; error_summary: string | null };
 type RecordingRow = { recording_id: string; name: string; task_id: string | null; domain_id: string | null; status: string; started_at_ms: number; ended_at_ms: number | null; event_count: number; action_count: number; state_snapshot_count: number; updated_at_ms: number };
 type StateSnapshotRow = { snapshot_id: string; source_kind: string; source_id: string; sequence: number; captured_at_ms: number; state_object_id: string | null; screenshot_object_id: string | null; previous_snapshot_id: string | null; digest: string; metadata_json: string };
 type StatePathRow = { snapshot_id: string; namespace: string; path: string; value_type: string; scalar_text: string | null; scalar_number: number | null; scalar_boolean: number | null; value_object_id: string | null };
@@ -701,6 +703,8 @@ function actionSummaryFromRow(row: RuntimeActionSummaryRow): AutomationStudioFlo
     ...(row.finished_at_ms !== null ? { finishedAt: row.finished_at_ms } : {}),
     ...(row.duration_ms !== null ? { durationMs: row.duration_ms } : {}),
     ...(row.comparison_status !== null ? { comparisonStatus: row.comparison_status } : {}),
+    // Where the row ran (a called part's step names its call) and its lifecycle records (`action-rows/frame-fields.ts`).
+    ...automationStudioRuntimeActionRowFrame.fields(row),
     metadata: { summaryOnly: true, eventSequence: row.sequence, durationMs: row.duration_ms, evidenceCount: row.evidence_count },
     ...(row.message_summary ?? row.error_summary ? { message: row.message_summary ?? row.error_summary ?? undefined } : {})
   } as unknown as AutomationStudioFlowRunActionAttemptRecord;

@@ -14,6 +14,7 @@ import {
 } from "../lifecycle-run/index.ts";
 import { automationStudioEndedTrace } from "./ended-trace.ts";
 import { automationStudioStepLifecycleRouteGuard } from "./lifecycle-route-guard.ts";
+import { automationStudioStepRouteLeavesLoops } from "./checkpoint-route.ts";
 import { automationStudioOutcomeUncertainTrace } from "./uncertain-stop.ts";
 import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
 
@@ -155,6 +156,7 @@ function applyOutcome(
   if (!to) return { kind: "return", trace: routeOutTrace(ctx, boundary.node.id, target), ...withRecord };
   const stops = ctx.stopAfter?.stops({ fromNodeId: boundary.node.id, toNodeId: to.id });
   if (stops) return { kind: "return", trace: ctx.stoppedAt(boundary.node.id, stops) };
+  automationStudioStepRouteLeavesLoops(ctx, boundary.node.id, to.id);
   return { kind: "route", node: to, ...withRecord };
 }
 
@@ -183,10 +185,10 @@ function keepBody(ctx: AutomationStudioStepLoopContext, handled: AutomationStudi
   ctx.lifecycle.bodyAttempts += attempts.length;
 }
 
-/** A route the step loop did not take reads `unhandled` on the attempt's record and the stream's. */
+/** A route the step loop did not take reads `unhandled` on the attempt's record, refused as unreachable, and on the stream's. */
 function unroute(handled: AutomationStudioLifecycleHandlerRun): void {
   handled.execution.disposition = { kind: "unhandled" };
-  if (handled.lifecycle) handled.lifecycle.disposition = { kind: "unhandled" };
+  if (handled.lifecycle) handled.lifecycle.disposition = { kind: "unhandled", reason: "route_refused", guard: "unreachable" };
 }
 
 /** Said once on the run holder, which the root frame's trace carries (`./lifecycle-trace.ts`). */

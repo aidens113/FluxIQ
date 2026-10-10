@@ -24,6 +24,8 @@ import { automationStudioRunFailureCounts } from "./failure-counts.ts";
 import { automationStudioRunDetailAttemptsInRunOrder, type AutomationStudioRunDetailAttemptPlacement } from "./frame-attempts.ts";
 import { hostTargetResolutionFromOutputs } from "./host-target-resolution.ts";
 import { automationStudioRunDetailRecoveryTrace } from "./recovery-trace.ts";
+import { automationStudioRunStop } from "./run-stop.ts";
+import { automationStudioRunDetailSkipped } from "./skipped.ts";
 import { automationStudioRunDetailStateRouting } from "./state-routing.ts";
 import { automationStudioRunDetailStepCount } from "./step-count.ts";
 
@@ -52,10 +54,15 @@ export function flowRunSummaryWithInterventionSummaries(detail: AutomationStudio
   // A Call Subflow container's part's attempts count and the container does not (`step-count.ts`).
   const steps = detail.actionAttempts ? automationStudioRunDetailStepCount(detail.actionAttempts) : detail.summary.actionAttemptCount;
   // A container is a record and not a step, so where the two differ the action pages are told how many records there are.
-  const records = detail.actionAttempts && detail.actionAttempts.length !== steps ? { metadata: { ...detail.summary.metadata, actionRecordCount: detail.actionAttempts.length } } : {};
+  const recordCount = detail.actionAttempts && detail.actionAttempts.length !== steps ? { actionRecordCount: detail.actionAttempts.length } : {};
+  // The run's own stop, from its detail (`run-stop.ts`): the summary says it and its words in place of "failed", and drops both once the detail no longer does.
+  const stop = automationStudioRunStop(detail.metadata?.stopCode);
+  const { stopCode: _stopCode, statusWords: _statusWords, ...summaryMetadata } = detail.summary.metadata ?? {};
+  const merged = { ...summaryMetadata, ...recordCount, ...(stop ? { stopCode: stop.code, statusWords: stop.statusWords } : {}) };
+  const metadata = detail.summary.metadata !== undefined || Object.keys(merged).length ? { metadata: merged } : {};
   return {
     ...detail.summary,
-    ...records,
+    ...metadata,
     routeDecisionCount: detail.routeDecisions.length,
     subflowEntryCount: detail.subflows.length,
     actionAttemptCount: steps,
@@ -93,7 +100,9 @@ export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSe
   const actionAttempts = runtimeActionAttemptsFromSession(session, adaptations);
   const recoveryAttempts = runtimeRecoveryAttemptsFromSession(session);
   const interventions = runtimeInterventionsFromRecoveryAttempts(session, recoveryAttempts);
-  const terminalFailureReason = runtimeTerminalFailureReason(session, recoveryAttempts);
+  // A run stopped as Outcome uncertain says so as its own stop, beside the failed attempt's own failure (`run-stop.ts`).
+  const stop = session.status === "failed" ? automationStudioRunStop(session.trace?.failure?.code) : undefined;
+  const terminalFailureReason = stop?.reason ?? runtimeTerminalFailureReason(session, recoveryAttempts);
   // The run's lifecycle handler executions, which the root frame's trace carries (`executor/step-loop/lifecycle-trace.ts`).
   const handlerExecutions = session.trace?.handlerExecutions;
   return {
@@ -122,6 +131,7 @@ export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSe
       recoveryAttemptCount: recoveryAttempts.length,
       comparisonCount: actionAttempts.filter((attempt) => attempt.comparisonStatus).length,
       ...(terminalFailureReason ? { terminalFailureReason } : {}),
+      ...(stop ? { stopCode: stop.code } : {}),
       ...(session.trace?.message ? { message: session.trace.message } : {}),
       ...(session.trace?.currentNodeId ? { currentNodeId: session.trace.currentNodeId } : {})
     }
@@ -176,6 +186,7 @@ function runtimeActionAttemptRecord(session: AutomationStudioRuntimeSession, pla
   const hostTargetResolution = hostTargetResolutionFromOutputs(attempt.outputs);
   const extraction = extractionSummaryFromOutputs(attempt.outputs);
   const stateRouting = automationStudioRunDetailStateRouting(attempt, failure?.code);
+  const skipped = automationStudioRunDetailSkipped(attempt);
   // The frames, failure class, frame entry and handler of state-aware recovery, as ids and closed codes (`recovery-trace.ts`).
   const recoveryTrace = automationStudioRunDetailRecoveryTrace(attempt);
   // A step whose state already held reads as done, with its failure kept (`flow-change/attempt-projection.ts`).
@@ -198,10 +209,9 @@ function runtimeActionAttemptRecord(session: AutomationStudioRuntimeSession, pla
     // `succeeded` down `route: "skipped"`, which alone a reader cannot tell
     // from a press; this says the step was skipped and what observed it. A
     // step state routing passed over (`executor/state-routing/`) also says
-    // where the run went on to, so a run's detail shows the routing decision.
-    ...(attempt.skipped ? { skipped: attempt.skipped.reason === "state_routed"
-      ? { reason: "state_routed", code: attempt.skipped.code, toNodeId: attempt.skipped.toNodeId, direction: attempt.skipped.direction }
-      : { reason: "target_absent", code: attempt.skipped.code } } : {}),
+    // where the run went on to, so a run's detail shows the routing decision;
+    // an act already done in this run names the row it was done for (`skipped.ts`).
+    ...(skipped ? { skipped } : {}),
     // What state routing made of the page, whatever it decided: a step whose
     // routing found no way on otherwise reads like one that never consulted
     // it (`state-routing.ts`).

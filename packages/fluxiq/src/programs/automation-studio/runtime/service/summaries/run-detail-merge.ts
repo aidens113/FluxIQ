@@ -20,6 +20,7 @@ const SESSION_PROJECTION_METADATA_KEYS: ReadonlySet<string> = new Set([
   "recoveryAttemptCount",
   "comparisonCount",
   "terminalFailureReason",
+  "stopCode",
   "message",
   "currentNodeId"
 ]);
@@ -36,6 +37,8 @@ const SUMMARY_PROJECTION_METADATA_KEYS: ReadonlySet<string> = new Set([
   "targetId",
   "effectCount",
   "recoveryAttemptCount",
+  "stopCode",
+  "statusWords",
   "errorCount",
   "lastEventSequence"
 ]);

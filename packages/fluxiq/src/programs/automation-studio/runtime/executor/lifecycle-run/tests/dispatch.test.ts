@@ -101,20 +101,29 @@ describe("dispatchAutomationStudioLifecycleEvent", () => {
 
     expect(await decided("retry", { disposition: "resume" })).toMatchObject({ kind: "handled", decision: { kind: "resume" } });
 
-    const guard = () => ({ passesUncertainAct: false, repeatsCompletedReconcile: false });
+    const guard = () => ({ passesUncertainAct: false });
     const routed = await decided("before_next", { disposition: "route", checkpointId: "cart" }, { routeGuard: guard });
     expect(routed).toMatchObject({ kind: "handled", decision: { kind: "route", checkpointId: "cart" }, routeTarget: { checkpointId: "cart", invocationId: "invocation-1", nodeId: "start" } });
     expect(routed.runs[0]?.recovery.targetId).toBe("cart");
     // Without graph-run's guard a route is never taken.
     const unguarded = await decided("before_next", { disposition: "route", checkpointId: "cart" });
-    expect(unguarded.runs[0]?.decision).toMatchObject({ kind: "unhandled", reason: expect.stringContaining("could not check what the route would pass") });
+    expect(unguarded.runs[0]?.decision).toMatchObject({ kind: "unhandled", reason: expect.stringContaining("could not check what the route would pass"), code: "route_refused", guard: "unguarded" });
+    // The attempt's stored record keeps where the unhandled came from (t411): the guard that refused the route.
+    expect(unguarded.runs[0]?.lifecycle?.disposition).toEqual({ kind: "unhandled", reason: "route_refused", guard: "unguarded" });
+    const uncertain = await decided("before_next", { disposition: "route", checkpointId: "cart" }, { routeGuard: () => ({ passesUncertainAct: true }) });
+    expect(uncertain.runs[0]?.lifecycle?.disposition).toEqual({ kind: "unhandled", reason: "route_refused", guard: "passes_uncertain_act" });
+    const unreachable = await decided("before_next", { disposition: "route", checkpointId: "cart" }, { routeGuard: () => ({ passesUncertainAct: false, unreachable: "Node start is not in the graph this frame runs." }) });
+    expect(unreachable.runs[0]?.decision).toMatchObject({ code: "route_refused", guard: "unreachable", reason: "Node start is not in the graph this frame runs." });
 
     const resolved = await decided("fail", { disposition: "resolve", outputs: { total: "12" } }, { requiredOutputIds: ["total"], incidentId: "incident-x" });
     expect(resolved).toMatchObject({ kind: "handled", decision: { kind: "resolve", outputs: { total: "12" } } });
     expect(resolved.runs[0]?.lifecycle?.disposition).toEqual({ kind: "resolve" });
 
     const unhandled = await decided("fail", { disposition: "unhandled" });
-    expect(unhandled).toMatchObject({ kind: "handled", decision: { kind: "unhandled", reason: "The handler ended unhandled." } });
+    expect(unhandled).toMatchObject({ kind: "handled", decision: { kind: "unhandled", reason: "The handler ended unhandled.", code: "written_unhandled" } });
+    expect(unhandled.runs[0]?.lifecycle?.disposition).toEqual({ kind: "unhandled", reason: "written_unhandled" });
+    // The runtime stream's record names the disposition alone, as its model type does.
+    expect(unhandled.runs[0]?.execution.disposition).toEqual({ kind: "unhandled" });
     expect(unhandled.runs[0]?.recovery.outcome).toBe("failed");
     expect(unhandled.runs[0]?.execution.outcome).toBe("succeeded");
   });
@@ -124,7 +133,7 @@ describe("dispatchAutomationStudioLifecycleEvent", () => {
     const flow = flowWith("graph.check", [handler("h", { ...retryAtPress, when: [fact("popup")], completionCheck: [fact("cleared")] }, { disposition: "resume" })]);
     const outcome = await dispatchAutomationStudioLifecycleEvent(dispatchInput(flow, { invocation: framed(flow), hostRuntime: host.runtime }, { event: "retry" }));
     expect(outcome).toMatchObject({ kind: "handled", decision: { kind: "unhandled", reason: "The handler's completion check is false, not true." } });
-    expect(outcome.runs[0]?.lifecycle).toMatchObject({ completionCheck: "false", disposition: { kind: "unhandled" } });
+    expect(outcome.runs[0]?.lifecycle).toMatchObject({ completionCheck: "false", disposition: { kind: "unhandled", reason: "completion_check_not_true" } });
   });
 
   it("never runs the same occurrence twice", async () => {

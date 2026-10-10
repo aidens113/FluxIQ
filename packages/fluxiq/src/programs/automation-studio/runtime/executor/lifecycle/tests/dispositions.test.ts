@@ -17,7 +17,7 @@ function continuation(event: AutomationStudioLifecycleEvent, extra: Partial<Auto
   };
 }
 
-const goodRoute: AutomationStudioRouteCheck = { found: true, when: "true", requiresBound: true, passesUncertainAct: false, repeatsCompletedReconcile: false };
+const goodRoute: AutomationStudioRouteCheck = { found: true, when: "true", requiresBound: true, passesUncertainAct: false };
 const RESUME: AutomationStudioHandlerDisposition = { kind: "resume" };
 const ROUTE: AutomationStudioHandlerDisposition = { kind: "route", checkpointId: "cart" };
 const RESOLVE: AutomationStudioHandlerDisposition = { kind: "resolve", outputs: { total: 3 } };
@@ -56,7 +56,7 @@ describe("handler dispositions by phase", () => {
   });
 
   it("returns unhandled when the body failed", () => {
-    expect(decide("before", RESUME, { bodyFailed: true })).toEqual({ kind: "unhandled", reason: "The handler's body failed." });
+    expect(decide("before", RESUME, { bodyFailed: true })).toEqual({ kind: "unhandled", reason: "The handler's body failed.", code: "body_failed" });
   });
 
   it("refuses a route whose checkpoint is missing, does not hold, lacks a binding, or would pass an uncertain act", () => {
@@ -68,12 +68,16 @@ describe("handler dispositions by phase", () => {
     expect(decide("fail", ROUTE, { route: { ...goodRoute, passesUncertainAct: true } })).toMatchObject({ kind: "unhandled", reason: expect.stringContaining("uncertain") });
   });
 
-  it("re-enters a completed reconcile act only when its effect check says not_landed", () => {
-    const reentry = { ...goodRoute, repeatsCompletedReconcile: true };
-    expect(decide("fail", ROUTE, { route: reentry })).toMatchObject({ kind: "unhandled" });
-    expect(decide("fail", ROUTE, { route: { ...reentry, effectCheck: "landed" } })).toMatchObject({ kind: "unhandled" });
-    expect(decide("fail", ROUTE, { route: { ...reentry, effectCheck: "unknown" } })).toMatchObject({ kind: "unhandled" });
-    expect(decide("fail", ROUTE, { route: { ...reentry, effectCheck: "not_landed" } })).toEqual({ kind: "route", checkpointId: "cart" });
+  it("keeps where each unhandled came from as a closed code, and names the guard that refused a route (t411)", () => {
+    expect(decide("fail", UNHANDLED)).toMatchObject({ code: "written_unhandled" });
+    expect(decide("fail", RESUME)).toMatchObject({ code: "disposition_not_allowed" });
+    expect(decide("fail", ROUTE, { completionCheck: "false" })).toMatchObject({ code: "completion_check_not_true" });
+    expect(decide("fail", { kind: "resolve", outputs: {} })).toMatchObject({ code: "resolve_missing_outputs" });
+    expect(decide("fail", ROUTE, { route: { ...goodRoute, found: false } })).toMatchObject({ code: "route_refused", guard: "checkpoint_not_found" });
+    expect(decide("fail", ROUTE, { route: { ...goodRoute, when: "unknown" } })).toMatchObject({ code: "route_refused", guard: "checkpoint_not_holding" });
+    expect(decide("fail", ROUTE, { route: { ...goodRoute, requiresBound: false } })).toMatchObject({ code: "route_refused", guard: "requires_unbound" });
+    expect(decide("fail", ROUTE, { route: { ...goodRoute, passesUncertainAct: true } })).toMatchObject({ code: "route_refused", guard: "passes_uncertain_act" });
+    expect(decide("fail", ROUTE, { route: { ...goodRoute, repeatsUnrecordedAct: true } })).toMatchObject({ code: "route_refused", guard: "repeats_unrecorded_act" });
   });
 
   it("never moves past an uncertain act, and no handler overrides a Core stop", () => {
