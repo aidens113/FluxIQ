@@ -33,7 +33,9 @@ export class AutomationStudioAcceptedStateValidation {
       if (flow.schemaVersion !== "0.1" || flow.projectId !== projectId || flow.scope.kind !== "domain" || flow.scope.domainId !== value.project.domainId || flow.source.mode !== "visual") fail("unsupported_flow_scope_or_source");
       if (!["draft", "publishable"].includes(flow.publication.status) || (flow.publicationHistory?.length ?? 0) > 0) fail("unsupported_publication");
       if (flow.nodes.some(node => node.definitionId.startsWith("composite.flow.") || Object.hasOwn(node.metadata ?? {}, "fluxiq.callFlow"))) fail("unsupported_publication");
-      if (!validateAutomationStudioFlow(flow).ok) fail("graph_invalid");
+      // The role of the Subflow that owns a graph, which the graph does not carry (t398).
+      const owner = resource?.owningSubflowId ? subflows.get(resource.owningSubflowId)?.artifact : undefined;
+      if (!validateAutomationStudioFlow(flow, owner ? { subflowRole: owner.role } : {}).ok) fail("graph_invalid");
       for (const node of flow.nodes) { this.id(node.id); this.id(node.definitionId); }
       for (const edge of flow.edges) { this.id(edge.id); this.id(edge.sourceNodeId); this.id(edge.targetNodeId); }
       for (const region of flow.regions ?? []) this.id(region.id);

@@ -105,8 +105,11 @@ export type AutomationStudioFlowScriptStep = {
   /**
    * What the Flow node this step becomes is named: the draft step's described
    * name, in the domain's words (`does.target`, R3-U-12), which a run's step
-   * card shows. Never written by a model, and set only on a step a draft step
-   * became; a join or a loop routing adds has none.
+   * card shows. Never written by a model as such: set on a step a draft step
+   * became, and on a handler's registration and end from the words written
+   * for it (`../script-statements/handler-blocks.ts`). A step the model wrote
+   * without one is named by its description (`./assemble.ts`); a join or a
+   * loop routing adds has none.
    */
   nodeLabel?: string;
   /**

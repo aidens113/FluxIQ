@@ -126,7 +126,7 @@ export function flowSummariesToCatalogEntries(summaries: any[]): any[] {
       updatedAt: summary.updatedAt ?? Date.now(),
       metadata: {
         summaryOnly: true,
-        ...(Array.isArray(summary.hierarchySubflows) ? { hierarchySubflows: summary.hierarchySubflows.map((subflow: any) => ({ subflowId: subflow.subflowId, ...(subflow.name ? { name: subflow.name } : {}), ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}), ...(subflow.parentCategoryId ? { parentCategoryId: subflow.parentCategoryId, metadata: { subflowCategoryId: subflow.parentCategoryId } } : {}) })) } : {}),
+        ...(Array.isArray(summary.hierarchySubflows) ? { hierarchySubflows: summary.hierarchySubflows.map((subflow: any) => ({ subflowId: subflow.subflowId, ...(subflow.name ? { name: subflow.name } : {}), ...(typeof subflow.role === "string" && subflow.role ? { role: subflow.role } : {}), ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}), ...(subflow.parentCategoryId ? { parentCategoryId: subflow.parentCategoryId, metadata: { subflowCategoryId: subflow.parentCategoryId } } : {}) })) } : {}),
         ...(Array.isArray(summary.subflowCategories) ? { subflowCategories: summary.subflowCategories.map((category: any) => ({ id: category.id, name: category.name, parentId: category.parentId ?? null })) } : {}),
         ...(summary.recordingProposalIds ? { recordingProposalIds: summary.recordingProposalIds } : {}),
         ...(summary.subflowGraph === true ? { subflowGraph: true } : {}),

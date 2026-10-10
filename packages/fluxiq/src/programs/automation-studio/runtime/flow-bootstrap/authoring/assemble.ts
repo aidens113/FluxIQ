@@ -621,6 +621,7 @@ function buildNode(input: {
   });
   issues.push(...normalised.issues);
   const derived = outputActionId ?? derivedOutputActionId(input.definition);
+  const label = input.step.nodeLabel ?? writtenNodeLabel(input.step);
   if (input.definition.outputAction && !derived) {
     issues.push(authoringError("bootstrap.missing_output_action", "Node definition requires an explicit output action.", `${input.path}.outputActionId`));
   }
@@ -634,13 +635,29 @@ function buildNode(input: {
       ...(consequences ?? normalised.consequences ? { consequences: (consequences ?? normalised.consequences)! } : {}),
       // The pages its draft step ran between; a step a model wrote has none (`./contracts.ts`).
       ...(input.step.routeSignatures ? { routeSignatures: structuredClone(input.step.routeSignatures) } : {}),
-      // What its draft step did, in the domain's words; a step a model wrote has none (`./contracts.ts`).
-      ...(input.step.nodeLabel ? { label: input.step.nodeLabel } : {}),
+      // What its draft step did, in the domain's words, or what a written
+      // step says it does; a join or loop Core derived has none (`./contracts.ts`).
+      ...(label ? { label } : {}),
       // The span's `repeat pace:`, on its first step (`../script-statements/repeat-pace.ts`).
       ...(input.step.paceMs !== undefined ? { paceMs: input.step.paceMs } : {})
     },
     issues
   };
+}
+
+/**
+ * What a step the model wrote says it does, as the name of the node it
+ * becomes (t398): the editor and the chat show a node by its `label`, and a
+ * candidate script's steps had none, so each read "One step". Only a written
+ * step (`line` above 0) that no draft step became: a draft step is named by
+ * its own words or deliberately not at all (`./assemble-draft.ts`), and a
+ * join or loop Core derived names nothing the person reads as a step.
+ */
+function writtenNodeLabel(step: AutomationStudioFlowScriptStep): string | undefined {
+  if (step.line <= 0) return undefined;
+  if (step.draftStepId !== undefined) return undefined;
+  const words = step.description.replace(/\s+/gu, " ").trim();
+  return words ? words.slice(0, NAME_LIMIT) : undefined;
 }
 
 /** The output action a definition leaves no choice about. */

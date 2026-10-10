@@ -18,7 +18,7 @@ export type AutomationGraphProblem = {
  * also name. Mirrors Core's `AutomationStudioFlowValidationContext`.
  */
 export type AutomationGraphValidationContext = {
-  subflowRole?: string;
+  subflowRole?: string | undefined;
   externalCheckpointIds?: readonly string[];
 };
 
