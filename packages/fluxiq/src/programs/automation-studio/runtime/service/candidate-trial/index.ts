@@ -3,6 +3,7 @@ export * from "./summary.ts";
 export * from "./check-step.ts";
 export * from "./happened.ts";
 export * from "./absorbed.ts";
+export * from "./target-on-page.ts";
 export * from "./feedback.ts";
 export * from "./learned-paces.ts";
 export * from "./run.ts";
