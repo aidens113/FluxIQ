@@ -124,6 +124,17 @@ describe("a failed step the ladder could not repair", () => {
     expect(brief.body).not.toContain("data-testid");
   });
 
+  // t431: the control is named by its own words or by nothing, never by how it was found.
+  it("names no control when the step's control has no words, and leaks no locator", async () => {
+    const port = deps();
+    const wordless: AutomationStudioFlowDocument = { ...flow, nodes: [flow.nodes[0]!, { id: "s4", definitionId: "web.action.click", parameterValues: { target: { name: "#composer", role: "button" }, selector: "[data-testid=composer]" } }] };
+    await automationStudioStepFailureRepairPort(port)({ detail: failedDetail(GOAL_GONE), flow: wordless, deniedEvidenceKeys: ["selector"] });
+    const body = briefOf(port).body;
+    expect(body).not.toContain("by its own words");
+    expect(body).not.toContain("Write something...");
+    expect(body).not.toMatch(/data-testid|#composer|fingerprint|-0\.12/u);
+  });
+
   it("ends as today when the build builds nothing, with the attempt on the run", async () => {
     const port = deps({ generate: vi.fn(async () => { throw flowBootstrapPhaseFailure("provider_output_validation"); }) as never });
     const result = await repair(port, failedDetail(GOAL_GONE));

@@ -97,7 +97,7 @@ import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunActionAttem
 import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRouter } from "../../model/index.ts";
 import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/harness/index.ts";
-import { automationStudioModelFacingFailureText } from "../llm/model-facing/index.ts";
+import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../llm/model-facing/index.ts";
 import { automationStudioFlowGraphSection, automationStudioScreenedAuthoredState, automationStudioStepParametersSection } from "./repair-context/index.ts";
 
 /**
@@ -281,7 +281,7 @@ function recoveryContextSections(
   const metadata = record?.metadata;
   const adaptations = matchingAdaptations(input.adaptations, record);
   return withoutEmptySections({
-    failure: failureSection(record, input.failedAttempt),
+    failure: failureSection(record, input.failedAttempt, input.flow),
     expected_transition: comparison ? boundedSection({
       nodeId: comparison.expected.nodeId,
       definitionId: comparison.expected.definitionId,
@@ -362,7 +362,7 @@ function rootFrameAttempts(detail: AutomationStudioFlowRunDetail): AutomationStu
   return (detail.actionAttempts ?? []).filter((attempt) => attempt.parentAttemptId === undefined);
 }
 
-function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | undefined, failedAttempt: AutomationStudioNodeAttemptTrace | undefined): JsonObject | undefined {
+function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | undefined, failedAttempt: AutomationStudioNodeAttemptTrace | undefined, flow: AutomationStudioFlowDocument | undefined): JsonObject | undefined {
   if (!record) return undefined;
   // Stored records are parsed again before use, as everywhere else that reads
   // one. `message` is deliberately not carried: the record's own `expected`
@@ -382,11 +382,19 @@ function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | und
   // a control was found, and no text at all for a failure about finding the
   // target (`../llm/model-facing/failure-text.ts`). The record in the
   // trace and the run log keeps every word.
+  //
+  // What the repair does read is the failed step's control by its own words
+  // (t431): its name, text, label or placeholder, read from the step's own
+  // node parameters and screened like the texts above
+  // (`../llm/model-facing/control-words.ts`). That is what the model sees on
+  // the page, and the one thing about the control it can look for again.
+  const control = automationStudioModelFacingControlWords(flow?.nodes.find((node) => node.id === record.nodeId)?.parameterValues);
   const failure = parseAutomationStudioFailureRecord(record.failure);
   return boundedSection({
     attemptId: record.attemptId,
     nodeId: record.nodeId,
     definitionId: record.definitionId,
+    control,
     status: record.status,
     route: record.route,
     comparisonStatus: record.comparisonStatus,
