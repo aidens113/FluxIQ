@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
+import { AutomationStudioFlowCandidateTrialGate, type AutomationStudioFlowCandidate } from "../../../flow-bootstrap/candidate/index.ts";
 import { automationStudioCandidateTrialFeedback } from "../index.ts";
 
 // t420, paid run R4a (`run-mv2nlh9l-52e476da`, 0038): the one trial stopped at the typing step with
@@ -77,5 +78,51 @@ describe("trial feedback for a step that could not find a control still on the p
     const step = lastStep([typing("t1", measured, { category: "action_failed", code: "web.action.failed", retryable: false })]);
     expect(step).not.toHaveProperty("targetOnPage");
     expect(step).toMatchObject({ happened: "The step ran and did not work.", retryable: false });
+  });
+});
+
+// t422, paid run R4a's second attempt (`run-mv2pgqkj-f3552c70`, trials 1 and 2): the quantity step was saved as a tag and
+// a selector through the box's per-load id, nothing else; the page set the absent id aside, nothing was left to score,
+// and the measurement carried 3 same-family controls and no score. The fix is in the domain: a step built from a handle
+// now carries the element's whole fingerprint, so the extension finds the control by its other signals. Finding an
+// element is the extension's work, never the model's (user, 2026-10-10): the feedback never asks the model to read the
+// control again or re-address it. Such a step keeps today's not-found feedback -- try again, which the gate answers
+// `retry_allowed` once -- and if it stops there again, the gate closes the revision as for any control not found.
+
+/** The trial's graph with the typing step saved as `element`. */
+const graphWith = (element: JsonObject) => ({
+  nodes: [graph.nodes[0], { ...graph.nodes[1], parameterValues: { selector: "#fb1l6ufkg", text: "3", element } }]
+} as unknown as AutomationStudioFlowArtifact);
+const feedbackWith = (element: JsonObject, attempts: Attempt[]) => automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph: graphWith(element),
+  trace: { status: "failed", startedAt: 1, values: {}, effects: [], attempts: [{ ...open }, ...attempts] } }).feedback;
+/** The domain's failure for that step, word for word: no score, and the resolution names only the family it weighed. */
+const unscoredNotFound: Failure = { ...notFound, actual: "nothing matched; 3 control(s) of the same family are on the page; the execution did not recover within its 5 attempts after absorbing target_absent ×5, waiting 3750 ms" };
+const R4A_TRIES = ["t1", "t2", "t3", "t4"].map((id) => typing(id, { strategy: "fingerprint", candidateCount: 3 }, unscoredNotFound));
+const addressOnly = { tagName: "input", selector: "#fb1l6ufkg" };
+
+describe("trial feedback for a step that scored no control at all", () => {
+  it("rebuilds R4a's second attempt: today's not-found feedback, retryable, and nothing that asks the model to find the control", () => {
+    const step = (feedbackWith(addressOnly, R4A_TRIES).steps as JsonObject[]).at(-1)!;
+    expect(step).toMatchObject({ step: 2, status: "failed", attempts: 4, failureCode: "web.target.not_found", happened: "The step's control was not found on the page.", retryable: true });
+    for (const key of ["targetOnPage", "onPage", "advice"]) expect(step).not.toHaveProperty(key);
+    // Nothing of this feedback's own asks the model to find or re-address the control; `expected` and `actual` are the
+    // domain's failure text, passed through as for every step.
+    const { expected: _expected, actual: _actual, ...said } = step;
+    expect(JSON.stringify(said)).not.toMatch(/fingerprint|read the control again|re-?address|look for the control|another way to find/iu);
+  });
+
+  it("the trial's answer is retry_allowed once, and the same stop again closes the revision to re-testing", async () => {
+    const candidate = { revision: 4, digest: "8d633994" } as unknown as AutomationStudioFlowCandidate;
+    const gate = new AutomationStudioFlowCandidateTrialGate({
+      latest: () => candidate,
+      trial: { candidateId: "candidate.r4a", port: async () => ({ revision: 4, digest: "8d633994", verdict: "execution_failed", trialRunId: "trial", feedback: feedbackWith(addressOnly, R4A_TRIES) }) }
+    });
+    const first = await gate.test({ revision: 4, digest: "8d633994" });
+    expect(first.resultReason).toBe("retry_allowed");
+    expect((first.evidence as JsonObject).instruction).toMatch(/If it may, test this same revision again/u);
+    const second = await gate.test({ revision: 4, digest: "8d633994" });
+    expect(second.resultReason).toBeUndefined();
+    expect(second.evidence).toMatchObject({ failedStep: { step: 2, failureCode: "web.target.not_found" }, retestsLeft: 0 });
+    expect((await gate.test({ revision: 4, digest: "8d633994" })).resultCode).toBe("candidate.trial_same_failure");
   });
 });
