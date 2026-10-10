@@ -177,3 +177,53 @@ describe("an exploration press names the control the page view printed for its h
     expect(ended().at(-1)?.detail?.title).toBe("Clicking “Friends tab”");
   });
 });
+
+// R4a attempt 2, `run-mv2pgqkj-f3552c70`, steps 0020-0024 and moment 04: the
+// model's own exploration calls carry only a handle, and its colour, version
+// and ship-from swatches read "Tick · Space Grey" and "Ticking “Spain”" while
+// the same steps in a test, which carry the saved element, read "Choose".
+// The view lines and calls below are that run's.
+describe("an exploration check is read by what the page view printed its control as", () => {
+  const VIEW = [
+    "t940 clickable \"Space Grey\" marked",
+    "t942 clickable \"Silver\"",
+    "t951 clickable \"7-in-1\"",
+    "t957 clickable \"China\" marked",
+    "t958 clickable \"Spain\"",
+    "t961 \"Quantity\"",
+    "t964 field \"Quantity\" =\"1\""
+  ];
+  const view = (lines: string[]) => ({ callId: "get.coupons", toolId: "core.run_node", value: { page: `PAGE "Voltbay USB C Hub - Farbazaar"\nURL ~/item/1005008123450\n\n[main]\n${lines.join("\n")}` } });
+  const check = (callId: string, handle: string) => ({ kind: "tool_call", callId, toolId: "core.run_node", input: { node: "web.output.dom-check", parameters: { target: { handle }, checked: true }, consequences: [] } });
+  const names: Record<string, string> = { t940: "Space Grey", t951: "7-in-1", t958: "Spain", t970: "Gift wrap" };
+
+  it("says a swatch the view printed as clickable as Choosing, which its card reads as Choose, with the domain's words kept", async () => {
+    const calls = [check("pick.spacegrey", "t940"), check("pick.7in1", "t951"), check("pick.spain", "t958")];
+    let next = calls[0]!;
+    const observed = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => next, describeCall: (call) => ({ target: names[String((call.value.parameters as { target: { handle: string } }).target.handle)] }) });
+    await inScope(async () => {
+      for (const [index, call] of calls.entries()) {
+        next = call;
+        await observed.decide({ iteration: index + 1, tools: [], evidence: [view(VIEW)], decisionSchema: {}, canComplete: false });
+        await observed.executeTool({ callId: call.callId, toolId: call.toolId, value: call.input });
+      }
+    });
+    expect(ended().map((event) => event.detail?.title)).toEqual(["Choosing “Space Grey”", "Choosing “7-in-1”", "Choosing “Spain”"]);
+    expect(ended().map((event) => activityActionOf(event)?.name)).toEqual(["Choose", "Choose", "Choose"]);
+  });
+
+  it("still says a box the view printed as a checkbox, or a handle no view printed, as Ticking", async () => {
+    const calls = [check("gift.wrap", "t970"), check("unseen", "t999")];
+    let next = calls[0]!;
+    const observed = observeAutomationStudioEvidenceLoop({ ...loopInput(), decide: async () => next });
+    await inScope(async () => {
+      for (const [index, call] of calls.entries()) {
+        next = call;
+        await observed.decide({ iteration: index + 1, tools: [], evidence: [view([...VIEW, "t970 checkbox \"Gift wrap\""])], decisionSchema: {}, canComplete: false });
+        await observed.executeTool({ callId: call.callId, toolId: call.toolId, value: call.input });
+      }
+    });
+    expect(ended().map((event) => event.detail?.title)).toEqual(["Ticking “Gift wrap”", "Ticking a box"]);
+    expect(activityActionOf(ended()[0]!)?.name).toBe("Tick");
+  });
+});

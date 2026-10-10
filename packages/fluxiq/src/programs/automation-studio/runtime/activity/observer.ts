@@ -82,7 +82,7 @@ function outcomeOf(status: "succeeded" | "failed", resultCode: string | undefine
     if (tested) return `${tested.charAt(0).toLowerCase()}${tested.slice(1)}`;
     return activityActionReplayFailing(resultCode) ? "didn't work when tried again" : "done";
   }
-  return /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved/u.test(resultCode) ? "didn't work" : "done";
+  return /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved|not_observed|state_mismatch/u.test(resultCode) ? "didn't work" : "done";
 }
 
 /**
@@ -281,11 +281,15 @@ export function observeAutomationStudioEvidenceLoop(input: AutomationStudioLlmEv
   // A call's stated reason, held to what came of it where the call repeats one or is a candidate's own (`./decision-answer/narration.ts`).
   const narration = automationStudioActivityNarration();
   // The domain's words for a call, with the control named as the evidence printed it where they name none (`./call-context.ts`, t378).
+  // The role the view printed for the control rides along either way, so an
+  // exploration call's "check" is read by the element rule a saved step's is
+  // (R4a attempt 2, `run-mv2pgqkj-f3552c70`, moment 04).
   const describedOf = (call: { toolId: string; value?: unknown }): AutomationStudioActivityCallWords | undefined => {
+    const role = context.role(call);
     const words = describeSafely(input.describeCall, call);
-    if (words?.target !== undefined) return words;
-    const target = context.target(call);
-    return target === undefined ? words : { ...words, target };
+    const target = words?.target ?? context.target(call);
+    const named = target === undefined ? words : { ...words, target };
+    return role === undefined ? named : { ...named, role };
   };
   return {
     ...input,
