@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { AutomationStudioFlowNode } from "../model/index.ts";
 import type { AutomationNodeExpectationEvaluation, AutomationNodeExpectationEvaluationContext, AutomationNodeExpectationEvaluator } from "../nodes/index.ts";
+import type { AutomationStudioFactCondition, AutomationStudioFactTruth } from "./executor/lifecycle/index.ts";
 
 export type AutomationStudioHostRuntimeCapability =
   | "action-dispatch"
@@ -10,6 +11,7 @@ export type AutomationStudioHostRuntimeCapability =
   | "external-side-effect"
   | "rollback-hint"
   | "expectation-evaluation"
+  | "fact-evaluation"
   | "route-state";
 
 export type AutomationStudioHostStateSnapshotRef = {
@@ -36,6 +38,35 @@ export type AutomationStudioHostRuntimeActionContext = {
   attemptId: string;
   inputs: Readonly<Record<string, JsonValue>>;
   previousStateRef?: AutomationStudioHostStateSnapshotRef;
+};
+
+/**
+ * What Core hands the host beside a batch of fact conditions (state-aware
+ * recovery plan, C9): the frame's bound inputs and the run's values a
+ * condition's `{ input }` or `{ value }` compares with, and the node and
+ * attempt the boundary is at. The host resolves those bindings from here and
+ * never looks a value up itself.
+ */
+export type AutomationStudioFactEvaluationContext = {
+  inputs?: Readonly<Record<string, JsonValue>>;
+  values?: Readonly<Record<string, JsonValue>>;
+  signal?: AbortSignal;
+  nodeId?: string;
+  attemptId?: string;
+};
+
+/**
+ * The host's answer for one fact condition, by position. `result` is the
+ * three-valued truth; `evidence` is the host's own bounded record of what it
+ * read, which Core never stores or shows -- it keeps only a reference derived
+ * from it (`executor/lifecycle-run/`) -- and `evidenceRef`, when the host keeps
+ * its evidence itself, names it.
+ */
+export type AutomationStudioHostFactResult = {
+  result: AutomationStudioFactTruth;
+  evidence?: unknown;
+  evidenceRef?: string | undefined;
+  capturedAt: number;
 };
 
 /** One `state.*` path a Router condition may test, and what it holds, in the host's own words. */
@@ -97,6 +128,17 @@ export type AutomationStudioHostRuntimeBoundary = {
    * runtime, so a host that binds nothing keeps Core's unconditional pass.
    */
   expectationEvaluator?(conditions: JsonValue[], mode: string, timeoutMs: number, context: AutomationNodeExpectationEvaluationContext): AutomationNodeExpectationEvaluation | Promise<AutomationNodeExpectationEvaluation>;
+  /**
+   * Answers a batch of fact conditions as the page stands now, with no wait,
+   * one result per condition in the same order: `true`, `false` or `unknown`
+   * (state-aware recovery plan, C9), offered under the capability
+   * `fact-evaluation`. Core calls it once per lifecycle boundary with every
+   * condition that boundary needs, and only when there is at least one. A
+   * host that cannot settle a condition answers `unknown`; Core reads a
+   * missing host, a throw or a batch of the wrong length as `unknown` for
+   * every condition, never as `false`.
+   */
+  factEvaluator?(conditions: readonly AutomationStudioFactCondition[], context: AutomationStudioFactEvaluationContext): readonly AutomationStudioHostFactResult[] | Promise<readonly AutomationStudioHostFactResult[]>;
 };
 
 export function hostExpectationEvaluator(hostRuntime: AutomationStudioHostRuntimeBoundary | undefined): AutomationNodeExpectationEvaluator | undefined {

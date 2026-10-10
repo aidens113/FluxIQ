@@ -31,7 +31,7 @@
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
-import { automationStudioAssessAttemptFault, automationStudioBoundedRetryWaitMs, type AutomationStudioFaultAssessment } from "../defensive/index.ts";
+import { automationStudioAssessAttemptFault, automationStudioBoundedRetryWaitMs, automationStudioFaultNotLanded, automationStudioRunEffectCheck, type AutomationStudioFaultAssessment, type AutomationStudioLastingActCheck } from "../defensive/index.ts";
 import { AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY, automationStudioRetryBackoffMs } from "../retry-policy.ts";
 
 /** What one attempt answered: success, or a failure with the producer's record when it gave one. */
@@ -57,11 +57,11 @@ export type AutomationStudioNodeRetryOutcome<T> = {
 };
 
 /**
- * The caller's own check of whether a lasting act took effect, asked only after
- * an attempt whose failure left that unknown: `landed`, `not_landed` (it did
- * not happen, so making it again is not a second act) or `unknown`.
+ * The effect check, the one hook a graph run uses too (C8): defined with the
+ * rest of the defensive policy (`../defensive/effect-check.ts`) and named here
+ * as well, where callers outside a graph first met it.
  */
-export type AutomationStudioLastingActCheck<T> = (result: T, attempt: number) => Promise<"landed" | "not_landed" | "unknown">;
+export type { AutomationStudioLastingActCheck };
 
 /**
  * Dispatches a node, and dispatches it again after each fault the default
@@ -104,12 +104,12 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
     if (reading.ok || !reading.failure) return { result, attempts: attempt, waitedMs, faults };
     const assessed = automationStudioAssessAttemptFault(failedAttempt(input.node, attempt, startedAt, reading.failure), input.node, now());
     // A lasting act whose failure left its effect unknown is checked, never blindly repeated (t359).
-    const settled = assessed?.actUncertain ? await (input.checkEffect?.(result, attempt) ?? Promise.resolve("unknown" as const)) : undefined;
+    const settled = assessed?.actUncertain ? await automationStudioRunEffectCheck(input.checkEffect, result, attempt) : undefined;
     if (assessed && (settled === "landed" || settled === "unknown")) {
       faults.push(assessed);
       return { result, attempts: attempt, waitedMs, faults, lastingAct: settled === "landed" ? "landed" : "uncertain" };
     }
-    const fault = assessed && settled === "not_landed" ? notLanded(assessed) : assessed;
+    const fault = assessed && settled === "not_landed" ? automationStudioFaultNotLanded(assessed) : assessed;
     if (fault) faults.push(fault);
     if (fault?.disposition !== "retry" || attempt >= policy.maxAttempts || input.signal?.aborted) return { result, attempts: attempt, waitedMs, faults };
     const wait = automationStudioBoundedRetryWaitMs({
@@ -122,12 +122,6 @@ export async function automationStudioDispatchWithNodeRetries<T>(input: {
     waitedMs += wait.waitMs;
     if (input.signal?.aborted) return { result, attempts: attempt, waitedMs, faults };
   }
-}
-
-/** A lasting act the effect check showed did not happen: making it again is not a second act. */
-function notLanded(assessed: AutomationStudioFaultAssessment): AutomationStudioFaultAssessment {
-  const { actUncertain: _settled, ...fault } = assessed;
-  return { ...fault, disposition: "retry", effect: "unacted", reason: `${assessed.reason} The effect check then showed it did not take effect, so it is made again.` };
 }
 
 /** The attempt as the graph executor would have traced it, which is all the assessment reads. */

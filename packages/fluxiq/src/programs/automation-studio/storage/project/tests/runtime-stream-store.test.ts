@@ -65,6 +65,33 @@ describe("AutomationStudioProjectRuntimeStreamStore", () => {
     await pool.closeAll();
   });
 
+  it("stores each handler execution as a handler_execution event and folds it back into handlerExecutions", async () => {
+    const pool = openPool();
+    await seedFlow(pool, "project.runtime", "flow.checkout");
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
+    const handlerExecutions: NonNullable<AutomationStudioFlowRunDetail["handlerExecutions"]> = [
+      { executionId: "handler.1", handlerId: "handler.dismiss-popup", event: "before", framePath: ["inv.root"], nodeId: "node.1", disposition: { kind: "resume" }, outcome: "succeeded", startedAt: 42, finishedAt: 44 },
+      { executionId: "handler.2", handlerId: "handler.sign-in", event: "fail", framePath: ["inv.root", "inv.checkout"], nodeId: "node.2", incidentId: "incident.1", disposition: { kind: "route", checkpointId: "checkpoint.cart" }, outcome: "failed", startedAt: 56 }
+    ];
+    await store.putRunDetail({ ...emptyRunDetail("run.checkout"), summary: runSummary({ actionAttemptCount: 2 }), actionAttempts: [action("attempt.1", 1, 40), action("attempt.2", 2, 50)], handlerExecutions });
+
+    const page = await store.listRuntimeEvents({ runId: "run.checkout", afterSequence: 0, limit: 10 });
+    expect(page.events.filter((event) => event.eventKind === "handler_execution").map((event) => [event.entityId, event.status])).toEqual([["handler.dismiss-popup", "succeeded"], ["handler.sign-in", "failed"]]);
+    await expect(store.getRunDetail("run.checkout")).resolves.toMatchObject({ handlerExecutions });
+    await store.close();
+    await pool.closeAll();
+  });
+
+  it("writes no handlerExecutions for a run in which no handler ran", async () => {
+    const pool = openPool();
+    await seedFlow(pool, "project.runtime", "flow.checkout");
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.runtime" });
+    await store.putRunDetail(emptyRunDetail("run.checkout"));
+    await expect(store.getRunDetail("run.checkout")).resolves.not.toHaveProperty("handlerExecutions");
+    await store.close();
+    await pool.closeAll();
+  });
+
   it("lists run summaries from SQL metadata without reading event chunk payloads", async () => {
     const pool = openPool();
     await seedFlow(pool, "project.runtime", "flow.checkout");

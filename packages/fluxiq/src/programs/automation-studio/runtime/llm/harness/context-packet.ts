@@ -28,10 +28,11 @@ import { automationStudioExecutableTargetKey, screenAutomationStudioLlmEvidence 
 import { packAutomationStudioLlmExploredEvidence, type AutomationStudioLlmExploredEvidenceSlot } from "./explored-evidence.ts";
 import { automationStudioLlmDraftEntryWithoutDeniedKeys } from "./draft-screen.ts";
 import { automationStudioEvidenceKey, sanitizeAutomationStudioLlmFailureEvidence } from "./failure-evidence.ts";
-import { resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "./instruction.ts";
+import { AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION, resolveAutomationStudioLlmInstructions, type AutomationStudioInstructionResolution } from "./instruction.ts";
+import { automationStudioWithoutLocators } from "./locator-text.ts";
 import type { AutomationStudioLlmDiagnosisFields } from "./structured-response.ts";
 import { AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS, type AutomationStudioLlmTaskKind } from "./task-kind.ts";
-import type { AutomationStudioLlmHarnessInput } from "./task-request.ts";
+import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmInRunRepairContext } from "./task-request.ts";
 
 export type AutomationStudioLlmContextPacket = {
   schemaVersion: "0.1";
@@ -63,6 +64,10 @@ export type AutomationStudioLlmContextPacket = {
    * told to carry out the plan it just stated is shown that plan. Runtime
    * patch only. */
   diagnosis?: AutomationStudioLlmDiagnosisFields;
+  /** The in-run repair this patch is for: the unit and its contract, the
+   * incident, and what the run already tried and did. Runtime patch only, and
+   * always beside the instruction that explains it. */
+  inRunRepair?: AutomationStudioLlmInRunRepairContext;
   /** The account of what a finished run produced, and of the shape of
    * the Flow that produced it. Carried to the verification, whose whole subject
    * it is, and to a runtime diagnosis or patch, because a repair entered from a
@@ -219,7 +224,12 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
   // The prompt is versioned by stage as well as by task kind: the same kind
   // asked at "implement" and at "iterate" is a different prompt, and a recorded
   // intervention has to say which one it was.
-  const promptVersion = stage ? `${AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS[input.taskKind]}+stage.${stage}` : AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS[input.taskKind];
+  const stagedVersion = stage ? `${AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS[input.taskKind]}+stage.${stage}` : AUTOMATION_STUDIO_LLM_PROMPT_VERSIONS[input.taskKind];
+  // An in-run repair is told something no other patch is, so it is a prompt of
+  // its own, and a recorded intervention says so.
+  const deniedEvidenceKeys = declaredDeniedEvidenceKeys(input);
+  const inRunRepair = input.inRunRepair ? packInRunRepair(input.taskKind, input.inRunRepair, deniedEvidenceKeys) : undefined;
+  const promptVersion = inRunRepair ? `${stagedVersion}+in_run_repair` : stagedVersion;
   // Composed here rather than accepted from the caller, so a staged request
   // always carries Core's ordering statement. There is no argument by which a
   // caller, or a domain that replaced every stage, can omit it.
@@ -229,11 +239,12 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
   // request that really has tools rather than to every call that happens to be
   // gathering. A runtime diagnosis gathers with nothing to call.
   const toolsOffered = input.taskKind === "evidence_tool_decision" && (input.evidenceLoop?.tools.length ?? 0) > 0;
+  const stageInstructions = stage ? automationStudioLoopStageInstructions(stage, input.stageInstructions, { toolsOffered }) : [];
+  // The in-run repair instruction follows the stage's, and only beside the slot it explains.
   const instructions = resolveAutomationStudioLlmInstructions(
     input,
-    stage ? automationStudioLoopStageInstructions(stage, input.stageInstructions, { toolsOffered }) : []
+    inRunRepair ? [...stageInstructions, { ...AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION, tags: [...AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION.tags] }] : stageInstructions
   );
-  const deniedEvidenceKeys = declaredDeniedEvidenceKeys(input);
   const catalogContext = (input.taskKind === "flow_bootstrap" || input.taskKind === "evidence_tool_decision") && input.flowBootstrap
     ? buildAutomationStudioFlowBootstrapContext({
       ...(input.flowBootstrap.registry ? { registry: input.flowBootstrap.registry } : {}),
@@ -279,6 +290,7 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     // how a run failed has no place in it.
     ...(input.recoveryContext && (input.taskKind === "runtime_diagnosis" || input.taskKind === "runtime_patch") ? { recoveryContext: input.recoveryContext } : {}),
     ...(input.diagnosis ? packDiagnosisFields(input.taskKind, input.diagnosis) : {}),
+    ...(inRunRepair ? { inRunRepair } : {}),
     // Held to the tasks that are looking at a finished run: the verification
     // that judges its result, and the runtime diagnosis and patch that repair
     // it. A build has produced nothing yet, and an evidence-loop decision is
@@ -399,6 +411,65 @@ function packDiagnosisFields(
     ...(flag(diagnosis.patchNeeded) !== undefined ? { patchNeeded: flag(diagnosis.patchNeeded)! } : {})
   };
   return Object.keys(packed).length ? { diagnosis: packed } : {};
+}
+
+/**
+ * How many entries of each in-run repair history the packet keeps, newest
+ * first. The two lists grow with the run (a long loop completes hundreds of
+ * acts), and every attempt already reaches the request whole as
+ * `recentActions`, so this bounds a copy, not what the model can see.
+ */
+const IN_RUN_REPAIR_HISTORY_MAX_ENTRIES = 40;
+
+/**
+ * The in-run repair slot as the packet carries it, or none: a runtime patch
+ * only, like `diagnosis`, and any other task leaves it out, so the instruction
+ * that explains it is left out too. The typed fields and no others; the two
+ * histories held to their newest entries; nothing shaped like a locator.
+ *
+ * The builder already screened the contract (`recovery/in-run-repair/unit-contract.ts`)
+ * and this applies the same locator screen again. A contract that still
+ * carries a credential, or a key the bound domain denies, is withheld rather
+ * than sent: it is the one part of the slot authored data reaches. A history
+ * entry carrying a credential is dropped and counted. Page text never enters
+ * the slot: the page is `failureEvidence`, beside it.
+ */
+function packInRunRepair(taskKind: AutomationStudioLlmTaskKind, slot: AutomationStudioLlmInRunRepairContext, deniedKeys: readonly string[]): AutomationStudioLlmInRunRepairContext | undefined {
+  if (taskKind !== "runtime_patch") return undefined;
+  const screened = automationStudioWithoutLocators(structuredClone({
+    contract: slot.contract,
+    recoveriesTried: slot.recoveriesTried,
+    actsCompleted: slot.actsCompleted
+  }) as unknown as JsonObject) as unknown as Pick<AutomationStudioLlmInRunRepairContext, "contract" | "recoveriesTried" | "actsCompleted">;
+  const contractScreen = screenAutomationStudioLlmEvidence(screened.contract, deniedKeys);
+  const contract: AutomationStudioLlmInRunRepairContext["contract"] = contractScreen.deniedKey || contractScreen.secretShaped
+    ? { kind: slot.contract.kind, withheld: "screened" }
+    : screened.contract;
+  const recoveries = newestEntries(screened.recoveriesTried.filter(credentialFree), slot.recoveriesTried.length, slot.omitted?.recoveriesTried);
+  const acts = newestEntries(screened.actsCompleted.filter(credentialFree), slot.actsCompleted.length, slot.omitted?.actsCompleted);
+  const omitted = {
+    ...(recoveries.omitted ? { recoveriesTried: recoveries.omitted } : {}),
+    ...(acts.omitted ? { actsCompleted: acts.omitted } : {})
+  };
+  return {
+    unit: { kind: slot.unit.kind, id: slot.unit.id },
+    contract,
+    incident: automationStudioWithoutLocators(structuredClone(slot.incident) as unknown as JsonObject) as unknown as AutomationStudioLlmInRunRepairContext["incident"],
+    failedAttempt: automationStudioWithoutLocators(structuredClone(slot.failedAttempt) as unknown as JsonObject) as unknown as AutomationStudioLlmInRunRepairContext["failedAttempt"],
+    recoveriesTried: recoveries.kept,
+    actsCompleted: acts.kept,
+    ...(Object.keys(omitted).length ? { omitted } : {})
+  };
+}
+
+/** The newest entries up to the count, and how many were left out: past the count, failing the screen, or already omitted by the caller. */
+function newestEntries<Entry>(entries: readonly Entry[], given: number, alreadyOmitted: number | undefined): { kept: Entry[]; omitted: number } {
+  const past = Math.max(0, entries.length - IN_RUN_REPAIR_HISTORY_MAX_ENTRIES);
+  return { kept: entries.slice(past), omitted: past + (given - entries.length) + (alreadyOmitted ?? 0) };
+}
+
+function credentialFree(value: unknown): boolean {
+  return !screenAutomationStudioLlmEvidence(value, []).secretShaped;
 }
 
 /**

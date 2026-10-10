@@ -4,6 +4,7 @@ import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExpectationEvaluation } from "../../nodes/index.ts";
 import { EXPECTATION_REJECTED_FAILURE } from "../../nodes/policy/index.ts";
 import { hostExpectationEvaluator, type AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
+import type { AutomationStudioEffectCheckResult, AutomationStudioLastingActCheck } from "./defensive/index.ts";
 import { actualTransitionForAttempt } from "./actual-transition.ts";
 import { automationStudioExpectationRequest, automationStudioReadinessCeilingMs, automationStudioRecordedState } from "./recorded-state.ts";
 import type { AutomationStudioActualTransition, AutomationStudioExpectedTransition, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison, AutomationStudioTransitionComparisonStatus } from "./contracts.ts";
@@ -83,7 +84,12 @@ export function compareAutomationStudioTransition(node: AutomationStudioFlowNode
       statusMatched,
       stateCheckCount
     },
-    ...(message ? { message } : {})
+    ...(message ? { message } : {}),
+    // Set only where the host judged the expected state: a comparison read off
+    // the attempt's own route, or kept when the evaluator broke, proves nothing
+    // about the page (C9), and a held repair is validated only on this
+    // (`service/runtime-adaptation/held-fix-validation.ts`).
+    ...(evaluation ? { metadata: { hostEvaluated: true } } : {})
   };
 }
 
@@ -160,6 +166,54 @@ export async function attemptWithHostExpectationEvaluation(
     failure,
     transitionComparison: compareAutomationStudioTransition(node, attempt, { ...evaluation, failure })
   };
+}
+
+/**
+ * A graph run's effect check (C6 step 4, C8): whether a lasting act whose
+ * outcome was uncertain took effect, judged by the host's *waiting* expectation
+ * evaluation of the node's `expectedState` -- the same evaluator and request
+ * the success re-check above uses, given the longer of the node's wait ceiling
+ * and the window the expected state declares. A zero-wait `false` on a slow
+ * page would read as "did not land" and make the act a second time.
+ *
+ * `landed` when the attempt's own evaluation already saw the state hold, or
+ * when every condition was judged and held (`any`: one held); `not_landed` only
+ * when the page answered and a judged condition did not hold (`any`: every
+ * condition was judged and none held). `unknown` otherwise: no expected state,
+ * no evaluator, a host that judged nothing or did not say how much it judged,
+ * an evaluator that threw. A missing acknowledgement is never `not_landed`.
+ */
+export function automationStudioHostEffectCheck(node: AutomationStudioFlowNode, options: AutomationStudioGraphExecutionOptions): AutomationStudioLastingActCheck<AutomationStudioNodeAttemptTrace> {
+  return async (attempt) => {
+    const evaluate = hostExpectationEvaluator(options.hostRuntime);
+    const expectedState = attempt.transitionComparison?.expected.expectedState ?? expectedTransitionForNode(node, attempt).expectedState;
+    if (!evaluate || !expectedState || Object.keys(expectedState).length === 0) return "unknown";
+    if (automationStudioExpectationSatisfiedAfterFailure(attempt.transitionComparison)) return "landed";
+    const declared = automationStudioExpectationRequest(expectedState);
+    const windowMs = Math.max(declared.timeoutMs, automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs));
+    const request = automationStudioExpectationRequest(expectedState, windowMs);
+    const stateRef = currentStateRef(attempt);
+    const verdict = await evaluate(request.conditions, request.mode, request.timeoutMs, {
+      source: "transition_comparison",
+      nodeId: attempt.nodeId,
+      attemptId: attempt.attemptId,
+      ...(stateRef ? { stateRef } : {}),
+      ...(options.signal ? { signal: options.signal } : {})
+    });
+    return effectCheckVerdict(verdict, request.conditions.length, request.mode);
+  };
+}
+
+/** The host's verdict read by its count contract: judged conditions are the count, and `passed` speaks only of them. */
+function effectCheckVerdict(verdict: AutomationNodeExpectationEvaluation, total: number, mode: string): AutomationStudioEffectCheckResult {
+  const judged = verdict.checkedConditionCount;
+  if (judged === undefined || judged === 0) return "unknown";
+  if (mode === "any") {
+    if (verdict.passed) return "landed";
+    return judged >= total ? "not_landed" : "unknown";
+  }
+  if (!verdict.passed) return "not_landed";
+  return judged >= total ? "landed" : "unknown";
 }
 
 /** Whether the ladder may skip this node: its own comparison says the state it was to produce holds. */

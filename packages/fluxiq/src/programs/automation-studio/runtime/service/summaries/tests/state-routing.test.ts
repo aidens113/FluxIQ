@@ -51,6 +51,21 @@ describe("runtimeSessionToFlowRunDetail state routing", () => {
     expect(project(consulted({ outcome: "guard_stopped", candidates: 1, matched: 1, toNodeId: "a node with spaces" }))).not.toHaveProperty("stateRouting");
   });
 
+  it("carries each way on a safety guard refused as its guard and node, never the node the guard named", () => {
+    const refused = [
+      { toNodeId: "confirm", guard: "unbound_value", nodeId: "read-price" },
+      { toNodeId: "cart", guard: "repeats_lasting_act", nodeId: "add-to-cart" },
+      { toNodeId: "a node with spaces", guard: "unbound_value", nodeId: "x" },
+      { toNodeId: "elsewhere", guard: "invented_guard", nodeId: "x" }
+    ];
+    expect(project(consulted({ outcome: "no_match", candidates: 2, matched: 2, refused }))?.stateRouting).toEqual({
+      outcome: "no_match",
+      code: "web.target.not_found",
+      refused: [{ guard: "unbound_value", toNodeId: "confirm" }, { guard: "repeats_lasting_act", toNodeId: "cart" }]
+    });
+    expect(project(consulted({ outcome: "no_match", candidates: 1, matched: 1, refused: [refused[3]] }))?.stateRouting).toEqual({ outcome: "no_match", code: "web.target.not_found" });
+  });
+
   it("writes no stateRouting for an attempt that never consulted the page", () => {
     expect(project({ ...attempt("failed"), failure: notFound } as AutomationStudioNodeAttemptTrace)).not.toHaveProperty("stateRouting");
     expect(project(attempt("succeeded"))).not.toHaveProperty("stateRouting");

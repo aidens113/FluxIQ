@@ -286,7 +286,7 @@ describe("a run that fails with nobody watching", () => {
     expect(found.callerCalls).toEqual([]);
 
     // The whole loop, in the order it happened: diagnose, patch, then judge the
-    // retry's own product. Before this change the first two never happened and
+    // repaired run's own product. Before this change the first two never happened and
     // the third was never reached, because a failed run has no result to judge.
     expect(found.standingCalls).toEqual(["runtime_diagnosis", "runtime_patch", "loop_verification"]);
     // Two redemptions, each at its own ceiling: the repair's per-run purse and
@@ -296,8 +296,10 @@ describe("a run that fails with nobody watching", () => {
       { keyId: "key.deepseek", maxEstimatedCostUsd: 0.05, authorizedByUserId: "user.aiden" }
     ]);
 
-    // The patch landed and the run re-ran.
-    expect(detail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded", attemptCount: 1 } });
+    // The fix was held at the failing step and the run carried on there, once (C6 step 8).
+    expect(detail?.metadata).not.toHaveProperty("adaptiveRetry");
+    expect(run.trace?.repairs).toHaveLength(1);
+    expect(detail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({ kind: "temporary_wait_retry", outcome: "overlaid", repairId: run.trace?.repairs?.[0] })]);
     // And the gate after this one, which t108 built, now has something to judge.
     expect(run.metadata?.resultCheck).toMatchObject({ checked: true, code: AUTOMATION_STUDIO_RESULT_CHECK_CODES.afterRepair, status: "confirmed" });
     expect(run.metadata?.resultVerification).toMatchObject({ status: "confirmed", performed: true, verdict: "answers", basis: "model" });

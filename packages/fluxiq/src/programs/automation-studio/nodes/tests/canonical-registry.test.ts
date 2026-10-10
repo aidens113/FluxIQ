@@ -35,7 +35,9 @@ describe("canonical Automation Studio node registry", () => {
       expect(definition.source.kind).toBe("builtin");
       expect(definition.availability).toEqual({ kind: "both" });
     }
-    expect(canonicalBuiltinAutomationNodeDefinitions.find((node) => node.id === "builtin.routine.subroutine")?.category).toBe("flow");
+    expect(canonicalBuiltinAutomationNodeDefinitions.find((node) => node.id === "builtin.routine.task-policy")?.category).toBe("flow");
+    expect(canonicalBuiltinAutomationNodeDefinitions.find((node) => node.id === "builtin.control.call-subflow")?.category).toBe("control-flow");
+    expect(canonicalBuiltinAutomationNodeDefinitions.some((node) => node.id === "builtin.routine.subroutine")).toBe(false);
   });
 
   it("exposes importer nodes only to the matching domain with requirements satisfied", () => {

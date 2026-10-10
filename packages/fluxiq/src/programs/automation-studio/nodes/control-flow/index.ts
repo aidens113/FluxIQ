@@ -1,4 +1,5 @@
 import { branchNode } from "./branch.ts";
+import { callSubflowNode } from "./call-subflow.ts";
 import { endNode } from "./end.ts";
 import { forEachNode } from "./for-each.ts";
 import { handlerNode } from "./handler.ts";
@@ -27,4 +28,7 @@ export {
   type AutomationStudioHandlerDispositionKind
 } from "./handler-end.ts";
 
-export const controlFlowNodes = [startNode, endNode, branchNode, switchNode, parallelNode, mergeNode, loopNode, forEachNode, repeatNode, handlerNode, handlerEndNode];
+// Call Subflow runs a sibling Subflow graph as a frame of its own (C1).
+export { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID } from "./call-subflow.ts";
+
+export const controlFlowNodes = [startNode, endNode, branchNode, switchNode, parallelNode, mergeNode, loopNode, forEachNode, repeatNode, handlerNode, handlerEndNode, callSubflowNode];

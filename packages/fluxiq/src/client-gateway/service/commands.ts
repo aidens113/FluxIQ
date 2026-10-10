@@ -11,9 +11,14 @@ import type { ClientGatewayConfig } from "./config.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
 import type { PendingCommand } from "./types.ts";
-import { ClientGatewayDurableDispatch, type ClientGatewayDurableActionOptions, type ClientGatewayDurableActionResponse } from "./command-ledger/index.ts";
+import { ClientGatewayCommandContext, ClientGatewayDurableDispatch, type ClientGatewayDurableActionOptions, type ClientGatewayDurableActionResponse } from "./command-ledger/index.ts";
 import type { ClientGatewayEventBus } from "./event-bus.ts";
 import type { ClientGatewayServiceOptions } from "./types.ts";
+import type { ClientGatewayActionResultReading } from "./action-result-reading.ts";
+import { ClientGatewayCommandHistory, type ClientGatewayLateActionResult, type ClientGatewayLateActionResultListener } from "./command-history.ts";
+
+/** What became of a client's action result. `late`: it answered a command Core no longer awaited, and went to the run's evidence. */
+export type ClientGatewayResultDisposition = "settled" | "unknown_command" | "wrong_session" | "suppressed" | "late";
 
 type CommandCollaborators = {
   config: ClientGatewayConfig;
@@ -22,6 +27,7 @@ type CommandCollaborators = {
   audit: ClientGatewayAuditLog;
   events: ClientGatewayEventBus;
   resolveCommandLedger?: ClientGatewayServiceOptions["resolveCommandLedger"];
+  commandOwner?: ClientGatewayServiceOptions["commandOwner"];
 };
 
 /**
@@ -31,6 +37,8 @@ type CommandCollaborators = {
 export class ClientGatewayCommands {
   private readonly pending = new Map<string, PendingCommand>();
   private readonly durable: ClientGatewayDurableDispatch;
+  private readonly history: ClientGatewayCommandHistory;
+  private readonly commandOwner: ClientGatewayServiceOptions["commandOwner"];
   private closed = false;
   private readonly config: ClientGatewayConfig;
   private readonly sessions: ClientGatewaySessionRegistry;
@@ -43,6 +51,8 @@ export class ClientGatewayCommands {
     this.transport = collaborators.transport;
     this.audit = collaborators.audit;
     this.durable = new ClientGatewayDurableDispatch({ ...collaborators, ...(collaborators.resolveCommandLedger ? { resolve: collaborators.resolveCommandLedger } : {}) });
+    this.history = new ClientGatewayCommandHistory(collaborators.config.now);
+    this.commandOwner = collaborators.commandOwner;
   }
 
   async startRecording(sessionId: string, input: { recordingId: string; projectId?: string | null; taskId?: string; domainId?: string }): Promise<void> {
@@ -71,9 +81,10 @@ export class ClientGatewayCommands {
   executeAction(sessionId: string, command: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): ClientGatewayDurableActionResponse;
   executeAction(sessionId: string, command: ClientGatewayActionCommand, options?: ClientGatewayDurableActionOptions): ClientGatewayActionResponse | ClientGatewayDurableActionResponse {
     if (this.closed) throw new Error("client_gateway.closed");
-    if (arguments.length > 2) return this.durable.execute(sessionId, command, options!);
+    if (arguments.length > 2) return this.executeDurable(sessionId, command, options!);
     const session = this.sessions.requireReady(sessionId);
     const commandId = randomUUID();
+    this.history.opened({ commandId, sessionId, clientId: session.clientId, actionType: command.actionType, durable: false, owner: this.readOwner() });
     const message = this.transport.message("server.execute_action", { ...command, commandId }, session);
     // The client is sent the command's own timeout, unchanged, and reports its
     // own timeout when that runs out; waiting only as long would discard that
@@ -82,6 +93,7 @@ export class ClientGatewayCommands {
     const result = new Promise<ClientGatewayActionResult>((resolve) => {
       const timeout = setTimeout(() => {
         this.pending.delete(commandId);
+        this.history.closed(commandId, "timed_out");
         resolve({ commandId, status: "timed_out", message: `Client action timed out after ${waitMs}ms.` });
       }, waitMs);
       this.pending.set(commandId, { sessionId, resolve, timeout });
@@ -91,22 +103,67 @@ export class ClientGatewayCommands {
     return { commandId, message, result };
   }
 
-  /** Bind a pending answer to its dispatched session before changing any state. */
-  async settle(senderSessionId: string, result: ClientGatewayActionResult): Promise<"settled" | "unknown_command" | "wrong_session" | "suppressed"> {
+  /**
+   * Bind a pending answer to its dispatched session before changing any state.
+   * A result for a command this gateway sent but no longer awaits is late: it
+   * resolves nothing, and goes to the late-result listeners instead.
+   */
+  async settle(senderSessionId: string, reading: ClientGatewayActionResultReading): Promise<ClientGatewayResultDisposition> {
+    const result = reading.result;
     if (this.durable.has(result?.commandId)) return await this.durable.settle(senderSessionId, result);
     const pending = this.pending.get(result.commandId);
-    if (!pending) return "unknown_command";
+    if (!pending) return await this.settleLate(senderSessionId, reading);
     if (pending.sessionId !== senderSessionId) return "wrong_session";
     clearTimeout(pending.timeout);
     this.pending.delete(result.commandId);
+    this.history.closed(result.commandId, "settled");
     pending.resolve(result);
     return "settled";
   }
+
+  /** Listens for results that arrive after Core stopped waiting for their command. */
+  onLateActionResult(listener: ClientGatewayLateActionResultListener): () => void {
+    return this.history.onLate(listener);
+  }
+
   isDurableCommand(commandId: string): boolean { return this.durable.has(commandId); }
   async close(): Promise<void> {
     this.closed = true;
-    for (const [commandId, pending] of this.pending) { clearTimeout(pending.timeout); pending.resolve({ commandId, status: "unknown", message: "Client gateway closed before an answer." }); }
-    this.pending.clear(); await this.durable.drain();
+    for (const [commandId, pending] of this.pending) {
+      clearTimeout(pending.timeout);
+      this.history.closed(commandId, "closed");
+      pending.resolve({ commandId, status: "unknown", message: "Client gateway closed before an answer." });
+    }
+    this.pending.clear();
+    await this.durable.drain();
+  }
+
+  private executeDurable(sessionId: string, command: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): ClientGatewayDurableActionResponse {
+    const response = this.durable.execute(sessionId, command, options);
+    const owner = ClientGatewayCommandContext.owner(options.context);
+    this.history.opened({ commandId: response.commandId, sessionId, clientId: this.sessions.require(sessionId).clientId, actionType: command.actionType, durable: true, owner: { projectId: owner.projectId, runId: owner.runId } });
+    void response.result.then(
+      (outcome) => this.history.closed(response.commandId, outcome.status === "outcome_unknown" ? "uncertain" : "settled"),
+      () => {
+        // best-effort: the dispatching caller is handed this rejection itself; here it only closes the command's record.
+        this.history.closed(response.commandId, "uncertain");
+      }
+    );
+    return response;
+  }
+
+  private async settleLate(senderSessionId: string, reading: ClientGatewayActionResultReading): Promise<ClientGatewayResultDisposition> {
+    const sender = this.sessions.require(senderSessionId);
+    const intake = this.history.intake({ sessionId: senderSessionId, clientId: sender.clientId }, reading);
+    if (intake.kind !== "late") return "unknown_command";
+    this.audit.record("command.late_result", "An action result arrived after Core stopped waiting for its command; it was kept as evidence and not applied.", lateAuditFields(intake.late));
+    const failures = await this.history.publish(intake.late);
+    if (failures.length) this.audit.record("command.late_result_unrecorded", "A late action result could not be put on its run's evidence.", { commandId: intake.late.commandId, failures: failures.length });
+    return "late";
+  }
+
+  private readOwner(): ReturnType<NonNullable<ClientGatewayServiceOptions["commandOwner"]>> {
+    return this.commandOwner?.();
   }
 
   async sendPing(sessionId: string): Promise<void> {
@@ -129,4 +186,15 @@ export class ClientGatewayCommands {
     session.activeRecordingId = input.recordingId;
     if (input.projectId !== undefined) session.projectId = input.projectId;
   }
+}
+
+function lateAuditFields(late: ClientGatewayLateActionResult): JsonObject {
+  return {
+    commandId: late.commandId,
+    closedAs: late.closedAs,
+    status: late.status,
+    reportedStatus: late.reportedStatus,
+    interrupted: late.interrupted,
+    ...(late.owner ? { projectId: late.owner.projectId, runId: late.owner.runId } : {})
+  };
 }

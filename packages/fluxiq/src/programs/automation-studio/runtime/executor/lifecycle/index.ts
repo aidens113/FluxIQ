@@ -32,4 +32,5 @@ export type { AutomationStudioHandlerRegistration, AutomationStudioHandlerScope,
 export { automationStudioNodeReplayRestriction, type AutomationStudioReplayRestriction } from "./replay-restriction.ts";
 export { resolveAutomationStudioHandlerCandidates, type AutomationStudioHandlerCandidate, type AutomationStudioHandlerLevel } from "./scope-resolver.ts";
 export { automationStudioSubflowContract, type AutomationStudioSubflowCheckpoint, type AutomationStudioSubflowContract, type AutomationStudioSubflowEntry } from "./subflow-contract.ts";
+export { automationStudioTraceFailureClass } from "./failure-class-trace.ts";
 export { classifyAutomationStudioFailure, type AutomationStudioEarlierRung, type AutomationStudioFailureClass, type AutomationStudioOnFailPath } from "./true-failure.ts";

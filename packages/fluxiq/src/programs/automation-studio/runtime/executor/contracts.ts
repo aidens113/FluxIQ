@@ -6,7 +6,7 @@ import type {
   AutomationStudioRunDatasetSummary
 } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
-import type { AutomationStudioFlowNode } from "../../model/index.ts";
+import type { AutomationStudioFlowNode, AutomationStudioFlowRunHandlerExecutionRecord } from "../../model/index.ts";
 import type { AutomationNodeExecutionResult, AutomationNodePort, AutomationNodeTargetResolution, AutomationStudioNativeLogEntry } from "../../nodes/index.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import type { AutomationStudioHostRuntimeBoundary, AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
@@ -14,6 +14,8 @@ import type { AutomationStudioAskKind, AutomationStudioParkedRun, AutomationStud
 import type { AutomationStudioRunControlGate } from "../run-control/index.ts";
 import type { AutomationStudioRecordedState } from "./recorded-state.ts";
 import type { AutomationStudioDefenceSummary, AutomationStudioFaultAssessment } from "./defensive/index.ts";
+import type { AutomationStudioLifecycleEvent } from "../../nodes/control-flow/index.ts";
+import type { AutomationStudioFactTruth } from "./lifecycle/index.ts";
 
 export type AutomationStudioGraphRunStatus = "running" | "succeeded" | "failed" | "waiting" | "cancelled";
 
@@ -174,7 +176,10 @@ export type AutomationStudioStateRouteDirection = "forward" | "backward";
  * - `guard_stopped`: the match was a return to a node without progress past the limit.
  *
  * `candidates` counts the other nodes with a recorded pre-state; `matched` the
- * ones whose pre-state held and that were eligible to run.
+ * ones whose pre-state held and that were eligible to run. `refused` lists
+ * every way on a safety guard refused, in the order they were ranked
+ * (`state-routing/decision.ts`); absent when none was, so a refused match
+ * does not read like a page that matched nothing.
  */
 export type AutomationStudioStateRoutingRecord = {
   outcome: "effect_holds" | "routed" | "no_match" | "unobserved" | "no_pre_states" | "guard_stopped";
@@ -184,6 +189,162 @@ export type AutomationStudioStateRoutingRecord = {
   direction?: AutomationStudioStateRouteDirection;
   closeness?: number;
   reason?: string;
+  refused?: AutomationStudioStateRouteRefusal[];
+};
+
+/**
+ * Why state routing passed over a node whose recorded pre-state matched the
+ * page, as a closed code (C6, "Safe state routing"):
+ *
+ * - `unbound_value`: the route goes forward past a step that never ran, whose
+ *   value a step on the route's path reads, and nothing in the run has set it
+ *   (`state-routing/skipped-values.ts`).
+ * - `repeats_lasting_act`: the route goes back across a step whose lasting act
+ *   already ran in this run, and nothing shows it did not take effect
+ *   (`state-routing/repeated-act.ts`).
+ * - `not_checkpoint`: the frame declares recovery checkpoints, and the node is
+ *   not one of them.
+ * - `checkpoint_when_not_true`: the node is a checkpoint whose `when` facts did
+ *   not all answer true on the page.
+ * - `ready_state_not_true`: the node's `readyState` facts did not all answer
+ *   true on the page; closeness alone does not qualify it.
+ */
+export type AutomationStudioStateRouteRefusalGuard = "unbound_value" | "repeats_lasting_act" | "not_checkpoint" | "checkpoint_when_not_true" | "ready_state_not_true";
+
+/** One refused way on: where it led, the guard that refused it, and the node that guard named (the skipped producer, or the act it would repeat). */
+export type AutomationStudioStateRouteRefusal = { toNodeId: string; guard: AutomationStudioStateRouteRefusalGuard; nodeId: string };
+
+/**
+ * What one condition of a handler's `when`, an entry's `when` or a completion
+ * check answered when it was decided (C9, C11): the host's truth, a reference
+ * to the evidence it kept, and when it was captured. Never the page's text or
+ * a value read from it; the evidence itself stays behind `evidenceRef`.
+ */
+export type AutomationStudioLifecycleConditionEvidence = {
+  truth: AutomationStudioFactTruth;
+  evidenceRef?: string;
+  capturedAt: number;
+};
+
+/**
+ * How a handler body ended, as a trace keeps it (C5): `resume`, `route` to a
+ * checkpoint, `resolve`, or `unhandled`. A `resolve` keeps no outputs: they
+ * are run values, and the attempt's own `outputs` already carry what the run
+ * went on with.
+ */
+export type AutomationStudioLifecycleTraceDisposition =
+  | { kind: "resume" }
+  | { kind: "route"; checkpointId: string }
+  | { kind: "resolve" }
+  | { kind: "unhandled" };
+
+/**
+ * The lifecycle handler that ran at this attempt (C3, C5, C11), from runtime
+ * events only:
+ *
+ * - `event`: the boundary it fired at;
+ * - `handlerId`: the registration that ran;
+ * - `occurrence`: its occurrence key (`lifecycle/incident.ts`), which makes the
+ *   same handler run at most once for the same node arrival and evidence;
+ * - `conditionEvidence`: what each of its `when` conditions answered, in order;
+ * - `disposition`: how its body ended, after the dispatcher's rules
+ *   (`lifecycle/dispositions.ts`) decided it, not as the body wrote it;
+ * - `completionCheck`: what its completion check answered; anything but
+ *   `true` makes the disposition `unhandled`;
+ * - `selection`: why this handler and not another, in plain words: its scope
+ *   level, the scope order, and what nearer or earlier candidates answered.
+ *   Handler ids, levels and truths only. The run detail does not carry it.
+ */
+export type AutomationStudioLifecycleTrace = {
+  event: AutomationStudioLifecycleEvent;
+  handlerId: string;
+  occurrence: string;
+  conditionEvidence: AutomationStudioLifecycleConditionEvidence[];
+  disposition: AutomationStudioLifecycleTraceDisposition;
+  completionCheck: AutomationStudioFactTruth;
+  selection?: string;
+};
+
+/**
+ * Where a frame began, on the frame's first attempt (C2, C11): its `default`
+ * entry (the graph's Start node), an alternative `entry` whose `when` held, or
+ * a `checkpoint` a Route moved it to. `id` names the entry or checkpoint, and
+ * is absent for `default`. `evidence` is what the chosen entry's or
+ * checkpoint's `when` conditions answered, in order (empty for `default`).
+ */
+export type AutomationStudioEntryTrace = {
+  kind: "default" | "entry" | "checkpoint";
+  id?: string;
+  evidence: AutomationStudioLifecycleConditionEvidence[];
+};
+
+/** A handler's route to a checkpoint in a calling frame (C5), carried up by each Call Subflow attempt until that frame moves to `nodeId`. Ids only. */
+export type AutomationStudioCheckpointRouteMarker = { checkpointId: string; invocationId: string; graphFlowId: string; nodeId: string };
+
+/** What a frame's success check (graph metadata `fluxiq.successCheck`, C2) answered at its End, with each condition's answer in order. */
+export type AutomationStudioSuccessCheckTrace = { truth: AutomationStudioFactTruth; evidence: AutomationStudioLifecycleConditionEvidence[] };
+
+/**
+ * How a recovery incident (C7) ended, which the counts read (C6): `passed` (the
+ * run passed the node), `planned_fail`, `true_failure`, `uncertain`,
+ * `state_route`, `skip`, or `ended` (the frame ended before anything settled it).
+ */
+export type AutomationStudioIncidentEnding = "passed" | "planned_fail" | "true_failure" | "uncertain" | "state_route" | "skip" | "ended";
+
+/** One recovery incident as the root trace keeps it (C7, C11), with how it ended and the retries it spent. Ids, codes and counts only. */
+export type AutomationStudioIncidentTraceRecord = {
+  incidentId: string;
+  origin: { framePath: string[]; nodeId: string; failureCode: string };
+  handlersRun: string[];
+  routes: Array<{ checkpointId: string; handlerId: string }>;
+  alternatives: Array<{ handlerId: string; subflowId?: string }>;
+  startedAt: number;
+  trueFailure?: boolean;
+  ending: AutomationStudioIncidentEnding;
+  retries: number;
+};
+
+/**
+ * What a failed attempt counted as, for traces, the chat and the measures
+ * (C6, "What counts as a true failure"), which count each separately:
+ *
+ * - `true_failure`: nothing moved the run on; the only trigger for in-run repair;
+ * - `planned_fail`: an On Fail path took the run to another node, a handler
+ *   resolved it, or the path led to an authored stop;
+ * - `retry`: another attempt superseded this one;
+ * - `skip`: the step's state already held, its effect landed, or it was an
+ *   optional step the run went on past;
+ * - `state_route`: state routing moved the run to the node the page is at;
+ * - `uncertain`: a lasting act may have landed and nothing settled it.
+ *
+ * Mapped from the classifier's verdict by `lifecycle/failure-class-trace.ts`.
+ */
+export type AutomationStudioTraceFailureClass = "true_failure" | "planned_fail" | "retry" | "skip" | "state_route" | "uncertain";
+
+/** One in-run repair as an attempt records it (C6 step 8, C11). `repairId` is absent on `none`; `reason` is plain words. */
+export type AutomationStudioAttemptRepairTrace = {
+  repairId?: string;
+  unit: import("./lifecycle-run/index.ts").AutomationStudioRepairUnit;
+  outcome: "held" | "dropped" | "none";
+  reason: string;
+};
+
+/**
+ * What a layer the client closed was: a consent notice, a rate-limit notice,
+ * a promotion, an assistant or chat widget, or `dialog` for a layer no
+ * classifier named. A closed vocabulary; a robot check is never closed.
+ */
+export type AutomationStudioClearedLayerKind = "consent" | "rate_limit" | "promotion" | "assistant" | "dialog";
+
+/**
+ * One layer the client closed: its kind, and `control`, the words of the
+ * dismiss control it pressed ("Not now"), whitespace-collapsed, with
+ * token-shaped runs hidden and held to 40 characters. `control` stays in the
+ * trace; the chat never shows it.
+ */
+export type AutomationStudioClearedLayer = {
+  kind: AutomationStudioClearedLayerKind;
+  control: string;
 };
 
 export type AutomationStudioNodeAttemptTrace = {
@@ -235,6 +396,28 @@ export type AutomationStudioNodeAttemptTrace = {
   fault?: AutomationStudioFaultAssessment;
   childTrace?: AutomationStudioGraphExecutionTrace;
   compositeTarget?: { flowId: string; version: string; flowDigest: string };
+  /** The sibling Subflow graph a Call Subflow attempt ran, at the revision it ran (C1). */
+  subflowTarget?: { subflowId: string; graphFlowId: string; graphRevision: number | null };
+  /** The invocation ids of the frames this attempt ran in, outermost first (C1, C11). */
+  framePath?: readonly string[];
+  /**
+   * The effect check a lasting act whose outcome was uncertain went through
+   * before any retry, route or alternative (C6 step 4, C8): `landed` carries the
+   * run on as done, `not_landed` makes the act unacted, `unknown` stops the run
+   * as Outcome uncertain. A missing acknowledgement is `unknown`, never
+   * `not_landed`.
+   */
+  effectCheck?: { result: "landed" | "not_landed" | "unknown"; checkedAt: number };
+  /** The lifecycle handler that ran at this attempt, when one did (C3, C5, C11). */
+  lifecycle?: AutomationStudioLifecycleTrace;
+  /** Where the frame began, on a frame's first attempt only (C2, C11). */
+  entry?: AutomationStudioEntryTrace;
+  /** On a Call Subflow attempt whose child ended to let a calling frame continue at a checkpoint (C5): the route it carries up. */
+  checkpointRoute?: AutomationStudioCheckpointRouteMarker;
+  /** What this attempt's failure counted as, once the ladder settled it (C6, C11). Absent on an attempt that did not fail. */
+  failureClass?: AutomationStudioTraceFailureClass;
+  /** The in-run repair this true failure asked for (C6 step 8): `held` (fix overlaid, unit attempted again), `dropped` (its trial failed too), `none`. */
+  repair?: AutomationStudioAttemptRepairTrace;
   regionId?: string;
   policyDecision?: { outcome: "selected" | "rejected" | "waiting"; reason: string; outputId?: string; confirmationInputId?: string };
   transitionComparison?: AutomationStudioTransitionComparison;
@@ -361,6 +544,13 @@ export type AutomationStudioNodeAttemptTrace = {
   };
   /** How the action's element target was resolved before dispatch, when the node dispatched one. */
   targetResolution?: AutomationNodeTargetResolution;
+  /**
+   * The layers the client closed over the page while this attempt's dispatch
+   * ran, in the order it closed them (state-aware recovery, C11): the one act
+   * a run takes that no Flow authored. Present only when a dispatch answered
+   * at least one readable layer (`node-execution/cleared-layers.ts`).
+   */
+  clearedLayers?: AutomationStudioClearedLayer[];
   hostCapabilities?: string[];
   /**
    * The saved changes (adaptation ids) the executed node carried in
@@ -428,6 +618,30 @@ export type AutomationStudioGraphExecutionTrace = {
   pace?: AutomationStudioNodePace[];
   /** Present only on a partial run that ended at its stop node (`AutomationStudioGraphExecutionOptions.stopAfterNodeId`). */
   stopReason?: AutomationStudioGraphRunStopReason;
+  /**
+   * Every lifecycle handler the run ran or refused (the runtime stream's
+   * `handler_execution` records, C11), whichever frame it fired in, in the
+   * order it happened. On the run's root frame's trace only, where the run
+   * detail reads them; absent when no handler ran.
+   */
+  handlerExecutions?: AutomationStudioFlowRunHandlerExecutionRecord[];
+  /**
+   * What lifecycle dispatch could not do in this run, in plain words: a
+   * recovery Subflow that would not load, a host that could not answer a fact,
+   * a route to a checkpoint the run cannot take yet. Root frame only; absent
+   * when there is nothing to say.
+   */
+  lifecycleNotes?: string[];
+  /** Every recovery incident of the run, with its ending and retries (C7). Root frame only; absent when the run met no failure. The run summary counts from these. */
+  incidents?: AutomationStudioIncidentTraceRecord[];
+  /** Ids of the in-run repairs whose overlay this run kept (C6 step 8). Root frame only; saved to the Flow only after the judged end. */
+  repairs?: string[];
+  /** What the frame's success check answered at its End (C2). Absent when the graph declares none. */
+  successCheck?: AutomationStudioSuccessCheckTrace;
+  /** Why the frame itself failed when a code names it (`executor.success_check.false` / `.unknown`); a Call Subflow attempt carries it as its own failure. */
+  failure?: AutomationStudioFailureRecord;
+  /** Set when this frame ended so a calling frame continues at its checkpoint (C5). Never on a root trace. */
+  checkpointRoute?: AutomationStudioCheckpointRouteMarker;
   message?: string;
 };
 
@@ -547,6 +761,16 @@ export type AutomationStudioGraphExecutionOptions = {
   /** Domain capabilities actually bound by the importer for this run. */
   authorizedDomainIds?: Iterable<string>;
   currentSubflowId?: string;
+  /** The frame this graph run executes as, and the run-level frame holder it shares (C1). */
+  invocation?: import("./frames/index.ts").AutomationStudioInvocationOptions;
+  /** The sibling Subflow graphs of the run's automation, for Call Subflow and automation-scope handlers (C1, C4). */
+  subflowGraphs?: import("./frames/index.ts").AutomationStudioSubflowGraphSource;
+  /**
+   * In-run model repair (C6 step 8): asked once per incident, on a true failure
+   * only, while the run holds in place. Supplied by the run session on an
+   * adapting run; absent, a true failure ends the run as it always has.
+   */
+  repairIncident?: import("./lifecycle-run/index.ts").AutomationStudioIncidentRepairCallback;
   approvedRuntimePatchNodeIds?: Iterable<string>;
   recoveryBudget?: AutomationStudioRecoveryBudget;
   /**

@@ -14,7 +14,8 @@ describe("the one progress status a person is shown", () => {
       automationStudioRunProgress({ status: "waiting", trace: { parked: {} } }, null),
       automationStudioRunProgress({ status: "succeeded" }, null),
       automationStudioRunProgress({ status: "failed" }, null),
-      automationStudioRunProgress({ status: "cancelled" }, null)
+      automationStudioRunProgress({ status: "cancelled" }, null),
+      automationStudioRunProgress({ status: "interrupted" }, null)
     ].map((progress) => progress.status));
     expect([...seen].sort()).toEqual([...AUTOMATION_STUDIO_RUN_PROGRESS_STATUSES].sort());
   });
@@ -32,6 +33,14 @@ describe("the one progress status a person is shown", () => {
       status: "running",
       label: "Running",
       detail: "Pausing after the current step finishes."
+    });
+  });
+
+  it("shows a run whose process ended mid-flight as interrupted, never failed or paused", () => {
+    expect(automationStudioRunProgress({ status: "interrupted" }, { ...base, state: "paused", holder: "person" })).toEqual({
+      status: "interrupted",
+      label: "Interrupted",
+      detail: "FluxIQ stopped while this run was in progress. Check the page before running it again."
     });
   });
 

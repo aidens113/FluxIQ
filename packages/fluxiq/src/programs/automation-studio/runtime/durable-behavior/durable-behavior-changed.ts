@@ -13,7 +13,8 @@ const REAUTHOR_METADATA_KEY: typeof AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_K
 /**
  * Whether a run left the Flow behaving differently from now on: one of the
  * adaptations the run recorded was applied automatically by a runtime patch
- * attempt, or the run's re-author was kept (`applied: true` on its marker, set
+ * attempt or by a fix the run held in place (`inRunRepairs`, C6 step 8, kept
+ * at its judged end), or the run's re-author was kept (`applied: true` on its marker, set
  * only once a whole re-run with it was judged to answer). An adaptation that
  * only waits for review changes nothing yet, and neither does an auto-applied
  * patch the run never recorded as its adaptation, nor a re-author not kept.
@@ -28,8 +29,7 @@ export function automationStudioRunChangedDurableBehavior(detail: { adaptationId
 function runtimePatchApplied(detail: { adaptationIds?: readonly string[] | undefined; metadata?: JsonObject | undefined }): boolean {
   const adaptationIds = detail.adaptationIds ?? [];
   if (!adaptationIds.length) return false;
-  const attempts = detail.metadata?.runtimePatchAttempts;
-  if (!Array.isArray(attempts)) return false;
+  const attempts = [detail.metadata?.runtimePatchAttempts, detail.metadata?.inRunRepairs].flatMap((receipts) => (Array.isArray(receipts) ? receipts : []));
   return adaptationIds.some((adaptationId) => attempts.some((attempt) => {
     if (!attempt || typeof attempt !== "object" || Array.isArray(attempt)) return false;
     return attempt.adaptationId === adaptationId && automationStudioDecisionAppliedAutomatically(attempt.approvalDecision);

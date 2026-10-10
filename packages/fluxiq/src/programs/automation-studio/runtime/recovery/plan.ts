@@ -38,7 +38,7 @@
 // that has told the model to do work that cannot land.
 
 import type { AutomationStudioAdaptationPolicy } from "../../model/index.ts";
-import type { AutomationStudioLlmTaskResult, AutomationStudioRuntimePatch } from "../llm/index.ts";
+import { AUTOMATION_STUDIO_IN_RUN_REPAIR_PATCH_KINDS, type AutomationStudioLlmTaskResult, type AutomationStudioRuntimePatch } from "../llm/index.ts";
 import type { AutomationStudioAdaptiveCandidateKind } from "../adaptive-orchestrator.ts";
 import type { AutomationStudioRuntimeDeterministicDiagnosis } from "./deterministic-diagnosis.ts";
 import {
@@ -83,6 +83,14 @@ export type AutomationStudioRuntimeRecoveryPlanInput = {
   /** The diagnosis call's result, when one was made. */
   result?: AutomationStudioLlmTaskResult;
   policy: AutomationStudioAdaptationPolicy;
+  /**
+   * Whether this plan is for an in-run repair: the run is held at its failing
+   * step and the fix is re-attempted there (state-aware recovery plan, C6 step
+   * 8). Only then may the plan ask for a handler (`add_handler`) or a unit's
+   * replacement (`replace_unit`). Absent, the plan offers exactly the kinds it
+   * always has.
+   */
+  inRunRepair?: boolean;
 };
 
 /**
@@ -102,12 +110,15 @@ const AUTOMATION_STUDIO_PATCH_KINDS_FOR_CANDIDATE: Readonly<Record<AutomationStu
   diagnosis_only: []
 });
 
+/** The ordinary kinds that change only the failing node itself, the only ones an in-run repair keeps (C12). */
+const IN_RUN_ORDINARY_PATCH_KINDS: ReadonlySet<AutomationStudioRuntimePatchKind> = new Set<AutomationStudioRuntimePatchKind>(["temporary_target_override", "temporary_wait_retry"]);
+
 /** Stage B: the whole plan, from the diagnosis and the policy, with no provider call. */
 export function planAutomationStudioRuntimeRecovery(input: AutomationStudioRuntimeRecoveryPlanInput): AutomationStudioRuntimeRecoveryPlan {
   const chain = decideAutomationStudioRuntimePatchRequest(input.result);
   if (!input.deterministic) return unclassifiedPlan();
   const diagnosis = buildAutomationStudioRuntimeStructuredDiagnosis({ deterministic: input.deterministic, ...(input.result ? { result: input.result } : {}) });
-  const { allowed, refusals } = patchKindsForPlan(diagnosis.candidateKind, input.policy);
+  const { allowed, refusals } = patchKindsForPlan(diagnosis.candidateKind, input.policy, input.inRunRepair === true);
   const patchRequest = decidePatchRequest({ chain, diagnosis, allowed, resolution: input.deterministic.resolution });
   // An exploration is not only the patch's errand. "Let me look at the page
   // first, and then say there is nothing to repair" has to be reachable, and
@@ -151,8 +162,18 @@ export function planAutomationStudioRuntimeRecovery(input: AutomationStudioRunti
  * takes a whole patch to answer it. What the plan needs is the set, before any
  * patch exists. A test pins that the two agree.
  */
-function patchKindsForPlan(candidateKind: AutomationStudioAdaptiveCandidateKind, policy: AutomationStudioAdaptationPolicy): { allowed: AutomationStudioRuntimePatchKind[]; refusals: string[] } {
-  const candidates = AUTOMATION_STUDIO_PATCH_KINDS_FOR_CANDIDATE[candidateKind];
+function patchKindsForPlan(candidateKind: AutomationStudioAdaptiveCandidateKind, policy: AutomationStudioAdaptationPolicy, inRunRepair: boolean): { allowed: AutomationStudioRuntimePatchKind[]; refusals: string[] } {
+  const ordinary = AUTOMATION_STUDIO_PATCH_KINDS_FOR_CANDIDATE[candidateKind];
+  // A handler or a unit's replacement can serve any failure a patch could
+  // serve at all, so an in-run repair offers both wherever the failure's shape
+  // offers anything; a report or an instruction still offers nothing. An
+  // in-run repair changes only the incident's unit (C12), so a kind that moves
+  // the run elsewhere or adds steps outside it is never offered there: the
+  // one-unit check would refuse it after the call was paid for
+  // (`service/runtime-session/in-run-repair-unit.ts`).
+  const candidates = inRunRepair && ordinary.length
+    ? [...ordinary.filter((kind) => IN_RUN_ORDINARY_PATCH_KINDS.has(kind)), ...AUTOMATION_STUDIO_IN_RUN_REPAIR_PATCH_KINDS]
+    : ordinary;
   if (!policy.allowRuntimeRecovery) {
     return { allowed: [], refusals: candidates.length ? ["Runtime recovery is disabled by adaptation policy."] : [] };
   }
@@ -175,6 +196,8 @@ export function automationStudioRuntimePatchKindPolicyRefusal(kind: AutomationSt
   if (kind === "temporary_recovery_subflow_call" && !policy.allowCreateRecoveryPaths) return "Recovery subflow calls are disabled by adaptation policy.";
   if (kind === "temporary_target_override" && !policy.allowModifyActionTargets) return "Action target overrides are disabled by adaptation policy.";
   if (kind === "temporary_reroute" && !policy.allowModifyRouter) return "Temporary reroutes are disabled by adaptation policy.";
+  if (kind === "add_handler" && !policy.allowCreateRecoveryPaths) return "Handlers added by a repair are disabled by adaptation policy.";
+  if (kind === "replace_unit" && !policy.allowModifySubflows) return "Unit replacements are disabled by adaptation policy.";
   return undefined;
 }
 

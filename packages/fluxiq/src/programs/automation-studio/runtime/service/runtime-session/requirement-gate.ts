@@ -30,11 +30,17 @@ export const AUTOMATION_STUDIO_REQUIREMENT_IDS = {
 } as const;
 
 /**
- * The executor-side ids this build of Core implements. Empty until the work
- * that implements a `flow.*` id lands and adds it here; until then a Flow that
- * requires it is refused rather than run without it.
+ * The executor-side ids this build of Core implements. Each is added by the
+ * work that implements it; until then a Flow that requires it is refused rather
+ * than run without it. Call Subflow (`flow.subflow-calls@1`) runs a sibling
+ * Subflow as a frame of the run (`executor/frames/call-subflow.ts`); situation
+ * handlers (`flow.handlers@1`) are dispatched at the step loop's lifecycle
+ * boundaries (`executor/step-loop/lifecycle.ts`).
  */
-export const AUTOMATION_STUDIO_EXECUTOR_GRANTED_REQUIREMENTS: readonly string[] = [];
+export const AUTOMATION_STUDIO_EXECUTOR_GRANTED_REQUIREMENTS: readonly string[] = [
+  AUTOMATION_STUDIO_REQUIREMENT_IDS.flowSubflowCalls,
+  AUTOMATION_STUDIO_REQUIREMENT_IDS.flowHandlers
+];
 
 /** Which side grants a requirement, and the words a person is shown for it. */
 export type AutomationStudioRequirement = { id: string; side: "executor" | "host"; plainName: string };

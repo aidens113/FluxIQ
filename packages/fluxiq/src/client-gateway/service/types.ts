@@ -25,6 +25,14 @@ export type ClientGatewayServiceOptions = {
   createToken?: () => string;
   now?: () => number;
   resolveCommandLedger?: (context: import("./command-ledger/index.ts").ClientGatewayCommandContext) => Promise<import("./command-ledger/index.ts").ClientGatewayCommandLedgerLease>;
+  /**
+   * The run an action command is being sent for, read as the command is
+   * dispatched, so a result that arrives after Core stopped waiting for it can
+   * be put on that run's evidence (`./command-history.ts`). A durable command
+   * names its run already; this is for the others. Unset, or answering
+   * nothing, a late result is still kept from being applied, only unattributed.
+   */
+  commandOwner?: () => import("./command-history.ts").ClientGatewayCommandOwnerRef | undefined;
 };
 
 /**

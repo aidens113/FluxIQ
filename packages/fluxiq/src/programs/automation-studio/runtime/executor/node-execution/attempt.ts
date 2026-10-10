@@ -9,18 +9,20 @@ import { getAutomationNodeDefinition, resolveAutomationNodeParameterValues } fro
 import { hostExpectationEvaluator, hostRuntimeCapabilityIds, type AutomationStudioHostStateSnapshotRef } from "../../host-runtime.ts";
 import { AUTOMATION_STUDIO_ASK_EFFECT } from "../../parking/index.ts";
 import { nodeAttemptFromResult } from "../attempt-trace.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioRecordBatch } from "../contracts.ts";
+import type { AutomationStudioClearedLayer, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioRecordBatch } from "../contracts.ts";
 import { automationStudioFaultFromThrownError, automationStudioNodeSideEffectClass, automationStudioThrownErrorText } from "../defensive/index.ts";
 import { captureHostState, enrichAttemptWithHostState } from "../host-state.ts";
 import { automationStudioNodeOutputReferences, collectNodeInputs, collectWiredNodeInputs } from "../node-inputs.ts";
 import { captureAutomationStudioRecordBatch, captureAutomationStudioWrittenRecords } from "../record-capture.ts";
 import type { AutomationStudioRunState } from "../run-state.ts";
 import type { AutomationStudioTraceWithholding } from "../trace-withholding.ts";
-import { emitAutomationStudioActivity, emitAutomationStudioActivityClearedWait } from "../../activity/index.ts";
+import { emitAutomationStudioActivity, emitAutomationStudioActivityClearedWait, emitAutomationStudioActivityStepInterference } from "../../activity/index.ts";
 import { attemptWithHostExpectationEvaluation } from "../transition-comparison.ts";
 
+import { automationStudioClearedLayersOf } from "./cleared-layers.ts";
 import { automationStudioNodeAttemptFailure } from "./failure.ts";
-import { controlFlowNodes } from "../../../nodes/control-flow/index.ts";
+import { automationStudioCallSubflow } from "../frames/index.ts";
+import { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID, controlFlowNodes } from "../../../nodes/control-flow/index.ts";
 import { dataNodes } from "../../../nodes/data/index.ts";
 import { logicNodes } from "../../../nodes/logic/index.ts";
 import { mathNodes } from "../../../nodes/math/index.ts";
@@ -28,7 +30,9 @@ import { policyNodes } from "../../../nodes/policy/index.ts";
 import { randomNodes } from "../../../nodes/random/index.ts";
 import { timingNodes } from "../../../nodes/timing/index.ts";
 
-type RecordCaptureTarget = { runState: AutomationStudioRunState; nodeId: string; attemptId: string; consumer?: object };
+// `cleared` collects the layers each dispatch of the attempt says the client
+// closed over the page (`./cleared-layers.ts`), in dispatch order.
+type RecordCaptureTarget = { runState: AutomationStudioRunState; nodeId: string; attemptId: string; consumer?: object; cleared?: AutomationStudioClearedLayer[] };
 type EffectDispatchContext = Parameters<NonNullable<AutomationStudioGraphExecutionOptions["effectDispatcher"]>>[1];
 const RECORDS_WRITE_EFFECT = "records.write";
 const PERSIST_FAILED_MESSAGE = "The output ran, but the records it returned could not be saved.";
@@ -40,10 +44,14 @@ export class AutomationStudioNodeAttemptExecution {
   private static readonly entries = new WeakMap<object, AutomationStudioExecutorNodeEntry>();
   private static readonly handling = new WeakMap<object, Map<object, { context: ClientGatewayCommandContext; run: AutomationStudioExecutorCommandRun; witness: object }>>();
   static readEntry(consumer: object, run: AutomationStudioExecutorCommandRun): AutomationStudioExecutorNodeEntry {
-    const entry = this.entries.get(consumer); if (!entry || entry.run !== run) throw new Error("executor.foreign_node_entry"); return entry;
+    const entry = this.entries.get(consumer);
+    if (!entry || entry.run !== run) throw new Error("executor.foreign_node_entry");
+    return entry;
   }
   static readHandling(consumer: object, capability: object, context: ClientGatewayCommandContext, run: AutomationStudioExecutorCommandRun): object | null {
-    this.readEntry(consumer, run); const handled = this.handling.get(consumer)?.get(capability); return handled && handled.context === context && handled.run === run ? handled.witness : null;
+    this.readEntry(consumer, run);
+    const handled = this.handling.get(consumer)?.get(capability);
+    return handled && handled.context === context && handled.run === run ? handled.witness : null;
   }
   static async execute(
     flow: AutomationStudioFlowDocument,
@@ -61,7 +69,8 @@ export class AutomationStudioNodeAttemptExecution {
     if (consumer) this.entries.set(consumer, Object.freeze({ run: options.commandRun!, invocationId: randomUUID(), attemptId, nodeId: node.id, executingFlowId: flow.flowId, executingFlowDigest: Rules.digest(flow) }));
     const definition = getAutomationNodeDefinition(node.definitionId);
     if (options.commandRun && definition?.execute && (!this.trustedDefinitions.has(definition) || this.trustedDefinitions.get(definition) !== definition.execute)) {
-      await options.commandRun.stop("executor.unsupported_definition"); throw new Error("executor.unsupported_definition");
+      await options.commandRun.stop("executor.unsupported_definition");
+      throw new Error("executor.unsupported_definition");
     }
     const inputs = collectNodeInputs(flow, node, values);
     // A parameter reading another node's output names that node by its key in
@@ -109,6 +118,17 @@ export class AutomationStudioNodeAttemptExecution {
     if (definition && node.definitionVersion && node.definitionVersion !== "1.0.0") {
       return await enrichAttemptWithHostState(executionNode, { attemptId, nodeId: node.id, definitionId: node.definitionId, startedAt, finishedAt: options.now?.() ?? Date.now(), status: "failed", route: "failed", inputs, outputs: {}, effects: [], message: `Node ${node.definitionId} pins ${node.definitionVersion}, but built-in version 1.0.0 is available.`, failure: { category: "graph_validation_or_unknown_node", code: "executor.node.definition_version_unavailable", retryable: false, stage: "dispatch" } }, options, beforeAction, hostCapabilities);
     }
+    // A Call Subflow runs its sibling graph as a frame of this run, never through a host (`../frames/call-subflow.ts`).
+    if (node.definitionId === AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID) {
+      const runSubflow = options.invocation?.run.runSubflow;
+      if (options.commandRun && (!runSubflow || !options.commandRun.acceptsComposite(runSubflow))) {
+        await options.commandRun.stop("executor.unsupported_native_or_composite");
+        throw new Error("executor.unsupported_native_or_composite");
+      }
+      // Its `inputs` were resolved above, as every parameter is: each holds the value it gives the child.
+      const called = await automationStudioCallSubflow({ node: executionNode, options: this.callFlowChildOptions(options, attemptId) });
+      return await this.finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, called.result), ...(called.childTrace ? { childTrace: called.childTrace } : {}), ...(called.subflowTarget ? { subflowTarget: called.subflowTarget } : {}) }, options, beforeAction, hostCapabilities);
+    }
     if (!definition?.execute) {
       const native = await (!options.commandRun ? options.nativeNodeExecutor?.({
         node: executionNode,
@@ -128,11 +148,13 @@ export class AutomationStudioNodeAttemptExecution {
       }) : undefined);
       if (native) {
         // An importer's definition is the native runtime's, so it says which routes the node declares.
-        const result = await this.dispatchAutomationStudioEffects(native.result, options, withholding, { runState, nodeId: node.id, attemptId, ...(consumer ? { consumer } : {}) }, this.declaredBranchRoutes(definition?.outputs ?? native.declaredOutputs));
-        return await this.finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
+        const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
+        const result = await this.dispatchAutomationStudioEffects(native.result, options, withholding, target, this.declaredBranchRoutes(definition?.outputs ?? native.declaredOutputs));
+        return await this.finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
       }
       if (options.commandRun && (!options.compositeExecutor || !options.commandRun.acceptsComposite(options.compositeExecutor))) {
-        await options.commandRun.stop("executor.unsupported_native_or_composite"); throw new Error("executor.unsupported_native_or_composite");
+        await options.commandRun.stop("executor.unsupported_native_or_composite");
+        throw new Error("executor.unsupported_native_or_composite");
       }
       const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options: this.callFlowChildOptions(options, attemptId) });
       if (composite) {
@@ -172,8 +194,9 @@ export class AutomationStudioNodeAttemptExecution {
         ...(expectationEvaluator ? { expectationEvaluator } : {})
       };
       let result = await definition.execute(context);
-      result = await this.dispatchAutomationStudioEffects(result, options, withholding, { runState, nodeId: node.id, attemptId, ...(consumer ? { consumer } : {}) }, this.declaredBranchRoutes(definition.outputs));
-      return await this.finishAttempt(executionNode, nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), options, beforeAction, hostCapabilities);
+      const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
+      result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, this.declaredBranchRoutes(definition.outputs));
+      return await this.finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target) }, options, beforeAction, hostCapabilities);
     } catch (error) {
       await options.commandRun?.stop("executor.attempt_failed");
       // The one place a node's throw becomes an attempt, and therefore the one
@@ -241,6 +264,9 @@ export class AutomationStudioNodeAttemptExecution {
         // told as the pair a tool call's would be; an absent or unreadable figure
         // says nothing.
         emitAutomationStudioActivityClearedWait(this.clearedWaitRef(options, target, index), answer.clearedWait, "running");
+        // Layers the client closed over the page while this output ran are read
+        // off the dispatch payload before records are captured from it.
+        target.cleared?.push(...automationStudioClearedLayersOf(answer.outputs?.result));
         dispatched = await this.withCapturedRecords(effect, answer, options, target);
         if (issued && (dispatched.failure?.code === "record_output.persist_failed" || dispatched.status !== "success" && dispatched.status !== "failed")) throw new Error("executor.required_result_unhandled");
       }
@@ -276,6 +302,16 @@ export class AutomationStudioNodeAttemptExecution {
   /** The ids of the branch outputs a node's definition declares: the only routes a dispatch may answer for it. */
   private static declaredBranchRoutes(outputs: readonly AutomationNodePort[] | undefined): ReadonlySet<string> {
     return new Set((outputs ?? []).filter((port) => port.role === "branch").map((port) => port.id));
+  }
+
+  // The layers an attempt's dispatches closed are said once, as one step
+  // recovery row about the node, and kept on the attempt trace. An attempt
+  // that closed none carries no field and says nothing.
+  private static clearedLayersSaid(nodeId: string, target: RecordCaptureTarget): Pick<AutomationStudioNodeAttemptTrace, "clearedLayers"> {
+    const layers = target.cleared ?? [];
+    if (layers.length === 0) return {};
+    emitAutomationStudioActivityStepInterference({ nodeId, kinds: layers.map((layer) => layer.kind) });
+    return { clearedLayers: layers };
   }
 
   // One card per node attempt, keyed under the Call Flow attempts it runs inside

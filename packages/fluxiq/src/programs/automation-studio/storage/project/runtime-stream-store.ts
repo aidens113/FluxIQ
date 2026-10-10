@@ -4,6 +4,7 @@ import type { JsonObject } from "../../../../core/index.ts";
 import type {
   AutomationStudioFlowRunActionAttemptRecord,
   AutomationStudioFlowRunDetail,
+  AutomationStudioFlowRunHandlerExecutionRecord,
   AutomationStudioFlowRunRecoveryRecord,
   AutomationStudioFlowRunStatus,
   AutomationStudioFlowRunSummary,
@@ -21,12 +22,24 @@ import { runDatasetSummariesForRun } from "./run-dataset-store.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE } from "../../runtime/executor/index.ts";
 
+/**
+ * The kinds of event a run's stream holds. `handler_execution` is one
+ * lifecycle handler that ran (state-aware recovery plan, C11), beside the
+ * ladder's `recovery_attempt`; its payload is an
+ * `AutomationStudioFlowRunHandlerExecutionRecord`, folded into the detail's
+ * `handlerExecutions` by its `executionId`. `late_action_result` is an action
+ * result that came after Core stopped waiting for its command (C8): kept on
+ * the run's log as evidence, never applied, and read back from the detail's
+ * own `metadata.lateActionResults`, so no reader folds it.
+ */
 export type AutomationStudioRuntimeEventKind =
   | "run_summary"
   | "route_decision"
   | "subflow_execution"
   | "action_attempt"
   | "recovery_attempt"
+  | "handler_execution"
+  | "late_action_result"
   | "intervention";
 
 export type AutomationStudioRuntimeStreamEvent = {
@@ -153,7 +166,7 @@ export class AutomationStudioProjectRuntimeStreamStore {
         optionalInteger(summary.finishedAt),
         nonNegativeInteger(summary.actionAttemptCount, "action count"),
         nonNegativeInteger(Number(summary.metadata?.effectCount ?? 0), "effect count"),
-        summary.status === "failed" ? 1 : 0,
+        summary.status === "failed" || summary.status === "interrupted" ? 1 : 0,
         nonNegativeInteger(summary.adaptationCount, "adaptation count"),
         requiredId(summary.runId, "run"),
         nonNegativeInteger(summary.updatedAt, "updated at"),
@@ -544,7 +557,9 @@ function runtimeEventsFromDetail(detail: AutomationStudioFlowRunDetail): Automat
     ...detail.subflows.map((record, index) => runtimeEvent("subflow_execution", record.entryId, record.enteredAt, "Subflow execution", record.status, record.subflowId, record as unknown as JsonObject, 200_000 + index)),
     ...(detail.actionAttempts ?? []).map((record, index) => runtimeEvent("action_attempt", record.attemptId, record.startedAt, record.nodeId, record.status, record.attemptId, record as unknown as JsonObject, record.order ?? 300_000 + index)),
     ...(detail.recoveryAttempts ?? []).map((record, index) => runtimeEvent("recovery_attempt", record.recoveryId, record.createdAt, "Recovery attempt", record.status, record.recoveryId, record as unknown as JsonObject, 400_000 + index)),
-    ...detail.interventions.map((record, index) => runtimeEvent("intervention", record.interventionId, record.createdAt, record.kind, record.validation?.ok === false ? "failed" : "created", record.interventionId, record as unknown as JsonObject, 500_000 + index))
+    ...(detail.handlerExecutions ?? []).map((record, index) => runtimeEvent("handler_execution", record.executionId, record.startedAt, "Handler execution", record.outcome, record.handlerId, record as unknown as JsonObject, 450_000 + index)),
+    ...detail.interventions.map((record, index) => runtimeEvent("intervention", record.interventionId, record.createdAt, record.kind, record.validation?.ok === false ? "failed" : "created", record.interventionId, record as unknown as JsonObject, 500_000 + index)),
+    ...lateActionResultEvents(detail)
   ];
   return candidates.sort((left, right) => left.timestampMs - right.timestampMs || left.order - right.order || left.eventId.localeCompare(right.eventId)).map((event, index) => ({
     eventId: event.eventId,
@@ -558,6 +573,21 @@ function runtimeEventsFromDetail(detail: AutomationStudioFlowRunDetail): Automat
   }));
 }
 
+// The late action results the run's detail keeps (`runtime/service/runtime-session/late-action-result.ts`),
+// one event each, named by the command and what it reported, so the same answer
+// sent again is the same event. Closed fields only, as the detail keeps them.
+function lateActionResultEvents(detail: AutomationStudioFlowRunDetail): RuntimeEventCandidate[] {
+  const records = Array.isArray(detail.metadata?.lateActionResults) ? detail.metadata.lateActionResults : [];
+  return records.flatMap((record, index) => {
+    if (!record || typeof record !== "object" || Array.isArray(record)) return [];
+    const late = record as JsonObject;
+    if (typeof late.commandId !== "string" || !Number.isSafeInteger(late.receivedAt) || (late.receivedAt as number) < 0) return [];
+    const status = typeof late.status === "string" ? late.status : undefined;
+    const reported = typeof late.reportedStatus === "string" ? late.reportedStatus : "unknown";
+    return [runtimeEvent("late_action_result", `${late.commandId}:${reported}`, late.receivedAt as number, "Late action result", status, late.commandId, late, 600_000 + index)];
+  });
+}
+
 function runtimeEvent(kind: AutomationStudioRuntimeEventKind, id: string, timestampMs: number, title: string, status: string | undefined, entityId: string | undefined, payload: JsonObject, order: number): RuntimeEventCandidate {
   return { eventId: `${kind}:${id}`, eventKind: kind, timestampMs: nonNegativeInteger(timestampMs, "event timestamp"), title, ...(status !== undefined ? { status } : {}), ...(entityId !== undefined ? { entityId } : {}), payload, order };
 }
@@ -568,13 +598,20 @@ function runDetailFromEvents(summary: AutomationStudioFlowRunSummary, events: Au
   const routeDecisions = new Map<string, AutomationStudioRouteDecisionRecord>();
   const subflows = new Map<string, AutomationStudioSubflowExecutionRecord>();
   const recoveryAttempts = new Map<string, AutomationStudioFlowRunRecoveryRecord>();
+  const handlerExecutions = new Map<string, AutomationStudioFlowRunHandlerExecutionRecord>();
   const interventions = new Map<string, AutomationStudioFlowIntervention>();
   for (const event of events) {
     if (event.eventKind === "action_attempt" && event.payload) { const item = event.payload as unknown as AutomationStudioFlowRunActionAttemptRecord; actions.set(item.attemptId, item); }
     else if (event.eventKind === "route_decision" && event.payload) { const item = event.payload as unknown as AutomationStudioRouteDecisionRecord; routeDecisions.set(item.decisionId, item); }
     else if (event.eventKind === "subflow_execution" && event.payload) { const item = event.payload as unknown as AutomationStudioSubflowExecutionRecord; subflows.set(item.entryId, item); }
     else if (event.eventKind === "recovery_attempt" && event.payload) { const item = event.payload as unknown as AutomationStudioFlowRunRecoveryRecord; recoveryAttempts.set(item.recoveryId, item); }
-    else if (event.eventKind === "intervention" && event.payload) { const item = event.payload as unknown as AutomationStudioFlowIntervention; interventions.set(item.interventionId, item); }
+    else if (event.eventKind === "handler_execution" && event.payload) {
+      const item = event.payload as unknown as AutomationStudioFlowRunHandlerExecutionRecord;
+      handlerExecutions.set(item.executionId, item);
+    } else if (event.eventKind === "intervention" && event.payload) {
+      const item = event.payload as unknown as AutomationStudioFlowIntervention;
+      interventions.set(item.interventionId, item);
+    }
   }
   return {
     schemaVersion: "0.1",
@@ -584,6 +621,8 @@ function runDetailFromEvents(summary: AutomationStudioFlowRunSummary, events: Au
     subflows: [...subflows.values()],
     actionAttempts: [...actions.values()],
     recoveryAttempts: [...recoveryAttempts.values()],
+    // Written only when a handler ran, so a run without one reads as it always did.
+    ...(handlerExecutions.size ? { handlerExecutions: [...handlerExecutions.values()] } : {}),
     interventions: [...interventions.values()],
     adaptationIds: Array.isArray(envelope.adaptationIds) ? envelope.adaptationIds : [],
     changeProposalIds: Array.isArray(envelope.changeProposalIds) ? envelope.changeProposalIds : [],
@@ -705,10 +744,15 @@ function statePathFromRow(row: StatePathRow): AutomationStudioStatePathRecord {
   return { snapshotId: row.snapshot_id, namespace: row.namespace, path: row.path, valueType: row.value_type, scalarText: row.scalar_text, scalarNumber: row.scalar_number, scalarBoolean: row.scalar_boolean === null ? null : row.scalar_boolean === 1, valueObjectId: row.value_object_id };
 }
 
-function isRuntimeEventKind(value: unknown): value is AutomationStudioRuntimeEventKind { return value === "run_summary" || value === "route_decision" || value === "subflow_execution" || value === "action_attempt" || value === "recovery_attempt" || value === "intervention"; }
+function isRuntimeEventKind(value: unknown): value is AutomationStudioRuntimeEventKind { return value === "run_summary" || value === "route_decision" || value === "subflow_execution" || value === "action_attempt" || value === "recovery_attempt" || value === "handler_execution" || value === "late_action_result" || value === "intervention"; }
 function recordingEventIsActionLike(event: unknown): boolean { const value = event as { type?: unknown; actionType?: unknown; eventType?: unknown }; return value.type === "action" || value.type === "domain_event" || typeof value.actionType === "string" || typeof value.eventType === "string"; }
 function recordingEventIsStateSnapshotLike(event: unknown): boolean { const value = event as { type?: unknown; observationType?: unknown }; return value.type === "state_checkpoint" || value.observationType === "client.state_snapshot"; }
-function sqlRuntimeStatus(status: AutomationStudioFlowRunStatus): "queued" | "running" | "succeeded" | "failed" | "cancelled" { return status === "waiting" ? "running" : status; }
+// `interrupted` is stored as itself (migration 0024_runtime_run_interrupted_status lets the column hold it):
+// a run whose process ended mid-flight is neither a failure it reported nor a
+// success, and a reader that filters on `failed` must not find it there.
+function sqlRuntimeStatus(status: AutomationStudioFlowRunStatus): "queued" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted" {
+  return status === "waiting" ? "running" : status;
+}
 // A definition id is a stored value, not a key: a Call Flow node's is
 // `composite.flow.<encoded flow id>@<version>`, which the key pattern rejects.
 function actionDefinitionId(value: unknown): string { const id = typeof value === "string" ? value.trim() : ""; if (!id || id.length > 1_000 || /[\u0000-\u001f\u007f]/.test(id)) throw new Error("Invalid action definition ID."); return id; }

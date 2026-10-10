@@ -46,6 +46,13 @@ export {
   automationStudioPlanStepConsequences,
   type AutomationStudioPlanStepConsequences
 } from "./plan-step-consequences.ts";
+// The page facts a plan states whose targets name a handle, which resolution reaches too.
+export {
+  AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID,
+  automationStudioPlanFactTargetSites,
+  automationStudioPlanMetadataFactHandlePaths,
+  type AutomationStudioPlanFactTargetSite
+} from "./plan-fact-targets.ts";
 export {
   AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES,
   assertAutomationStudioFlowBootstrapPlanHandlesResolved,

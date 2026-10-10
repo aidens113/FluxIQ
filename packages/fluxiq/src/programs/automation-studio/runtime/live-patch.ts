@@ -13,7 +13,6 @@ import { classifyAutomationStudioAdaptiveFailure } from "./adaptive-orchestrator
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison } from "./executor.ts";
 import {
   AUTOMATION_STUDIO_CHANGE_VERDICT_EVIDENCE_KINDS,
-  actionTargetParameterValues,
   automationStudioChangeValidationResult,
   automationStudioFlowChangeFailureState,
   trialAutomationStudioFlowChange,
@@ -22,14 +21,17 @@ import {
   type AutomationStudioFlowChangeTrialReport
 } from "./flow-change/index.ts";
 import {
-  applyAutomationStudioInsertedSteps,
   automationStudioInsertedStepNodeId,
+  automationStudioRepairUnitDigest,
   checkAutomationStudioRuntimeTargetOverride,
+  overlayAutomationStudioRuntimePatch,
+  type AutomationStudioOverlayValidationContext,
+  type AutomationStudioRuntimePatchOverlay,
   type AutomationStudioRuntimeTargetOverrideCheck,
   type AutomationStudioRuntimeTargetOverrideEvidenceValidation,
   type AutomationStudioRuntimeTargetOverrideFailedAction
 } from "./live-patch/index.ts";
-import type { AutomationStudioRuntimePatch, AutomationStudioRuntimeTargetOverrideTarget } from "./llm/index.ts";
+import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, AutomationStudioRuntimeTargetOverrideTarget } from "./llm/index.ts";
 
 export type AutomationStudioRuntimePatchPreflight = {
   ok: boolean;
@@ -60,7 +62,7 @@ export type AutomationStudioRuntimePatchPreflight = {
  */
 export type AutomationStudioRuntimePatchVerification =
   | { status: "verified"; basis: AutomationStudioChangeVerdictEvidenceKind }
-  | { status: "unverifiable"; reason: "no_expectation_declared" | "expectation_empty" | "evidence_unevaluated" | "changed_node_incomplete"; awaitsJudgedRun?: true }
+  | { status: "unverifiable"; reason: "no_expectation_declared" | "expectation_empty" | "evidence_unevaluated" | "changed_node_incomplete" | "in_run_trial"; awaitsJudgedRun?: true }
   | { status: "contradicted"; reason: string }
   | { status: "not_executed"; reason: string };
 
@@ -166,6 +168,8 @@ function preflightRuntimePatch(input: AutomationStudioRuntimePatchExecutionInput
   if (input.patch.kind === "temporary_recovery_subflow_call" && policy && !policy.allowCreateRecoveryPaths) issues.push("Recovery subflow calls are disabled by adaptation policy.");
   if (input.patch.kind === "temporary_target_override" && policy && !policy.allowModifyActionTargets) issues.push("Action target overrides are disabled by adaptation policy.");
   if (input.patch.kind === "temporary_reroute" && policy && !policy.allowModifyRouter) issues.push("Temporary reroutes are disabled by adaptation policy.");
+  if (input.patch.kind === "add_handler" && policy && !policy.allowCreateRecoveryPaths) issues.push("Handlers added by a repair are disabled by adaptation policy.");
+  if (input.patch.kind === "replace_unit" && policy && !policy.allowModifySubflows) issues.push("Unit replacements are disabled by adaptation policy.");
   const suppliedHostCapabilities = input.hostCapabilities ?? input.options?.hostRuntime?.capabilities;
   if (suppliedHostCapabilities !== undefined) {
     const hostCapabilities = new Set(suppliedHostCapabilities);
@@ -260,7 +264,7 @@ export async function executeAutomationStudioRuntimePatch(requested: AutomationS
   // What runs, and what the adaptation records, is the checked override: on
   // the failed node, with the domain's resolution in place of the handles.
   const input: AutomationStudioRuntimePatchExecutionInput = targetCheck ? { ...requested, patch: targetCheck.patch } : requested;
-  const application = applyRuntimePatchToFlow(input.flow, input.patch, input.runId);
+  const application = applyRuntimePatchToFlow(input.flow, input.patch, input.runId, input.failedAttempt.nodeId);
   // Fail closed: a patch kind with no application branch would otherwise send
   // the ORIGINAL flow to the rerun, and that rerun's success would be recorded
   // against a patch that never took effect.
@@ -305,6 +309,58 @@ export async function executeAutomationStudioRuntimePatch(requested: AutomationS
   };
 }
 
+/** An in-run repair's patch, checked and overlaid, with the records that keep it until the run's judged end; or why it may not run. */
+export type AutomationStudioInRunRepairPreparation =
+  | {
+    ok: true;
+    /** The patch as it runs: a target override carries the domain's resolution in place of the handles. */
+    patch: AutomationStudioRuntimePatch;
+    overlay: Extract<AutomationStudioRuntimePatchOverlay, { applied: true }>;
+    adaptation: AutomationStudioFlowAdaptation;
+    changeProposal?: AutomationStudioFlowChangeProposal;
+  }
+  | { ok: false; code: string; reason: string };
+
+/**
+ * One patch of an in-run repair (state-aware recovery plan, C6 step 8): the
+ * same preflight a detached repair passes, the one overlay, and the records.
+ * There is no trial here: the executor re-attempts the unit on the overlaid
+ * graph, and that attempt is the trial. So the adaptation proves nothing yet
+ * (`in_run_trial`, awaiting the judged run), and a structural fix links its
+ * change proposal, the review record the plan requires.
+ */
+export function prepareAutomationStudioInRunRepair(input: AutomationStudioRuntimePatchExecutionInput & {
+  subflowGraphs?: Readonly<Record<string, AutomationStudioFlowDocument>>;
+  validationContext?: AutomationStudioOverlayValidationContext;
+}): AutomationStudioInRunRepairPreparation {
+  const targetCheck = input.patch.kind === "temporary_target_override" ? checkAutomationStudioRuntimeTargetOverride(input) : undefined;
+  const preflight = preflightRuntimePatch(input, targetCheck);
+  if (!preflight.ok) return { ok: false, code: "preflight_refused", reason: preflight.issues.join(" ") };
+  const checked: AutomationStudioRuntimePatchExecutionInput = targetCheck ? { ...input, patch: targetCheck.patch } : input;
+  const overlay = overlayAutomationStudioRuntimePatch({
+    flow: checked.flow,
+    patch: checked.patch,
+    failedNodeId: checked.failedAttempt.nodeId,
+    runId: checked.runId,
+    ...(input.subflowGraphs ? { subflowGraphs: input.subflowGraphs } : {}),
+    ...(input.validationContext ? { validationContext: input.validationContext } : {})
+  });
+  if (!overlay.applied) return { ok: false, code: overlay.reason, reason: overlay.message };
+  const part = checked.patch.kind === "replace_unit" && checked.patch.unit.kind === "part" ? input.subflowGraphs?.[checked.patch.unit.subflowId] : undefined;
+  const verification: AutomationStudioRuntimePatchVerification = { status: "unverifiable", reason: "in_run_trial", awaitsJudgedRun: true };
+  const recorded = adaptationFromRuntimePatch(checked, undefined, verification);
+  // The executor takes the unit again on the overlaid graph; no pass of the
+  // detached retry takes the failed action again on this adaptation's account.
+  const adaptation: AutomationStudioFlowAdaptation = {
+    ...recorded,
+    patch: [changePatchFromRuntimePatch(checked.patch, checked.runId, checked.failedAttempt.nodeId, part ?? checked.flow)],
+    metadata: { ...(recorded.metadata ?? {}), retryOriginalAction: false, inRunRepair: true }
+  };
+  if (!requiresChangeProposalForRuntimePatch(checked.patch)) return { ok: true, patch: checked.patch, overlay, adaptation };
+  const changeProposal = changeProposalFromRuntimePatch(checked, adaptation);
+  return { ok: true, patch: checked.patch, overlay, adaptation: { ...adaptation, proposalId: changeProposal.proposalId }, changeProposal };
+}
+
 /**
  * The run's own options for the trial, bounded by the steps the run has left
  * when the caller says how many that is. Undefined when none is left: a trial
@@ -330,7 +386,17 @@ function trialOptions(input: AutomationStudioRuntimePatchExecutionInput): Automa
  */
 function runtimePatchRetriesOriginalAction(verification: AutomationStudioRuntimePatchVerification, patch: AutomationStudioRuntimePatch): boolean {
   const proved = verification.status === "verified" || (verification.status === "unverifiable" && verification.awaitsJudgedRun === true);
-  return proved && patch.kind !== "temporary_action_sequence";
+  return proved && !patchRunsItsOwnSteps(patch);
+}
+
+/**
+ * Whether the patch's change is steps of its own: inserted before a node, a
+ * handler's body, or a unit's replacement. Those ran in the trial, and the
+ * failed action they stand in for or beside is not taken again on their
+ * account.
+ */
+function patchRunsItsOwnSteps(patch: AutomationStudioRuntimePatch): boolean {
+  return patch.kind === "temporary_action_sequence" || patch.kind === "add_handler" || patch.kind === "replace_unit";
 }
 
 /** The receipt's reading of the verdict. The verdict decided; this only names why. */
@@ -368,7 +434,7 @@ export function adaptationFromRuntimePatch(
   trial?: Pick<AutomationStudioFlowChangeTrialReport, "verdict" | "origin" | "observedState" | "expectedState">
 ): AutomationStudioFlowAdaptation {
   const now = input.now?.() ?? Date.now();
-  const patch = changePatchFromRuntimePatch(input.patch, input.runId);
+  const patch = changePatchFromRuntimePatch(input.patch, input.runId, input.failedAttempt.nodeId);
   const validationResult = trial
     ? automationStudioChangeValidationResult({ verdict: trial.verdict, runId: input.runId, checkedAt: now, kind: "trial" })
     : validationResultForVerification(input.runId, now, verification, trace);
@@ -433,6 +499,7 @@ function adaptationStatusForVerification(verification: AutomationStudioRuntimePa
 
 function runtimePatchVerificationTrigger(verification: AutomationStudioRuntimePatchVerification): string {
   if (verification.status === "verified") return "restored expected state";
+  if (verification.status === "unverifiable" && verification.reason === "in_run_trial") return "was overlaid in the run at its failing step and waits for the run's judged end";
   if (verification.status === "unverifiable") return "ran without evidence that proves or contradicts it";
   if (verification.status === "not_executed") return "was not executed";
   return "failed to restore expected state";
@@ -492,7 +559,7 @@ function targetOverrideProposalAdaptation(
     observedState,
     ...(expectedState ? { expectedState } : {}),
     diagnosis: input.patch.reason,
-    patch: [changePatchFromRuntimePatch(input.patch, input.runId)],
+    patch: [changePatchFromRuntimePatch(input.patch, input.runId, input.failedAttempt.nodeId)],
     // No `validationResults`: this proposal declares `executed: false` in the
     // same object, and a validation entry means "it ran and was compared". The
     // structural check that did happen is recorded where no consumer asking
@@ -518,74 +585,35 @@ function targetOverrideProposalAdaptation(
   };
 }
 
-type AutomationStudioRuntimePatchApplication =
-  | { applied: true; flow: AutomationStudioFlowDocument }
-  | { applied: false; reason: string };
-
 /**
  * Applies a runtime patch to a throwaway copy of the Flow, or says plainly that
- * it could not. The switch is exhaustive by construction: a new patch kind
- * fails the type check in `unappliedRuntimePatchKind` until it is either
- * applied here or explicitly refused.
+ * it could not. There is one application path for every kind, the pure overlay
+ * an in-run repair uses too (`./live-patch/overlay.ts`); its switch is the
+ * exhaustive one, so a new patch kind fails the type check there until it is
+ * applied or explicitly refused.
  */
-function applyRuntimePatchToFlow(flow: AutomationStudioFlowDocument, patch: AutomationStudioRuntimePatch, runId: string): AutomationStudioRuntimePatchApplication {
-  const next: AutomationStudioFlowDocument = structuredClone(flow);
-  switch (patch.kind) {
-    case "temporary_wait_retry": {
-      const node = next.nodes.find((candidate) => candidate.id === patch.targetNodeId);
-      if (!node) return { applied: false, reason: `target_node_absent:${patch.targetNodeId}` };
-      node.parameterValues = { ...(node.parameterValues ?? {}), ...(patch.timeoutMs !== undefined ? { timeoutMs: patch.timeoutMs } : {}), ...(patch.retryCount !== undefined ? { retryCount: patch.retryCount } : {}) };
-      return { applied: true, flow: next };
-    }
-    case "temporary_target_override": {
-      const node = next.nodes.find((candidate) => candidate.id === patch.targetNodeId);
-      if (!node) return { applied: false, reason: `target_node_absent:${patch.targetNodeId}` };
-      // Written where an apply would write it, so the trial runs the repair a
-      // recorded step would dispatch, not the target it was recorded with.
-      const parameterValues = node.parameterValues ?? {};
-      let written: JsonObject;
-      try {
-        written = actionTargetParameterValues({ nodeId: node.id, definitionId: node.definitionId, parameterValues }, patch.target, `the runtime patch of run ${runId}`);
-      } catch {
-        return { applied: false, reason: `action_target_unwritable:${node.id}` };
-      }
-      node.parameterValues = { ...parameterValues, ...written };
-      return { applied: true, flow: next };
-    }
-    case "temporary_reroute": {
-      if (!next.nodes.some((node) => node.id === patch.fromNodeId) || !next.nodes.some((node) => node.id === patch.toNodeId)) {
-        return { applied: false, reason: `reroute_node_absent:${patch.fromNodeId}->${patch.toNodeId}` };
-      }
-      if (!next.edges.some((edge) => edge.sourceNodeId === patch.fromNodeId && edge.targetNodeId === patch.toNodeId && edge.sourcePortId === "success")) {
-        next.edges.push({ id: `runtime-patch.${patch.fromNodeId}.${patch.toNodeId}`, sourceNodeId: patch.fromNodeId, sourcePortId: "success", targetNodeId: patch.toNodeId, targetPortId: "in" });
-      }
-      return { applied: true, flow: next };
-    }
-    // The steps the Flow never had, inserted ahead of the node they must run
-    // before, so the trial runs the repair rather than the Flow that answered
-    // wrongly (`live-patch/step-insert.ts`).
-    case "temporary_action_sequence":
-      return applyAutomationStudioInsertedSteps(flow, patch, runId);
-    // No application exists for this kind. Refusing it here is what stops the
-    // rerun from validating the unmodified Flow.
-    case "temporary_recovery_subflow_call":
-      return { applied: false, reason: `unapplied_patch_kind:${patch.kind}` };
-    default:
-      return unappliedRuntimePatchKind(patch);
-  }
+function applyRuntimePatchToFlow(flow: AutomationStudioFlowDocument, patch: AutomationStudioRuntimePatch, runId: string, failedNodeId: string): { applied: true; flow: AutomationStudioFlowDocument } | { applied: false; reason: string } {
+  return overlayAutomationStudioRuntimePatch({ flow, patch, runId, failedNodeId });
 }
 
-// Compile-time exhaustiveness: a new runtime patch kind fails the type check
-// here until it is applied or explicitly refused above.
-function unappliedRuntimePatchKind(patch: never): AutomationStudioRuntimePatchApplication {
-  return { applied: false, reason: `unapplied_patch_kind:${(patch as { kind?: string }).kind ?? "unknown"}` };
-}
-
-function changePatchFromRuntimePatch(patch: AutomationStudioRuntimePatch, runId: string): AutomationStudioFlowAdaptation["patch"][number] {
+function changePatchFromRuntimePatch(patch: AutomationStudioRuntimePatch, runId: string, failedNodeId: string, unitGraph?: AutomationStudioFlowDocument): AutomationStudioFlowAdaptation["patch"][number] {
   if (patch.kind === "temporary_reroute") return { kind: "edit_router", targetId: patch.fromNodeId, summary: patch.reason, after: { toNodeId: patch.toNodeId } };
   if (patch.kind === "temporary_target_override") return { kind: "edit_action_target", targetId: patch.targetNodeId, summary: patch.reason, after: patch.target, metadata: { externalSideEffect: true } };
   if (patch.kind === "temporary_recovery_subflow_call") return { kind: "edit_recovery", targetId: patch.subflowId, summary: patch.reason };
   if (patch.kind === "temporary_wait_retry") return { kind: "edit_expectation", targetId: patch.targetNodeId, summary: patch.reason, after: { timeoutMs: patch.timeoutMs ?? null, retryCount: patch.retryCount ?? null } };
+  // A handler and a unit replacement keep durable kinds of their own (C12),
+  // which the unit repair applier writes through the overlay the run used. A
+  // replaced unit carries the digest it was replaced at, so the apply refuses a
+  // saved unit that changed since; a new handler names no existing unit.
+  if (patch.kind === "add_handler") {
+    const { kind: _kind, reason: _reason, metadata: _metadata, consequences: _consequences, ...spec } = patch;
+    return { kind: "add_handler", targetId: failedNodeId, summary: patch.reason, after: structuredClone(spec) as unknown as JsonObject, metadata: { runtimePatchKind: patch.kind } };
+  }
+  if (patch.kind === "replace_unit") {
+    const { kind: _kind, reason: _reason, metadata: _metadata, consequences: _consequences, ...spec } = patch;
+    const unitDigest = unitGraph ? automationStudioRepairUnitDigest(unitGraph, patch.unit) : undefined;
+    return { kind: "replace_unit", targetId: unitTargetId(patch.unit), summary: patch.reason, ...(unitDigest ? { before: { unitDigest } } : {}), after: structuredClone(spec) as unknown as JsonObject, metadata: { runtimePatchKind: patch.kind } };
+  }
   // An inserted sequence has no durable form: keeping a step belongs to the
   // extend-mode build plan, which authors it from an exploration rather than
   // from a patch (`live-patch/step-insert.ts`). `edit_recovery` has no durable
@@ -593,13 +621,25 @@ function changePatchFromRuntimePatch(patch: AutomationStudioRuntimePatch, runId:
   return { kind: "edit_recovery", targetId: patch.targetNodeId, summary: patch.reason };
 }
 
+/** The id a unit is named by: its node's, or its Subflow's. */
+function unitTargetId(unit: AutomationStudioRuntimePatchUnit): string {
+  return unit.kind === "part" ? unit.subflowId : unit.nodeId;
+}
+
 function patchMayCauseExternalSideEffects(patch: AutomationStudioRuntimePatch): boolean {
-  return patch.kind === "temporary_action_sequence" || patch.kind === "temporary_target_override";
+  return patchRunsItsOwnSteps(patch) || patch.kind === "temporary_target_override";
 }
 
 function runtimePatchTargetsFlow(flow: AutomationStudioFlowDocument, patch: AutomationStudioRuntimePatch): boolean {
   if (patch.kind === "temporary_recovery_subflow_call") return Boolean(flow.metadata?.subflowIds || patch.subflowId);
   if (patch.kind === "temporary_reroute") return flow.nodes.some((node) => node.id === patch.fromNodeId) && flow.nodes.some((node) => node.id === patch.toNodeId);
+  // A handler's nodes must be in this graph; a part is a graph of its own,
+  // which only the overlay is handed.
+  if (patch.kind === "add_handler") return patch.scope.kind !== "nodes" || patch.scope.nodeIds.every((id) => flow.nodes.some((node) => node.id === id));
+  if (patch.kind === "replace_unit") {
+    const unit = patch.unit;
+    return unit.kind === "part" || flow.nodes.some((node) => node.id === unit.nodeId);
+  }
   if ("targetNodeId" in patch) return flow.nodes.some((node) => node.id === patch.targetNodeId);
   return true;
 }
@@ -616,6 +656,10 @@ function changedNodeForPatch(patch: AutomationStudioRuntimePatch, failedNodeId: 
   // trial judges. Starting at the named node would run the Flow that answered
   // wrongly and record the inserted steps as never reached.
   if (patch.kind === "temporary_action_sequence") return automationStudioInsertedStepNodeId(runId, 0);
+  // A replaced node keeps its id, so its first replacement step is where the
+  // trial starts. A new handler, a replaced handler and a replaced part change
+  // what happens at the step that failed, which is re-attempted there.
+  if (patch.kind === "replace_unit" && patch.unit.kind === "node") return patch.unit.nodeId;
   if ("targetNodeId" in patch) return patch.targetNodeId;
   return failedNodeId;
 }
@@ -630,19 +674,27 @@ function runtimePatchOrigin(input: AutomationStudioRuntimePatchExecutionInput): 
   });
 }
 
+/**
+ * Whether a proven patch is kept as a change proposal: a structural change to
+ * a route, a recovery path or a unit, which links to a review record.
+ */
 function requiresChangeProposalForRuntimePatch(patch: AutomationStudioRuntimePatch): boolean {
-  return patch.kind === "temporary_reroute" || patch.kind === "temporary_recovery_subflow_call";
+  return patch.kind === "temporary_reroute" || patch.kind === "temporary_recovery_subflow_call" || patch.kind === "add_handler" || patch.kind === "replace_unit";
 }
 
 function requiredHostCapabilitiesForRuntimePatch(patch: AutomationStudioRuntimePatch): string[] {
   if (patch.kind === "temporary_wait_retry") return ["wait-observe"];
   if (patch.kind === "temporary_target_override" || patch.kind === "temporary_action_sequence") return ["action-dispatch"];
   if (patch.kind === "temporary_recovery_subflow_call") return ["action-dispatch"];
+  // Both run steps of their own. The facts a handler's `when` and completion
+  // check ask about are read through the host's fact evaluation, which has no
+  // capability id of its own yet; the dispatcher that asks it (R2) names it.
+  if (patch.kind === "add_handler" || patch.kind === "replace_unit") return ["action-dispatch"];
   return [];
 }
 
 function patchRisk(patch: AutomationStudioRuntimePatch): AutomationStudioFlowAdaptation["riskLevel"] {
-  if (patch.kind === "temporary_action_sequence" || patch.kind === "temporary_target_override") return "high";
+  if (patchRunsItsOwnSteps(patch) || patch.kind === "temporary_target_override") return "high";
   if (patch.kind === "temporary_reroute" || patch.kind === "temporary_recovery_subflow_call") return "medium";
   return "low";
 }

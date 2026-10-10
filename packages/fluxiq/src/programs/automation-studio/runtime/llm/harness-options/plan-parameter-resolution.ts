@@ -40,6 +40,16 @@
 // and the resolution returns them per node as a record of where the
 // candidate's targets were learned. Without it nothing is sent and nothing
 // beside `status` and `parameters` is accepted, exactly as before.
+//
+// **A page fact's target is resolved here too (t392).** A handler's `when`, an
+// entry's, a checkpoint's and a success check name a control by handle, as a
+// step's target does (`./plan-fact-targets.ts`). Each is put to the domain
+// first, as a step of `AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID` whose
+// only parameter is that `target`, declaring it does nothing lasting, and is
+// held to everything a step is: a refusal, an `unchanged` answer, or an answer
+// still naming a handle refuses it at its own path. What the domain answers
+// becomes the fact's target. A handler with a refused fact is not asked about
+// again; the fact's refusal already says why.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -47,6 +57,7 @@ import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapN
 // From the module that owns them: `../harness.ts` and the harness barrel both lead back into this module's import cycle, and through them the two read as undefined when this module loads inside it.
 import { AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH, AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN } from "../harness/structured-response.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleReach, AutomationStudioPlanHandleView } from "./binding.ts";
+import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, automationStudioPlanFactTargetSites, automationStudioPlanMetadataFactHandlePaths } from "./plan-fact-targets.ts";
 import { automationStudioPlanNodeHandleSites, automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
 import { automationStudioPlanStepConsequences } from "./plan-step-consequences.ts";
 
@@ -117,9 +128,28 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
   const resolvedNodeKeys: string[] = [];
   const handleViews: AutomationStudioFlowBootstrapPlanHandleView[] = [];
+  // Page facts first (header): a handler's facts are its parameters, so they are resolved before the handler is asked about.
+  const refusedHandlers = new Set<string>();
+  for (const site of automationStudioPlanFactTargetSites(plan)) {
+    const fact = { key: site.ref, definitionId: AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, definitionVersion: "1.0.0", parameters: { target: site.target }, consequences: [] };
+    const outcome = await resolveNode(fact, input, automationStudioActionPermissionDenied, false);
+    if (outcome.status === "needs_permission") {
+      issues.push(permissionIssue(outcome, site.path));
+      return { ok: false, issues };
+    }
+    if (outcome.status !== "resolved") {
+      // An `unchanged` answer leaves the handle in place, which `resolveNode` already refuses; this is the same refusal if it ever did not.
+      for (const code of outcome.status === "refused" ? outcome.issueCodes : [AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved]) issues.push(parameterIssue(code, site.path));
+      if (site.path.includes(".parameters.")) refusedHandlers.add(site.ref);
+      continue;
+    }
+    site.replace(outcome.parameters);
+    for (const view of outcome.handleViews ?? []) handleViews.push({ node: site.ref, handle: view.handle, view: view.view, location: view.location });
+  }
   for (const [subflowIndex, subflow] of plan.subflows.entries()) {
     for (const [nodeIndex, node] of subflow.nodes.entries()) {
       const ref = `${subflow.key}.${node.key}`;
+      if (refusedHandlers.has(ref)) continue;
       const permission = input.permissionFor?.({ definitionId: node.definitionId, ref }) ?? automationStudioActionPermissionDenied;
       const outcome = await resolveNode(node, input, permission, input.inheritedNodeRefs?.has(ref) === true);
       const path = `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`;
@@ -147,14 +177,16 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
 }
 
 /**
- * Refuse a plan that still names a handle anywhere. For plans that reach
+ * Refuse a plan that still names a handle anywhere: in a node's parameters, or
+ * in a page fact's target in node or Subflow metadata. For plans that reach
  * persistence or apply without passing through resolution.
  */
 export function assertAutomationStudioFlowBootstrapPlanHandlesResolved(plan: AutomationStudioFlowBootstrapPlan): void {
-  const paths = plan.subflows.flatMap((subflow, subflowIndex) => subflow.nodes.flatMap((node, nodeIndex) =>
-    automationStudioPlanNodeParametersNameHandle(node.parameters)
-      ? [`plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters (${AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved})`]
-      : []));
+  const paths = [
+    ...plan.subflows.flatMap((subflow, subflowIndex) => subflow.nodes.flatMap((node, nodeIndex) =>
+      automationStudioPlanNodeParametersNameHandle(node.parameters) ? [`plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`] : [])),
+    ...automationStudioPlanMetadataFactHandlePaths(plan)
+  ].map((path) => `${path} (${AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved})`);
   if (paths.length) throw new Error(`Invalid Automation Studio Flow Bootstrap plan: ${paths.join(", ")}`);
 }
 

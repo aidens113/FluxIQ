@@ -306,7 +306,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4380,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4360,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "import-cycles": {
@@ -750,10 +750,10 @@
       "apps/web/src/features/programs/live-views/tests/docs-recovery.test.tsx": 20,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/command-execution/tests/service.test.ts": 20,
       "packages/fluxiq/src/programs/automation-studio/storage/project/adaptation-store.ts": 20,
-      "packages/fluxiq/src/programs/automation-studio/storage/project/runtime-stream-store.ts": 20,
       "packages/fluxiq/src/client-gateway/service/command-ledger/tests/controller.test.ts": 19,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/command-execution/controller.ts": 19,
       "packages/fluxiq/src/programs/automation-studio/storage/project/command-ledger/store.ts": 19,
+      "packages/fluxiq/src/programs/automation-studio/storage/project/runtime-stream-store.ts": 19,
       "apps/web/src/features/automation-studio/problems/tests/problems-query-feedback.test.tsx": 18,
       "apps/web/src/features/automation-studio/workspace/overlays/tests/floating-entry-focus.test.tsx": 18,
       "apps/web/src/features/programs/documentation-tree/VirtualDocumentationTree.tsx": 18,
@@ -862,8 +862,6 @@
       "apps/web/src/features/automation-studio/hierarchy/tests/useHierarchyPersistence.test.tsx": 5,
       "apps/web/src/features/automation-studio/runtime/audit-export/tests/runtimeAuditBlob.test.ts": 5,
       "apps/web/src/server/gateway-runtime/tests/load.test.ts": 5,
-      "packages/fluxiq/src/programs/automation-studio/runtime/composite-execution/owner.ts": 5,
-      "packages/fluxiq/src/programs/automation-studio/runtime/executor/node-execution/attempt.ts": 5,
       "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/unfinished-build/tests/repair-rounds.test.ts": 5,
       "packages/fluxiq/src/programs/automation-studio/runtime/llm/harness/tests/run-size.test.ts": 5,
       "packages/fluxiq/src/programs/automation-studio/runtime/result-verification/build-test/tests/judge.test.ts": 5,
@@ -961,7 +959,6 @@
       "apps/web/src/features/automation-studio/settings/SettingsSectionLayout.tsx": 2,
       "apps/web/src/server/client-gateway-websocket.ts": 2,
       "packages/fluxiq/src/client-gateway/service/command-ledger/outcome.ts": 2,
-      "packages/fluxiq/src/client-gateway/service/commands.ts": 2,
       "packages/fluxiq/src/io/tests/index.test.ts": 2,
       "packages/fluxiq/src/programs/automation-studio/api/handlers/artifacts.ts": 2,
       "packages/fluxiq/src/programs/automation-studio/dsl/generator.ts": 2,
@@ -1072,7 +1069,7 @@
       "packages/fluxiq/src/programs/automation-studio/runtime/conversations/commands/tests/candidate-endings.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/conversations/instructions/tests/domain-instructions.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/conversations/tests/person-words.test.ts": 1,
-      "packages/fluxiq/src/programs/automation-studio/runtime/executor/graph-run.ts": 1,
+      "packages/fluxiq/src/programs/automation-studio/runtime/executor/node-execution/attempt.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/executor/pacing/tests/pace-keeper.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/executor/tests/ladder-run.test.ts": 1,
       "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/digest.ts": 1,

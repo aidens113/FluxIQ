@@ -34,6 +34,36 @@ export type AutomationStudioInstructionResolutionInput = {
 };
 
 /**
+ * What an in-run repair is, said to the model on that request and on no other
+ * (state-aware recovery plan, C6 step 8, C12). `./context-packet.ts` adds it
+ * after the stage instructions when the request carries `inRunRepair`, so the
+ * slot it explains is always beside it.
+ *
+ * Its one example is a kind of site and act that no realistic Lab scenario uses
+ * (user rule: model guidance never teaches to the test); a guard test holds it
+ * to that (`./tests/in-run-repair-slot.test.ts`).
+ */
+export const AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION: Readonly<AutomationStudioResolvedInstruction> = Object.freeze({
+  instructionId: "core.in-run-repair",
+  scopeKind: "in_run_repair",
+  title: "Repairing one unit while the run is held",
+  body: [
+    "The run is held at the step that failed: all it has done so far is kept, and it carries on from there once the unit below is fixed.",
+    "`context.inRunRepair` names that unit (`unit`: a node, a handler or a part, with its id), what it promised (`contract`), the failure (`incident`, `failedAttempt`), the recoveries already tried (`recoveriesTried`) and the acts already completed (`actsCompleted`).",
+    "Change only the named unit. A patch that touches any other unit is refused.",
+    "Never repeat an act listed as completed, and never offer again, unchanged, a recovery listed as tried.",
+    "When the failure is an interruption met here, something the page shows that stands between the step and its work, prefer `add_handler`: give it a `when` made of conditions the page shows now, in the failure evidence, and a completion check that is true once the interruption is gone.",
+    "Otherwise use `replace_unit` for the named unit, or one of the other patch kinds offered.",
+    "Once the fix is applied, the unit is attempted again on this page from where the run stopped. That attempt is the fix's trial: if it does not hold, the fix is dropped.",
+    "Never add a speculative handler: write one only for an interruption the evidence shows was met, never for one that might appear.",
+    "For example, on a clinic's appointment booking page a notice that the session is about to expire covers the time slots: the fix is a handler whose `when` is that notice being shown, whose step presses the notice's own control to stay signed in, and whose completion check is the notice being gone."
+  ].join(" "),
+  priority: 900,
+  requirement: "required",
+  tags: ["safety"]
+});
+
+/**
  * The effective instructions for one call.
  *
  * `stageInstructions` are the loop's stage protocol: Core's ordering statement

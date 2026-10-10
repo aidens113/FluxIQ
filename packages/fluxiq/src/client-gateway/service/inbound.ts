@@ -6,6 +6,7 @@ import type { ClientGatewayFacadePorts } from "./facade-ports.ts";
 import type { ClientGatewayLifecycle } from "./lifecycle.ts";
 import type { ClientGatewayPairingFlow } from "./pairing-flow.ts";
 import { clientGatewayProtocolVersionVerdict } from "./protocol-version.ts";
+import { readClientGatewayActionResult } from "./action-result-reading.ts";
 import type { ClientGatewaySessionRegistry } from "./sessions.ts";
 import type { ClientGatewayTransport } from "./transport.ts";
 
@@ -100,10 +101,14 @@ export class ClientGatewayInbound {
       return;
     }
     if (message.type === "client.action_result") {
-      const eventMessage = this.commands.isDurableCommand(message.payload?.commandId) ? structuredClone(message) : message;
+      // A client's `interrupted` is read into Core's own status here, before
+      // anything waits on it, so no caller or listener meets it.
+      const reading = readClientGatewayActionResult(this.commands.isDurableCommand(message.payload?.commandId) ? structuredClone(message.payload) : message.payload);
+      const eventMessage = { ...message, payload: reading.result };
       const eventSession = this.sessions.toPublic(session);
-      const disposition = await this.commands.settle(sessionId, eventMessage.payload);
+      const disposition = await this.commands.settle(sessionId, reading);
       if (disposition === "wrong_session" || disposition === "suppressed") return;
+      // Still published as a diagnostic, late or unknown alike: no listener of this event applies an outcome.
       await this.events.emit({ type: "client.action_result", session: eventSession, message: eventMessage });
       return;
     }

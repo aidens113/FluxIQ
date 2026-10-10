@@ -4,6 +4,7 @@ import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import type { AutomationStudioFaultAssessment, AutomationStudioFaultEffect } from "./contracts.ts";
 import { automationStudioNodeActLasts } from "./lasting-act.ts";
 import { automationStudioNodeMutates, automationStudioNodeRepeatCannotAct, automationStudioNodeRepeatIsSafe } from "./node-side-effect.ts";
+import { automationStudioFaultNotLanded } from "./not-landed.ts";
 import { automationStudioFaultFromResultMessage } from "./result-message.ts";
 import { automationStudioRetryHintMs } from "./retry-hint.ts";
 
@@ -66,7 +67,9 @@ export function automationStudioAssessAttemptFault(
     ?? (attempt.failure ? automationStudioRetryHintMs(attempt.failure, now) : undefined)
     ?? automationStudioRetryHintMs(attempt.outputs, now);
   const fault: AutomationStudioFaultAssessment = { ...base, ...(hinted === undefined ? {} : { hintedWaitMs: hinted }) };
-  if (fault.disposition === "refuse") return fault;
+  // The effect check already showed this act did not happen (C6 step 4), so it is unacted, whatever the gates below would say.
+  if (attempt.effectCheck?.result === "not_landed") return automationStudioFaultNotLanded(fault);
+  if (fault.disposition === "refuse") return refusalWithUnknownOutcome(attempt, node, fault) ?? fault;
   const stage = fault.stage ?? attempt.failure?.stage;
   const foundAfterActing = stage === "confirmation" || stage === "verification";
   // Core owns both rules rather than the producer, because they are about the
@@ -109,6 +112,32 @@ export function automationStudioAssessAttemptFault(
     };
   }
   return fault;
+}
+
+/**
+ * A refusal that still leaves a lasting act's outcome unknown (C8): the
+ * producer's record states the act was made (`effect: "ambiguous"`) and that
+ * what came of it is unknown (`ambiguous_or_unknown`). A lost command reported
+ * `interrupted` on a committing act reads exactly so (`web.action.unknown`,
+ * `retryable: false`). The record's `retryable: false` says the same request
+ * would be answered the same way; it does not say the act did not happen, so
+ * the refusal is marked `actUncertain` and the effect check runs before any
+ * route or alternative.
+ *
+ * Every other refusal is the producer's answer about what happened -- a page
+ * that rejected the press, a dialog in the way, a sign-in wall -- and keeps the
+ * handling it always had. So does a fault classified from a throw, which
+ * carries no producer statement about the act.
+ */
+function refusalWithUnknownOutcome(attempt: AutomationStudioNodeAttemptTrace, node: AutomationStudioFlowNode | undefined, fault: AutomationStudioFaultAssessment): AutomationStudioFaultAssessment | undefined {
+  if (fault.actUncertain || fault.effect === "unacted" || fault.category !== "ambiguous_or_unknown") return undefined;
+  if (attempt.failure?.effect !== "ambiguous" || (node && automationStudioNodeRepeatIsSafe(node))) return undefined;
+  return {
+    ...fault,
+    effect: "ambiguous",
+    actUncertain: true,
+    reason: `${node ? `${node.id} made an act` : "An act was made"} whose outcome ${fault.code} reports as unknown: it may already have taken effect, so it is not made again.`
+  };
 }
 
 /** Whether this failed attempt may be dispatched again under the default policy. */

@@ -21,6 +21,15 @@ describe("the bounds on one activity event", () => {
     }
   });
 
+  it("keeps a recovery only on a step row, and only in the contract's closed shape", () => {
+    const recovery = { kind: "handler", subject: "Dismiss the popup", outcome: "succeeded", event: "before" };
+    const row = (kind: "step" | "tool", value: object) => ({ ...base, detail: { kind, title: "Dismiss the popup", ref: "node.1", recovery: value } } as AutomationStudioActivityInput);
+    expect(boundedAutomationStudioActivity(row("step", recovery)).detail?.recovery).toEqual(recovery);
+    expect(boundedAutomationStudioActivity(row("tool", recovery)).detail).not.toHaveProperty("recovery");
+    expect(boundedAutomationStudioActivity(row("step", { ...recovery, outcome: "maybe" })).detail).not.toHaveProperty("recovery");
+    expect(boundedAutomationStudioActivity(row("step", { ...recovery, kind: "route" })).detail?.recovery).toEqual({ kind: "route", subject: "Dismiss the popup", outcome: "succeeded" });
+  });
+
   it("drops a resolution the contract does not name, and one on a row that is not an ask", () => {
     expect(boundedAutomationStudioActivity(askRow("guessed")).detail).not.toHaveProperty("resolution");
     expect(boundedAutomationStudioActivity(askRow("answered", "tool")).detail).not.toHaveProperty("resolution");

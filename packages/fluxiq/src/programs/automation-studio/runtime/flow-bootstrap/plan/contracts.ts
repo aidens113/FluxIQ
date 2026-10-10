@@ -96,6 +96,11 @@ export type AutomationStudioFlowBootstrapNode = {
  * name). Core never interprets `fact` or `target`; the host evaluates the
  * condition and answers true, false or unknown, and unknown never holds.
  *
+ * A handle is resolved at bootstrap completion, as a step's target is
+ * (`../../llm/harness-options/plan-fact-targets.ts`), into the durable target
+ * the domain answers with, in its own form: so a validated plan's target is a
+ * dialog or that object, and never a handle.
+ *
  * Mirrors the contract's `FactCondition` by name and shape, so the runtime's own
  * type (R1, `executor/lifecycle/`) can replace it without the plan changing.
  */
@@ -103,7 +108,7 @@ export type AutomationStudioFlowBootstrapFactCondition = {
   fact: string;
   op: "exists" | "absent" | "visible" | "enabled" | "equals" | "contains" | "matches" | "count";
   value?: string | number | boolean | { input: string } | { value: string };
-  target?: { handle: string } | { locator: string } | { kind: "dialog"; role: string; name: string };
+  target?: { handle: string } | { locator: string } | { kind: "dialog"; role: string; name: string } | JsonObject;
 };
 
 /** An alternative entry (C2): taken at invocation, by ascending `order`, when every `when` holds and every `requires` is bound. */

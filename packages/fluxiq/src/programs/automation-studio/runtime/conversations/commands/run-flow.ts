@@ -111,7 +111,9 @@ const BY_KIND: Record<AutomationStudioChangeProposalKind, string> = {
   edit_recovery: "it learned a way past a step that goes wrong",
   insert_deterministic_path: "it added steps that get it past a step that goes wrong",
   promote_adaptation: "it kept a fix it had tried before",
-  edit_instruction: "it changed the instructions it follows"
+  edit_instruction: "it changed the instructions it follows",
+  add_handler: "it learned a way past an interruption it met",
+  replace_unit: "it re-wrote a step that stopped working"
 };
 
 const BY_TARGET: Record<AppliedTarget, string> = {

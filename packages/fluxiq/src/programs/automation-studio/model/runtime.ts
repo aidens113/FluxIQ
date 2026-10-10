@@ -23,7 +23,9 @@ export type AutomationStudioRuntimeSessionStatus =
   | "waiting"
   | "succeeded"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  /** Left `running` by a process that ended; its last lasting act is unknown (C8, the orphaned-run sweep). */
+  | "interrupted";
 
 export type AutomationStudioRuntimeSession = {
   schemaVersion: "0.1";

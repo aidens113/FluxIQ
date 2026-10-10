@@ -50,11 +50,11 @@ import {
   runAutomationStudioLlmHarness,
   sanitizeAutomationStudioLlmFailureEvidence,
   type AutomationStudioLlmProvider,
-  type AutomationStudioLlmRunBudgetDiagnostic,
   type AutomationStudioRuntimeSessionLlm
 } from "../../llm/index.ts";
 import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { emitAutomationStudioActivityThought } from "../../activity/index.ts";
+import { automationStudioMarkRunAdapting } from "../../run-control/index.ts";
 import type { executeAutomationStudioRuntimePatch } from "../../live-patch.ts";
 import { flowRunSummaryWithInterventionSummaries } from "../../service/index.ts";
 import type {
@@ -71,12 +71,14 @@ import { decideAutomationStudioRuntimeLlmInvocation } from "../llm-invocation.ts
 import { automationStudioUnresolvedFailedAttempt } from "../unresolved-failed-attempt.ts";
 import { planAutomationStudioRuntimeRecovery } from "../plan.ts";
 import { startAutomationStudioRecoveryDeadline } from "../recovery-deadline.ts";
-import { automationStudioRuntimeRecoveryRefusedTrace, automationStudioRuntimeRecoveryTrace } from "../stages.ts";
+import { automationStudioRuntimeRecoveryTrace } from "../stages.ts";
 import { summarizeAutomationStudioRuntimeStructuredDiagnosis } from "../structured-diagnosis.ts";
 import { runAutomationStudioRecoveryExploration, type AutomationStudioRecoveryExplorationResult } from "./exploration.ts";
 import { holdAutomationStudioRecoveryPatchReserve } from "./patch-reserve.ts";
+import type { AutomationStudioInRunRecovery } from "./in-run.ts";
 import { applyAutomationStudioRuntimeRecoveryPatches, automationStudioDeclinedRepairAttempt } from "./patches.ts";
 import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, type AutomationStudioPermissionAsk } from "../../parking/index.ts";
+import { automationStudioRecoveryEarlyRefusal } from "./early-refusal.ts";
 import { automationStudioRecoveryPermissionGate } from "./permissions.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";
 import { replanAutomationStudioRecoveryAfterExploration } from "./replan.ts";
@@ -114,6 +116,15 @@ export type AutomationStudioRuntimeRecoveryAnnotationInput = {
    * Absent for a recovery that is a whole repair of its own.
    */
   costLeftUsd?: number | undefined;
+  /**
+   * Present when the run is held at a true failure and asks here, in place
+   * (C6 step 8, `./in-run.ts`): the patch request carries the unit, the plan
+   * offers a handler and a unit's replacement, the patches are overlaid on the
+   * held run, and the run's purse is shared by every incident it asks about.
+   * Absent, the recovery is the one after the run, for a run that could not
+   * hold.
+   */
+  inRun?: AutomationStudioInRunRecovery | undefined;
 };
 
 /** One failed run, taken through the loop's four stages at the failure entry point. */
@@ -121,6 +132,8 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   input: AutomationStudioRuntimeRecoveryAnnotationInput
 ): Promise<AutomationStudioFlowRunDetail> {
   const ports = input.ports;
+  // The run is adapting from here, which the chat shows, until it takes a step again.
+  automationStudioMarkRunAdapting(input.graphOptions?.runControl);
   if (!input.context) return input.detail;
   if (input.detail.summary.status !== "failed") return input.detail;
   // A person who asked the model into this run is held to the run's own budget
@@ -130,40 +143,12 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const explicitRunBudget = intent === "diagnose_and_adapt" || intent === "diagnosis_only" || intent === "explore_and_adapt";
   // The metadata key the provider reads to shape a proposal-only patch schema.
   const executionPurpose = intent === "diagnose_and_adapt" || intent === "explore_and_adapt" ? { executionPurpose: intent } : {};
-  // The one early return that used to leave no trace. A run refused here is a
-  // run nothing will ever repair, so it has to say so in the same four-stage
-  // vocabulary as every other outcome; without that, a Flow created with LLM
-  // intervention off looked exactly like a Flow whose recovery ran and found
-  // nothing to change. The `code` is the same answer for a reader that must
-  // not carry a sentence, such as an evaluation.
-  if (!input.context.behavior.invokeLlm || (!explicitRunBudget && !input.context.budgetDecision.ok)) {
-    const trainingRefused = !input.context.behavior.invokeLlm;
-    const refusal = trainingRefused
-      ? "Current training mode or settings do not allow LLM intervention."
-      : `Training budget exhausted: ${input.context.budgetDecision.exhausted.join(", ")}.`;
-    return {
-      ...input.detail,
-      metadata: {
-        ...(input.detail.metadata ?? {}),
-        llmGate: { invoked: false, code: trainingRefused ? "llm.gate.training_mode" : "llm.gate.training_budget_exhausted", reason: refusal },
-        recoveryTrace: automationStudioRuntimeRecoveryRefusedTrace(refusal) as unknown as JsonObject
-      }
-    };
-  }
-  // A recovery that is one part of a repair whose purse is spent asks no model.
-  // Handed on, a total of zero would be ignored as no limit at all and the
-  // recovery would take the whole ceiling, so it stops here and says why.
-  if (input.costLeftUsd !== undefined && !(input.costLeftUsd > 0)) {
-    const refusal = "The repair's cost ceiling is spent, so no model was asked.";
-    return {
-      ...input.detail,
-      metadata: {
-        ...(input.detail.metadata ?? {}),
-        llmGate: { invoked: false, code: RECOVERY_COST_BOUND_CODE, bound: "cost", reason: refusal },
-        recoveryTrace: automationStudioRuntimeRecoveryRefusedTrace(refusal) as unknown as JsonObject
-      }
-    };
-  }
+  // The returns before any stage runs, each recorded in the same four-stage
+  // vocabulary as every other outcome (`./early-refusal.ts`): a refusal that
+  // left no trace made a Flow nothing would ever repair look like one whose
+  // recovery ran and found nothing to change.
+  const refusal = automationStudioRecoveryEarlyRefusal({ detail: input.detail, context: input.context, inRun: Boolean(input.inRun), refutedResult: Boolean(input.resultSummary), failedTraceAttempt: input.failedTraceAttempt, explicitRunBudget, costLeftUsd: input.costLeftUsd });
+  if (refusal) return refusal;
   // One clock for the whole recovery, started once and read from by every stage
   // that follows. Starting it inside the exploration instead would make it that
   // exploration's clock, which is the distinction `recovery-deadline.ts` exists
@@ -288,7 +273,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   // What one call may reserve, priced at the rate in force as that call is made
   // rather than once here: a recovery can run from off-peak into a peak window
   // (`run-budget.ts`, t254). Read it in each call's request, never hoisted.
-  const maxEstimatedCostUsdPerCall = (): number => budget.maxEstimatedCostUsdPerCallAt();
+  const maxEstimatedCostUsdPerCall = (): number => (input.inRun?.purse.current?.budget ?? budget).maxEstimatedCostUsdPerCallAt();
   const requestedTokenLimits = providerResolution?.tokenLimits;
   let failureEvidence: JsonObject | undefined;
   if (provider && failedAttempt && ports.llmEvidenceRuntime?.captureSanitizedFailureEvidence) {
@@ -350,7 +335,12 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     // question. With a thread, the exploration waits and settles it.
     answerable: Boolean(permissionAsk)
   }) : undefined;
-  const runBudget = new AutomationStudioLlmRunBudgetLedger(budget.ledger);
+  // An in-run recovery draws on the run's one purse, opened by the first one
+  // that resolved a model: the cost ceiling is the run's, whatever the number
+  // of incidents. Any other recovery is a whole run's recovery of its own.
+  const purse = input.inRun?.purse.current ?? { budget, ledger: new AutomationStudioLlmRunBudgetLedger(budget.ledger) };
+  if (input.inRun && provider && !input.inRun.purse.current) input.inRun.purse.current = purse;
+  const runBudget = purse.ledger;
   const reusableContextResult = input.useReusableContext === true && failureEvidence
     ? await ports.reusableLlmContextForFreshEvidence({
       optedIn: true, taskKind: "runtime_diagnosis", projectId: input.context.projectId, flowId: input.context.flowId,
@@ -407,7 +397,9 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   });
   emitAutomationStudioActivityThought({ phase: "repairing", title: "Working out what went wrong", text: result.response?.kind === "diagnosis" ? result.response.summary : undefined, max: 480 });
   // Stage B: the plan decides whether a patch is asked for at all, from the structured diagnosis and the policy, with no provider call.
-  const plannedBeforeLooking = planAutomationStudioRuntimeRecovery({ ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}), result, policy: input.context.policy });
+  // Held in place, the plan also offers a handler and a unit's replacement (C6 step 8).
+  const inRunRepair = Boolean(input.inRun);
+  const plannedBeforeLooking = planAutomationStudioRuntimeRecovery({ ...(invocation.diagnosis ? { deterministic: invocation.diagnosis } : {}), result, policy: input.context.policy, inRunRepair });
   const explicitProposalRun = intent === "diagnose_and_adapt";
   // A refusal the page could overturn is not the end of the plan stage. The
   // model said the step's result can no longer be reached, about a page it had
@@ -437,7 +429,7 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
     // patch that could follow adds one for itself.
     const reservedCalls = (refusalIsCheckable ? 1 : 0) + (patchCouldFollow ? 1 : 0);
     const patchReserve = scope && reservedCalls > 0
-      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall(), reservedCalls, ...(provider?.estimateCostUsd ? { estimateCostUsd: provider.estimateCostUsd.bind(provider) } : {}) })
+      ? holdAutomationStudioRecoveryPatchReserve({ runBudget, runId: input.detail.summary.runId, declaredCallsPerRun: purse.budget.declaredCallsPerRun, tokenLimits: requestedTokenLimits, maxEstimatedCostUsd: maxEstimatedCostUsdPerCall(), reservedCalls, ...(provider?.estimateCostUsd ? { estimateCostUsd: provider.estimateCostUsd.bind(provider) } : {}) })
       : undefined;
     try {
       explorationResult = scope ? await runAutomationStudioRecoveryExploration({
@@ -534,7 +526,8 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
         ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
         now
       },
-      ...(executionPurpose.executionPurpose ? { metadata: executionPurpose } : {})
+      ...(executionPurpose.executionPurpose ? { metadata: executionPurpose } : {}),
+      inRunRepair
     })
     : undefined;
   const plan = replan?.plan ?? plannedBeforeLooking;
@@ -598,6 +591,10 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
       ...(input.graphOptions?.signal ? { signal: input.graphOptions.signal } : {}),
       expectedOutput: "runtime_patch",
       now,
+      // Held in place, the request is held to the incident's unit: its
+      // contract, the incident, and what the run already tried and did. The
+      // slot brings the instruction that explains it.
+      ...(input.inRun ? { inRunRepair: input.inRun.slot } : {}),
       // The kinds this plan may ask for, so the provider offers the model those
       // and no others. It was shown all five and wrote kinds the plan refused
       // (t193 wK, C3): a patch the model is never shown cannot be one it wastes the call on.
@@ -617,7 +614,18 @@ export async function annotateAutomationStudioRunDetailWithRuntimeLlm(
   const patchFailureCode = patchResult && !patchResult.ok
     ? patchResult.diagnostics.find((diagnostic) => diagnostic.severity === "error")?.code ?? "llm.runtime_patch_failed"
     : undefined;
-  const applied = patchResult?.response?.kind === "runtime_patch" && input.runtimeFlow && input.failedTraceAttempt
+  // Held in place, the patches are overlaid on the held run and the executor's
+  // re-attempt is their trial; otherwise each is tried on a clone of the Flow.
+  const applied = patchResult?.response?.kind === "runtime_patch" && input.runtimeFlow && input.failedTraceAttempt && input.inRun
+    ? await input.inRun.apply({
+      patches: patchResult.response.patches,
+      allowedPatchKinds: plan.allowedPatchKinds,
+      ...(failureEvidence ? { failureEvidence } : {}),
+      ...(patchResult.request.context.explorationEvidence ? { explorationEvidence: patchResult.request.context.explorationEvidence } : {}),
+      ...(reusableContextResult ? { reusableContextMetadata: reusableContextResult.metadata } : {}),
+      ...(permissions ? { permissionGate: permissions.gate } : {})
+    })
+    : patchResult?.response?.kind === "runtime_patch" && input.runtimeFlow && input.failedTraceAttempt
     ? await applyAutomationStudioRuntimeRecoveryPatches({
       ports,
       context: input.context,
@@ -737,9 +745,6 @@ function intentSkipReason(plan: { allowedPatchKinds: readonly string[]; diagnosi
   }
   return undefined;
 }
-
-/** Why a recovery with nothing left of its repair's purse asked no model: the run ledger's own code for a total that cannot take another call. */
-const RECOVERY_COST_BOUND_CODE: Extract<AutomationStudioLlmRunBudgetDiagnostic["code"], "llm_budget.run_cost_limit"> = "llm_budget.run_cost_limit";
 
 /** A configured string, or the fallback when the setting is absent or blank. */
 function settingString(value: unknown, fallback: string): string {

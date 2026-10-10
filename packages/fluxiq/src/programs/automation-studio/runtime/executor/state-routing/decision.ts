@@ -7,9 +7,11 @@ import {
   observeAutomationStudioRouteState
 } from "../../route-state/passive/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioFactEvaluationContext } from "../../host-runtime.ts";
 import { chooseAutomationStudioEdge } from "../graph-navigation.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioStateRouteDirection } from "../contracts.ts";
 import { automationStudioAbsentStepSkip } from "../step-skip/index.ts";
+import { automationStudioStateRouteFactGate, type AutomationStudioStateRouteFactRefusal } from "./checkpoint-facts.ts";
 import { AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT, automationStudioRunProgressMark, type AutomationStudioStateRouteGuard } from "./progress-guard.ts";
 import { automationStudioRankStateRoutes, type AutomationStudioRankedStateRoute, type AutomationStudioStateRouteMatch } from "./ranking.ts";
 import type { AutomationStudioGuardedStateRoutingRecord, AutomationStudioStateRouteRefusal } from "./refusal.ts";
@@ -70,12 +72,20 @@ export type AutomationStudioStateRouteInput = {
  *    effect still stands) or it recorded none (nothing shows the effect is
  *    gone). The failing node is never a candidate: its target is missing.
  * 5. The matches are ranked (`ranking.ts`), and the best one no safety guard
- *    refuses is admitted by the progress guard (C6, "Safe state routing"). A
+ *    refuses is admitted by the progress guard (C6, "Safe state routing").
+ *    First the page's facts, asked of the host in one batched call for every
+ *    match that has any (`checkpoint-facts.ts`): when the graph declares
+ *    recovery checkpoints, only a checkpoint whose `when` all answers `true`
+ *    qualifies; when it declares none, a match whose `readyState` is written
+ *    as fact conditions qualifies only when they all answer `true`. Then a
  *    forward route is refused when it passes over a step whose value a step on
  *    its path reads and nothing in the run has set (`skipped-values.ts`); a
  *    backward route when it would run a completed lasting act again
  *    (`repeated-act.ts`). A refused match is dropped and the next one tried;
  *    with none left the decision is `none` and the ladder runs.
+ *
+ * The route in 3 is not gated by checkpoints or ready states: it goes on along
+ * the failing step's own success edge, as if the step had run.
  */
 export async function decideAutomationStudioStateRoute(input: AutomationStudioStateRouteInput): Promise<AutomationStudioStateRouteDecision> {
   const declared = automationStudioAbsentStepSkip(input.flow, input.node, input.attempt);
@@ -109,7 +119,9 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
     }
     matches.push({ node, closeness: before.closeness });
   }
-  const chosen = firstAllowed(input, automationStudioRankStateRoutes(input.flow, input.node.id, matches), observation.state);
+  const ranked = automationStudioRankStateRoutes(input.flow, input.node.id, matches);
+  const facts = await automationStudioStateRouteFactGate({ flow: input.flow, nodeIds: ranked.map((route) => route.node.id), hostRuntime, context: factContext(input) });
+  const chosen = firstAllowed(input, ranked, observation.state, facts.refused);
   refused.push(...chosen.refused.map((entry) => entry.refusal));
   const best = chosen.route;
   if (!best) {
@@ -166,19 +178,43 @@ function effectHolds(
 /** A way on a safety guard refused, with the sentence that says why. */
 type Refused = { refusal: AutomationStudioStateRouteRefusal; why: string };
 
-/** The best-ranked match no safety guard refuses, and every one refused before it. */
+/** The best-ranked match no safety guard refuses, and every one refused before it. The fact gate's refusals come first. */
 function firstAllowed(
   input: AutomationStudioStateRouteInput,
   ranked: readonly AutomationStudioRankedStateRoute[],
-  observed: JsonObject
+  observed: JsonObject,
+  factRefused: ReadonlyMap<string, AutomationStudioStateRouteFactRefusal>
 ): { route?: AutomationStudioRankedStateRoute; refused: Refused[] } {
   const refused: Refused[] = [];
   for (const route of ranked) {
-    const refusal = route.direction === "forward" ? unboundRefusal(input, route.node.id) : repeatRefusal(input, route.node.id, observed);
+    const fact = factRefused.get(route.node.id);
+    const refusal = fact
+      ? factRefusal(route.node.id, fact)
+      : route.direction === "forward"
+        ? unboundRefusal(input, route.node.id)
+        : repeatRefusal(input, route.node.id, observed);
     if (!refusal) return { route, refused };
     refused.push(refusal);
   }
   return { refused };
+}
+
+/** The fact gate's refusal of `toNodeId`, with its sentence. */
+function factRefusal(toNodeId: string, fact: AutomationStudioStateRouteFactRefusal): Refused {
+  const refusal = { toNodeId, guard: fact.guard, nodeId: toNodeId };
+  if (fact.guard === "not_checkpoint") return { refusal, why: `Node ${toNodeId} is not a recovery checkpoint, and this Subflow lets a run go on only at its checkpoints.` };
+  const answered = fact.truth === "false" ? "did not all hold" : "could not all be shown to hold";
+  const what = fact.guard === "checkpoint_when_not_true" ? `the conditions of checkpoint node ${toNodeId}` : `the ready state of node ${toNodeId}`;
+  return { refusal, why: `On this page ${what} ${answered}.` };
+}
+
+/** What the host is told when asked the routing decision's facts: the run's inputs, the step that could not run, and the run's signal. */
+function factContext(input: AutomationStudioStateRouteInput): AutomationStudioFactEvaluationContext {
+  return {
+    nodeId: input.node.id,
+    ...(input.options.inputs ? { inputs: input.options.inputs } : {}),
+    ...(input.options.signal ? { signal: input.options.signal } : {})
+  };
 }
 
 /** The first guard, for a forward route into `toNodeId`. */

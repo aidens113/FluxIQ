@@ -1,7 +1,10 @@
 import type { JsonValue } from "../../../../core/index.ts";
 import { getCallFlowConfiguration, validateFlowComposition, type AutomationStudioFlowArtifact, type AutomationStudioPublishedFlowSnapshot } from "../../model/index.ts";
 import { runAutomationStudioGraph, type AutomationStudioGraphExecutionOptions, type AutomationStudioGraphExecutionTrace } from "../executor.ts";
+import { automationStudioChildInvocation, automationStudioRootInvocation, type AutomationStudioSubflowGraphRunner } from "../executor/frames/index.ts";
 import { compileAutomationStudioRegions } from "../region-compiler.ts";
+import { automationStudioCallAcrossBoundary } from "./boundary.ts";
+import { runAutomationStudioChildWithBounds } from "./child-bounds.ts";
 
 /**
  * Executes only immutable, version-pinned published snapshots.
@@ -45,44 +48,20 @@ export class AutomationStudioCanonicalExecution {
       if (!call) return undefined;
       const snapshot = byId.get(`${call.target.flowId}@${call.target.version}`);
       if (!snapshot) return { result: { status: "failed", route: "failed", effects: [] } };
-      // A composite is a real typed boundary: no ambient parent values cross it.
-      const childInputs: Record<string, JsonValue> = {};
-      const declaredInputDefaults: Record<string, JsonValue> = {};
-      for (const port of snapshot.interface.inputs) if (port.defaultValue !== undefined) childInputs[port.id] = declaredInputDefaults[port.id] = port.defaultValue;
-      for (const binding of call.inputBindings ?? []) {
-        const value = callInputs[binding.valueKey];
-        if (value !== undefined) childInputs[binding.targetPortId] = value;
-      }
-      const now = parentOptions.now?.() ?? Date.now();
-      const ownDeadline = snapshot.executionDefaults?.timeoutMs ? now + snapshot.executionDefaults.timeoutMs : undefined;
-      const deadlineAt = Math.min(parentOptions.deadlineAt ?? Number.POSITIVE_INFINITY, ownDeadline ?? Number.POSITIVE_INFINITY);
-      const boundedDeadline = Number.isFinite(deadlineAt) ? deadlineAt : undefined;
-      // A start node belongs to the graph that named it. A child Flow starts at
-      // its own start node, so a parent resuming mid-graph never sends its node
-      // id across the boundary, where nothing would match it and the child would
-      // fail with "No start node is available in this flow." A partial run's
-      // stop node is the root's too: a child node sharing its id runs on.
-      const { startNodeId: _parentStartNodeId, stopAfterNodeId: _parentStopAfterNodeId, ...childBase } = parentOptions;
-      // The child's defaults come from its published interface: authored, not supplied (`trace-withholding.ts`, `supply`).
-      const childOptions: AutomationStudioGraphExecutionOptions = { ...childBase, declaredInputDefaults, ...(boundedDeadline !== undefined ? { deadlineAt: boundedDeadline } : {}) };
-      const maxAttempts = Math.max(1, Number((node.parameterValues?.retry as { maxAttempts?: unknown } | undefined)?.maxAttempts ?? 1));
-      let childTrace: AutomationStudioGraphExecutionTrace = { status: "failed", startedAt: now, finishedAt: now, attempts: [], values: {}, effects: [], message: "Child Flow did not execute." };
-      for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        await parentOptions.commandRun?.checkpoint();
-        childTrace = await runChildWithBounds((signal) => runSnapshot(snapshot, childInputs, stack, { ...childOptions, signal }), boundedDeadline, parentOptions.signal, parentOptions.now, parentOptions.commandRun);
-        await parentOptions.commandRun?.checkpoint();
-        if (childTrace.status === "succeeded" || childTrace.status === "waiting" || childTrace.status === "cancelled") break;
-      }
-      // The parent executes with what its child executed with. The attempt keeps
-      // the child's saved trace.
-      await parentOptions.commandRun?.checkpoint();
-      const executedChild = executedTrace(childTrace);
-      const outputs: Record<string, JsonValue> = {};
-      for (const port of snapshot.interface.outputs) outputs[port.id] = executedChild.values[port.id] ?? null;
-      for (const binding of call.outputBindings ?? []) outputs[binding.valueKey] = executedChild.values[binding.targetPortId] ?? null;
-      const errorBinding = childTrace.status === "failed" ? call.errorBindings?.find((binding) => snapshot.errors.some((error) => error.id === binding.targetPortId)) : undefined;
-      if (errorBinding) outputs[errorBinding.valueKey] = executedChild.message ?? `Child Flow ${snapshot.flowId}@${snapshot.version} failed.`;
-      return { result: { status: childTrace.status === "succeeded" ? "success" : childTrace.status === "waiting" ? "waiting" : "failed", route: childTrace.status === "succeeded" ? "success" : errorBinding ? `error.${errorBinding.targetPortId}` : "failed", outputs }, childTrace, compositeTarget: { flowId: snapshot.flowId, version: snapshot.version, flowDigest: snapshot.flowDigest } };
+      const { target: _target, ...bindings } = call;
+      const crossed = await automationStudioCallAcrossBoundary({
+        contract: snapshot,
+        bindings,
+        callInputs,
+        parentOptions,
+        maxAttempts: Math.max(1, Number((node.parameterValues?.retry as { maxAttempts?: unknown } | undefined)?.maxAttempts ?? 1)),
+        // A Call Flow child is a frame of the run too, of no Subflow (C1).
+        frame: (childInputs) => automationStudioChildInvocation(parentOptions.invocation, { callNodeId: node.id, subflowId: null, graph: snapshot, graphRevision: null, inputs: childInputs }),
+        runChild: (childOptions) => runSnapshot(snapshot, childOptions.inputs ?? {}, stack, childOptions),
+        executedTrace,
+        failedMessage: `Child Flow ${snapshot.flowId}@${snapshot.version} failed.`
+      });
+      return { ...crossed, compositeTarget: { flowId: snapshot.flowId, version: snapshot.version, flowDigest: snapshot.flowDigest } };
     };
     this.registered.add(compositeExecutor);
     return runAutomationStudioGraph({ schemaVersion: "0.1", flowId: document.flowId, ownerKind: "routine", ownerId: document.flowId, name: document.name, nodes: document.nodes, edges: document.edges, createdAt: 0, updatedAt: 0 }, {
@@ -92,28 +71,25 @@ export class AutomationStudioCanonicalExecution {
     regionRuntime: compiled.plan
   }, (executed, saved) => { executedTraces.set(saved, executed); });
   };
+  // A Subflow a Call Subflow node calls runs as the root's graphs do: its own
+  // regions compiled, its own Call Flow nodes run against the same snapshots.
+  // The trace it executed is read back as a Call Flow child's is.
+  const runSubflow: AutomationStudioSubflowGraphRunner = async (target, childOptions, onExecuted) => {
+    const saved = await runDocument(target.artifact ?? target.graph, childOptions.inputs ?? {}, [`${target.graph.flowId}@subflow`], childOptions);
+    onExecuted(executedTrace(saved), saved);
+    return saved;
+  };
+  this.registered.add(runSubflow);
   const startedAt = options.now?.() ?? Date.now();
   const ownDeadline = flow.executionDefaults?.timeoutMs ? startedAt + flow.executionDefaults.timeoutMs : undefined;
   const deadlineAt = Math.min(options.deadlineAt ?? Number.POSITIVE_INFINITY, ownDeadline ?? Number.POSITIVE_INFINITY);
-  const rootOptions: AutomationStudioGraphExecutionOptions = { ...options, ...(Number.isFinite(deadlineAt) ? { deadlineAt } : {}) };
-  const trace = await runChildWithBounds((signal) => runDocument(flow, options.inputs ?? {}, [`${flow.flowId}@draft`], { ...rootOptions, signal }), Number.isFinite(deadlineAt) ? deadlineAt : undefined, options.signal, options.now, options.commandRun);
+  // The run's root frame and the holder its frames share, unless a caller framed it already (C1).
+  const invocation = options.invocation ?? automationStudioRootInvocation(flow, options, runSubflow);
+  const rootOptions: AutomationStudioGraphExecutionOptions = { ...options, invocation, ...(Number.isFinite(deadlineAt) ? { deadlineAt } : {}) };
+  const trace = await runAutomationStudioChildWithBounds((signal) => runDocument(flow, options.inputs ?? {}, [`${flow.flowId}@draft`], { ...rootOptions, signal }), Number.isFinite(deadlineAt) ? deadlineAt : undefined, options.signal, options.now, options.commandRun);
   await options.commandRun?.checkpoint();
   onExecutedTrace?.(executedTrace(trace), trace);
   return trace;
 }
 
-}
-
-async function runChildWithBounds(run: (signal: AbortSignal) => Promise<AutomationStudioGraphExecutionTrace>, deadlineAt?: number, signal?: AbortSignal, now: () => number = Date.now, commandRun?: AutomationStudioGraphExecutionOptions["commandRun"]): Promise<AutomationStudioGraphExecutionTrace> {
-  const startedAt = now();
-  if (signal?.aborted) { await commandRun?.stop("executor.composite_cancelled"); return { status: "cancelled", startedAt, finishedAt: now(), attempts: [], values: {}, effects: [], message: "Run cancelled." }; }
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let abortListener: (() => void) | undefined;
-  const stop = async () => { await commandRun?.stop("executor.composite_stopped"); };
-  const bounds: Array<Promise<AutomationStudioGraphExecutionTrace>> = [];
-  if (deadlineAt !== undefined) bounds.push(new Promise((resolve, reject) => { timer = setTimeout(() => { controller.abort(new Error("Flow execution deadline exceeded.")); void stop().then(() => resolve({ status: "failed", startedAt, finishedAt: now(), attempts: [], values: {}, effects: [], message: "Flow execution deadline exceeded." }), reject); }, Math.max(0, deadlineAt - now())); }));
-  if (signal) bounds.push(new Promise((resolve, reject) => { abortListener = () => { controller.abort(signal.reason); void stop().then(() => resolve({ status: "cancelled", startedAt, finishedAt: now(), attempts: [], values: {}, effects: [], message: "Run cancelled." }), reject); }; signal.addEventListener("abort", abortListener, { once: true }); }));
-  try { const start = () => run(controller.signal); const running = commandRun ? commandRun.own(start) : start(); return bounds.length ? await Promise.race([running, ...bounds]) : await running; }
-  finally { if (timer) clearTimeout(timer); if (signal && abortListener) signal.removeEventListener("abort", abortListener); }
 }

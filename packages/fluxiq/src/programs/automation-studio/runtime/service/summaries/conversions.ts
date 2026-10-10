@@ -17,31 +17,17 @@ import { automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithF
 import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure } from "../../adaptive-orchestrator.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import type { AutomationStudioInstructionSummary } from "../indexes/index.ts";
-import { automationStudioDecisionAppliedAutomatically, automationStudioRunChangedDurableBehavior } from "../../durable-behavior/index.ts";
-import { compactJsonObject } from "../compact-json.ts";
+import { automationStudioRunChangedDurableBehavior } from "../../durable-behavior/index.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { extractionSummaryFromOutputs } from "./extraction-summary.ts";
+import { automationStudioRunFailureCounts } from "./failure-counts.ts";
 import { hostTargetResolutionFromOutputs } from "./host-target-resolution.ts";
+import { automationStudioRunDetailRecoveryTrace } from "./recovery-trace.ts";
 import { automationStudioRunDetailStateRouting } from "./state-routing.ts";
 
 // Converting a runtime session into the run detail, summaries and intervention
 // records that the summary indexes and the public run views are built from.
 export const SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY = 16;
-
-export function adaptiveRuntimeMetricsFromRunDetail(detail: AutomationStudioFlowRunDetail): JsonObject {
-  const runtimePatchAttempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
-  const durableBehaviorChanged = runtimePatchAttempts.some((attempt) => automationStudioDecisionAppliedAutomatically(attempt.approvalDecision));
-  const tokenUsage = detail.summary.tokenUsage ?? flowRunSummaryWithInterventionSummaries(detail).tokenUsage;
-  return compactJsonObject({
-    llmCallCount: detail.interventions.filter((intervention) => intervention.provider || intervention.promptVersion || intervention.kind === "diagnosis" || intervention.kind === "runtime_patch").length,
-    tokenCount: tokenUsage?.totalTokens ?? 0,
-    estimatedCostUsd: tokenUsage?.estimatedCostUsd ?? 0,
-    recoveryAttemptCount: detail.recoveryAttempts?.length ?? 0,
-    adaptationApplyCount: durableBehaviorChanged ? 1 : 0,
-    durableBehaviorChanged,
-    deterministicSuccessAfterAdaptation: detail.metadata?.adaptiveRetry && isJsonRecord(detail.metadata.adaptiveRetry) ? detail.metadata.adaptiveRetry.status === "succeeded" : false
-  });
-}
 
 export function flowRunSummaryWithInterventionSummaries(detail: AutomationStudioFlowRunDetail): AutomationStudioFlowRunSummary {
   type TokenUsageSummary = NonNullable<AutomationStudioFlowRunSummary["tokenUsage"]>;
@@ -101,6 +87,8 @@ export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSe
   const recoveryAttempts = runtimeRecoveryAttemptsFromSession(session);
   const interventions = runtimeInterventionsFromRecoveryAttempts(session, recoveryAttempts);
   const terminalFailureReason = runtimeTerminalFailureReason(session, recoveryAttempts);
+  // The run's lifecycle handler executions, which the root frame's trace carries (`executor/step-loop/lifecycle-trace.ts`).
+  const handlerExecutions = session.trace?.handlerExecutions;
   return {
     schemaVersion: "0.1",
     summary: runtimeFlowRunSummaryFromSession(session, projectId),
@@ -109,6 +97,9 @@ export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSe
     subflows: [],
     actionAttempts,
     recoveryAttempts,
+    ...(handlerExecutions?.length ? { handlerExecutions: handlerExecutions.map((record) => ({ ...record, framePath: [...record.framePath] })) } : {}),
+    // Retries, planned fails and true failures, from the run's recovery incidents and in-run repairs, for every run (`failure-counts.ts`).
+    failureCounts: automationStudioRunFailureCounts(session.trace?.incidents, session.trace?.repairs),
     interventions,
     adaptationIds: [],
     changeProposalIds: [],
@@ -171,6 +162,8 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
     const hostTargetResolution = hostTargetResolutionFromOutputs(attempt.outputs);
     const extraction = extractionSummaryFromOutputs(attempt.outputs);
     const stateRouting = automationStudioRunDetailStateRouting(attempt, failure?.code);
+    // The frames, failure class, frame entry and handler of state-aware recovery, as ids and closed codes (`recovery-trace.ts`).
+    const recoveryTrace = automationStudioRunDetailRecoveryTrace(attempt);
     // A step whose state already held reads as done, with its failure kept (`flow-change/attempt-projection.ts`).
     const settled = automationStudioAttemptSettled(attempt);
     return {
@@ -199,6 +192,7 @@ function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSessio
       // routing found no way on otherwise reads like one that never consulted
       // it (`state-routing.ts`).
       ...(stateRouting ? { stateRouting } : {}),
+      ...recoveryTrace,
       ...(attempt.stateHeld && attempt.status === "failed" ? { stateHeld: { rung: attempt.stateHeld.rung } } : {}),
       metadata: {
         ...(attempt.regionId ? { regionId: attempt.regionId } : {}),
@@ -290,6 +284,7 @@ function runtimeFlowRunSummaryFromSession(session: AutomationStudioRuntimeSessio
     actionAttemptCount: session.trace?.attempts?.length ?? 0,
     interventionCount,
     adaptationCount: 0,
+    failureCounts: automationStudioRunFailureCounts(session.trace?.incidents, session.trace?.repairs),
     metadata: {
       compatibilitySource: "runtime-session",
       targetKind: session.targetKind,

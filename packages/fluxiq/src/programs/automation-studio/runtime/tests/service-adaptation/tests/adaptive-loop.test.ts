@@ -12,7 +12,8 @@ import { getPrimarySubflowGraph, installPrimaryRouter, adaptiveTrainingMetadata 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
-const GATE_REASON = "An adaptation whose trial succeeded is applied once a whole run from the Flow's start, which ran it, is judged to answer.";
+/** The gate's reason for a fix decided before its re-attempt: the judged run is its evidence. */
+const JUDGED_RUN_REASON = "A change whose trial proved nothing either way is applied only once a whole run from the Flow's start, which ran it, is judged to answer: that judged run is its evidence.";
 
 let tempRoot: string;
 
@@ -22,6 +23,41 @@ function createService(...args: ConstructorParameters<typeof AutomationStudioSer
   const service = new AutomationStudioService(...args);
   services.add(service);
   return service;
+}
+
+/** A domain node that fails until it runs with a retry setting of 2. */
+function driftRuntime(): AutomationStudioNativeNodeRuntime {
+  const manifest: AutomationStudioImporterSdkManifest = {
+    schemaVersion: "0.1",
+    sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION,
+    packageId: "example.adaptive",
+    packageVersion: "1.0.0",
+    domainId: "example",
+    nodes: [{
+      schemaVersion: "0.1",
+      id: "example.drift-action",
+      version: "1.0.0",
+      label: "Drift Action",
+      description: "Fails until a retry parameter is durably learned.",
+      category: "custom",
+      source: { kind: "importer", domainId: "example", packageId: "example.adaptive", implementationKey: "drift" },
+      availability: { kind: "domain", domainId: "example" },
+      capabilities: { executable: true, retryable: true, stateAware: true },
+      requiredRuntimeCapabilities: ["example.host"],
+      inputs: [],
+      outputs: [{ id: "done", label: "Done", valueType: "boolean" }],
+      parameters: []
+    }]
+  };
+  return new AutomationStudioNativeNodeRuntime({ runtimeCapabilities: ["example.host"] }).register(manifest, {
+    packageId: "example.adaptive",
+    packageVersion: "1.0.0",
+    implementations: {
+      drift: ({ parameters }) => parameters.retryCount === 2
+        ? { status: "success", route: "success", outputs: { done: true } }
+        : { status: "failed", route: "failed", outputs: { error: "Target drift was not recovered." } }
+    }
+  });
 }
 
 describe("AutomationStudioService recording persistence", () => {
@@ -36,9 +72,11 @@ describe("AutomationStudioService recording persistence", () => {
   });
 
   // Since t249 a patch the gate allows unattended is held until a whole run that
-  // ran it is judged to answer. This run resumed on the candidate and finished,
-  // but nothing judged its result, so the patch stays unapplied with why.
-  it("allows a validated low-risk runtime adaptation unattended, and leaves it unapplied when nothing judged the run that ran it", async () => {
+  // ran it is judged to answer. In the run (C6 step 8) the fix is held at the
+  // failing step and decided on there, before its re-attempt, so the decision
+  // rests on the judged run; the re-attempt that passes validates it. This run
+  // finished, but nothing judged its result, so the fix stays unapplied with why.
+  it("allows a low-risk fix held in the run unattended, validates it by its re-attempt, and leaves it unapplied when nothing judged the run that ran it", async () => {
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
@@ -50,29 +88,28 @@ describe("AutomationStudioService recording persistence", () => {
               kind: "runtime_patch",
               summary: "Retry after state settles.",
               riskLevel: "low",
-              patches: [{ kind: "temporary_wait_retry", targetNodeId: "constant", retryCount: 2, timeoutMs: 250, reason: "Retry the stable constant node." }]
+              patches: [{ kind: "temporary_wait_retry", targetNodeId: "drift", retryCount: 2, timeoutMs: 250, reason: "Retry the drift action once the state settles." }]
             },
             usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.002 }
           }
           : {
-            response: { kind: "diagnosis", summary: "The divide node failed, but a deterministic retry candidate exists." },
+            response: { kind: "diagnosis", summary: "The drift action failed, but a deterministic retry candidate exists." },
             usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 }
           }
       })
-    });
-    const project = await service.createProject({ name: "Runtime auto promote" });
+    }).bindNativeNodeRuntime(driftRuntime());
+    const project = await service.createProject({ name: "Runtime auto promote", domainId: "example" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.runtime-auto-promote", name: "Runtime auto promote Flow" });
     await service.saveFlow({ projectId: project.id, flow: { ...flow, metadata: { ...(flow.metadata ?? {}), ...adaptiveTrainingMetadata() } } });
     await installPrimaryRouter(service, project.id, flow.flowId, {
         nodes: [
           { id: "start", definitionId: "builtin.control.start", parameterValues: {} },
-          { id: "divide", definitionId: "builtin.math.divide", parameterValues: { expectedOutputs: { value: "ok" } } }, // The failed node declares what it was expected to produce; without that the rerun proves nothing and nothing is auto-applied.
-          { id: "constant", definitionId: "builtin.data.constant", parameterValues: { value: "ok" } },
+          { id: "drift", definitionId: "example.drift-action", parameterValues: { expectedOutputs: { done: true } } }, // The failed node declares what it was expected to produce; its re-attempt is matched against it.
           { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
         ],
         edges: [
-          { id: "start.divide", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "divide", targetPortId: "in" },
-          { id: "constant.end", sourceNodeId: "constant", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
+          { id: "start.drift", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "drift", targetPortId: "in" },
+          { id: "drift.end", sourceNodeId: "drift", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
         ]
     });
 
@@ -80,15 +117,18 @@ describe("AutomationStudioService recording persistence", () => {
     const detail = await service.getFlowRunDetail(project.id, run.runId);
     const adaptation = await service.getFlowAdaptation(project.id, flow.flowId, detail!.adaptationIds[0]!);
 
+    expect(run.status).toBe("succeeded");
+    expect(run.trace?.repairs).toHaveLength(1);
     expect(adaptation).toMatchObject({
       status: "validated",
-      patch: [{ kind: "edit_expectation", targetId: "constant" }],
+      patch: [{ kind: "edit_expectation", targetId: "drift" }],
+      validationResults: [{ runId: run.runId, status: "succeeded", kind: "trial", basis: ["in_run_trial"] }],
       metadata: {
         approvalDecision: {
           autoApply: true,
           requiresManualApproval: false,
-          reason: GATE_REASON,
-          confidence: "provisional",
+          reason: JUDGED_RUN_REASON,
+          confidence: "unverified",
           applyAt: "judged_whole_run",
           applied: false,
           notAppliedReason: "not_judged",
@@ -97,10 +137,9 @@ describe("AutomationStudioService recording persistence", () => {
       }
     });
     expect(adaptation?.metadata).not.toHaveProperty("applicationRecord");
-    await expect(getPrimarySubflowGraph(service, project.id, flow.flowId)).resolves.toMatchObject({
-      nodes: expect.arrayContaining([expect.objectContaining({ id: "constant", parameterValues: { value: "ok" } })])
-    });
-    expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
+    const stored = await getPrimarySubflowGraph(service, project.id, flow.flowId);
+    expect(stored.nodes.find((node) => node.id === "drift")?.parameterValues).not.toHaveProperty("retryCount");
+    expect(detail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({
       kind: "temporary_wait_retry",
       approvalDecision: expect.objectContaining({ autoApply: true, applied: false, notAppliedReason: "not_judged" })
     })]);
@@ -120,37 +159,6 @@ describe("AutomationStudioService recording persistence", () => {
         return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: { answersRequest: "yes" } }, usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.0015 } };
       }
     };
-    const manifest: AutomationStudioImporterSdkManifest = {
-      schemaVersion: "0.1",
-      sdkVersion: AUTOMATION_STUDIO_IMPORTER_SDK_VERSION,
-      packageId: "example.adaptive",
-      packageVersion: "1.0.0",
-      domainId: "example",
-      nodes: [{
-        schemaVersion: "0.1",
-        id: "example.drift-action",
-        version: "1.0.0",
-        label: "Drift Action",
-        description: "Fails until a retry parameter is durably learned.",
-        category: "custom",
-        source: { kind: "importer", domainId: "example", packageId: "example.adaptive", implementationKey: "drift" },
-        availability: { kind: "domain", domainId: "example" },
-        capabilities: { executable: true, retryable: true, stateAware: true },
-        requiredRuntimeCapabilities: ["example.host"],
-        inputs: [],
-        outputs: [{ id: "done", label: "Done", valueType: "boolean" }],
-        parameters: []
-      }]
-    };
-    const nativeRuntime = new AutomationStudioNativeNodeRuntime({ runtimeCapabilities: ["example.host"] }).register(manifest, {
-      packageId: "example.adaptive",
-      packageVersion: "1.0.0",
-      implementations: {
-        drift: ({ parameters }) => parameters.retryCount === 2
-          ? { status: "success", route: "success", outputs: { done: true } }
-          : { status: "failed", route: "failed", outputs: { error: "Target drift was not recovered." } }
-      }
-    });
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
@@ -175,7 +183,7 @@ describe("AutomationStudioService recording persistence", () => {
         }
       }),
       resultCheckProviderResolver: (request) => ({ provider: judge, maxEstimatedCostUsd: request.maxEstimatedCostUsd })
-    }).bindNativeNodeRuntime(nativeRuntime);
+    }).bindNativeNodeRuntime(driftRuntime());
     const project = await service.createProject({ name: "Adaptive Loop", domainId: "example" });
     const flow = await service.createFlow({ projectId: project.id, flowId: "flow.adaptive-loop", name: "Adaptive Loop Flow" });
     const base = adaptiveTrainingMetadata();
@@ -206,12 +214,10 @@ describe("AutomationStudioService recording persistence", () => {
     expect(first.status).toBe("succeeded");
     expect(first.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
     expect(judgeCalls).toEqual(["loop_verification"]);
-    expect(firstDetail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded", candidateAdaptationIds: firstDetail?.adaptationIds } });
-    expect(firstDetail?.metadata?.adaptiveMetrics).toMatchObject({
-      durableBehaviorChanged: true,
-      deterministicSuccessAfterAdaptation: true,
-      adaptationApplyCount: 1
-    });
+    // The fix was held at the failing step and the run carried on there (C6 step 8).
+    expect(firstDetail?.metadata).not.toHaveProperty("adaptiveRetry");
+    expect(firstDetail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({ repairId: first.trace?.repairs?.[0], adaptationId: firstDetail?.adaptationIds[0] })]);
+    // The run's metrics do not yet count an in-run fix: pinned in `./judged-promotion.test.ts`.
     // The diagnosis, the patch request, and the result check that judged the repaired run.
     expect(firstDetail?.interventions.map((intervention) => intervention.kind)).toEqual(["diagnosis", "diagnosis", "runtime_patch", "diagnosis"]);
     expect(firstDetail?.adaptationIds).toHaveLength(1);

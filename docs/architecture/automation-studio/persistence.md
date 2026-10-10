@@ -414,6 +414,11 @@ existing scroll coordinate, and virtualize rendered rows.
 both abort signals and generation checks so obsolete pages or details cannot
 replace the active run.
 
+A run's event stream holds the kinds `run_summary`, `route_decision`,
+`subflow_execution`, `action_attempt`, `recovery_attempt`,
+`handler_execution` (one lifecycle handler that ran, folded into the detail's
+`handlerExecutions` by `executionId`) and `intervention`.
+
 The migrations are additive. The full `get-flow-router` endpoint remains only
 for runtime execution, mutation internals, exports, and documented legacy
 compatibility; browser preload, list, settings, instruction, and readiness
@@ -472,6 +477,41 @@ Runtime runs accept idempotency keys so duplicate callers receive the same run
 record, and adaptive execution allows only one active adaptive run per project.
 `cancel-runtime-session` aborts an in-process executor signal when available
 and marks queued/running sessions cancelled in durable storage.
+
+A run left `running` by a process that is gone is ended the first time the
+service reads that project's runs (`runtime/service/runtime-session/orphaned-run-sweep.ts`).
+Only a run that started before this process did, and that no live executor of
+this service owns, is touched: a run this process started is never swept,
+because the same process losing track of something is not evidence that the
+process running it ended. The session ends `interrupted`, which is terminal
+and neither a failure nor a success (`runtime/service/runtime-session/terminal-status.ts`),
+so no reader that ends, lists, repairs, reruns or promotes runs takes it for
+either, with `metadata.interruption = { state: "interrupted",
+reason: "process_ended", at, sessionStatus: "running", lastingAct: "unknown",
+lastNodeId? }`, and the run detail carries the same `metadata.interruption`.
+A parked (`waiting`) run is durable by design and is not swept.
+
+An action result that arrives after Core stopped waiting for its command is
+kept on the run detail as `metadata.lateActionResults`, at most 20, oldest
+first out (`runtime/service/runtime-session/late-action-result.ts`): the
+command, how Core had ended it (`timed_out`, `uncertain`, `closed` or
+`settled`), the status the client reported and Core's reading of it, whether it
+was interrupted, the effect and failure code when the client's record states
+them, and times. No message, payload or target is kept. It is written under
+the run's session lock and merged like every other detail key.
+
+A run that repaired a true failure in place (state-aware recovery plan, C6
+step 8) keeps one receipt per fix it overlaid, and one per incident it asked
+about and got no fix for, as `metadata.inRunRepairs`
+(`runtime/service/runtime-adaptation/context.ts`): `repairId`, `incidentId`,
+the failing `nodeId` and `framePath`, the `unit`, `outcome` (`overlaid` or
+`none` with a closed `code` and a plain-words `reason`), for a fix its `kind`,
+`adaptationId`, `changeProposalId` and promotion `approvalDecision`, and what
+the run's in-run repairs had `spent` against the run's cost ceiling. Each fix's
+adaptation id is also in the detail's `adaptationIds`, and the judged end
+writes how it was settled onto its receipt
+(`runtime/service/runtime-adaptation/judged-promotion.ts`). No page data, run
+value or model text is kept.
 
 LLM harness invocations are persisted as run interventions. Each intervention
 stores the prompt version, provider/model metadata, instruction IDs, compact

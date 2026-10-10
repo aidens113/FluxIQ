@@ -26,6 +26,17 @@ describe("whether a run changed its Flow's durable behavior", () => {
     expect(automationStudioRunChangedDurableBehavior(detail(["a.one"], [{ adaptationId: "a.one", approvalDecision: { autoApply: true, applyAt: "judged_whole_run", applied: true } }]))).toBe(true);
   });
 
+  // C6 step 8: a fix the run held in place leaves its receipt on `inRunRepairs`,
+  // read as a detached patch's receipt is: a change once its judged end kept it.
+  it("reads a fix held in the run from its in-run receipt, once its judged end kept it", () => {
+    const inRun = (approvalDecision: JsonObject) => ({ adaptationIds: ["a.one"], metadata: { inRunRepairs: [{ repairId: "repair.one", adaptationId: "a.one", outcome: "overlaid", approvalDecision }] } as JsonObject });
+
+    expect(automationStudioRunChangedDurableBehavior(inRun({ autoApply: true, applyAt: "judged_whole_run", applied: false }))).toBe(false);
+    expect(automationStudioRunChangedDurableBehavior(inRun({ autoApply: true, applyAt: "judged_whole_run", applied: false, notAppliedReason: "not_judged" }))).toBe(false);
+    expect(automationStudioRunChangedDurableBehavior(inRun({ autoApply: true, applyAt: "judged_whole_run", applied: true }))).toBe(true);
+    expect(automationStudioRunChangedDurableBehavior({ adaptationIds: ["a.one"], metadata: { inRunRepairs: "not a list" } as JsonObject })).toBe(false);
+  });
+
   it("is false for an adaptation that waits for review", () => {
     expect(automationStudioRunChangedDurableBehavior(detail(["a.one"], [{ adaptationId: "a.one", approvalDecision: { autoApply: false } }]))).toBe(false);
     expect(automationStudioRunChangedDurableBehavior(detail(["a.one"], [{ adaptationId: "a.one" }]))).toBe(false);

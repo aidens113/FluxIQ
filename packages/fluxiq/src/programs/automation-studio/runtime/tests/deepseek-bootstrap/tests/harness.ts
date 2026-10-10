@@ -116,7 +116,11 @@ export async function create(options: {
   });
   // Small per-call limits, so the run budgets these cases measure bind as they were calibrated. They were 8,000 / 2,000 /
   // 10,000; the whole node catalog rides in every request since 2026-09-30, and a request that size no longer holds it.
-  const tokenLimits = options.tokenLimits ?? { maxInputTokens: 20_000, maxOutputTokens: 2_000, maxTotalTokens: 22_000 };
+  // They stand in for a model's context window, the only bound a request has, and the catalog is never cut to fit one
+  // (`flow-bootstrap/plan/catalog.ts`). The size check counts the packed request, with every catalog entry whole, so a
+  // built-in node adds its whole entry to every call. At 20,000 a nineteen-call build had 135 tokens to spare, and Call
+  // Subflow's entry (t392, +162) refused its seventeenth call; the room left is several nodes', not one's.
+  const tokenLimits = options.tokenLimits ?? { maxInputTokens: 28_000, maxOutputTokens: 2_000, maxTotalTokens: 30_000 };
   // The host's resolver, with the per-call and run limits each case sets as
   // budget defaults on the resolution. Nothing is issued or checked first.
   service.bindLlmExecutionProvider((input) => {
