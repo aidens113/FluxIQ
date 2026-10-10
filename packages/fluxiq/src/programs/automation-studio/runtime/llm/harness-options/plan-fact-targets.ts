@@ -3,9 +3,10 @@
 // A script's `when:` and `done when:` lines become fact conditions (contract
 // C9, `../../flow-bootstrap/script-statements/fact-condition.ts`), and a fact
 // about a control names it as a step's target is named: by the handle the
-// evidence printed, `{ "handle": "t5" }`. They sit in five places:
+// evidence printed, `{ "handle": "t5" }`. They sit in six places:
 //
 //   a handler's `when` and `completionCheck`      node parameters
+//   a step's own `done when:` (t413)            node parameters, `expectedState.facts`
 //   an entry's `when` (`fluxiq.entry`)            node metadata
 //   a checkpoint's `when` (`fluxiq.checkpoint`)   node metadata
 //   a Subflow's success check                     Subflow metadata, `fluxiq.successCheck`
@@ -18,6 +19,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS } from "../../../nodes/control-flow/index.ts";
 import type { AutomationStudioFlowBootstrapPlan } from "../../flow-bootstrap/index.ts";
+import { AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY } from "../../executor/defensive/index.ts";
 import { automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
 
 /**
@@ -70,6 +72,10 @@ export function automationStudioPlanFactTargetSites(plan: AutomationStudioFlowBo
       if (node.definitionId === AUTOMATION_STUDIO_HANDLER_DEFINITION_ID) {
         for (const list of HANDLER_FACT_LISTS) collect(node.parameters?.[list], `${nodeAt}.parameters.${list}`, ref);
       }
+      // A step's own facts sit inside its parameters, and the domain resolving the step refuses a handle there as
+      // misplaced, so they are resolved here first, as a handler's are (`flow-bootstrap/script-statements/step-done-when.ts`).
+      const expectedState = node.parameters?.expectedState;
+      if (isObject(expectedState)) collect(expectedState[AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY], `${nodeAt}.parameters.expectedState.${AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY}`, ref);
       for (const key of [AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS.entry, AUTOMATION_STUDIO_SUBFLOW_CONTRACT_KEYS.checkpoint] as const) {
         collect(node.metadata?.[key]?.when, `${nodeAt}.metadata.${key}.when`, ref);
       }

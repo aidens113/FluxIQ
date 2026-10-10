@@ -396,6 +396,9 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
  * interruption guidance keeps t378's rule for one place -- `optional:` and
  * `only after:` -- and its pace rules, and adds the handler for an
  * interruption that can come at several places or at any pass of a loop.
+ * Since t413 one rule gives a committing step its own `done when:`, which
+ * becomes its node's expected state, so a press whose answer was lost is
+ * settled from the page rather than stopped as uncertain.
  *
  * No example is a Lab task (t378's rule): a city permit portal, a weather
  * network's station list and a meeting-room planner are sites and acts none of
@@ -408,6 +411,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
   "`start at: <step label>`, with its `when:` lines right after it, lets a block begin further on when the page already shows what that step needs: `start at: search` then `when: exists t4`. Otherwise the block starts at its first step, as always.",
   "`checkpoint: yes` on a step marks a place a handler may send the run back to.",
   "`done when: <fact>` in a part, or in a handler, says what the page shows once it worked: `done when: text t11 contains \"Booked\"`.",
+  "Give a step that commits something (a press, a submit, a choice) its own `done when:` right under its `step` line, before `node:`, so if its answer is lost the run checks the page instead of giving up: `done when: text t9 contains \"Saved\"`.",
   "A fact is `exists <handle>`, `absent <handle>`, `visible <handle>`, `enabled <handle>`, `text <handle> contains \"<words>\"` (or `is`, `matches`), `value <handle> is <value>` (a value may be `$input.<name>`), `count <handle> is <number>`, or `dialog <kind> \"<name>\"`, with `absent` after it when it should be gone. The handle is one the evidence printed, as on any step.",
   "A handler is what the run does when something it recognises gets in the way: `on <event> [for <step labels> | for this part | everywhere]: <the situation>`, then its `when:` facts, its steps, `then: <what next>` and `end`. Without `for`, it covers the block it is written in. Events: `before` a step is tried, `retry` before it is tried again, `fail` once it has failed, `start` as the part begins, `next` after it succeeded: `on retry for open: a notice covers the list`.",
   "`then: carry on` goes on with the step (never after `fail`); `then: go to <checkpoint step>` goes back to a checkpoint; `then: use <output> = <value>`, only after `fail`, stands in for the failed step's results; `then: give up` lets the failure stand. A `before` or `retry` handler needs `done when:`, unless its `when:` says something is showing, whose going away is the proof.",

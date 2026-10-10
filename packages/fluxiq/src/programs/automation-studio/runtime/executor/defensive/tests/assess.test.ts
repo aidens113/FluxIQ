@@ -2,7 +2,9 @@ import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowNode } from "../../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../contracts.ts";
-import { automationStudioAssessAttemptFault, automationStudioFaultFromResultMessage } from "../index.ts";
+import { EXPECTATION_REJECTED_FAILURE } from "../../../../nodes/policy/index.ts";
+import { compareAutomationStudioTransition } from "../../transition-comparison.ts";
+import { AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE, automationStudioAssessAttemptFault, automationStudioFaultFromResultMessage } from "../index.ts";
 
 function attempt(overrides: Partial<AutomationStudioNodeAttemptTrace> = {}): AutomationStudioNodeAttemptTrace {
   return {
@@ -193,5 +195,32 @@ describe("a delay stated in what the node returned", () => {
     const assessed = automationStudioAssessAttemptFault(attempt({ failure: TIMEOUT, outputs: { retryAfter: 2 } }), node(), 0);
 
     expect(assessed?.hintedWaitMs).toBe(2_000);
+  });
+});
+
+// t413: an act that answered success, then failed by the host's verdict on its expected state -- its step's own
+// `done when:` facts, or the evaluator's conditions -- as the transition comparison demotes it.
+describe("a press rejected by its expected state after it answered success", () => {
+  const webPress = (declaredConsequences: string[]) => node({ definitionId: "web.output.dom-click", metadata: { declaredConsequences } });
+  const demoted = (failure: AutomationStudioFailureRecord) => {
+    const succeeded = attempt({ status: "succeeded", route: "success" });
+    return attempt({ failure, transitionComparison: compareAutomationStudioTransition(webPress([]), succeeded, { passed: false, failure }) });
+  };
+
+  it.each([
+    ["its step's own facts", AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE],
+    ["the evaluator's conditions", EXPECTATION_REJECTED_FAILURE]
+  ])("refuses a lasting act rejected by %s, with no uncertain outcome to check: it happened, and is never made again", (_by, failure) => {
+    const assessed = automationStudioAssessAttemptFault(demoted({ ...failure }), webPress(["modify_existing"]));
+    expect(assessed).toMatchObject({ disposition: "refuse", stage: "verification", code: failure.code });
+    expect(assessed?.actUncertain).toBeUndefined();
+  });
+
+  it("retries a step that declared nothing lasting, as any verification failure on a web node", () => {
+    expect(automationStudioAssessAttemptFault(demoted({ ...AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE }), webPress([]))).toMatchObject({ disposition: "retry" });
+  });
+
+  it("leaves a lasting act's failure the host did not judge after a success to the uncertain-outcome rule", () => {
+    expect(automationStudioAssessAttemptFault(attempt({ failure: { ...EXPECTATION_REJECTED_FAILURE } }), webPress(["modify_existing"]))?.actUncertain).toBe(true);
   });
 });

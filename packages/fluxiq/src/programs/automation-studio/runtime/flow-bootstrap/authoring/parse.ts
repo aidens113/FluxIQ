@@ -26,13 +26,22 @@
 //   call: <part>                    on a step: run that part and wait for it
 //   start at: <step>  + when: ...   another step the block may start at
 //   checkpoint: yes                 on a step: a handler may bring the run back here
-//   done when: <fact>               what proves the block, or the handler, worked
+//   done when: <fact>               what proves the block, the handler, or one step, worked
 //   on <event> [for ...]: <words>   a handler, with its `when:` lines, its steps,
 //     ... then: <what next>         its `then:` line and its own `end`
 //
 // A handler is a block inside the block it is written in: its `end` returns
 // there, not to the main sequence. `when:` lines belong to the handler, to the
 // `start at:` above them, or else to the block, in that order.
+//
+// A `done when:` line belongs to one step when the step's own lines enclose
+// it (t413): another line of that step -- its `node:`, a value, `consequences:`
+// -- comes after it, as it does when it is written right under the step line.
+// Anywhere else -- before the block's first step, or after a step's last line,
+// with only `end`, a block statement or the next step after it -- it is the
+// block's, or the handler's, as it always was. Indentation still means
+// nothing: the order alone decides, so the part examples that end with `done
+// when:` keep their meaning.
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type {
   AutomationStudioFlowScript,
@@ -125,10 +134,17 @@ class ScriptReader {
   /** The `start at:` the next `when:` lines belong to, until a step, block or `end` starts. */
   private entry: AutomationStudioFlowScriptEntryPoint | undefined;
   private handlers = 0;
+  /**
+   * `done when:` lines written after a step line, not yet placed: they are
+   * the step's when another of its lines follows, and the block's when the
+   * step's lines end first (header).
+   */
+  private pendingDone: { step: AutomationStudioFlowScriptStep; block: AutomationStudioFlowScriptBlock; conditions: AutomationStudioFlowScriptCondition[] } | undefined;
 
   constructor(private readonly issues: AutomationStudioFlowBootstrapIssue[]) {}
 
   script(): AutomationStudioFlowScript {
+    this.settleDone(false);
     // A block with no step is dropped, as before, except a handler's, whose
     // `then:` alone may be all it does. A handler's parent is renumbered to the
     // blocks kept.
@@ -151,6 +167,7 @@ class ScriptReader {
     const trimmed = raw.trim();
     if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("//")) return;
     if (authoringKey(trimmed) === "end") {
+      this.settleDone(false);
       // A handler's `end` returns to the block it was written in.
       this.current = this.blocks[this.current]?.handler?.parent ?? 0;
       this.open = undefined;
@@ -165,19 +182,24 @@ class ScriptReader {
     const keyword = authoringKey(words[0] ?? "");
     const rest = words.slice(1).join(" ");
     const key = authoringKey(head);
+    if (DONE_WORDS.has(key)) return this.addDone(value, line);
+    const handlerEvent = keyword === "on" && rest !== "" && HANDLER_EVENTS.has(authoringKey(words[1] ?? "")) && !GO_TO.test(value);
+    const output = keyword === OUTPUT_WORD && !rest ? PART_OUTPUT.exec(value) : null;
+    // Every line below is either one of the current step's own, which keeps a
+    // `done when:` above it on that step, or a block's, which gives it to the block (header).
+    const blockLine = BLOCK_WORDS.has(keyword) || STEP_WORDS.has(keyword) || WHEN_WORDS.has(key) || UNLESS_WORDS.has(key) || handlerEvent
+      || START_AT_WORDS.has(key) || INPUT_WORDS.has(key) || output !== null || (keyword === "then" && !rest && this.blocks[this.current]?.handler !== undefined && DISPOSITION.test(value));
+    this.settleDone(!blockLine);
     if (BLOCK_WORDS.has(keyword)) return this.startBlock(rest, value, line);
     if (keyword === "then" && !rest && this.blocks[this.current]?.handler && DISPOSITION.test(value)) return this.setThen(value, line);
     if (STEP_WORDS.has(keyword)) return this.startStep(rest, value, line);
     if (WHEN_WORDS.has(key) || UNLESS_WORDS.has(key)) return this.addCondition(value, UNLESS_WORDS.has(key), line);
-    if (DONE_WORDS.has(key)) return this.addDone(value, line);
     if (keyword === "on" && rest) {
-      const event = authoringKey(words[1] ?? "");
-      if (HANDLER_EVENTS.has(event) && !GO_TO.test(value)) return this.startHandler(event as AutomationStudioFlowScriptHandler["event"], words.slice(2).join(" "), value, line);
+      if (handlerEvent) return this.startHandler(authoringKey(words[1] ?? "") as AutomationStudioFlowScriptHandler["event"], words.slice(2).join(" "), value, line);
       return this.branch(rest, value, line);
     }
     if (START_AT_WORDS.has(key)) return this.startAt(value, line);
     if (INPUT_WORDS.has(key)) return this.addInput(value, line);
-    const output = keyword === OUTPUT_WORD && !rest ? PART_OUTPUT.exec(value) : null;
     if (output) return this.addOutput(output[1]!, output[2]!, line);
     const step = this.currentStep();
     if (!step) {
@@ -235,9 +257,30 @@ class ScriptReader {
     this.open = undefined;
   }
 
+  /**
+   * A `done when:` line: the block's when no step has started, otherwise held
+   * until the next line says whose it is (header).
+   */
   private addDone(text: string, line: number): void {
-    (this.blocks[this.current]!.done ??= []).push({ text, line });
+    const block = this.blocks[this.current]!;
+    const step = this.currentStep();
+    const condition: AutomationStudioFlowScriptCondition = { text, line };
     this.open = undefined;
+    if (!step) {
+      (block.done ??= []).push(condition);
+      return;
+    }
+    if (this.pendingDone?.step !== step) this.settleDone(false);
+    (this.pendingDone ??= { step, block, conditions: [] }).conditions.push(condition);
+  }
+
+  /** Places the held `done when:` lines: on their step when one of its lines followed them, otherwise on its block. */
+  private settleDone(onStep: boolean): void {
+    const pending = this.pendingDone;
+    if (!pending) return;
+    this.pendingDone = undefined;
+    const owner = onStep ? pending.step : pending.block;
+    (owner.done ??= []).push(...pending.conditions);
   }
 
   private startAt(value: string, line: number): void {

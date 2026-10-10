@@ -1,9 +1,11 @@
 // What a Flow requires a runtime to support (t388, contract C10), read off
 // what each of its Subflows holds once the script is assembled: a handler
 // registration, a call to a part, or a fact the host must observe -- an
-// entry's or checkpoint's `when`, a handler's `when` or completion check, or a
-// success check. A Flow holding none declares nothing and runs as before.
+// entry's or checkpoint's `when`, a handler's `when` or completion check, a
+// success check, or a step's own `done when:` (t413, its node's expected
+// state). A Flow holding none declares nothing and runs as before.
 import type { JsonValue } from "../../../../../core/index.ts";
+import { AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY } from "../../executor/defensive/index.ts";
 import {
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_REQUIREMENTS,
   AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS,
@@ -17,10 +19,16 @@ export function automationStudioFlowBootstrapSubflowRequires(subflow: Automation
   const tested = (value: JsonValue | undefined) => Array.isArray(value) && value.length > 0;
   const facts = Boolean(subflow.metadata?.["fluxiq.successCheck"]?.length)
     || subflow.nodes.some((node) => Boolean(node.metadata?.["fluxiq.entry"]?.when.length || node.metadata?.["fluxiq.checkpoint"]?.when?.length)
-      || (node.definitionId === ids.handler && (tested(node.parameters?.when) || tested(node.parameters?.completionCheck))));
+      || (node.definitionId === ids.handler && (tested(node.parameters?.when) || tested(node.parameters?.completionCheck)))
+      || tested(factsOf(node.parameters?.expectedState)));
   return [
     ...(holds(ids.handler) ? [AUTOMATION_STUDIO_FLOW_BOOTSTRAP_REQUIREMENTS.handlers] : []),
     ...(holds(ids.callSubflow) ? [AUTOMATION_STUDIO_FLOW_BOOTSTRAP_REQUIREMENTS.subflowCalls] : []),
     ...(facts ? [AUTOMATION_STUDIO_FLOW_BOOTSTRAP_REQUIREMENTS.facts] : [])
   ];
+}
+
+/** The facts a step's expected state holds (`./step-done-when.ts`), if it holds any. */
+function factsOf(expectedState: JsonValue | undefined): JsonValue | undefined {
+  return expectedState && typeof expectedState === "object" && !Array.isArray(expectedState) ? expectedState[AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY] : undefined;
 }

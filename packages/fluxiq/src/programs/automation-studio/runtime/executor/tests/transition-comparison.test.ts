@@ -3,6 +3,7 @@ import { AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES, type AutomationStudioAdapti
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
 import { compareAutomationStudioTransition, runAutomationStudioGraph, type AutomationStudioNodeAttemptTrace, type AutomationStudioTransitionComparisonStatus } from "../index.ts";
+import { attemptWithHostExpectationEvaluation } from "../transition-comparison.ts";
 
 const node: AutomationStudioFlowNode = { id: "click", definitionId: "builtin.policy.action", parameterValues: {} };
 
@@ -105,6 +106,83 @@ describe("the host check after a succeeded action", () => {
     expect(empty.trace.attempts[0]).not.toHaveProperty("failure");
     expect(empty.trace.attempts[0]?.transitionComparison).toMatchObject({ status: "matched", diffSummary: { stateCheckCount: 0 } });
     expect(empty.dispatched).toEqual(["activate-element", "read-cart"]);
+  });
+});
+
+// t413: a step's own `done when:` is stored as `{ facts: [...] }` and judged
+// through the batched fact check, never the expectation evaluator.
+describe("an expected state of page facts", () => {
+  const factsNode: AutomationStudioFlowNode = { id: "click", definitionId: "builtin.policy.action", parameterValues: { expectedState: { facts: [{ fact: "exists", op: "exists", target: { locator: "#saved" } }] } } };
+  const succeeded = failedAttempt({ status: "succeeded", route: "success", effects: [{ type: "policy.output.dispatch" }] });
+  const judged = async (answer: "true" | "false" | "unknown", attempt = succeeded) => {
+    const reads: number[] = [];
+    let expectationAsks = 0;
+    const result = await attemptWithHostExpectationEvaluation(factsNode, { ...attempt, transitionComparison: compareAutomationStudioTransition(factsNode, attempt) }, {
+      delay: async (ms) => {
+        reads.push(ms);
+      },
+      hostRuntime: {
+        capabilities: [],
+        expectationEvaluator: () => {
+          expectationAsks += 1;
+          return { passed: true };
+        },
+        factEvaluator: (conditions) => conditions.map(() => ({ result: answer, capturedAt: 1 }))
+      }
+    });
+    return { result, waits: reads, expectationAsks };
+  };
+
+  it("rejects a succeeded attempt only once the facts are still false at the end of its wait ceiling", async () => {
+    const { result, waits, expectationAsks } = await judged("false");
+    expect(result).toMatchObject({ status: "failed", route: "failed", failure: { category: "expected_state_missing" }, transitionComparison: { status: "missing_expected_state", metadata: { hostEvaluated: true } } });
+    expect(waits.reduce((sum, ms) => sum + ms, 0)).toBe(2_000);
+    expect(expectationAsks).toBe(0);
+  });
+
+  it("accepts on facts that hold, and leaves the attempt as it was on facts the host could not settle", async () => {
+    expect((await judged("true")).result.transitionComparison).toMatchObject({ status: "matched", metadata: { hostEvaluated: true } });
+    const unsettled = await judged("unknown");
+    expect(unsettled.result.status).toBe("succeeded");
+    expect(unsettled.result.transitionComparison?.metadata).toBeUndefined();
+  });
+
+  it("records beside a failed attempt that its facts hold, without waiting, so the ladder can skip it", async () => {
+    const { result, waits } = await judged("true", failedAttempt());
+    expect(result.status).toBe("failed");
+    expect(result.transitionComparison?.metadata).toMatchObject({ expectationSatisfiedAfterFailure: true, expectationCheckedConditionCount: 1 });
+    expect(waits).toEqual([]);
+  });
+});
+
+describe("a lasting act rejected by its expected state after it answered success", () => {
+  // t413: found after acting, so never made again -- no effect check, no retry -- and the run ends as a failure,
+  // not as Outcome uncertain. Before, the rejection reached the effect check, which read the same rejection as
+  // "did not land" and pressed again.
+  it("is dispatched once, and nothing after it runs", async () => {
+    const dispatched: unknown[] = [];
+    const flow: AutomationStudioFlowDocument = {
+      schemaVersion: "0.1", flowId: "flow.lasting-rejected", ownerKind: "task", ownerId: "task.lasting-rejected", name: "Lasting rejected", createdAt: 1, updatedAt: 1,
+      nodes: [
+        { id: "click", definitionId: "builtin.policy.action", parameterValues: { outputId: "activate-element", expectedState: { conditions: [{ path: "cart.items" }] } }, metadata: { declaredConsequences: ["modify_existing"] } },
+        { id: "after", definitionId: "builtin.policy.action", parameterValues: { outputId: "read-cart" } }
+      ],
+      edges: [{ id: "edge.click.after", sourceNodeId: "click", targetNodeId: "after", sourcePortId: "success" }]
+    };
+    const trace = await runAutomationStudioGraph(flow, {
+      delay: async () => undefined,
+      effectDispatcher: (effect) => {
+        dispatched.push((effect.payload as { outputId?: unknown } | undefined)?.outputId);
+        return { status: "success", route: "success", outputs: { ok: true } };
+      },
+      hostRuntime: { capabilities: ["expectation-evaluation"], expectationEvaluator: () => ({ passed: false, checkedConditionCount: 1 }) }
+    });
+
+    expect(dispatched).toEqual(["activate-element"]);
+    expect(trace.status).toBe("failed");
+    expect(trace.message ?? "").not.toMatch(/^Outcome uncertain/u);
+    expect(trace.attempts[0]).toMatchObject({ status: "failed", failure: { code: "core.policy.expectation_rejected", stage: "verification" } });
+    expect(trace.attempts[0]?.effectCheck).toBeUndefined();
   });
 });
 

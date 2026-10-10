@@ -25,6 +25,41 @@
 // answer such questions, leave it `timed_out` as before -- and that is what
 // arrives here, to be judged by the node's expected state or stop as Outcome
 // uncertain. Core never presses again on `unknown`.
+//
+// **An expected state may be page facts (t413).** A candidate script's step
+// says what the page shows once it worked with its own `done when:` lines
+// (`../../flow-bootstrap/script-statements/step-done-when.ts`), stored as
+// `{ facts: [...] }` under the key below. Those are C9 fact conditions, asked
+// through the batched fact check rather than the expectation evaluator, and
+// read three ways: every fact `true` is `landed`; a `false` is `not_landed`
+// only for an act that does not last, and `unknown` for one that does -- a
+// fact the page does not show is no proof that a lasting act did not happen,
+// and reading it so would make the act twice; anything else `unknown`.
+//
+// **The effect check is only for an outcome nobody knows.** A committing act
+// whose dispatch answered success has happened. When its step's facts are
+// still false after the wait, that is a failure found after acting
+// (`AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE`, stage `verification`),
+// never a question for this check: the assessment refuses to repeat a lasting
+// one (`./assess.ts`), so it is a true failure, and a step that declared
+// nothing lasting is simply tried again.
+
+import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
+
+/** The key of a node's expected state that holds page facts (C9) rather than the host's expectation conditions. */
+export const AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY = "facts";
+
+/**
+ * The failure of an attempt whose act answered success while its expected
+ * state's facts stayed false: found after acting, so stage `verification`.
+ * `retryable` speaks only for a step whose act does not last.
+ */
+export const AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE: Readonly<AutomationStudioFailureRecord> = Object.freeze({
+  category: "expected_state_missing",
+  code: "core.step.done_when_false",
+  retryable: true,
+  stage: "verification"
+});
 
 /** What the effect check answered about a lasting act whose outcome was uncertain. */
 export type AutomationStudioEffectCheckResult = "landed" | "not_landed" | "unknown";

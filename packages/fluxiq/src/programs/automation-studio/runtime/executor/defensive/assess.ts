@@ -70,6 +70,13 @@ export function automationStudioAssessAttemptFault(
   const fault: AutomationStudioFaultAssessment = { ...base, ...(hinted === undefined ? {} : { hintedWaitMs: hinted }) };
   // The effect check already showed this act did not happen (C6 step 4), so it is unacted, whatever the gates below would say.
   if (attempt.effectCheck?.result === "not_landed") return automationStudioFaultNotLanded(fault);
+  // An act that answered success, rejected afterwards by the host's verdict on its expected state -- the
+  // evaluator's conditions or its step's own facts (t413), stage `verification`: the act happened, so a lasting
+  // one is never made again and its outcome is not uncertain -- no effect check, a true failure (`./effect-check.ts`).
+  // A step whose act does not last goes on to the gates below and keeps its ordinary retry.
+  if (rejectedAfterSuccess(attempt) && node && automationStudioNodeActLasts(node)) {
+    return { ...fault, disposition: "refuse", reason: `${node.id} made a lasting act that answered success, and the page did not then show what it was meant to leave: that is found after acting, so the act is not made again.` };
+  }
   if (fault.disposition === "refuse") return refusalWithUnknownOutcome(attempt, node, fault) ?? fault;
   const stage = fault.stage ?? attempt.failure?.stage;
   const foundAfterActing = stage === "confirmation" || stage === "verification";
@@ -142,6 +149,16 @@ function refusalWithUnknownOutcome(attempt: AutomationStudioNodeAttemptTrace, no
     actUncertain: true,
     reason: `${node ? `${node.id} made an act` : "An act was made"} whose outcome ${fault.code} reports as unknown: it may already have taken effect, so it is not made again.`
   };
+}
+
+/**
+ * Whether the attempt's act answered success and the host's verdict on its
+ * expected state then failed it (`../transition-comparison.ts`): only that
+ * demotion leaves a failed attempt with a host-judged comparison, and it always
+ * carries stage `verification`.
+ */
+function rejectedAfterSuccess(attempt: AutomationStudioNodeAttemptTrace): boolean {
+  return attempt.transitionComparison?.metadata?.hostEvaluated === true && attempt.failure?.stage === "verification";
 }
 
 /** Whether this failed attempt may be dispatched again under the default policy. */
