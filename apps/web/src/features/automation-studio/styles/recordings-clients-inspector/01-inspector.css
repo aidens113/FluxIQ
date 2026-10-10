@@ -476,3 +476,53 @@
   font-weight: var(--font-weight-bold);
 }
 
+
+.automation-effective-handlers ol {
+  display: grid;
+  gap: var(--space-compact);
+  margin: 0;
+  padding: var(--space-dense);
+  list-style: decimal inside;
+}
+
+.automation-effective-handlers li {
+  display: grid;
+  gap: 2px;
+}
+
+.automation-effective-handler-event {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+
+.automation-effective-handler-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: var(--font-weight-bold);
+  text-align: left;
+  cursor: pointer;
+}
+
+.automation-effective-handler-link:hover,
+.automation-effective-handler-link:focus-visible {
+  text-decoration: underline;
+}
+
+.automation-effective-handlers small,
+.automation-effective-handlers-note {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-effective-handlers-note {
+  margin: 0;
+  padding: 0 var(--space-dense) var(--space-dense);
+}

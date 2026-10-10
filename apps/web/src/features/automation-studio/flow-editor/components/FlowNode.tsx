@@ -3,6 +3,7 @@
 import type { NodeProps } from "@xyflow/react";
 import type { AutomationFlowNodeData } from "../node-types";
 import { automationNodeIcon } from "../palette-icons";
+import { FlowNodeHandlerBadges } from "./FlowNodeHandlerBadges";
 import { NodePortList, SelectedNodeDeleteButton, SelectedNodeStateButton } from "./NodePortList";
 export function FlowNode({ id, data, selected }: NodeProps) {
   const node = data as AutomationFlowNodeData;
@@ -20,6 +21,7 @@ export function FlowNode({ id, data, selected }: NodeProps) {
         <span className="node-badge category">{node.recovery.replace(/_/g, " ")}</span>
         {node.regionName ? <span className={`node-badge region-${node.regionKind}`}>{node.regionName}</span> : null}
         {node.confidence !== undefined ? <span className="node-badge confidence">{Math.round(node.confidence * 100)}%</span> : null}
+        <FlowNodeHandlerBadges nodeId={id} />
       </div>
       <div className="automation-flow-node-main">
         <span className="node-icon" title={node.nodeDefinitionId ? node.label : "Generated Flow node"}>

@@ -2,6 +2,7 @@ import type { Edge, Node } from "@xyflow/react";
 import type { AutomationFlowNodeData } from "./node-types";
 import { automationPortTypesCompatible } from "../graph/ports";
 import { automationParameterError } from "../parameters/ParameterEditor";
+import { FLOW_CONTRACT_KEYS, FLOW_HANDLER_DEFINITION_ID, FLOW_HANDLER_END_DEFINITION_ID } from "../graph/handlers";
 export type AutomationGraphProblem = {
   id: string;
   kind: "node" | "edge" | "graph";
@@ -26,12 +27,12 @@ type FlowNode = Node<AutomationFlowNodeData>;
 // Lifecycle handlers (state-aware recovery plan, C4). The editor's mirror of
 // Core's `validateFlowHandlers` in `model/validation/flow.ts`, which stays the
 // authority. The events and dispositions are read off the node definitions'
-// own parameter options; the ids below are those definitions'.
-const HANDLER_DEFINITION_ID = "builtin.control.handler";
-const HANDLER_END_DEFINITION_ID = "builtin.control.handler-end";
-const ENTRY_METADATA_KEY = "fluxiq.entry";
-const CHECKPOINT_METADATA_KEY = "fluxiq.checkpoint";
-const CLEARS_INTERFERENCE_METADATA_KEY = "clearsInterference";
+// own parameter options; the ids are those definitions' (`graph/handlers/vocabulary.ts`).
+const HANDLER_DEFINITION_ID = FLOW_HANDLER_DEFINITION_ID;
+const HANDLER_END_DEFINITION_ID = FLOW_HANDLER_END_DEFINITION_ID;
+const ENTRY_METADATA_KEY = FLOW_CONTRACT_KEYS.entry;
+const CHECKPOINT_METADATA_KEY = FLOW_CONTRACT_KEYS.checkpoint;
+const CLEARS_INTERFERENCE_METADATA_KEY = FLOW_CONTRACT_KEYS.clearsInterference;
 
 export function automationFlowGraphProblems(nodes: Array<Node<AutomationFlowNodeData>>, edges: Edge[], context: AutomationGraphValidationContext = {}): AutomationGraphProblem[] {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
