@@ -71,6 +71,19 @@ describe("Flow validation of lifecycle handlers", () => {
     expect(codes(graph(onFail({ kind: "nodes", nodeIds: ["press", "elsewhere"] }), { disposition: "unhandled" }))).toContain("flow.handler_scope_node_outside_graph");
   });
 
+  it("refuses a node scope naming Core plumbing, where the event never fires, but not a step that acts or a frame's start", () => {
+    const merge: AutomationStudioFlowNode = { id: "merge", definitionId: "builtin.control.merge" };
+    const pause: AutomationStudioFlowNode = { id: "pause", definitionId: "builtin.timing.wait" };
+    const withPlumbing = (scope: JsonObject, event = "fail") => graph({ event, scope }, { disposition: "unhandled" }, { nodes: [merge, pause] });
+    for (const nodeId of ["merge", "pause", "end"]) {
+      expect(codes(withPlumbing({ kind: "nodes", nodeIds: [nodeId] }))).toContain("flow.handler_scope_plumbing_node");
+    }
+    expect(codes(withPlumbing({ kind: "nodes", nodeIds: ["press", "read"] }))).not.toContain("flow.handler_scope_plumbing_node");
+    // `start` is a frame's boundary: it fires at the frame's first node, a Start included.
+    expect(codes(withPlumbing({ kind: "nodes", nodeIds: ["start"] }, "start"))).not.toContain("flow.handler_scope_plumbing_node");
+    expect(codes(withPlumbing({ kind: "nodes", nodeIds: ["start"] }, "before_next"))).toContain("flow.handler_scope_plumbing_node");
+  });
+
   it("refuses automation scope outside the recovery Subflow graph", () => {
     const flow = graph(onFail({ kind: "automation" }), { disposition: "unhandled" });
     expect(codes(flow)).toContain("flow.handler_automation_scope_outside_recovery");

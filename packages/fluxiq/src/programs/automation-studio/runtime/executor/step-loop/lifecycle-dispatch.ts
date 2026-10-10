@@ -3,7 +3,7 @@ import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioLifecycleEvent } from "../../../nodes/control-flow/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioLifecycleTrace } from "../contracts.ts";
 import type { AutomationStudioFramePhase, AutomationStudioInvocationOptions } from "../frames/index.ts";
-import type { AutomationStudioDispositionDecision, AutomationStudioLastingActStatus } from "../lifecycle/index.ts";
+import { automationStudioLifecycleEventApplies, type AutomationStudioDispositionDecision, type AutomationStudioLastingActStatus } from "../lifecycle/index.ts";
 import {
   automationStudioLifecycleHasHandlers,
   automationStudioRegisterLifecycleGraph,
@@ -14,6 +14,7 @@ import {
 } from "../lifecycle-run/index.ts";
 import { automationStudioEndedTrace } from "./ended-trace.ts";
 import { automationStudioStepLifecycleRouteGuard } from "./lifecycle-route-guard.ts";
+import { automationStudioOutcomeUncertainTrace } from "./uncertain-stop.ts";
 import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
 
 /** The frame phase each event's boundary stands at (`../frames/invocation-frame.ts`). */
@@ -91,6 +92,8 @@ export async function automationStudioStepLifecycle(ctx: AutomationStudioStepLoo
   if (!invocation) return { kind: "pass" };
   const { event, node } = boundary;
   standCursor(invocation, node.id, EVENT_PHASE[event]);
+  // Core plumbing neither acts on nor reads the host, so no handler fires at it (`../lifecycle/event-applies.ts`).
+  if (!automationStudioLifecycleEventApplies(event, node)) return { kind: "pass" };
   const run = invocation.run;
   if (run.lifecycle.recovery.loaded && !automationStudioLifecycleHasHandlers(run)) return { kind: "pass" };
   const outcome = await dispatchAutomationStudioLifecycleEvent({
@@ -167,7 +170,7 @@ function routeOutTrace(ctx: AutomationStudioStepLoopContext, nodeId: string, tar
 /** The run's end on a Core stop no handler overrides: a cancel ends it cancelled, an uncertain act and anything else end it failed. */
 function stopTrace(ctx: AutomationStudioStepLoopContext, nodeId: string, decision: Extract<AutomationStudioDispositionDecision, { kind: "stop" }>): AutomationStudioGraphExecutionTrace {
   if (decision.stop === "cancel") return automationStudioEndedTrace(ctx, "cancelled", nodeId, "Run cancelled.");
-  if (decision.stop === "outcome_uncertain") return automationStudioEndedTrace(ctx, "failed", nodeId, `Outcome uncertain: ${decision.reason}`);
+  if (decision.stop === "outcome_uncertain") return automationStudioOutcomeUncertainTrace(ctx, nodeId, `Outcome uncertain: ${decision.reason}`);
   return automationStudioEndedTrace(ctx, "failed", nodeId, decision.reason);
 }
 
