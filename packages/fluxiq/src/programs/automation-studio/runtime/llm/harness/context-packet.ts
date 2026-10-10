@@ -282,8 +282,10 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     // Every action the run took, in order, and every relevant run, adaptation,
     // Subflow and available action below: nothing is cut to a count (user,
     // 2026-09-30). These were the last 12 actions, 25 runs, 25 adaptations, 100
-    // Subflows and 100 actions.
-    ...(input.runDetail?.actionAttempts?.length ? { recentActions: input.runDetail.actionAttempts.map(compactRecentActionForLlm) } : {}),
+    // Subflows and 100 actions. The root frame's actions: a called part's
+    // (`parentAttemptId`) are its Call Subflow action's, whose outcome is here,
+    // and this closed projection has no field to tell a part's node from the Flow's.
+    ...(rootFrameActions(input.runDetail).length ? { recentActions: rootFrameActions(input.runDetail).map(compactRecentActionForLlm) } : {}),
     ...(input.failureEvidence ? { failureEvidence: sanitizeAutomationStudioLlmFailureEvidence(input.taskKind, input.failureEvidence, deniedEvidenceKeys) } : {}),
     // Held to the same task-kind rule as the failure evidence it sits beside: a
     // flow-bootstrap packet describes a Flow that has never run, so a record of
@@ -571,6 +573,10 @@ function containsReusableExecutableTarget(value: JsonValue, deniedKeys: Readonly
       || deniedKeys.has(normalized)
       || containsReusableExecutableTarget(item as JsonValue, deniedKeys, seen);
   });
+}
+
+function rootFrameActions(detail: AutomationStudioLlmHarnessInput["runDetail"]): AutomationStudioFlowRunActionAttemptRecord[] {
+  return (detail?.actionAttempts ?? []).filter((action) => action.parentAttemptId === undefined);
 }
 
 function compactRecentActionForLlm(action: AutomationStudioFlowRunActionAttemptRecord): AutomationStudioLlmRecentActionContext {
