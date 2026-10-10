@@ -27,6 +27,7 @@ export async function withAutomationStudioCanonicalFlowHierarchySubflows(ports: 
         .map((subflow) => ({
           subflowId: subflow.subflowId,
           name: subflow.name,
+          ...(subflow.role ? { role: subflow.role } : {}),
           ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}),
           ...(subflow.parentCategoryId ? { parentCategoryId: subflow.parentCategoryId } : {})
         }))

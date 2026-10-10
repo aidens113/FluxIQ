@@ -400,7 +400,8 @@ export function useFlowEditorCanvasInteractions(
     const { graph: currentGraph, props: currentProps } = currentRef.current;
     const problems = automationFlowGraphProblems(
       currentGraph.flowNodesRef.current,
-      currentGraph.flowEdgesRef.current
+      currentGraph.flowEdgesRef.current,
+      { subflowRole: currentProps.subflowRole }
     );
     currentGraph.setFlowGraphProblems(problems);
     currentProps.setSelection({

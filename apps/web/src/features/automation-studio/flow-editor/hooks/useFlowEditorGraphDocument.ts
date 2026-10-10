@@ -207,14 +207,14 @@ export function useFlowEditorGraphDocument(props: FlowEditorProps) {
     const nodes = flowNodesRef.current;
     const edges = flowEdgesRef.current;
     const cancel = scheduleAutomationGraphIdleTask(() => {
-      const problems = automationFlowGraphProblems(nodes, edges);
+      const problems = automationFlowGraphProblems(nodes, edges, { subflowRole: props.subflowRole });
       if (!cancelled) setFlowGraphProblems(problems);
     }, { delayMs: 80, timeoutMs: 1_000 });
     return () => {
       cancelled = true;
       cancel();
     };
-  }, [flowGraphValidationRevision]);
+  }, [flowGraphValidationRevision, props.subflowRole]);
 
   const invalidFlowNodeIds = useMemo(
     () => new Set(flowGraphProblems

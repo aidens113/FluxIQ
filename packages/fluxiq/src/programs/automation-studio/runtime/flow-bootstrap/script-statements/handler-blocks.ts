@@ -153,12 +153,16 @@ export function automationStudioFlowScriptHandlerSteps(input: {
       order: input.orderIn(scope.kind === "automation"),
       completionCheck
     },
+    // The situation it handles, in the words written for it, which the editor
+    // and the chat name the handler by (t398); never page data.
+    nodeLabel: situationLabel(handler.situation || input.block.name),
     line: 0,
     cause: handler.line
   };
   const end: AutomationStudioFlowScriptStep = {
     label: `${input.block.label}.end`,
     description: `then ${then.text}`.slice(0, 200),
+    nodeLabel: situationLabel(`Then ${then.text}`),
     node: AUTOMATION_STUDIO_FLOW_BOOTSTRAP_STATE_NODE_IDS.handlerEnd,
     entries,
     branches: [],
@@ -168,6 +172,11 @@ export function automationStudioFlowScriptHandlerSteps(input: {
   };
   const facts = when.length > 0 || completionCheck.length > 0;
   return { steps: [registration, ...input.block.steps, end], automation: scope.kind === "automation", issues, facts };
+}
+
+/** Written words as a node's name: one line, bounded as a block's name is. */
+function situationLabel(text: string): string {
+  return text.replace(/\s+/gu, " ").trim().slice(0, 120);
 }
 
 type Scope = { kind: "subflow" } | { kind: "automation" } | { kind: "nodes"; labels: string[] };

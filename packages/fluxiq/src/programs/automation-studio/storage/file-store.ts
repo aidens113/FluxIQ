@@ -70,6 +70,8 @@ export type AutomationStudioFlowHierarchySubflowSummary = {
   subflowId: string;
   name?: string;
   graphFlowId?: string;
+  /** The Subflow's role, which the editor validates its graph with: only a `recovery` graph may hold a whole-automation handler (t398). */
+  role?: string;
   parentCategoryId?: string;
 };
 
