@@ -33,6 +33,13 @@
 // build resolves a fact's target (`AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID`),
 // and the domain's answer becomes the fact's target.
 //
+// **Only by handle (t432; user, 2026-10-10).** The model names a control by the
+// handle the evidence printed and nothing else, so every step and fact here is
+// the model's own writing (`writtenByModel`): the domain refuses a step that
+// names a control any other way -- an address or an identity of its own --
+// rather than letting it stand as written, and a fact whose target is anything
+// but `handles` is refused here, before anyone is asked.
+//
 // A refusal's sentence is for a person reading the run: it says which step and
 // that its control could not be tied to the page, and never how a control is
 // found. The domain's codes travel beside it for the record.
@@ -145,15 +152,16 @@ async function resolveSteps(
   return resolved;
 }
 
-/** Each fact whose target names handles, resolved to the target the domain answers; the rest as written. */
+/** Each fact whose target names handles, resolved to the target the domain answers; one with no target as written; any other target refused (header). */
 async function resolveFacts(context: Context, facts: readonly AutomationStudioFactCondition[], where: string): Promise<AutomationStudioFactCondition[] | Refused> {
   const resolved: AutomationStudioFactCondition[] = [];
   for (const fact of facts) {
     const target = fact.target as JsonValue | undefined;
-    if (!isJsonRecord(target) || !isJsonRecord(target.handles)) {
+    if (target === undefined) {
       resolved.push(fact);
       continue;
     }
+    if (!isJsonRecord(target) || !isJsonRecord(target.handles)) return notAHandle(where);
     const handles = Object.values(target.handles);
     // A fact is about one control (header).
     if (handles.length !== 1 || typeof handles[0] !== "string") return unresolved(where, [AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.malformed]);
@@ -199,7 +207,9 @@ async function resolveOne(
     // Handles were shown: the packet is how the domain finds them, and a step naming one with no packet was refused before here.
     handlesIssued: true,
     permissionFor: () => permission,
-    ...(packet ? { handleEvidence: packet } : {})
+    ...(packet ? { handleEvidence: packet } : {}),
+    // Every step and fact a repair carries is the model's own writing (header).
+    writtenByModel: true
   });
   if (!result.ok) {
     const codes = [...new Set(result.issues.map((issue) => issue.code))];
@@ -235,11 +245,22 @@ function setHandle(parameters: JsonObject, path: ReadonlyArray<string | number>,
   (at as Record<string, unknown>).handle = handle;
 }
 
+/** A fact naming its control by anything but a handle (header): Core's own code, no domain asked. */
+function notAHandle(where: string): Refused {
+  return unresolved(where, [AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.notAHandle]);
+}
+
+/** A code, Core's or a domain's (`<domain>.handle.not_a_handle:<position>`), saying a control was named by something other than a handle. */
+const NOT_A_HANDLE_CODE = /(?:^|\.)(?:handle\.not_a_handle|target_not_a_handle)(?::|$)/u;
+
 function unresolved(where: string, issueCodes: readonly string[]): Refused {
+  const notByHandle = issueCodes.some((code) => NOT_A_HANDLE_CODE.test(code));
   return {
     ok: false,
     code: "step_unresolved",
-    reason: `The fix's ${where} names a control that could not be tied to the page the model was shown, so the fix was not used.`,
+    reason: notByHandle
+      ? `The fix's ${where} names a control by something other than the handle the page view printed for it, so the fix was not used.`
+      : `The fix's ${where} names a control that could not be tied to the page the model was shown, so the fix was not used.`,
     issueCodes: [...issueCodes]
   };
 }

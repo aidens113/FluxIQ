@@ -27,7 +27,7 @@
 // because a fact read wrongly is a handler that runs, or does not, quietly.
 import type { AutomationStudioFlowBootstrapFactCondition, AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type { AutomationStudioFlowScriptCondition } from "../authoring/index.ts";
-import { readAutomationStudioFlowScriptFactLocator, type AutomationStudioFlowScriptFactLocator } from "./fact-locator.ts";
+import { AUTOMATION_STUDIO_FLOW_SCRIPT_AT_IS_HAND_WRITTEN, readAutomationStudioFlowScriptFactLocator, type AutomationStudioFlowScriptFactLocator } from "./fact-locator.ts";
 import { scriptStatementRefusal } from "./statement-refusal.ts";
 
 export type AutomationStudioFlowScriptFactReading =
@@ -148,7 +148,7 @@ type ElementTarget = { handle: string } | AutomationStudioFlowScriptFactLocator;
 function targetOf(tokens: readonly Token[]): { target: ElementTarget; after: Token[] } | { reason: string } | undefined {
   const [first, second] = tokens;
   if (first && !first.quoted && first.text.toLowerCase() === "at") {
-    if (!second?.quoted) return { reason: "`at` takes a locator in quotes: `exists at \"<locator>\"`." };
+    if (!second?.quoted) return { reason: `\`at\` takes its text in quotes. ${AUTOMATION_STUDIO_FLOW_SCRIPT_AT_IS_HAND_WRITTEN}` };
     const locator = readAutomationStudioFlowScriptFactLocator(second.text);
     return locator.ok ? { target: locator.target, after: tokens.slice(2) } : { reason: locator.reason };
   }

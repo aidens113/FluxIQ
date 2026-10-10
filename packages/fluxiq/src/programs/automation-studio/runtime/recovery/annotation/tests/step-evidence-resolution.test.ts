@@ -168,3 +168,48 @@ describe("a repair's steps, resolved before they are overlaid", () => {
     expect(await resolver({ resolve: domain() })(wait)).toEqual({ ok: true, patch: wait });
   });
 });
+
+// t432 (user, 2026-10-10): a repair names a control only by the handle the
+// evidence printed. Every step and fact it writes is the model's own, so the
+// domain is told so, and a fact naming its control any other way is refused
+// before anyone is asked.
+describe("a repair that names a control other than by handle", () => {
+  it("is handed to the domain as the model's own writing, every step and fact", async () => {
+    const asked: Asked[] = [];
+    const patch: AutomationStudioRuntimePatch = {
+      kind: "add_handler", event: "retry", scope: { kind: "nodes", nodeIds: ["read"] },
+      when: [{ fact: "visible", op: "visible", target: { handles: { target: "t2" } } }],
+      steps: [{ definitionId: "test.press", parameters: { target: { handle: "t2" } } }],
+      then: { kind: "resume" }, consequences: [], reason: "A notice covers the list."
+    };
+    expect((await resolver({ resolve: domain(asked) })(patch)).ok).toBe(true);
+    expect(asked).toHaveLength(2);
+    expect(asked.every((entry) => entry.writtenByModel === true)).toBe(true);
+  });
+
+  it("is refused when the domain says a step named its control some other way, in words that say to use the handle", async () => {
+    const refusing: Resolver = async () => ({ status: "refused", issueCodes: ["test.handle.not_a_handle", "test.handle.not_a_handle:selector"] });
+    const result = await resolver({ resolve: refusing })(sequence({ selector: "#close" }));
+    expect(result).toEqual({
+      ok: false, code: "step_unresolved",
+      reason: "The fix's step 1 names a control by something other than the handle the page view printed for it, so the fix was not used.",
+      issueCodes: ["test.handle.not_a_handle", "test.handle.not_a_handle:selector"]
+    });
+  });
+
+  it("refuses, without asking, a fact whose target is not the evidence's handles", async () => {
+    const asked: Asked[] = [];
+    const handler = (target: JsonObject): AutomationStudioRuntimePatch => ({
+      kind: "add_handler", event: "fail", scope: { kind: "subflow" }, when: [{ fact: "visible", op: "visible", target }],
+      steps: [{ definitionId: "test.press", parameters: { target: { handle: "t2" } } }], then: { kind: "give_up" }, consequences: [], reason: "r"
+    });
+    for (const target of [{ locator: "#notice" }, { selector: ".notice" }]) {
+      expect(await resolver({ resolve: domain(asked) })(handler(target))).toEqual({
+        ok: false, code: "step_unresolved",
+        reason: "The fix's situation names a control by something other than the handle the page view printed for it, so the fix was not used.",
+        issueCodes: ["bootstrap.target_not_a_handle"]
+      });
+    }
+    expect(asked).toEqual([]);
+  });
+});
