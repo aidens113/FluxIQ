@@ -413,6 +413,24 @@ describe("AutomationStudioProjectRuntimeStreamStore with called parts", () => {
     await expect(store.getRunActionDetail({ runId: "run.frames", attemptId: "call.attempt.1:inner.attempt.1:type.attempt.1" })).resolves.toMatchObject({ nodeId: "type", parentAttemptId: "call.attempt.1:inner.attempt.1" });
     await store.close();
   });
+
+  // t410: a page's rows say where each ran, so a run log can place a part's steps under their call.
+  it("carries each paged row's frame, call and lifecycle fields", async () => {
+    const pool = openPool();
+    await seedFlow(pool, "project.frames", "flow.frames");
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool, projectId: "project.frames" });
+    await store.putRunDetail(projected());
+
+    const first = await store.listRunActions({ runId: "run.frames", limit: 3 });
+    const rest = await store.listRunActions({ runId: "run.frames", limit: 3, cursor: first.nextCursor });
+    const rows = [...first.actions, ...rest.actions];
+    expect(rows.map((row) => row.parentAttemptId)).toEqual([undefined, undefined, "call.attempt.1", "call.attempt.1", "call.attempt.1:inner.attempt.1", undefined]);
+    expect(rows[0]).not.toHaveProperty("subflowTarget");
+    expect(rows[1]).toMatchObject({ subflowTarget: { subflowId: "part.search", graphFlowId: "flow.frames.sub.search", graphRevision: 2 }, metadata: { summaryOnly: true } });
+    expect(rows[2]).toMatchObject({ framePath: ["invocation-1", "invocation-2"], entry: { kind: "entry", id: "entry.search" } });
+    expect(rows[4]).toMatchObject({ framePath: ["invocation-1", "invocation-2", "invocation-3"], lifecycle: { handlerId: "handler.consent", event: "before" } });
+    await store.close();
+  });
 });
 
 async function filesHolding(root: string, literal: string): Promise<string[]> {

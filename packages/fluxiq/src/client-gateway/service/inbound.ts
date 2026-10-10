@@ -112,6 +112,12 @@ export class ClientGatewayInbound {
       await this.events.emit({ type: "client.action_result", session: eventSession, message: eventMessage });
       return;
     }
+    if (message.type === "client.reconcile_result") {
+      // An answer to Core's own question about a command (C8, B3). It settles
+      // only the question; an answer nobody asked for is dropped and audited.
+      if (!this.commands.answerReconcile(sessionId, message.payload)) this.audit.record("command.reconcile_unasked", "A reconcile answer arrived that no open question was waiting for; it was ignored.", { sessionId });
+      return;
+    }
     if (message.type === "client.error") await this.events.emit({ type: "client.error", session: this.sessions.toPublic(session), message });
   }
 

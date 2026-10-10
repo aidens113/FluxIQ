@@ -17,6 +17,12 @@ export function runtimeStepWords(nodeId: unknown, options: RuntimeAttemptStoryOp
   return named ? named : `“${nodeId}”`;
 }
 
+/** A called part as the story names it: the caller's name for it, else its id in quotes. */
+export function runtimePartWords(subflowId: string, options: RuntimeAttemptStoryOptions = {}): string {
+  const named = options.partName?.(subflowId)?.trim();
+  return named ? named : `“${subflowId}”`;
+}
+
 /** A finite, non-negative number, or undefined: a record read back from storage is checked, not assumed. */
 export function runtimeStoryNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
