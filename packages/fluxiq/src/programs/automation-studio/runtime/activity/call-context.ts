@@ -38,6 +38,16 @@
 //   since t378 W15, `../service.ts`). Only a name the evidence printed in quotes
 //   is used; the domain's own words, when it gives them, still come first
 //   (`./observer.ts`).
+// - **What the view said a control is.** The word a view printed between the
+//   handle and its name (`t940 clickable "Space Grey"`, `t12 checkbox "Gift
+//   wrap"`), kept as the role the wording reads a "check" by
+//   (`./wording/action.ts`): a box (`checkbox`, `switch`) is ticked, one
+//   option of several (`radio`, `option`, `tab`) is chosen, and any other
+//   word, or none, says neither, as an element a resolved node keeps with no
+//   role or input type does. A model's exploration calls carry only the
+//   handle, so its colour swatches read "Ticking “Spain”" while the same steps
+//   in a test of the Flow, which carry the saved element, read "Choose" (R4a
+//   attempt 2, `run-mv2pgqkj-f3552c70`, steps 0020-0024, moment 04).
 //
 // Reads only: a call and its result pass through the observer unchanged.
 
@@ -70,6 +80,14 @@ const MAX_TARGET_NAME = 60;
  * (`t12 link "Friends" ~/friends/`, `t857 button "Close chat"`).
  */
 const PRINTED_LINE = /^([a-z]\d{1,7})\b[^"\n]*?"([^"\n]{1,300})"/gmu;
+/**
+ * A line of a page view that starts with a handle, and the word it prints for
+ * what the element is when it prints one before the name (`t940 clickable
+ * "Space Grey"`, `t872 field[search] ...`; `t880 "Welcome back"` prints none).
+ */
+const KIND_LINE = /^([a-z]\d{1,7})(?: ([a-z][a-z0-9]*))?(?=[\s[:]|$)/gmu;
+/** The words a view prints for a role the wording reads a "check" by; any other word says neither. */
+const ROLE_WORDS: ReadonlySet<string> = new Set(["checkbox", "switch", "radio", "option", "tab"]);
 /** How deep into an evidence value its printed text is looked for. */
 const MAX_DEPTH = 4;
 /** A handle as a call names it. */
@@ -129,18 +147,26 @@ function labelColumn(result: unknown): string | undefined {
   return keys.length === 1 ? keys[0] : undefined;
 }
 
-/** Each handle a value's text printed with a name, in the order printed, into `into`. */
-function printedNames(value: unknown, into: Map<string, string>, depth = 0): void {
+/**
+ * Each handle a value's text printed with a name, in the order printed, into
+ * `into`; and each handle it printed at all, with the role its kind word says
+ * (`ROLE_WORDS`, else ""), into `roles`.
+ */
+function printedNames(value: unknown, into: Map<string, string>, roles: Map<string, string>, depth = 0): void {
   if (typeof value === "string") {
     if (!value.includes("\n") && !HANDLE.test(value.split(" ")[0] ?? "")) return;
     for (const found of value.matchAll(PRINTED_LINE)) {
       const name = automationStudioActivityHumanLabel(found[2], MAX_TARGET_NAME);
       if (name) into.set(found[1]!, name);
     }
+    for (const found of value.matchAll(KIND_LINE)) {
+      const word = found[2] ?? "";
+      roles.set(found[1]!, ROLE_WORDS.has(word) ? word : "");
+    }
     return;
   }
   if (depth >= MAX_DEPTH || !value || typeof value !== "object") return;
-  for (const member of Array.isArray(value) ? value : Object.values(value)) printedNames(member, into, depth + 1);
+  for (const member of Array.isArray(value) ? value : Object.values(value)) printedNames(member, into, roles, depth + 1);
 }
 
 /** The handle a call acts on: its parameters' `target` (a handle, or `{ handle }`), else its own. */
@@ -167,18 +193,24 @@ export function automationStudioActivityCallContext(): {
   start(): string | undefined;
   /** What the latest page view that printed the call's handle named it, or nothing. */
   target(call: { value?: unknown }): string | undefined;
+  /** The role the latest view that printed the call's handle said it has ("" for none a "check" is read by), or nothing when no view printed it. */
+  role(call: { value?: unknown }): string | undefined;
 } {
   let start: string | undefined;
   let column: string | undefined;
   /** Each handle's name, as the evidence last printed it. */
   let names = new Map<string, string>();
+  /** Each handle's role, as the evidence last printed its kind. */
+  let roles = new Map<string, string>();
   return {
     decided: (evidence) => {
       start = draftStart(evidence) ?? start;
       // Read afresh from what this decision was shown, in order, so the latest view of a handle wins.
       const next = new Map<string, string>();
-      for (const entry of evidence) printedNames(entry.value, next);
+      const kinds = new Map<string, string>();
+      for (const entry of evidence) printedNames(entry.value, next, kinds);
       names = next;
+      roles = kinds;
     },
     sent: (call) => {
       const value = record(call.value);
@@ -201,6 +233,10 @@ export function automationStudioActivityCallContext(): {
     target: (call) => {
       const handle = handleOf(record(call.value));
       return handle === undefined ? undefined : names.get(handle);
+    },
+    role: (call) => {
+      const handle = handleOf(record(call.value));
+      return handle === undefined ? undefined : roles.get(handle);
     }
   };
 }

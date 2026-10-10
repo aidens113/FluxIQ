@@ -68,7 +68,7 @@ const CORE_NODE_KINDS: ReadonlyMap<string, ActivityActionKind> = new Map<string,
 ]);
 
 /** A result code that says the action did not happen (`programs/automation-studio/runtime/activity/observer.ts` reads codes the same way). */
-const FAILING = /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved/u;
+const FAILING = /reject|fail|error|timeout|timed_out|refused|denied|invalid|blocked|not_found|unobserved|not_observed|state_mismatch/u;
 /** A result code that says the page needs a person before the work can go on. */
 const PERSON_CODE = /(?:^|[._-])(intervention|check_required|human_check)(?:[._-]|$)/u;
 /** A result code that says the work needs a person's permission. */
@@ -234,6 +234,20 @@ function actionActOf(event: ActivityActionEvent, detail: Detail, code: string | 
     ?? (event.step?.label ? actOfWords(wordsOf(event.step.label), true) : undefined)
     ?? actOfCode(code)
     ?? actOfTitle(detail.title);
+}
+
+/**
+ * The kind a failure's reason is worded for: the card's own, but for a run's
+ * "Recovering from a failed step" row (`repairing`), the kind of the step that
+ * failed, which its node and title still name. That row settles a failed step
+ * and is what the page's overlay reads why from, and a clear step the site
+ * set back read "it ran, but the page didn't change the way it should have"
+ * there rather than a box's words (R4a attempt 2, `run-mv2pgqkj-f3552c70`,
+ * moment 12: `web.validation.output_not_observed` on `web.output.dom-clear`).
+ */
+function reasonKind(event: ActivityActionEvent, detail: Detail, kind: ActivityActionKind, record: ReturnType<typeof activityActionRecordOf>): ActivityActionKind {
+  if (kind !== "repair") return kind;
+  return actionActOf(event, detail, record.resultCode, record.node)?.kind ?? kind;
 }
 
 /** A failing code, unless it is a replay's for a step the test passes over (`excused`), which did not stand in the way. */
@@ -466,7 +480,7 @@ export function activityActionOf(event: ActivityActionEvent): ActivityAction | n
       : record.said ? record.said
       : detail.kind === "ask" ? declinedWhy(kind, detail.resolution)
         : kind === "result_check" ? activityActionCheckWhy(detail.text)
-          : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason, kind) : null;
+          : record.resultCode ? activityActionFailureReason(record.resultCode, record.reason, reasonKind(event, detail, kind, record)) : null;
   const testing = kind !== "test" && testStep(event, detail, detail.ref ? CORE_TOOL_KINDS.get(detail.ref) : undefined);
   // What a test did with the step, when it did not simply do it again: a test
   // step is named by its action (`testing`), and one that names none by the verb of its title.
