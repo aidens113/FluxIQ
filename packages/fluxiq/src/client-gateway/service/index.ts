@@ -4,6 +4,7 @@ export * from "./activity-publisher.ts";
 export * from "./audit-log.ts";
 export * from "./command-answer-margin.ts";
 export * from "./command-history.ts";
+export * from "./command-reconcile/index.ts";
 export * from "./commands.ts";
 export * from "./config.ts";
 export * from "./declared-domain.ts";
