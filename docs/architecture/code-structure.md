@@ -168,7 +168,9 @@ Configuration this requires:
   keeps exporting the same names. Check that invariant, not the file tree.
 - **800 lines per file, 25 files per directory, 40 methods per class.** The
   first two fail `pnpm check`; the third warns. Existing violations are frozen
-  in `.structure-baseline.json` and may only shrink.
+  in `.structure-baseline.json` and may only shrink. A line holds one
+  statement, so the line budget cannot be met by packing (see
+  [Anti-Patterns](#anti-patterns)).
 
 ## Dividing A File That Has Outgrown Its Place
 
@@ -251,6 +253,19 @@ The detailed procedure for each, with the current offenders, is in the
   return type is checked and stays fine. The `as-never` rule enforces this in
   source and tests alike, reading the syntax tree so a comment or string does
   not count, with existing casts baselined per file.
+- **Packing statements onto one line.** The line budget counts lines, so
+  `let a: X | undefined; if (cond) doThing({ a });` or two imports on one line
+  keep a file under it without making the file any smaller. On 2026-10-09
+  this kept both Core's baselined `runtime/service.ts` and a downstream test
+  runner inside their budgets. Write one statement per line; if that takes
+  the file past its budget, split the file by the reason it grew. The
+  `statement-packing` rule enforces this in source and tests alike: it reads
+  the syntax tree and fails a line on which one statement ends and the next
+  in the same statement list begins. A `for (;;)` header, a `;` inside a
+  string, template, regular expression or comment, type-literal and
+  interface members, and a one-line body holding a single statement
+  (`() => { run(); }`) do not count. Existing packed lines are baselined per
+  file and may only shrink.
 - **An import cycle.** Two modules that reach each other at load time, even
   through barrels, can hand each other `undefined` depending on which loads
   first: in October 2026 a re-export through a barrel broke six tests in four
