@@ -9,7 +9,8 @@ const READY_STATE_NOT_SHOWN = "executor.ready_state.not_shown";
  * The `skipped` record: a step the run passed over rather than ran. An
  * optional step that was not there says so; a state route names the step it
  * skipped and the step the run went on with, in the words the chat announces
- * it with (Core's `executor/state-routing/announcement.ts`).
+ * it with (Core's `executor/state-routing/announcement.ts`); an act the run
+ * had already done says so, for the row it was done for when it has one.
  */
 export function runtimeSkippedLine(attempt: unknown, options: RuntimeAttemptStoryOptions = {}): RuntimeAttemptStoryLine | undefined {
   const skipped = runtimeAttemptRecord(attempt, "skipped");
@@ -19,6 +20,11 @@ export function runtimeSkippedLine(attempt: unknown, options: RuntimeAttemptStor
     const why = skipped.code === READY_STATE_NOT_SHOWN ? "the page did not show what it needs" : "it was not shown";
     return { kind: "skipped", text: `Skipped ${step}: ${why}, so the run went on without it.` };
   }
+  if (skipped.reason === "already_done") {
+    // An act the run had already completed (Core's `executor/step-loop/already-done.ts`): no failure, and nothing done twice.
+    const row = typeof skipped.row === "string" ? skipped.row.trim() : "";
+    return { kind: "already_done", text: row ? `Already done for ${row}, so not done again.` : `${upperFirst(step)} was already done earlier in this run, so not done again.` };
+  }
   if (skipped.reason !== "state_routed") return undefined;
   const next = runtimeStepWords(skipped.toNodeId, options);
   const effectHolds = runtimeAttemptRecord(attempt, "stateRouting")?.outcome === "effect_holds";
@@ -26,4 +32,9 @@ export function runtimeSkippedLine(attempt: unknown, options: RuntimeAttemptStor
     : skipped.direction === "backward" ? "the page went back to an earlier step"
     : "the page is already past it";
   return { kind: "state_routed", text: `Skipped ${step}: ${why}. Continuing with ${next}.` };
+}
+
+/** "“confirm” was ..." stays as it is; "a step was ..." starts the sentence with a capital. */
+function upperFirst(words: string): string {
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

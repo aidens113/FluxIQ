@@ -43,6 +43,16 @@ describe("runtime attempt story", () => {
   });
 
   describe("skipped", () => {
+    it("says an act already done in this run was not done again, for its row, and never as a failure", () => {
+      const done = (skipped: Record<string, unknown>, options = {}) => runtimeAttemptStory({ ...base, status: "succeeded", route: "success", skipped }, options);
+      expect(done({ reason: "already_done", code: "executor.act.already_done", attemptId: "confirm.attempt.3", row: "Lin Zhao" }))
+        .toEqual([{ kind: "already_done", text: "Already done for Lin Zhao, so not done again." }]);
+      expect(done({ reason: "already_done", code: "executor.act.already_done", attemptId: "confirm.attempt.3" }, { stepName: () => "Confirm Amara Osei" }).map((line) => line.text))
+        .toEqual(["Confirm Amara Osei was already done earlier in this run, so not done again."]);
+      expect(done({ reason: "already_done", code: "executor.act.already_done", attemptId: "confirm.attempt.3" }).map((line) => line.text))
+        .toEqual(["“add-to-cart” was already done earlier in this run, so not done again."]);
+    });
+
     it("says an optional step that was not there was skipped", () => {
       expect(texts({ ...base, route: "skipped", skipped: { reason: "target_absent", code: "web.target.not_found" } }))
         .toEqual(["Skipped “add-to-cart”: it was not shown, so the run went on without it."]);

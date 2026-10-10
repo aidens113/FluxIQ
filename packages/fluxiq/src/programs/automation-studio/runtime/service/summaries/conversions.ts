@@ -25,6 +25,7 @@ import { automationStudioRunDetailAttemptsInRunOrder, type AutomationStudioRunDe
 import { hostTargetResolutionFromOutputs } from "./host-target-resolution.ts";
 import { automationStudioRunDetailRecoveryTrace } from "./recovery-trace.ts";
 import { automationStudioRunStop } from "./run-stop.ts";
+import { automationStudioRunDetailSkipped } from "./skipped.ts";
 import { automationStudioRunDetailStateRouting } from "./state-routing.ts";
 import { automationStudioRunDetailStepCount } from "./step-count.ts";
 
@@ -185,6 +186,7 @@ function runtimeActionAttemptRecord(session: AutomationStudioRuntimeSession, pla
   const hostTargetResolution = hostTargetResolutionFromOutputs(attempt.outputs);
   const extraction = extractionSummaryFromOutputs(attempt.outputs);
   const stateRouting = automationStudioRunDetailStateRouting(attempt, failure?.code);
+  const skipped = automationStudioRunDetailSkipped(attempt);
   // The frames, failure class, frame entry and handler of state-aware recovery, as ids and closed codes (`recovery-trace.ts`).
   const recoveryTrace = automationStudioRunDetailRecoveryTrace(attempt);
   // A step whose state already held reads as done, with its failure kept (`flow-change/attempt-projection.ts`).
@@ -207,10 +209,9 @@ function runtimeActionAttemptRecord(session: AutomationStudioRuntimeSession, pla
     // `succeeded` down `route: "skipped"`, which alone a reader cannot tell
     // from a press; this says the step was skipped and what observed it. A
     // step state routing passed over (`executor/state-routing/`) also says
-    // where the run went on to, so a run's detail shows the routing decision.
-    ...(attempt.skipped ? { skipped: attempt.skipped.reason === "state_routed"
-      ? { reason: "state_routed", code: attempt.skipped.code, toNodeId: attempt.skipped.toNodeId, direction: attempt.skipped.direction }
-      : { reason: "target_absent", code: attempt.skipped.code } } : {}),
+    // where the run went on to, so a run's detail shows the routing decision;
+    // an act already done in this run names the row it was done for (`skipped.ts`).
+    ...(skipped ? { skipped } : {}),
     // What state routing made of the page, whatever it decided: a step whose
     // routing found no way on otherwise reads like one that never consulted
     // it (`state-routing.ts`).

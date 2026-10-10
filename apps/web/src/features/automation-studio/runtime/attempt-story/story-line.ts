@@ -17,6 +17,7 @@ export type RuntimeAttemptStoryKind =
   | "child_run"
   | "part"
   | "skipped"
+  | "already_done"
   | "state_routed"
   | "state_routing"
   | "defence"
