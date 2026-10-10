@@ -156,7 +156,16 @@ const CORPUS: CorpusCase[] = [
   { name: "a handler carrying on after a failure", lines: [...open, ...handler("on fail for rows: no rows", ["  then: carry on"])], codes: ["flow_script.handler_then_invalid"] },
   { name: "a retry handler that cannot say it worked", lines: [...open, ...handler("on retry for rows: a notice", ["  when: text t1 contains \"wait\"", "  then: carry on"])], codes: ["flow_script.handler_check_missing"] },
   { name: "a handler fact that cannot be read", lines: [...open, ...handler("on retry for rows: a notice", ["  when: somewhere t1", "  then: carry on"])], codes: ["flow_script.fact_invalid"] },
-  { name: "a handler in a library with no handler nodes", lines: [...open, ...handler("on fail for rows: no rows", ["  then: give up"])], codes: ["flow_script.handler_unavailable"], registry: refusalTestRegistry([], ["builtin.control.handler", "builtin.control.handler-end"]) }
+  { name: "a handler in a library with no handler nodes", lines: [...open, ...handler("on fail for rows: no rows", ["  then: give up"])], codes: ["flow_script.handler_unavailable"], registry: refusalTestRegistry([], ["builtin.control.handler", "builtin.control.handler-end"]) },
+  // Interruptions answered through their offer rather than their way out (t423).
+  // The element words stand in for what the domain resolves a handle to.
+  { name: "an optional step pressing an offer's accept control as if it did nothing", lines: [...open, ...click("offer", ["  optional: yes", "  element.visibleText: Claim your discount"])], codes: ["flow_script.way_out_accepts"] },
+  {
+    name: "a handler step pressing an offer's join control as if it did nothing",
+    lines: [...open, ...handler("on before for rows: an offer covers the list", ["  when: exists t1", "  step: close the offer", "    node: web.dom.click", "    selector: .offer", "    element.accessibleName: Join now", "    consequences: none", "  then: carry on"])],
+    codes: ["flow_script.way_out_accepts"],
+    registry: calling()
+  }
 ];
 
 type Outcome = { name: string; issues: JsonObject[]; expected: string[] };

@@ -152,6 +152,18 @@
 // `AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT`, at the end of this file: parts,
 // other entries, checkpoints, handlers and page facts, and when an
 // interruption is a handler rather than an optional step.
+//
+// Two rules came from R4a's second paid run (t423, `run-mv2pgqkj-f3552c70`).
+// Its optional step for a promotion the page raised pressed the promotion's
+// call to action, not its Close, while declaring `consequences: none`; on a real
+// site that takes the offer. So the optional rule, the handler rule and the
+// interruption rule each say an interruption is dismissed through its way out,
+// and a check refuses the step that does otherwise
+// (`../script-statements/way-out-steps.ts`). And it set a box's value with a
+// clear step and then a typing step, and the page put its default back when
+// the box was emptied, so the clear step could never be seen to work. Typing
+// already replaces what a box holds (the web domain's `web.dom.type`), so the
+// act text says to type the new value and never clear first.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 
@@ -242,7 +254,9 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
   "A choice is written as the state it leaves, not as a press. A press toggles: pressing an option the page already shows chosen un-chooses it.",
   "An option in a dropdown is `node: web.dom.select` with the option's `value:`. A checkbox, a radio, or an option the page draws itself and shows chosen -- a colour swatch or size chip drawn apart from the others (`marked`), a `selected` tab, a `pressed` toggle -- is `node: web.dom.check` on that control itself, `checked: true` to choose it or `checked: false` to clear it; it presses only when the state differs, so it is right however the page arrives. Never look for a hidden box behind a swatch or chip: check the swatch or chip itself.",
   "Every option the instruction asks for gets its own step, even one the page arrives with already chosen: write it with `web.dom.check` or `web.dom.select`, which change nothing when the state is already right, so the Flow is right however a later run's page arrives. Press an option with `node: web.dom.click` only when the page shows no chosen state for it at all; `web.dom.check` refuses such a control and says so. A press is right for a control that does something each time it is pressed: apply, add, send, open, next.",
+  "To set a box to a value, type the new value with `node: web.dom.type`: typing replaces whatever the box holds, so never clear it first. A box the page refills when it is emptied fails a clear step, while the typing step alone sets it.",
   "`optional: yes` marks a step that is only sometimes needed -- closing a cookie banner, a popup or a notice the page may not show -- and the run goes on past it when it cannot be done. Use it only on such a step, never on one the answer depends on, and never beside an `on <port>:` line.",
+  "An interruption is dismissed through its way out -- close, no thanks, not now, the X -- never through the control that accepts, joins, buys or continues what it offers: on a real site that press takes the offer. So an optional step names the way out's own handle, and one that presses an accepting control while saying `consequences: none` is refused. A cookie or consent banner is not an offer: prefer its reject or necessary-only answer where it has one, and its accept is allowed where it has none. When the instruction does ask for that act, it is a step of its own, not optional, that says what it lastingly does.",
   "Do not end the Flow with a check you invented to confirm it worked: whether the run did what was asked is judged from the page it ends on, so the last step is the last act the instruction needs. A wait or check step belongs in the Flow only where a later step needs the page to be ready, or where the instruction asks for the check. It waits only for something the page visibly showed after that act while you gathered evidence, never for text inside a closed panel or menu, or a notice that has already gone.",
   "Example, acting on one item:",
   "flow: Set the budget review task to high priority, in progress, with a 3 hour estimate",
@@ -413,8 +427,9 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
   "`done when: <fact>` in a part, or in a handler, says what the page shows once it worked: `done when: text t11 contains \"Booked\"`.",
   "Give a step that commits something (a press, a submit, a choice) its own `done when:` right under its `step` line, before `node:`, so if its answer is lost the run checks the page instead of giving up: `done when: text t9 contains \"Saved\"`.",
   "A fact is `exists <handle>`, `absent <handle>`, `visible <handle>`, `enabled <handle>`, `text <handle> contains \"<words>\"` (or `is`, `matches`), `value <handle> is <value>` (a value may be `$input.<name>`), `count <handle> is <number>`, or `dialog <kind> \"<name>\"`, with `absent` after it when it should be gone. The handle is one the evidence printed, as on any step.",
-  "A handler is what the run does when something it recognises gets in the way: `on <event> [for <step labels> | for this part | everywhere]: <the situation>`, then its `when:` facts, its steps, `then: <what next>` and `end`. Without `for`, it covers the block it is written in. Events: `before` a step is tried, `retry` before it is tried again, `fail` once it has failed, `start` as the part begins, `next` after it succeeded: `on retry for open: a notice covers the list`.",
+  "A handler is what the run does when something it recognises gets in the way: `on <event> [for <step labels> | for this part | everywhere]: <the situation>`, then its `when:` facts, its steps, `then: <what next>` and `end`. Without `for`, it covers the block it is written in. Events: `before` a step is tried, `retry` before it is tried again, `fail` once it has failed, `start` as the part begins, `next` after it succeeded: `on retry for open: a notice covers the list`. A handler's steps that clear what got in the way press its way out, exactly as an optional step does.",
   "`then: carry on` goes on with the step (never after `fail`); `then: go to <checkpoint step>` goes back to a checkpoint; `then: use <output> = <value>`, only after `fail`, stands in for the failed step's results; `then: give up` lets the failure stand. A `before` or `retry` handler needs `done when:`, unless its `when:` says something is showing, whose going away is the proof.",
+  "An interruption, wherever it comes, is dismissed through its way out -- close, no thanks, not now, the X -- never through the control that accepts, joins, buys or continues: on a real site that press takes the offer. A cookie or consent banner is the exception: its reject or necessary-only answer is preferred, and its accept is allowed.",
   "An interruption that can only come at one place is an `optional: yes` step there, with its `only after:` steps. One that can come at several places, or at any pass of a loop, is one handler instead -- `on before everywhere:` or `on retry for <steps>:` -- so one rule covers every place. A loop the site asked to slow down still takes `repeat pace:` as well.",
   "A second known way to do a step is a `fail` handler for it whose steps call another part and end `then: use <output> = $step.<label>.<output>`. Give both parts the same `done when:`, so either way is checked the same.",
   "Write a handler only for an interruption you met while gathering evidence or in a trial, or one the instruction names; never one you imagine.",

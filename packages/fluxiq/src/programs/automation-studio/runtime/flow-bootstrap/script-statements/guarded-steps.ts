@@ -146,6 +146,16 @@ export function automationStudioFlowScriptGuardedSteps(input: {
   return { steps: emitted, issues };
 }
 
+/**
+ * Whether a written step's `optional:` line says yes, read exactly as the
+ * guarded shape reads it -- whether or not that shape could then be built.
+ * For a check after assembly that asks what an optional step may do
+ * (`./way-out-steps.ts`).
+ */
+export function automationStudioFlowScriptStepSaysOptional(step: AutomationStudioFlowScriptStep): boolean {
+  return step.optional !== undefined && OPTIONAL_YES.has(answerKey(step.optional.text));
+}
+
 /** An `optional:` value reduced as every authoring key is (`../authoring/keys.ts`): lower case, letters and digits only. */
 function answerKey(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/gu, "");

@@ -32,6 +32,10 @@ const BY_CODE: ReadonlyArray<readonly [RegExp, Words]> = [
   [/^web\.step\.(?:consequences_undeclared|expected\.consequences)|^bootstrap\.(?:step_consequences_invalid|invalid_consequences)$/u,
     { one: "a step that presses or sends something didn't say what doing that does", many: "{some} steps that press or send something didn't say what doing that does",
       named: "the step {step} presses or sends something but didn't say what doing that does", namedMany: "the steps {steps} press or send something but didn't say what doing that does" }],
+  // t423: an optional or handler step that presses a popup's offer rather than its way out.
+  [/^flow_script\.way_out_accepts$/u,
+    { one: "a step would accept the offer instead of closing it", many: "{some} steps would accept the offer instead of closing it",
+      named: "the step {step} would accept the offer instead of closing it", namedMany: "the steps {steps} would accept the offer instead of closing it" }],
   [/^flow_script\.repeat_/u, { one: "a repeat was written where the Flow can't run it", many: "{some} repeats were written where the Flow can't run them",
     named: "the repeat on the step {step} was written where the Flow can't run it", namedMany: "the repeats on the steps {steps} were written where the Flow can't run them" }],
   [/^(?:web|bootstrap)\.handle[._]/u, { one: "a step points at something that wasn't seen on the page", many: "{some} steps point at things that weren't seen on the page",
