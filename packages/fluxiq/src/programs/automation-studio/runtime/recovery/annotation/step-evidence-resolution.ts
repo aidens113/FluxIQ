@@ -69,8 +69,15 @@ export type AutomationStudioRecoveryStepResolution =
 
 type Refused = Extract<AutomationStudioRecoveryStepResolution, { ok: false }>;
 
-/** Core's own code for a handle no packet the request carried can have issued. */
-const NOT_ISSUED = AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.notIssued;
+/**
+ * Core's own code for a handle no packet the request carried can have issued.
+ * Read when used, never when this module loads: `../../llm/` and this module
+ * import each other, and whichever loads first sees the other's exports still
+ * undefined (two test entries failed to import on `.notIssued`).
+ */
+function notIssued(): typeof AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.notIssued {
+  return AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.notIssued;
+}
 
 /**
  * The resolver a recovery's patches pass through before they are overlaid
@@ -229,10 +236,10 @@ function route(context: Context, parameters: JsonObject): { parameters: JsonObje
   if (found.malformed || found.sites.length === 0) return { parameters, namesHandle: found.malformed };
   const read = found.sites.map((site) => ({ site, handle: automationStudioExploredEvidenceHandle(site.handle) }));
   const labels = new Set(read.flatMap((entry) => (entry.handle.kind === "qualified" ? [entry.handle.evidenceId] : [])));
-  if (labels.size === 0) return context.failureEvidence ? { parameters, packet: context.failureEvidence, namesHandle: true } : { refused: NOT_ISSUED };
-  if (labels.size > 1 || read.some((entry) => entry.handle.kind !== "qualified")) return { refused: NOT_ISSUED };
+  if (labels.size === 0) return context.failureEvidence ? { parameters, packet: context.failureEvidence, namesHandle: true } : { refused: notIssued() };
+  if (labels.size > 1 || read.some((entry) => entry.handle.kind !== "qualified")) return { refused: notIssued() };
   const packet = context.carried.get([...labels][0]!);
-  if (!packet) return { refused: NOT_ISSUED };
+  if (!packet) return { refused: notIssued() };
   const unqualified = structuredClone(parameters);
   for (const entry of read) setHandle(unqualified, entry.site.path, entry.handle.handle);
   return { parameters: unqualified, packet, namesHandle: true };
