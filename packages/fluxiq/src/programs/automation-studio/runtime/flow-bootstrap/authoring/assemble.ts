@@ -22,8 +22,8 @@
 // in, or in the Flow's recovery Subflow for one written `everywhere`
 // (`../script-statements/handler-blocks.ts`). A block's `start at:` and a
 // step's `checkpoint:` become node metadata (`../script-statements/entry-points.ts`),
-// a block's `done when:` its success check, and a Flow that uses any of them
-// says so in `metadata.requires` (contract C10).
+// a block's `done when:` its success check, a step's its node's expected state
+// (`../script-statements/step-done-when.ts`); a Flow using any says so in `metadata.requires` (C10).
 //
 // Order carries the meaning. Steps connect in the order they were written, on
 // the node's first output port that no branch claimed, into the target's first
@@ -75,7 +75,7 @@ import {
   automationStudioFlowScriptEntryPoints,
   automationStudioFlowScriptFacts,
   automationStudioFlowScriptGuardedSteps,
-  automationStudioFlowScriptHandlerSteps,
+  automationStudioFlowScriptHandlerSteps, automationStudioFlowScriptWithStepDoneWhen,
   type AutomationStudioFlowScriptPart
 } from "../script-statements/index.ts";
 import { automationStudioFlowScriptLocator, type AutomationStudioFlowScriptLocatedSubflow } from "./script-locator.ts";
@@ -610,7 +610,7 @@ function buildNode(input: {
   }
   const normalised = normaliseAuthoringNodeParameters({
     definition: input.definition,
-    written,
+    written: automationStudioFlowScriptWithStepDoneWhen({ step: input.step, definition: input.definition, written, issues }), // its own `done when:` as its expected state
     path: input.path,
     fallbackName: input.step.description || input.definition.label,
     // The draft step's own id where it was written from one, which survives

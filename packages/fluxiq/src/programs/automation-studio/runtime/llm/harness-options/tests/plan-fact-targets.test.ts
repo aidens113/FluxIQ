@@ -157,3 +157,43 @@ describe("a page fact's handle", () => {
     expect(() => assertAutomationStudioFlowBootstrapPlanHandlesResolved(dialogsOnly)).not.toThrow();
   });
 });
+
+// t413: a step's own `done when:` is its node's `expectedState.facts`, inside the parameters the domain resolves
+// for the step. The web domain refuses a handle outside its own slots as misplaced, so the fact is resolved first.
+describe("a step's own `done when:` handle", () => {
+  /** A press whose expected state names a handle, as a step's `done when: exists t5` assembles. */
+  const stepPlan = (handle: string): AutomationStudioFlowBootstrapPlan => ({
+    schemaVersion: "0.1",
+    router: { name: "Router", rules: [], fallback: { kind: "subflow", targetSubflowKey: "main" } },
+    subflows: [{
+      key: "main", name: "Main", role: "primary",
+      nodes: [{ key: "s1", definitionId: "ledger.press", definitionVersion: "1.0.0", parameters: { selector: "#hold", expectedState: { facts: [fact(handle)] } } }],
+      edges: []
+    }]
+  });
+  /** The domain's rule for a step: a handle anywhere in its parameters is misplaced. */
+  const strictDomain = (asked: Asked[]) => standIn(asked, (input) => {
+    if (input.nodeDefinitionId === AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID) return standIn([])(input);
+    return JSON.stringify(input.parameters).includes("\"handle\"") ? { status: "refused", issueCodes: ["ledger.handle_misplaced"] } : { status: "unchanged" };
+  });
+
+  it("is resolved before the step is, so the step never reaches the domain naming a handle", async () => {
+    const asked: Asked[] = [];
+    const resolved = await resolve(stepPlan("t5"), strictDomain(asked));
+    if (!resolved.ok) throw new Error(JSON.stringify(resolved.issues));
+
+    expect(resolved.plan.subflows[0]!.nodes[0]!.parameters?.expectedState).toEqual({ facts: [{ fact: "exists", op: "exists", target: { selector: "#notice" } }] });
+    expect(asked.map((input) => input.nodeDefinitionId)).toEqual([AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, "ledger.press"]);
+    expect(JSON.stringify(asked[1]!.parameters)).not.toContain("handle");
+    expect(() => assertAutomationStudioFlowBootstrapPlanHandlesResolved(resolved.plan)).not.toThrow();
+  });
+
+  it("refuses one the domain never issued at the fact's own path, and does not ask about the step", async () => {
+    const asked: Asked[] = [];
+    const resolved = await resolve(stepPlan("t9"), strictDomain(asked));
+    expect(resolved.ok).toBe(false);
+    if (resolved.ok) return;
+    expect(resolved.issues.map((issue) => [issue.code, issue.path])).toEqual([["ledger.handle_unknown", "plan.subflows.0.nodes.0.parameters.expectedState.facts.0.target"]]);
+    expect(asked.map((input) => input.nodeDefinitionId)).toEqual([AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID]);
+  });
+});

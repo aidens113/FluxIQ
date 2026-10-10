@@ -68,6 +68,14 @@ export type AutomationStudioFlowScriptStep = {
    */
   checkpoint?: AutomationStudioFlowScriptOptional;
   /**
+   * The step's own `done when:` lines (t413): what the page shows once this
+   * step worked. Written right under the step line, before its `node:`, or
+   * among its lines with more of them after it (`./parse.ts`). It becomes the
+   * node's expected state, so an act whose answer was lost is settled from
+   * the page (`../script-statements/step-done-when.ts`).
+   */
+  done?: AutomationStudioFlowScriptCondition[];
+  /**
    * Parameters Core set on a step it derived -- a handler's registration and
    * the end of its body (`../script-statements/handler-blocks.ts`). Never
    * written by a model; read before the written lines, which a derived step
@@ -227,7 +235,8 @@ export type AutomationStudioFlowScriptBlock = {
   when?: AutomationStudioFlowScriptCondition[];
   /**
    * The block's `done when:` lines: the facts that prove it worked -- a part's
-   * success check, or a handler's completion check.
+   * success check, or a handler's completion check. A line among one step's
+   * own lines is that step's instead (`AutomationStudioFlowScriptStep.done`).
    */
   done?: AutomationStudioFlowScriptCondition[];
   /** A part's `input: <name>` lines. */

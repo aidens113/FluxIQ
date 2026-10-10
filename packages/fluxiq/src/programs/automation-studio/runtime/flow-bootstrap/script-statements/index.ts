@@ -15,7 +15,9 @@
 // Since t388 the block-level statements of the state-aware grammar live here
 // too: a part a step calls (`./called-parts.ts`), a block's other entries and
 // its checkpoints (`./entry-points.ts`), a handler (`./handler-blocks.ts`), and
-// the page facts all three test (`./fact-condition.ts`).
+// the page facts all three test (`./fact-condition.ts`). Since t413 a step's
+// own `done when:` too, which becomes its node's expected state
+// (`./step-done-when.ts`).
 export * from "./called-parts.ts";
 export * from "./entry-points.ts";
 export * from "./fact-condition.ts";
@@ -25,3 +27,4 @@ export * from "./handler-blocks.ts";
 export * from "./repeat-bound.ts";
 export * from "./repeat-pace.ts";
 export * from "./script-spans.ts";
+export * from "./step-done-when.ts";
