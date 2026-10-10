@@ -16,6 +16,12 @@ import type {
   AutomationStudioFlowRunLifecycleEvent
 } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
+import {
+  AUTOMATION_STUDIO_ROUTE_REFUSAL_GUARDS,
+  AUTOMATION_STUDIO_UNHANDLED_REASONS,
+  type AutomationStudioRouteRefusalGuard,
+  type AutomationStudioUnhandledReason
+} from "../../executor/lifecycle/index.ts";
 
 type RecoveryFields = Pick<AutomationStudioFlowRunActionAttemptRecord, "framePath" | "failureClass" | "entry" | "lifecycle" | "subflowTarget">;
 
@@ -27,6 +33,17 @@ const FAILURE_CLASSES: ReadonlySet<unknown> = new Set(["true_failure", "planned_
 const EVENTS: ReadonlySet<unknown> = new Set(["start", "before", "retry", "fail", "before_next"]);
 const TRUTHS: ReadonlySet<unknown> = new Set(["true", "false", "unknown"]);
 const ENTRY_KINDS: ReadonlySet<unknown> = new Set(["default", "entry", "checkpoint"]);
+const UNHANDLED_REASONS: ReadonlySet<unknown> = new Set(AUTOMATION_STUDIO_UNHANDLED_REASONS);
+const ROUTE_GUARDS: ReadonlySet<unknown> = new Set(AUTOMATION_STUDIO_ROUTE_REFUSAL_GUARDS);
+
+// The run detail's closed codes are the executor's, neither more nor fewer: a
+// code added on one side and not the other fails the typecheck here.
+type UnhandledDisposition = Extract<AutomationStudioFlowRunHandlerDisposition, { kind: "unhandled" }>;
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const SAME_REASONS: Same<NonNullable<UnhandledDisposition["reason"]>, AutomationStudioUnhandledReason> = true;
+const SAME_GUARDS: Same<NonNullable<UnhandledDisposition["guard"]>, AutomationStudioRouteRefusalGuard> = true;
+void SAME_REASONS;
+void SAME_GUARDS;
 
 /** The run detail's recovery fields for one attempt; each is absent when the trace has none or it is malformed. */
 export function automationStudioRunDetailRecoveryTrace(attempt: AutomationStudioNodeAttemptTrace): RecoveryFields {
@@ -77,10 +94,21 @@ function entryOf(value: unknown): RecoveryFields["entry"] {
   return { kind, id: fields.id, evidence };
 }
 
+/**
+ * The decided disposition. An `unhandled` keeps its closed `reason` and the
+ * route `guard` that refused it (`executor/lifecycle/unhandled-reason.ts`,
+ * t411), each only when it is one of Core's codes: a stored value outside them
+ * is dropped, never the disposition.
+ */
 function dispositionOf(value: unknown): AutomationStudioFlowRunHandlerDisposition | undefined {
   const fields = record(value);
   if (!fields) return undefined;
-  if (fields.kind === "resume" || fields.kind === "resolve" || fields.kind === "unhandled") return { kind: fields.kind };
+  if (fields.kind === "unhandled") {
+    const reason = UNHANDLED_REASONS.has(fields.reason) ? fields.reason as AutomationStudioUnhandledReason : undefined;
+    const guard = ROUTE_GUARDS.has(fields.guard) ? fields.guard as AutomationStudioRouteRefusalGuard : undefined;
+    return { kind: "unhandled", ...(reason ? { reason } : {}), ...(guard ? { guard } : {}) };
+  }
+  if (fields.kind === "resume" || fields.kind === "resolve") return { kind: fields.kind };
   if (fields.kind === "route" && typeof fields.checkpointId === "string" && ID.test(fields.checkpointId)) return { kind: "route", checkpointId: fields.checkpointId };
   return undefined;
 }

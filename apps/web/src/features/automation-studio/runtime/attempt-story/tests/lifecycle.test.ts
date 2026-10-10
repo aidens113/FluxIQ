@@ -27,9 +27,27 @@ describe("lifecycle story lines (C11)", () => {
     expect(texts({ ...base, lifecycle: lifecycle("before", { kind: "resume" }) }, named)).toEqual(["Before a step, the handler for a cookie banner covers the page ran. It dealt with it, and the run carried on."]);
     expect(texts({ ...base, lifecycle: lifecycle("fail", { kind: "route", checkpointId: "search-box" }) }, named)).toEqual(["When the step failed, the handler for a cookie banner covers the page ran. Went back to Search box."]);
     expect(texts({ ...base, lifecycle: lifecycle("retry", { kind: "resolve" }) })).toEqual(["Before trying the step again, the handler for “handler.consent” ran. Used the other way: the run went on with what the handler produced."]);
-    expect(texts({ ...base, lifecycle: lifecycle("before_next", { kind: "unhandled" }, "false") })).toEqual(["Before the next step, the handler for “handler.consent” ran. It did not settle it: its check found the situation still there."]);
-    expect(texts({ ...base, lifecycle: lifecycle("start", { kind: "unhandled" }, "unknown") })).toEqual(["When the part started, the handler for “handler.consent” ran. It did not settle it: its check could not tell whether the situation was gone."]);
+    expect(texts({ ...base, lifecycle: lifecycle("before_next", { kind: "unhandled" }, "false") })).toEqual(["Before the next step, the handler for “handler.consent” ran. It did not help: its check found the situation still there."]);
+    expect(texts({ ...base, lifecycle: lifecycle("start", { kind: "unhandled" }, "unknown") })).toEqual(["When the part started, the handler for “handler.consent” ran. It did not help: its check could not tell whether the situation was gone."]);
     expect(texts({ ...base, lifecycle: { event: "before" } })).toEqual([]);
+  });
+
+  it("says why a handler did not help, from the reason Core kept and the guard that refused its route", () => {
+    const said = (disposition: Record<string, unknown>, check = "true") => texts({ ...base, lifecycle: lifecycle("fail", disposition, check) });
+    const ran = "When the step failed, the handler for “handler.consent” ran.";
+    expect(said({ kind: "unhandled", reason: "completion_check_not_true" }, "false")).toEqual([`${ran} It did not help: its check found the situation still there.`]);
+    expect(said({ kind: "unhandled", reason: "body_failed" })).toEqual([`${ran} It did not help: its own steps did not finish.`]);
+    expect(said({ kind: "unhandled", reason: "budget_spent" })).toEqual([`${ran} It did not help: the run had no recovery tries left.`]);
+    expect(said({ kind: "unhandled", reason: "route_refused", guard: "passes_uncertain_act" })).toEqual([`${ran} It did not help: going back would pass a step that may already have gone through.`]);
+    expect(said({ kind: "unhandled", reason: "route_refused", guard: "repeats_unrecorded_act" })).toEqual([`${ran} It did not help: going back would do a finished step again.`]);
+    expect(said({ kind: "unhandled", reason: "route_refused" })).toEqual([`${ran} It did not help: going back was not allowed.`]);
+    expect(said({ kind: "unhandled", reason: "something_new" })).toEqual([`${ran} It did not help.`]);
+    const reasons = ["written_unhandled", "body_failed", "completion_check_not_true", "disposition_not_allowed", "resolve_missing_outputs", "budget_spent", "already_tried", "no_body", "core_stop"];
+    const guards = ["checkpoint_not_found", "checkpoint_not_holding", "requires_unbound", "passes_uncertain_act", "unreachable", "unguarded", "repeats_unrecorded_act"];
+    const all = [...reasons.map((reason) => said({ kind: "unhandled", reason }, "false")), ...guards.map((guard) => said({ kind: "unhandled", reason: "route_refused", guard }))].flat();
+    // Each reason and each guard has its own words, and none is a code.
+    expect(new Set(all).size).toBe(reasons.length + guards.length);
+    plain(all);
   });
 
   it("tells a true failure from a planned fail and an uncertain act, and leaves the rest to their own records", () => {
