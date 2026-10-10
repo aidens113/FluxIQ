@@ -249,6 +249,50 @@ describe("AutomationStudioProjectFlowResourceRepository", () => {
     await pool.closeAll();
   });
 
+  // A port, variable or error id is unique within its Flow, not across the
+  // project (t405): two Flows, and two Subflow graphs of one automation, may
+  // each hold `cart`, a variable `count` and an error `error.blocked`.
+  it("saves and reads back the same port, variable and error ids on two Flows and on two Subflow graphs of one automation", async () => {
+    const pool = new AutomationStudioProjectDatabasePool({ rootDir });
+    const repository = await AutomationStudioProjectFlowResourceRepository.open({ pool, projectId: "project.ports" });
+    const port = (portId: string, description: string) => ({ portId, name: portId, valueType: { kind: "unknown" }, required: false, defaultValue: null, description, sortKey: "" });
+    const owned = (description: string) => ({
+      variables: [{ variableId: "count", name: "count", valueType: { kind: "number" }, initialValue: 0, description, sortKey: "" }],
+      errors: [{ errorId: "error.blocked", code: "blocked", description, metadata: { owner: description } }]
+    });
+    try {
+      await repository.upsertFlow({ ...baseFlow("flow.a", "A", 1), inputs: [port("query", "a in")], outputs: [port("cart", "a out")], ...owned("a") });
+      await repository.upsertFlow({ ...baseFlow("flow.b", "B", 2), inputs: [port("query", "b in")], outputs: [port("cart", "b out")], ...owned("b") });
+      await repository.upsertFlow(baseFlow("flow.main", "Main", 3));
+      for (const [index, key] of ["first", "second"].entries()) {
+        const graphFlowId = `flow.main.${key}`;
+        await repository.upsertFlow({ ...baseFlow(graphFlowId, key, 4 + index), parentFlowId: "flow.main", outputs: [port("cart", `${key} out`)], ...owned(key) });
+        await repository.upsertSubflow({ subflowId: `subflow.${key}`, parentFlowId: "flow.main", graphFlowId, parentCategoryId: null, name: key, description: "", role: "utility", status: "active", inputMapping: [], outputMapping: [], approvalOverride: null });
+        await repository.upsertFlow({ ...baseFlow(graphFlowId, key, 6 + index), parentFlowId: "flow.main", owningSubflowId: `subflow.${key}`, outputs: [port("cart", `${key} out`)], ...owned(key) });
+      }
+      // Saving one Flow's ports again replaces only that Flow's.
+      await repository.upsertFlow({ ...baseFlow("flow.a", "A", 8), inputs: [port("query", "a in again")], outputs: [port("cart", "a out again")], ...owned("a again") });
+      await repository.close();
+
+      const reopened = await AutomationStudioProjectFlowResourceRepository.open({ pool, projectId: "project.ports" });
+      try {
+        const ports = async (flowId: string) => {
+          const detail = await reopened.getFlow(flowId);
+          return [
+            ...[...detail!.inputs, ...detail!.outputs].map((item) => [item.direction, item.portId, item.description]),
+            ...detail!.variables.map((item) => ["variable", item.variableId, item.description]),
+            ...detail!.errors.map((item) => ["error", item.errorId, item.metadata.owner])
+          ];
+        };
+        await expect(ports("flow.a")).resolves.toEqual([["input", "query", "a in again"], ["output", "cart", "a out again"], ["variable", "count", "a again"], ["error", "error.blocked", "a again"]]);
+        await expect(ports("flow.b")).resolves.toEqual([["input", "query", "b in"], ["output", "cart", "b out"], ["variable", "count", "b"], ["error", "error.blocked", "b"]]);
+        await expect(ports("flow.main.first")).resolves.toEqual([["output", "cart", "first out"], ["variable", "count", "first"], ["error", "error.blocked", "first"]]);
+        await expect(ports("flow.main.second")).resolves.toEqual([["output", "cart", "second out"], ["variable", "count", "second"], ["error", "error.blocked", "second"]]);
+        await expect(reopened.getSubflow("subflow.second")).resolves.toMatchObject({ graphFlowId: "flow.main.second" });
+      } finally { await reopened.close(); }
+    } finally { await pool.closeAll(); }
+  });
+
   it("records transactional mutation deltas for resource changes and deletion", async () => {
     const pool = new AutomationStudioProjectDatabasePool({ rootDir });
     const mutations = await AutomationStudioProjectFlowResourceMutations.open({ pool, projectId: "project.mutations" });
