@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
-import { emitAutomationStudioActivity } from "../../activity/index.ts";
+import { emitAutomationStudioActivityStepSkipped } from "../../activity/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import { automationStudioNodeActLasts } from "../defensive/index.ts";
 import { chooseAutomationStudioEdge, hasUnvisitedAutomationStudioNodes, missingTargetTrace } from "../graph-navigation.ts";
@@ -79,11 +79,13 @@ export async function automationStudioStepAlreadyDone(
     ctx.values[outputId] = value;
   }
   const index = ctx.stepNumbers.numberOf(node.id);
-  emitAutomationStudioActivity({
-    phase: "running",
-    label: said,
-    ...(index !== undefined ? { step: { index, count: ctx.stepNumbers.count, nodeId: node.id, ...(node.label ? { label: node.label } : {}), ...(row ? { row } : {}) } } : {}),
-    detail: { kind: "step", title: said, status: "succeeded", ref: node.id }
+  // The row carries `skipped` (t416), so a client reads it from that field; its subject is the row's label, else the step's own.
+  const subject = row ?? node.label?.trim();
+  emitAutomationStudioActivityStepSkipped({
+    nodeId: node.id,
+    said,
+    skipped: { reason: "already_done", ...(subject ? { subject } : {}) },
+    ...(index !== undefined ? { step: { index, count: ctx.stepNumbers.count, nodeId: node.id, ...(node.label ? { label: node.label } : {}), ...(row ? { row } : {}) } } : {})
   });
   return await leave(ctx, node, regionId);
 }

@@ -2,7 +2,8 @@ import {
   CLIENT_GATEWAY_ACTIVITY_RECOVERY_EVENTS,
   CLIENT_GATEWAY_ACTIVITY_RECOVERY_KINDS,
   CLIENT_GATEWAY_ACTIVITY_RECOVERY_OUTCOMES,
-  CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS
+  CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS,
+  CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS
 } from "@fluxiq/contracts/client-gateway";
 import type { AutomationStudioActivityInput } from "./contracts.ts";
 import { AUTOMATION_STUDIO_ACTIVITY_LIMITS } from "./limits.ts";
@@ -13,6 +14,7 @@ const RESOLUTIONS: ReadonlySet<string> = new Set(CLIENT_GATEWAY_ACTIVITY_RESOLUT
 const RECOVERY_KINDS: ReadonlySet<unknown> = new Set(CLIENT_GATEWAY_ACTIVITY_RECOVERY_KINDS);
 const RECOVERY_OUTCOMES: ReadonlySet<unknown> = new Set(CLIENT_GATEWAY_ACTIVITY_RECOVERY_OUTCOMES);
 const RECOVERY_EVENTS: ReadonlySet<unknown> = new Set(CLIENT_GATEWAY_ACTIVITY_RECOVERY_EVENTS);
+const SKIP_REASONS: ReadonlySet<unknown> = new Set(CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS);
 /** An id a recovery may lead to: no whitespace, at most 200 characters. */
 const TARGET_ID = /^[^\s]{1,200}$/u;
 
@@ -42,23 +44,39 @@ function boundedRecovery(recovery: Recovery): Recovery | undefined {
   };
 }
 
+type Skipped = NonNullable<Detail["skipped"]>;
+
+/**
+ * A `step` row's skip with its subject trimmed and cut to the title's bound,
+ * or `undefined` when its reason is outside the contract. An empty subject is
+ * left out rather than sent.
+ */
+function boundedSkip(skipped: Skipped): Skipped | undefined {
+  if (!SKIP_REASONS.has(skipped.reason)) return undefined;
+  const subject = typeof skipped.subject === "string" ? skipped.subject.trim() : "";
+  return { reason: skipped.reason, ...(subject ? { subject: clip(subject, AUTOMATION_STUDIO_ACTIVITY_LIMITS.title) } : {}) };
+}
+
 /**
  * The detail row with its strings cut to their bounds, and a `resolution`
  * kept only when the contract names it and the row is an `ask`: it says how a
  * wait on the person ended, and no other row carries one. Likewise a
- * `recovery` is kept only on a `step` row, and only in the contract's shape.
+ * `recovery` or a `skipped` is kept only on a `step` row, and only in the
+ * contract's shape.
  */
 function boundedDetail(detail: Detail): Detail {
   const limits = AUTOMATION_STUDIO_ACTIVITY_LIMITS;
-  const { resolution, recovery, ...rest } = detail;
+  const { resolution, recovery, skipped, ...rest } = detail;
   const kept = resolution !== undefined && detail.kind === "ask" && RESOLUTIONS.has(resolution);
   const recovered = recovery !== undefined && detail.kind === "step" ? boundedRecovery(recovery) : undefined;
+  const skip = skipped !== undefined && detail.kind === "step" ? boundedSkip(skipped) : undefined;
   return {
     ...rest,
     title: clip(detail.title, limits.title),
     ...(detail.text === undefined ? {} : { text: clip(detail.text, limits.text) }),
     ...(kept ? { resolution } : {}),
-    ...(recovered ? { recovery: recovered } : {})
+    ...(recovered ? { recovery: recovered } : {}),
+    ...(skip ? { skipped: skip } : {})
   };
 }
 

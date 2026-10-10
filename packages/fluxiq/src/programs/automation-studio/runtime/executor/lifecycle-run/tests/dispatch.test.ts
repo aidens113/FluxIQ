@@ -122,8 +122,9 @@ describe("dispatchAutomationStudioLifecycleEvent", () => {
     const unhandled = await decided("fail", { disposition: "unhandled" });
     expect(unhandled).toMatchObject({ kind: "handled", decision: { kind: "unhandled", reason: "The handler ended unhandled.", code: "written_unhandled" } });
     expect(unhandled.runs[0]?.lifecycle?.disposition).toEqual({ kind: "unhandled", reason: "written_unhandled" });
-    // The runtime stream's record names the disposition alone, as its model type does.
-    expect(unhandled.runs[0]?.execution.disposition).toEqual({ kind: "unhandled" });
+    // The runtime stream's record keeps why, as the attempt's record does (t416).
+    expect(unhandled.runs[0]?.execution.disposition).toEqual({ kind: "unhandled", reason: "written_unhandled" });
+    expect(unguarded.runs[0]?.execution.disposition).toEqual({ kind: "unhandled", reason: "route_refused", guard: "unguarded" });
     expect(unhandled.runs[0]?.recovery.outcome).toBe("failed");
     expect(unhandled.runs[0]?.execution.outcome).toBe("succeeded");
   });
