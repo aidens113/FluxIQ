@@ -4,7 +4,7 @@ import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExpectationEvaluation } from "../../nodes/index.ts";
 import { EXPECTATION_REJECTED_FAILURE } from "../../nodes/policy/index.ts";
 import { hostExpectationEvaluator, type AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
-import { AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE, AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY, automationStudioNodeActLasts, type AutomationStudioEffectCheckResult, type AutomationStudioLastingActCheck } from "./defensive/index.ts";
+import { AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE, AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY, automationStudioHostActLanded, automationStudioNodeActLasts, type AutomationStudioEffectCheckResult, type AutomationStudioLastingActCheck } from "./defensive/index.ts";
 import { automationStudioFactConditionsHold, parseAutomationStudioFactConditions, type AutomationStudioFactCondition, type AutomationStudioFactTruth } from "./lifecycle/index.ts";
 import { observeAutomationStudioFacts } from "./lifecycle-run/index.ts";
 import { automationStudioRunWait } from "./pacing/index.ts";
@@ -195,7 +195,7 @@ export async function attemptWithHostExpectationEvaluation(
  * `landed` when the attempt's own evaluation already saw the state hold, or
  * when every condition was judged and held (`any`: one held); `not_landed` only
  * when the page answered and a judged condition did not hold (`any`: every
- * condition was judged and none held). `unknown` otherwise: no expected state,
+ * condition was judged and none held). `unknown` otherwise: no expected state the host could judge,
  * no evaluator, a host that judged nothing or did not say how much it judged,
  * an evaluator that threw. A missing acknowledgement is never `not_landed`.
  *
@@ -206,12 +206,19 @@ export async function attemptWithHostExpectationEvaluation(
  * stops as Outcome uncertain rather than act twice on a page fact -- and
  * anything else `unknown`: a host with no fact check, one that failed, a fact
  * it could not settle.
+ *
+ * A node that declares no expected state is asked of the host from the act
+ * itself (`./defensive/host-act-landed.ts`, t430): the page, never the step's
+ * declaration, says whether a press whose answer was lost landed.
  */
 export function automationStudioHostEffectCheck(node: AutomationStudioFlowNode, options: AutomationStudioGraphExecutionOptions): AutomationStudioLastingActCheck<AutomationStudioNodeAttemptTrace> {
   return async (attempt) => {
     const evaluate = hostExpectationEvaluator(options.hostRuntime);
     const expectedState = attempt.transitionComparison?.expected.expectedState ?? expectedTransitionForNode(node, attempt).expectedState;
-    if (!expectedState || Object.keys(expectedState).length === 0) return "unknown";
+    if (!expectedState || Object.keys(expectedState).length === 0) {
+      const timeoutMs = automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs);
+      return await automationStudioHostActLanded(options.hostRuntime, { node, attemptId: attempt.attemptId, timeoutMs, ...(options.signal ? { signal: options.signal } : {}) });
+    }
     if (automationStudioExpectationSatisfiedAfterFailure(attempt.transitionComparison)) return "landed";
     const facts = expectedFacts(expectedState);
     if (facts) {
