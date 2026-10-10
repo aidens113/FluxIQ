@@ -48,7 +48,7 @@ import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
-import { automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
+import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
@@ -93,7 +93,7 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
   const listed = ran.slice(0, MAX_STEPS).map(({ attempt, attempts, absorbed, pass }, index) => {
     const node = nodes.get(attempt.nodeId);
     const failure = attempt.failure;
-    const control = controlWords(node?.parameterValues);
+    const control = automationStudioModelFacingControlWords(node?.parameterValues);
     // A control the step could not find where it was saved, though the domain measured one like it on the page (t420).
     const onPage = failure && !attempt.stateHeld ? automationStudioTrialTargetOnPage({ step: index + 1, node, control, attempt, earlier: absorbed.map((entry) => entry.failed) }) : undefined;
     const step = compact({
@@ -117,7 +117,7 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
 function learnedPaces(trace: AutomationStudioGraphExecutionTrace | undefined, nodes: ReadonlyMap<string, AutomationStudioFlowNode>): JsonObject[] {
   return (trace?.pace ?? []).filter((pace) => pace.learnedMs !== undefined).map((pace) => {
     const node = nodes.get(pace.nodeId);
-    return compact({ definitionId: node?.definitionId, label: node?.label, control: controlWords(node?.parameterValues), paceMs: pace.paceMs,
+    return compact({ definitionId: node?.definitionId, label: node?.label, control: automationStudioModelFacingControlWords(node?.parameterValues), paceMs: pace.paceMs,
       said: `The run learned to start this step at most once every ${(pace.paceMs / 1_000).toFixed(1)} s after the site asked it to slow down${pace.raisedCount > 1 ? ` ${pace.raisedCount} times` : ""}, and held every later pass to it.` });
   });
 }
@@ -158,14 +158,6 @@ function executedSteps(attempts: readonly AutomationStudioNodeAttemptTrace[]): E
 
 /** The nodes whose `body` passes a step can run in, as the executor keys them. */
 const LOOP_DEFINITION_IDS: ReadonlySet<string> = new Set(["builtin.control.for-each", "builtin.control.repeat"]);
-
-/** The words of the element a node targets, from the identity its handle resolved to at submission (`parameters.element`). */
-function controlWords(parameters: JsonObject | undefined): string | undefined {
-  const element = parameters?.element;
-  if (!element || typeof element !== "object" || Array.isArray(element)) return undefined;
-  const words = [element.accessibleName, element.visibleText].find((value): value is string => typeof value === "string" && value.trim() !== "");
-  return words?.replace(/\s+/gu, " ").trim();
-}
 
 function compact(value: Record<string, string | number | undefined>): JsonObject {
   return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string | number] => entry[1] !== undefined && entry[1] !== ""));

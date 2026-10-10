@@ -2618,7 +2618,7 @@ export class AutomationStudioService {
               ? `Router selected Subflow ${route.selectedSubflow.subflowId}, but its graph Flow ${selectedFlowId || "was not configured"} could not be loaded or did not prove matching Subflow ownership.`
               : route.diagnostics.map((diagnostic) => diagnostic.message).join(" ")
           };
-        await commands.checkpoint();
+        await commands.checkpoint(trace);
         const next: AutomationStudioRuntimeSession = {
           ...session, status: trace.status,
           startedAt: session.startedAt ?? startedAt,
@@ -2698,7 +2698,7 @@ export class AutomationStudioService {
       : runtimeCanonical
       ? await commands.execute(async () => runCanonicalAutomationStudioFlow(runtimeCanonical, await this.catalogue.listPublishedFlowSnapshots(), graphOptions, (await this.catalogue.listFlowPublicationRecords()).filter((record) => record.status === "deprecated").map((record) => `${record.flowId}@${record.version}`), (executed) => { failedTraceAttempt = automationStudioUnresolvedFailedAttempt(executed.attempts); }))
       : await commands.execute(async () => runAutomationStudioGraph(runtimeFlow, graphOptions));
-    await commands.checkpoint();
+    await commands.checkpoint(trace);
     const next: AutomationStudioRuntimeSession = {
       ...session,
       status: trace.status,

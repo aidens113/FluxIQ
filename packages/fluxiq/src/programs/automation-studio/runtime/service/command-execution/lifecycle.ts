@@ -31,7 +31,16 @@ export class AutomationStudioRequiredCommandRun {
     options.commandRun = this.run; options.signal = this.run.signal;
   }
   async execute<T>(start: () => Promise<T>): Promise<T> { return this.run ? await this.run.own(start) : await start(); }
-  async checkpoint(): Promise<void> { if (this.run) await this.run.checkpoint(); }
+  /**
+   * The run's closing check that every command it issued was consumed. A run
+   * that `ended` as Outcome uncertain keeps that ending: in a required run its
+   * command's outcome stayed unknown and latched the run, so this check would
+   * refuse for the very reason the run already stopped and says (t427).
+   */
+  async checkpoint(ended?: { failure?: { code?: string } }): Promise<void> {
+    if (ended?.failure?.code === "run.outcome_uncertain") return;
+    if (this.run) await this.run.checkpoint();
+  }
   async endFailure(ports: AutomationStudioRuntimeSessionEndingPorts, projectId: string | null | undefined, session: AutomationStudioRuntimeSession | undefined, error: unknown): Promise<AutomationStudioRuntimeSession> {
     if (!projectId || !session) throw error;
     const ending = await endAutomationStudioRuntimeSessionAfterThrow(ports, projectId, session.runId, error);

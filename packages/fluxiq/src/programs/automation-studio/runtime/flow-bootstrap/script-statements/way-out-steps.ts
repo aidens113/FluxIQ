@@ -56,6 +56,7 @@ import type {
   AutomationStudioFlowScript,
   AutomationStudioFlowScriptStep
 } from "../authoring/index.ts";
+import { automationStudioModelFacingControlWords } from "../../llm/model-facing/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 import { automationStudioFlowScriptStepSaysOptional } from "./guarded-steps.ts";
 import { scriptStatementRefusal } from "./statement-refusal.ts";
@@ -117,7 +118,7 @@ export function automationStudioFlowScriptWayOutIssues(input: {
       const line = input.locator.nodes[`${subflowIndex}.${nodeIndex}`]?.line;
       const dismissal = line === undefined ? undefined : dismissals.get(line);
       if (!dismissal || refused.has(dismissal.step.line)) continue;
-      const words = controlWords(node.parameters);
+      const words = boundedControlWords(node.parameters);
       if (!words || !wordsAccept(words, dismissal.consent === true)) continue;
       refused.add(dismissal.step.line);
       issues.push(scriptStatementRefusal(WAY_OUT_ACCEPTS, message(dismissal, words), consequencesLine(dismissal.step)));
@@ -138,13 +139,9 @@ function wordsAccept(words: string, consent: boolean): boolean {
   return ACCEPTING_WORD.test(words) || ACCEPTING_LEAD.test(words);
 }
 
-/** The words of the element a node targets, from the identity its handle resolved to; nothing when it carries none or only prose. */
-function controlWords(parameters: JsonObject | undefined): string | undefined {
-  const element = parameters?.element;
-  if (!element || typeof element !== "object" || Array.isArray(element)) return undefined;
-  const words = [element.accessibleName, element.visibleText, element.label]
-    .find((value): value is string => typeof value === "string" && value.trim() !== "")
-    ?.replace(/\s+/gu, " ").trim();
+/** The control's own words (`automationStudioModelFacingControlWords`); nothing when it carries none or only prose. */
+function boundedControlWords(parameters: JsonObject | undefined): string | undefined {
+  const words = automationStudioModelFacingControlWords(parameters);
   return words && words.length <= MAX_CONTROL_WORDS ? words : undefined;
 }
 

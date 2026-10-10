@@ -47,6 +47,10 @@ export class AutomationStudioCommandRunController {
       if (state.blocked) throw new Error(state.blocked); effect.consumed = true;
     });
   }
+  /** Whether the command issued under `context` came back with a committed receipt: false while it is in flight, and for good once its outcome is unknown. */
+  receipted(context: Context): boolean {
+    return this.contexts.get(context)?.effect.ticket !== undefined;
+  }
   open(input: AutomationStudioCommandRunOwner & { signal?: AbortSignal }): Promise<AutomationStudioCommandRunScope> {
     this.requireOpen();
     if (!input || typeof input !== "object" || Object.getPrototypeOf(input) !== Object.prototype || Reflect.ownKeys(input).some(key => typeof key !== "string" || !["projectId", "runId", "rootFlowId", "signal"].includes(key)) || Object.values(Object.getOwnPropertyDescriptors(input)).some(descriptor => !descriptor.enumerable || !Object.hasOwn(descriptor, "value"))) throw new Error("command_run.invalid_open_options");
