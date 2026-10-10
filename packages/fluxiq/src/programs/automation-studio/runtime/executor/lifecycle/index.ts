@@ -14,6 +14,7 @@ export {
   type AutomationStudioLifecycleLedger
 } from "./budget-ledger.ts";
 export type { AutomationStudioHandlerDisposition, AutomationStudioLastingActStatus, AutomationStudioLifecycleContinuation } from "./continuation.ts";
+export { automationStudioLifecycleEventApplies } from "./event-applies.ts";
 export { decideAutomationStudioDisposition, type AutomationStudioCoreStop, type AutomationStudioDispositionDecision, type AutomationStudioRouteCheck } from "./dispositions.ts";
 export { selectAutomationStudioEntry, type AutomationStudioEntryConsideration, type AutomationStudioEntrySelection } from "./entry-selection.ts";
 export {

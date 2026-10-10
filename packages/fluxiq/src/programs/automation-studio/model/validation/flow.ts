@@ -10,6 +10,8 @@ import {
   type AutomationStudioHandlerDispositionKind,
   type AutomationStudioLifecycleEvent
 } from "../../nodes/control-flow/index.ts";
+// The owning module, not its barrel: the barrel's budget module imports `model/`, which would close a cycle here.
+import { automationStudioLifecycleEventApplies } from "../../runtime/executor/lifecycle/event-applies.ts";
 import { validateAutomationStudioFlowRegions, type AutomationStudioFlowArtifact, type AutomationStudioFlowInterface, type AutomationStudioFlowNode, type AutomationStudioFlowPort, type AutomationStudioFlowValueType, type AutomationStudioFlowVariable, type AutomationStudioSubflowRole } from "../index.ts";
 import { addIssue, result, type AutomationStudioValidationIssue, type AutomationStudioValidationResult } from "./issue.ts";
 
@@ -160,7 +162,9 @@ const BODY_PORT_ID = "body";
 /**
  * Refuses a handler the runtime could not dispatch as written: an unknown
  * event; a scope that is not one of the three shapes, names a node outside the
- * graph, or is `automation` outside the recovery Subflow; a `before`/`retry`
+ * graph, names Core plumbing the event never fires at
+ * (`runtime/executor/lifecycle/event-applies.ts`), or is `automation` outside
+ * the recovery Subflow; a `before`/`retry`
  * handler without a `completionCheck`; a body with no Handler End, or with a
  * Handler inside it; a Handler End whose disposition is unknown or not allowed
  * at the event (`resume` at `fail`, `resolve` anywhere else), whose Route names
@@ -186,6 +190,9 @@ function validateFlowHandlers(flow: AutomationStudioFlowArtifact, issues: Automa
     } else if (scope.kind === "nodes") {
       for (const nodeId of scope.nodeIds.filter((id) => !nodesById.has(id))) {
         addIssue(issues, "error", "flow.handler_scope_node_outside_graph", `Handler "${node.id}" names node "${nodeId}", which is not in this graph.`, `${path}.scope.nodeIds`);
+      }
+      for (const named of scope.nodeIds.map((id) => nodesById.get(id)).filter((named) => named && event && !automationStudioLifecycleEventApplies(event, named))) {
+        addIssue(issues, "error", "flow.handler_scope_plumbing_node", `Handler "${node.id}" names node "${named!.id}" (${named!.definitionId}), which neither acts on nor reads the host, so "${event}" never fires there.`, `${path}.scope.nodeIds`);
       }
     } else if (scope.kind === "automation" && context.subflowRole !== "recovery") {
       addIssue(issues, "error", "flow.handler_automation_scope_outside_recovery", `Handler "${node.id}" applies to the whole automation, which only the automation's recovery Subflow graph may declare.`, `${path}.scope.kind`);
