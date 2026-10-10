@@ -19,6 +19,17 @@ describe("an issue's own words", () => {
     expect(automationStudioActivityIssueWords([{ code: "web.step.consequences_undeclared", line: 12 }], true).reasons).toEqual(["a step that presses or sends something didn't say what doing that does"]);
   });
 
+  // t423: a step that presses a popup's offer rather than its way out, said without its code.
+  it("says a step that would accept an offer instead of closing it", () => {
+    const said = automationStudioActivityIssueWords([{ code: "flow_script.way_out_accepts", path: "flow.line.9", line: 5 }]);
+    expect(said).toEqual({ reasons: ["a step would accept the offer instead of closing it"], steps: 1, others: 0 });
+    for (const reason of said.reasons) expect(reason).not.toMatch(CODE);
+    expect(automationStudioActivityCompletionRefusal({
+      issueCodes: ["flow_script.way_out_accepts"],
+      feedback: { code: "candidate.way_out_refused", issues: [{ code: "flow_script.way_out_accepts", path: "flow.line.9", line: 5 }] }
+    })).toBe("Sent back because a step would accept the offer instead of closing it. One step needs fixing.");
+  });
+
   it("counts by script line first, then by node, and names how many when asked", () => {
     const repeats = [{ code: "flow_script.repeat_body_is_routed", path: "flow.line.22", line: 23 }, { code: "flow_script.repeat_invalid", path: "flow.line.27", line: 23 }];
     expect(automationStudioActivityIssueWords(repeats)).toEqual({ reasons: ["a repeat was written where the Flow can't run it"], steps: 1, others: 0 });

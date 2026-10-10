@@ -17,7 +17,11 @@
 // its checkpoints (`./entry-points.ts`), a handler (`./handler-blocks.ts`), and
 // the page facts all three test (`./fact-condition.ts`). Since t413 a step's
 // own `done when:` too, which becomes its node's expected state
-// (`./step-done-when.ts`).
+// (`./step-done-when.ts`). Since t423 one check that runs after the domain
+// resolved each step's target, not during assembly: an optional or handler step
+// that presses an interruption's offer rather than its way out
+// (`./way-out-steps.ts`), which the candidate submission asks
+// (`../candidate/submission.ts`).
 export * from "./called-parts.ts";
 export * from "./entry-points.ts";
 export * from "./fact-condition.ts";
@@ -28,3 +32,4 @@ export * from "./repeat-bound.ts";
 export * from "./repeat-pace.ts";
 export * from "./script-spans.ts";
 export * from "./step-done-when.ts";
+export * from "./way-out-steps.ts";
