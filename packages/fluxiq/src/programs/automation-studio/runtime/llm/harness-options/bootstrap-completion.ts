@@ -139,6 +139,7 @@ import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvi
 import type { AutomationStudioLlmEvidenceRestoredStep } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleReach } from "./binding.ts";
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
+import { automationStudioAmendedPlanParameters } from "./amended-plan-parameters.ts";
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView } from "./plan-parameter-resolution.ts";
 
@@ -202,7 +203,7 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
 
 const FEEDBACK_INSTRUCTION = "The completed plan was refused and nothing was created. Correct every listed issue and complete again. "
   + "Where an issue carries accepted, it is what that parameter takes: write only the keys it names, beside a handle where one belongs, and follow its example. "
-  + `Where a parameter needs something you observed, write {"${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY}": "<handle copied exactly from evidence>"} instead of writing a locator of your own; `
+  + `Where a parameter needs something you observed, write {"${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY}": "<handle copied exactly from evidence>"} and nothing of your own in its place; `
   + `if you explored more than one place, add "${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY}": "<the location the evidence reported for that handle>". `
   + "A code written <code>:<path> names where inside that node's parameters the issue is, with keys you chose given by their position; "
   + "a parameter's own description names any further keys it takes beside the handle. "
@@ -348,6 +349,9 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
         handlesIssued: true,
         permissionFor: input.permissionFor,
         inheritedNodeRefs: drafted?.inheritedNodeRefs,
+        // A plan from the reply is the model's writing; a draft's steps ran with what the domain resolved (t432).
+        writtenByModel: drafted === undefined,
+        modelWrittenParameters: drafted?.amendedParameters,
         ...(input.handleReach ? { handleReach: input.handleReach } : {})
       });
       if (resolved.ok) handleViews = resolved.handleViews;
@@ -506,7 +510,7 @@ function fromDraft(
   resolution: AutomationStudioNodeRegistryResolution,
   instructionText: string | undefined,
   routeSignaturesOf: ((step: AutomationStudioFlowDraftStep) => AutomationStudioRouteSignatures | undefined) | undefined
-): AutomationStudioFlowBootstrapAcceptance & { inheritedNodeRefs?: ReadonlySet<string> } {
+): AutomationStudioFlowBootstrapAcceptance & { inheritedNodeRefs?: ReadonlySet<string>; amendedParameters?: ReadonlyMap<string, readonly string[]> } {
   // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
   // summary is one sentence about the Flow, and refusing a whole Flow because the
   // sentence ran long was how `run-muncqlr0-3348202b` lost its first completion
@@ -528,7 +532,9 @@ function fromDraft(
   // The steps the Flow being extended already runs, untouched, which the gate
   // has nothing new to ask about (`./inherited-plan-nodes.ts`).
   const inheritedNodeRefs = automationStudioInheritedPlanNodeRefs({ plan: assembled.plan, steps, draftStepIdByNodeKey: assembled.draftStepIdByNodeKey ?? {} });
-  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE, inheritedNodeRefs };
+  // What amendments wrote over the steps, which is the model's writing (`./amended-plan-parameters.ts`, t432).
+  const amendedParameters = automationStudioAmendedPlanParameters({ plan: assembled.plan, steps, draftStepIdByNodeKey: assembled.draftStepIdByNodeKey ?? {} });
+  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE, inheritedNodeRefs, amendedParameters };
 }
 
 /**

@@ -76,8 +76,8 @@ describe("a page fact naming its element by `at`", () => {
   it.each([
     ["exists at \"\"", "empty"],
     ["exists at \"   \"", "empty"],
-    ["exists at", "takes a locator in quotes"],
-    ["exists at #sign-in", "takes a locator in quotes"],
+    ["exists at", "takes its text in quotes"],
+    ["exists at #sign-in", "takes its text in quotes"],
     [`visible at "${"x".repeat(1_001)}"`, "longer than"],
     ["exists at \"#a\" now", "takes one handle"],
     ["text at \"#a\"", "takes a handle, `is`, `contains` or `matches`"],

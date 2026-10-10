@@ -117,7 +117,8 @@ const ADVICE_WORDS = {
   misplaced: "takes no handle of its kind",
   malformed: "not in a shape it takes",
   frame_mismatch: "other than the one its control is in",
-  extraction_required: "read written from selectors is refused",
+  extraction_required: "read written out by hand is refused",
+  not_a_handle: "names a control by something other than a handle",
   not_a_control: "not a control a press acts on",
   wrong_control: "the handle is right and the node is not",
   unknown_field: "neither one the list's detection printed nor a key this same step keeps"

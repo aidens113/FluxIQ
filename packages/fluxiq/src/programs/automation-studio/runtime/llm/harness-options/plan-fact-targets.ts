@@ -53,13 +53,35 @@ const HANDLER_FACT_LISTS = ["when", "completionCheck"] as const;
  * hands this its own copy.
  */
 export function automationStudioPlanFactTargetSites(plan: AutomationStudioFlowBootstrapPlan): AutomationStudioPlanFactTargetSite[] {
+  return factTargetSites(plan, (target) => automationStudioPlanNodeParametersNameHandle(target));
+}
+
+/**
+ * Every fact target that names an element by neither a handle nor a dialog's
+ * kind and name -- an `at "<locator>"` target, or anything else written in a
+ * handle's place (t432) -- with its path and the node it is on. A
+ * hand-authored Flow may name one that way
+ * (`flow-bootstrap/script-statements/fact-locator.ts`); a model never may, so
+ * what the model wrote is refused at each of these.
+ */
+export function automationStudioPlanFactTargetsNotNamingHandles(plan: AutomationStudioFlowBootstrapPlan): Array<{ path: string; ref: string }> {
+  return factTargetSites(plan, (target) => !automationStudioPlanNodeParametersNameHandle(target) && !isDialogTarget(target)).map((site) => ({ path: site.path, ref: site.ref }));
+}
+
+/** A dialog fact's target, `{ kind: "dialog", role, name }`, which names no element (header). */
+function isDialogTarget(target: JsonValue): boolean {
+  return isObject(target) && target.kind === "dialog";
+}
+
+/** Every fact condition in the plan whose target `keep` keeps, in plan order. */
+function factTargetSites(plan: AutomationStudioFlowBootstrapPlan, keep: (target: JsonValue) => boolean): AutomationStudioPlanFactTargetSite[] {
   const sites: AutomationStudioPlanFactTargetSite[] = [];
   const collect = (list: unknown, path: string, ref: string): void => {
     if (!Array.isArray(list)) return;
     list.forEach((condition: unknown, index) => {
       if (!isObject(condition)) return;
       const target = condition.target as JsonValue | undefined;
-      if (target === undefined || !automationStudioPlanNodeParametersNameHandle(target)) return;
+      if (target === undefined || !keep(target)) return;
       sites.push({ path: `${path}.${index}.target`, ref, target, replace: (resolved) => { list[index] = { ...condition, target: resolved }; } });
     });
   };

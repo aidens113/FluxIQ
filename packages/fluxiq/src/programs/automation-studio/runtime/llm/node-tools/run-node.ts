@@ -70,7 +70,7 @@ const PUBLISHING: (typeof AUTOMATION_STUDIO_ACTION_CONSEQUENCES)[number] = "send
 const DESCRIPTION = [
   "Run one node from the library against the live target, now, and get back what it really did: the same node, with the same parameters, that the finished Flow runs.",
   "flowBootstrap.nodeCatalog names every node; pick from those names. A node you run is described for you, under describedNodes in its first result. Give exactly the parameters its definition declares; for a node whose parameters you do not know yet, read it first with core.describe_nodes, several at once.",
-  "Where a node acts on something you observed, name it under `target` as {\"handle\": \"<the handle the evidence printed, copied exactly>\"} and nothing else. Never write a locator, a description or a guess of your own: a step that names something you did not observe is refused.",
+  "Where a node acts on something you observed, name it under `target` as {\"handle\": \"<the handle the evidence printed, copied exactly>\"} and nothing else. Never write an address, a description or a guess of your own: a step that names something any other way is refused.",
   "A node that reads a repeating list names it the same way, by the handle the detection tool issued, with the fields you want beside it: detect the list first, then read the rows it really returned.",
   // A check is not a failure to try again. "Run again. A failure ends nothing"
   // is what a build read as permission to knock on a robot check until the

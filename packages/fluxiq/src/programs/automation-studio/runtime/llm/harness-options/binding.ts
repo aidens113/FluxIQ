@@ -391,6 +391,25 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
      * resolves as it always has.
      */
     handleEvidence?: JsonObject | undefined;
+    /**
+     * That the node's parameters are the model's own writing (t432): a
+     * candidate script, a reply's plan, the steps a repair wrote. The model
+     * names an element only by a handle the evidence printed (user,
+     * 2026-10-10), so the domain refuses any element it names some other way --
+     * an address, an identity or a description of its own -- rather than
+     * running it as written. Absent for parameters the host itself wrote -- a
+     * draft step's, which ran with what the domain resolved, and a step the
+     * Flow already holds -- which stand as they are.
+     */
+    writtenByModel?: true;
+    /**
+     * For a node the host wrote, the top-level parameters the model wrote over
+     * it (t432): the settings an amendment carried onto a draft step, which
+     * replace that parameter whole. The domain judges those as it judges a node
+     * the model wrote, and leaves the rest -- what the step ran with -- as it
+     * stands. Never sent beside `writtenByModel`.
+     */
+    modelWrittenParameters?: readonly string[];
   }): AutomationStudioPlanNodeResolution | Promise<AutomationStudioPlanNodeResolution>;
 };
 
