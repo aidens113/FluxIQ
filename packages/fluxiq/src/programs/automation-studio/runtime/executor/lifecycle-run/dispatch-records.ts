@@ -105,7 +105,12 @@ function traceDisposition(decision: AutomationStudioDispositionDecision): Automa
   }
 }
 
-/** The decision as the runtime stream's `handler_execution` record keeps it, which names the disposition alone (`model/flow-adaptation.ts`). */
+/**
+ * The decision as the runtime stream's `handler_execution` record keeps it
+ * (`model/flow-adaptation.ts`): the same as the attempt's record, so an
+ * `unhandled` keeps its closed reason and the guard that refused a route
+ * (t416). It once kept the kind alone, and a stored run could not say why.
+ */
 function streamDisposition(disposition: AutomationStudioLifecycleTraceDisposition): AutomationStudioFlowRunHandlerExecutionRecord["disposition"] {
-  return disposition.kind === "unhandled" ? { kind: "unhandled" } : disposition;
+  return disposition.kind === "unhandled" ? { kind: "unhandled", ...(disposition.reason ? { reason: disposition.reason } : {}), ...(disposition.guard ? { guard: disposition.guard } : {}) } : disposition;
 }

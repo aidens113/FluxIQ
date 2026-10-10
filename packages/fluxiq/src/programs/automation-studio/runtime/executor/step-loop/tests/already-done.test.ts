@@ -37,6 +37,11 @@ function said(rows: readonly ClientGatewayActivity[]): string[] {
   return rows.map((row) => row.label).filter((label) => label.startsWith("Already done"));
 }
 
+/** The `skipped` field each already-done row carries. */
+function skips(rows: readonly ClientGatewayActivity[]): unknown[] {
+  return rows.filter((row) => row.label.startsWith("Already done")).map((row) => row.detail?.skipped);
+}
+
 describe("the completed-act ledger", () => {
   it("row 10's shape: four confirms, the fourth refused, a route back to the requests checkpoint, and only the fourth is confirmed after it", async () => {
     const current = page();
@@ -57,6 +62,8 @@ describe("the completed-act ledger", () => {
       skipped: { reason: "already_done", code: "executor.act.already_done", attemptId: trace.attempts.find((attempt) => attempt.nodeId === "amara")!.attemptId }
     });
     expect(said(rows)).toEqual(["Already done: Confirm Amara Osei", "Already done: Confirm Jonas Weber", "Already done: Confirm Lin Zhao"]);
+    // With no list row, the skip's subject is the step's own label (t416).
+    expect(skips(rows)).toEqual(["Confirm Amara Osei", "Confirm Jonas Weber", "Confirm Lin Zhao"].map((subject) => ({ reason: "already_done", subject })));
   });
 
   it("a loop of four confirms: a route back to the list checkpoint after the third, and only the fourth is confirmed afterwards, the first three skipped as already done", async () => {
@@ -75,6 +82,11 @@ describe("the completed-act ledger", () => {
       ["Amara Osei", "Jonas Weber", "Lin Zhao"].map((row) => expect.objectContaining({ row }))
     );
     expect(said(rows)).toEqual(["Already done for Amara Osei", "Already done for Jonas Weber", "Already done for Lin Zhao"]);
+    // The row says it was skipped in a closed field, its subject the list row's label (t416).
+    expect(skips(rows)).toEqual(["Amara Osei", "Jonas Weber", "Lin Zhao"].map((subject) => ({ reason: "already_done", subject })));
+    expect(rows.filter((row) => row.label.startsWith("Already done")).map((row) => [row.detail?.kind, row.detail?.status, row.step?.row])).toEqual(
+      ["Amara Osei", "Jonas Weber", "Lin Zhao"].map((row) => ["step", "succeeded", row])
+    );
     expect(reads).toBe(2);
   });
 

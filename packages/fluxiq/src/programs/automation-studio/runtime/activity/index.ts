@@ -19,7 +19,7 @@ export { observeAutomationStudioEvidenceLoop } from "./observer.ts";
 export { withAutomationStudioRunActivity } from "./run.ts";
 export { automationStudioActivityRunScope } from "./run-scope.ts";
 export { runWithAutomationStudioActivity } from "./scope.ts";
-export { automationStudioActivityStepNumbers, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepInterference, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityStepRecovery } from "./step/index.ts";
+export { automationStudioActivityStepNumbers, emitAutomationStudioActivityStep, emitAutomationStudioActivityStepInterference, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityStepRecovery, emitAutomationStudioActivityStepSkipped } from "./step/index.ts";
 export { emitAutomationStudioActivityThought } from "./thought.ts";
 export {
   automationStudioActivityAction,

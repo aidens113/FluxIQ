@@ -268,6 +268,31 @@ export type ClientGatewayActivityRecovery = {
 };
 
 /**
+ * Why a run step was skipped rather than run, on the `step` row that says so:
+ *
+ * - `already_done`: the run already completed the step's lasting act for the
+ *   same row, so it was not done again (the executor's completed-act ledger);
+ * - `optional_absent`: a sometimes-present step whose target was not shown;
+ * - `state_routed`: the page was elsewhere, so state routing passed the step
+ *   over and the run went on at the step the page is at.
+ *
+ * Additive: a client that does not know a reason reads the row as a plain step.
+ */
+export const CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS = Object.freeze(["already_done", "optional_absent", "state_routed"] as const);
+export type ClientGatewayActivitySkipReason = (typeof CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS)[number];
+
+/**
+ * The skip a `step` row reports, so a client draws its card from a closed
+ * field rather than from the row's shape or Core's sentence. `subject` is the
+ * plain words naming what was skipped: the list row's label ("Lin Zhao") or the
+ * step's authored label, never other page data.
+ */
+export type ClientGatewayActivitySkip = {
+  reason: ClientGatewayActivitySkipReason;
+  subject?: string;
+};
+
+/**
  * One activity event: the current status of one unit of work (a build or a
  * run) plus an optional detail row for the chat stream. Bounded, and
  * content-free beyond what the person's own panel already shows: labels and
@@ -277,7 +302,8 @@ export type ClientGatewayActivityRecovery = {
  * for that step (what it does next, on what, and why) or its diagnosis or
  * verdict, whitespace-collapsed, with token-shaped runs hidden, and bounded
  * (240 characters for a decision's reason). Core truncates `label` to 160
- * characters, `detail.title` to 160, `detail.recovery.subject` to 160 and
+ * characters, `detail.title` to 160, `detail.recovery.subject` and
+ * `detail.skipped.subject` to 160 and
  * `detail.text` to 1,000.
  *
  * A wait on the person is one `ask` row pair for one card. The wait opens as
@@ -333,6 +359,12 @@ export type ClientGatewayActivity = {
      * additive; a client that does not know it reads the row as a plain step.
      */
     recovery?: ClientGatewayActivityRecovery;
+    /**
+     * On a `step` row only: the step was skipped rather than run, and why.
+     * Optional and additive; a client that does not know it reads the row as a
+     * plain step that succeeded.
+     */
+    skipped?: ClientGatewayActivitySkip;
   };
   /** The conversation this work speaks through, when it has one. */
   conversationId?: string;

@@ -30,6 +30,16 @@ describe("the bounds on one activity event", () => {
     expect(boundedAutomationStudioActivity(row("step", { ...recovery, kind: "route" })).detail?.recovery).toEqual({ kind: "route", subject: "Dismiss the popup", outcome: "succeeded" });
   });
 
+  it("keeps a skip only on a step row, in the contract's closed shape, with its subject trimmed and bounded (t416)", () => {
+    const row = (kind: "step" | "tool", value: object) => ({ ...base, detail: { kind, title: "Already done for Lin Zhao", status: "succeeded", ref: "node.1", skipped: value } } as AutomationStudioActivityInput);
+    expect(boundedAutomationStudioActivity(row("step", { reason: "already_done", subject: " Lin Zhao " })).detail?.skipped).toEqual({ reason: "already_done", subject: "Lin Zhao" });
+    expect(boundedAutomationStudioActivity(row("step", { reason: "state_routed" })).detail?.skipped).toEqual({ reason: "state_routed" });
+    expect(boundedAutomationStudioActivity(row("step", { reason: "optional_absent", subject: "  " })).detail?.skipped).toEqual({ reason: "optional_absent" });
+    expect(boundedAutomationStudioActivity(row("step", { reason: "already_done", subject: "x".repeat(500) })).detail?.skipped?.subject).toHaveLength(160);
+    expect(boundedAutomationStudioActivity(row("tool", { reason: "already_done" })).detail).not.toHaveProperty("skipped");
+    expect(boundedAutomationStudioActivity(row("step", { reason: "guessed" })).detail).not.toHaveProperty("skipped");
+  });
+
   it("drops a resolution the contract does not name, and one on a row that is not an ask", () => {
     expect(boundedAutomationStudioActivity(askRow("guessed")).detail).not.toHaveProperty("resolution");
     expect(boundedAutomationStudioActivity(askRow("answered", "tool")).detail).not.toHaveProperty("resolution");

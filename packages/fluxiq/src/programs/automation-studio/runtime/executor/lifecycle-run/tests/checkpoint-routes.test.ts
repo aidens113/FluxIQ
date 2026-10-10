@@ -45,7 +45,7 @@ describe("routes to a checkpoint", () => {
     expect(result.trace.handlerExecutions?.map((record) => [record.outcome, record.disposition])).toEqual([
       ["succeeded", { kind: "route", checkpointId: "cp.start" }],
       ["succeeded", { kind: "route", checkpointId: "cp.start" }],
-      ["succeeded", { kind: "unhandled" }]
+      ["succeeded", { kind: "unhandled", reason: "budget_spent" }]
     ]);
     // The third run of the handler was not taken: the run's two routes were spent, which its record keeps.
     expect(result.trace.attempts.filter((attempt) => attempt.nodeId === "s3").map((attempt) => attempt.lifecycle?.disposition)).toEqual([

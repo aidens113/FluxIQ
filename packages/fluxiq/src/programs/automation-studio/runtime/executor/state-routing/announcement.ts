@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
-import { automationStudioActivityAction, automationStudioActivityHumanLabel, automationStudioActivityStepNumbers, emitAutomationStudioActivity } from "../../activity/index.ts";
+import { automationStudioActivityAction, automationStudioActivityHumanLabel, automationStudioActivityStepNumbers, emitAutomationStudioActivityStepSkipped } from "../../activity/index.ts";
 import { chooseAutomationStudioStartNode } from "../start-node.ts";
 import type { AutomationStudioStateRouteDecision } from "./decision.ts";
 
@@ -21,7 +21,12 @@ export function announceAutomationStudioStateRoute(flow: AutomationStudioFlowDoc
       : decision.direction === "forward"
       ? `Skipped ${stepName(flow, node)}: the page is already past it. Continuing with ${stepName(flow, decision.node)}`
       : `Skipped ${stepName(flow, node)}: the page went back to an earlier step. Continuing with ${stepName(flow, decision.node)}`;
-  emitAutomationStudioActivity({ phase: "running", label: said, detail: { kind: "step", title: said, status: "succeeded", ref: node.id } });
+  const subject = node.label?.trim();
+  emitAutomationStudioActivityStepSkipped({
+    nodeId: node.id,
+    said,
+    skipped: { reason: decision.kind === "declared" ? "optional_absent" : "state_routed", ...(subject ? { subject } : {}) }
+  });
 }
 
 /**
