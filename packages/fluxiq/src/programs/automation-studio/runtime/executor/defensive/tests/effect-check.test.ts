@@ -106,3 +106,19 @@ describe("a graph run's host check", () => {
     expect(windows[0]).toBeGreaterThan(0);
   });
 });
+
+describe("a command the client was asked about by id (C8, B3)", () => {
+  const lasting: AutomationStudioFlowNode = { ...press, metadata: { declaredConsequences: ["create_new"] } };
+
+  it("not_seen: the act never reached the client, so even a lasting step is made again", () => {
+    const notSeen: AutomationStudioFailureRecord = { category: "timeout", code: "client_gateway.command_not_seen", retryable: true, stage: "dispatch", effect: "unacted" };
+    const fault = automationStudioAssessAttemptFault(failed(notSeen), lasting);
+    expect(fault).toMatchObject({ disposition: "retry", effect: "unacted" });
+    expect(fault?.actUncertain).toBeUndefined();
+  });
+
+  it("unknown: the timeout it stays is held uncertain, so the effect check runs and nothing is pressed again", () => {
+    const timedOut: AutomationStudioFailureRecord = { category: "timeout", code: "web.action.timeout", retryable: true, stage: "execution", effect: "ambiguous" };
+    expect(automationStudioAssessAttemptFault(failed(timedOut), lasting)).toMatchObject({ disposition: "refuse", actUncertain: true });
+  });
+});

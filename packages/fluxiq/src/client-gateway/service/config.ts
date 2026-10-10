@@ -7,6 +7,7 @@ export type ClientGatewayConfig = {
   readonly publicUrl: string | undefined;
   readonly pairingTtlMs: number;
   readonly commandTimeoutMs: number;
+  readonly reconcileAnswerMs: number;
   readonly trustedClientTtlMs: number;
   readonly trustedClientStore: ClientGatewayTrustedClientStore | undefined;
   readonly createToken: () => string;
@@ -19,6 +20,7 @@ export function resolveClientGatewayConfig(options: ClientGatewayServiceOptions 
     publicUrl: options.publicUrl,
     pairingTtlMs: options.pairingTtlMs ?? 5 * 60_000,
     commandTimeoutMs: options.commandTimeoutMs ?? 30_000,
+    reconcileAnswerMs: options.reconcileAnswerMs ?? 5_000,
     trustedClientTtlMs: options.trustedClientTtlMs ?? 30 * 24 * 60 * 60_000,
     trustedClientStore: options.trustedClientStore,
     createToken: options.createToken ?? (() => randomBytes(32).toString("base64url")),

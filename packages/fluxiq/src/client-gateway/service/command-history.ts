@@ -95,6 +95,12 @@ export class ClientGatewayCommandHistory {
     while (this.sent.size > ClientGatewayCommandHistory.LIMIT) this.sent.delete(this.sent.keys().next().value!);
   }
 
+  /** Where a remembered command was sent, so its client can be asked what became of it. */
+  route(commandId: string): { sessionId: string; clientId: string } | undefined {
+    const sent = this.sent.get(commandId);
+    return sent ? { sessionId: sent.sessionId, clientId: sent.clientId } : undefined;
+  }
+
   /** Records how Core stopped waiting for a command. The first closure stands. */
   closed(commandId: string, closedAs: ClientGatewayCommandClosure): void {
     const sent = this.sent.get(commandId);

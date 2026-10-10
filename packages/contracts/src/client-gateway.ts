@@ -147,6 +147,41 @@ export type ClientGatewayActionResult = {
 export type ClientGatewayReportedActionResult = Omit<ClientGatewayActionResult, "status"> & { status: ClientGatewayReportedActionStatus };
 
 /**
+ * What became of one command, as the client that was sent it answers
+ * `server.reconcile_command` (state-aware recovery plan, C8 and B3). The client
+ * answers from what it kept and never by acting:
+ *
+ * - `landed`: the command finished there; `result` is the result it kept, the
+ *   one whose delivery was lost;
+ * - `not_seen`: the client has no record of that id, so the act never reached
+ *   it and making it again is not a second act. A client that answers this
+ *   refuses the id from then on, so a copy still on its way cannot act later;
+ * - `running`: the command is still being carried out;
+ * - `unknown`: the client cannot say -- for example its record was cleared by a
+ *   restart before a result was kept. Core never makes the act again on it.
+ */
+export const CLIENT_GATEWAY_RECONCILE_STATES = Object.freeze(["landed", "not_seen", "running", "unknown"] as const);
+export type ClientGatewayReconcileState = (typeof CLIENT_GATEWAY_RECONCILE_STATES)[number];
+
+/**
+ * The capability metadata field a client sets to `true` to say it answers
+ * `server.reconcile_command`. Core asks only a session that declared it, on
+ * any capability; a session that did not is never asked, and a lost reply to
+ * it keeps the outcome it had (`timed_out`).
+ */
+export const CLIENT_GATEWAY_RECONCILE_ANSWER_METADATA_KEY = "answersReconcile";
+
+/** Core asking a client what became of a command it sent: answered, never executed. */
+export type ClientGatewayReconcileRequest = { commandId: string };
+
+/** A client's answer to `server.reconcile_command`. `result` is present only on `landed`. */
+export type ClientGatewayReconcileAnswer = {
+  commandId: string;
+  state: ClientGatewayReconcileState;
+  result?: ClientGatewayReportedActionResult;
+};
+
+/**
  * The capability a client advertises to receive `server.activity`. Core sends
  * the activity stream only to ready sessions that declared it.
  */
@@ -415,6 +450,7 @@ export type ClientGatewayClientMessage =
   | ClientGatewayEnvelope<"client.recording_event", ClientGatewayRecordingEvent>
   | ClientGatewayEnvelope<"client.snapshot", ClientGatewaySnapshot>
   | ClientGatewayEnvelope<"client.action_result", ClientGatewayReportedActionResult>
+  | ClientGatewayEnvelope<"client.reconcile_result", ClientGatewayReconcileAnswer>
   | ClientGatewayEnvelope<"client.error", { message: string; code?: string; metadata?: JsonObject }>;
 
 export type ClientGatewayServerMessage =
@@ -424,6 +460,7 @@ export type ClientGatewayServerMessage =
   | ClientGatewayEnvelope<"server.stop_recording", { recordingId?: string }>
   | ClientGatewayEnvelope<"server.capture_snapshot", { kind?: string; metadata?: JsonObject }>
   | ClientGatewayEnvelope<"server.execute_action", ClientGatewayActionCommand & { commandId: string }>
+  | ClientGatewayEnvelope<"server.reconcile_command", ClientGatewayReconcileRequest>
   | ClientGatewayEnvelope<"server.set_active_tab", { tabId: string }>
   | ClientGatewayEnvelope<"server.activity", ClientGatewayActivity>
   | ClientGatewayEnvelope<"server.ping", { nonce: string }>

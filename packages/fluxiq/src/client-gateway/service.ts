@@ -8,6 +8,7 @@ import type {
   ClientGatewayClientMessage,
   ClientGatewayEventHandler,
   ClientGatewayPairingChallenge,
+  ClientGatewayReconcileAnswer,
   ClientGatewayServerMessage,
   ClientGatewaySession,
   ClientGatewaySocket,
@@ -195,6 +196,18 @@ export class ClientGatewayService {
   executeAction(sessionId: string, command: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): ClientGatewayDurableActionResponse;
   executeAction(sessionId: string, command: ClientGatewayActionCommand, options?: ClientGatewayDurableActionOptions): ClientGatewayActionResponse | ClientGatewayDurableActionResponse {
     return arguments.length > 2 ? this.commands.executeAction(sessionId, command, options!) : this.commands.executeAction(sessionId, command);
+  }
+
+  /**
+   * Asks the client a command was sent to what became of it -- `landed` with
+   * the result it kept, `not_seen`, `running` or `unknown` -- by command id,
+   * as a question it answers from what it kept and never by acting (C8, B3).
+   * A command whose answer never came is asked about this way before it is
+   * settled `timed_out`. `undefined` when no session of that client declared
+   * it answers, or the command is not one this gateway remembers sending.
+   */
+  reconcileAction(commandId: string): Promise<ClientGatewayReconcileAnswer | undefined> {
+    return this.commands.reconcileAction(commandId);
   }
   /** Finish pending action accounting and leased durable ports before program storage shuts down. */
   close(): Promise<void> { return this.commands.close(); }

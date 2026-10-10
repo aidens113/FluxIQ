@@ -13,6 +13,18 @@
 // not a second act. `unknown`: nothing showed either way -- no expected state,
 // no host to ask, a page that never answered, a check that threw. A missing
 // acknowledgement is `unknown`, never `not_landed`.
+//
+// **The client is asked first, by command id.** A command whose answer never
+// came is not called timed out until the client gateway has asked the client
+// it was sent to what became of it (`client-gateway/service/command-reconcile/`),
+// a question answered from what the client kept and never by acting. `landed`
+// settles the attempt with the result it kept, so it never reaches this check
+// and nothing is pressed again; `not_seen` settles it as a failure that did
+// nothing (`effect: "unacted"`), so the ordinary retry follows; `running`
+// (asked again after one bounded wait) and `unknown`, or a client that does not
+// answer such questions, leave it `timed_out` as before -- and that is what
+// arrives here, to be judged by the node's expected state or stop as Outcome
+// uncertain. Core never presses again on `unknown`.
 
 /** What the effect check answered about a lasting act whose outcome was uncertain. */
 export type AutomationStudioEffectCheckResult = "landed" | "not_landed" | "unknown";
