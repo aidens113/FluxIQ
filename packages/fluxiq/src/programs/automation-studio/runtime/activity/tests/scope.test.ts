@@ -194,6 +194,21 @@ describe("withAutomationStudioRunActivity", () => {
     expect(seen.at(-1)!.detail).not.toHaveProperty("text");
   });
 
+  it("ends a run stopped as Outcome uncertain on \"Stopped\", not \"Run failed\", from its trace or its record (t412)", async () => {
+    const ending = "not sure the last step went through, so it was not repeated.";
+    await withAutomationStudioRunActivity({ projectId: "p1" }, async () => {
+      bindAutomationStudioActivityRun("r7");
+      return { status: "failed", trace: { failure: { code: "run.outcome_uncertain" } } };
+    });
+    expect(seen.at(-1)).toMatchObject({ phase: "failed", final: true, label: `Stopped: ${ending}`, detail: { kind: "step", title: "Stopped", status: "failed", text: ending } });
+    expect(seen.at(-1)).not.toHaveProperty("stopped");
+    await withAutomationStudioRunActivity({ projectId: "p1" }, async () => {
+      bindAutomationStudioActivityRun("r8");
+      return { status: "failed" };
+    }, { readRecord: async () => ({ stopCode: "run.outcome_uncertain" }) });
+    expect(seen.at(-1)).toMatchObject({ label: `Stopped: ${ending}`, detail: { title: "Stopped", text: ending } });
+  });
+
   it("runs unobserved without a project", async () => {
     await withAutomationStudioRunActivity({ projectId: null }, async () => { bindAutomationStudioActivityRun("r3"); return { status: "succeeded" }; });
     expect(seen).toEqual([]);
