@@ -802,8 +802,15 @@ done: on the graph path that is the existing `skip_satisfied_node` rung (the
 expected state already holds); outside a graph it is the optional `checkEffect`
 hook of `automationStudioDispatchWithNodeRetries`, which answers `landed`,
 `not_landed` (the act is made again, as `unacted`) or `unknown`, and the
-outcome then says `lastingAct: "landed"` or `"uncertain"`. Nodes whose act
-does not last keep t355's retries unchanged. A domain running a node outside a
+outcome then says `lastingAct: "landed"` or `"uncertain"`. A graph run's
+effect check reads the node's expected state; a node that declares none (a step
+written without `done when:`) is asked of the host's optional `actLanded`
+(`defensive/host-act-landed.ts`, t430), which judges the act from the page and
+answers `unknown` when the page cannot say. Which acts commit is the producer's
+statement (`effect: "ambiguous"`): a step's `consequences: none` never unlocks
+a second act after one (Core 61f6adbf did so and was withdrawn in t430, because
+a model under-declares). Nodes whose act does not last keep t355's retries
+unchanged. A domain running a node outside a
 graph describes it as its Flow node would be described: the web domain marks a
 read `effect: "observe"` and gives a page-changing node only its call's
 declared consequences, never a blanket `effect: "mutate"`, which would make

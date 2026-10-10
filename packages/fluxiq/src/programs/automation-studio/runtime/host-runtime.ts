@@ -139,7 +139,31 @@ export type AutomationStudioHostRuntimeBoundary = {
    * every condition, never as `false`.
    */
   factEvaluator?(conditions: readonly AutomationStudioFactCondition[], context: AutomationStudioFactEvaluationContext): readonly AutomationStudioHostFactResult[] | Promise<readonly AutomationStudioHostFactResult[]>;
+  /**
+   * Whether an act whose answer was lost took effect, judged on the page from
+   * the act itself (t430): asked by the effect check only for a node that
+   * declares no expected state, which is every step written without a
+   * `done when:`. Which of its acts can be judged this way, and how, is the
+   * host's to say -- a web host reads whether the pressed control is still
+   * shown -- so Core learns nothing of the medium. `landed` and `not_landed`
+   * must rest on what the page showed, never on what the step declared;
+   * anything else is `unknown`. It may wait up to `timeoutMs` for the page to
+   * settle. Core reads a missing method, a throw or any other answer as
+   * `unknown`, never as `not_landed`.
+   */
+  actLanded?(input: AutomationStudioHostActLandedInput): AutomationStudioHostActLanding | Promise<AutomationStudioHostActLanding>;
 };
+
+/** What the host is asked about an act whose answer was lost: the node that made it, the attempt, and how long it may wait. */
+export type AutomationStudioHostActLandedInput = {
+  node: AutomationStudioFlowNode;
+  attemptId: string;
+  timeoutMs: number;
+  signal?: AbortSignal;
+};
+
+/** The host's answer about an act whose answer was lost: the effect check's three values. */
+export type AutomationStudioHostActLanding = "landed" | "not_landed" | "unknown";
 
 export function hostExpectationEvaluator(hostRuntime: AutomationStudioHostRuntimeBoundary | undefined): AutomationNodeExpectationEvaluator | undefined {
   const evaluate = hostRuntime?.expectationEvaluator;
