@@ -102,11 +102,11 @@ describe("automationStudioActivityRecoveryChoice", () => {
   // an Add to cart the page refused on its only attempt.
   it("says trying again only of a step that was tried again, and names a build's run as its test", () => {
     const stop = (run: Parameters<typeof automationStudioActivityRecoveryChoice>[1]) => automationStudioActivityRecoveryChoice({ kind: "stop" }, run);
-    expect(stop({ attempts: 1, retryable: false, mayAbsorb: true, actUncertain: false, test: true })).toEqual({ title: "Not repeating the step", text: "Another try wouldn't change what happened, so the test follows what the Flow says to do when this step fails." });
-    expect(stop({ attempts: 2, retryable: false, mayAbsorb: true })).toEqual({ title: "Trying again didn't help", text: "FluxIQ tried the step again and it still didn't work, so the run follows what the Flow says to do when this step fails." });
-    expect(stop({ attempts: 2, actUncertain: true, retryable: false }).text).toBe("FluxIQ can't tell whether the step went through, and repeating it could do it twice, so the run follows what the Flow says to do when this step fails.");
-    expect(stop({ attempts: 1, mayAbsorb: false, retryable: true }).text).toBe("The run has already waited as long as it may, so it follows what the Flow says to do when this step fails.");
-    expect(stop({ attempts: 1, retryable: true }).text).toBe("The step didn't work, so the run follows what the Flow says to do when this step fails.");
+    expect(stop({ attempts: 1, retryable: false, mayAbsorb: true, actUncertain: false, test: true, next: "on_fail" })).toEqual({ title: "Not repeating the step", text: "Another try wouldn't change what happened, so the test follows what the Flow says to do when this step fails." });
+    expect(stop({ attempts: 2, retryable: false, mayAbsorb: true, next: "on_fail" })).toEqual({ title: "Trying again didn't help", text: "FluxIQ tried the step again and it still didn't work, so the run follows what the Flow says to do when this step fails." });
+    expect(stop({ attempts: 2, actUncertain: true, retryable: false, next: "on_fail" }).text).toBe("FluxIQ can't tell whether the step went through, and repeating it could do it twice, so the run follows what the Flow says to do when this step fails.");
+    expect(stop({ attempts: 1, mayAbsorb: false, retryable: true, next: "on_fail" }).text).toBe("The run has already waited as long as it may, so it follows what the Flow says to do when this step fails.");
+    expect(stop({ attempts: 1, retryable: true, next: "on_fail" }).text).toBe("The step didn't work, so the run follows what the Flow says to do when this step fails.");
     for (const run of [{ attempts: 1, retryable: false }, { attempts: 1, actUncertain: true }, { attempts: 1, mayAbsorb: false }, { attempts: 1 }, {}]) {
       const said = stop(run);
       expect(`${said.title} ${said.text}`).not.toMatch(/\b(trying|tried|try)\b[^.]*\bagain\b|\bfix/iu);

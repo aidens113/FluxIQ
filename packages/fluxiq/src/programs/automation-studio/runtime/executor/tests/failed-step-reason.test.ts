@@ -148,7 +148,7 @@ describe("the recovery ladder's end", () => {
 
     const rows = ladderRows("s9.cart");
     expect(rows.map((event) => [event.detail!.title, event.detail!.text])).toEqual([
-      ["Not repeating the step", "Another try wouldn't change what happened, so the test follows what the Flow says to do when this step fails."]
+      ["Not repeating the step", "Another try wouldn't change what happened, so the test stops here at this step."]
     ]);
     const cart = seen.filter((event) => event.detail?.ref === "s9.cart");
     expect(cart.length).toBeGreaterThan(1);
@@ -161,14 +161,14 @@ describe("the recovery ladder's end", () => {
   it("says the run, in a saved Flow's run", async () => {
     await playedStop("run", failing("cart", [REFUSED]));
 
-    expect(ladderRows("s9.cart").map((event) => event.detail!.text)).toEqual(["Another try wouldn't change what happened, so the run follows what the Flow says to do when this step fails."]);
+    expect(ladderRows("s9.cart").map((event) => event.detail!.text)).toEqual(["Another try wouldn't change what happened, so the run stops here at this step."]);
   });
 
   it("says trying again didn't help only once the step was pressed again", async () => {
     await playedStop("build", failing("cart", [BUSY, REFUSED]));
 
     expect(ladderRows("s9.cart").map((event) => event.detail!.title)).toEqual(["Trying the step again", "Trying again didn't help"]);
-    expect(ladderRows("s9.cart").at(-1)!.detail!.text).toBe("FluxIQ tried the step again and it still didn't work, so the test follows what the Flow says to do when this step fails.");
+    expect(ladderRows("s9.cart").at(-1)!.detail!.text).toBe("FluxIQ tried the step again and it still didn't work, so the test stops here at this step.");
   });
 
   it("still says trying the step again when the ladder retries a busy page", async () => {
