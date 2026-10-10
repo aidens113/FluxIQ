@@ -29,6 +29,7 @@ import {
   automationStudioStepLifecycle,
   automationStudioStepLifecycleFrame,
   automationStudioStepLifecycleRegister,
+  automationStudioStepRequiredOutcomeStop,
   automationStudioStepRetryBeforeRouting,
   automationStudioStepStateRoute,
   automationStudioTraceWithLifecycle,
@@ -36,6 +37,7 @@ import {
   type AutomationStudioStepLifecycleOutcome,
   type AutomationStudioStepLoopContext
 } from "./step-loop/index.ts";
+import { AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN } from "./command-scope/index.ts";
 import { automationStudioTraceWithholding, automationStudioWithholdRunInputs, type AutomationStudioTraceWithholding } from "./trace-withholding.ts";
 import type { FluxIQRuntimeWithheldValues } from "../../../../runtime/index.ts";
 import { automationStudioActivityHold, automationStudioActivityLoopWords, automationStudioActivityStepNumbers, emitAutomationStudioActivityStep } from "../activity/index.ts";
@@ -178,7 +180,8 @@ async function runGraphToTrace(
   const executed = automationStudioTraceInFrame(await running, options.invocation);
   // The incident still open when the frame ends closes here; a Call Subflow child's goes to its node first (C7).
   automationStudioStepEndFrameIncident(options.invocation, executed);
-  await options.commandRun?.checkpoint();
+  // A run stopped as Outcome uncertain keeps its trace: in a required run the latch that would refuse this checkpoint is why it stopped.
+  if (executed.failure?.code !== "run.outcome_uncertain") await options.commandRun?.checkpoint();
   for (const attempt of executed.attempts) {
     const childWithheld = attempt.childTrace ? withheldBySavedTrace.get(attempt.childTrace) : undefined;
     if (childWithheld) withholding.include(childWithheld);
@@ -403,7 +406,9 @@ async function executeAutomationStudioGraph(
           // Built here, not by the node, so it is stamped here the way node-execution.ts stamps the rest.
           () => nodeAttemptWithAdaptationIds(node, { attemptId: `${node.id}.attempt.${ctx.nextAttemptNumber()}`, nodeId: node.id, definitionId: node.definitionId, startedAt: now(), finishedAt: now(), status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], message: `Region ${regionId} exceeded its ${region!.timeoutMs}ms timeout.`, failure: { category: "timeout", code: "executor.region.timeout", retryable: false, stage: "execution" } }), options.commandRun
         );
-      await options.commandRun?.checkpoint();
+      // A required command whose outcome stayed unknown latched the run, so no checkpoint is asked before it stops (`step-loop/uncertain-stop.ts`).
+      const outcomeUnknown = executed.failure?.code === AUTOMATION_STUDIO_REQUIRED_OUTCOME_UNKNOWN.code;
+      if (!outcomeUnknown) await options.commandRun?.checkpoint();
       // What the ladder and the recorded state contributed is stamped once, here,
       // so every attempt carries it however the node was executed.
       const attempt: AutomationStudioNodeAttemptTrace = {
@@ -422,6 +427,7 @@ async function executeAutomationStudioGraph(
       const tracedAttempt = region?.kind === "policy" ? { ...attempt, policyDecision: policyDecisionForAttempt(node, attempt) } : attempt;
       const attemptIndex = attempts.length;
       attempts.push(regionId ? { ...tracedAttempt, regionId } : tracedAttempt);
+      if (outcomeUnknown) return await automationStudioStepRequiredOutcomeStop(ctx, node, attemptIndex);
       // A child that handed the run back to a checkpoint: here, or in a frame that called this one (`step-loop/checkpoint-route.ts`).
       const handedBack = automationStudioStepCheckpointRoute(ctx, node, attemptIndex);
       if (handedBack?.kind === "return") return handedBack.trace;

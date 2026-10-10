@@ -1,10 +1,11 @@
 import { parseAutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
-import type { ClientGatewayActionCommand, ClientGatewayActionResult } from "@fluxiq/contracts/client-gateway";
+import type { ClientGatewayActionCommand, ClientGatewayActionResult, ClientGatewayReconcileAnswer } from "@fluxiq/contracts/client-gateway";
 import type { ClientGatewayConfig } from "../config.ts";
 import type { ClientGatewaySessionRegistry } from "../sessions.ts";
 import type { ClientGatewayTransport } from "../transport.ts";
 import type { ClientGatewayEventBus } from "../event-bus.ts";
 import { COMMAND_ANSWER_MARGIN_MS } from "../command-answer-margin.ts";
+import { clientGatewayReconciledResult, clientGatewaySessionAnswersReconcile } from "../command-reconcile/index.ts";
 import { ClientGatewayCommandContext } from "./context.ts";
 import { ClientGatewayCommandOutcome } from "./outcome.ts";
 import { ClientGatewayCommandLedgerController as Controller } from "./controller.ts";
@@ -20,7 +21,7 @@ type Entry = {
   context: ClientGatewayCommandContext; observer?: ClientGatewayCommandOutcomeObserver; proof?: object;
   uncertainty?: Promise<void>;
 };
-type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease> };
+type Ports = { config: ClientGatewayConfig; sessions: ClientGatewaySessionRegistry; transport: ClientGatewayTransport; events: ClientGatewayEventBus; resolve?: (context: ClientGatewayCommandContext) => Promise<ClientGatewayCommandLedgerLease>; reconcile?: (commandId: string) => Promise<ClientGatewayReconcileAnswer | undefined> };
 /** Explicit trusted gateway dispatch only; existing Flow/domain callers remain on the legacy path. */
 export class ClientGatewayDurableDispatch {
   private static readonly proofs = new WeakMap<object, { entry: Entry; observer: ClientGatewayCommandOutcomeObserver; value: ClientGatewayCommandCompletion }>();
@@ -36,7 +37,7 @@ export class ClientGatewayDurableDispatch {
   private closed = false;
   private closing?: Promise<void>;
   constructor(private readonly ports: Ports) {
-    this.unsubscribe = ports.events.subscribe(event => { if (event.type === "session.disconnected") for (const entry of this.pending.values()) if (entry.sessionId === event.session.sessionId) this.uncertain(entry); });
+    this.unsubscribe = ports.events.subscribe(event => { if (event.type === "session.disconnected") for (const entry of this.pending.values()) if (entry.sessionId === event.session.sessionId) this.disconnected(entry, clientGatewaySessionAnswersReconcile(event.session)); });
   }
   execute(sessionId: string, input: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): ClientGatewayDurableActionResponse {
     if (this.closed) throw new Error("durable_command.closed");
@@ -61,7 +62,7 @@ export class ClientGatewayDurableDispatch {
     options.signal?.addEventListener("abort", abort, { once: true }); entry.detach = () => options.signal?.removeEventListener("abort", abort);
     if (options.signal?.aborted) this.uncertain(entry);
     this.pending.set(commandId, entry);
-    if (observer) entry.timer = setTimeout(() => this.uncertain(entry), command.timeoutMs === undefined ? this.ports.config.commandTimeoutMs : command.timeoutMs + COMMAND_ANSWER_MARGIN_MS);
+    if (observer) entry.timer = setTimeout(() => this.answerNeverCameOrUnknown(entry, this.answerWaitMs(command)), this.answerWaitMs(command));
     const pipeline = this.run(entry, options.context, command, message);
     entry.completion = pipeline; this.pipelines.add(pipeline);
     void pipeline.finally(() => this.pipelines.delete(pipeline)).catch(/* best-effort: derived observer mirrors the public failure */ () => undefined);
@@ -73,6 +74,10 @@ export class ClientGatewayDurableDispatch {
     if (!entry) return "unknown_command";
     const sender = this.ports.sessions.require(sessionId);
     if (sessionId !== entry.sessionId || sender.clientId !== entry.clientId) return "wrong_session";
+    return await this.accept(entry, input);
+  }
+  /** Takes `input` as the answer of a command still waiting: committed as its receipt, or, for an outcome the client could not vouch for, unknown. */
+  private async accept(entry: Entry, input: ClientGatewayActionResult): Promise<"settled" | "suppressed"> {
     if (entry.phase !== "waiting") return "suppressed";
     let result: ClientGatewayActionResult, resultDigest: string;
     try { resultDigest = Controller.digest(input); result = this.parseResult(input); this.freeze(result); }
@@ -104,8 +109,8 @@ export class ClientGatewayDurableDispatch {
         const current = this.ports.sessions.requireReady(entry.sessionId);
         if (entry.abort.signal.aborted || this.closed || current.clientId !== entry.clientId || current.projectId && current.projectId !== entry.claim.binding.projectId) throw new Error("durable_command.admission_refused");
         entry.phase = "waiting";
-        const waitMs = command.timeoutMs === undefined ? this.ports.config.commandTimeoutMs : command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
-        if (!entry.observer) entry.timer = setTimeout(() => this.uncertain(entry), waitMs);
+        const waitMs = this.answerWaitMs(command);
+        if (!entry.observer) entry.timer = setTimeout(() => this.answerNeverCameOrUnknown(entry, waitMs), waitMs);
         // Account for send rejection without awaiting a transport's possibly stalled flush before the answer deadline.
         void this.ports.transport.sendChecked(entry.sessionId, entry.clientId, message).catch(() => { /* best-effort: send rejection becomes durable unknown through the answer pipeline */ this.uncertain(entry); });
         return await entry.answer;
@@ -133,6 +138,43 @@ export class ClientGatewayDurableDispatch {
         if (observing && entry.abort.signal.aborted) { const pending = cleanup(); this.pipelines.add(pending); void pending.finally(() => this.pipelines.delete(pending)); } else await cleanup();
       }
     }
+  }
+  private answerWaitMs(command: ClientGatewayActionCommand): number {
+    return command.timeoutMs === undefined ? this.ports.config.commandTimeoutMs : command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
+  }
+  // The wait for a sent command's answer ran out (C8, B3). Before its outcome
+  // is called unknown -- which marks its ledger entry `unknown` and stops a
+  // required run for good -- the client it went to is asked by command id,
+  // exactly as for an ordinary command (`../commands.ts`, `answerNeverCame`):
+  // the result it kept is taken as the command's answer and committed like any
+  // answer, so the act is never made twice; `not_seen` is committed as a
+  // failure that did nothing, so a retry may follow; `running`, `unknown`, a
+  // kept result that is itself uncertain, or nobody to ask leave it unknown, as
+  // before. The command stays waiting meanwhile, so its own answer still wins.
+  // A result that only arrives after this is late and is never committed.
+  private async answerNeverCame(entry: Entry, waitMs: number): Promise<void> {
+    if (entry.phase !== "waiting" || !this.ports.reconcile) {
+      this.uncertain(entry);
+      return;
+    }
+    const commandId = entry.claim.binding.commandId;
+    const answer = await this.ports.reconcile(commandId);
+    if (entry.phase !== "waiting") return;
+    await this.accept(entry, clientGatewayReconciledResult(commandId, answer, waitMs));
+    if (entry.phase === "waiting") this.uncertain(entry);
+  }
+  /** A question that could not be asked at all leaves the command unknown, as before it could be asked. */
+  private answerNeverCameOrUnknown(entry: Entry, waitMs: number): void {
+    void this.answerNeverCame(entry, waitMs).catch(/* best-effort: an unaskable client leaves the outcome unknown, which the ledger records */ () => this.uncertain(entry));
+  }
+  // A dropped session usually means the client's worker restarted mid-command.
+  // A client that answers reconcile questions may come back on a new session
+  // and say what became of the command, so the command keeps waiting out its
+  // own answer window and is reconciled then; any other client's command is
+  // unknown at once, as before.
+  private disconnected(entry: Entry, answersReconcile: boolean): void {
+    if (answersReconcile && entry.phase === "waiting" && this.ports.reconcile) return;
+    this.uncertain(entry);
   }
   private uncertain(entry: Entry): void {
     if ((!entry.observer && entry.phase === "reserved") || entry.phase === "terminal") return;

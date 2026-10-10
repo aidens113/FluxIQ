@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../contracts.ts";
-import { automationStudioRootInvocation } from "../../frames/index.ts";
+import { automationStudioChildInvocation, automationStudioRootInvocation } from "../../frames/index.ts";
 import { edge, graph } from "../../lifecycle-run/tests/lifecycle-fixtures.ts";
 import { checkpoint, failingFirst, framedRun, withRows } from "../../lifecycle-run/tests/recovery-paths-fixtures.ts";
 import { closer, fact, landedCounts, line, page, pageOptions, press, type Page } from "../../lifecycle-run/tests/wiring-fixtures.ts";
@@ -115,6 +115,31 @@ describe("the completed-act ledger", () => {
     // One the ledger holds no longer refuses the route: it is skipped as already done.
     invocation.run.lifecycle.completedActs.set("graph.main/pay/digest", { key: "graph.main/pay/digest", nodeId: "pay", attemptId: "pay.attempt.1", outputs: {} });
     expect(guardFrom("s3", [done])).toEqual({ passesUncertainAct: false });
+  });
+
+  // An uncertainty the assessment derived from a record carries no `fault`;
+  // only its effect check's `unknown` shows it (t392 open question 2, t427).
+  it("refuses a route back past an act whose effect check could not tell, in this frame and in a calling frame", () => {
+    const flow = line("graph.main", [checkpoint("requests", "cp.requests"), confirm("pay"), press("call")]);
+    const child = line("graph.child", [press("c1"), press("c2")]);
+    const checkedUnknown: AutomationStudioNodeAttemptTrace = { attemptId: "pay.attempt.1", nodeId: "pay", definitionId: "builtin.policy.action", startedAt: 1, finishedAt: 1, status: "failed", route: "failed", inputs: {}, outputs: {}, effects: [], effectCheck: { result: "unknown", checkedAt: 1 } };
+    const checkedNotLanded: AutomationStudioNodeAttemptTrace = { ...checkedUnknown, effectCheck: { result: "not_landed", checkedAt: 1 } };
+    const root = automationStudioRootInvocation(flow, { currentSubflowId: "main" });
+    const target = { checkpointId: "cp.requests", invocationId: root.frame.invocationId, graphFlowId: "graph.main", nodeId: "requests" };
+    const ownGuard = (attempts: AutomationStudioNodeAttemptTrace[]) => automationStudioStepLifecycleRouteGuard({ flow, attempts, options: { invocation: root } } as unknown as AutomationStudioStepLoopContext, "call")(target);
+
+    expect(ownGuard([checkedUnknown])).toEqual({ passesUncertainAct: true });
+    expect(ownGuard([checkedNotLanded])).toEqual({ passesUncertainAct: false });
+
+    // The run is in a child frame `call` started; the checkpoint is in the calling frame, before `pay`.
+    const called = automationStudioChildInvocation(root, { callNodeId: "call", subflowId: "child", graph: child, graphRevision: null, inputs: {} })!;
+    root.run.stack.push(root.frame, called.frame);
+    root.run.lifecycle.frames.set(root.frame.invocationId, { flow, attempts: [checkedUnknown], values: {} });
+    const childGuard = () => automationStudioStepLifecycleRouteGuard({ flow: child, attempts: [], options: { invocation: called } } as unknown as AutomationStudioStepLoopContext, "c2")(target);
+
+    expect(childGuard()).toEqual({ passesUncertainAct: true });
+    root.run.lifecycle.frames.set(root.frame.invocationId, { flow, attempts: [checkedNotLanded], values: {} });
+    expect(childGuard()).toEqual({ passesUncertainAct: false });
   });
 });
 
