@@ -378,6 +378,19 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
      * views agree on. Only then may a resolved answer carry `handleViews`.
      */
     handleReach?: AutomationStudioPlanHandleReach | undefined;
+    /**
+     * The packet every handle of this node was issued in, exactly as the model
+     * read it, for a step a repair wrote (t429). A domain numbers its handles
+     * per packet, and a repair's model was shown the failure packet and the
+     * packets its exploration returned -- none of them a view of the build --
+     * so the domain resolves the node's handles from this packet alone, as it
+     * judges a target override against the one packet it names
+     * (`validateTargetOverrideEvidence`, with Core's qualifier removed the same
+     * way). A packet the domain did not issue, or no longer keeps, resolves
+     * nothing, and the node is refused. Absent for a build's node, which
+     * resolves as it always has.
+     */
+    handleEvidence?: JsonObject | undefined;
   }): AutomationStudioPlanNodeResolution | Promise<AutomationStudioPlanNodeResolution>;
 };
 
