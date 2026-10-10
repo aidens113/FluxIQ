@@ -68,11 +68,18 @@ type CatalogEntryAccount = { entry: AutomationStudioFlowBootstrapCatalogEntry; w
 
 /**
  * A definition as the catalog lists it: its label and description whole, every
- * parameter with its authoring text whole (`./parameter-text.ts`), its ports,
- * capabilities and output action.
+ * parameter a model may write with its authoring text whole
+ * (`./parameter-text.ts`), its ports, capabilities and output action.
+ *
+ * A parameter the host fills from what the model names (`shownToModel: false`)
+ * is not listed (t432, user 2026-10-10: the model names an element by the
+ * handle the page view printed, "that's all handled by extension"). Listing a
+ * web node's `selector` -- a required string -- invited the model to write one.
  */
 function catalogEntry(definition: AutomationStudioNodeDefinition): CatalogEntryAccount {
-  const parameters = definition.parameters.map((parameter) => automationStudioFlowBootstrapParameterTextAccount(definition, parameter));
+  const parameters = definition.parameters
+    .filter((parameter) => parameter.shownToModel !== false)
+    .map((parameter) => automationStudioFlowBootstrapParameterTextAccount(definition, parameter));
   const entry: AutomationStudioFlowBootstrapCatalogEntry = {
     id: definition.id,
     version: definition.version,

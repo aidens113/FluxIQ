@@ -1677,8 +1677,8 @@ export class AutomationStudioService {
           failureStage = "provider_output_validation";
           failureCode = "flow_bootstrap.provider_output_validation_failed";
           failureAccounting = accounting;
-          // The domain's parameters, then validation. Nothing explored, so no handle was issued and naming one refuses the plan.
-          const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({ plan: result.response.plan, projectId, flowId, binding: this.llmEvidenceRuntime, handlesIssued: false, permissionFor: permissions.planStep });
+          // The domain's parameters, then validation. Nothing explored, so no handle was issued and naming one refuses the plan; the plan is the model's writing, so an element named any other way is refused too (t432).
+          const resolved = await resolveAutomationStudioFlowBootstrapPlanParameters({ plan: result.response.plan, projectId, flowId, binding: this.llmEvidenceRuntime, handlesIssued: false, writtenByModel: true, permissionFor: permissions.planStep });
           const validated = resolved.ok ? validateAutomationStudioFlowBootstrapPlan({ plan: resolved.plan, registry, resolution, size }) : undefined;
           if (!validated?.ok || !validated.validated) throw permissions.endedOnRequest(undefined, accounting) ?? personNeeded.endedOnIntervention(undefined, accounting) ?? new Error("Flow Bootstrap generation returned an invalid plan.");
           permission = await automationStudioBootstrapPermissionOutcome(permissions, () => authority.usage.calls);

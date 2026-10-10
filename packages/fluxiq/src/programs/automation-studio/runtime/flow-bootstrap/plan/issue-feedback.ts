@@ -136,7 +136,11 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   "flow_script.optional_invalid",
   "flow_script.optional_misplaced",
   "flow_script.optional_unavailable",
-  "flow_script.only_after_misplaced"
+  "flow_script.only_after_misplaced",
+  // A fact the model wrote that names its element by anything but a handle
+  // (`../../llm/harness-options/plan-parameter-resolution.ts`, t432): a fixed
+  // sentence that quotes nothing and says to name it by its handle.
+  "bootstrap.target_not_a_handle"
 ]);
 
 const ROUTE_CODES: ReadonlySet<string> = new Set([
@@ -299,9 +303,16 @@ function definitionAt(
   return input.registry.get(node.definitionId, input.resolution);
 }
 
+/**
+ * The shape a refused parameter accepts, from the catalog's own text. A
+ * parameter the host fills from what the model names (`shownToModel: false`)
+ * has no shape to give: the model never writes it, and showing it would teach
+ * it to (t432). Its refusal's own codes say where the handle goes instead.
+ */
 function acceptedShape(definition: AutomationStudioNodeDefinition, target: ParameterTarget): JsonObject | undefined {
-  if (target.undeclared) return { parameters: definition.parameters.map((parameter) => parameter.id) };
-  const parameter = definition.parameters.find((candidate) => candidate.id === target.parameterId);
+  const shown = definition.parameters.filter((parameter) => parameter.shownToModel !== false);
+  if (target.undeclared) return { parameters: shown.map((parameter) => parameter.id) };
+  const parameter = shown.find((candidate) => candidate.id === target.parameterId);
   if (!parameter) return undefined;
   if (parameter.ui?.control === "record-output") {
     const contract = automationStudioFlowBootstrapRecordOutputContract(definition);

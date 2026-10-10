@@ -54,6 +54,7 @@ export const AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION: Readonly<Automatio
     "Never repeat an act listed as completed, and never offer again, unchanged, a recovery listed as tried.",
     "When the failure is an interruption met here, something the page shows that stands between the step and its work, prefer `add_handler`: give it a `when` made of conditions the page shows now, in the failure evidence, and a completion check that is true once the interruption is gone.",
     "Otherwise use `replace_unit` for the named unit, or one of the other patch kinds offered.",
+    "A step of the fix names each control it acts on, and a condition its control, only by the handle the evidence printed for it, copied exactly: {\"handle\": \"<handle>\"} in a step, `handles` in a condition. A control named any other way refuses the fix.",
     "Once the fix is applied, the unit is attempted again on this page from where the run stopped. That attempt is the fix's trial: if it does not hold, the fix is dropped.",
     "Never add a speculative handler: write one only for an interruption the evidence shows was met, never for one that might appear.",
     "For example, on a clinic's appointment booking page a notice that the session is about to expire covers the time slots: the fix is a handler whose `when` is that notice being shown, whose step presses the notice's own control to stay signed in, and whose completion check is the notice being gone."

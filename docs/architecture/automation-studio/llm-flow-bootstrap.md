@@ -325,6 +325,24 @@ and a refusal says so (`described`, or `definition` when it already was) with
 not declare (`runtime/llm/node-tools/describing-failures.ts`). Core's own
 replays of the draft pass through untouched.
 
+**A parameter the host fills is never shown (t432).** A node parameter
+declared `shownToModel: false` (`nodes/contracts.ts`) is one the host fills
+from what the model names and the model never writes -- on the web, a node's
+`selector`, `element` and `visualTarget`, filled from the handle the model
+writes in `target`. It is left out of every catalog entry, so of
+`describedNodes` and `core.describe_nodes` too
+(`runtime/flow-bootstrap/plan/catalog.ts`), and out of the shape a refused
+parameter is answered with (`accepted`) and the list an undeclared one is
+answered with (`runtime/flow-bootstrap/plan/issue-feedback.ts`). The node
+still declares it, so a Flow that holds it validates and runs. Everything a
+model reads about naming an element -- the Flow script format, the library
+verb's description, the in-run repair instruction, the advice on a refused
+candidate, Core's own refusals -- speaks of the handle the evidence printed and
+never of a selector, a locator, CSS or XPath; a guard test fails if one does
+(`runtime/tests/model-facing/tests/handle-only.test.ts`). A model told "never
+write a locator" has still been taught that a locator is a thing it could
+write, so the prohibitions are worded without the word too.
+
 ## Permission on the authoring path
 
 A build may carry `permittedConsequences`, the lasting consequences the person
@@ -674,6 +692,7 @@ code of Core's own:
 | `bootstrap.parameter_resolution_invalid` | The answer has another shape, or its resolved parameters are not plain JSON within 16,384 bytes. |
 | `bootstrap.parameters_refused` | The domain refused without a usable code. |
 | `bootstrap.handle_unresolved` | The parameters still name a handle after resolution, `unchanged` ones included. |
+| `bootstrap.target_not_a_handle` | A fact the model wrote names its element by something other than a handle or a dialog (t432, below). |
 
 A refused node fails the plan and never reaches dispatch. In evidence-guided
 generation the refusal is fed back to the model (see
@@ -681,6 +700,42 @@ generation the refusal is fed back to the model (see
 `createFlowBootstrapAdaptation` and Bootstrap apply both run
 `assertAutomationStudioFlowBootstrapPlanHandlesResolved`, so a plan that
 reaches either without resolution is refused if any handle survives.
+
+### What the model wrote names an element by handle only (t432)
+
+The user's rule (2026-10-10): every saved element carries the full
+multi-signal fingerprint, and the model "shouldnt have to worry about any of
+that, that's all handled by extension". So a caller says who wrote what it asks
+the domain about, and the domain refuses an element the model named any other
+way -- a locator, an identity or a description of its own -- instead of running
+it as written. Two optional fields of `resolvePlanNodeParameters`'s input say
+it, never both:
+
+- `writtenByModel: true`: every parameter of the node is the model's. Set for a
+  plan from the reply -- a candidate submission, a legacy completion with no
+  draft (`bootstrap-completion.ts`) -- for the one-shot `flow_bootstrap` plan of
+  a build that explored nothing (`service.ts`), and for every step and fact an
+  in-run repair writes (`runtime/recovery/annotation/step-evidence-resolution.ts`).
+- `modelWrittenParameters: string[]`: for a node the host wrote -- a plan built
+  from the draft, whose steps ran with what the domain resolved -- the
+  top-level parameters the model wrote over it: the `settings` an
+  `amend_draft` decision carried onto the step, which replace that parameter
+  whole (`runtime/llm/harness-options/amended-plan-parameters.ts`). Only those
+  are judged.
+
+A step the draft ran, a step the Flow being extended already holds, and a
+hand-authored Flow compiled without a build (the Lab's recovery matrix) are
+never flagged, so their literal locators still run.
+
+A fact is Core's own statement, so Core judges its target itself: with
+`writtenByModel`, or in a parameter `modelWrittenParameters` names, a fact
+target that names neither a handle nor a dialog -- the `at "<locator>"` form,
+which only a hand-authored Flow may write
+(`runtime/flow-bootstrap/script-statements/fact-locator.ts`) -- is refused as
+`bootstrap.target_not_a_handle` at its path, with a fixed sentence saying to
+name the element by the handle the evidence printed. An in-run repair's fact
+whose target is anything but `handles` is refused the same way before any
+domain is asked.
 
 ## Core-derived fields
 

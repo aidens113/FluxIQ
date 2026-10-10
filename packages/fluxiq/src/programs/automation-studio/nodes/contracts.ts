@@ -52,6 +52,16 @@ export type AutomationNodeParameter = {
   required?: boolean;
   /** Parameters are state-bindable by default; set false to restrict this field to manual values. */
   allowStateBinding?: boolean;
+  /**
+   * `false` for a parameter the host fills from what a model names -- a
+   * domain's own address and identity for an element the model named by a
+   * handle -- and that a model never writes itself. It is left out of every
+   * node entry and refusal shape a model reads
+   * (`runtime/flow-bootstrap/plan/catalog.ts`, `.../issue-feedback.ts`); the
+   * node still declares it, so a Flow that holds it validates and runs. Absent,
+   * the parameter is shown.
+   */
+  shownToModel?: false;
   example?: JsonValue;
   constraints?: {
     minimum?: number;

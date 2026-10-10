@@ -241,7 +241,7 @@ describe("Automation Studio DeepSeek provider", () => {
     const user = JSON.parse(outbound.messages.find((message) => message.role === "user")!.content) as any;
     expect(system).toContain("fill target.handles with opaque handles copied exactly as failureEvidence names them");
     expect(system).toContain("semantically compatible with the failed nodeId and definitionId");
-    expect(system).toContain("never write a locator, path, query, or expression of your own");
+    expect(system).toContain("never write an address, path, query, or expression of your own in its place");
     expect(user.context).toMatchObject({
       nodeId: "submit",
       recentActions: [expect.objectContaining({ nodeId: "submit", definitionId: "example.form.submit", status: "failed" })],

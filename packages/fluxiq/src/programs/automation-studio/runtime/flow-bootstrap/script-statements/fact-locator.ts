@@ -23,10 +23,17 @@ export type AutomationStudioFlowScriptFactLocatorReading =
 
 const MAX_LENGTH = 1_000;
 
+/**
+ * Said beside every refusal of an `at` line (t432). Only a hand-authored Flow
+ * writes one; a model that wrote one is told what it writes instead, in words
+ * that never ask it for a locator.
+ */
+export const AUTOMATION_STUDIO_FLOW_SCRIPT_AT_IS_HAND_WRITTEN = "A Flow built from the page names an element only by the handle the page view printed for it: `exists t5`.";
+
 /** A quoted locator read as a fact's target, or the reason it cannot be. */
 export function readAutomationStudioFlowScriptFactLocator(text: string): AutomationStudioFlowScriptFactLocatorReading {
   const locator = text.trim();
-  if (!locator) return { ok: false, reason: "`at` takes a locator in quotes, and this one is empty: `exists at \"<locator>\"`." };
-  if (locator.length > MAX_LENGTH) return { ok: false, reason: `the locator is longer than ${MAX_LENGTH} characters.` };
+  if (!locator) return { ok: false, reason: `\`at\` takes its text in quotes, and this one is empty. ${AUTOMATION_STUDIO_FLOW_SCRIPT_AT_IS_HAND_WRITTEN}` };
+  if (locator.length > MAX_LENGTH) return { ok: false, reason: `the text after \`at\` is longer than ${MAX_LENGTH} characters.` };
   return { ok: true, target: { locator } };
 }

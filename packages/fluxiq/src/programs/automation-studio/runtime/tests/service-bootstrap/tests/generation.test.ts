@@ -198,6 +198,36 @@ describe("AutomationStudioService generateFlowBootstrapAdaptation", () => {
     await expectNoTopology(instance, project.id, flow.flowId);
   });
 
+  // t432 (user, 2026-10-10): the model names an element only by a handle the page
+  // view printed. A build with no exploration has shown it none, so its whole plan
+  // is its own writing, and the domain is told so with every node it is asked about.
+  it("tells the domain that a plan built with no exploration is the model's own writing", async () => {
+    const provider = mockProvider(async () => ({
+      response: { kind: "flow_bootstrap", summary: "Build the active instruction.", plan: plan() },
+      usage: { inputTokens: 120, outputTokens: 80, totalTokens: 200, estimatedCostUsd: 0.002 }
+    }));
+    const asked: JsonObject[] = [];
+    const evidenceRuntime: NonNullable<AutomationStudioServiceOptions["llmEvidenceRuntime"]> = {
+      domainId: "example",
+      deniedEvidenceKeys: [],
+      tools: [],
+      executeTool: async () => { throw new Error("a build with no exploration runs no tool"); },
+      resolvePlanNodeParameters: ({ permission: _permission, ...input }) => {
+        asked.push(structuredClone(input) as unknown as JsonObject);
+        return { status: "unchanged" };
+      }
+    };
+    const { project, flow } = await seeded(single);
+    const instance = createService({ provider, evidenceRuntime });
+
+    const result = await instance.generateFlowBootstrapAdaptation({ projectId: project.id, flowId: flow.flowId, caller: caller() });
+
+    expect(result.status).toBe("proposed");
+    expect(asked.map((input) => input.nodeDefinitionId)).toEqual(["builtin.control.start", "builtin.control.end"]);
+    expect(asked.every((input) => input.writtenByModel === true)).toBe(true);
+    expect(asked.some((input) => Object.hasOwn(input, "modelWrittenParameters"))).toBe(false);
+  });
+
   it("runs a bounded evidence loop and persists only content-free trace with the bootstrap adaptation", async () => {
     const requests: AutomationStudioLlmTaskRequest[] = [];
     const provider = mockProvider(async (request) => {

@@ -71,7 +71,7 @@ describe("Automation Studio opaque repair target", () => {
       expect(system).not.toMatch(webNoun);
     }
     expect(system).toContain("target.handles");
-    expect(system).toContain("never write a locator, path, query, or expression of your own");
+    expect(system).toContain("never write an address, path, query, or expression of your own in its place");
 
     // The schema the provider is held to. `handles` is the only field the model
     // is offered, and `additionalProperties: false` is what makes that binding.
