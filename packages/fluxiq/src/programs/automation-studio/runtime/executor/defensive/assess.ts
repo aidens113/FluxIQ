@@ -2,7 +2,6 @@ import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import type { AutomationStudioFaultAssessment, AutomationStudioFaultEffect } from "./contracts.ts";
-import { automationStudioNodeDeclaresNoLastingAct } from "./declared-no-lasting-act.ts";
 import { automationStudioNodeActLasts } from "./lasting-act.ts";
 import { automationStudioNodeMutates, automationStudioNodeRepeatCannotAct, automationStudioNodeRepeatIsSafe } from "./node-side-effect.ts";
 import { automationStudioFaultNotLanded } from "./not-landed.ts";
@@ -109,10 +108,12 @@ export function automationStudioAssessAttemptFault(
   //    lasting consequence, or the producer itself stated the act was made and
   //    only its answer is missing (`./lasting-act.ts`). Repeated only when the
   //    failure shows the act did not happen.
-  //    A step that declared no lasting consequence answers the producer's
-  //    "it may have acted": nothing it does lasts (`./declared-no-lasting-act.ts`).
-  const producerSaysActed = attempt.failure?.effect === "ambiguous"
-    && !(node && (automationStudioNodeRepeatIsSafe(node) || automationStudioNodeDeclaresNoLastingAct(node)));
+  //    Which acts commit is the producer's fact, so its statement outranks
+  //    whatever the step declared: a model under-declares (a promotion's offer
+  //    written `consequences: none`), and a declaration never unlocks a second
+  //    act. A committing act whose answer was lost is decided by the effect
+  //    check -- the page -- and repeated only when that shows it did not land.
+  const producerSaysActed = attempt.failure?.effect === "ambiguous" && !(node && automationStudioNodeRepeatIsSafe(node));
   if (fault.effect !== "unacted" && (producerSaysActed || (node && automationStudioNodeActLasts(node)))) {
     return {
       ...fault,

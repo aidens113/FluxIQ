@@ -10,7 +10,7 @@
 //
 // **Three answers, and `unknown` is the honest default.** `landed`: the act took
 // effect, so the node is done. `not_landed`: it did not, so making it again is
-// not a second act. `unknown`: nothing showed either way -- no expected state,
+// not a second act. `unknown`: nothing showed either way -- no expected state and no host answer from the act itself (`./host-act-landed.ts`),
 // no host to ask, a page that never answered, a check that threw. A missing
 // acknowledgement is `unknown`, never `not_landed`.
 //

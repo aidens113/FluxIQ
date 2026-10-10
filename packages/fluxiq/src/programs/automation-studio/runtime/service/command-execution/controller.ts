@@ -91,7 +91,8 @@ export class AutomationStudioCommandExecutionController {
         try { await this.commandRuns.consume(consumer, context); this.live(state); } catch (error) { this.stop(state, "command_execution.consume_failed"); throw error; }
       },
       stop: async (reason: string) => { this.stop(state, reason); },
-      receipted: (context: ClientGatewayCommandContext) => this.contexts.get(context)?.state === state && this.commandRuns.receipted(context)
+      receipted: (context: ClientGatewayCommandContext) => this.contexts.get(context)?.state === state && this.commandRuns.receipted(context),
+      withdraw: (context: ClientGatewayCommandContext) => this.contexts.get(context)?.state === state && this.commandRuns.withdraw(context)
     });
     const parentAbort = () => this.stop(state, "command_execution.cancelled");
     state = { port, abort, pipelines: new Set(), detach: () => owner.signal?.removeEventListener("abort", parentAbort) };

@@ -183,10 +183,10 @@ function actionCommandFromRuntime(command: FluxIQRuntimeCommand): ClientGatewayA
 }
 
 function sessionMatchesCommand(session: ClientGatewaySession, command: FluxIQRuntimeCommand): boolean {
-  if (command.domainId !== undefined) {
-    const sessionDomainId = domainIdFromMetadata(session.metadata);
-    if (sessionDomainId !== command.domainId) return false;
-  }
+  // A session serves a domain when it says so itself or one of its capabilities
+  // does, as `RuntimeService` matches the client it projects to.
+  if (command.domainId !== undefined && domainIdFromMetadata(session.metadata) !== command.domainId
+    && !session.capabilities.some((capability) => domainIdFromMetadata(capability.metadata) === command.domainId)) return false;
   if (command.capabilityId && !session.capabilities.some((capability) => capability.id === command.capabilityId)) return false;
   if (command.actionType && !session.capabilities.some((capability) => capability.actionTypes?.includes(command.actionType!))) return false;
   return true;
