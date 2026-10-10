@@ -61,7 +61,9 @@ function requiredRun(run: Run): AutomationStudioExecutorCommandRun {
     receipted: (context) => {
       if (run.latched) unreceipted.add(context);
       return !run.latched;
-    }
+    },
+    // Every command here was claimed: its outcome is the ledger's, never withdrawn.
+    withdraw: () => false
   };
 }
 
