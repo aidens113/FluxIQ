@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { COMMAND_ANSWER_MARGIN_MS } from "../../client-gateway/service/index.ts";
+import { COMMAND_ANSWER_MARGIN_MS, COMMAND_RECONCILE_ALLOWANCE_MS } from "../../client-gateway/service/index.ts";
 import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../../client-gateway/service/command-ledger/index.ts";
 import {
   FileRuntimeStore,
@@ -221,7 +221,7 @@ describe("RuntimeService", () => {
     expect(result).toEqual({ commandId: "command.late", ...answer });
   });
 
-  it.each(["adapter", "transport"] as const)("times out a silent %s only once its timeout and the answer margin have both passed", async (targetKind) => {
+  it.each(["adapter", "transport"] as const)("times out a silent %s only once its timeout, the answer margin and the reconcile allowance have all passed", async (targetKind) => {
     vi.useFakeTimers();
     try {
       const runtime = new RuntimeService();
@@ -230,12 +230,12 @@ describe("RuntimeService", () => {
       const pending = runtime.dispatch({ commandId: "command.silent", kind: "execute_action", actionType: "late.run", timeoutMs: 20 })
         .then((result) => { settled = result; });
 
-      await vi.advanceTimersByTimeAsync(20 + COMMAND_ANSWER_MARGIN_MS - 1);
-      expect(settled, "the runtime is still waiting inside the answer margin").toBeUndefined();
+      await vi.advanceTimersByTimeAsync(20 + COMMAND_ANSWER_MARGIN_MS + COMMAND_RECONCILE_ALLOWANCE_MS - 1);
+      expect(settled, "the runtime is still waiting inside the answer margin and reconcile allowance").toBeUndefined();
       await vi.advanceTimersByTimeAsync(1);
       await pending;
 
-      expect(settled).toMatchObject({ commandId: "command.silent", status: "timed_out", message: expect.stringContaining(`after ${20 + COMMAND_ANSWER_MARGIN_MS}ms`) });
+      expect(settled).toMatchObject({ commandId: "command.silent", status: "timed_out", message: expect.stringContaining(`after ${20 + COMMAND_ANSWER_MARGIN_MS + COMMAND_RECONCILE_ALLOWANCE_MS}ms`) });
       expect(settled).not.toHaveProperty("failure");
     } finally {
       vi.useRealTimers();

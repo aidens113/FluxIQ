@@ -3,6 +3,7 @@
 export { automationStudioStepArrival } from "./arrival.ts";
 export { automationStudioStepAskOrPark } from "./ask-or-park.ts";
 export { automationStudioEndedTrace } from "./ended-trace.ts";
+export { automationStudioStepRequiredOutcomeStop } from "./uncertain-stop.ts";
 export { automationStudioStepFailedAttempt } from "./failed-attempt.ts";
 export type { AutomationStudioStepLoopContext } from "./loop-context.ts";
 export type { AutomationStudioStepOutcome } from "./loop-outcome.ts";
