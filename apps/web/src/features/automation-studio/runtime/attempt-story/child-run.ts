@@ -13,9 +13,11 @@ const ENDED: Readonly<Record<string, string>> = Object.freeze({
 /**
  * The `childTrace` record of a Call Flow step: the called Flow ran as its own
  * run, and this says how many steps it took and how it ended. The called
- * Flow's id stays in the Raw JSON tab.
+ * Flow's id stays in the Raw JSON tab. A Call Subflow step's child is a part
+ * of this Flow, told by `part.ts`, whose steps are listed under the step.
  */
 export function runtimeChildRunLine(attempt: unknown): RuntimeAttemptStoryLine | undefined {
+  if (runtimeAttemptRecord(attempt, "subflowTarget")) return undefined;
   const child = runtimeAttemptRecord(attempt, "childTrace");
   if (!child) return undefined;
   const steps = Array.isArray(child.attempts) ? child.attempts.length : undefined;
