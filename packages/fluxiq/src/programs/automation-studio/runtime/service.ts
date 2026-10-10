@@ -221,7 +221,7 @@ import { readAutomationStudioFlowRunDetail } from "./service/run-detail-read/ind
 import { automationStudioRunEndViewReader } from "./service/end-view/index.ts";
 import { AutomationStudioParkedRunExpiry, AutomationStudioOrphanedRunSweep, AutomationStudioLateActionResults, automationStudioHeldRepairVerification, bindAutomationStudioInRunRepair, writeAutomationStudioRuntimeSessionFiles, admitAutomationStudioRuntimeSession, assertAutomationStudioRunRequirements, automationStudioRunGraphOptions, automationStudioSubflowGraphIsOwned, automationStudioBindRouterSubflowFrame, annotateAutomationStudioRunDetailWithRecoveryState, automationStudioRequestedRunId, endAutomationStudioRuntimeSessionAfterThrow } from "./service/runtime-session/index.ts";
 export type { AutomationPipelineArtifacts, AutomationStudioAdaptationPolicySummary, AutomationStudioAdaptationSummary, AutomationStudioAdaptationSummaryPage, AutomationStudioChangeProposalSummary, AutomationStudioFlowRunSummaryPage, AutomationStudioInstructionSummary, AutomationStudioInstructionSummaryPage, AutomationStudioRouterSummary, AutomationStudioSubflowSummary, AutomationStudioSubflowSummaryPage, AutomationStudioWriteProjectObjectAssetInput, AutomationStudioWriteProjectObjectAssetResult, CreateFlowSubflowInput, CreateRecordingFlowProposalsResult, GenerateRecordingProposalInput, GenerateRecordingProposalResult, NormalizationReviewArtifact, ProcessFinalizedRecordingResult, ReplayResultArtifact } from "./service/index.ts";
-import { ProgramJsonStore, programDataFile, safeSegment } from "../../_shared/storage.ts";
+import { ProgramJsonStore, programDataFile, programStateConnections, safeSegment } from "../../_shared/storage.ts";
 import type { JsonObject, JsonValue } from "../../../core/index.ts";
 import type { IoRegistry } from "../../../io/index.ts";
 import type { RuntimeService } from "../../../runtime/index.ts";
@@ -2502,7 +2502,7 @@ export class AutomationStudioService {
 
   async runRuntimeSession(input: AutomationStudioRuntimeSessionRunInput): Promise<AutomationStudioRuntimeSession> {
     const commands = new AutomationStudioRequiredCommandRun(input, Boolean(this.projectDatabasePool)), requiredCommands = commands.required;
-    return await withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => withAutomationStudioRunActivity({ projectId: input.projectId, flowId: input.flowId ?? input.flow?.flowId }, async () => {
+    return await programStateConnections.keepWhile(() => withAutomationStudioProjectDatabaseHeld({ pool: this.runtimeProjectDatabasePool, projects: this.projects }, input.projectId, () => withAutomationStudioRunActivity({ projectId: input.projectId, flowId: input.flowId ?? input.flow?.flowId }, async () => {
     // The run executes under the mode and the authorizations its caller asked
     // for. A lasting real-world consequence is gated one action at a time by
     // `permittedConsequences` and the action permission gate.
@@ -2741,7 +2741,7 @@ export class AutomationStudioService {
       commands.close();
       if (input.projectId && session) { this.runtimeAbortControllers.delete(`${input.projectId}:${session.runId}`); this.runControl.close(input.projectId, session.runId); }
     }
-  }, { readRecord: async (ended) => (input.projectId ? (await this.getFlowRunDetail(input.projectId, ended.runId))?.metadata : undefined) /* A failed run's last row says what came back and why, from its record (`activity/run.ts`, t194 U3). */ })); }
+  }, { readRecord: async (ended) => (input.projectId ? (await this.getFlowRunDetail(input.projectId, ended.runId))?.metadata : undefined) /* A failed run's last row says what came back and why, from its record (`activity/run.ts`, t194 U3). */ }))); }
 
   async cancelRuntimeSession(projectId: string, runId: string, reason = "Cancelled by user."): Promise<AutomationStudioRuntimeSession | null> {
     return await this.parkedRunExpiry.cancel(projectId, runId, reason, () => this.runtimeAbortControllers.get(`${projectId}:${runId}`)?.abort(reason));

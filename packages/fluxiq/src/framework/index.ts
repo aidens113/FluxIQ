@@ -12,7 +12,7 @@ import {
   validateDomainIo,
   validateIoRequirements
 } from "../io/index.ts";
-import { AutomationStudioIoRecorder, buildProgramDirectory, createGlobalProgramRuntime, registerHostDocumentationGenerators, type AutomationStudioNativeNodeRuntime, type AutomationStudioReusableLlmContextHostConfiguration, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
+import { AutomationStudioIoRecorder, buildProgramDirectory, createGlobalProgramRuntime, programStateConnections, registerHostDocumentationGenerators, type AutomationStudioNativeNodeRuntime, type AutomationStudioReusableLlmContextHostConfiguration, type GlobalProgramRuntime, type ProgramDirectory } from "../programs/index.ts";
 import { initializeFluxIQStorage, inspectFluxIQStorage, type FluxIQStorageInspection } from "./storage-layout.ts";
 import { migrateFluxIQStorage, rollbackFluxIQStorageMigration, type FluxIQStorageMigrationResult } from "./storage-migration.ts";
 
@@ -208,6 +208,8 @@ export class FluxIQ {
       } finally {
         try { this.programs.secretKeys.close(); } catch (error) { errors.push(error); }
       }
+      // Program state keeps its database connections open between operations; none outlives FluxIQ (t435).
+      try { await programStateConnections.closeAll(); } catch (error) { errors.push(error); }
       if (errors.length === 1) throw errors[0];
       if (errors.length > 1) throw new AggregateError(errors, "fluxiq.close_failed");
     })();
