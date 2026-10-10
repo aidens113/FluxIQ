@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";
-import { automationStudioActivityInBuild, automationStudioActivityRecoveryChoice, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought } from "../../activity/index.ts";
+import { automationStudioActivityInBuild, automationStudioActivityRecoveryChoice, emitAutomationStudioActivityStepRecovering, emitAutomationStudioActivityThought, type AutomationStudioRecoveryNext } from "../../activity/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../contracts.ts";
 import {
   automationStudioAssessAttemptFault,
@@ -23,11 +23,11 @@ import { automationStudioHostEffectCheck } from "../transition-comparison.ts";
 import { automationStudioStepRecordCompletedAct } from "./already-done.ts";
 import { automationStudioRecordDefendedFault } from "./defended-fault.ts";
 import { automationStudioEndedTrace } from "./ended-trace.ts";
-import { automationStudioStepRepairIncident } from "./incident-repair.ts";
+import { automationStudioStepRepairIncident, automationStudioStepRepairWillAsk } from "./incident-repair.ts";
 import { automationStudioStepStampFailureClass } from "./lifecycle-stamps.ts";
 import type { AutomationStudioStepLoopContext } from "./loop-context.ts";
 import type { AutomationStudioStepOutcome } from "./loop-outcome.ts";
-import { automationStudioStepOnFail } from "./on-fail.ts";
+import { automationStudioStepFailHandlerInScope, automationStudioStepOnFail } from "./on-fail.ts";
 import { automationStudioStepOnRetry } from "./on-retry.ts";
 import { automationStudioOutcomeUncertainTrace } from "./uncertain-stop.ts";
 
@@ -125,8 +125,18 @@ export async function automationStudioStepFailedAttempt(
     retryBackoffMs: ladder.kind === "retry" ? ladder.backoffMs : undefined, hintedWaitMs: fault?.hintedWaitMs, settledAt: settled.finishedAt ?? settled.startedAt, now: now(),
     nodeWaitedMs: runState.defence.nodeWaitedMs(failedNode.id), runWaitedMs: runState.defence.runWaitedMs(), node: failedNode
   });
-  const choice = automationStudioActivityRecoveryChoice(ladder, { attempts: ctx.arrival.attempts, actUncertain: fault?.actUncertain === true, mayAbsorb, retryable: automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode), test: automationStudioActivityInBuild(), ...siteAsked });
-  emitAutomationStudioActivityThought({ phase: "repairing", title: choice.title, text: choice.text, ref: failedNode.id });
+  // What the ladder chose, in a person's words. A stop says what happens next,
+  // so it is said once that is known: before On Fail when the Flow has a way on
+  // from the failure, else where the run goes on, is fixed or ends (t428).
+  const runFacts = { attempts: ctx.arrival.attempts, actUncertain: fault?.actUncertain === true, mayAbsorb, retryable: automationStudioAttemptIsRetryable(attempts[attemptIndex]!, failedNode), test: automationStudioActivityInBuild(), ...siteAsked };
+  let said = false;
+  const tell = (next?: AutomationStudioRecoveryNext): void => {
+    if (said) return;
+    said = true;
+    const choice = automationStudioActivityRecoveryChoice(ladder, next ? { ...runFacts, next } : runFacts);
+    emitAutomationStudioActivityThought({ phase: "repairing", title: choice.title, text: choice.text, ref: failedNode.id });
+  };
+  if (ladder.kind !== "stop") tell();
   attempts[attemptIndex] = {
     ...attempts[attemptIndex]!,
     recoveryDecision
@@ -164,14 +174,16 @@ export async function automationStudioStepFailedAttempt(
     automationStudioRecordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, ctx.arrival.attempts, fault, "continued", 0);
     return { kind: "proceed", routeOverride: "success" };
   }
+  const executableFailedEdge = automationStudioRecoveryPathEdge(flow, failedNode, recoveryDecision, failedEdge);
+  if (executableFailedEdge || (await automationStudioStepFailHandlerInScope(ctx, failedNode, fault?.actUncertain === true))) tell("on_fail");
   // On Fail, before the failed route or the continuation is taken (`./on-fail.ts`).
   const onFail = await automationStudioStepOnFail(ctx, { node: failedNode, attemptIndex, fault });
   if (onFail.kind !== "pass") {
+    tell("on_fail");
     automationStudioRecordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, ctx.arrival.attempts, fault, onFail.kind === "return" ? "stopped" : "continued", 0);
     return onFail;
   }
   const { incidentId } = onFail;
-  const executableFailedEdge = automationStudioRecoveryPathEdge(flow, failedNode, recoveryDecision, failedEdge);
   if (!executableFailedEdge) {
     // The ladder is spent and the Flow has no failed route of its own.
     // Before this, that ended the run -- every time, for every node,
@@ -184,9 +196,13 @@ export async function automationStudioStepFailedAttempt(
       automationStudioRecordDefendedFault(runState, failedNode.id, attempts[attemptIndex]!, ctx.arrival.attempts, fault ?? continuationFault(continuation.reason), "continued", 0);
       const onwardEdge = chooseAutomationStudioEdge(flow, failedNode.id, "success", failedNode.definitionId);
       const stopsOnward = onwardEdge ? ctx.stopAfter?.stops({ fromNodeId: failedNode.id, toNodeId: onwardEdge.targetNodeId }) : undefined;
-      if (stopsOnward) return { kind: "return", trace: ctx.stoppedAt(failedNode.id, stopsOnward) };
+      if (stopsOnward) {
+        tell("stop");
+        return { kind: "return", trace: ctx.stoppedAt(failedNode.id, stopsOnward) };
+      }
+      const onward = onwardEdge ? ctx.nodesById.get(onwardEdge.targetNodeId) : undefined;
+      tell(onward ? "goes_on" : "stop");
       if (onwardEdge) {
-        const onward = ctx.nodesById.get(onwardEdge.targetNodeId);
         if (!onward) return { kind: "return", trace: missingTargetTrace(ctx.startedAt, now(), onwardEdge, attempts, values, effects) };
         recordRegionTransition(onwardEdge, regionId, options, ctx.regionTransitions, now());
         // The run goes on past a failure that is not fatal to the Flow, as past an optional step.
@@ -197,6 +213,7 @@ export async function automationStudioStepFailedAttempt(
     // Nothing took the run on: a true failure (or an uncertain act), which marks the incident.
     const verdict = automationStudioStepStampFailureClass(ctx, attemptIndex, { uncertainAct: fault?.actUncertain === true, onFail: [] }, incidentId);
     const attemptsHere = ctx.arrival.attempts;
+    tell(verdict === "true_failure" && automationStudioStepRepairWillAsk(ctx, { node: failedNode, attemptIndex, incidentId, fault }) ? "repair" : "stop");
     const repaired = verdict === "true_failure" ? await automationStudioStepRepairIncident(ctx, { node: failedNode, attemptIndex, incidentId, fault }) : undefined;
     const settledFault = fault ?? continuationFault(continuation.reason);
     if (repaired?.kind === "next") {

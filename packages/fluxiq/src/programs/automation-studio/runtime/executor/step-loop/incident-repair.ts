@@ -60,7 +60,7 @@ export async function automationStudioStepRepairIncident(
     if (prior.outcome === "held") dropOverlay(ctx, invocation, failure, incidentId, prior);
     return undefined;
   }
-  if (!mayAsk(ctx, invocation, failure)) return undefined;
+  if (!automationStudioStepRepairWillAsk(ctx, failure)) return undefined;
   const failedAttempt = ctx.attempts[failure.attemptIndex]!;
   const unit = repairUnit(ctx, invocation, failure.node, failedAttempt, incidentId);
   emitAutomationStudioActivityThought({ phase: "repairing", title: "Fixing a step", text: "Nothing in the Flow could take the run past this step, so the run waits here while the step is fixed, then tries it again where it stood.", ref: failure.node.id });
@@ -81,6 +81,19 @@ export async function automationStudioStepRepairIncident(
     return undefined;
   }
   return { kind: "next", node: holdOverlay(ctx, invocation, failure, incidentId, answer, reattempt) };
+}
+
+/**
+ * Whether a true failure here will be held for an in-run fix: the run has a
+ * fix to ask for, the incident was not fixed once already, and it may ask
+ * (`mayAsk`). The recovery ladder's last words read it before the fix is
+ * asked, so they say a fix comes only when one will (t428).
+ */
+export function automationStudioStepRepairWillAsk(ctx: AutomationStudioStepLoopContext, failure: TrueFailure): boolean {
+  const invocation = ctx.options.invocation;
+  if (!ctx.options.repairIncident || !invocation || !failure.incidentId) return false;
+  if (invocation.run.lifecycle.repairs.has(failure.incidentId)) return false;
+  return mayAsk(ctx, invocation, failure);
 }
 
 /**
