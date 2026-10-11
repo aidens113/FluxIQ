@@ -93,7 +93,7 @@ describe("observeAutomationStudioEvidenceLoop", () => {
     for (const callId of ["rerun.5", "rerun.8", "rerun.8.2"]) await inScope(() => observed.executeTool({ callId, toolId: "core.run_node", value: { node: LIST, parameters: {} } }));
     const ends = seen.filter((event) => event.detail?.status === "succeeded");
     expect(ends.map((event) => event.detail?.text)).toEqual(Array(3).fill(`Result: web.action.rejected.target_unobserved · Reason: malformed_handle · Node: ${LIST}`));
-    for (const end of ends) expect(activityActionOf(end)?.why).toBe("FluxIQ didn't read it, as the step didn't say which list on the page to read");
+    for (const end of ends) expect(activityActionOf(end)?.why).toBe("FluxIQ didn't read it, as the step didn't name its list the way FluxIQ needs");
   });
 
   it("leaves a repeat whose first refusal it never saw as a repeat", async () => {

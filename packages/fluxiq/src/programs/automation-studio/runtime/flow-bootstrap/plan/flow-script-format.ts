@@ -76,6 +76,14 @@
 // model writes by hand go through, and a step that arrives here undeclared is
 // refused -- so the sentence is what makes that refusal answerable.
 //
+// Which steps declare is the bound domain's one rule, not this text's: the web
+// domain's `webPlanStepMustDeclare` (a press, a key press, a dialog answer, a
+// typing step that submits), which holds a plan's steps and every live
+// `run_node` call alike. Until t439 a live call of any acting node was refused
+// without one, so a saved navigate, check or type -- written exactly as this
+// sentence says -- could never be rerun in a repair (`run-mv4912r9-53b05a51`).
+// The sentence and the domain's rule must say the same; change them together.
+//
 // The routing lines were rewritten on 2026-09-18. The format used to say that
 // `step: run subflow <label>` reaches a block, and Core read that as a route
 // rule with no condition -- which always holds, so every Flow built with a

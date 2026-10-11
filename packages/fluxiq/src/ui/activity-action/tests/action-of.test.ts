@@ -290,7 +290,7 @@ describe("activityActionOf: what each card says (t193 chat wording)", () => {
   // "Didn't work: it wasn't on the page". Nothing was looked up.
   it("lets a refusal's own reason say why it failed, before its code's words", () => {
     const refused = tool("Clicking “Add to cart”", "Result: web.action.rejected.target_unobserved · Reason: target_not_a_handle · Node: web.output.dom-click");
-    expect(outputsOf(activityActionOf(refused))).toEqual(["click", "Add to cart", "failed", "FluxIQ didn't send it, as the step didn't say which control on the page to use"]);
+    expect(outputsOf(activityActionOf(refused))).toEqual(["click", "Add to cart", "failed", "FluxIQ didn't send it, as the step didn't name its control the way FluxIQ needs"]);
     // A reason with no words of its own leaves the code to say it.
     const unknown = tool("Clicking “Add to cart”", "Result: web.target.not_found · Reason: vendor_specific_thing · Node: web.output.dom-click");
     expect(activityActionOf(unknown)?.why).toBe("FluxIQ couldn't find it where it was saved");
@@ -475,7 +475,7 @@ describe("activityActionOf: a list read Core never sent (R2-U-6)", () => {
   const read = (reason: string) => activityActionOf(tool("Reading the list of “name, price and 4 more”", `Result: web.action.rejected.target_unobserved · Reason: ${reason} · Node: web.output.dom-extract_list`));
 
   it("says it was not read, and why, never that the list wasn't on the page", () => {
-    expect(read("malformed_handle")).toMatchObject({ kind: "read", target: "name, price and 4 more", outcome: "failed", why: "FluxIQ didn't read it, as the step didn't say which list on the page to read" });
+    expect(read("malformed_handle")).toMatchObject({ kind: "read", target: "name, price and 4 more", outcome: "failed", why: "FluxIQ didn't read it, as the step didn't name its list the way FluxIQ needs" });
     expect(read("answered_the_same_again")?.why).toBe("FluxIQ didn't read it, for the same reason as the time before");
     expect(activityActionOf(tool("Reading the list", "Result: web.action.rejected.target_unobserved · Node: web.output.dom-extract_list"))?.why).not.toMatch(/wasn't on the page/u);
   });

@@ -32,8 +32,9 @@ const CART = "https://bigbox.test/cart";
 const CHECKOUT = "https://bigbox.test/checkout";
 const CONFIRMATION = "https://bigbox.test/order/confirmation";
 
-function savedCandidate(options: { declarations?: string[]; missingDeclarations?: true; missingStart?: true; unresolved?: true } = {}) {
+function savedCandidate(options: { declarations?: string[]; missingDeclarations?: true; missingStart?: true; unresolved?: true; notRequired?: true } = {}) {
   return automationStudioFlowDraftSeedFromFlow({
+    ...(options.notRequired ? { declarationRequired: () => false } : {}),
     nodes: [{ id: "saved", definitionId: "fixture.open", parameterValues: { selector: "#open", text: { $state: { path: "text", ...(options.unresolved ? {} : { fallback: "authored" }) } } }, ...(options.missingDeclarations ? {} : { metadata: { declaredConsequences: options.declarations ?? [] } }) }],
     edges: [], ...(options.missingStart ? {} : { startPages: { saved: { location: HOME } } })
   }).steps;
@@ -65,6 +66,21 @@ describe("fresh full tests of carried saved configurations", () => {
     expect(calls).toBe(0);
   });
 
+  // t439: a saved step that declared nothing is the saved Flow's, and is run as
+  // saved (`run-mv4912r9-53b05a51`); only the first step needs a start.
+  it("dispatches an unchanged saved configuration that declared nothing where its node need not, adding no declaration", async () => {
+    const calls: JsonObject[] = [];
+    const executeTool = async ({ value }: { value: JsonObject }) => {
+      calls.push(value);
+      return answer("core.replay.replayed", true);
+    };
+    const result = await replayAutomationStudioFlowDraft({ steps: savedCandidate({ missingDeclarations: true, notRequired: true }), attempt: 1, executeTool, nodeOf: () => mappedCandidateNode });
+    expect(calls.map((call) => call.replay)).toEqual(["reset", "step"]);
+    expect(Object.hasOwn(calls[1]!, "consequences")).toBe(false);
+    expect(result.verdict.ok).toBe(true);
+  });
+
+  // A saved step whose node must declare and did not is never run blind (supervisor review, t439).
   it.each(["declaration", "start", "copy", "edit"])("refuses missing or invalid %s before dispatch", async (kind) => {
     let steps = savedCandidate({ ...(kind === "declaration" ? { missingDeclarations: true } : {}), ...(kind === "start" ? { missingStart: true } : {}) });
     if (kind === "copy") steps = steps.map((step) => ({ ...step }));

@@ -47,15 +47,33 @@ describe("a Flow read back as a draft", () => {
     expect(seed.steps[0]!.priorExecution).toBeUndefined();
   });
 
-  it("refuses missing declarations or captured start, changed configuration and copied steps", () => {
+  it("refuses a first step with no captured start, changed configuration and copied steps", () => {
     const node = { id: "saved", definitionId: "fixture.open", metadata: { declaredConsequences: [] } };
     expect(automationStudioFlowDraftReplayable(automationStudioFlowDraftSeedFromFlow({ nodes: [node], edges: [] }).steps)).toBe(false);
-    expect(automationStudioFlowDraftReplayable(automationStudioFlowDraftSeedFromFlow({ nodes: [{ id: "saved", definitionId: "fixture.open" }], edges: [], startPages: { saved: { location: "fixture://start" } } }).steps)).toBe(false);
     const seed = declaredSeed();
     expect(automationStudioFlowDraftReplayable(seed.steps.map((step) => ({ ...step })))).toBe(false);
     seed.steps[0]!.input.parameters = { changed: true };
     expect(automationStudioFlowDraftReplayable(seed.steps)).toBe(false);
   });
+  // t439 (`run-mv4912r9-53b05a51`): a script-authored Flow declares only its
+  // presses, and a failed run never starts the nodes after the one it failed at.
+  it("schedules an undeclared saved step its node need not declare, and a later step whose start was never captured, keeping no declaration it lacked", () => {
+    const undeclared = (declarationRequired: (definitionId: string) => boolean) => automationStudioFlowDraftSeedFromFlow({
+      nodes: [{ id: "open", definitionId: "fixture.open" }, { id: "tick", definitionId: "fixture.tick" }],
+      edges: [{ id: "e1", sourceNodeId: "open", targetNodeId: "tick" }],
+      startPages: { open: { location: "fixture://start" } },
+      declarationRequired
+    });
+    const seed = undeclared(() => false);
+    expect(seed.steps.map((step) => Object.hasOwn(step.input, "consequences"))).toEqual([false, false]);
+    expect(seed.steps.map((step) => step.scheduledCandidate?.sourceNodeId)).toEqual(["open", "tick"]);
+    expect(automationStudioFlowDraftReplayable(seed.steps)).toBe(true);
+    // A node whose steps must declare (a press) is not scheduled undeclared (supervisor review, t439).
+    const pressing = undeclared((definitionId) => definitionId === "fixture.tick");
+    expect(pressing.steps.map((step) => step.scheduledCandidate?.sourceNodeId)).toEqual(["open", undefined]);
+    expect(automationStudioFlowDraftReplayable(pressing.steps)).toBe(false);
+  });
+
   it("orders the steps the way the Flow runs them, not the way the document lists them", () => {
     const seed = automationStudioFlowDraftSeedFromFlow(flow());
     expect(seed.steps.map((step) => step.actionId)).toEqual(["web.page.navigate", "web.dom.extract_list"]);

@@ -1514,17 +1514,30 @@ actually run (causes C-F, UI-4).
 
 A round that could not be measured is never "not doable" (t194-w70). A
 re-author or extend build seeds its draft from a stored Flow. Each step it
-carries (`f<n>`) has nothing it ran with. An unchanged carried step whose node
-declared its consequences and whose start page the repaired run captured holds a
-scheduled candidate, and the test runs it fresh as the Flow saved it; the Merge
-an optional step joins at is passed through (`runtime/flow-draft/carried-step/`,
+carries (`f<n>`) has nothing it ran with. An unchanged carried step holds a
+scheduled candidate where it declared its consequences or its node need not
+(the domain says which on each node definition, `consequenceDeclaration`, read
+by `automationStudioNodeDeclarationRequired`; unsaid, it must), with the start
+page the repaired run captured where it captured one (t439), and the test runs
+it fresh as the Flow saved it. A saved press that declared nothing is never run
+blind: the permission gate is asked about an action from its declaration, so
+it is listed to be rerun with one. The Merge an optional step joins at is
+passed through, and so is an optional carried step the test cannot run as
+saved, which is excused as optional and never listed for a live rerun. A change
+to an optional saved step that the test never exercised is not saved: once the
+build is finished the step goes back to its saved version, the plan is built
+again, and the chat says "Kept the saved version of ..."
+(`runtime/flow-draft/carried-step/untested-edit.ts`; `runtime/flow-draft/carried-step/`,
 t274 C-4: live run `run-muw60j7c-bb7c9a62`'s re-author was told to rerun every
 carried step live, the domain refused each rerun of the stored type step,
 which names an element and no handle, as `target_not_a_handle`, and five
-rounds ended without a test). Any other carried step has nothing to put the
-target back with until it is rerun live, and Core never runs such a step
-itself, because the permission gate reads its missing consequence declaration
-as "none". A round whose Flow still holds one of those is not tested at its
+rounds ended without a test; t439: live run `run-mv4912r9-53b05a51`'s script
+-authored Flow declared only its presses and its failed playback never started
+the nodes after the failing one, so the gate demanded live reruns of steps the
+domain then refused, repair never completed, and the optional notice step was
+forced into a press of an unrelated control). Any other carried step -- one
+changed since it was seeded -- has nothing to run until it is rerun live. A
+round whose Flow still holds one of those is not tested at its
 end; its judgement names those steps (`notRunInThisBuild`), and neither `repeated_unchanged` nor
 `no_progress` is concluded from it, since there is no measurement to compare.
 Live run `run-murwcmx2`'s re-author ended not doable with the advised fix in its
@@ -2168,11 +2181,12 @@ stands; any edit after that run needs another. Three pieces hold it:
 
 **Re-authored and extended Flows.** A re-author or an improve is an extend
 build seeded from the stored Flow (`runtime/llm/node-tools/draft-from-flow.ts`):
-its carried steps `f<n>` have no `ranWith` and no `replay`. One whose node
-declared its consequences and whose start page the repaired run captured is
-run by the test as saved (its scheduled candidate) while unchanged; a carried
-Merge is passed through; any other must be rerun live before the Flow can be
-tested whole (t274 C-4).
+its carried steps `f<n>` have no `ranWith` and no `replay`. Each is run by the
+test as saved (its scheduled candidate) while unchanged, where it declared or
+its node need not, with its captured start where the repaired run captured one
+(t439); a carried Merge,
+and an optional carried step the test cannot run, are passed through; any other
+must be rerun live before the Flow can be tested whole (t274 C-4).
 The rerun is a new step; it records `standsFor`, the id of the step whose place
 it took (`runtime/flow-draft/step.ts`,
 `runtime/llm/evidence-loop/rerun-replacement.ts`), so the written Flow keeps
