@@ -16,12 +16,18 @@
 //                                    one on a page the draft no longer reaches
 //                                    (`../../flow-draft/site-memory.ts`).
 //   { replay: "verify", ...ranWith,  check this step could run now, or that
-//     from? }                        its effect is already in place, and run
+//     from?, effect? }               its effect is already in place, and run
 //                                    nothing: its effect lasts, and a dry run
 //                                    never repeats a lasting effect. `from`
 //                                    is where the step found the target, the
 //                                    caller's own token, carried unread
 //                                    (`../../flow-draft/verify-only.ts`).
+//                                    `effect` is what the step's act made true
+//                                    as its Flow node recorded it
+//                                    (`routeSignatures.effect`, t447), the
+//                                    host's own form, carried unread: a host
+//                                    that finds it on the page answers
+//                                    `present`, whatever the control now reads.
 //
 // **Why the executor rather than a seam of its own.** Everything a replay needs
 // is already on that path and already right there: the permission gate wraps
@@ -82,6 +88,7 @@ import {
   type AutomationStudioFlowDraftReplayStatus,
   type AutomationStudioFlowDraftStep
 } from "../../flow-draft/index.ts";
+import { automationStudioRouteSignaturesValue } from "../../route-state/signatures/index.ts";
 import { automationStudioFlowBootstrapDraftNodeStep } from "./draft-step.ts";
 
 /** The key a replay call carries, which no ordinary call of any tool may use. */
@@ -191,7 +198,9 @@ export function automationStudioNodeReplayStepCall(
  * target the Flow would act on; where the step found the target, so the host
  * can tell an effect already in place from a page the steps before it no
  * longer reach; and no `produced`: nothing is run, so there is nothing to
- * compare. `pass` and `definition` as for the step call.
+ * compare. `pass` and `definition` as for the step call. A step carried from a
+ * Flow node that recorded its effect sends it (`effect`, see the header), so
+ * the host can answer an act already done as `present`.
  */
 export function automationStudioNodeReplayVerifyCall(
   step: AutomationStudioFlowDraftStep,
@@ -206,8 +215,15 @@ export function automationStudioNodeReplayVerifyCall(
     ...passed(pass),
     ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "verify",
-    ...(scheduled ? scheduled.from === undefined ? {} : { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from })
+    ...(scheduled ? scheduled.from === undefined ? {} : { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from }),
+    ...recordedEffect(step)
   };
+}
+
+/** The effect the step's Flow node recorded (`routeSignatures.effect`), read as signatures are read, or nothing. */
+function recordedEffect(step: AutomationStudioFlowDraftStep): JsonObject {
+  const effect = automationStudioRouteSignaturesValue(step.routeSignatures)?.effect;
+  return effect ? { effect } : {};
 }
 
 /**

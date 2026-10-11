@@ -71,6 +71,25 @@
 // says to name the element by its handle. A plan the host wrote (a draft, a
 // step the Flow already holds) carries the domain's own resolved parameters and
 // is never flagged.
+//
+// **A step the build acted on carries what its act made true (t447).** A step
+// a build created used to carry no route signatures at all: the candidate path
+// strips any the model wrote (`./bootstrap-completion.ts`) and has no build
+// routing to sign one from (`../../flow-bootstrap/candidate/submission.ts`), so
+// a run that met a page where the site already held the step's effect -- a
+// coupon already "Collected" in the same session -- could never pass it over as
+// done (`../../executor/state-routing/decision.ts`, `effect_holds`) and failed
+// it instead. Only the domain knows which act a handle's control came from, so
+// a resolved answer may carry that act's `effect`, in the host's own
+// route-effect form, and within a signature's bound
+// (`automationStudioReadRouteSignature`). It is written onto the plan node as
+// `routeSignatures.effect`, on the candidate and the draft path alike, where
+// the build signed no effect of its own: one signed from the step's own pages
+// stands. `../../flow-bootstrap/adaptation.ts` carries it to the Flow node's
+// metadata. A fact's answer is never one a run passes over, so an effect on it
+// is not kept. An effect only ever skips: state routing goes on along the
+// step's own success edge when the page shows it, and never runs a completed
+// lasting act again because of one (`../../executor/state-routing/repeated-act.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -81,6 +100,8 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHan
 import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, automationStudioPlanFactTargetSites, automationStudioPlanFactTargetsNotNamingHandles, automationStudioPlanMetadataFactHandlePaths } from "./plan-fact-targets.ts";
 import { automationStudioPlanNodeHandleSites, automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
 import { automationStudioPlanStepConsequences } from "./plan-step-consequences.ts";
+// The leaf directory, not the route-state barrel: it imports nothing of the runtime but types.
+import { automationStudioReadRouteSignature } from "../../route-state/signatures/index.ts";
 
 type ParameterResolver = Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters">;
 
@@ -214,6 +235,8 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
       }
       if (outcome.status === "unchanged") continue;
       node.parameters = outcome.parameters;
+      // What the act on its control made true, where the build signed no effect of its own (header, t447).
+      if (outcome.effect && !node.routeSignatures?.effect) node.routeSignatures = { ...node.routeSignatures, effect: outcome.effect };
       resolvedNodeKeys.push(node.key);
       for (const view of outcome.handleViews ?? []) handleViews.push({ node: ref, handle: view.handle, view: view.view, location: view.location });
     }
@@ -238,7 +261,7 @@ export function assertAutomationStudioFlowBootstrapPlanHandlesResolved(plan: Aut
 
 type NodeOutcome =
   | { status: "unchanged" }
-  | { status: "resolved"; parameters: JsonObject; handleViews?: AutomationStudioPlanHandleView[] }
+  | { status: "resolved"; parameters: JsonObject; handleViews?: AutomationStudioPlanHandleView[]; effect?: JsonObject }
   | { status: "refused"; issueCodes: string[] }
   | { status: "needs_permission"; missing: string[]; requestId: string | null };
 
@@ -305,12 +328,18 @@ async function resolveNode(
   }
   let outcome: NodeOutcome;
   if (answer.status === "unchanged" && exactKeys(answer, ["status"])) outcome = stripped(step, parameters);
-  else if (answer.status === "resolved" && exactKeys(answer, ["status", "parameters"]) && isBoundedJsonObject(answer.parameters)) {
-    outcome = { status: "resolved", parameters: structuredClone(answer.parameters) };
-  } else if (answer.status === "resolved" && input.handleReach !== undefined && exactKeys(answer, ["status", "parameters", "handleViews"])
-    && isBoundedJsonObject(answer.parameters) && isHandleViews(answer.handleViews)) {
-    // Only an answer to a resolution that asked for the view history (header).
-    outcome = { status: "resolved", parameters: structuredClone(answer.parameters), handleViews: answer.handleViews.map((view) => ({ handle: view.handle, view: view.view, location: view.location })) };
+  else if (answer.status === "resolved" && isBoundedJsonObject(answer.parameters)
+    // `handleViews` only on an answer to a resolution that asked for the view history; `effect` on any (header).
+    && keysWithin(answer, ["status", "parameters"], input.handleReach !== undefined ? ["handleViews", "effect"] : ["effect"])
+    && (!Object.hasOwn(answer, "handleViews") || isHandleViews(answer.handleViews))) {
+    const effect = Object.hasOwn(answer, "effect") ? automationStudioReadRouteSignature(answer.effect) : undefined;
+    if (effect && !effect.ok) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
+    outcome = {
+      status: "resolved",
+      parameters: structuredClone(answer.parameters),
+      ...(isHandleViews(answer.handleViews) ? { handleViews: answer.handleViews.map((view) => ({ handle: view.handle, view: view.view, location: view.location })) } : {}),
+      ...(effect?.ok ? { effect: effect.signature } : {})
+    };
   } else return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
   // Whatever the node leaves with -- its own parameters or the domain's --
   // names no handle.
@@ -376,6 +405,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
   const actual = Object.keys(value);
   return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+/** Every key of `required` present, and nothing beside them but keys of `optional`. */
+function keysWithin(value: Record<string, unknown>, required: string[], optional: string[]): boolean {
+  return required.every((key) => Object.hasOwn(value, key)) && Object.keys(value).every((key) => required.includes(key) || optional.includes(key));
 }
 
 /** Plain JSON, no deeper or wider than a plan parameter may be, and small. */

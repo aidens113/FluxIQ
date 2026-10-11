@@ -1294,6 +1294,30 @@ effect for a step it cannot run, to pass over a step the site already did
 (`../automation-studio.md`, "A step that cannot run continues where the page
 is").
 
+**A step the build acted on also carries its effect from the domain (t447).**
+The candidate path has no build routing to sign a step with, and the model's
+own `routeSignatures` are dropped, so until t447 a candidate's steps reached
+the Flow with no signatures at all: in the same browser session a coupon the
+build collected stays "Collected", the step's saved control ("Get coupons",
+t442) is not on the page, and the run failed a step whose act was done. Only
+the domain knows which act a handle's control came from, so its answer to
+`resolvePlanNodeParameters` may carry `effect`: what that act made true, in the
+host's own route-effect form (`signRouteEffect`) and within a signature's
+2,048-character bound (`automationStudioReadRouteSignature`); anything else
+refuses the node as `bootstrap.parameter_resolution_invalid`. Core accepts it
+on any resolved answer, candidate or draft, and writes it onto the plan node as
+`routeSignatures.effect` where the build signed no effect of its own: an effect
+signed from the step's own pages stands. A fact's answer keeps none
+(`runtime/llm/harness-options/plan-parameter-resolution.ts`). From there it
+rides validation and `adaptation.ts` to the Flow node exactly as a signed one
+does. An effect only ever skips a step: state routing goes on along the step's
+own success edge when the page shows it (`effect_holds`), and the repeated-act
+guard never sends a run back to a completed lasting act because of one. A
+build test's check of a step carried from a Flow node sends that node's
+recorded effect with it (`effect` on the `replay: "verify"` call,
+`runtime/llm/node-tools/replay.ts`), and a host that finds it on the page
+answers `present` whatever the control now reads.
+
 **The instructed acts are the model's checklist from the first decision**
 (audit A1, cause 1). The draft entry carries `acts`: each lasting act the
 instruction asks for, in the person's words, with `done` naming the step of the
