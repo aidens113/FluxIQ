@@ -98,6 +98,18 @@ describe("the run endpoint and a run's model intent", () => {
     }
   });
 
+  // t438: the chat's "Run it" sends what reading the message cost; a Lab-scoped run counts it against the Flow's one purse.
+  it("hands the run what reading the chat message cost, and refuses a figure that is not a cost", async () => {
+    const { response, runRuntimeSession } = await pairedRun("session.unlocked", { runIntent: "explore_and_adapt", interpretationCostUsd: 0.0003 });
+    expect(response).toMatchObject({ ok: true });
+    expect((runRuntimeSession.mock.calls[0] as unknown[])[0]).toMatchObject({ interpretationCostUsd: 0.0003 });
+    for (const value of [-1, "0.1", Number.NaN]) {
+      const refused = await pairedRun("session.unlocked", { runIntent: "explore_and_adapt", interpretationCostUsd: value });
+      expect(refused.response, String(value)).toEqual({ ok: false, error: "The run's interpretation cost is invalid." });
+      expect(refused.runRuntimeSession).not.toHaveBeenCalled();
+    }
+  });
+
   it("asks nothing of the result checks of a run the model takes no part in", async () => {
     const { response, runRuntimeSession } = await pairedRun("session.unlocked", { resultCheckCallerPays: "repair_checks" });
 

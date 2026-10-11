@@ -9,6 +9,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import type { AutomationStudioIncidentRepair } from "../../../executor/lifecycle-run/index.ts";
 import { annotateAutomationStudioRunDetailWithRuntimeLlm } from "../../../recovery/index.ts";
+import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../index.ts";
 import { bindAutomationStudioInRunRepair } from "../in-run-repair.ts";
 import { IN_RUN_REPAIR_FLOW_ID, IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_RUN_ID, inRunRepairHandlerPatch, inRunRepairRequest, inRunRepairWorld, type InRunRepairWorld } from "./in-run-repair-fixture.ts";
 
@@ -203,3 +204,54 @@ function failedDetail(): AutomationStudioFlowRunDetail {
     changeProposalIds: []
   };
 }
+
+// t438: in a Lab-scoped run a Flow has one purse. The user's words
+// (2026-10-01): "bring the ceiling down to $0.1 per flow max". Every call an
+// in-run repair makes is added to the Flow's record as it settles, and each
+// incident is held to what the Flow has left when it is asked, not once per run.
+describe("the in-run repair of a Lab-scoped run", () => {
+  const memoryStore = async (spentUsd: number) => {
+    const projectPaths = new AutomationStudioProjectPaths(undefined);
+    const store = new AutomationStudioFlowBootstrapCreationSpendStore(projectPaths, new AutomationStudioFlowPaths(projectPaths), {} as unknown as AutomationStudioProjectStore);
+    if (spentUsd > 0) await store.add(IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_FLOW_ID, spentUsd);
+    return store;
+  };
+  const underFlow = async <T>(store: AutomationStudioFlowBootstrapCreationSpendStore, run: () => Promise<T>) => await store.withFlowPurse(IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_FLOW_ID, 0.04, run);
+
+  it("draws only on what the Flow's creation left, and adds what it spent to the Flow's record", async () => {
+    const store = await memoryStore(0.02);
+    const world = inRunRepairWorld({ scripts: [{ patches: [inRunRepairHandlerPatch()], costUsd: 0.02 }, { patches: [inRunRepairHandlerPatch()] }], policy: { maxEstimatedCostUsdPerRun: 0.04 } });
+    const context = bind(world);
+    const [first, later] = await underFlow(store, async () => [await repair(world), await repair(world, inRunRepairRequest({ incidentId: "incident.2" }))]);
+    expect(first?.kind).toBe("overlay");
+    expect(store.spentNowUsd(IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_FLOW_ID)).toBe(0.04);
+    // The first incident spent what the creation left, so the second asks no model.
+    expect(later?.kind).toBe("none");
+    expect(taskKinds(world)).toEqual(["runtime_diagnosis", "runtime_patch"]);
+    expect(context.inRunRepairs?.recoveries().at(-1)?.metadata.llmGate).toMatchObject({ invoked: false, bound: "cost" });
+  });
+
+  it("re-reads what the Flow has left at each incident: what another part spent in between is taken out", async () => {
+    const store = await memoryStore(0);
+    const world = inRunRepairWorld({ scripts: [{ patches: [inRunRepairHandlerPatch()], costUsd: 0.01 }, { patches: [inRunRepairHandlerPatch()] }], policy: { maxEstimatedCostUsdPerRun: 0.04 } });
+    const context = bind(world);
+    const later = await underFlow(store, async () => {
+      expect((await repair(world)).kind).toBe("overlay");
+      // A re-author's build spends the rest of the Flow's ceiling between the two incidents.
+      await store.add(IN_RUN_REPAIR_PROJECT_ID, IN_RUN_REPAIR_FLOW_ID, 0.03);
+      return await repair(world, inRunRepairRequest({ incidentId: "incident.2" }));
+    });
+    expect(later.kind).toBe("none");
+    expect(taskKinds(world)).toEqual(["runtime_diagnosis", "runtime_patch"]);
+    expect(context.inRunRepairs?.recoveries().at(-1)?.metadata.llmGate).toMatchObject({ invoked: false, bound: "cost" });
+  });
+
+  it("asks no model once the Flow's creation spent its ceiling", async () => {
+    const store = await memoryStore(0.04);
+    const world = inRunRepairWorld({ policy: { maxEstimatedCostUsdPerRun: 0.04 } });
+    bind(world);
+    expect((await underFlow(store, async () => await repair(world))).kind).toBe("none");
+    expect(world.requests).toHaveLength(0);
+    expect(world.adaptations.size).toBe(0);
+  });
+});

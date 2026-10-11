@@ -40,6 +40,7 @@ import { automationStudioActionPermissionDenied, automationStudioConsequencesInO
 import { emitAutomationStudioActivityThought } from "../../activity/index.ts";
 import type { AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
 import type { AutomationStudioIncidentRepair, AutomationStudioIncidentRepairRequest, AutomationStudioRepairUnit } from "../../executor/lifecycle-run/index.ts";
+import { automationStudioLlmCurrentFlowPurse } from "../../llm/build-purse/index.ts";
 import { prepareAutomationStudioInRunRepair, type AutomationStudioInRunRepairPreparation } from "../../live-patch.ts";
 import type { AutomationStudioRuntimePatch, AutomationStudioRuntimePatchUnit, AutomationStudioRuntimeSessionLlm } from "../../llm/index.ts";
 import {
@@ -133,6 +134,13 @@ async function repairIncident(
   const partGraph = part.graph;
   const contract = automationStudioRepairUnitContract({ graph: request.graph, unit: request.unit, partGraph, deniedEvidenceKeys: input.ports.llmEvidenceRuntime?.deniedEvidenceKeys });
   const fix: Fix = { receipts: [] };
+  // In a Lab-scoped run (t438) each incident is held to what the Flow's one purse has left now, read here rather than once per run:
+  // a re-author or a check since the last incident spent from it. Every call is also held against that purse and added to the Flow's
+  // record as it settles (`../runtime-adaptation/flow-spend.ts`). With nothing left the recovery is refused on cost before any model
+  // is asked (`../../recovery/annotation/early-refusal.ts`).
+  const flowPurse = automationStudioLlmCurrentFlowPurse();
+  if (flowPurse) delete purse.current;
+  const costLeftUsd = flowPurse ? Math.floor(flowPurse.leftUsd() * 1_000_000_000) / 1_000_000_000 : undefined;
   const recovered = await annotateAutomationStudioRunDetailWithRuntimeLlm({
     ports: input.ports,
     detail: runSoFar(input, request),
@@ -145,6 +153,7 @@ async function repairIncident(
     ...(input.llmExecution ? { llmExecution: input.llmExecution } : {}),
     ...(input.permittedConsequences?.length ? { permittedConsequences: input.permittedConsequences } : {}),
     ...(input.useReusableContext ? { useReusableContext: true as const } : {}),
+    ...(costLeftUsd === undefined ? {} : { costLeftUsd }),
     inRun: {
       slot: automationStudioInRunRepairSlot({ request, contract }),
       purse,
