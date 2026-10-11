@@ -179,7 +179,7 @@ export function automationStudioNodeReplayStepCall(
     ...passed(pass),
     ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "step",
-    ...(scheduled ? { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from }),
+    ...(scheduled ? scheduled.from === undefined ? {} : { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from }),
     ...(scheduled || step.replay?.produced === undefined ? {} : { produced: step.replay.produced })
   };
 }
@@ -206,7 +206,7 @@ export function automationStudioNodeReplayVerifyCall(
     ...passed(pass),
     ...assembledRecordOutput(step, { ...ranWith, ...passed(pass) }, definition),
     [AUTOMATION_STUDIO_NODE_REPLAY_KEY]: "verify",
-    ...(scheduled ? { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from })
+    ...(scheduled ? scheduled.from === undefined ? {} : { from: scheduled.from } : step.replay?.from === undefined ? {} : { from: step.replay.from })
   };
 }
 

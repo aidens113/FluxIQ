@@ -86,7 +86,7 @@ import {
   type AutomationStudioFlowDraftStep,
   type AutomationStudioFlowDraftUnrunnableWord
 } from "../../flow-draft/index.ts";
-import { automationStudioFlowDraftStepCarried, automationStudioFlowDraftStepCarriedJoin, automationStudioFlowDraftStepNotRunInThisBuild } from "../../flow-draft/carried-step/index.ts";
+import { automationStudioFlowDraftStepCarried, automationStudioFlowDraftStepCarriedJoin, automationStudioFlowDraftStepCarriedPassedOver, automationStudioFlowDraftStepNotRunInThisBuild } from "../../flow-draft/carried-step/index.ts";
 import { automationStudioFlowBootstrapDraftStepIsWritable } from "./draft-step.ts";
 import { replayAutomationStudioFlowDraft, type AutomationStudioFlowDraftReplayInput } from "./replay-draft.ts";
 import { AUTOMATION_STUDIO_FLOW_DRAFT_REPLAY_UNRESOLVED_BINDING_CODE, type AutomationStudioFlowDraftReplayObservation } from "./replay-span.ts";
@@ -327,8 +327,10 @@ export function automationStudioFlowDraftDryRunGate(
     const tested = proposed.filter((step) => !automationStudioFlowDraftStepCarriedJoin(step));
     // An unchanged carried step is run as its scheduled candidate, where its
     // node names the output it runs; anything else needs what it ran with and
-    // where it starts.
-    const cannotRun = tested.filter((step) => step.scheduledCandidate !== undefined
+    // where it starts. An optional carried step the test cannot run is passed
+    // over, as playback passes it when its trigger is absent, and is never
+    // demanded live (t439, `../../flow-draft/carried-step/`).
+    const cannotRun = tested.filter((step) => !automationStudioFlowDraftStepCarriedPassedOver(step)).filter((step) => step.scheduledCandidate !== undefined
       ? !automationStudioFlowDraftScheduledCandidateCall(step) || !input.nodeOf?.(step.actionId)?.outputAction?.fixed
       : step.ranWith === undefined || step.replay === undefined);
     const noStart = !cannotRun.length && tested.length > 0 && automationStudioFlowDraftReplayFrom(tested) === undefined;

@@ -71,7 +71,7 @@ describe("activityActionFailureReason", () => {
 // U-12 (`run-muw60j7c-bb7c9a62`, moment 14): "since it named no control from
 // the page" was FluxIQ's own term; the words say what the step left out.
 describe("activityActionFailureReason: a refusal's own reason (t193)", () => {
-  const UNNAMED = "FluxIQ didn't send it, as the step didn't say which control on the page to use";
+  const UNNAMED = "FluxIQ didn't send it, as the step didn't name its control the way FluxIQ needs";
   it.each([
     ["target_not_a_handle", UNNAMED],
     ["malformed_handle", UNNAMED],
@@ -157,8 +157,8 @@ describe("activityActionFailureReason: a call never sent is no page miss (R2-U-6
   const UNOBSERVED = "web.action.rejected.target_unobserved";
 
   it("says a list read that named no list as not read, and why, in a list's words", () => {
-    expect(activityActionFailureReason(UNOBSERVED, "malformed_handle", "read")).toBe("FluxIQ didn't read it, as the step didn't say which list on the page to read");
-    expect(activityActionFailureReason(UNOBSERVED, "malformed_handle", "click")).toBe("FluxIQ didn't send it, as the step didn't say which control on the page to use");
+    expect(activityActionFailureReason(UNOBSERVED, "malformed_handle", "read")).toBe("FluxIQ didn't read it, as the step didn't name its list the way FluxIQ needs");
+    expect(activityActionFailureReason(UNOBSERVED, "malformed_handle", "click")).toBe("FluxIQ didn't send it, as the step didn't name its control the way FluxIQ needs");
     expect(activityActionFailureReason(UNOBSERVED, undefined, "read")).toBe("FluxIQ didn't read it, as the step named a list it hadn't seen on the page");
   });
 

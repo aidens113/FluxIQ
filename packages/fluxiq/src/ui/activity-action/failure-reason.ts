@@ -97,11 +97,15 @@ const REFUSAL_REASONS: readonly Reason[] = [
   { words: /_(handle_not_in_packet|handle_from_older_view|stale_handle)_/u, why: "FluxIQ was looking at an older view of the page" },
   // "since it named no control from the page" was FluxIQ's own term for a
   // handle, and read beside "it wasn't on the page" for the same step as two
-  // stories (U-12, `run-muw60j7c-bb7c9a62`, moment 14).
+  // stories (U-12, `run-muw60j7c-bb7c9a62`, moment 14). "didn't say which
+  // control" was then said of steps that had named theirs by a handle and were
+  // refused for something written beside it (t439, `run-mv4912r9-53b05a51`,
+  // t942 and t870): the words say how the step named it, which holds whether it
+  // named nothing, named it malformed, or named it beside a description.
   {
     words: /_(not_a_handle|malformed_handle|handle_in_wrong_parameter)_/u,
-    why: "FluxIQ didn't send it, as the step didn't say which control on the page to use",
-    read: "FluxIQ didn't read it, as the step didn't say which list on the page to read"
+    why: "FluxIQ didn't send it, as the step didn't name its control the way FluxIQ needs",
+    read: "FluxIQ didn't read it, as the step didn't name its list the way FluxIQ needs"
   },
   // The same refusal given again, which a domain may say in place of its cause
   // (`answered_the_same_again`): the cause was said on the first of them, and

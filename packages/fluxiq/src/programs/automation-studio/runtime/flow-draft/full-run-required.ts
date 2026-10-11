@@ -9,12 +9,15 @@
 //   not_run_in_this_build -- carried from an earlier Flow by a re-author or an
 //                            extend (`../llm/node-tools/draft-from-flow.ts`) and
 //                            not runnable as that Flow saved it: changed since
-//                            it was seeded, declaring no consequences, or with
-//                            no start captured for its node, so it holds no
-//                            scheduled candidate (`./scheduled-candidate/`) and
-//                            has no argument it ran with. Running it would also
-//                            bypass the permission gate, which reads an absent
-//                            declaration as "no consequence". Before this
+//                            it was seeded, so it holds no scheduled candidate
+//                            (`./scheduled-candidate/`) and has no argument it
+//                            ran with, or one that must declare (a press, by its
+//                            node definition) and declared nothing, which is
+//                            never run blind. Until t439 a step that need not
+//                            declare and did not, or whose node the run being
+//                            repaired never started, was one too; it is now run
+//                            as saved, and an optional step the test cannot run
+//                            is passed over, never listed (`./carried-step/`). Before this
 //                            refusal such a draft was simply not tested, the
 //                            judge answered `unknown`, the build finished
 //                            unverified, and the Flow was approved and applied
