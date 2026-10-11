@@ -187,6 +187,14 @@ describe("the post-run check is told it judges a finished run, and only a build'
     expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true })).toContain("When resultSummary.buildTest is present");
   });
 
+  // t443 (run `run-mv4dgmki-2b13db91`, R4b): a withheld act's earlier landing, credited only when it ran after the steps before it.
+  it("tells a build's judge how to read a withheld step's earlier landing, and the post-run check nothing of it", () => {
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(prompt).toContain("explored.landed, where present, is that act as the build did it earlier: with counts true it ran once after the steps before it");
+    expect(prompt).toContain("never ask for it to be run again; with counts false it did not run that way (why says how), and it shows nothing about the Flow.");
+    expect(automationStudioDiagnosisPromptInstruction("loop_verification")).not.toContain("explored.landed");
+  });
+
   // Cause 7: neither judge was shown the page the run or test ended on.
   it("tells every judge what the page the run or test ended on is, and how to read it", () => {
     for (const prompt of [automationStudioDiagnosisPromptInstruction("loop_verification"), automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true })]) {

@@ -62,6 +62,14 @@
 // when the Flow runs the step does its act each time -- a repeated step on each
 // row its listing keeps.
 //
+// **The press's evidence is kept, not overwritten (t443, R4b).** A check that
+// took overwrites the step's own record with the check's (`effectApplied:
+// false`, `core.replay.verified`), so the press that did the act survives only
+// in `priorExecution`: what it changed, the states either side, its code, and
+// where its rerun ran (`rerunPlace`, `./step-place.ts`). A second check keeps
+// the first press's record, never its own. The judge of the build's test reads
+// the landing from there (`../../result-verification/build-test/summary.ts`).
+//
 // **What this is not.** It is not a refusal and it narrows nothing the model may
 // do (user, 2026-10-01: no restrictions beyond permissions): a plain call is run
 // exactly as asked, and so is a rerun of any step that does no act or has not
@@ -174,6 +182,8 @@ function checked(step: AutomationStudioFlowDraftStep, callId: string, toolId: st
     delete step.cancels;
     delete step.routeSignatures;
     delete step.written;
+    // Where the press ran stays with the press, in `priorExecution` (above): the judge reads a landing from there.
+    delete step.rerunPlace;
     if (step.replay?.from !== undefined) step.replay = { from: step.replay.from };
     else delete step.replay;
     // The control is the one the step ran on (above), so its resolved form and its

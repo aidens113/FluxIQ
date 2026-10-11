@@ -54,8 +54,8 @@ function refutedRun(): { actionAttempts: AutomationStudioFlowRunActionAttemptRec
 }
 
 /** The rerun the evidence loop makes: put the page back, then run the step's own call. */
-async function rerun(step: AutomationStudioFlowDraftStep, startedOn: JsonObject | undefined, executeTool: ReturnType<typeof site>) {
-  const place = await automationStudioNodeRerunFromItsPlace({ steps: [], step, startedOn, now: "page=5", callId: "rerun.5", executeTool });
+async function rerun(step: AutomationStudioFlowDraftStep, seedStartedOn: Record<string, JsonObject> | undefined, executeTool: ReturnType<typeof site>) {
+  const place = await automationStudioNodeRerunFromItsPlace({ steps: [], step, seedStartedOn, now: "page=5", callId: "rerun.5", executeTool });
   const ran = place.kind === "unreachable" ? place.result : await executeTool({ callId: "rerun.5", toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, value: { node: "web.output.dom-extract_list" } });
   return { place, ran: automationStudioNodeRerunPlaceNoted(place, ran) as { evidence: JsonObject } };
 }
@@ -66,7 +66,7 @@ describe("a rerun of a step seeded from the Flow, after the refuted run left the
     const read = seed.steps[2]!;
     const executeTool = site(5);
 
-    const { place, ran } = await rerun(read, seed.startedOnByStepId[read.id!], executeTool);
+    const { place, ran } = await rerun(read, seed.startedOnByStepId, executeTool);
 
     expect(executeTool.mock.calls.map(([call]) => [call.callId, call.value])).toEqual([
       ["rerun.5.place", { replay: "reset", from: { location: "page=1" } }],
@@ -107,7 +107,7 @@ describe("where a rerun runs", () => {
 
   it("puts back the step's own recorded page before the seeded one", async () => {
     const executeTool = site(5);
-    const place = await automationStudioNodeRerunFromItsPlace({ steps: [], step: step({ replay: { from: { location: "page=2" } } }), startedOn: { location: "page=1" }, now: "page=5", callId: "r", executeTool });
+    const place = await automationStudioNodeRerunFromItsPlace({ steps: [], step: step({ replay: { from: { location: "page=2" } } }), seedStartedOn: { d1: { location: "page=1" } }, now: "page=5", callId: "r", executeTool });
     expect(place).toEqual({ kind: "put_back", callId: "r.place", startPage: "step", doneAgain: [] });
     expect(executeTool.mock.calls[0]![0].value).toEqual({ replay: "reset", from: { location: "page=2" } });
   });

@@ -471,6 +471,27 @@ describe("a checked rerun that takes the new argument", () => {
     expect(replaces).toEqual(beforeRefusal);
   });
 
+  // t443 (run `run-mv4dgmki-2b13db91`, R4b): later checks overwrote the step's record, and the press survived only in `priorExecution`.
+  it("keeps the press's own evidence, and where its rerun ran, in priorExecution through every later check", async () => {
+    const pressed: AutomationStudioFlowDraftStep = {
+      position: 7, id: "d9", standsFor: "f7", iteration: 3, callId: "rerun.7", actionId: "web.click", toolId: "press", input: { target: "Reserve", consequences: ["create_new"] },
+      effect: "mutate", effectApplied: true, proposes: true, disposition: "kept", resultCode: "web.action.succeeded", stateBefore: "page|0", stateAfter: "page|1",
+      changed: [{ words: "Reserved", how: "appeared" }], rerunPlace: { kind: "put_back", redone: ["f3", "f4", "f5", "f6"] }, replay: { from: { location: "item" } }
+    };
+    const executeTool = vi.fn(async (_request: { callId: string; toolId: string; value: JsonObject }) => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true }, effectApplied: false, resultCode: "core.replay.verified" }));
+    for (const callId of ["rerun.7.2", "rerun.7.3"]) {
+      const { took } = await automationStudioNodeRerunAnswer({ place: undefined, replaces: pressed, call: { callId, toolId: "press", value: { target: "Reserve", consequences: ["create_new"] } }, executeTool });
+      expect(took).toBe(true);
+    }
+    expect(executeTool.mock.calls.map(([call]) => call.value.replay)).toEqual(["verify", "verify"]);
+    expect(pressed).toMatchObject({ effectApplied: false, resultCode: "core.replay.verified", checkedCandidate: { callId: "rerun.7.3" } });
+    for (const key of ["changed", "rerunPlace", "stateBefore", "stateAfter"]) expect(pressed).not.toHaveProperty(key);
+    expect(pressed.priorExecution).toMatchObject({
+      callId: "rerun.7", effectApplied: true, resultCode: "web.action.succeeded", stateBefore: "page|0", stateAfter: "page|1",
+      changed: [{ words: "Reserved", how: "appeared" }], rerunPlace: { kind: "put_back", redone: ["f3", "f4", "f5", "f6"] }, lasting: true
+    });
+  });
+
   it("leaves the step untested with it", async () => {
     const { automationStudioNodeRerunAnswer } = await import("../rerun-check.ts");
     const executeTool = vi.fn(async () => ({ kind: "llm_evidence_tool_execution" as const, evidence: { ok: true, code: "core.replay.verified" }, effectApplied: false, resultCode: "core.replay.verified" }));
