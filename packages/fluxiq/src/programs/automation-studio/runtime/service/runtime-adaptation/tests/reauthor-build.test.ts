@@ -26,7 +26,7 @@ function detail(): AutomationStudioFlowRunDetail {
 }
 
 function purse(limitUsd = 0.1): AutomationStudioResultRepairPurse {
-  return { limitUsd, spentUsd: 0, unreportedParts: 0, averagedCalls: 0, averagedUsd: 0, refusedParts: [] };
+  return { limitUsd, carriedUsd: 0, spentUsd: 0, unreportedParts: 0, averagedCalls: 0, averagedUsd: 0, refusedParts: [] };
 }
 
 function failure(code: string, stage: AutomationStudioFlowBootstrapFailureDiagnostic["stage"] = "provider_request", providerStatus?: number): AutomationStudioFlowBootstrapGenerationError {

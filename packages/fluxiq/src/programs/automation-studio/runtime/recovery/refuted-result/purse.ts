@@ -4,13 +4,29 @@
 // run cost ceiling, then $0.25, on its own: the re-author build, the build again
 // after a failure that may pass, and the patch ladder the repair falls back to.
 // So one repair could spend about $0.75, and a run refuted again after its
-// re-run could start the whole sequence over. The user's rule is that a build,
-// and its repair, each spend at most the run cost ceiling in total
-// (`AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 by default). So the repair of one run
-// is one total: the ceiling, lowered by the Flow's own setting and never raised
-// by it. Each part is handed what is left of that total once the parts before
-// it have been charged what they reported spending, and a part with nothing
-// left makes no model call and says the cost bound is why.
+// re-run could start the whole sequence over. So the repair of one run is one
+// total: the run cost ceiling (`automationStudioLlmRunCostCeilingUsd`), lowered
+// by the Flow's own setting and never raised by it. Each part is handed what is
+// left of that total once the parts before it have been charged what they
+// reported spending, and a part with nothing left makes no model call and says
+// the cost bound is why.
+//
+// **In a Lab-scoped run the Flow's creation is in it too (t438).** The user's
+// words (2026-10-01): "bring the ceiling down to $0.1 per flow max". One purse
+// per Flow: its build, re-authors, repairs and judge all count against it, in
+// billed dollars, with no cap on output. So where the run cost ceiling is
+// Lab-scoped (`FLUXIQ_LLM_RUN_COST_CEILING_SCOPE=test`), every pass of the
+// repair opens with what the Flow has spent so far (`carriedUsd`, read live
+// from the Flow's purse, `llm/build-purse/flow-scope.ts`): its creation, the
+// run's in-run repairs, its result check and this run's earlier passes, all of
+// which that purse added to the Flow's record as each call settled. The repair
+// is handed only what is left of the Flow's one ceiling. A part already in the
+// record when the pass opens -- the in-run ladder before a failed step's
+// re-author -- is counted in the averages only (`...Averaged`), never charged
+// again. A product run carries nothing: a Flow there runs on a schedule for as
+// long as it exists, and its owner's limit is per run
+// (`maxEstimatedCostUsdPerRun`), so a lifetime purse would leave every later
+// repair with nothing.
 //
 // **"Nothing left" means not enough for one more call.** Inside a part, what
 // is left is held only from what each call reports once it has been made: the
@@ -59,7 +75,9 @@ export type AutomationStudioResultRepairPart = "reauthor" | "patch_ladder";
 export type AutomationStudioResultRepairPurse = {
   /** The whole repair's total: the run cost ceiling, lowered by the Flow's own setting. */
   limitUsd: number;
-  /** What every part of this run's repair reported spending, every pass included. */
+  /** What the Flow had spent when this pass opened, in a Lab-scoped run; 0 otherwise. */
+  carriedUsd: number;
+  /** What is drawn from the total: in a Lab-scoped run, `carriedUsd` plus what this pass's parts reported; otherwise every part of this run's repair, every pass included. */
   spentUsd: number;
   /** Parts that reached the provider and reported no cost, which the purse could not charge. */
   unreportedParts: number;
@@ -74,15 +92,19 @@ export type AutomationStudioResultRepairPurse = {
  * The purse this pass of the repair spends from: the run's own, opened where an
  * earlier pass left it, or a new one. `flowMaxCostUsd` is the Flow's configured
  * `maxEstimatedCostUsdPerRun`; it lowers the total and never raises it.
+ * `flowSpentUsd` is what the Flow's purse says the Flow has spent, in a
+ * Lab-scoped run only: when given, every pass opens from it, because the
+ * Flow's record already holds what earlier passes spent.
  */
-export function automationStudioResultRepairPurse(detail: AutomationStudioFlowRunDetail, flowMaxCostUsd?: unknown): AutomationStudioResultRepairPurse {
+export function automationStudioResultRepairPurse(detail: AutomationStudioFlowRunDetail, flowMaxCostUsd?: unknown, flowSpentUsd?: number): AutomationStudioResultRepairPurse {
   const recorded = recordedPurse(detail);
-  const spentUsd = typeof recorded?.spentUsd === "number" && Number.isFinite(recorded.spentUsd) && recorded.spentUsd > 0 ? recorded.spentUsd : 0;
+  const carried = flowSpentUsd === undefined ? 0 : positiveUsd(flowSpentUsd);
+  const spentUsd = flowSpentUsd === undefined ? positiveUsd(recorded?.spentUsd) : carried;
   const unreportedParts = typeof recorded?.unreportedParts === "number" && Number.isSafeInteger(recorded.unreportedParts) && recorded.unreportedParts > 0 ? recorded.unreportedParts : 0;
   const averagedCalls = typeof recorded?.averagedCalls === "number" && Number.isSafeInteger(recorded.averagedCalls) && recorded.averagedCalls > 0 ? recorded.averagedCalls : 0;
   const averagedUsd = averagedCalls && typeof recorded?.averagedUsd === "number" && Number.isFinite(recorded.averagedUsd) && recorded.averagedUsd > 0 ? recorded.averagedUsd : 0;
   const refusedParts = Array.isArray(recorded?.refusedParts) ? recorded.refusedParts.filter((part): part is AutomationStudioResultRepairPart => part === "reauthor" || part === "patch_ladder") : [];
-  return { limitUsd: automationStudioLlmRunCostCeilingUsd(flowMaxCostUsd), spentUsd, unreportedParts, averagedCalls, averagedUsd, refusedParts };
+  return { limitUsd: automationStudioLlmRunCostCeilingUsd(flowMaxCostUsd), carriedUsd: carried, spentUsd, unreportedParts, averagedCalls, averagedUsd, refusedParts };
 }
 
 /** What the next part may spend: the total less everything charged, never below zero. */
@@ -119,6 +141,20 @@ export function automationStudioResultRepairPurseCharged(
   };
 }
 
+/**
+ * The purse after a part whose spend it already holds -- a part paid before
+ * the pass opened, in the Flow's record a Lab-scoped pass opens from: its calls
+ * and cost join the averages, and nothing is charged again.
+ */
+export function automationStudioResultRepairPurseAveraged(
+  purse: AutomationStudioResultRepairPurse,
+  part: { costUsd?: unknown; calls?: unknown }
+): AutomationStudioResultRepairPurse {
+  const cost = typeof part.costUsd === "number" && Number.isFinite(part.costUsd) && part.costUsd >= 0 ? part.costUsd : undefined;
+  const calls = typeof part.calls === "number" && Number.isSafeInteger(part.calls) && part.calls > 0 ? part.calls : 0;
+  return cost === undefined || !calls ? purse : { ...purse, averagedCalls: purse.averagedCalls + calls, averagedUsd: roundUsd(purse.averagedUsd + cost) };
+}
+
 /** The purse after a part it had nothing left for. */
 export function automationStudioResultRepairPurseRefused(purse: AutomationStudioResultRepairPurse, part: AutomationStudioResultRepairPart): AutomationStudioResultRepairPurse {
   return { ...purse, refusedParts: [...purse.refusedParts, part] };
@@ -129,6 +165,7 @@ export function automationStudioResultRepairWithPurse(detail: AutomationStudioFl
   const marker = reauthorMarker(detail) ?? {};
   const recorded: JsonObject = {
     limitUsd: purse.limitUsd,
+    ...(purse.carriedUsd ? { carriedUsd: purse.carriedUsd } : {}),
     spentUsd: purse.spentUsd,
     leftUsd: automationStudioResultRepairPurseLeftUsd(purse),
     ...(purse.unreportedParts ? { unreportedParts: purse.unreportedParts } : {}),
@@ -142,6 +179,11 @@ export function automationStudioResultRepairWithPurse(detail: AutomationStudioFl
       [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: { ...marker, purse: recorded }
     }
   };
+}
+
+/** A recorded or carried figure: a finite positive number of dollars, else nothing. */
+function positiveUsd(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 /** Rounded to the billionth, as the run ledger rounds its running total, so $0.10 less $0.07 is $0.03. */
