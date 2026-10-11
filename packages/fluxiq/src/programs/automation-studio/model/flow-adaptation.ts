@@ -398,7 +398,8 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
    * (as a person reads it, "Lin Zhao"). It is no failure.
    */
   skipped?:
-    | { reason: "target_absent"; code: string }
+    /** `notDone`: the step does a lasting act, and the page did not show its effect, so the act was not done (r4b F4, `step-skip/act-not-done.ts`). */
+    | { reason: "target_absent"; code: string; notDone?: true }
     | { reason: "state_routed"; code: string; toNodeId: string; direction: "forward" | "backward" }
     | { reason: "already_done"; code: string; attemptId: string; row?: string };
   /**

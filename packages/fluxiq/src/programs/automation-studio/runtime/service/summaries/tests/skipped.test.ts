@@ -25,6 +25,13 @@ describe("the run detail's skipped record", () => {
       .toEqual({ reason: "target_absent", code: "executor.ready_state.not_shown" });
   });
 
+  it("keeps that a skipped step's act was not done (r4b F4), and reads only true as that", () => {
+    expect(automationStudioRunDetailSkipped({ ...attempt(), skipped: { reason: "target_absent", code: "web.target.not_found", notDone: true } }))
+      .toEqual({ reason: "target_absent", code: "web.target.not_found", notDone: true });
+    const stored = { ...attempt(), skipped: { reason: "target_absent", code: "web.target.not_found", notDone: "yes" } } as unknown as AutomationStudioNodeAttemptTrace;
+    expect(automationStudioRunDetailSkipped(stored)).toEqual({ reason: "target_absent", code: "web.target.not_found" });
+  });
+
   it("drops a stored record outside Core's shapes, and writes nothing for a step that ran", () => {
     const broken = { ...attempt(), skipped: { reason: "already_done", code: "executor.act.already_done", attemptId: "an id with spaces" } } as AutomationStudioNodeAttemptTrace;
     expect(automationStudioRunDetailSkipped(broken)).toBeUndefined();

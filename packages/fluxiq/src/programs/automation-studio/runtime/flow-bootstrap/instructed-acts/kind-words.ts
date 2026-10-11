@@ -8,7 +8,7 @@ export const AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS: Readonly<Record<Automa
   set: ["switch", "set", "change", "filter", "sort", "narrow", "store", "radius", "location"],
   move: ["move", "moved"],
   open: ["open", "opened", "go", "view", "visit"],
-  submit: ["book", "buy", "order", "send", "post", "create", "confirm", "withdraw", "submit", "place", "check out", "checkout", "ask", "request", "apply", "quote", "bid"]
+  submit: ["book", "buy", "order", "reserve", "send", "post", "create", "confirm", "withdraw", "submit", "place", "check out", "checkout", "ask", "request", "apply", "quote", "bid"]
 });
 
 // What a step changed shows an act only in words that cannot describe anything
@@ -61,4 +61,57 @@ export const AUTOMATION_STUDIO_INSTRUCTED_ACT_DONE_WORDS: Readonly<Record<Automa
 export function automationStudioInstructedActNamesWord(text: string, word: string): boolean {
   const escaped = word.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/gu, "\\$&").replace(/\s+/gu, "\\s+");
   return escaped !== "" && new RegExp(`(?<![a-z])${escaped}(?![a-z])`, "iu").test(text);
+}
+
+/**
+ * Whether `text` names `act`: its own verb, or a word of its kind
+ * ("Add to basket" names an add, "Get coupons" a claim). The one test a
+ * claim's control and an optional step's words are read by
+ * (`./claim-doubt.ts`, `./optional-act-steps.ts`).
+ */
+export function automationStudioInstructedActWordsNameAct(act: Pick<AutomationStudioInstructedAct, "kind" | "verb">, text: string): boolean {
+  return [act.verb, ...AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS[act.kind]].some((word) => automationStudioInstructedActNamesWord(text, word));
+}
+
+/**
+ * Whether `text` states the act of `kind` done: a control that now reads
+ * "Collected" or "Added" is evidence the act happened, never a control
+ * unrelated to it (r4b F3: the claim's control read "Collected", which does not
+ * name "collect" as a whole word, and the checklist doubted a done act).
+ */
+export function automationStudioInstructedActWordsShowDone(kind: AutomationStudioInstructedAct["kind"], text: string): boolean {
+  return AUTOMATION_STUDIO_INSTRUCTED_ACT_DONE_WORDS[kind].some((word) => automationStudioInstructedActNamesWord(text, word));
+}
+
+/**
+ * The kinds of act whose effect lasts after the step: setting and opening are
+ * read from the page itself, and their controls name a value or a place.
+ */
+export const AUTOMATION_STUDIO_INSTRUCTED_ACT_LASTING_KINDS: readonly AutomationStudioInstructedAct["kind"][] = Object.freeze(["save", "add_to", "claim", "submit", "move"] as const);
+
+/**
+ * A control's words that close or decline what they sit on, or answer a
+ * cookie or privacy prompt: "Close the coupon offer", "No thanks", "Save
+ * cookie preferences". Such words never do a person's act, whatever else they
+ * name, so neither the optional-step rule nor a run's "not done" reads them as
+ * one (`./optional-act-steps.ts`, `../../executor/step-skip/act-not-done.ts`).
+ */
+const DECLINES = /^(?:close|dismiss|hide|minimi[sz]e|skip|cancel|reject|decline|refuse|deny|later|maybe later|remind me later|not now|not interested|no,? thanks?|no thank you|continue without|continue shopping|continue browsing|go back|back)(?![a-z])|^[×✕✖╳xX]$/iu;
+const PROMPT = /(?<![a-z])(?:cookies?|consent|privacy|tracking)(?![a-z])/iu;
+
+/** Whether `text` closes, declines or answers a cookie or privacy prompt (see above). */
+export function automationStudioInstructedActWordsDecline(text: string): boolean {
+  const trimmed = text.trim();
+  return DECLINES.test(trimmed) || PROMPT.test(trimmed);
+}
+
+/**
+ * Whether a step's own words name a lasting act of any kind, without the
+ * instruction to hand: what a run reads off a Flow node it passed over, which
+ * carries no instruction (`../../executor/step-skip/act-not-done.ts`). Words
+ * that decline (above) name none.
+ */
+export function automationStudioInstructedActWordsNameLastingAct(text: string): boolean {
+  if (!text.trim() || automationStudioInstructedActWordsDecline(text)) return false;
+  return AUTOMATION_STUDIO_INSTRUCTED_ACT_LASTING_KINDS.some((kind) => AUTOMATION_STUDIO_INSTRUCTED_ACT_KIND_WORDS[kind].some((word) => automationStudioInstructedActNamesWord(text, word)));
 }

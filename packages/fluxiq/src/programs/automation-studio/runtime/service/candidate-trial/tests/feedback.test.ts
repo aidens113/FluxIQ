@@ -226,3 +226,22 @@ describe("trial feedback for a step whose state already held", () => {
     expect((feedback.steps as JsonObject[]).map((step) => step.status)).toEqual(["succeeded", "succeeded", "succeeded"]);
   });
 });
+
+// r4b F4: a skipped step that does a lasting act says the act was not done, never only that it was skipped.
+describe("trial feedback for a skipped step", () => {
+  const skipped = (notDone: boolean): AutomationStudioGraphExecutionTrace => ({
+    status: "succeeded", startedAt: 1, values: {}, effects: [],
+    attempts: [{ attemptId: "a2", nodeId: "coupon", definitionId: "web.output.dom-click", startedAt: 2, status: "succeeded", route: "skipped", inputs: {}, outputs: {}, effects: [],
+      skipped: { reason: "target_absent", code: "web.target.not_found", ...(notDone ? { notDone: true as const } : {}) } }]
+  });
+
+  it("says what the step does was not done when the run marked it so", () => {
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph, trace: skipped(true) });
+    expect((feedback.steps as JsonObject[])[0]!.skipped).toBe("Its control was not on the page, so the step was skipped and what it does was not done. If the instruction asks for it, the step must not be optional.");
+  });
+
+  it("says only that the step was skipped for a dismissal", () => {
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph, trace: skipped(false) });
+    expect((feedback.steps as JsonObject[])[0]!.skipped).toBe("Its control was not on the page, so the step was skipped.");
+  });
+});

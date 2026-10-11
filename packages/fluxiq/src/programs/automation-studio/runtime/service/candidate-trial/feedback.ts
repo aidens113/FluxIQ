@@ -99,7 +99,7 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
     const step = compact({
       step: index + 1, definitionId: attempt.definitionId, label: node?.label, control, status: automationStudioAttemptSettled(attempt).status,
       attempts: attempts > 1 ? attempts : undefined,
-      ...(attempt.skipped ? { skipped: attempt.skipped.reason === "target_absent" ? "Its control was not on the page, so the step was skipped." : "The page was already at another step, so the run went on from there." } : {}),
+      ...(attempt.skipped ? { skipped: skippedSaid(attempt.skipped) } : {}),
       // Done, though its try failed: the page already showed what the step does (`stateHeld`).
       ...(attempt.stateHeld ? { stateHeld: "The step's try failed, but the page already showed what the step does, so the run went on without doing it again." } : {}),
       failureCode: failure?.code, happened: failure ? automationStudioTrialFailureHappened(failure.category) : undefined,
@@ -111,6 +111,18 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
   });
   const paces = learnedPaces(trace, nodes);
   return { steps: listed, ...(ran.length > MAX_STEPS ? { stepsLeftOut: ran.length - MAX_STEPS } : {}), ...(paces.length ? { paces } : {}) };
+}
+
+/**
+ * Why a step was passed over, in one sentence. A step that does a lasting act
+ * and was passed over says the act was not done, never only that it was
+ * skipped (r4b F4, `../../executor/step-skip/act-not-done.ts`).
+ */
+function skippedSaid(skipped: NonNullable<AutomationStudioNodeAttemptTrace["skipped"]>): string {
+  if (skipped.reason !== "target_absent") return "The page was already at another step, so the run went on from there.";
+  return skipped.notDone
+    ? "Its control was not on the page, so the step was skipped and what it does was not done. If the instruction asks for it, the step must not be optional."
+    : "Its control was not on the page, so the step was skipped.";
 }
 
 /** Each pace the run learned from a site asking it to slow down, with the step it holds, said once. */

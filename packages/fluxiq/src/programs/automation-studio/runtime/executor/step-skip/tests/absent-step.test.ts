@@ -150,3 +150,22 @@ describe("a sometimes-present step whose ready state is observed first", () => {
     expect(calls).toContain("not-now");
   });
 });
+
+// r4b F4, on a generic lending-library site.
+describe("a sometimes-present step that does a lasting act and is not shown", () => {
+  it("is skipped, and the attempt and the chat say the act was not done", async () => {
+    const claim = press("check", "not-now", {}, { element: { visibleText: "Claim voucher" } });
+    const trace = await inRun(optionalFlow(claim), { effectDispatcher: absentDispatcher([]) });
+
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts[1]).toMatchObject({ route: "skipped", skipped: { reason: "target_absent", notDone: true } });
+    const skipped = seen.find((event) => event.detail?.kind === "step" && event.detail.ref === "check" && event.detail.status === "succeeded");
+    expect(skipped?.detail?.title).toBe("Skipped “Claim voucher”: it was not shown, so it was not done");
+    expect(recoveryRows()).toEqual([]);
+  });
+
+  it("says nothing of an act for a dismissal", async () => {
+    const trace = await inRun(optionalFlow(dismissal), { effectDispatcher: absentDispatcher([]) });
+    expect(trace.attempts[1]!.skipped).toEqual({ reason: "target_absent", code: "web.target.not_found" });
+  });
+});
