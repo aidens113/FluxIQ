@@ -1736,9 +1736,35 @@ instruction, every decision, the test and the judge are all held against it.
 - **The spend outlives a build.** It is kept on a per-Flow creation record
   (`runtime/flow-bootstrap/creation-spend/`, stored as `creation-spend.json`
   beside the Flow by `runtime/service/creation-spend.ts`), carried into the
-  next build's purse as `carriedUsd`, and cleared when the creation ends. A
-  refuted-result repair during a later scheduled run keeps its own run ceiling
-  and never touches the record.
+  next build's purse as `carriedUsd`, and, outside the Lab, cleared when the
+  creation ends. In a product run a refuted-result repair during a later
+  scheduled run keeps its own run ceiling and never touches the record.
+- **In a Lab-scoped run the record is the Flow's one purse (t438).** The
+  user's words (2026-10-01): "bring the ceiling down to $0.1 per flow max".
+  One purse per Flow: its build, re-authors, repairs and judge all count
+  against it, in billed dollars, with no cap on output. Where the run cost
+  ceiling is Lab-scoped (`FLUXIQ_LLM_RUN_COST_CEILING_SCOPE=test`), a Flow's
+  builds and its runs (`runRuntimeSession`, through
+  `service/runtime-adaptation/flow-spend.ts`) run under a second purse, the
+  Flow's (`runtime/llm/build-purse/flow-scope.ts`), at the run cost ceiling.
+  The harness holds every call against it as well as against any build purse
+  (`build-purse/harness-hold.ts`); its spend is the Flow's record read live,
+  and each settled call is added to the record as it settles, with a
+  compare-and-add the store serializes, so no two additions read the same
+  total. So the build and its judge, the chat's reading of the message that
+  asked for the build or the run (added when the build or run opens), the
+  run's in-run repairs (sized to what the Flow has left at each incident, not
+  once per run), its recovery after the run, its result check, its re-authors
+  and their re-runs all draw on one ceiling, whether the run succeeds or
+  fails. Each pass of a refuted-result repair opens its purse from the Flow's
+  record (`recovery/refuted-result/purse.ts`); a ladder already in the record
+  joins only the averages. A call the Flow's purse cannot pay for is refused
+  unsent and ends its part on the cost bound, as a part's own ceiling does.
+  The record outlives the creation, so a later build of the same Flow -- an
+  extend after it was proposed -- carries everything the Flow has spent.
+  Product scope keeps one purse per creation and a per-run repair purse: a
+  product Flow runs on a schedule indefinitely, and a lifetime purse would
+  leave every later run with nothing.
 - **Holds price what is sent, with an observed reply reserve (t254).** Each
   call is held at the input its provider will send -- never the packed request,
   which carries the whole node catalog and is kept only for the window refusal

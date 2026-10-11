@@ -12,9 +12,13 @@
 // and a Flow nobody could build could be paid for without end.
 //
 // It is held in a store of its own beside the Flow
-// (`runtime/service/creation-spend.ts`), and deleted when the creation ends.
-// A refuted-result repair (`recovery/refuted-result/`) keeps its own ceiling
-// and never reads or writes it.
+// (`runtime/service/creation-spend.ts`), and deleted when the creation ends --
+// except in a Lab-scoped run (`FLUXIQ_LLM_RUN_COST_CEILING_SCOPE=test`), where
+// it is the Flow's whole purse (t438; the user, 2026-10-01: "bring the ceiling
+// down to $0.1 per flow max"): it outlives the creation, the run's repair opens
+// its purse with it and writes its own spend back
+// (`runtime/service/runtime-adaptation/flow-spend.ts`). Outside the Lab a
+// repair keeps its own per-run ceiling and never reads or writes it.
 
 export type AutomationStudioFlowBootstrapCreationSpend = {
   kind: "flow_creation_spend";

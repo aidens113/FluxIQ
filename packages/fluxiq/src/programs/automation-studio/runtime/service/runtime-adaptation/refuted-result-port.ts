@@ -20,8 +20,11 @@
 // the build again after a failure that may pass, and the patch ladder it falls
 // back to were each held to $0.25 on their own, so one repair could spend about
 // $0.75. They now spend from one purse (`recovery/refuted-result/purse.ts`):
-// the run cost ceiling (`AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD`, $0.10 by
-// default), lowered by the Flow's own setting. Each part is handed what is left as
+// the run cost ceiling (`automationStudioLlmRunCostCeilingUsd`), lowered by the
+// Flow's own setting. In a Lab-scoped run each pass opens with what the Flow
+// has already spent, read live from the Flow's purse, which also adds every
+// call the repair makes to the Flow's record (`./flow-spend.ts`), so the Flow's
+// build, its check and its repairs share one ceiling. Each part is handed what is left as
 // its total -- the build's loop budget, the recovery's ledger -- once the parts
 // before it are charged what they reported. A part with nothing left -- less
 // than one more call at what the repair's calls have cost so far -- is not
@@ -45,6 +48,7 @@ import {
   type AutomationStudioRefutedResultRepairPort,
   type AutomationStudioResultRepairPurse
 } from "../../recovery/refuted-result/index.ts";
+import { automationStudioLlmCurrentFlowPurse } from "../../llm/build-purse/index.ts";
 import { automationStudioReauthorBuild, type AutomationStudioReauthorBuildDependencies, type AutomationStudioReauthorBuilt } from "./reauthor-build.ts";
 
 type RepairRequest = Parameters<AutomationStudioRefutedResultRepairPort>[0];
@@ -76,8 +80,9 @@ export function automationStudioRefutedResultRepairPort(deps: AutomationStudioRe
   return async (refuted) => {
     const flowId = deps.flowId();
     // Opened where an earlier pass of this run's repair left it, so a re-run
-    // refuted again spends from the same total rather than a fresh one.
-    const opened = automationStudioResultRepairPurse(refuted.detail, deps.maxCostUsd?.());
+    // refuted again spends from the same total rather than a fresh one; in a
+    // Lab-scoped run, from what the Flow's purse says the Flow has spent.
+    const opened = automationStudioResultRepairPurse(refuted.detail, deps.maxCostUsd?.(), automationStudioLlmCurrentFlowPurse()?.spentUsd());
     const decision = automationStudioRefutedResultReauthorDecision({ detail: refuted.detail, ...(deps.projectId ? { projectId: deps.projectId } : {}), ...(flowId ? { flowId } : {}) });
     // Whether the patch ladder may follow at all (`recovery/refuted-result/ladder-skip.ts`): not for a
     // refutation that names no step, and not once the re-author has explored (run-muqilf9s, run-muqiojz4).

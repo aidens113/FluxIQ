@@ -6,8 +6,23 @@
 // (`../../flow-bootstrap/creation-spend/`). The chat's reading of the message
 // that asked for the build (`interpretationCostUsd`) is carried on top, so the
 // call that decided to build the Flow is saved into that record with the rest.
-// A refuted-result repair keeps its own ceiling, never reads or writes that
-// record, and carries nothing.
+// A repair's build carries nothing here and never reads or writes that record:
+// it is handed only what its repair's purse has left
+// (`../../recovery/refuted-result/purse.ts`).
+//
+// **In a Lab-scoped run the record is the Flow's whole purse (t438).** The
+// user's words (2026-10-01): "bring the ceiling down to $0.1 per flow max".
+// One purse per Flow: its build, re-authors, repairs and judge all count
+// against it, in billed dollars, with no cap on output. So where the run cost
+// ceiling is Lab-scoped (`FLUXIQ_LLM_RUN_COST_CEILING_SCOPE=test`) the build's
+// body also runs under the Flow's purse (`../creation-spend.ts`,
+// `withFlowPurse`), which adds every call to the record as it settles; the
+// chat's reading is added to the record when the build opens; and the record
+// outlives the creation, so the Flow's runs, their repairs and their checks
+// draw on what the creation left, and a later build of the same Flow -- an
+// extend after it was proposed -- carries everything the Flow has spent.
+// Outside the Lab it goes with the creation, as before: a product Flow's limit
+// is per run.
 //
 // **The step log.** The build's body is written as the creation's part, or the
 // re-author's for a repair, and the instruction reading as its `read` phase
@@ -18,7 +33,8 @@
 // loop's signal and the next decision; this keeps that wiring in one place and
 // keeps `../../service.ts` from growing.
 
-import type { AutomationStudioLlmTaskResult } from "../../llm/index.ts";
+import { resolveAutomationStudioLlmTestRunCostCeilingUsd } from "../../../model/index.ts";
+import { automationStudioLlmRunCostCeilingUsd, type AutomationStudioLlmTaskResult } from "../../llm/index.ts";
 import { AutomationStudioLlmBuildPurse, AutomationStudioLlmBuildPurseRefused, automationStudioLlmBuildPurseScope, type AutomationStudioLlmBuildPurseRefusal } from "../../llm/build-purse/index.ts";
 import { automationStudioLlmStepLogScope } from "../../llm/step-log/index.ts";
 import type { AutomationStudioParkingPort } from "../../parking/index.ts";
@@ -45,20 +61,27 @@ export type AutomationStudioFlowBootstrapCreationPurse = {
 };
 
 export async function automationStudioFlowBootstrapCreationPurse(input: {
-  store: Pick<AutomationStudioFlowBootstrapCreationSpendStore, "get" | "save" | "delete">;
+  store: Pick<AutomationStudioFlowBootstrapCreationSpendStore, "get" | "save" | "delete" | "add" | "spentNowUsd" | "withFlowPurse">;
   projectId: string;
   flowId: string;
-  /** A refuted-result repair: its own ceiling, and no creation record read or written. */
+  /** A repair's build: the ceiling its repair's purse handed it, and no creation record read or written. */
   repair: boolean;
+  /** Whether the record is the Flow's whole purse and outlives the creation: by default, whether the run cost ceiling is Lab-scoped. */
+  flowPurse?: boolean | undefined;
   /** What the chat's reading of the message that asked for the build cost: carried on top of the record's spend. A repair ignores it. */
   interpretationCostUsd?: number | undefined;
   ceilingUsd: number;
   maxCalls?: number;
 }): Promise<AutomationStudioFlowBootstrapCreationPurse> {
   const { store, projectId, flowId, repair } = input;
+  const flowPurse = input.flowPurse ?? resolveAutomationStudioLlmTestRunCostCeilingUsd() !== undefined;
   const creation = repair ? undefined : await store.get(projectId, flowId);
   const interpretationUsd = repair ? 0 : input.interpretationCostUsd ?? 0;
-  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: input.ceilingUsd, ...(input.maxCalls === undefined ? {} : { maxCalls: input.maxCalls }), carriedUsd: (creation?.spentUsd ?? 0) + interpretationUsd });
+  // In a Lab-scoped run the chat's reading is the Flow's spend: added to its record, which is then what the build carries.
+  const labCreation = flowPurse && !repair;
+  if (labCreation && interpretationUsd > 0) await store.add(projectId, flowId, interpretationUsd);
+  const carriedUsd = labCreation ? store.spentNowUsd(projectId, flowId) : (creation?.spentUsd ?? 0) + interpretationUsd;
+  const purse = new AutomationStudioLlmBuildPurse({ ceilingUsd: input.ceilingUsd, ...(input.maxCalls === undefined ? {} : { maxCalls: input.maxCalls }), carriedUsd });
   const part = repair ? "reauthor" : "creation";
   let creationEnded = false; // A Flow proposed, or the build ended not doable: the creation is over, and its record goes with it.
   // A call the purse refused, never sent: its own figures, read off the harness's refusal.
@@ -69,15 +92,20 @@ export async function automationStudioFlowBootstrapCreationPurse(input: {
     purse,
     get readingRefused() { return readingRefused; },
     // The build's whole body runs under the purse, so the instruction reading, every decision, the test and the judge are held against it (`../../llm/build-purse/run.ts`).
-    run: async (body) => await automationStudioLlmBuildPurseScope(purse, async () => await automationStudioLlmStepLogScope.within({ part }, async () => {
-      try {
-        return await body();
-      } finally {
-        // However the build ended: the creation's spend carried to its next build, or the record gone with the creation.
-        if (!repair && creationEnded) await store.delete(projectId, flowId);
-        else if (!repair) { const now = Date.now(); await store.save({ kind: "flow_creation_spend", projectId, flowId, spentUsd: purse.spentUsd(), builds: (creation?.builds ?? 0) + 1, createdAt: creation?.createdAt ?? now, updatedAt: now }); }
-      }
-    })),
+    run: async (body) => {
+      const built = async () => await automationStudioLlmBuildPurseScope(purse, async () => await automationStudioLlmStepLogScope.within({ part }, async () => {
+        try {
+          return await body();
+        } finally {
+          // However the build ended: the creation's spend carried to its next build, or the record gone with the creation. In a Lab-scoped run every call is already in the record, which stays as the Flow's purse; the build is counted.
+          if (labCreation) await store.add(projectId, flowId, 0, { build: true });
+          else if (!repair && creationEnded) await store.delete(projectId, flowId);
+          else if (!repair) { const now = Date.now(); await store.save({ kind: "flow_creation_spend", projectId, flowId, spentUsd: purse.spentUsd(), builds: (creation?.builds ?? 0) + 1, createdAt: creation?.createdAt ?? now, updatedAt: now }); }
+        }
+      }));
+      // The Flow's purse holds the Lab ceiling; the build's own may be lower. A repair's build is already under its run's.
+      return flowPurse ? await store.withFlowPurse(projectId, flowId, automationStudioLlmRunCostCeilingUsd(), built) : await built();
+    },
     reading: (run) => async (request) => { const answer = await automationStudioLlmStepLogScope.within({ phase: "read" }, () => run(request)); readingRefused ??= purseRefusalOf(answer); return answer; },
     askPort: (port) => ({ open: (ask) => { if (readingRefused) throw new AutomationStudioLlmBuildPurseRefused(readingRefused); return port.open(ask); }, ...(port.awaitAnswer ? { awaitAnswer: port.awaitAnswer.bind(port) } : {}) }),
     signal: (permissions) => {

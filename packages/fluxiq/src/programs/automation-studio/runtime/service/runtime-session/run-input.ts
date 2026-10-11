@@ -25,4 +25,6 @@ export type AutomationStudioRuntimeSessionRunInput = {
     /** The lasting consequences the person already allowed this run's actions to have. Anything else is asked about act by act. */
     permittedConsequences?: AutomationStudioActionConsequence[];
     useReusableContext?: true; /** Which of this run's result checks `llmExecution`'s caller pays for; absent is every one (`resolveAutomationStudioResultCheckProvider`). */ resultCheckCallerPays?: AutomationStudioResultCheckCallerPays;
+    /** What the chat's reading of the message that started this run cost, when a chat turn started it: the Flow's spend in a Lab-scoped run (t438). */
+    interpretationCostUsd?: number;
 };
