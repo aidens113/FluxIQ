@@ -14,6 +14,8 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../../harness.ts";
 import { AutomationStudioLlmProviderError, normalizedAutomationStudioLlmProviderFailure } from "../../provider-contract.ts";
 import { AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, createAutomationStudioDeepSeekProvider, estimateAutomationStudioDeepSeekCostUsd } from "../index.ts";
+import { parseAutomationStudioDeepSeekEnvelope } from "../response-envelope.ts";
+import { parseAutomationStudioLlmProviderResult } from "../../harness/index.ts";
 
 /** A peak instant, Wednesday 2026-09-30 02:00 UTC: DeepSeek bills calls at their send time, peak or off-peak (t254), and these figures are peak. */
 const PEAK_CLOCK = (): number => Date.UTC(2026, 8, 30, 2);
@@ -167,6 +169,75 @@ describe("what a refused reply cost", () => {
     expect(normalizedAutomationStudioLlmProviderFailure(clone).paid).toBeUndefined();
   });
 });
+
+// R4b step 0017 (`run-mv4dgmki-2b13db91`): DeepSeek wrote the key name
+// `callId` as the decision's kind. The envelope passed the decision through,
+// and the harness refused it as `llm_output.invalid_evidence_decision`; the
+// next decision re-sent the same call, which ran. Across 81 logged runs all 9
+// such refusals had this kind, 6 of them with no callId, every one an offered
+// tool with an input object (t445).
+describe("an evidence decision whose kind is the key name callId", () => {
+  const R4B_INPUT = { nodeId: "t951", parameters: { option: "7-in-1" } };
+  const R4B = { kind: "callId", callId: "select-7in1", toolId: "core.run_node", input: R4B_INPUT };
+
+  /** The reply as DeepSeek sent it, read by the envelope and then by the harness's provider check, as a live call is. */
+  function read(decision: unknown) {
+    const content = JSON.stringify({ kind: "evidence_tool_decision", summary: "Choose the 7-in-1 option.", decision });
+    const { response, usage } = parseAutomationStudioDeepSeekEnvelope({ choices: [{ finish_reason: "stop", message: { content } }], usage: USAGE }, evidenceRequest(), AUTOMATION_STUDIO_DEEPSEEK_DEFAULT_MODEL, PEAK_CLOCK());
+    return parseAutomationStudioLlmProviderResult({ response, usage }, "evidence_tool_decision");
+  }
+
+  const errors = (result: ReturnType<typeof read>) => result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+
+  it("reads R4b's exact shape as the tool call it wrote, keeping its callId, with a warning", () => {
+    const result = read(R4B);
+    expect(errors(result)).toEqual([]);
+    expect(result.response).toEqual({ kind: "evidence_tool_decision", summary: "Choose the 7-in-1 option.", decision: { kind: "tool_call", callId: "select-7in1", toolId: "core.run_node", input: R4B_INPUT } });
+    expect(result.diagnostics).toContainEqual({
+      severity: "warning", code: "llm_output.decision_kind_inferred", path: "response.decision.kind",
+      message: expect.any(String), metadata: { kindWritten: "unknown", callIdFilled: false }
+    });
+  });
+
+  it("fills a callId derived from the tool and its input where the reply left it out", () => {
+    const { callId: _left, ...withoutCallId } = R4B;
+    const first = read(withoutCallId);
+    expect(errors(first)).toEqual([]);
+    const decision = (first.response as { decision: { kind: string; callId: string; toolId: string; input: unknown } }).decision;
+    expect(decision).toMatchObject({ kind: "tool_call", toolId: "core.run_node", input: R4B_INPUT });
+    expect(decision.callId).toMatch(/^call\.[0-9a-f]{8}$/);
+    expect(first.diagnostics).toContainEqual(expect.objectContaining({ code: "llm_output.decision_kind_inferred", metadata: { kindWritten: "unknown", callIdFilled: true } }));
+    // The same call gets the same id; another input, another id.
+    expect((read(withoutCallId).response as { decision: { callId: string } }).decision.callId).toBe(decision.callId);
+    expect((read({ ...withoutCallId, input: { nodeId: "t951", parameters: { option: "5-in-1" } } }).response as { decision: { callId: string } }).decision.callId).not.toBe(decision.callId);
+    // No kind at all, or an id that is not one, is read the same way.
+    expect(errors(read({ toolId: "core.run_node", input: R4B_INPUT }))).toEqual([]);
+    expect((read({ ...R4B, callId: "not an id" }).response as { decision: { callId: string } }).decision.callId).toBe(decision.callId);
+  });
+
+  it.each([
+    ["a known kind the fields contradict", { kind: "complete", toolId: "core.run_node", input: R4B_INPUT }, "llm_output.unexpected_field"],
+    ["amend_draft carrying a tool call", { kind: "amend_draft", toolId: "core.run_node", input: R4B_INPUT }, "llm_output.unexpected_field"],
+    ["a toolId with no input", { kind: "callId", callId: "select-7in1", toolId: "core.run_node" }, "llm_output.invalid_evidence_decision"],
+    ["an input that is not an object", { kind: "callId", toolId: "core.run_node", input: "t951" }, "llm_output.invalid_evidence_decision"],
+    ["a tool call that also carries a result", { ...R4B, result: { done: true } }, "llm_output.invalid_evidence_decision"],
+    ["a tool call that also carries amendments", { ...R4B, amendments: [{ step: 1, change: "rerun" }] }, "llm_output.invalid_evidence_decision"],
+    ["a field no tool call has", { ...R4B, note: "chosen" }, "llm_output.unexpected_field"]
+  ])("still refuses %s", (_label, decision, code) => {
+    const result = read(decision);
+    expect(result.response).toBeUndefined();
+    expect(errors(result).map((diagnostic) => diagnostic.code)).toContain(code);
+  });
+
+  it("says which field was at fault and what it may be, where the kind is refused", () => {
+    const refused = errors(read({ kind: "callId", toolId: "core.run_node" })).find((diagnostic) => diagnostic.code === "llm_output.invalid_evidence_decision");
+    expect(refused).toMatchObject({ path: "response.decision.kind", message: expect.stringContaining("tool_call, complete, amend_draft") });
+  });
+});
+
+function evidenceRequest(): AutomationStudioLlmTaskRequest {
+  return { ...request(), taskKind: "evidence_tool_decision", expectedOutput: "evidence_tool_decision" };
+}
 
 const DIAGNOSIS = JSON.stringify({ kind: "diagnosis", summary: "A bounded diagnosis.", confidence: 0.9 });
 

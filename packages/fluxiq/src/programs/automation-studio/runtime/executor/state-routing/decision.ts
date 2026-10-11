@@ -10,7 +10,7 @@ import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFactEvaluationContext } from "../../host-runtime.ts";
 import { chooseAutomationStudioEdge } from "../graph-navigation.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioStateRouteDirection } from "../contracts.ts";
-import { automationStudioAbsentStepSkip } from "../step-skip/index.ts";
+import { automationStudioAbsentStepSkip, automationStudioSkippedStepDoesAct } from "../step-skip/index.ts";
 import { automationStudioStateRouteFactGate, type AutomationStudioStateRouteFactRefusal } from "./checkpoint-facts.ts";
 import { AUTOMATION_STUDIO_STATE_ROUTE_RETURN_LIMIT, automationStudioRunProgressMark, type AutomationStudioStateRouteGuard } from "./progress-guard.ts";
 import { automationStudioRankStateRoutes, type AutomationStudioRankedStateRoute, type AutomationStudioStateRouteMatch } from "./ranking.ts";
@@ -23,6 +23,9 @@ import { automationStudioUnboundSkippedValue } from "./skipped-values.ts";
  *
  * - `declared`: the Flow itself says where the page is -- a sometimes-present
  *   step's way on (`step-skip/absent-step.ts`), taken with no observation.
+ *   `notDone` when the step does a lasting act (`step-skip/act-not-done.ts`)
+ *   and the page did not show its effect: the act was not done, which the
+ *   attempt and the chat say (r4b F4).
  * - `routed`: the page already shows the failing step's own effect, and the
  *   run goes on along its success `edge` to `node` (record outcome
  *   `effect_holds`); or the page matched `node`'s recorded pre-state, and the
@@ -34,7 +37,7 @@ import { automationStudioUnboundSkippedValue } from "./skipped-values.ts";
  * A record names every way on a safety guard refused (`refused`), when one was.
  */
 export type AutomationStudioStateRouteDecision =
-  | { kind: "declared"; edge: AutomationStudioFlowEdge }
+  | { kind: "declared"; edge: AutomationStudioFlowEdge; notDone?: true }
   | { kind: "routed"; node: AutomationStudioFlowNode; direction: AutomationStudioStateRouteDirection; closeness?: number; edge?: AutomationStudioFlowEdge; record: AutomationStudioGuardedStateRoutingRecord }
   | { kind: "stopped"; message: string; record: AutomationStudioGuardedStateRoutingRecord }
   | { kind: "none"; record: AutomationStudioGuardedStateRoutingRecord };
@@ -89,7 +92,7 @@ export type AutomationStudioStateRouteInput = {
  */
 export async function decideAutomationStudioStateRoute(input: AutomationStudioStateRouteInput): Promise<AutomationStudioStateRouteDecision> {
   const declared = automationStudioAbsentStepSkip(input.flow, input.node, input.attempt);
-  if (declared) return { kind: "declared", edge: declared };
+  if (declared) return automationStudioSkippedStepDoesAct(input.node) ? await declaredAct(input, declared) : { kind: "declared", edge: declared };
   const candidates = input.flow.nodes
     .filter((node) => node.id !== input.node.id)
     .map((node) => ({ node, signatures: automationStudioNodeRouteSignatures(node) }))
@@ -135,6 +138,22 @@ export async function decideAutomationStudioStateRoute(input: AutomationStudioSt
   const record = { candidates: candidates.length, matched: matches.length - chosen.refused.length, toNodeId: best.node.id, direction: best.direction, closeness: best.closeness, ...refusedOf(refused) };
   const stopped = guarded(input, best.node.id, record, `the page matched only node ${best.node.id}'s expected starting page`);
   return stopped ?? { kind: "routed", node: best.node, direction: best.direction, closeness: best.closeness, record: { outcome: "routed", ...record } };
+}
+
+/**
+ * A sometimes-present step that does a lasting act, passed over: the page is
+ * observed once, when the step recorded its own effect, and a page already
+ * showing it goes on as any effect that holds does ("the page already shows
+ * what it does"). Otherwise the declared way on, with the act `notDone`.
+ */
+async function declaredAct(input: AutomationStudioStateRouteInput, edge: AutomationStudioFlowEdge): Promise<AutomationStudioStateRouteDecision> {
+  const own = ownEffect(input.flow, input.node);
+  if (own) {
+    const observation = await observeAutomationStudioRouteState({ hostRuntime: input.options.hostRuntime, ...flowScope(input.flow), ...(input.options.signal ? { signal: input.options.signal } : {}) });
+    const held = observation.ok ? effectHolds(input, own, observation.state, 0, []) : undefined;
+    if (held && held.kind !== "none") return held;
+  }
+  return { kind: "declared", edge, notDone: true };
 }
 
 /** The failing step's own effect and the success edge it would take: present only when it recorded one and the edge leads to a node. */

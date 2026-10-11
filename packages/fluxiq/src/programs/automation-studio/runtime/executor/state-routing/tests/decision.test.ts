@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../contracts.ts";
 import { automationStudioNotShownAttempt, automationStudioStateRouteGuard, decideAutomationStudioStateRoute } from "../index.ts";
@@ -171,5 +172,35 @@ describe("the state-routing decision", () => {
       for (let index = 0; index < 4; index += 1) expect((await decideAutomationStudioStateRoute(input)).kind).toBe("routed");
       expect(await decideAutomationStudioStateRoute(input)).toMatchObject({ kind: "stopped", record: { outcome: "guard_stopped", toNodeId: "c", direction: "forward" } });
     });
+  });
+});
+
+// r4b F4, on a generic lending-library site: a sometimes-present step that does
+// a lasting act is never passed over silently.
+describe("a sometimes-present step that does a lasting act", () => {
+  const claim = (metadata: JsonObject = {}): AutomationStudioFlowNode => ({
+    id: "pop", definitionId: "web.output.dom-click", parameterValues: { element: { visibleText: "Claim voucher" } }, metadata: { sometimesPresent: true, ...metadata }
+  });
+
+  it("is declared not done when it recorded no effect, observing nothing", async () => {
+    const calls = { observe: 0 };
+    const flow = flowOf([node("a"), claim(), node("b")], [edge("a", "pop"), edge("pop", "b")]);
+    expect(await decide(flow, "pop", host("p", calls))).toMatchObject({ kind: "declared", edge: { targetNodeId: "b" }, notDone: true });
+    expect(calls.observe).toBe(0);
+  });
+
+  it("goes on as done when the page already shows its effect", async () => {
+    const calls = { observe: 0 };
+    const flow = flowOf([node("a"), claim({ routeSignatures: { effect: { shows: "Claimed" } } }), node("b")], [edge("a", "pop"), edge("pop", "b")]);
+    const shown = host("list:Claimed", calls, { routeEffectHolds: (effect, observed) => String(observed.page).includes(String(effect.shows)) });
+    expect(await decide(flow, "pop", shown)).toMatchObject({ kind: "routed", node: { id: "b" }, record: { outcome: "effect_holds" } });
+    const missing = host("list", { observe: 0 }, { routeEffectHolds: (effect, observed) => String(observed.page).includes(String(effect.shows)) });
+    expect(await decide(flow, "pop", missing)).toMatchObject({ kind: "declared", notDone: true });
+  });
+
+  it("keeps a dismissal's declared way on exactly as before", async () => {
+    const dismissal: AutomationStudioFlowNode = { ...claim(), parameterValues: { element: { visibleText: "No thanks" } } };
+    const decision = await decide(flowOf([node("a"), dismissal, node("b")], [edge("a", "pop"), edge("pop", "b")]), "pop", host("p", { observe: 0 }));
+    expect(decision).toEqual({ kind: "declared", edge: expect.objectContaining({ targetNodeId: "b" }) });
   });
 });

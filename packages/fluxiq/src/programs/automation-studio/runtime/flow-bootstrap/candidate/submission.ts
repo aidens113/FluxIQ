@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { checkAutomationStudioFlowBootstrapCompletion } from "../../llm/harness-options/index.ts";
 import { automationStudioFlowBootstrapIssuePlace, automationStudioFlowBootstrapWrittenPlanBindingIssues, parseAutomationStudioFlowScript, type AutomationStudioFlowBootstrapIssueLocator } from "../authoring/index.ts";
+import { automationStudioInstructedActOptionalScriptIssues } from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { automationStudioFlowScriptWayOutIssues } from "../script-statements/index.ts";
 import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
@@ -50,10 +51,15 @@ export class AutomationStudioFlowCandidateSubmissionController {
       .filter((issue) => issue.severity === "error");
     // An interruption answered through its offer rather than its way out
     // (t423), read once the domain has said which control each step names.
-    const wayOut = typeof result.flow === "string"
-      ? automationStudioFlowScriptWayOutIssues({ script: parseAutomationStudioFlowScript(result.flow).script, plan: verdict.buildPlan.plan, locator: verdict.locator })
-      : [];
-    if (bindings.length || wayOut.length) return { ok: false, revision, check: bindingRefusal([...bindings, ...wayOut], verdict.locator, bindings.length ? "candidate.loop_or_binding_refused" : "candidate.way_out_refused") };
+    const script = typeof result.flow === "string" ? parseAutomationStudioFlowScript(result.flow).script : undefined;
+    const wayOut = script ? automationStudioFlowScriptWayOutIssues({ script, plan: verdict.buildPlan.plan, locator: verdict.locator }) : [];
+    // A step doing one of the person's requested acts is never optional (r4b
+    // F4): the draft path's `step_is_optional` rule, which no candidate met.
+    const optionalActs = script ? automationStudioInstructedActOptionalScriptIssues({ instructionText: this.input.instructionText, script, plan: verdict.buildPlan.plan, locator: verdict.locator }) : [];
+    if (bindings.length || wayOut.length || optionalActs.length) {
+      const code = bindings.length ? "candidate.loop_or_binding_refused" : wayOut.length ? "candidate.way_out_refused" : "candidate.optional_act_refused";
+      return { ok: false, revision, check: bindingRefusal([...bindings, ...wayOut, ...optionalActs], verdict.locator, code) };
+    }
     const plan = structuredClone(verdict.buildPlan);
     const candidate: AutomationStudioFlowCandidate = {
       revision, digest: fingerprint.candidate({ buildPlan: plan, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "",
@@ -70,9 +76,10 @@ export class AutomationStudioFlowCandidateSubmissionController {
 }
 
 /**
- * A candidate refused for its loops or bindings, or for a step that answers an
- * interruption through its offer (`../script-statements/way-out-steps.ts`),
- * under `code`. Every sentence is Core's own
+ * A candidate refused for its loops or bindings, for a step that answers an
+ * interruption through its offer (`../script-statements/way-out-steps.ts`), or
+ * for an optional step that does a requested act
+ * (`../instructed-acts/optional-act-steps.ts`), under `code`. Every sentence is Core's own
  * (`../authoring/`, `../script-statements/`) and quotes only node keys, labels,
  * field names and output ids the model wrote -- and, for the way out, the words
  * of the control its step names, which the evidence already printed to it --

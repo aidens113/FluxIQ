@@ -420,6 +420,10 @@ const DECISION_KINDS = new Set(["tool_call", "complete", "amend_draft"]);
  * Nothing here relaxes what a decision may *be*: the decision itself still goes
  * through `automationStudioLlmEvidenceParseDecision` unchanged, and a `kind`
  * that names some other task's answer is still refused rather than relabelled.
+ * The decision's own `kind` is passed through as written: where it names no
+ * known kind but the decision can only be a tool call, the harness reads it as
+ * one and says so in a warning (`./harness/provider-result.ts`,
+ * `inferredEvidenceToolCall`), for every provider rather than this one alone.
  */
 export function automationStudioLlmEvidenceNormalizedDecisionResponse(value: unknown, maxSummaryLength: number): JsonObject | undefined {
   if (!isRecord(value)) return undefined;

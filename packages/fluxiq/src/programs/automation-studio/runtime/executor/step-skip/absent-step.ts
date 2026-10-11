@@ -23,6 +23,11 @@ import { automationStudioOptionalStepWayOn } from "./optional-step.ts";
  * `target_ambiguous` is not absent (something matched), and neither is an
  * action that ran and failed; those keep the recovery ladder, as does a step
  * that is not sometimes-present.
+ *
+ * **Never silently, when the step does an act (r4b F4).** A step passed over
+ * here whose own words name a lasting act (`./act-not-done.ts`) is not a
+ * popup: unless the page already shows its effect, the run records and says
+ * that the act was not done (`../state-routing/decision.ts`, `notDone`).
  */
 export function automationStudioAbsentStepSkip(
   flow: AutomationStudioFlowDocument,
