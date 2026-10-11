@@ -35,7 +35,9 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 //     `run-musp8nz1-dbd3905a`'s judges saw a press that un-chose Space Grey and
 //     the one that chose it again as two `replayed`.
 //   - `explored`, what a checked step did while the build explored it, since
-//     the test did not do it again.
+//     the test did not do it again, with `landed`, the press its act rests on
+//     when a rerun or a later check holds one, and whether it ran after the
+//     steps before it (`./landing.ts`, t443).
 //   - `afterWithheld`, on a step that changes nothing (a read) the test ran
 //     after checked steps whose act it left undone (`verified` on the step or
 //     any pass; `present` was already in place): their positions. Such a read
@@ -132,6 +134,7 @@ import {
   type AutomationStudioResultEndView,
   type AutomationStudioRunResultSummaryWithEndView
 } from "../result-summary.ts";
+import { automationStudioBuildTestExplored } from "./landing.ts";
 import { automationStudioBuildTestObservationReader } from "./observation.ts";
 import { automationStudioBuildTestPassLines } from "./pass-lines.ts";
 import { automationStudioBuildTestSpanRows } from "./span-rows.ts";
@@ -274,7 +277,7 @@ export function automationStudioBuildTestResultSummary(input: {
       ...(carriedStep(step) ? { carried: true as const } : {}),
       ...(observed?.value !== undefined ? { observed: observed.value } : {}),
       ...(lines.passes ? { passes: lines.passes } : {}),
-      ...(checked ? { explored: explored(step) } : {})
+      ...(checked ? { explored: automationStudioBuildTestExplored(step, input.steps, (each) => denied === undefined ? [] : targetWords(each, denied, input.steps, input.rowContextKeys ?? [])) } : {})
     };
   });
   const checklist = automationStudioInstructedActsChecklistValue(automationStudioInstructedActsChecklist({
@@ -443,15 +446,6 @@ function routingValue(routing: AutomationStudioFlowDraftStepRouting, steps: read
   }
   if (routing.kind === "repeat") return { kind: routing.kind, over: at(routing.over), through: at(routing.through) };
   return { kind: routing.kind };
-}
-
-/** What a checked step did while the build explored it. */
-function explored(step: AutomationStudioFlowDraftStep): NonNullable<AutomationStudioBuildTestStep["explored"]> {
-  return {
-    changed: step.effectApplied === undefined ? "unknown" : step.effectApplied ? "yes" : "no",
-    ...(step.resultCode ? { resultCode: step.resultCode } : {}),
-    ...(step.stateBefore !== undefined && step.stateAfter !== undefined ? { stateChanged: step.stateBefore !== step.stateAfter } : {})
-  };
 }
 
 /** The acts the build's result claims, each with the step it names, as written. */

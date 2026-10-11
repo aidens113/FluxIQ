@@ -360,6 +360,18 @@ export type AutomationStudioFlowDraftStep = {
    */
   priorExecution?: Omit<AutomationStudioFlowDraftStep, "priorExecution" | "checkedCandidate"> & { lasting: true };
   /**
+   * Where the rerun that ran this step found the target
+   * (`../llm/node-tools/step-place.ts`, t443): `put_back` to its start page,
+   * with the ids of the steps before it done again there first (`redone`, in
+   * order) and, when the walk back stopped at a step that recorded no start
+   * page, that step's position (`unknownBefore`); `already_there`, on the page
+   * in the state the step it replaced found it; `start_page_unknown`, wherever
+   * the last call left it. Absent on a step the loop ran as an ordinary call.
+   * The judge of a build's test reads it for a lasting step's landing
+   * (`../result-verification/build-test/summary.ts`).
+   */
+  rerunPlace?: { kind: "put_back"; redone: string[]; unknownBefore?: number } | { kind: "already_there" } | { kind: "start_page_unknown" };
+  /**
    * The argument the step first ran with, kept when `bind` lifted a value of it
    * into a binding (`./amendment/bind.ts`): the evidence that the step worked with
    * that value. Never set on a written step, which never ran with one, and

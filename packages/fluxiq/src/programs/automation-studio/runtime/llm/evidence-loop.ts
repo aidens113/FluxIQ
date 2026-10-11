@@ -4,7 +4,7 @@ import {
   AUTOMATION_STUDIO_FLOW_DRAFT_DRY_RUN_TOOL_ID,
   automationStudioFlowDraftDropReversals, automationStudioFlowDraftKeepOpeners,
   automationStudioFlowDraftReplaySignature,
-  automationStudioFlowDraftStepId, automationStudioFlowDraftStepIsAction,
+  automationStudioFlowDraftStepIsAction,
   automationStudioFlowDraftStepIsProposable, automationStudioFlowDraftStepWordsOf, automationStudioFlowDraftSetRoutePlaces,
   type AutomationStudioFlowDraftStep
 } from "../flow-draft/index.ts";
@@ -68,7 +68,7 @@ import {
   type AutomationStudioLlmEvidenceLoopProgress
 } from "./evidence-loop/index.ts";
 import { automationStudioLlmFailedDecisionFeedback, automationStudioLlmFailedDecisionUsage } from "./failed-decision/index.ts";
-import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioLlmEvidenceRerunCheckedRows, automationStudioNodeRerunAnswer, automationStudioNodeRerunFromItsPlace } from "./node-tools/index.ts";
+import { AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID, AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, automationStudioFlowDraftDryRunGate, automationStudioLlmEvidenceLoopToolSet, automationStudioLlmEvidenceRerunCheckedRows, automationStudioNodeRerunAnswer, automationStudioNodeRerunFromItsPlace, automationStudioNodeRerunPlaceOfStep } from "./node-tools/index.ts";
 import type { AutomationStudioLlmBuildPurseRefusal } from "./build-purse/index.ts";
 import type { AutomationStudioLlmEvidenceEntry } from "./context-window.ts";
 import {
@@ -418,15 +418,16 @@ export async function runAutomationStudioLlmEvidenceLoop(
     let ran: Awaited<ReturnType<typeof input.executeTool>> | undefined;
     let stateBefore: string | undefined;
     let stateAfter: string | undefined;
-    let rerunTook = false, rerunChecked = false; // A checked rerun whose step took the new argument (run `run-murwcaj0-40e56557` R7); one sent as the dry run's check at all, which acted on nothing (run `run-mux74k5q-1c3c2127` C3): `./node-tools/rerun-check.ts`.
+    let rerunTook = false, rerunChecked = false, rerunPlace: AutomationStudioFlowDraftStep["rerunPlace"]; // A checked rerun whose step took the new argument (run `run-murwcaj0-40e56557` R7); one sent as the dry run's check at all, which acted on nothing (run `run-mux74k5q-1c3c2127` C3): `./node-tools/rerun-check.ts`.
     const words = automationStudioFlowDraftStepWordsOf(input.describeCall, { toolId: decision.toolId, value: decision.input }); // Asked before the call: a click that closes its popup leaves its handle naming nothing (`../flow-draft/step-words.ts`).
     try {
       // A rerun runs from its step's own page, never from where the last call left it; a carried step from where its node started in the repaired run (`./node-tools/step-place.ts`, t194 C-D).
-      const startedOn = rerunReplaces && input.draft ? input.draft.seedStartedOn?.[rerunReplaces.standsFor ?? automationStudioFlowDraftStepId(rerunReplaces)] : undefined;
-      const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, startedOn, steps: draftSteps, now: handling.repeats.state(), callId, executeTool: input.executeTool, signal: input.signal, ...(lastingActs ? { lastingActs: await lastingActs() } : {}) }) : undefined;
+      const seedStartedOn = rerunReplaces && input.draft ? input.draft.seedStartedOn : undefined; // Every seeded step's start page: the seeded steps before it on its page are done again first (t443, R4b).
+      const place = rerunReplaces ? await automationStudioNodeRerunFromItsPlace({ step: rerunReplaces, seedStartedOn, steps: draftSteps, now: handling.repeats.state(), callId, value: decision.input, executeTool: input.executeTool, signal: input.signal, nodeOf: input.nodeOf, definitionOf: input.definitionOf, ...(lastingActs ? { lastingActs: await lastingActs() } : {}) }) : undefined;
       stateBefore = await digest(callId, decision.toolId);
       // The answer says where a rerun ran (`rerunPlace`; run `run-muqk713g` C6), and a rerun of a done lasting act is checked, not done again (R7).
       ({ ran, took: rerunTook, checked: rerunChecked } = await automationStudioNodeRerunAnswer({ place, replaces: rerunReplaces, steps: draftSteps, call: { callId, toolId: decision.toolId, value: decision.input }, words, executeTool: runFlow.executeTool, signal: input.signal, ...(rerunReplaces && lastingActs ? { lastingActs: await lastingActs() } : {}) }));
+      if (!rerunChecked) rerunPlace = automationStudioNodeRerunPlaceOfStep(place); // The step it leaves keeps where it ran, for the judge of a lasting act's landing (t443).
       stateAfter = await digest(callId, decision.toolId);
       execution = automationStudioLlmEvidenceParseToolExecutionResult(ran, tool.effect);
     } catch {
@@ -476,7 +477,7 @@ export async function runAutomationStudioLlmEvidenceLoop(
       resultCode: resultCode ?? "ok", changed: record.effect === "mutate" && effectApplied ? "yes" : "no", ...(refusedCall ? { refused: true } : {})
     });
     if (record.effect === "mutate") handling.lastAction = { callId, iteration };
-    const draftChanged = decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}) }, { add: decision.add, act: decision.act, place: decision.place });
+    const draftChanged = decision.toolId !== AUTOMATION_STUDIO_LLM_RUN_FLOW_TOOL_ID && draftRecord({ iteration, callId, ...record, ...(words ? { words } : {}), effectApplied, ...(resultCode ? { resultCode } : {}), ...(stateBefore !== undefined && stateAfter !== undefined ? { stateBefore, stateAfter } : {}), ...(rerunPlace ? { rerunPlace } : {}) }, { add: decision.add, act: decision.act, place: decision.place });
     automationStudioLlmEvidenceRerunReplaced(draftSteps, rerunReplaces, { takesItsPlace: authoring }); if (authoring) automationStudioFlowDraftDropReversals(draftSteps); // A rerun that took a kept step's place joined the Flow too (`../flow-draft/reversal.ts`).
     const settled = rerunHeld ? automationStudioLlmEvidenceSettleHeldAmendments(handling, iteration, rerunHeld, rerunTook ? rerunReplaces : draftSteps.find((step) => step.callId === callId), { kind: rerunTook || (!refusedCall && (record.effect !== "mutate" || effectApplied || record.written === true)) ? "accepted" : "failed", callId }) : undefined;
     // Whether this call's step is now in the Flow the model authors: added as it ran, or a rerun standing in for a step that was.
