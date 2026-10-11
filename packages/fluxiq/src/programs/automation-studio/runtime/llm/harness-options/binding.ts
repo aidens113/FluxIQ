@@ -427,8 +427,14 @@ export type AutomationStudioPlanHandleView = { handle: string; view: number; loc
 /** A domain answer about one plan node. May be awaited: asking permission is. */
 export type AutomationStudioPlanNodeResolution =
   | { status: "unchanged" }
-  /** `handleViews` only on an answer to a resolution that asked for `view_history`; Core refuses it on any other. */
-  | { status: "resolved"; parameters: JsonObject; handleViews?: readonly AutomationStudioPlanHandleView[] }
+  /**
+   * `handleViews` only on an answer to a resolution that asked for `view_history`; Core refuses it on any other.
+   * `effect`, on any resolved answer: what the act the build made on the step's control made true, in the host's
+   * own route-effect form (`signRouteEffect`) and within its bound. Core writes it onto the plan node as
+   * `routeSignatures.effect` where the build signed none, so a run that cannot find the control passes the step over
+   * when the page already shows it (`./plan-parameter-resolution.ts`, t447). It only ever skips a step.
+   */
+  | { status: "resolved"; parameters: JsonObject; handleViews?: readonly AutomationStudioPlanHandleView[]; effect?: JsonObject }
   | { status: "refused"; issueCodes: readonly string[] }
   | { status: "needs_permission"; missing: readonly string[]; requestId: string | null };
 
