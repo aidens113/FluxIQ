@@ -48,6 +48,23 @@
 // `.handle.` -- `unknown`, `stale`, `unknown_field`, ... -- each saying only
 // what that reason means and how to get past it; a reason with no advice here
 // is answered with the general advice, never with another reason's.
+//
+// **A handle the build acted on is named where it still stands (t442).** R4a
+// and R4b (`run-mv4dcf2j-cb68009a`, `run-mv4dgmki-2b13db91`) pressed each
+// popup's close control while exploring, and every view that printed those
+// controls had since been replaced; the only handles left for the popups were
+// lines of text the presses removed, so the model copied those, was refused
+// (`not_a_control`, `unknown`), and copied the next such line. The advice for
+// those two reasons now says where the control's handle still is -- the result
+// of the call that acted on it -- and that `core.recall_result` gives back a
+// replaced view whole. Said once, however many issues give either reason.
+//
+// **A corrected resubmission is a new refusal (t442).** The run of refusals
+// was keyed on each issue's code and line alone, so R4a's second submission,
+// which changed every refused handle, counted as the same refusal again, and
+// one more would have ended a build that was correcting itself each time. The
+// key now carries the handles each issue refused as well, so only a
+// resubmission refused for the same issue on the same values continues a run.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowCandidateSubmission } from "./contracts.ts";
@@ -96,6 +113,12 @@ const HANDLE_ADVICE: Readonly<Record<string, (handles: readonly string[]) => str
     + "A condition reads only its own step's row, so a key another step keeps is not one of its columns. Name the column by a key the detection printed for this list, or by a key this step's fields keep -- adding the column to this step's fields first if it is not there -- or drop the condition. "
 });
 
+/** The reasons whose refused handle may be text an act removed, or a control only a replaced view printed (header). */
+const ACTED_CONTROL_REASONS: ReadonlySet<string> = new Set(["unknown", "not_a_control"]);
+/** Where a control the build already acted on is still named, said once after those reasons' advice (header). */
+const ACTED_CONTROL = "If the step acts on a control this build already acted on while exploring, the result of that call names the control by its handle beside its words, and keeps it after its view is replaced: copy that handle, never a line of text the act removed. "
+  + "A view a newer one replaced is given back whole by core.recall_result with the callId of the result that showed it. ";
+
 /** The evidence and loop statement for one refused submission. */
 export function automationStudioCandidateSubmissionRefusal(submitted: Extract<AutomationStudioFlowCandidateSubmission, { ok: false }>): {
   evidence: JsonObject;
@@ -117,15 +140,27 @@ const ISSUES_DIGEST_LENGTH = 8;
 /**
  * What makes two refusals "the same" for the run of refusals: the refusal's own
  * category and a digest of its issues -- each code with the line (or, with
- * none, the path) it is about. Two submissions refused for different defects
- * are different refusals, however alike their category (header).
+ * none, the path) it is about, and the handles it refused (t442). Two
+ * submissions refused for different defects, or for the same defect on
+ * different values, are different refusals, however alike their category
+ * (header).
  */
 function refusalCode(feedback: JsonObject, issueCodes: readonly string[]): string {
   const named = [feedback.refusal, feedback.code, issueCodes[0]].find((code): code is string => typeof code === "string" && CLOSED_CODE.test(code));
   const category = named ?? AUTOMATION_STUDIO_CANDIDATE_SUBMISSION_REFUSED_CODE;
-  const keys = [...new Set(issuesOf(feedback).map((issue) => `${String(issue.code)}@${typeof issue.line === "number" ? issue.line : typeof issue.path === "string" ? issue.path : ""}`))].sort();
+  const keys = [...new Set(issuesOf(feedback).map((issue) => `${String(issue.code)}@${typeof issue.line === "number" ? issue.line : typeof issue.path === "string" ? issue.path : ""}#${refusedHandles(issue)}`))].sort();
   if (!keys.length) return category;
   return `${category.slice(0, 100 - ISSUES_DIGEST_LENGTH - 1)}:${digest(keys.join("\n"))}`;
+}
+
+/** The handles one issue refused (`../plan/issue-feedback.ts`, `handles`), each with the location written beside it, sorted; empty when it names none. */
+function refusedHandles(issue: JsonObject): string {
+  const handles: JsonValue[] = Array.isArray(issue.handles) ? issue.handles : [];
+  return handles
+    .filter((entry): entry is JsonObject => entry !== null && typeof entry === "object" && !Array.isArray(entry) && typeof entry.handle === "string")
+    .map((entry) => `${String(entry.handle)}${typeof entry.location === "string" ? `@${entry.location}` : ""}`)
+    .sort()
+    .join(",");
 }
 
 /** FNV-1a over the text, as hex: stable across processes, and only ever compared for equality. */
@@ -181,5 +216,6 @@ function handleAdvice(feedback: JsonObject): string {
       if (entry && typeof entry === "object" && !Array.isArray(entry) && typeof entry.handle === "string" && CLOSED_CODE.test(entry.handle)) found.add(entry.handle);
     }
   }
-  return [...byReason].map(([reason, handles]) => HANDLE_ADVICE[reason]!([...handles])).join("");
+  const advice = [...byReason].map(([reason, handles]) => HANDLE_ADVICE[reason]!([...handles])).join("");
+  return [...byReason.keys()].some((reason) => ACTED_CONTROL_REASONS.has(reason)) ? advice + ACTED_CONTROL : advice;
 }

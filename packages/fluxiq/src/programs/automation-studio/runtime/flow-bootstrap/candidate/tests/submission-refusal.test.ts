@@ -87,6 +87,16 @@ describe("a refused candidate submission", () => {
     expect(warning).toMatchObject({ code: "llm_evidence_loop.refused_in_a_row", refusal: "call:flow_bootstrap.evidence_completion_parameters_unresolved", inARow: 2 });
   });
 
+  // R4a (`run-mv4dcf2j-cb68009a`, t442): the second submission changed every refused handle and was still counted as
+  // the same refusal, keyed on code and line alone. A correction is progress; the same values refused again are not.
+  it("counts a resubmission that changed the refused handles as a new refusal, not the same one again", async () => {
+    const decisions = [look, submit(["t925", "t1049"], "one"), submit(["t925", "t1051"], "two"), submit(["t925", "t1053"], "three"), look];
+    const { outcome, seen, decided } = await run(decisions);
+    expect(decided()).toBe(decisions.length + 1);
+    expect("value" in outcome && !outcome.value.loop.ok && outcome.value.loop.code).not.toBe("llm_evidence_loop.repeat_without_progress");
+    for (const evidence of seen) expect(latestOf("core.refusal_run", evidence)).toBeUndefined();
+  });
+
   it("does not end the round when the refusals differ, or when a valid submission comes between", async () => {
     const decisions = [look, submit(["t478"], "one"), submit(["t925"], "valid"), submit(["t478"], "two"), submit(["t478"], "three"), look];
     const { outcome, seen, decided } = await run(decisions);
@@ -162,6 +172,30 @@ describe("the advice a refused handle is given", () => {
     expect(next).toContain(`The handle t478 ${ADVICE_WORDS.unknown}`);
     expect(next).toContain(`The handle t860 names text the view printed, ${ADVICE_WORDS.not_a_control}`);
     expect(next.indexOf(ADVICE_WORDS.unknown)).toBeLessThan(next.indexOf(ADVICE_WORDS.not_a_control));
+  });
+
+  // R4a and R4b (t442): every view printing the popups' close controls had been replaced, so the model copied lines
+  // of text the presses removed. The advice for those reasons says where the pressed control's handle still is.
+  it("for a handle refused as unknown or as text names where a control the build acted on is still named, once", () => {
+    const acted = "the result of that call names the control by its handle";
+    for (const reason of ["unknown", "not_a_control"]) {
+      const next = nextOf([{ code: `web.handle.${reason}`, path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t1049" }] }]);
+      expect(next).toContain(acted);
+      expect(next).toContain("core.recall_result");
+    }
+    const mixed = nextOf([
+      { code: "web.handle.unknown", path: "plan.subflows.0.nodes.1.parameters", handles: [{ handle: "t484" }] },
+      { code: "web.handle.not_a_control", path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t479" }] }
+    ]);
+    expect(mixed.split(acted)).toHaveLength(2);
+    expect(nextOf([{ code: "web.handle.stale", path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t12" }] }])).not.toContain(acted);
+  });
+
+  it("keys a refusal on the handles each issue refused, so the same issue on other values is another refusal", () => {
+    const code = (handle: string) => automationStudioCandidateSubmissionRefusal(refusedWith([{ code: "web.handle.not_a_control", path: "plan.subflows.0.nodes.2.parameters", line: 4, handles: [{ handle }] }])).resultCode;
+    expect(code("t1049")).toBe(code("t1049"));
+    expect(code("t1049")).not.toBe(code("t1051"));
+    expect(code("t1049").startsWith("flow_bootstrap.completion_refused:")).toBe(true);
   });
 
   it("for a reason it has no advice for is the general advice, never another reason's", () => {
