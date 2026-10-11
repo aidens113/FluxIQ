@@ -1011,7 +1011,17 @@ and `skipped: { reason: "target_absent", code }`, with no `failure`, `fault`,
 nothing goes on the defence ledger, and the run follows the Merge edge (or,
 for a node marked by metadata alone, its `success` edge). The step's activity
 row says it was skipped because what it acts on was not shown ("Skipped
-“Not now”: it was not shown"). A node that also declares a `readyState` is
+“Not now”: it was not shown"). A skipped node whose own words (its saved
+control's identity, else its label) name a lasting act -- collect, add, save,
+send, move, and not a close, a decline or a cookie answer
+(`runtime/executor/step-skip/act-not-done.ts`) -- is never passed over
+silently: when it recorded its own effect the page is observed once and an
+effect already shown goes on as `effect_holds`; otherwise the attempt adds
+`skipped.notDone: true`, the run detail keeps it, the trial feedback says what
+the step does was not done, and the row reads "Skipped “Claim voucher”: it was
+not shown, so it was not done". Authoring refuses such a step as optional on
+both paths (`flow-bootstrap/instructed-acts/optional-act-steps.ts` for a
+candidate script, `step_is_optional` for a draft). A node that also declares a `readyState` is
 observed first: when the gate judged at least one condition and the state was
 not met, the same skip is taken with nothing dispatched, under the code
 `executor.ready_state.not_shown`. A gate that judged nothing says nothing about

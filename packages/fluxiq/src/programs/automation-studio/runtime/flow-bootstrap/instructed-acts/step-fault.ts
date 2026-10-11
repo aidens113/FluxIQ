@@ -39,6 +39,18 @@ export function automationStudioInstructedActStepFault(
 }
 
 /**
+ * The one sentence a step doing a requested act while marked optional is told
+ * by, on every authoring path: the draft's checklist and completion check
+ * (`./check.ts`, `step_is_optional`, `where` "step 3") and a candidate
+ * script's optional step (`./optional-act-steps.ts`, `where` "the step at line
+ * 12"). `only` says no other step does the act.
+ */
+export function automationStudioInstructedActOptionalSaid(id: string, where: string, only = true): string {
+  return `${id} is done ${only ? "only " : ""}by ${where}, which is marked optional: the Flow carries on when it fails, so ${id} may never be done, `
+    + `and ${where} passing in one test is not evidence the Flow always does it.`;
+}
+
+/**
  * Whether the act's verb names a class a person is asked about and neither
  * this step nor any proposed step of a span that repeats it declares that
  * class. The one rule a completion is still refused for

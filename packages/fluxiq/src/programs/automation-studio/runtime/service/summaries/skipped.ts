@@ -33,6 +33,7 @@ export function automationStudioRunDetailSkipped(attempt: AutomationStudioNodeAt
     const row = typeof fields.row === "string" ? fields.row.trim().slice(0, MAX_ROW_CHARS) : "";
     return { reason: "already_done", code, attemptId: fields.attemptId, ...(row ? { row } : {}) };
   }
-  // `target_absent`, and a reason from an older trace that named none.
-  return { reason: "target_absent", code };
+  // `target_absent`, and a reason from an older trace that named none; a
+  // skipped step that does a lasting act keeps that the act was not done (r4b F4).
+  return { reason: "target_absent", code, ...(fields.notDone === true ? { notDone: true as const } : {}) };
 }

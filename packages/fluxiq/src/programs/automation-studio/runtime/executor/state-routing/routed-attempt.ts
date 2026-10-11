@@ -6,7 +6,10 @@ import type { AutomationStudioStateRouteDecision } from "./decision.ts";
  *
  * - `declared`: skipped, exactly as a sometimes-present step not shown always
  *   was: `status: "succeeded"`, `route: "skipped"`, `skipped.reason:
- *   "target_absent"`, no `failure`, `fault` or `message`.
+ *   "target_absent"`, no `failure`, `fault` or `message`. A skipped step that
+ *   does a lasting act whose effect the page did not show also carries
+ *   `skipped.notDone: true`: the act was not done, and the run says so rather
+ *   than pass over it silently (r4b F4).
  * - `routed`: the same shape under `route: "state_routed"`, with where the run
  *   went and which way, and the routing record. A step passed over because the
  *   page was elsewhere did not fail.
@@ -17,7 +20,7 @@ export function automationStudioStateRoutedAttempt(attempt: AutomationStudioNode
   if (decision.kind === "stopped" || decision.kind === "none") return { ...attempt, stateRouting: decision.record };
   const { failure, fault: _fault, message: _message, ...shown } = attempt;
   const code = failure?.code ?? "executor.target.not_found";
-  if (decision.kind === "declared") return { ...shown, status: "succeeded", route: "skipped", skipped: { reason: "target_absent", code } };
+  if (decision.kind === "declared") return { ...shown, status: "succeeded", route: "skipped", skipped: { reason: "target_absent", code, ...(decision.notDone ? { notDone: true as const } : {}) } };
   return {
     ...shown,
     status: "succeeded",

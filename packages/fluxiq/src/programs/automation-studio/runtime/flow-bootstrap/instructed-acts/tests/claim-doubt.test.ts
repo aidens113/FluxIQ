@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowDraftStep } from "../../../flow-draft/index.ts";
 import type { AutomationStudioInstructedAct } from "../contracts.ts";
-import { automationStudioInstructedActClaimDoubt } from "../claim-doubt.ts";
+import { automationStudioInstructedActClaimDoubt, automationStudioInstructedActControlShowsDone } from "../claim-doubt.ts";
 
 const add: AutomationStudioInstructedAct = { id: "a1", kind: "add_to", verb: "add", quote: "Add the hub to my cart." };
 function step(target?: string): AutomationStudioFlowDraftStep {
@@ -54,5 +54,28 @@ describe("advisory act-claim feedback", () => {
     expect(said).toContain("different place");
     expect(said).toContain("distinct step");
     expect(said).not.toContain("reorder");
+  });
+  // r4b F3, on a generic lending-library site: a voucher claimed relabels its control.
+  describe("a control that reads the act done", () => {
+    const claim: AutomationStudioInstructedAct = { id: "a1", kind: "claim", verb: "claim", quote: "Claim the welcome voucher." };
+
+    it.each(["Claimed", "Voucher collected", "Redeemed"])("is evidence the act is done, not a doubt: %s", (target) => {
+      const draft = step(target);
+      expect(automationStudioInstructedActClaimDoubt(claim, draft, [draft])).toBeUndefined();
+      expect(automationStudioInstructedActControlShowsDone(claim, draft)).toBe(true);
+    });
+
+    it("is not read done from another kind's done word, nor from the act's present verb", () => {
+      expect(automationStudioInstructedActControlShowsDone(claim, step("Added"))).toBe(false);
+      expect(automationStudioInstructedActControlShowsDone(claim, step("Claim"))).toBe(false);
+      expect(automationStudioInstructedActClaimDoubt(claim, step("Added"), [step("Added")])).toBeDefined();
+    });
+
+    it("reads the identity the step was saved with before the newest call's words", () => {
+      const saved = { ...step("Thank you"), control: "Thank you", ranWith: { element: { visibleText: "Get voucher" } } };
+      expect(automationStudioInstructedActClaimDoubt(claim, saved, [saved])).toBeUndefined();
+      const wrong = { ...step("Thank you"), ranWith: { element: { visibleText: "Spain" } } };
+      expect(automationStudioInstructedActClaimDoubt(claim, wrong, [wrong])).toContain('control is "Spain"');
+    });
   });
 });
