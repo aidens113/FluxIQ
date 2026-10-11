@@ -19,8 +19,12 @@ const MAX_CALLS = 12;
 
 type Reply = (call: number, latest: { revision?: number; digest?: string } | undefined) => Record<string, unknown>;
 
-/** The round 3 reply: a whole submission whose wrapper says `callId` where `tool_call` belongs, and no call id. */
-const malformedSubmission = { kind: "callId", toolId: "core.submit_candidate", input: { summary: "complete revision", plan: plan() } };
+/**
+ * A whole submission no reader can use: its wrapper says `callId` where `tool_call` belongs and it names no tool.
+ * The round 3 reply also carried its `toolId`, which since t445 is read as the tool call it unambiguously is
+ * (`../../../llm/tests/decision-kind/tests/inferred-tool-call.test.ts`), so it no longer stands for an unusable one.
+ */
+const malformedSubmission = { kind: "callId", input: { summary: "complete revision", plan: plan() } };
 
 async function candidateBuild(reply: Reply) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-candidate-unusable-"));
