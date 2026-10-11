@@ -30,4 +30,9 @@ describe("the attempt of a step that could not run", () => {
     const stopped = automationStudioStateRoutedAttempt(failed, { kind: "stopped", message: "stop", record: { ...record, outcome: "guard_stopped" } });
     expect(stopped).toMatchObject({ status: "failed", failure: failed.failure, stateRouting: { outcome: "guard_stopped" } });
   });
+  it("says the act was not done when a skipped step that does one left it undone (r4b F4)", () => {
+    const attempt = automationStudioStateRoutedAttempt(failed, { kind: "declared", edge: { id: "e", sourceNodeId: "b", targetNodeId: "j" }, notDone: true });
+    expect(attempt).toMatchObject({ status: "succeeded", route: "skipped", skipped: { reason: "target_absent", code: "web.target.not_found", notDone: true } });
+    expect(attempt).not.toHaveProperty("failure");
+  });
 });

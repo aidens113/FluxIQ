@@ -127,6 +127,7 @@ import { automationStudioInstructedActsOnSaid } from "./object-binding.ts";
 import { AUTOMATION_STUDIO_INSTRUCTED_QUANTITY_INSTRUCTIONS } from "./quantity-fault.ts";
 import { automationStudioInstructedChoiceAfterAct, type AutomationStudioInstructedChoiceAfterAct } from "./choice-order.ts";
 import { automationStudioInstructedActsStanding, type AutomationStudioInstructedStanding } from "./standing.ts";
+import { automationStudioInstructedActOptionalSaid } from "./step-fault.ts";
 
 /** The issue a missing act refuses completion under. */
 export const AUTOMATION_STUDIO_INSTRUCTED_ACT_MISSING_ISSUE_CODE = "bootstrap.instructed_act_missing";
@@ -338,8 +339,7 @@ function choicesAfterAct(
  * run's judges dismissed the bare reason because the step "was replayed".
  */
 function optionalSaid(id: string, step: string): string {
-  return `${id} is done only by step ${step}, which is marked optional: the Flow carries on when it fails, so ${id} may never be done, `
-    + `and step ${step} passing in one test is not evidence the Flow always does it.`;
+  return automationStudioInstructedActOptionalSaid(id, `step ${step}`);
 }
 
 /**

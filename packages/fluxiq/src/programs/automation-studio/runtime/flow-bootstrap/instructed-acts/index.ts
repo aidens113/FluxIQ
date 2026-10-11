@@ -34,6 +34,8 @@
 // is asked about needs a step declaring it, and an act whose only step is
 // optional may never be done (run `run-musq0b1m-0472cfa0`, Cause 5). The check
 // and the checklist are information beside the test and its judge.
+// `optional-act-steps.ts` holds a candidate script to the same optional rule,
+// since a candidate has no draft for the other two to read (r4b F4).
 export * from "./act-evidence.ts";
 export * from "./check.ts";
 export * from "./checklist.ts";
@@ -42,6 +44,7 @@ export * from "./choice-order.ts";
 export * from "./contracts.ts";
 export * from "./instruction-acts.ts";
 export * from "./optional-only.ts";
+export * from "./optional-act-steps.ts";
 export * from "./permission.ts";
 export * from "./span.ts";
 export * from "./standing.ts";

@@ -443,7 +443,8 @@ export type AutomationStudioNodeAttemptTrace = {
    * node's ready state was judged and not met, and nothing was dispatched.
    */
   skipped?:
-    | { reason: "target_absent"; code: string }
+    /** `notDone`: the step does a lasting act, and the page did not show its effect, so the act was not done (r4b F4, `step-skip/act-not-done.ts`). */
+    | { reason: "target_absent"; code: string; notDone?: true }
     /**
      * The step could not run and the page matched another node's recorded
      * pre-state, so the run continued at `toNodeId` (`state-routing/`). The
