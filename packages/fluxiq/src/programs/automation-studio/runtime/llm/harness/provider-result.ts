@@ -1,5 +1,6 @@
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, isAutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { parseAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSizeLimits } from "../../flow-bootstrap/index.ts";
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
 import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
@@ -60,6 +61,8 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     return undefined;
   }
   const commonFields = ["kind", "summary", "metadata"];
+  // An evidence decision as read: the one sent, or the tool call it can only be (`inferredEvidenceToolCall`).
+  let decision: unknown = value.decision;
   rejectUnexpectedFields(value, kind === "flow_bootstrap"
     ? [...commonFields, "plan"]
     : kind === "evidence_tool_decision"
@@ -77,7 +80,8 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     const parsed = parseAutomationStudioFlowBootstrapPlan(value.plan, size);
     diagnostics.push(...parsed.issues.map((issue) => ({ ...issue, severity: issue.severity, path: issue.path ? `response.${issue.path}` : "response.plan" })));
   } else if (kind === "evidence_tool_decision") {
-    validateUnknownEvidenceToolDecision(value.decision, diagnostics);
+    decision = inferredEvidenceToolCall(value.decision, diagnostics);
+    validateUnknownEvidenceToolDecision(decision, diagnostics);
   } else if (kind === "diagnosis") {
     if (value.confidence !== undefined && (!isFiniteNumber(value.confidence) || value.confidence < 0 || value.confidence > 1)) diagnostics.push({ severity: "error", code: "llm_output.invalid_confidence", message: "Diagnosis confidence must be between 0 and 1.", path: "response.confidence" });
     validateUnknownDiagnosisFields(value.diagnosis, diagnostics);
@@ -109,6 +113,7 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
   }
   if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) return undefined;
   if (kind === "diagnosis" && isRecord(value.diagnosis)) return { ...value, diagnosis: readDiagnosisText(value.diagnosis) } as unknown as AutomationStudioLlmStructuredResponse;
+  if (kind === "evidence_tool_decision" && decision !== value.decision) return { ...value, decision } as unknown as AutomationStudioLlmStructuredResponse;
   return value as unknown as AutomationStudioLlmStructuredResponse;
 }
 
@@ -206,6 +211,58 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
   }
 }
 
+/** The kinds an evidence decision may name; the feedback for a refused kind lists the same three. */
+const EVIDENCE_DECISION_KINDS: readonly string[] = ["tool_call", "complete", "amend_draft"];
+
+/**
+ * A decision that can only be a tool call, read as one when its `kind` says
+ * nothing Core knows.
+ *
+ * **Every refused decision of 81 logged runs was this shape** (R4,
+ * 2,728 decisions, 9 refused in 7 runs): `kind` held `"callId"` -- the key's
+ * name written as the value -- and 6 of the 9 left the id out, while each named
+ * an offered tool with a valid input object. Each refusal cost a paid call and
+ * the next decision re-sent the same call, which ran.
+ *
+ * A `toolId` string and an `input` object, with no `result` and no
+ * `amendments`, can be nothing but a tool call: `complete` needs `result` and
+ * `amend_draft` needs `amendments`. So the kind is filled in, and where the
+ * `callId` is missing or not a valid id one is derived from the tool and its
+ * input -- an identical call gets the same id, which the loop already makes
+ * unique (`../evidence-loop/call-id.ts`). Nothing else is relaxed: the tool
+ * call's keys, the tool being offered and its input schema are checked exactly
+ * as for a decision that named its kind. A known kind is never relabelled, so a
+ * `complete` carrying a `toolId` is still refused.
+ *
+ * The repair is a warning, `llm_output.decision_kind_inferred`, so the step
+ * log shows that a reply was read rather than taken as written.
+ */
+function inferredEvidenceToolCall(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): unknown {
+  if (!isRecord(value)) return value;
+  if (typeof value.kind === "string" && EVIDENCE_DECISION_KINDS.includes(value.kind)) return value;
+  if (typeof value.toolId !== "string" || !isJsonObject(value.input) || value.result !== undefined || value.amendments !== undefined) return value;
+  const callIdFilled = !validRequestIdentity(value.callId as string);
+  const callId = callIdFilled ? derivedCallId(value.toolId, value.input) : value.callId;
+  diagnostics.push({
+    severity: "warning",
+    code: "llm_output.decision_kind_inferred",
+    message: `The decision named no known kind but carried a toolId and an input object, so it was read as tool_call${callIdFilled ? ", with a callId derived from the tool and its input" : ""}.`,
+    path: "response.decision.kind",
+    metadata: { kindWritten: value.kind === undefined ? "absent" : typeof value.kind === "string" ? "unknown" : "not_a_string", callIdFilled }
+  });
+  return { ...value, kind: "tool_call", callId };
+}
+
+/** `call.` and the FNV-1a hash of the tool and its input: the same call, the same id. */
+function derivedCallId(toolId: string, input: JsonObject): string {
+  let hash = 0x811c9dc5;
+  for (const char of `${toolId}\u0000${JSON.stringify(input)}`) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `call.${hash.toString(16).padStart(8, "0")}`;
+}
+
 function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): void {
   const path = "response.decision";
   if (!isRecord(value)) {
@@ -235,7 +292,7 @@ function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: Automa
     }
     return;
   }
-  diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: "Evidence decision kind is unsupported.", path: `${path}.kind` });
+  diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: `Evidence decision kind is unsupported: decision.kind must be one of ${EVIDENCE_DECISION_KINDS.join(", ")}.`, path: `${path}.kind` });
 }
 
 function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics: AutomationStudioLlmDiagnostic[]): void {
