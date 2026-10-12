@@ -53,6 +53,13 @@ export type AutomationStudioActionDeclarationRecord = {
    * "declared nothing" apart from "declared something that could not apply".
    */
   disregarded?: AutomationStudioActionConsequence[];
+  /**
+   * Present when the action undid a lasting act of this same build, naming
+   * that act (t462). Such an action is the build putting the site back, not
+   * part of what the person asked for, so the cross-check against the
+   * instruction leaves it out (`cross-check.ts`).
+   */
+  undoes?: string;
 };
 
 /** Every class any of these actions declared, deduplicated and in Core's order. */

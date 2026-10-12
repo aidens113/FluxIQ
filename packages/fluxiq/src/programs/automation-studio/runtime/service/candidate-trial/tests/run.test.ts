@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
+import { runAutomationStudioDetachedCandidate } from "../../../flow-bootstrap/verification/index.ts";
 import { automationStudioBuildTestJudge } from "../../../result-verification/index.ts";
 import { judgeReply, mockProvider } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 import { automationStudioCandidateTrialPort, runAutomationStudioCandidateTrial } from "../index.ts";
@@ -151,5 +152,46 @@ describe("one candidate trial", () => {
     const { result } = await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports);
     expect(result).toMatchObject({ verdict: "not_judged", feedback: { code: "candidate.trial_result_unreadable", failure: "TypeError" } });
     expect(fixture.judged).toEqual([]);
+  });
+});
+
+describe("the lasting acts a trial left on the site (t462)", () => {
+  const act = { step: 2, definitionId: "custom.press", consequences: ["move_money"] };
+
+  it("a judged trial answers the press that landed, whatever the verdict, and the port passes them on", async () => {
+    const fixture = trialFixture(["create_new", "move_money"]);
+    pressing(fixture);
+    fixture.setVerdict({ verdict: "no", expected: "x", observed: "y", findings: [], records: { stored: 0, refused: 0, missingRequired: 0 }, spent: { ...SPENT_TWO } });
+    const { result } = await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports);
+    expect(result.verdict).toBe("no");
+    expect(result.acts).toEqual([{ ...act, consequences: ["move_money", "create_new"] }]);
+    const trials = automationStudioCandidateTrialPort("candidate.1", fixture.ports);
+    expect((await trials.port(fixture.request())).acts).toEqual([{ ...act, consequences: ["move_money", "create_new"] }]);
+  });
+
+  it("an execution_failed trial still answers the act that landed before the run stopped", async () => {
+    const fixture = trialFixture();
+    pressing(fixture);
+    // The press lands, then the run ends failed (a later fault): the act is still on the site.
+    fixture.ports.execute = async (input) => {
+      const ran = await runAutomationStudioDetachedCandidate(input);
+      return { ...ran, code: "executor.graph.unmatched_route", receipt: { ...ran.receipt, status: "failed" } };
+    };
+    const { result } = await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports);
+    expect(result.verdict).toBe("execution_failed");
+    expect(result.acts).toEqual([act]);
+  });
+
+  it("has no acts when the press failed, declared nothing lasting, or nothing ran", async () => {
+    const failed = trialFixture();
+    pressing(failed, "failed");
+    expect((await runAutomationStudioCandidateTrial(failed.request(), failed.ports)).result).not.toHaveProperty("acts");
+    const none = trialFixture([]);
+    pressing(none);
+    expect((await runAutomationStudioCandidateTrial(none.request(), none.ports)).result).not.toHaveProperty("acts");
+    const unstarted = trialFixture();
+    pressing(unstarted);
+    unstarted.ports.prepareStart = async () => { throw new Error("no fixture"); };
+    expect((await runAutomationStudioCandidateTrial(unstarted.request(), unstarted.ports)).result).not.toHaveProperty("acts");
   });
 });

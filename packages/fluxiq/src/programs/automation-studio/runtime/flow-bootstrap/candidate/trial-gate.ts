@@ -54,6 +54,16 @@
 // control is found, nor asks the model to find or re-address one: that is the
 // extension's work (user, 2026-10-10; t426).
 //
+// **The site is put back first (t462; user, 2026-10-12).** Given a reset
+// (`../site-reset/`), a trial that follows a lasting act of this build runs
+// only once the model has undone this build's acts and the site is back as the
+// build found it, or once refusing would make no progress. A refusal is not a
+// trial: it answers `retry_allowed`, so the identical request to test again
+// reaches this gate rather than the loop's memory or repeat guard, and it says
+// whether taking the target back to the start moved it. The answer of a trial
+// that ran says under `startedWith` what was still in place, and under
+// `leftOnSite` the acts now on the site, the trial's own among them.
+//
 // With no port injected the test tool says `candidate.trial_unavailable` and
 // completion keeps its old meaning: the latest valid submission ends as an
 // unverified draft, which is all a deployment without a trial runner can make.
@@ -61,7 +71,9 @@
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvidenceTool, AutomationStudioLlmEvidenceToolExecutionResult } from "../../llm/evidence-loop.ts";
-import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
+import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
+import type { AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS, type AutomationStudioCandidateTrialAct, type AutomationStudioCandidateTrialPort, type AutomationStudioCandidateTrialResult, type AutomationStudioCandidateTrialVerdict, type AutomationStudioFlowCandidate } from "./contracts.ts";
 
 export const AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID = "core.test_candidate";
 
@@ -99,7 +111,7 @@ const TRANSIENT: ReadonlySet<AutomationStudioCandidateTrialVerdict> = new Set(["
 export class AutomationStudioFlowCandidateTrialGate {
   readonly tool: AutomationStudioLlmEvidenceTool = {
     toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, effect: "mutate",
-    description: "Ask Core to run your latest submitted candidate once, on its own with no model, from its declared start, and to judge only what that run did. Give that candidate's revision and digest exactly. The answer is a verdict (yes, no, unsure, not_judged or execution_failed) with feedback. The run acts on the site like the saved Flow would. Complete only after a yes for that exact revision and digest; any later submission needs its own trial. After a no, change the Flow and submit it before testing again. If it answers candidate.trial_unavailable, no trial can run here: complete with the latest revision and digest and the Flow stays an unverified draft.",
+    description: "Ask Core to run your latest submitted candidate once, on its own with no model, from its declared start, and to judge only what that run did. Give that candidate's revision and digest exactly. The answer is a verdict (yes, no, unsure, not_judged or execution_failed) with feedback. The run acts on the site like the saved Flow would. Before a trial, put the site back the way this build found it: if this answers candidate.trial_reset_required, undo the acts it lists, then test again. Complete only after a yes for that exact revision and digest; any later submission needs its own trial. After a no, change the Flow and submit it before testing again. If it answers candidate.trial_unavailable, no trial can run here: complete with the latest revision and digest and the Flow stays an unverified draft.",
     inputSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" } }, required: ["revision", "digest"], additionalProperties: false }
   };
   private readonly verdicts = new Map<string, AutomationStudioCandidateTrialResult>();
@@ -116,6 +128,8 @@ export class AutomationStudioFlowCandidateTrialGate {
     latest: () => AutomationStudioFlowCandidate | undefined;
     trial?: { candidateId: string; port: AutomationStudioCandidateTrialPort } | undefined;
     signal?: AbortSignal | undefined;
+    /** The site reset before each trial (header); absent, a trial runs on the site as it stands. */
+    reset?: AutomationStudioSiteResetTrialReset | undefined;
   }) {
     if (input.trial && (typeof input.trial.candidateId !== "string" || !input.trial.candidateId || typeof input.trial.port !== "function")) throw new Error("candidate.trial_port_invalid");
   }
@@ -146,9 +160,14 @@ export class AutomationStudioFlowCandidateTrialGate {
     }
     const signal = callSignal ?? this.input.signal ?? this.fallbackSignal;
     signal.throwIfAborted();
+    const reset = await this.input.reset?.beforeTrial(signal);
+    signal.throwIfAborted();
+    // Not a trial: the model is told what to put back, and the identical test after it reaches this gate again (header).
+    if (reset?.kind === "refuse") return { kind: "llm_evidence_tool_execution", evidence: reset.evidence, effectApplied: reset.moved, targetsUnchanged: !reset.moved, resultCode: reset.evidence.code, resultReason: RETEST_REASON };
     this.trials.set(key(latest), tried + 1);
     const answer = await this.ask(trial, latest, signal);
     signal.throwIfAborted();
+    const leftOnSite = this.input.reset?.trialRan(answer.acts ?? [], answer.trialRunId);
     this.verdicts.set(key(answer), answer);
     if (answer.verdict === "no") this.closedDigests.set(answer.digest, answer.feedback);
     const repeatedStep = this.recordStop(answer);
@@ -157,7 +176,9 @@ export class AutomationStudioFlowCandidateTrialGate {
       ok: answer.verdict === "yes", verdict: answer.verdict, revision: answer.revision, digest: answer.digest,
       ...(answer.trialRunId ? { trialRunId: answer.trialRunId } : {}), feedback: answer.feedback, instruction: repeatedStep ? repeatedInstruction(answer) : standingInstruction(answer, retestsLeft > 0),
       ...(repeatedStep ? { failedStep: repeatedStep } : {}),
-      ...(TRANSIENT.has(answer.verdict) ? { retestsLeft } : {})
+      ...(TRANSIENT.has(answer.verdict) ? { retestsLeft } : {}),
+      ...(reset?.kind === "admit" && reset.startedWith ? { startedWith: reset.startedWith } : {}),
+      ...(leftOnSite?.length ? { leftOnSite: leftOnSite.map((act) => ({ act: act.act, did: act.did, ...(act.call ? { call: act.call } : {}) })) } : {})
     };
     // The trial ran on the target, so whatever it touched may have moved. A transient verdict with a re-test left says
     // so in its reason, so the identical request to test again is never refused as a repeat (header).
@@ -225,8 +246,21 @@ export class AutomationStudioFlowCandidateTrialGate {
       || !isJsonObject(result.feedback) || (result.trialRunId !== undefined && typeof result.trialRunId !== "string")) return failed("candidate.trial_result_invalid");
     // A verdict about another revision or digest is no verdict about this one.
     if (result.revision !== latest.revision || result.digest !== latest.digest) return failed("candidate.trial_result_mismatch");
-    return { revision: latest.revision, digest: latest.digest, verdict: result.verdict!, feedback: structuredClone(result.feedback) as JsonObject, ...(result.trialRunId ? { trialRunId: result.trialRunId } : {}) };
+    const acts = trialActs(result.acts);
+    return { revision: latest.revision, digest: latest.digest, verdict: result.verdict!, feedback: structuredClone(result.feedback) as JsonObject, ...(result.trialRunId ? { trialRunId: result.trialRunId } : {}), ...(acts.length ? { acts } : {}) };
   }
+}
+
+/** A trial's lasting acts, copied; a malformed entry is dropped rather than refusing the verdict it rides on. */
+function trialActs(value: unknown): AutomationStudioCandidateTrialAct[] {
+  if (!Array.isArray(value)) return [];
+  const known = new Set<unknown>(AUTOMATION_STUDIO_ACTION_CONSEQUENCES);
+  return value.flatMap((entry): AutomationStudioCandidateTrialAct[] => {
+    if (!isJsonObject(entry) || typeof entry.step !== "number" || !Number.isSafeInteger(entry.step) || typeof entry.definitionId !== "string" || !entry.definitionId) return [];
+    if (!Array.isArray(entry.consequences) || !entry.consequences.length || !entry.consequences.every((consequence) => known.has(consequence))) return [];
+    if ((entry.label !== undefined && typeof entry.label !== "string") || (entry.control !== undefined && typeof entry.control !== "string")) return [];
+    return [{ step: entry.step, definitionId: entry.definitionId, ...(entry.label ? { label: entry.label } : {}), ...(entry.control ? { control: entry.control } : {}), consequences: [...new Set(entry.consequences as AutomationStudioCandidateTrialAct["consequences"])] }];
+  });
 }
 
 function key(receipt: { revision: number; digest: string }): string { return `${receipt.revision}\n${receipt.digest}`; }

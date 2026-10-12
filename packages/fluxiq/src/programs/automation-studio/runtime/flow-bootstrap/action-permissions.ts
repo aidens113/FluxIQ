@@ -93,13 +93,18 @@
 // `assertAutomationStudioBootstrapPermissionRequestAnswered` is what stops an
 // unanswered one reaching a replay, where there is no gate.
 
+import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import {
   AutomationStudioActionPermissionGate,
   automationStudioActionDeclarationCrossCheck,
+  automationStudioConsequencesInOrder,
   automationStudioDestructiveConsequences,
   automationStudioInstructedActReads,
+  readAutomationStudioActionDeclaration,
+  type AutomationStudioActionDeclaration,
   type AutomationStudioActionDeclarationCrossCheck,
   type AutomationStudioActionDeclarationRecord,
+  type AutomationStudioActionPermissionAction,
   type AutomationStudioActionPermissionCheck,
   type AutomationStudioActionPermissionRequest,
   type AutomationStudioInstructedConsequence
@@ -107,10 +112,16 @@ import {
 import type { AutomationStudioAuthoringMode } from "../../model/authoring-mode/index.ts";
 import { automationStudioActivityAskPort } from "../activity/index.ts";
 import { automationStudioFlowDraftDeclaresLasting } from "../flow-draft/index.ts";
-import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace } from "../llm/index.ts";
+import type { AutomationStudioHarnessOptionLoopBinding, AutomationStudioLlmEvidenceLoopAccounting, AutomationStudioLlmEvidenceLoopInput, AutomationStudioLlmEvidenceLoopTrace, AutomationStudioLlmEvidenceToolExecutionResult } from "../llm/index.ts";
 import { AUTOMATION_STUDIO_PERMISSION_ASK_TIMEOUT_MS, automationStudioPermissionAskOutcome, type AutomationStudioPermissionAsk } from "../parking/index.ts";
 import type { AutomationStudioInstructedActKind } from "./instructed-acts/index.ts";
 import { flowBootstrapPermissionRequiredFailure, type AutomationStudioFlowBootstrapFailureDiagnostic, type AutomationStudioFlowBootstrapGenerationError } from "./generation-failure/index.ts";
+import {
+  AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY,
+  type AutomationStudioSiteResetCalls,
+  type AutomationStudioSiteResetClaim,
+  type AutomationStudioSiteResetDeclared
+} from "./site-reset/contracts.ts";
 
 /**
  * How long a build waits for an answer, for a caller that waits at all.
@@ -233,6 +244,13 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
    * lane A round 7 UI). The read still treats the act as lasting either way.
    */
   authoringMode?: AutomationStudioAuthoringMode | undefined;
+  /**
+   * The candidate build's site-reset ledger (t462). Present, an exploration
+   * call's `undoes` key is read by it and stripped before the domain sees the
+   * call, and every call that ran is reported to it. Absent, every call goes
+   * through exactly as before. Plan steps are never undos.
+   */
+  siteReset?: AutomationStudioSiteResetCalls | undefined;
   now?: () => number;
   newRequestId?: () => string;
 }): AutomationStudioFlowBootstrapActionPermissions {
@@ -258,7 +276,7 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
   // with a new id, and that one is asked (t195-w18).
   const asked = new Set<string>();
   /** The gate's check, with the refusal it would return put to a person first. */
-  const asking = (action: { kind: "exploration_step" | "flow_step"; id: string; ref: string }): AutomationStudioActionPermissionCheck => {
+  const asking = (action: AutomationStudioActionPermissionAction): AutomationStudioActionPermissionCheck => {
     const check = gate.checkFor(action);
     return async (declaration) => {
       const decision = await check(declaration);
@@ -291,14 +309,44 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
   };
   return {
     executeTool: async (call) => {
-      // Before the domain has the call, not from inside its permission check (see the header).
-      if (automationStudioFlowDraftDeclaresLasting(call.value.consequences)) await read();
-      const permission = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
-      const execution = await input.executeTool({ ...call, permission });
+      const siteReset = input.siteReset;
+      if (!siteReset) {
+        // Before the domain has the call, not from inside its permission check (see the header).
+        if (automationStudioFlowDraftDeclaresLasting(call.value.consequences)) await read();
+        const permission = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
+        const execution = await input.executeTool({ ...call, permission });
+        gate.observe(execution);
+        // Recoverable. The domain has already turned a refusal nobody granted
+        // into evidence the model can read and route around, and the request it
+        // names is on the build whatever the model does next.
+        return execution;
+      }
+      // A candidate build's call, which may name an act of this build it
+      // undoes (t462). Only the ledger reads the claim; the domain never sees it.
+      const { value, claim } = claimed(siteReset, call.value);
+      if (claim.kind === "refused") {
+        const code = claim.evidence.code;
+        return { kind: "llm_evidence_tool_execution", evidence: claim.evidence, effectApplied: false, targetsUnchanged: true, ...(typeof code === "string" ? { resultCode: code } : {}) };
+      }
+      const undo = claim.kind === "undo" ? claim.undo : undefined;
+      if (automationStudioFlowDraftDeclaresLasting(value.consequences)) await read();
+      const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId, ...(undo ? { undoes: undo } : {}) });
+      // The last action the domain put to the gate for this call, as the gate read it.
+      let declared: AutomationStudioSiteResetDeclared | undefined;
+      const permission: AutomationStudioActionPermissionCheck = async (declaration) => {
+        const verdict = await check(declaration);
+        declared = declaredAs(gate, declaration, verdict.permitted);
+        return verdict;
+      };
+      const execution = await input.executeTool({ ...call, value, permission });
       gate.observe(execution);
-      // Recoverable. The domain has already turned a refusal nobody granted
-      // into evidence the model can read and route around, and the request it
-      // names is on the build whatever the model does next.
+      siteReset.explored({
+        callId: call.callId,
+        toolId: call.toolId,
+        ...(undo ? { undoes: undo.act } : {}),
+        ...(declared ? { declared } : {}),
+        landed: landed(execution)
+      });
       return execution;
     },
     planStep: (step) => {
@@ -335,7 +383,9 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
     request: () => gate.request,
     declarations: () => gate.declarations,
     crossCheck: async () => {
-      if (!gate.declarations.length) return undefined;
+      // Undo records are the build putting the site back (t462): a build that
+      // did nothing else has nothing to compare, and pays for no read.
+      if (!gate.declarations.some((record) => record.undoes === undefined)) return undefined;
       const crossCheck = automationStudioActionDeclarationCrossCheck({
         declarations: gate.declarations,
         instructed: await read()
@@ -347,6 +397,46 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       ? flowBootstrapPermissionRequiredFailure(gate.request, progress ?? NO_LOOP_PROGRESS, accounting)
       : undefined
   };
+}
+
+/**
+ * A candidate call's input with any `undoes` key taken off, and the ledger's
+ * reading of that key. Only an own key counts; a call without one is never
+ * asked about and goes to the domain as it came.
+ */
+function claimed(siteReset: AutomationStudioSiteResetCalls, value: JsonObject): { value: JsonObject; claim: AutomationStudioSiteResetClaim } {
+  if (!Object.prototype.hasOwnProperty.call(value, AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY)) return { value, claim: { kind: "none" } };
+  const { [AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY]: undoes, ...rest } = value;
+  return { value: rest, claim: siteReset.claim(undoes) };
+}
+
+/**
+ * What one action put to the gate, as the gate read it: the consequences it
+ * holds lasting (none for a read), and the control's name only as the gate
+ * would carry it to a person. Read after the gate answered, so a declaration
+ * the gate refused to read never reaches here.
+ */
+function declaredAs(gate: AutomationStudioActionPermissionGate, declaration: AutomationStudioActionDeclaration, permitted: boolean): AutomationStudioSiteResetDeclared {
+  const read = readAutomationStudioActionDeclaration(declaration);
+  return {
+    permitted,
+    effect: read.effect,
+    consequences: read.effect === "observe" ? [] : automationStudioConsequencesInOrder(read.consequences),
+    control: { name: gate.carriedControlName(read.controlName), kind: read.controlKind },
+    verb: read.verb
+  };
+}
+
+/** The call applied an effect and did not answer `ok: false`: what the ledger counts as an act having landed. */
+function landed(execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult): boolean {
+  if (!execution || typeof execution !== "object" || Array.isArray(execution) || execution.kind !== "llm_evidence_tool_execution") return false;
+  const result = execution as AutomationStudioLlmEvidenceToolExecutionResult;
+  return result.effectApplied === true && !automationStudioLlmEvidenceRefusedItself(result.evidence);
+}
+
+/** The evidence's own `ok: false`, Core's word for a call that refused itself. */
+function automationStudioLlmEvidenceRefusedItself(evidence: unknown): boolean {
+  return Boolean(evidence) && typeof evidence === "object" && !Array.isArray(evidence) && (evidence as { ok?: unknown }).ok === false;
 }
 
 /** The act kinds that do something to an item that stays done: lasting whatever the read quoted (`instructedLastingActs`, (a)). */

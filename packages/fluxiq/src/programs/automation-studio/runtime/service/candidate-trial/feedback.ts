@@ -59,6 +59,7 @@ import { automationStudioModelFacingControlWords, automationStudioModelFacingFai
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
+import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
 import { automationStudioTrialFailureHappened } from "./happened.ts";
 import { automationStudioTrialReadsFeedback } from "./reads.ts";
 import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
@@ -103,7 +104,7 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
  * learned, once each.
  */
 function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined): JsonObject {
-  const ran = executedSteps(trace?.attempts ?? []);
+  const ran = automationStudioTrialExecutedSteps(trace?.attempts ?? []);
   if (!ran.length) return { steps: [] };
   const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
   const listed = ran.slice(0, MAX_STEPS).map(({ attempt, attempts, absorbed, pass }, index) => {
@@ -149,43 +150,6 @@ function learnedPaces(trace: AutomationStudioGraphExecutionTrace | undefined, no
       said: `The run learned to start this step at most once every ${(pace.paceMs / 1_000).toFixed(1)} s after the site asked it to slow down${pace.raisedCount > 1 ? ` ${pace.raisedCount} times` : ""}, and held every later pass to it.` });
   });
 }
-
-type ExecutedStep = {
-  attempt: AutomationStudioNodeAttemptTrace;
-  attempts: number;
-  /** Each failed attempt the step was tried again after, with the attempt that followed it. */
-  absorbed: Array<{ failed: AutomationStudioNodeAttemptTrace; retry: AutomationStudioNodeAttemptTrace }>;
-  /** The outputs of the loop pass the step ran in, when it ran in one. */
-  pass?: AutomationStudioNodeAttemptTrace["outputs"] | undefined;
-};
-
-/**
- * The trace's attempts folded into steps (t365). Since t355 a node may make up
- * to four attempts, recorded one after another; lane A round 5
- * (`run-muz0f12h-eae63685`) listed a busy refusal and its successful retry as a
- * failed step and a new one. An attempt of the same node right after a failed
- * attempt of it is that step tried again, so it replaces the step's outcome and
- * adds to its count; a node reached again after it succeeded (a loop, a
- * route back) is a new step. The attempts folded away are kept (t378): what the
- * step absorbed is what the model needs to slow a loop down.
- */
-function executedSteps(attempts: readonly AutomationStudioNodeAttemptTrace[]): ExecutedStep[] {
-  const folded: ExecutedStep[] = [];
-  let pass: ExecutedStep["pass"];
-  for (const attempt of attempts) {
-    const last = folded.at(-1);
-    if (last && last.attempt.nodeId === attempt.nodeId && automationStudioAttemptSettled(last.attempt).status === "failed") {
-      folded[folded.length - 1] = { ...last, attempt, attempts: last.attempts + 1, absorbed: [...last.absorbed, { failed: last.attempt, retry: attempt }] };
-      continue;
-    }
-    folded.push({ attempt, attempts: 1, absorbed: [], ...(pass ? { pass } : {}) });
-    if (LOOP_DEFINITION_IDS.has(attempt.definitionId)) pass = attempt.route === "body" ? attempt.outputs : undefined;
-  }
-  return folded;
-}
-
-/** The nodes whose `body` passes a step can run in, as the executor keys them. */
-const LOOP_DEFINITION_IDS: ReadonlySet<string> = new Set(["builtin.control.for-each", "builtin.control.repeat"]);
 
 function compact(value: Record<string, string | number | undefined>): JsonObject {
   return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string | number] => entry[1] !== undefined && entry[1] !== ""));

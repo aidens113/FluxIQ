@@ -44,6 +44,26 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * The reader is given the same denied-lasting-action permission and bounded
    * signal as that fallback; its answer is projected and screened normally.
    */
+  /**
+   * Where the target stands against where a build began (t462: a build
+   * resets the site before it re-runs its Flow). Asked once as a candidate
+   * build begins, with no `start`, and again before a trial that follows a
+   * lasting act, with the `state` the first answer gave. Core takes the target
+   * back to the build's start first (`runsNodes.arrival`), so both answers
+   * read the same place. It only reads. `state` is opaque to Core and kept for
+   * the next ask; `differs` says what is not as it was, one thing per entry in
+   * the domain's own words, empty when nothing differs, and the model is shown
+   * it. Undefined, or absent, when the domain cannot read its state: the build
+   * then relies on undoing its own acts alone (`../../flow-bootstrap/site-reset/`).
+   */
+  startState?(input: {
+    projectId: string;
+    flowId: string;
+    callId: string;
+    start?: JsonObject;
+    permission: AutomationStudioActionPermissionCheck;
+    signal?: AbortSignal;
+  }): Promise<{ state: JsonObject; differs: string[] } | undefined>;
   observeResult?(input: {
     projectId: string;
     flowId: string;
