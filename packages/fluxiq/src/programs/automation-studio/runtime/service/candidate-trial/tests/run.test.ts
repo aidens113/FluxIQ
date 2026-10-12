@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AutomationStudioFlowRunActionAttemptRecord, AutomationStudioRuntimeSession } from "../../../../model/index.ts";
 import type { AutomationStudioLlmTaskRequest } from "../../../llm/index.ts";
 import { runAutomationStudioDetachedCandidate } from "../../../flow-bootstrap/verification/index.ts";
 import { automationStudioBuildTestJudge } from "../../../result-verification/index.ts";
@@ -84,6 +85,23 @@ describe("one candidate trial", () => {
     expect(result).toMatchObject({ verdict: "execution_failed", feedback: { code: "candidate.execution_incomplete", steps: [{ step: 1, definitionId: "builtin.control.start" }, { step: 2, definitionId: "custom.press", status: "failed" }] } });
     expect(record).toMatchObject({ execution: "failed", judge: { calls: 0 } });
     expect(fixture.sessions.at(-1)?.status).toBe("failed");
+  });
+
+  // t474 (lane D round 9): a run that did not reach its end says what its reads kept, as a judged one does.
+  it("an execution_failed trial carries the run's own read accounts", async () => {
+    const fixture = trialFixture();
+    pressing(fixture, "failed");
+    const asked: AutomationStudioRuntimeSession[] = [];
+    const read: AutomationStudioFlowRunActionAttemptRecord = { attemptId: "attempt.read", nodeId: "node.read", definitionId: "custom.read", order: 1, status: "succeeded", startedAt: 1,
+      metadata: { extraction: { recordCount: 0, pagesRead: 1, truncated: false, itemsSeen: 6 } } };
+    fixture.ports.actionAttempts = (session) => {
+      asked.push(session);
+      return [read];
+    };
+    const { result } = await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports);
+    expect(result.verdict).toBe("execution_failed");
+    expect(asked.at(-1)?.status).toBe("failed");
+    expect(result.feedback).toMatchObject({ reads: [{ nodeId: "node.read", seen: 6, kept: 0, said: "The read saw 6 rows and kept none." }] });
   });
 
   it("a cancelled trial asks no judge and throws the cancellation, its session ended cancelled", async () => {
