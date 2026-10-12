@@ -55,14 +55,29 @@
 // which the executor no longer fails as unvisited steps
 // (`../../executor/graph-navigation/zero-pass-loop.ts`) -- and is said as one,
 // never as a fault in the Flow's connections.
+//
+// **A failed run says what its reads kept too, and blames no wiring a loop
+// with no passes explains (t474).** Lane D round 9 (`run-mv5q4j2n-25784472`,
+// revs 5 to 15) split one condition that accepts either form into two that
+// must both hold, so its listing kept 0 of 8 rows. Seven trials were failed
+// `executor.graph.unvisited_nodes` (the exemption above did not yet hold on
+// the compiled graph), and each was told only "check the Flow's connections",
+// with no `reads`: the model rewired its loop instead of fixing the condition.
+// An execution-failed trial now carries the same read account a judged one
+// does (`reads`, from the run's own read accounts), and its graph ending reads
+// the run's loops: where every step it never reached lies inside a loop that
+// ran no passes, it says so and does not ask for the connections to change;
+// where a loop ran no passes and some other step was not reached, it says the
+// loop's steps are not the ones owed.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
+import { automationStudioZeroPassLoopBodies } from "../../executor/graph-navigation/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
-import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import type { AutomationStudioBuildTestVerdict, AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
 import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
@@ -79,15 +94,17 @@ const MAX_STEPS = 40;
 
 /** A trial's verdict for the model, from the judge's verdict on the trial run. */
 export const automationStudioCandidateTrialFeedback = Object.freeze({
-  /** The run did not reach its end: no judge was asked. */
-  executionFailed(input: { code: string; trialRunId?: string | undefined; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string; wayOuts?: WayOutHandles }): { verdict: AutomationStudioCandidateTrialVerdict; feedback: JsonObject } {
+  /** The run did not reach its end: no judge was asked. `reads` are the run's own read accounts, as a judged trial's summary carries them. */
+  executionFailed(input: { code: string; trialRunId?: string | undefined; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string; wayOuts?: WayOutHandles; reads?: readonly AutomationStudioResultReadAccount[] | undefined }): { verdict: AutomationStudioCandidateTrialVerdict; feedback: JsonObject } {
     const graphFailure = input.trace?.failure?.code;
     const graphEnding = graphFailure === "executor.graph.unvisited_nodes"
-      ? { code: graphFailure, happened: "The run reached a terminal step while required graph nodes remained unvisited.", instruction: "Check the Flow's connections and required steps. Continue to those steps, or use an explicit End only where the instruction is complete. This is a graph-level failure; no displayed successful step needs retrying." }
+      ? unvisitedEnding(graphFailure, input.trace, input.graph)
       : graphFailure === "executor.graph.unmatched_route"
         ? { code: graphFailure, happened: "The last step chose a route with no matching outgoing edge.", instruction: "Connect the step's settled route to the intended next step, then resubmit and test the new revision." }
         : undefined;
-    return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...(graphEnding ? { graphEnding } : {}), ...steps(input.trace, input.graph, input.wayOuts) } };
+    // What each list read saw, kept and rejected, as a judged trial says it (`./reads.ts`).
+    const reads = automationStudioTrialReadsFeedback(input.reads, input.graph);
+    return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...(graphEnding ? { graphEnding } : {}), ...(reads.length ? { reads } : {}), ...steps(input.trace, input.graph, input.wayOuts) } };
   },
 
   /** The judge's verdict, read as the trial gate's. */
@@ -106,6 +123,28 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
     return { verdict: "not_judged", code: "candidate.trial_not_judged", feedback: { ...common, code: "candidate.trial_not_judged", why: judged.why } };
   }
 });
+
+/**
+ * Why a run that reached a terminal step left steps behind, and what to change
+ * (header). The steps it never reached are the Flow's nodes no attempt ran;
+ * those inside a loop that ran no passes are the loop's body
+ * (`automationStudioZeroPassLoopBodies`).
+ */
+function unvisitedEnding(code: string, trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined): JsonObject {
+  const attempts = trace?.attempts ?? [];
+  const emptyLoops = graph ? new Set(automationStudioZeroPassLoopBodies(graph, attempts)) : new Set<string>();
+  if (!emptyLoops.size) {
+    return { code, happened: "The run reached a terminal step while required graph nodes remained unvisited.", instruction: "Check the Flow's connections and required steps. Continue to those steps, or use an explicit End only where the instruction is complete. This is a graph-level failure; no displayed successful step needs retrying." };
+  }
+  const ran = new Set(attempts.map((attempt) => attempt.nodeId));
+  const notReached = (graph?.nodes ?? []).filter((node) => !ran.has(node.id));
+  if (notReached.every((node) => emptyLoops.has(node.id))) {
+    return { code, happened: "The run ended with steps it never reached, and every one of them is inside a loop that ran no passes: the list the loop walks had no rows.",
+      instruction: "A loop that runs no passes is a valid ending, not a fault in the Flow's connections: do not rewire it. If the request wants rows the list did not keep, a condition of the read that made the list is wrong; reads says what each read kept and what each condition rejected." };
+  }
+  return { code, happened: "The run reached a terminal step while required graph nodes remained unvisited. A loop in this run ran no passes, because the list it walks had no rows; the steps inside it are not the ones the run still owed.",
+    instruction: "Check the connections to the steps outside that loop that the run never reached. Continue to those steps, or use an explicit End only where the instruction is complete. No displayed successful step needs retrying." };
+}
 
 /**
  * Each step that ran, in order: its definition, the control it acted on, its

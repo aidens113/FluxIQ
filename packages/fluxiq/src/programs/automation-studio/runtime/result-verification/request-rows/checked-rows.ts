@@ -15,6 +15,24 @@
 // A sentence that names a row and says it was left out, dropped, excluded,
 // rejected, omitted or missing calls that row left out.
 //
+// **Only a left-out word said of the run (t474).** Lane C round 9
+// (`run-mv5q4j5c-49bfb5e2`, trials 2 and 4) was twice told that correct advice
+// was "not supported". Trial 2's judges wrote "Two are accessories the request
+// excludes: <two stored rows>", and the word `excludes`, whose subject there is
+// the request, was read as the Flow having left both out. A left-out word says
+// what the run did only when it is not said of the request (`ASKED_BY`: "the
+// request excludes", "the instruction says to leave out"), nor as what should
+// happen or did not (`NOT_DONE`: "should be excluded", "a condition to exclude",
+// "was not dropped"; `NONE_DID`: "no condition that excludes").
+//
+// **A mention belongs to the longest label it spells (t474).** Trial 4's judges
+// named the left-out "... Ivory with Wireless Charging Case"; the stored
+// "... Ivory" is a strict prefix of it, so its whole label is its prefix and
+// the mention matched both. Where one row's matched words lie inside another
+// row's longer match in the same sentence, the mention is the longer row's.
+// And a measure (`MEASURE`: "600mAh") a title carries is no row's id unless it
+// is the whole of one row's cell: trial 2 named a charging case by its capacity.
+//
 // **What is said, in Core's words.** A named row no condition left out alone
 // that is in the result, although the judgement calls it left out: the check
 // misread which rows were left out, and advice resting on that reading is not
@@ -22,13 +40,21 @@
 // alone. Nothing of the judgement is copied but the labels and ids it matched.
 
 import type { AutomationStudioRunResultSummary } from "../contracts.ts";
-import { automationStudioRequestRowNaming, automationStudioRequestTextNamesRow } from "./row-naming.ts";
+import { automationStudioRequestRowNaming } from "./row-naming.ts";
 import { automationStudioRequestRowsReads } from "./summary-reads.ts";
-import type { AutomationStudioRequestRowsRead } from "./types.ts";
-import { automationStudioRequestRowIds } from "./words.ts";
+import type { AutomationStudioRequestRowsRead, AutomationStudioRequestRowsStored } from "./types.ts";
+import { automationStudioRequestRowIds, automationStudioRequestRowWords } from "./words.ts";
 
 /** Words that say a row was left out. */
-const LEFT_OUT = /\b(left out|leaves? out|leaving out|drop(s|ped|ping)?|exclud(e|es|ed|ing)|reject(s|ed|ing)?|omit(s|ted|ting)?|missing|misses|missed|filtered out|filters out)\b/iu;
+const LEFT_OUT = /\b(left out|leaves? out|leaving out|drop(s|ped|ping)?|exclud(e|es|ed|ing)|reject(s|ed|ing)?|omit(s|ted|ting)?|missing|misses|missed|filtered out|filters out)\b/giu;
+/** What comes before a left-out word said of the request: its noun, then only words of asking ("the request explicitly excludes", "the instruction says to leave out"). */
+const ASKED_BY = /\b(?:request|requests|instruction|instructions|task|user|prompt)(?:['’]s)?(?:\s+(?:explicitly|expressly|clearly|also|specifically|says?|said|asks?|asked|wants?|wanted|means|meant|to|and))*\s+$/iu;
+/** What comes before a left-out word said as what should happen, or did not ("should be excluded", "a condition to exclude", "was not dropped", "wasn't filtered out"). */
+const NOT_DONE = /(?:\b(?:should|must|would|could|ought to|needs? to|has to|have to|to|not|never|no longer)|n['’]t)(?:\s+(?:also|be|been|being|have|\w+ly))*\s+$/iu;
+/** What comes before a left-out word whose subject is nothing: "no condition excludes", "has no condition that excludes". */
+const NONE_DID = /\bno(?:\s+[\p{L}-]+){1,2}(?:\s+(?:that|which))?\s+$/iu;
+/** An id that is a measure: digits, then a unit ("600MAH"). */
+const MEASURE = /^\p{N}+\p{L}+$/u;
 /** Abbreviations whose full stop does not end a sentence. */
 const ABBREVIATIONS = /\b(e\.g|i\.e|etc|vs|approx|incl)\./giu;
 
@@ -51,16 +77,15 @@ export function automationStudioResultCheckedRows(summary: AutomationStudioRunRe
   const prefixes = reads.flatMap((read) => read.labels.map((label) => ({ label, prefix: automationStudioRequestRowNaming(label, read.labels).prefix })))
     .filter((entry) => entry.prefix.length >= 4);
   for (const sentence of sentences(judgement)) {
-    const leftOut = LEFT_OUT.test(sentence);
+    const leftOut = saysLeftOut(sentence);
     for (const id of automationStudioRequestRowIds(sentence)) {
+      if (MEASURE.test(id) && !wholeCellOfOne(stored, id)) continue;
       const holders = new Set(stored.filter((row) => row.cells.some((cell) => cell.toUpperCase().includes(id))).map((row) => row.label));
       if (!holders.size) for (const label of everyLabel) if (label.toUpperCase().includes(id)) holders.add(label);
       // An id more than one row holds names none of them.
       if (holders.size === 1) note([...holders][0]!, id, leftOut);
     }
-    for (const { label, prefix } of prefixes) {
-      if (automationStudioRequestTextNamesRow(sentence, { prefix, ids: [] })) note(label, undefined, leftOut);
-    }
+    for (const label of longestNamed(sentence, prefixes)) note(label, undefined, leftOut);
   }
   return lines([...named.values()], reads, new Set([...stored.map((row) => row.label), ...reads.flatMap((read) => read.inResult)]));
 }
@@ -94,6 +119,38 @@ function said(row: Named): string {
 
 function whereOf(read: AutomationStudioRequestRowsRead): string {
   return read.step !== undefined ? `Step ${read.step}` : `Read ${read.nodeId}`;
+}
+
+/** Whether a sentence says the run left something out: a left-out word not said of the request, nor as what should happen or did not. */
+function saysLeftOut(sentence: string): boolean {
+  for (const match of sentence.matchAll(LEFT_OUT)) {
+    const before = sentence.slice(0, match.index);
+    if (!ASKED_BY.test(before) && !NOT_DONE.test(before) && !NONE_DID.test(before)) return true;
+  }
+  return false;
+}
+
+/** Whether exactly one stored row has a cell that is this id and nothing else. */
+function wholeCellOfOne(stored: readonly AutomationStudioRequestRowsStored[], id: string): boolean {
+  return stored.filter((row) => row.cells.some((cell) => cell.trim().toUpperCase() === id)).length === 1;
+}
+
+/**
+ * The labels a sentence names by prefix, each mention given to the longest
+ * label it spells: a match that lies inside another label's longer match in
+ * the same sentence is that label's, not its own.
+ */
+function longestNamed(sentence: string, prefixes: ReadonlyArray<{ label: string; prefix: readonly string[] }>): string[] {
+  const words = automationStudioRequestRowWords(sentence).map((word) => word.word);
+  const matches: Array<{ label: string; start: number; end: number }> = [];
+  for (const { label, prefix } of prefixes) {
+    for (let start = 0; start + prefix.length <= words.length; start += 1) {
+      if (prefix.every((word, index) => words[start + index] === word)) matches.push({ label, start, end: start + prefix.length });
+    }
+  }
+  const inside = (match: { label: string; start: number; end: number }): boolean => matches.some((other) =>
+    other.label !== match.label && other.start <= match.start && other.end >= match.end && other.end - other.start > match.end - match.start);
+  return [...new Set(matches.filter((match) => !inside(match)).map((match) => match.label))];
 }
 
 /** The judgement's sentences and clauses: a full stop, semicolon or line ends one, an abbreviation's stop does not. */

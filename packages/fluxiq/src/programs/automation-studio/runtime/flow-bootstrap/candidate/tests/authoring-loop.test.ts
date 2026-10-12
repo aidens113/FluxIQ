@@ -92,7 +92,8 @@ describe("explicit candidate authoring", () => {
     expect(refused.ok).toBe(false);
     expect(controller.latest()).toBeUndefined();
     expect(controller.matches(first.candidate)).toBe(false);
-    const next = await controller.submit(result());
+    // A changed Flow is the next revision; the identical one is refused as unchanged (`unchanged-submission.test.ts`, t474).
+    const next = await controller.submit(result("another criterion"));
     expect(next.ok && next.candidate.revision).toBe(3);
     expect(controller.matches(first.candidate)).toBe(false);
   });
