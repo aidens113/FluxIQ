@@ -165,6 +165,12 @@ instead?, ...}`:
   "search for the paper towels""), each held to 120 characters
   (`candidate/submission-refusal.ts`).
 
+Trusted static handler-scope refusals also retain Core's explanation through
+early completion and repeated-submission feedback. A handler targets an explicit
+step label; a descriptive unlabelled step does not bind that scope. Only the exact
+authored-statement refusal code admits this message, preserving the existing
+withholding of arbitrary provider or page messages. Invalid handlers remain refused.
+
 The contract is enforced by
 `flow-bootstrap/candidate/tests/refusal-locator-corpus.test.ts`: a corpus of
 scripts, each refused at one stage, goes through the real submission
