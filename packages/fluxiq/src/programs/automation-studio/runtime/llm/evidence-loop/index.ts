@@ -14,6 +14,7 @@ export * from "./answered-request.ts";
 export * from "./answerability.ts";
 export * from "./call-id.ts";
 export * from "./call-record.ts";
+export * from "../candidate-receipt/index.ts";
 export * from "./completion-attempt.ts";
 export * from "./completion-check.ts";
 export * from "./cost-purse.ts";

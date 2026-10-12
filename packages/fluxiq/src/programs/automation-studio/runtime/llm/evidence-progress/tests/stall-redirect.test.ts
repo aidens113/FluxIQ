@@ -108,3 +108,30 @@ describe("the stall note about an act still owed", () => {
     expect(said).toContain("Your next step is the one that does a2: run it and add it with act a2.");
   });
 });
+
+
+describe("candidate stall guidance", () => {
+  it("names the exact accepted receipt instead of legacy draft instructions", () => {
+    const candidate = { revision: 7, digest: "b".repeat(64) };
+    const note = automationStudioLlmEvidenceStallRedirect({
+      stepsWithoutProgress: 2, maxStepsWithoutProgress: 8, repeatingToolIds: ["core.submit_candidate"],
+      proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
+      ...{ discoveryOnly: true, candidate }
+    });
+    expect(note).toMatchObject({ candidate, stepsLeftBeforeStopping: 6 });
+    expect(note.instruction).toContain(`{"revision":7,"digest":"${candidate.digest}"}`);
+    expect(note.instruction).toContain("core.test_candidate");
+    expect(note.instruction).not.toMatch(/Your draft|amend_draft|run a step|or complete/u);
+  });
+
+  it("does not invent a receipt or draft when no candidate has been accepted", () => {
+    const note = automationStudioLlmEvidenceStallRedirect({
+      stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: ["inspect"],
+      proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
+      ...{ discoveryOnly: true }
+    });
+    expect(note.instruction).toContain("submit the whole candidate");
+    expect(note.instruction).not.toMatch(/Your draft|amend_draft|or complete/u);
+    expect(note).not.toHaveProperty("candidate");
+  });
+});

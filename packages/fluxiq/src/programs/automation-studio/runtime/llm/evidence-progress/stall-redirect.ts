@@ -68,6 +68,9 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_NO_PROGRESS_TOOL_ID = "core.no_progr
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 
 export type AutomationStudioLlmEvidenceStallRedirectInput = {
+  /** Candidate discovery owns a submitted receipt, never the legacy accumulated draft. */
+  discoveryOnly?: boolean;
+  candidate?: { revision: number; digest: string } | undefined;
   stepsWithoutProgress: number;
   maxStepsWithoutProgress: number;
   /** The tools whose latest answers gave the loop nothing it did not hold. */
@@ -132,7 +135,7 @@ export function automationStudioLlmEvidenceStallRedirect(input: AutomationStudio
     maxStepsWithoutProgress: input.maxStepsWithoutProgress,
     stepsLeftBeforeStopping: stepsLeft,
     repeatingToolIds: [...new Set(input.repeatingToolIds.filter((toolId) => ISSUE_CODE.test(toolId)))],
-    draftStepsSoFar: input.proposableSteps,
+    ...(input.discoveryOnly ? { authoringMode: "candidate", ...(input.candidate ? { candidate: { ...input.candidate } } : {}) } : { draftStepsSoFar: input.proposableSteps }),
     completionAttempts: input.completionAttempts,
     ...(issueCodes.length ? { lastCompletionIssueCodes: issueCodes } : {}),
     ...(stillMissing ? { stillMissing } : {}),
@@ -184,6 +187,13 @@ function nextOwed(owed: readonly string[]): string {
 }
 
 function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {
+  if (input.discoveryOnly) {
+    const next = input.candidate
+      ? `The latest accepted candidate has receipt ${JSON.stringify(input.candidate)}. Use core.test_candidate with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; change and resubmit only when its feedback names a cause in the Flow.`
+      : "No candidate has been accepted. Use the evidence already gathered, correct any named submission issues and submit the whole candidate, then test its returned revision and digest. Do not complete an untested candidate.";
+    const looking = input.looksWithdrawn ? " Looking is withdrawn until an action runs; candidate submission and testing remain the finishing path." : "";
+    return `The last ${input.stepsWithoutProgress} steps added no new evidence. Repeating the same request returns the answer already held.${looking} ${next} ${stepsLeft} more step(s) without progress stop this build.`;
+  }
   // What is missing leads, because it is the only sentence here that says what
   // to do next rather than what not to do again.
   const said = stillMissing ? [RECORDS_MISSING] : [];
