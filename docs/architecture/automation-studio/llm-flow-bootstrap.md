@@ -2534,3 +2534,12 @@ These modules are independently tested infrastructure. The production service
 requirement interpreter, declared-start browser owner, independent oracle,
 durable receipt recovery and atomic shared promotion adapter are still required.
 No existing build or repair is automatically accepted by adding these exports.
+
+The shared model result-verification instruction compares included and relevant
+excluded witnesses with the original request, independently of the authored
+predicate. Quantities use their full expressed components; before/after record
+sets are not summed as distinct required subjects. An omitted required subject
+calls for refusal, and uncertain quantity or cohort evidence calls for unknown.
+These are model instructions, not a deterministic arithmetic or completeness
+proof. Existing answer schemas, two-call agreement and candidate promotion gates
+remain unchanged; an independent runtime oracle is still needed for live proof.
