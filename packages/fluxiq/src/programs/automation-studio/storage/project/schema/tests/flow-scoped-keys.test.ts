@@ -84,10 +84,16 @@ describe("migration 0024_scoped_flow_keys: a port, variable or error id is uniqu
     await rm(rootDir, { recursive: true, force: true });
   });
 
-  it("is the last of the project migrations, sorting before 0025", () => {
+  // It was the last project migration until t454 appended the recording stream's
+  // `0025_recording_stream_identity_index`; what must still hold is that it is in
+  // the list and every migration appended after it sorts after it, because the
+  // runner refuses ids out of order (`../../tests/administration.test.ts` guards
+  // the stores that append their own).
+  it("is a project migration, and everything appended after it sorts after it", () => {
     expect(MIGRATION.id).toBe("0024_scoped_flow_keys");
-    expect(AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.at(-1)).toBe(MIGRATION);
-    expect(MIGRATION.id < "0025").toBe(true);
+    const index = AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.indexOf(MIGRATION);
+    expect(index).toBeGreaterThanOrEqual(0);
+    for (const later of AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.slice(index + 1)) expect(later.id > MIGRATION.id).toBe(true);
   });
 
   it("carries every row of an old-key database over unchanged, and then lets two Flows share an id", async () => {

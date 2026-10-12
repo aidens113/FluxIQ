@@ -7,6 +7,10 @@ import { AutomationStudioProjectDatabasePool } from "../database.ts";
 import { AUTOMATION_STUDIO_PROJECT_ADAPTATION_MATCHING_MIGRATION } from "../schema/index.ts";
 import { AutomationStudioSchemaMigrationRunner } from "../../schema-migrations.ts";
 import { CanonicalAuthorityWholeSql, type CanonicalWholeSqlCapability } from "../../canonical-authority/index.ts";
+import { AUTOMATION_STUDIO_STAGED_PROJECT_AUTHORITY_MIGRATION } from "../accepted-state/index.ts";
+import { AUTOMATION_STUDIO_AUTHORITY_GUARD_MIGRATION } from "../authority-guard/index.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_VERIFICATION_MIGRATION } from "../candidate-verification/index.ts";
+import { AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION } from "../command-ledger/index.ts";
 
 // Its own directory per case: a fixed path under the working directory was
 // shared by every run of this file in the checkout, so two runs at once
@@ -137,5 +141,28 @@ describe("AutomationStudioProjectAdministration", () => {
     await upgraded.release();
     await admin.close();
     await pool.closeAll();
+  });
+});
+
+// Each of these stores runs the administration list with its own migration
+// appended, and the runner refuses a list whose IDs do not ascend. An
+// administration migration whose ID sorts after one of these breaks that store
+// on open (t454's 0025_recording_stream_identity_index did this to candidate
+// verification), so the ordering is pinned here by name, not discovered later
+// as an opaque "unique, ascending IDs" failure in an unrelated store's tests.
+const EXTENSIONS = {
+  "accepted-state": AUTOMATION_STUDIO_STAGED_PROJECT_AUTHORITY_MIGRATION,
+  "authority-guard": AUTOMATION_STUDIO_AUTHORITY_GUARD_MIGRATION,
+  "candidate-verification": AUTOMATION_STUDIO_CANDIDATE_VERIFICATION_MIGRATION,
+  "command-ledger": AUTOMATION_STUDIO_COMMAND_LEDGER_MIGRATION
+};
+
+describe("migrations appended to the administration ledger", () => {
+  const ids = AUTOMATION_STUDIO_PROJECT_ADMINISTRATION_MIGRATIONS.map((migration) => migration.id);
+  const last = [...ids].sort().at(-1) ?? "";
+
+  it.each(Object.entries(EXTENSIONS))("%s's migration sorts after every administration migration", (_store, migration) => {
+    expect(ids).not.toContain(migration.id);
+    expect(migration.id > last, `${migration.id} must sort after ${last}`).toBe(true);
   });
 });
