@@ -4,14 +4,17 @@ import { automationStudioFlowBootstrapIssuePlace, automationStudioFlowBootstrapW
 import { automationStudioInstructedActOptionalScriptIssues } from "../instructed-acts/index.ts";
 import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import { automationStudioFlowScriptWayOutIssues } from "../script-statements/index.ts";
-import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
+import type { AutomationStudioFlowCandidate, AutomationStudioFlowCandidateSubmission, AutomationStudioFlowCandidateSubmissionHistory, AutomationStudioCandidateOriginalSourceBinding } from "./contracts.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "./digest.ts";
+import { automationStudioCandidateUnchangedRefusal } from "./unchanged-submission.ts";
 
 /** Session-local candidates, separate from discovery and the accepted Flow store. */
 export class AutomationStudioFlowCandidateSubmissionController {
   private revision = 0;
   private current: AutomationStudioFlowCandidate | undefined;
   private previous: AutomationStudioFlowCandidate | undefined;
+  /** The current revision's Flow as the script reader reads it (`submissionText`), to tell an unchanged resubmission (t464). */
+  private currentText: string | undefined;
   private readonly originalSource: AutomationStudioCandidateOriginalSourceBinding | undefined;
   constructor(private readonly input: Omit<Parameters<typeof checkAutomationStudioFlowBootstrapCompletion>[0], "result" | "draftSteps" | "routeSignaturesOf"> & { baseDependencyDigest: string; signal?: AbortSignal; originalSource?: AutomationStudioCandidateOriginalSourceBinding }) {
     const descriptor = Object.getOwnPropertyDescriptor(input, "originalSource");
@@ -34,11 +37,24 @@ export class AutomationStudioFlowCandidateSubmissionController {
     return !this.input.signal?.aborted && this.current?.revision === receipt.revision && this.current.digest === receipt.digest && this.current.baseDependencyDigest === receipt.baseDependencyDigest;
   }
 
-  async submit(result: JsonObject): Promise<AutomationStudioFlowCandidateSubmission> {
+  /**
+   * A submission is checked and, when valid, becomes the next revision.
+   *
+   * **Except one that changes nothing (t464).** A Flow the same as the current
+   * revision -- the same script as the reader reads it, or the same resolved
+   * plan (digest) -- or one whose digest the judge refuted, is refused under
+   * `./unchanged-submission.ts` with what failed last (`history`, the trial
+   * gate's), and the current revision stands: nothing was submitted that it
+   * is not. Any other refusal still invalidates the current revision.
+   */
+  async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
+    this.input.signal?.throwIfAborted();
+    const standing = this.current;
+    const text = submissionText(result);
+    if (standing && text !== undefined && text === this.currentText) return this.unchanged(standing, standing, history, history.refuted?.(standing.digest));
     // Even a refused revision invalidates any earlier candidate and receipt.
     const revision = ++this.revision;
     this.current = undefined;
-    this.input.signal?.throwIfAborted();
     // A candidate is written after exploration, so it may name a control from
     // any view exploration took, not only the page it last saw (t358).
     const verdict = await checkAutomationStudioFlowBootstrapCompletion({ ...this.input, result, handleReach: "view_history" });
@@ -61,18 +77,59 @@ export class AutomationStudioFlowCandidateSubmissionController {
       return { ok: false, revision, check: bindingRefusal([...bindings, ...wayOut, ...optionalActs], verdict.locator, code) };
     }
     const plan = structuredClone(verdict.buildPlan);
+    const digest = fingerprint.candidate({ buildPlan: plan, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "",
+      ...(this.originalSource ? { originalInstructionsDigest: this.originalSource.originalInstructionsDigest } : {}) });
+    // The same plan as the current revision's, written differently, or a Flow
+    // the judge refuted: nothing new to test (header of `submit`).
+    const refuted = history.refuted?.(digest);
+    if (standing && digest === standing.digest) return this.unchanged(standing, standing, history, refuted, text);
+    if (refuted !== undefined) return this.unchanged(standing, undefined, history, refuted);
     const candidate: AutomationStudioFlowCandidate = {
-      revision, digest: fingerprint.candidate({ buildPlan: plan, baseDependencyDigest: this.input.baseDependencyDigest, projectId: this.input.projectId, flowId: this.input.flowId, instructionText: this.input.instructionText ?? "",
-        ...(this.originalSource ? { originalInstructionsDigest: this.originalSource.originalInstructionsDigest } : {}) }), baseDependencyDigest: this.input.baseDependencyDigest,
+      revision, digest, baseDependencyDigest: this.input.baseDependencyDigest,
       status: "draft", summary: verdict.summary, buildPlan: plan,
       changedPaths: changedPaths(this.previous?.buildPlan.plan as unknown as JsonValue, plan.plan as unknown as JsonValue),
       ...(this.originalSource ? { fingerprintVersion: "candidate.plan+original_sources.v2" as const, originalInstructionsDigest: this.originalSource.originalInstructionsDigest } : {})
     };
     this.current = structuredClone(candidate);
     this.previous = structuredClone(candidate);
+    this.currentText = text;
     const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
     return { ok: true, candidate, handleViews };
   }
+
+  /**
+   * Refuses a submission that changes nothing, keeping `standing` as the
+   * current revision. `same` is the revision it is the same as, absent when
+   * it is a Flow refuted under an earlier one; `refuted` is the judge's
+   * finding when the Flow was judged no; `text` replaces the remembered script
+   * when a differently written script read to the same plan.
+   */
+  private unchanged(standing: AutomationStudioFlowCandidate | undefined, same: AutomationStudioFlowCandidate | undefined, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string): AutomationStudioFlowCandidateSubmission {
+    this.current = standing;
+    if (same && text !== undefined) this.currentText = text;
+    const check = automationStudioCandidateUnchangedRefusal({
+      standing: same ? { revision: same.revision, digest: same.digest } : undefined,
+      lastTrial: same ? history.trialOf?.(same) : undefined,
+      refuted
+    });
+    return { ok: false, revision: (same ?? standing)?.revision ?? this.revision, check };
+  }
+}
+
+/**
+ * The submitted Flow as the script reader reads it, so a resubmission that
+ * differs only in what the reader ignores is the same Flow: line endings, the
+ * spaces around each line, blank lines and whole-line comments
+ * (`../authoring/parse.ts`). A JSON plan is read as its canonical JSON. Nothing
+ * else of the input counts -- a new `summary` changes no step -- and an input
+ * with neither has no text and is never "the same".
+ */
+function submissionText(result: JsonObject): string | undefined {
+  if (typeof result.flow === "string") {
+    const lines = result.flow.split(/\r\n|\r|\n/u).map((line) => line.trim()).filter((line) => line && !line.startsWith("#") && !line.startsWith("//"));
+    return `flow\n${lines.join("\n")}`;
+  }
+  return result.plan !== undefined ? `plan\n${canonical(result.plan)}` : undefined;
 }
 
 /**

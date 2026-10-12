@@ -42,6 +42,13 @@
 // on the page, says that plainly, that the script need not change, and is
 // retryable (`./target-on-page.ts`); the trial gate reads its
 // `targetOnPage` to tell the model to test again rather than look for it.
+//
+// **A read says what it saw and kept (t466).** A judged trial lists each list
+// read with the rows it saw, kept and each condition rejected (`./reads.ts`).
+// A read that kept no rows is a valid ending -- the loop over it ran no passes,
+// which the executor no longer fails as unvisited steps
+// (`../../executor/graph-navigation/zero-pass-loop.ts`) -- and is said as one,
+// never as a fault in the Flow's connections.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
@@ -53,6 +60,7 @@ import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary
 import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
 import { automationStudioTrialFailureHappened } from "./happened.ts";
+import { automationStudioTrialReadsFeedback } from "./reads.ts";
 import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
 
 /** The most steps a feedback lists; a longer Flow says how many it left out. */
@@ -74,7 +82,9 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
   /** The judge's verdict, read as the trial gate's. */
   judged(input: { verdict: AutomationStudioBuildTestVerdict; summary: AutomationStudioRunResultSummary; trialRunId: string; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string }): { verdict: AutomationStudioCandidateTrialVerdict; code?: string; feedback: JsonObject } {
     const judged = input.verdict;
-    const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored: { rows: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired }, ...steps(input.trace, input.graph) };
+    // What each list read saw, kept and rejected: a read that kept no rows is said as a valid outcome of its conditions (`./reads.ts`, t466).
+    const reads = automationStudioTrialReadsFeedback(input.summary.reads, input.graph);
+    const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored: { rows: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired }, ...(reads.length ? { reads } : {}), ...steps(input.trace, input.graph) };
     if (judged.verdict === "yes") return { verdict: "yes", feedback: { ...common, judge: "The trial was judged twice to do what the instruction asks." } };
     if (judged.verdict === "no") {
       return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: judged.advice, stillAchievable: judged.stillAchievable }), ...(judged.findings.length ? { findings: [...judged.findings] } : {}), ...(judged.fix?.length ? { fix: [...judged.fix] } : {}), ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };

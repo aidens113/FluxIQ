@@ -724,6 +724,15 @@ uses the same bounded, nonbranching optional-shape rule as absent-step skips
 and recovery; it does not exempt general untaken branches, disconnected nodes
 or required continuations.
 
+A loop that ran no passes -- a For Each over a list its conditions kept no
+rows of, a Repeat or Loop that never took its `body` -- leaves the nodes only
+its body leads to unvisited by design, and they do not fail the run
+(`executor/graph-navigation/zero-pass-loop.ts`). A node the loop's other
+routes also reach is still owed. A judged trial's feedback lists each list
+read with the rows it saw and kept and what each of its conditions rejected
+(`service/candidate-trial/reads.ts`); a read that kept none is said as a valid
+outcome whose conditions must all hold, never as a connection fault.
+
 Terminal coverage and unmatched-route failures carry closed Core codes
 `executor.graph.unvisited_nodes` and `executor.graph.unmatched_route` on the
 frame trace. Candidate trial feedback explains these as graph endings and
