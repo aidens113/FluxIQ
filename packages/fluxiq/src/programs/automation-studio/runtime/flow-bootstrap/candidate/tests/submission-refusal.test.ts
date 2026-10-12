@@ -130,7 +130,7 @@ const ADVICE_WORDS = {
   extraction_required: "read written out by hand is refused",
   not_a_handle: "names a control by something other than a handle",
   not_a_control: "not a control a press acts on",
-  wrong_control: "the handle is right and the node is not",
+  wrong_control: "does not prove it is the control the instruction needs",
   unknown_field: "neither one the list's detection printed nor a key this same step keeps"
 } as const;
 
@@ -203,4 +203,16 @@ describe("the advice a refused handle is given", () => {
     expect(next).toMatch(/^Correct every listed issue in the script you sent/u);
     for (const words of Object.values(ADVICE_WORDS)) expect(next).not.toContain(words);
   });
+});
+
+
+it("does not claim a known control is the intended control when its node is incompatible", () => {
+  const next = nextOf([
+    { code: "demo.handle.wrong_control", line: 8, step: "change the calendar title", handles: [{ handle: "t12" }] },
+    { code: "demo.handle.expected.node.demo.press", line: 8, step: "change the calendar title" }
+  ]);
+  expect(next).toContain("does not prove it is the control the instruction needs");
+  expect(next).toContain("If this is the intended control");
+  expect(next).toContain("If it is a different control");
+  expect(next).not.toMatch(/the handle is right|Keep the handle/u);
 });
