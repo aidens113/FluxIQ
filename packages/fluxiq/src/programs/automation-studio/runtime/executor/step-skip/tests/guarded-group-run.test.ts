@@ -57,10 +57,13 @@ function noticeOn(shownOn: number[]) {
   return { calls, dispatch };
 }
 
-async function run(rows: number, shownOn: number[]) {
+async function run(rows: number, shownOn: number[], terminalRead = false, disconnected = false) {
   const { calls, dispatch } = noticeOn(shownOn);
   const waits: number[] = [];
-  const trace = await runAutomationStudioGraph(guardedLoop(rows), {
+  const flow = guardedLoop(rows);
+  if (terminalRead) flow.nodes[flow.nodes.length - 1] = { id: "end", definitionId: "builtin.data.constant", parameterValues: { value: "final result" } };
+  if (disconnected) flow.nodes.push({ id: "mandatory", definitionId: "builtin.data.constant", parameterValues: { value: "not reached" } });
+  const trace = await runAutomationStudioGraph(flow, {
     effectDispatcher: dispatch,
     recoveryBudget: DEFAULT_RECOVERY_BUDGET,
     startNodeId: "list",
@@ -70,6 +73,20 @@ async function run(rows: number, shownOn: number[]) {
 }
 
 describe("a guarded group inside a For Each, the notice shown on one pass only", () => {
+  it("finishes at its final read when every pass bypasses the conditional wait", async () => {
+    const { trace, calls, waits } = await run(3, [], true);
+    expect(trace.attempts.every((attempt) => attempt.status === "succeeded")).toBe(true);
+    expect(trace.status).toBe("succeeded");
+    expect(calls.confirm).toBe(3);
+    expect(trace.attempts.filter((attempt) => attempt.nodeId === "cooldown")).toHaveLength(0);
+    expect(waits).toEqual([]);
+  });
+
+  it("still fails for a disconnected mandatory node after bypassing a conditional wait", async () => {
+    const { trace } = await run(3, [], true, true);
+    expect(trace.status).toBe("failed");
+    expect(trace.failure?.code).toBe("executor.graph.unvisited_nodes");
+  });
   it("skips the absent notice on every other pass with one press each, and waits only on the pass it was closed", async () => {
     const { trace, calls, waits } = await run(3, [2]);
 

@@ -26,6 +26,25 @@ function trace(failure: NonNullable<AutomationStudioGraphExecutionTrace["attempt
 }
 
 describe("trial feedback for a step that failed", () => {
+  it.each(["executor.graph.unvisited_nodes", "executor.graph.unmatched_route"])("explains %s as a graph ending without copying trace messages", (code) => {
+    const run = trace({ category: "action_failed", code: "test.unused", retryable: false });
+    run.attempts = run.attempts.slice(0, 1);
+    run.failure = { category: "graph_validation_or_unknown_node", code, retryable: false, stage: "execution" };
+    run.message = "private page text #secret-selector https://private.example";
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph, trace: run });
+    expect(feedback.graphEnding).toMatchObject({ code, happened: expect.any(String), instruction: expect.any(String) });
+    expect(feedback.steps).toEqual([{ step: 1, definitionId: "web.output.browser-navigate", status: "succeeded" }]);
+    expect(JSON.stringify(feedback)).not.toMatch(/private page|secret-selector|private\.example/u);
+  });
+
+  it("does not forward an arbitrary frame failure code or message", () => {
+    const run = trace({ category: "action_failed", code: "test.step", retryable: false });
+    run.failure = { category: "ambiguous_or_unknown", code: "private-frame-data", retryable: false };
+    run.message = "private frame data";
+    const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", trace: run });
+    expect(feedback).not.toHaveProperty("graphEnding");
+    expect(JSON.stringify(feedback)).not.toContain("private");
+  });
   it("names the step's control and says what happened, and that trying again may pass, without the failure's page message", () => {
     const { feedback } = automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.execution_incomplete", start: "reset", graph,
       trace: trace({ category: "action_failed", code: "web.action.rate_limited", retryable: true, expected: "the press to be accepted", actual: "the page refused it as busy" }) });

@@ -498,9 +498,10 @@ async function executeAutomationStudioGraph(
       if (currentNode.definitionId === "builtin.control.end" || !outgoingRoutes.length && !hasUnvisitedAutomationStudioNodes(ctx.flow, attempts)) {
         return await automationStudioStepFrameSucceeded(ctx, currentNode.id);
       }
-      return automationStudioEndedTrace(ctx, "failed", currentNode.id, outgoingRoutes.length
+      const ended = automationStudioEndedTrace(ctx, "failed", currentNode.id, outgoingRoutes.length
         ? `Node ${currentNode.id} completed on route ${route}, but no matching outgoing edge exists. Available routes: ${outgoingRoutes.join(", ")}.`
         : `Node ${currentNode.id} completed without an outgoing edge before the Flow visited every node. Add an edge to continue or an End node to finish explicitly.`);
+      return { ...ended, failure: { category: "graph_validation_or_unknown_node", code: outgoingRoutes.length ? "executor.graph.unmatched_route" : "executor.graph.unvisited_nodes", retryable: false, stage: "execution" } };
     }
     const stopsOnEdge = stopAfter?.stops({ fromNodeId: currentNode.id, toNodeId: nextEdge.targetNodeId });
     if (stopsOnEdge) return stoppedAt(currentNode.id, stopsOnEdge);
