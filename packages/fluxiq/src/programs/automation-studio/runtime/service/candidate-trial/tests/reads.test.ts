@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../../model/index.ts";
+import type { AutomationStudioGraphExecutionTrace } from "../../../executor/index.ts";
 import type { AutomationStudioBuildTestVerdict, AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
 import { automationStudioCandidateTrialFeedback, automationStudioTrialReadsFeedback } from "../index.ts";
 
@@ -49,5 +50,66 @@ describe("a trial's list reads, for the model", () => {
     const { feedback } = automationStudioCandidateTrialFeedback.judged({ verdict, summary, trialRunId: "trial.1", graph, start: "reset" });
     expect((feedback.reads as JsonObject[])[0]).toMatchObject({ nodeId: "s6", seen: 8, kept: 0 });
     expect(feedback.stored).toEqual({ rows: 0, refused: 0, missingRequired: 0 });
+  });
+});
+
+// t474, lane D round 9 (`run-mv5q4j2n-25784472`, revs 5 to 15): seven trials whose listing kept no rows were failed
+// before a judge was asked, each told only to check the Flow's connections and given no reads. A failed run now says
+// what its reads kept, and its graph ending blames no wiring a loop that ran no passes explains.
+describe("an execution-failed trial's reads and graph ending", () => {
+  const edge = (sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId = "in") => ({ id: `${sourceNodeId}.${sourcePortId}.${targetNodeId}.${targetPortId}`, sourceNodeId, sourcePortId, targetNodeId, targetPortId });
+  /** list -> head -> each; body: accept -> check -> head, each pass's row handed to both; done -> after -> members. */
+  const loopGraph = {
+    nodes: [
+      { id: "s6", definitionId: "web.output.dom-extract_list", label: "read the requests" },
+      { id: "head", definitionId: "builtin.control.merge" },
+      { id: "each", definitionId: "builtin.control.for-each" },
+      { id: "accept", definitionId: "web.output.dom-click", label: "accept the invitation" },
+      { id: "check", definitionId: "web.output.dom-wait_for_text", label: "check it was accepted" },
+      { id: "after", definitionId: "builtin.control.merge" },
+      { id: "members", definitionId: "web.output.dom-extract_list", label: "read the members" }
+    ],
+    edges: [
+      edge("s6", "success", "head", "branches"), edge("s6", "records", "each", "items"), edge("head", "success", "each"),
+      edge("each", "body", "accept"), edge("each", "item", "accept", "item"), edge("each", "item", "check", "item"),
+      edge("accept", "success", "check"), edge("check", "success", "head", "branches"),
+      edge("each", "done", "after"), edge("after", "success", "members")
+    ]
+  } as unknown as AutomationStudioFlowArtifact;
+  const ran = (...ids: string[]): AutomationStudioGraphExecutionTrace => ({
+    status: "failed", startedAt: 1, values: {}, effects: [],
+    failure: { category: "graph_validation_or_unknown_node", code: "executor.graph.unvisited_nodes", retryable: false, stage: "execution" },
+    attempts: ids.map((id, index) => {
+      const node = (loopGraph.nodes as Array<{ id: string; definitionId: string }>).find((candidate) => candidate.id === id)!;
+      return { attemptId: `a${index}`, nodeId: id, definitionId: node.definitionId, startedAt: index, status: "succeeded" as const, ...(id === "each" ? { route: "done" } : {}), inputs: {}, outputs: {}, effects: [] };
+    })
+  });
+  const failed = (trace: AutomationStudioGraphExecutionTrace, reads?: AutomationStudioResultReadAccount[]) =>
+    automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.trial_failed", start: "not_reset", graph: loopGraph, trace, ...(reads ? { reads } : {}) }).feedback;
+
+  it("carries the read account a judged trial carries, with the kept-none sentence", () => {
+    const feedback = failed(ran("s6", "head", "each", "after", "members"), [listing(0)]);
+    expect((feedback.reads as JsonObject[])[0]).toMatchObject({ nodeId: "s6", label: "read the requests", seen: 8, kept: 0 });
+    expect(String((feedback.reads as JsonObject[])[0]!.said)).toContain("Keeping no rows is a valid outcome");
+    expect(automationStudioCandidateTrialFeedback.executionFailed({ code: "candidate.trial_failed", start: "not_reset", graph: loopGraph, trace: ran("s6") }).feedback.reads).toBeUndefined();
+  });
+
+  it("does not ask for the connections to change when every step never reached is inside a loop that ran no passes", () => {
+    const ending = failed(ran("s6", "head", "each", "after", "members"), [listing(0)]).graphEnding as JsonObject;
+    expect(ending.code).toBe("executor.graph.unvisited_nodes");
+    expect(String(ending.happened)).toContain("inside a loop that ran no passes");
+    expect(String(ending.instruction)).toContain("not a fault in the Flow's connections");
+    expect(String(ending.instruction)).not.toContain("Check the Flow's connections");
+  });
+
+  it("says a loop with no passes is not what was owed when another step was not reached", () => {
+    const ending = failed(ran("s6", "head", "each", "after"), [listing(0)]).graphEnding as JsonObject;
+    expect(String(ending.happened)).toContain("the steps inside it are not the ones the run still owed");
+    expect(String(ending.instruction)).toContain("steps outside that loop");
+  });
+
+  it("keeps the wiring advice when no loop ran without passes", () => {
+    const ending = failed(ran("s6"), [listing(3)]).graphEnding as JsonObject;
+    expect(String(ending.instruction)).toContain("Check the Flow's connections");
   });
 });

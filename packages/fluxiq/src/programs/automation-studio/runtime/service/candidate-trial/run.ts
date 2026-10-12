@@ -34,7 +34,7 @@ import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../flow-bootstrap/verification/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
-import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdict, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
 import { automationStudioCandidateTrialFeedback as Feedback } from "./feedback.ts";
 import { automationStudioCandidateTrialLandedActs } from "./landed-acts.ts";
@@ -96,7 +96,9 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
   const acts = automationStudioCandidateTrialLandedActs(executed.trace, executed.graph);
   if (executed.receipt.status !== "succeeded") {
     const code = executed.code ?? `candidate.trial_${executed.receipt.status}`;
-    const failed = Feedback.executionFailed({ code, ...shown });
+    // What each list read kept, from the run's own read accounts, as a judged trial's summary has them (t474).
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: ports.actionAttempts?.(ended), flowNodes: executed.graph?.nodes, deniedEvidenceKeys: ports.deniedEvidenceKeys });
+    const failed = Feedback.executionFailed({ code, ...shown, reads });
     return answer(failed.verdict, failed.feedback, { trialRunId: runId, start, execution: executed.receipt.status, code, ...paced, judge: { ...NO_SPEND } }, acts);
   }
   let summary: AutomationStudioRunResultSummary;

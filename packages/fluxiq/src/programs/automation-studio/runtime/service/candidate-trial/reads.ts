@@ -14,6 +14,13 @@
 // Only counts and the conditions in the model's own wording, as the read
 // account screened them; never the rows a condition left out, which are page
 // values.
+//
+// **Under every verdict (t474).** Lane D round 9 (`run-mv5q4j2n-25784472`)
+// lost seven trials to a listing that kept 0 of 8 rows, each failed before a
+// judge was asked; the feedback of a run that did not reach its end carried
+// no reads at all. A judged trial takes its reads from the judge's summary, an
+// execution-failed one from the run's own read accounts (`./run.ts`), and both
+// are said here the same way.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";

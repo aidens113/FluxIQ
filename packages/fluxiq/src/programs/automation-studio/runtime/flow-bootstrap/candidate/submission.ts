@@ -46,12 +46,25 @@ export class AutomationStudioFlowCandidateSubmissionController {
    * `./unchanged-submission.ts` with what failed last (`history`, the trial
    * gate's), and the current revision stands: nothing was submitted that it
    * is not. Any other refusal still invalidates the current revision.
+   *
+   * **The same after a refusal too (t474).** A refusal clears the current
+   * revision, so t464 had nothing to compare the next submission with. Lane D
+   * round 9 (`run-mv5q4j2n-25784472`, 0124 to 0126) resubmitted revision 15
+   * word for word after a refused revision 16; it was accepted as revision 17,
+   * `changedPaths: []`, with a fresh trial count. The comparison is now with
+   * the last accepted revision (`previous`) whenever none stands. A Flow the
+   * same as it is refused as unchanged, with that revision's last trial, and
+   * that revision stands again: resubmitting it is saying it is the Flow meant.
+   * One the judge refuted is named but not reinstated, since it cannot be
+   * tested again or completed.
    */
   async submit(result: JsonObject, history: AutomationStudioFlowCandidateSubmissionHistory = {}): Promise<AutomationStudioFlowCandidateSubmission> {
     this.input.signal?.throwIfAborted();
     const standing = this.current;
+    // The last revision accepted: the standing one, or the one a refusal since cleared.
+    const last = standing ?? this.previous;
     const text = submissionText(result);
-    if (standing && text !== undefined && text === this.currentText) return this.unchanged(standing, standing, history, history.refuted?.(standing.digest));
+    if (last && text !== undefined && text === this.currentText) return this.sameAsLast(standing, last, history, history.refuted?.(last.digest));
     // Even a refused revision invalidates any earlier candidate and receipt.
     const revision = ++this.revision;
     this.current = undefined;
@@ -82,7 +95,7 @@ export class AutomationStudioFlowCandidateSubmissionController {
     // The same plan as the current revision's, written differently, or a Flow
     // the judge refuted: nothing new to test (header of `submit`).
     const refuted = history.refuted?.(digest);
-    if (standing && digest === standing.digest) return this.unchanged(standing, standing, history, refuted, text);
+    if (last && digest === last.digest) return this.sameAsLast(standing, last, history, refuted, text);
     if (refuted !== undefined) return this.unchanged(standing, undefined, history, refuted);
     const candidate: AutomationStudioFlowCandidate = {
       revision, digest, baseDependencyDigest: this.input.baseDependencyDigest,
@@ -95,6 +108,15 @@ export class AutomationStudioFlowCandidateSubmissionController {
     this.currentText = text;
     const handleViews = (verdict.handleViews ?? []).map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location }));
     return { ok: true, candidate, handleViews };
+  }
+
+  /**
+   * Refuses a submission that is the last accepted revision's Flow (header of
+   * `submit`): that revision stands again, unless the judge refuted it, when
+   * whatever stood before this submission still does.
+   */
+  private sameAsLast(standing: AutomationStudioFlowCandidate | undefined, last: AutomationStudioFlowCandidate, history: AutomationStudioFlowCandidateSubmissionHistory, refuted: JsonObject | undefined, text?: string): AutomationStudioFlowCandidateSubmission {
+    return this.unchanged(refuted === undefined ? structuredClone(last) : standing, last, history, refuted, text);
   }
 
   /**

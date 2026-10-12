@@ -4,6 +4,7 @@
 // B0J5MCMBAY ... B07Z1RZGJG". Both are in the stored result, and the re-author
 // followed that reading and threw away the answer it held.
 import { describe, expect, it } from "vitest";
+import type { AutomationStudioRunResultSummary } from "../../contracts.ts";
 import { automationStudioResultCheckedRows, automationStudioResultCheckedRowsNamed } from "../index.ts";
 import { RUN_MUW60J7C_PAIRS_LEFT_OUT, RUN_MUW60J7C_RESULT_JUDGE, runMuw60j7cRunSummary, runMuw60j7cTestSummary } from "./run-muw60j7c.ts";
 
@@ -91,5 +92,63 @@ describe("the rows the checked lines name, per read and condition", () => {
     const cut = RUN_MUW60J7C_PAIRS_LEFT_OUT[1]!.replace(" with Wireless Charging Case", "");
     const line = `Step 10: the condition "name" alone left out this row the check names: ${cut} with Wireless Charging Case, Gift Box.`;
     expect(automationStudioResultCheckedRowsNamed(summary, [line])).toEqual([]);
+  });
+});
+
+// t474, lane C round 9 (`run-mv5q4j5c-49bfb5e2`): correct advice was twice called "not supported". Trial 2's
+// judges said two stored accessories are rows "the request excludes"; trial 4's named a left-out title that a
+// stored title is a strict prefix of. A generic catalogue: a stored "... Blue" and a left-out "... Blue with Carry
+// Bag", and two stored accessories, one carrying a measure ("2600mAh") in its title.
+describe("a judgement's left-out words and labels, read for what they say of the run", () => {
+  const LANTERN_PACK = "Solar Lantern Replacement Battery Pack, 2600mAh Cell, Black";
+  const HIP_BELT = "Trailmark Spare Hip Belt for Daypack Backpacks, Padded, Black";
+  const BLUE = "Ridgeway Trek Hiking Backpack, 30L, Rain Cover, Blue";
+  const BLUE_WITH_BAG = `${BLUE} with Carry Bag`;
+  const STORED = [BLUE, LANTERN_PACK, HIP_BELT, "Summit Line Daypack Hiking Backpack, 20L, Hydration Sleeve, Green"];
+  const summary = (): AutomationStudioRunResultSummary => ({
+    schemaVersion: "automation-studio.run-result-summary.v1",
+    totalRecordCount: STORED.length, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 1,
+    recordSets: [{ datasetId: "web.output.dom-extract_list", recordCount: STORED.length, refusedCount: 0, truncated: false, columns: ["name", "url"], columnsWithheld: false,
+      rowsChecked: STORED.length, rowsMissingRequired: 0, missingRequiredColumns: [], sampleRows: STORED.map((name, index) => ({ name, url: `/item/${index + 1}` })) }],
+    reads: [{ nodeId: "node.read", definitionId: "web.output.dom-extract_list", pagesRead: 2, truncated: false, itemsSeen: 30, kept: 4,
+      conditions: [{ condition: "name not matches \"Carry Bag\"", rejected: 1, alone: 1, leftOutOnlyByThis: [BLUE_WITH_BAG] }] }],
+    flowShape: [], withheld: false
+  });
+  const misread = (judgement: string): string[] => automationStudioResultCheckedRows(summary(), judgement).filter((line) => line.includes("misread"));
+
+  it("does not call rows misread when the request is what excludes them", () => {
+    expect(misread(`Two are accessories the request excludes: "${LANTERN_PACK}" and "${HIP_BELT}".`)).toEqual([]);
+    expect(misread(`The stored rows include accessories that the request explicitly excludes: "${LANTERN_PACK}".`)).toEqual([]);
+    expect(misread(`The instruction says to leave out "${HIP_BELT}".`)).toEqual([]);
+  });
+
+  it("does not call rows misread when the judgement says they should be left out, or were not", () => {
+    expect(misread(`"${LANTERN_PACK}" should be excluded.`)).toEqual([]);
+    expect(misread(`Add a condition to exclude "${HIP_BELT}".`)).toEqual([]);
+    expect(misread(`"${LANTERN_PACK}" was not filtered out.`)).toEqual([]);
+    expect(misread(`The Flow has no condition that excludes "${HIP_BELT}".`)).toEqual([]);
+  });
+
+  it("still calls a stored row misread when the judgement says the run left it out", () => {
+    const lines = misread(`The name condition excluded "${LANTERN_PACK}".`);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(`${LANTERN_PACK} is in the result`);
+  });
+
+  it("never takes a measure in a title for a row's id", () => {
+    const lines = automationStudioResultCheckedRows(summary(), `The name condition excluded "${LANTERN_PACK}".`);
+    expect(lines.join("\n")).not.toContain("2600MAH");
+  });
+
+  it("gives a mention of the longer title to that row, never to the stored row its title starts with", () => {
+    const lines = automationStudioResultCheckedRows(summary(), `One backpack was left out by the name condition alone: "${BLUE_WITH_BAG}".`);
+    expect(lines.filter((line) => line.includes("misread"))).toEqual([]);
+    expect(lines).toEqual([`Read node.read: the condition "name not matches "Carry Bag"" alone left out this row the check names: ${BLUE_WITH_BAG}.`]);
+  });
+
+  it("still names the shorter stored row where the judgement names it alone", () => {
+    const lines = misread(`The run dropped "${BLUE}".`);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain(`${BLUE} is in the result`);
   });
 });
