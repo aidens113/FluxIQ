@@ -37,6 +37,8 @@ const STORED = /(\d+)(?: records?)? stored/u;
  * that would store 30 rows, 3 of them twice.
  */
 const WOULD_STORE = /(\d+)(?: records?)? would be stored/u;
+/** How many record sets a run wrote and, for more than one, each one's rows: "across 2 record sets (4, 4 rows)" (`./verdict.ts`). */
+const SETS = /\bstored, across (\d+) record sets?(?: \(([\d, ]+) rows\))?/u;
 /**
  * How many datasets a build's Flow would write, or record sets a run wrote,
  * right after that count (`./verdict.ts`): "…, in 0 datasets", "…, across 0
@@ -77,7 +79,24 @@ function rowsWords(observation: string): string[] {
   if (!match) return [];
   const count = Number(match[1]);
   if (count === 0) return ["No rows came back."];
+  const sets = SETS.exec(observation);
+  if (sets && Number(sets[1]) > 1) return [setsWords(Number(sets[1]), sets[2])];
   return [`${count} ${count === 1 ? "row" : "rows"} came back.`];
+}
+
+/**
+ * The rows of a run that stored more than one record set, said per set and
+ * never summed: each set is an answer of its own, and the same rows stored by
+ * two steps are not twice the rows (live run `run-mv5jnc5m-a47c3e59`: "8 rows
+ * came back" of 4 requests stored by the listing and again by the final read).
+ * Without the per-set counts (`./verdict.ts`, `eachSet`), only the sets are said.
+ */
+function setsWords(sets: number, each: string | undefined): string {
+  const counts = each?.split(", ").map(Number).filter((rows) => Number.isInteger(rows)) ?? [];
+  if (counts.length !== sets) return `Rows were stored in ${sets} record sets.`;
+  const rows = (n: number) => `${n} ${n === 1 ? "row" : "rows"}`;
+  if (counts.every((n) => n === counts[0])) return `${rows(counts[0]!)} came back, in each of ${sets} record sets.`;
+  return `Rows came back in ${sets} record sets: ${counts.slice(0, -1).join(", ")} and ${counts.at(-1)} rows.`;
 }
 
 /** The model's sentences a person may read, joined, or nothing when none survives. */
