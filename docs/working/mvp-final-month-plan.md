@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: t455/t456/t457 integrated; round-six B/C/D failed; t454 recording compatibility, t458 processing help and t459 passive result-view isolated.
+Status detail: t455/t456/t457/t458 integrated; round-six B/C/D failed; t454 recording restart/public-writer repairs and t459 passive result-view verification remain isolated.
 Created: 2026-10-06
 Last updated: 2026-10-11
 Owner: Codex senior supervisor
@@ -60,10 +60,13 @@ its yes verdict is not disproved by the later saved failure. C/D each used48buil
 ended evidence_iteration_limit ($0.09098706/$0.068919444), with all trials negative/unconfirmed. All12actual
 running identities verified; startup passed and the source freeze is released. Total$0.204905943, no balance
 failure. Fresh terminal captures saw intentionally stale visible text; hidden current state was omitted by
-domain observation policy, not a Core cache replacement. Exact neutral owner fixes are isolated as t458
-supported record-processing help (parser unchanged) and t459 optional passive domain result observation.
-t454 private incarnation repair now preserves normal undo IDs/sequences; a further supported fresh input
-without packet IDs after undo regresses and blocks acceptance until capture-content proof/gates pass.
+domain observation policy, not a Core cache replacement. t458 supported record-processing help is integrated
+at Core0cfb4f45/downstreamf191802a; supervisor52focused tests, fresh Core typecheck, compiled help/parser
+parity, downstream freshness/typecheck and both native audits passed. Parser/runtime semantics unchanged.
+t459 optional passive domain result observation remains isolated for independent gates and provider-free
+actual content-capture proof. t454 private incarnations and fresh no-packet inputs after undo now pass;
+final review reproduced hydrated public-writer conflicts and a killed-child orphan reconciliation claim.
+Bounded repairs and independent process/public-facade gates are required before accepting that storage unit.
 No original profile reset, paid relaunch or claim that extra money/calls alone fixes semantics. Future ready
 plans may use the existing64call upper bound within the same$0.25whole-test ceiling after relevant repair.
 User raised future testing purse to $0.25 via launch environment, leaving historical $0.10 receipts intact;
