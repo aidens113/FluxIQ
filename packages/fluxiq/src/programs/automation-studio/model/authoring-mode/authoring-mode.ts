@@ -4,12 +4,18 @@
 // improvement, and the Lab -- takes the mode from here (or from Core resolving
 // it for them), never from a literal of its own.
 //
-// - `legacy` (the default): the evidence-guided build explores, tests and
+// - `candidate` (the product default): the evidence-guided build explores,
+//   submits the whole Flow as a draft and tests that exact revision; a supplied
+//   start hook resets the target first. Only a
+//   trial confirmed by two judges can produce a proposed adaptation for the
+//   chat or panel to apply; an unverified draft keeps the Flow unchanged.
+// - `legacy` (explicit opt-out): the evidence-guided build explores, tests and
 //   judges a draft and answers with a proposed adaptation. The chat applies it
-//   onto a blank Flow and says the automation is ready, and asks before
-//   applying an improvement; the panel offers the proposal for review.
-// - `candidate`: the build submits an unverified candidate draft that nothing
-//   executes, verifies or promotes yet. The Flow's steps stay unchanged.
+//   onto a blank Flow and asks before applying an improvement; the panel offers
+//   the proposal for review.
+//
+// Raw API requests that omit authoringMode retain their legacy wire contract;
+// configured product callers resolve this setting instead.
 //
 // Set with `FLUXIQ_AUTHORING_MODE` in the environment of the Core process. A
 // value that is neither mode refuses rather than falling back, so a mistyped
@@ -24,7 +30,7 @@ export const AUTOMATION_STUDIO_AUTHORING_MODES = Object.freeze(["legacy", "candi
 export type AutomationStudioAuthoringMode = (typeof AUTOMATION_STUDIO_AUTHORING_MODES)[number];
 
 /** The mode when nothing is set. */
-export const AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT: AutomationStudioAuthoringMode = "legacy";
+export const AUTOMATION_STUDIO_AUTHORING_MODE_DEFAULT: AutomationStudioAuthoringMode = "candidate";
 
 type Environment = Readonly<Record<string, string | undefined>>;
 

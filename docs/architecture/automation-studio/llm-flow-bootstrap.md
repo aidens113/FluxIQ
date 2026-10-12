@@ -10,10 +10,10 @@ proposal, or mutate a Flow by itself.
 
 How the product's own creation and improvement builds are authored is one runtime
 setting with one owner, `model/authoring-mode/`: `FLUXIQ_AUTHORING_MODE` in the
-Core process environment, `legacy` (the default) or `candidate`. Any other value
+Core process environment, `candidate` (the default) or `legacy`. Any other value
 refuses instead of falling back. Nothing else holds a mode literal of its own.
 
-- `legacy` is the behaviour before candidate drafts became the default
+- `legacy` is the explicit opt-out for the evidence-guided draft behavior
   (Core `e9b7d691` through the parent of t330's merge `66a310cc`). The chat's
   `flow.createHere` and `flow.explore` build with the evidence loop, its build
   tests and judges, then approve and apply the proposed adaptation onto the blank
@@ -44,6 +44,12 @@ mode, and the handler refuses a result that disagrees with the resolved mode. An
 API request that omits the field is legacy and one that sends `candidate` is a
 candidate request, whatever the setting. The downstream Lab sets the variable on
 each Core it starts and refuses created-Flow qualification only in candidate mode.
+
+The configured product default changed after two same-pair candidate creations
+and their separate zero-model replays passed. Setting `FLUXIQ_AUTHORING_MODE=legacy`
+retains the prior product path; no environment file is rewritten by this change.
+Raw API omitted-mode behavior remains legacy for compatibility. Submission alone,
+a mode setting and an unverified stored draft still grant no outcome acceptance.
 
 ## Explicit candidate authoring
 

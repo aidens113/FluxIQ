@@ -12,8 +12,8 @@ function recording(answer: unknown) {
 
 afterEach(() => { vi.unstubAllEnvs(); });
 
-describe("legacy authoring mode (the default)", () => {
-  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", ""); });
+describe("explicit legacy authoring mode", () => {
+  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "legacy"); });
 
   it("asks for a proposed adaptation and answers with it", async () => {
     const { requests, context } = recording({ ok: true, payload: { adaptation: { status: "proposed", adaptationId: "adaptation" } } });
@@ -33,8 +33,8 @@ describe("legacy authoring mode (the default)", () => {
   });
 });
 
-describe("candidate authoring mode", () => {
-  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate"); });
+describe.each([undefined, "", "  ", "candidate"])("candidate authoring mode with setting %s", (mode) => {
+  beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", mode); });
 
   it("refuses an answer that is not a valid candidate for this Flow", async () => {
     const { requests, context } = recording({ ok: true, payload: { candidate: { status: "draft", candidateId: "candidate", verification: "not_performed", promotionAllowed: false } } });
