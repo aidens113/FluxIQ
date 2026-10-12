@@ -20,6 +20,13 @@
 //     to exclude the actions this build saw report `effect: "observe"` and
 //     `proposes: false` -- the snapshot, not the list read that becomes a step.
 //
+// The tools that finish a candidate (`core.submit_candidate`,
+// `core.test_candidate`) are never withdrawn, though submitting is declared
+// `observe` for the repeat guard: they are how a build stops looking. Lane C
+// `run-mv0pa79q-ef91811b` (steps 0019, 0021) could not submit its Flow while
+// looks were withdrawn, and each change of the offered list empties the
+// provider's prompt cache.
+//
 // **The backstop.** A withdrawn look asked for anyway is refused as an unusable
 // decision, `llm_evidence_loop.look_withdrawn`: never run, and never answered
 // from memory, because an answer from memory is exactly the move being taken
@@ -35,6 +42,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmDecisionContextRecorder } from "../decision-context/index.ts";
 import type { AutomationStudioLlmEvidenceTool } from "../evidence-loop/index.ts";
+import { CANDIDATE_FINISHING_TOOL_IDS } from "../loop-budget.ts";
 
 /** The issue code a withdrawn look asked for anyway is refused under. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_LOOK_WITHDRAWN_CODE = "llm_evidence_loop.look_withdrawn";
@@ -82,7 +90,8 @@ export function automationStudioLlmEvidenceLookWithdrawal(input: { enabled: bool
   let withdrawnEpoch: number | undefined;
   const looks = new Map<string, Set<string>>();
   const active = (attemptEpoch: number): boolean => input.enabled && withdrawnEpoch === attemptEpoch;
-  const observeOnly = (tool: AutomationStudioLlmEvidenceTool): boolean => tool.effect !== "mutate" && tool.perCallEffect !== true;
+  const observeOnly = (tool: AutomationStudioLlmEvidenceTool): boolean =>
+    tool.effect !== "mutate" && tool.perCallEffect !== true && !CANDIDATE_FINISHING_TOOL_IDS.has(tool.toolId);
   return {
     redirectShown(iteration) {
       redirectAt = iteration;

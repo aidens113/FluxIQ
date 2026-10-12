@@ -117,6 +117,34 @@ describe("a candidate build stopped for no progress names why its Flow was refus
   });
 });
 
+// Lane C (`run-mv0pa79q-ef91811b`) looked at five pages, never submitted a Flow, and tried to finish four times with an
+// invented revision; it ended "it kept trying without getting any further", which named no cause.
+describe("a candidate build that never submitted a Flow says so", () => {
+  const NO_PROGRESS = { code: "flow_bootstrap.evidence_repeat_without_progress", stage: "provider_output_validation" };
+  const never = { candidateId: "candidate.c", draft: "none", trialCount: 0, trials: [] };
+
+  it("ends in plain words that it never wrote a Flow to test", () => {
+    const said = cause({ ...NO_PROGRESS, candidate: never, issueCodes: ["candidate.latest_submission_required"] });
+    expect(said).toBe("the build failed: it never wrote a Flow to test: it kept trying to finish without one, so it was stopped");
+    expectPlain(said);
+  });
+
+  it("is not said where a Flow was accepted or tested, or with no candidate carried", () => {
+    const old = "the build failed: it kept trying without getting any further, so it was stopped";
+    const codes = { issueCodes: ["candidate.latest_submission_required"] };
+    expect(cause({ ...NO_PROGRESS, ...codes, candidate: { candidateId: "candidate.c", draft: "saved", revision: 2, digest: DIGEST, trialCount: 0, trials: [] } })).toBe(old);
+    expect(cause({ ...NO_PROGRESS, ...codes, candidate: { ...never, trialCount: 1 } })).toBe(old);
+    expect(cause({ ...NO_PROGRESS, ...codes })).toBe(old);
+  });
+
+  it("leaves a refused submission's ending as it was", () => {
+    const issueCodes = [...automationStudioCandidateRefusalCodes.encode({ refusals: 1, sentAgain: 3, family: "flow_bootstrap.evidence_completion_plan_invalid",
+      issues: [{ code: "flow_script.repeat_body_is_routed", line: 23 }, { code: "flow_script.repeat_invalid", line: 23 }] }), "candidate.latest_submission_required"];
+    expect(cause({ ...NO_PROGRESS, candidate: never, issueCodes }))
+      .toBe("the build failed: the Flow it wrote was refused because a repeat was written where the Flow can't run it, and then it was sent again unchanged 3 times, so nothing was tested");
+  });
+});
+
 describe("what a failed candidate build kept", () => {
   it("a kept draft is a draft, not 'no steps', and each trial verdict reads as what the test run came to", () => {
     const base = { candidateId: "candidate.7", revision: 7, digest: DIGEST };
