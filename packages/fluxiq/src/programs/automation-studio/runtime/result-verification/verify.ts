@@ -1,7 +1,7 @@
 // One question, asked after a run has finished: does what came back answer
 // what was asked for?
 //
-// **At most two calls, never a loop.** A verification is not an investigation.
+// **At most two checks, never a loop.** A verification is not an investigation.
 // It is shown the request, the shape of the Flow that ran, and a bounded account
 // of the result, and it answers in one field: `yes`, `no` or `unknown`.
 //
@@ -11,7 +11,20 @@
 // second call is the first one repeated, not a new question; `agreement.ts`
 // says what the two answers come to. Only two agreeing `no`s fail the run;
 // every other pair that is not a `yes` first leaves it `unverified`. A first
-// call that gave no answer at all is not repeated and fails closed.
+// check that gave no answer at all is not followed by a second and fails closed.
+//
+// **A check that did not come back for a temporary reason is asked again
+// (t473).** A call that ran past its deadline, or met a fault the adapter
+// calls temporary that the provider retry policy could not get past, gave no
+// answer, not a wrong one. That policy deliberately leaves a timeout to "the
+// loop above" (`../llm/provider-retry/decision.ts`, `NEVER_ASKED_AGAIN`), and
+// for a verification this is that loop: each check is asked up to
+// `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK` times with the same
+// evidence, each ask a call of its own under the run's budget or the build's
+// purse. Live run `run-mv5q4j5c-49bfb5e2` cut a judge off at 19,985 ms, never
+// asked it again, and re-ran a whole 84-second trial for a 5-second answer. A
+// fault that is not temporary -- a refusal by the purse, a reply that could not
+// be read, a cancellation -- is not asked again.
 //
 // **A build's test confirms a `yes` as well (`confirmAnswer`).** The build-test
 // judge's `yes` finishes a build, and in live run murwcmx2 one `yes` to a
@@ -135,6 +148,13 @@ export type AutomationStudioResultVerificationReport = {
 /** Where a verification call's intervention says it came from. */
 const VERIFICATION_SOURCE = "verifyAutomationStudioRunResult";
 
+/**
+ * How many times one check is asked when its call did not come back for a
+ * temporary reason: the first ask, and once more (header). A verification
+ * makes at most twice this many calls.
+ */
+export const AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK = 2;
+
 export async function verifyAutomationStudioRunResult(request: AutomationStudioResultVerificationRequest): Promise<AutomationStudioResultVerificationReport> {
   const core = automationStudioResultCoreObservation(request.summary);
   if (core) return { outcome: { ...core, performed: true }, interventions: [] };
@@ -152,22 +172,39 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   }
   emitAutomationStudioActivity({ phase: "verifying", label: "Checking the result answers the request", detail: { kind: "check", title: "Result check started", status: "started" } });
   const confirmAnswer = request.confirmAnswer === true;
-  const first = await askOnce(request, provider, 1);
-  request.recordIntervention?.(first.intervention);
-  if (!automationStudioResultVerificationAskAgain(first.verification, { confirmAnswer })) {
-    return said({ outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification }), performed: true }, interventions: [first.intervention] });
+  const interventions: AutomationStudioFlowIntervention[] = [];
+  const first = await askCheck(request, provider, 1, interventions);
+  if (!automationStudioResultVerificationAskAgain(first, { confirmAnswer })) {
+    return said({ outcome: { ...automationStudioResultVerificationAgreement({ first }), performed: true }, interventions });
   }
-  const second = await askOnce(request, provider, 2);
-  // Two calls can finish within one millisecond of each other, and the
-  // harness names an intervention by the run and the time.
-  const secondIntervention = second.intervention.interventionId === first.intervention.interventionId
-    ? { ...second.intervention, interventionId: `${second.intervention.interventionId}.2` }
-    : second.intervention;
-  request.recordIntervention?.(secondIntervention);
+  const second = await askCheck(request, provider, 2, interventions);
   return said({
-    outcome: { ...automationStudioResultVerificationAgreement({ first: first.verification, second: second.verification, confirmAnswer }), performed: true },
-    interventions: [first.intervention, secondIntervention]
+    outcome: { ...automationStudioResultVerificationAgreement({ first, second, confirmAnswer }), performed: true },
+    interventions
   });
+}
+
+/**
+ * One check, asked again while its call did not come back for a temporary
+ * reason, up to `AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK` asks
+ * (header). Every ask's intervention is recorded, in order, under a name of its
+ * own: two calls can finish within one millisecond of each other, and the
+ * harness names an intervention by the run and the time.
+ */
+async function askCheck(
+  request: AutomationStudioResultVerificationRequest,
+  provider: AutomationStudioLlmProvider,
+  check: 1 | 2,
+  interventions: AutomationStudioFlowIntervention[]
+): Promise<ReturnType<typeof automationStudioResultVerdict>> {
+  for (let ask = 1; ; ask += 1) {
+    const asked = await askOnce(request, provider, check, ask);
+    const taken = new Set(interventions.map((intervention) => intervention.interventionId));
+    const intervention = taken.has(asked.intervention.interventionId) ? { ...asked.intervention, interventionId: `${asked.intervention.interventionId}.${interventions.length + 1}` } : asked.intervention;
+    interventions.push(intervention);
+    request.recordIntervention?.(intervention);
+    if (!asked.temporary || ask >= AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK || request.signal?.aborted) return asked.verification;
+  }
 }
 
 /** The check's verdict, said in the chat as the check that was started ends (`check-activity.ts`), and returned unchanged. */
@@ -180,12 +217,16 @@ function said(report: AutomationStudioResultVerificationReport): AutomationStudi
 /**
  * One verification call and the verdict it reached. The second call of a
  * verification is this one repeated: the same request, the same evidence.
+ * `temporary` when it gave no reply because of a fault the adapter called
+ * temporary -- its deadline passing among them -- and the caller was not
+ * cancelled: the one kind of unanswered call that is asked again.
  */
 async function askOnce(
   request: AutomationStudioResultVerificationRequest,
   provider: AutomationStudioLlmProvider,
-  check: 1 | 2
-): Promise<{ verification: ReturnType<typeof automationStudioResultVerdict>; intervention: AutomationStudioFlowIntervention }> {
+  check: 1 | 2,
+  ask: number
+): Promise<{ verification: ReturnType<typeof automationStudioResultVerdict>; intervention: AutomationStudioFlowIntervention; temporary: boolean }> {
   // With the instruction's named columns no stored column reads, said once
   // (`read-account/unread-columns.ts`): information for the judge, not a verdict.
   // And the rows a condition alone left out that name the asked item
@@ -234,8 +275,9 @@ async function askOnce(
   });
   // The harness records a call's own metadata, not the caller's, so the
   // intervention is told here which check it was and who asked.
-  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check } };
-  return { verification, intervention };
+  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}) } };
+  const temporary = !response && request.signal?.aborted !== true && firstError(result.diagnostics)?.metadata?.retryable === true;
+  return { verification, intervention, temporary };
 }
 
 /** `{ [key]: value }`, or nothing when the value is undefined, for an optional field that may not be set to `undefined`. */
@@ -245,5 +287,10 @@ function withDefined<K extends string, V>(key: K, value: V | undefined): { [P in
 
 /** The first error code a failed call reported. Codes only: a provider's message never reaches a run record. */
 function firstErrorCode(diagnostics: readonly { severity: string; code: string }[]): string | undefined {
-  return diagnostics.find((diagnostic) => diagnostic.severity === "error")?.code;
+  return firstError(diagnostics)?.code;
+}
+
+/** The first error a failed call reported: the provider's fault, whose `metadata.retryable` is the adapter's verdict on it. */
+function firstError<T extends { severity: string }>(diagnostics: readonly T[]): T | undefined {
+  return diagnostics.find((diagnostic) => diagnostic.severity === "error");
 }

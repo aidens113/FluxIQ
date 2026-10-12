@@ -30,6 +30,8 @@
 // written from it: the caller discards its value, and the only writes a
 // verification makes happen after this returns.
 
+import { AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK } from "./verify.ts";
+
 /**
  * How long the whole of a verification may take: resolving a provider, reading
  * the instructions and the run detail, and both calls.
@@ -39,6 +41,21 @@
  * settling rather than that the model was slow.
  */
 export const AUTOMATION_STUDIO_RESULT_VERIFICATION_DEADLINE_MS = 120_000;
+
+/**
+ * The deadline for a verification whose calls each run under `timeoutMs`
+ * (t473): every call it may make -- each check asked again after a temporary
+ * fault (`./verify.ts`) -- at that timeout, with 30 seconds for the reads and
+ * waits around them, and never less than the default above. A build's judge runs
+ * under the build's own per-call timeout (45 s), and four of those do not fit
+ * in the default: the deadline would cut off the very ask that replaces a
+ * timed-out call. Without a timeout, the default.
+ */
+export function automationStudioResultVerificationDeadlineMs(timeoutMs: number | undefined): number {
+  if (timeoutMs === undefined || !Number.isFinite(timeoutMs) || timeoutMs <= 0) return AUTOMATION_STUDIO_RESULT_VERIFICATION_DEADLINE_MS;
+  const calls = 2 * AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK;
+  return Math.max(AUTOMATION_STUDIO_RESULT_VERIFICATION_DEADLINE_MS, calls * timeoutMs + 30_000);
+}
 
 /** What a bounded verification came to: its value, or why there is none. */
 export type AutomationStudioResultVerificationBounded<TValue> =

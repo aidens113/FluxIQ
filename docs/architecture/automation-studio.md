@@ -409,6 +409,28 @@ the run keeping the status its steps earned. That is the same treatment a run
 gets when no model is configured, and the reason is the same: nobody judged this
 result.
 
+**A check whose call did not come back for a temporary reason is asked again
+(t473).** A call that ran past its own timeout, or met a fault the adapter
+calls temporary that the provider retry policy could not get past, gave no
+answer rather than a wrong one, so each of the two checks is asked up to
+`AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK` (2) times with the same
+evidence (`verify.ts`). The provider retry policy leaves a timeout to the loop
+above it (`llm/provider-retry/decision.ts`); for a verification this is that
+loop. Each ask is a call of its own under the run's budget or the build's purse.
+A refusal by the purse, an unreadable reply and a cancellation are not asked
+again. A build's judge (`result-verification/build-test/judge.ts`) runs each
+call under the build's own per-call timeout, the resolved provider's
+`timeoutMs` that every build decision gets, rather than the harness's 20 s
+default, and its deadline is sized from it
+(`automationStudioResultVerificationDeadlineMs`: every ask at that timeout plus
+30 s, never less than 120 s). A judge whose every call still failed is
+`not_judged` with the cause, never `unknown` and never a no. A candidate trial
+its judge did not judge keeps its evidence, and the next test of the same
+revision asks the judge again on it instead of running the Flow again
+(`service/candidate-trial/run.ts`, `port.ts`). Live run
+`run-mv5q4j5c-49bfb5e2` lost an 84-second trial to a judge cut off at
+19,985 ms.
+
 Two codes and one status are historical. `core.result.no_records` and
 `core.result.nothing_to_judge` are produced by nothing and readable on runs
 recorded before 2026-09-24, and the `no_result` value of a run's

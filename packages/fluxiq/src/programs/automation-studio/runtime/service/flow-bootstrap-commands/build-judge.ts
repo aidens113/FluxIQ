@@ -43,6 +43,11 @@ import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/harnes
 // exploration's 3-Pack -- as the two towel packs; shown both pages, a judge
 // credits only what changed.
 //
+// **Its calls run under the build's per-call timeout (t473).** `timeoutMs` is
+// the provider resolution's, which every build decision already runs under;
+// without it the judge got the harness's 20-second default (live run
+// `run-mv5q4j5c-49bfb5e2`, a judge cut off at 19,985 ms).
+//
 // **Why it is its own module.** The service holds the build's state (the
 // round's last test, the accepted plan) in closures; this keeps that wiring in
 // one place the tests can read, and keeps `../../service.ts` from growing.
@@ -90,6 +95,8 @@ export type AutomationStudioFlowBootstrapBuildJudge = {
 
 export function automationStudioFlowBootstrapBuildJudge(input: {
   provider: AutomationStudioLlmProvider;
+  /** Each judge call's deadline: the build's per-call timeout, as its decisions get it (header). */
+  timeoutMs?: number | undefined;
   /** The Flow's own instructions, as its runs are judged against them. */
   instructions: readonly AutomationStudioFlowInstruction[];
   deniedEvidenceKeys?: readonly string[] | undefined;
@@ -118,7 +125,7 @@ export function automationStudioFlowBootstrapBuildJudge(input: {
   };
   const ask = automationStudioBuildTestJudge({
     provider: input.provider, instructions: input.instructions, deniedEvidenceKeys: input.deniedEvidenceKeys,
-    projectId: input.projectId, flowId: input.flowId, signal: input.signal
+    projectId: input.projectId, flowId: input.flowId, signal: input.signal, timeoutMs: input.timeoutMs
   });
   const look = input.look && automationStudioEndViewLook({ tools: input.look.tools, viewKeys: input.observedStateKeys });
   const executeTool = input.look?.executeTool;
