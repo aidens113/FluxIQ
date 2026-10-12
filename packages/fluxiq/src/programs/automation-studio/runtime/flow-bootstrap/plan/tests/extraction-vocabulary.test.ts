@@ -116,8 +116,13 @@ describe("the vocabulary a model writes an extraction filter from", () => {
     expect(entry?.parameters.find((parameter) => parameter.id === "extractList")?.example).toBeDefined();
     expect(context.catalogSelection.withheldParameterText).toBeUndefined();
     // What that costs, so a change that doubles it is visible here rather than
-    // in a bill: the entry, and the grammar as a share of it.
-    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(3_000);
+    // in a bill: the entry, and the grammar as a share of it. The bound was
+    // 3,000 until t458 (2026-10-11) published recordOutput's run-end `process`
+    // vocabulary (dedupe, where, sort, limit, columns, minRows) whole in the
+    // catalog, as automation-studio-native-nodes.md records. That added about
+    // 1,270 bytes on purpose and took this entry from about 2,500 to 3,769;
+    // the bound sits just above the intended entry, not room for another addition.
+    expect(Buffer.byteLength(JSON.stringify(entry), "utf8")).toBeLessThanOrEqual(4_000);
     expect(Buffer.byteLength(JSON.stringify(context.nodeCatalog), "utf8")).toBe(context.catalogSelection.usedBytes);
   });
 
