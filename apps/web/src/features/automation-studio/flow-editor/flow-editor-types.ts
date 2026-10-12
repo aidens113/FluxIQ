@@ -26,6 +26,12 @@ export type FlowEditorProps = {
   policy: any;
   taskGraph?: any;
   taskGraphDraft?: AutomationGraphDocument | null;
+  /**
+   * The role of the Subflow `taskGraph` belongs to, which validation needs:
+   * only a `recovery` graph may hold a handler for the whole automation.
+   * Absent while unknown and for a graph that is no Subflow's.
+   */
+  subflowRole?: string | undefined;
   recoverableDraft?: { savedAt: number; stale: boolean } | null;
   nativeNodeDefinitions: any[];
   recordings: any[];

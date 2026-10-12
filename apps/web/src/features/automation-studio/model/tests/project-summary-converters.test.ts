@@ -62,7 +62,7 @@ describe("project summary converters", () => {
       updatedAt: 50,
       flowRepresentationVersion: 1,
       flowRepresentationKind: "orchestration",
-      hierarchySubflows: [{ subflowId: "subflow.child", name: "Child", parentCategoryId: "category.one" }]
+      hierarchySubflows: [{ subflowId: "subflow.child", name: "Child", role: "recovery", parentCategoryId: "category.one" }]
     }]);
     expect(entry).toMatchObject({
       source: "canonical",
@@ -77,6 +77,7 @@ describe("project summary converters", () => {
           hierarchySubflows: [{
             subflowId: "subflow.child",
             name: "Child",
+            role: "recovery",
             parentCategoryId: "category.one",
             metadata: { subflowCategoryId: "category.one" }
           }]

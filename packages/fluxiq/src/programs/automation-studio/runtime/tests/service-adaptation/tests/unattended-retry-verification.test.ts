@@ -283,9 +283,11 @@ describe("a repaired run's result, with nobody watching", () => {
     const found = await harness();
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId });
 
-    // The repair landed and the run re-ran: the precondition for anything below.
+    // The fix was held at the failing step and the run carried on (C6 step 8): the precondition for anything below.
     const detail = await found.service.getFlowRunDetail(found.projectId, run.runId);
-    expect(detail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded" } });
+    expect(detail?.metadata).not.toHaveProperty("adaptiveRetry");
+    expect(run.trace?.repairs).toHaveLength(1);
+    expect(detail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({ kind: "temporary_wait_retry", outcome: "overlaid", repairId: run.trace?.repairs?.[0] })]);
 
     // A model was obtained, and one verification call was made, with no caller.
     expect(found.standingRequests).toEqual([{ keyId: "key.deepseek", maxEstimatedCostUsd: 0.05, authorizedByUserId: "user.aiden" }]);
@@ -306,13 +308,14 @@ describe("a repaired run's result, with nobody watching", () => {
 
     // The three links of the old circle, each read where it is written. A grant
     // once forced `manual_approval`, which sets `proposalMode: "manual"`,
-    // which makes the gate refuse, which makes the retry decision `null`.
-    const attempts = detail?.metadata?.runtimePatchAttempts as Array<{ approvalDecision?: { mode?: string; autoApply?: boolean; requiresManualApproval?: boolean } }> | undefined;
+    // which makes the gate refuse, which leaves the fix unkept. An in-run fix's
+    // receipt is in `inRunRepairs` (C6 step 8).
+    const attempts = detail?.metadata?.inRunRepairs as Array<{ approvalDecision?: { mode?: string; autoApply?: boolean; requiresManualApproval?: boolean } }> | undefined;
     expect(attempts?.[0]?.approvalDecision).toMatchObject({ mode: "auto", autoApply: true, requiresManualApproval: false });
     const context = detail?.metadata?.runtimeAdaptationContext as { approvalMode?: string } | undefined;
     expect(context?.approvalMode).not.toBe("manual");
     expect(JSON.stringify(detail?.metadata?.runtimeAdaptationContext)).not.toContain("manual_approval");
-    expect(detail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true } });
+    expect(run.trace?.repairs).toHaveLength(1);
     expect(found.standingCalls).toEqual(["loop_verification"]);
   });
 
@@ -341,7 +344,9 @@ describe("a repaired run's result, with nobody watching", () => {
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId });
     const detail = await found.service.getFlowRunDetail(found.projectId, run.runId);
 
-    expect(detail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded" } });
+    expect(detail?.metadata).not.toHaveProperty("adaptiveRetry");
+    expect(run.trace?.repairs).toHaveLength(1);
+    expect(detail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({ kind: "temporary_wait_retry", outcome: "overlaid", repairId: run.trace?.repairs?.[0] })]);
     // No key was asked for, no call was made, and the run says which refusal it was.
     expect(found.standingRequests).toEqual([]);
     expect(found.standingCalls).toEqual([]);

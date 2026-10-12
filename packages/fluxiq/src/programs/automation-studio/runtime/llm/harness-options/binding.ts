@@ -378,6 +378,38 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
      * views agree on. Only then may a resolved answer carry `handleViews`.
      */
     handleReach?: AutomationStudioPlanHandleReach | undefined;
+    /**
+     * The packet every handle of this node was issued in, exactly as the model
+     * read it, for a step a repair wrote (t429). A domain numbers its handles
+     * per packet, and a repair's model was shown the failure packet and the
+     * packets its exploration returned -- none of them a view of the build --
+     * so the domain resolves the node's handles from this packet alone, as it
+     * judges a target override against the one packet it names
+     * (`validateTargetOverrideEvidence`, with Core's qualifier removed the same
+     * way). A packet the domain did not issue, or no longer keeps, resolves
+     * nothing, and the node is refused. Absent for a build's node, which
+     * resolves as it always has.
+     */
+    handleEvidence?: JsonObject | undefined;
+    /**
+     * That the node's parameters are the model's own writing (t432): a
+     * candidate script, a reply's plan, the steps a repair wrote. The model
+     * names an element only by a handle the evidence printed (user,
+     * 2026-10-10), so the domain refuses any element it names some other way --
+     * an address, an identity or a description of its own -- rather than
+     * running it as written. Absent for parameters the host itself wrote -- a
+     * draft step's, which ran with what the domain resolved, and a step the
+     * Flow already holds -- which stand as they are.
+     */
+    writtenByModel?: true;
+    /**
+     * For a node the host wrote, the top-level parameters the model wrote over
+     * it (t432): the settings an amendment carried onto a draft step, which
+     * replace that parameter whole. The domain judges those as it judges a node
+     * the model wrote, and leaves the rest -- what the step ran with -- as it
+     * stands. Never sent beside `writtenByModel`.
+     */
+    modelWrittenParameters?: readonly string[];
   }): AutomationStudioPlanNodeResolution | Promise<AutomationStudioPlanNodeResolution>;
 };
 
@@ -395,8 +427,14 @@ export type AutomationStudioPlanHandleView = { handle: string; view: number; loc
 /** A domain answer about one plan node. May be awaited: asking permission is. */
 export type AutomationStudioPlanNodeResolution =
   | { status: "unchanged" }
-  /** `handleViews` only on an answer to a resolution that asked for `view_history`; Core refuses it on any other. */
-  | { status: "resolved"; parameters: JsonObject; handleViews?: readonly AutomationStudioPlanHandleView[] }
+  /**
+   * `handleViews` only on an answer to a resolution that asked for `view_history`; Core refuses it on any other.
+   * `effect`, on any resolved answer: what the act the build made on the step's control made true, in the host's
+   * own route-effect form (`signRouteEffect`) and within its bound. Core writes it onto the plan node as
+   * `routeSignatures.effect` where the build signed none, so a run that cannot find the control passes the step over
+   * when the page already shows it (`./plan-parameter-resolution.ts`, t447). It only ever skips a step.
+   */
+  | { status: "resolved"; parameters: JsonObject; handleViews?: readonly AutomationStudioPlanHandleView[]; effect?: JsonObject }
   | { status: "refused"; issueCodes: readonly string[] }
   | { status: "needs_permission"; missing: readonly string[]; requestId: string | null };
 

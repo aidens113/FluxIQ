@@ -51,6 +51,13 @@ export type AutomationFlowNodeData = {
   metadata?: JsonObject;
 };
 
+/**
+ * The renderer a Handler node is drawn with (`components/FlowHandlerNode.tsx`).
+ * It is set only on the canvas's display copy of the node, never on the stored
+ * graph, which keeps the one node type it was loaded with.
+ */
+export const AUTOMATION_HANDLER_NODE_TYPE = "handlerRegistration";
+
 export const AUTOMATION_FLOW_NODE_WIDTH = 280;
 export const AUTOMATION_FLOW_NODE_HEIGHT = 400;
 

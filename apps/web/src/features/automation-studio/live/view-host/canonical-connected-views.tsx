@@ -170,6 +170,8 @@ export const AutomationFlowEditorConnectedView = createAutomationDirectViewConne
         entries: view.selectedTimelineEntries,
         policy: view.selectedPolicy,
         taskGraph,
+        // What validation needs and the graph does not carry: its Subflow's role, off the parent's summary (t398).
+        ...subflowRoleModel(view.projectFlows, taskGraph),
         ...(draftKey && drafts[draftKey] ? { taskGraphDraft: drafts[draftKey] } : {}),
         nativeNodeDefinitions: view.availableNodeDefinitions,
         recordings: view.recordings,
@@ -414,3 +416,21 @@ export const AutomationStateConnectedView = createAutomationDirectViewConnector(
       } as any;
     }
 });
+
+/**
+ * The role of the Subflow a graph belongs to, read off its parent Flow's
+ * summary (`hierarchySubflows`), which the hierarchy already holds: only a
+ * `recovery` graph may hold a whole-automation handler. Nothing when the graph
+ * is no Subflow's or the summary names no role, so the editor never guesses.
+ */
+function subflowRoleModel(projectFlows: readonly any[] | undefined, graph: any): { subflowRole?: string } {
+  const metadata = graph?.metadata;
+  if (metadata?.subflowGraph !== true) return {};
+  const parentFlowId = metadata.parentFlowId;
+  const subflowId = metadata.parentSubflowId;
+  if (typeof parentFlowId !== "string" || typeof subflowId !== "string") return {};
+  const parent = (projectFlows ?? []).map((entry: any) => entry?.flow ?? entry).find((flow: any) => flow?.flowId === parentFlowId);
+  const entries = Array.isArray(parent?.metadata?.hierarchySubflows) ? parent.metadata.hierarchySubflows : [];
+  const owned = entries.find((entry: any) => entry?.subflowId === subflowId);
+  return typeof owned?.role === "string" && owned.role ? { subflowRole: owned.role } : {};
+}

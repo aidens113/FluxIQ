@@ -28,3 +28,15 @@ export const AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_LIMITS = {
   maxRouteTags: 8,
   maxParametersPerNode: 16
 } as const;
+
+/**
+ * The bound on a plan node's `paceMs` (t378): the least time between two starts
+ * of the node in one run, in whole milliseconds, from 1 ms to ten minutes. A
+ * span's `repeat pace:` is read against it (`../script-statements/`),
+ * and a pace a trial learned is held to it before promotion writes it
+ * (`../../service/candidate-trial/promotion.ts`).
+ */
+export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS = {
+  minPaceMs: 1,
+  maxPaceMs: 600_000
+} as const;

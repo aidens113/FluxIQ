@@ -8,6 +8,7 @@ import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, Aut
 import { flowBootstrapPhaseFailure } from "../../../flow-bootstrap/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD } from "../../../llm/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, automationStudioStepFailureReauthorDecision } from "../../../recovery/refuted-result/index.ts";
+import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../index.ts";
 import { automationStudioStepFailureRepairPort, type AutomationStudioStepFailureRepairPortDependencies } from "../step-failure-port.ts";
 import { automationStudioReauthorProposed } from "./reauthor-proposal.ts";
 
@@ -124,6 +125,17 @@ describe("a failed step the ladder could not repair", () => {
     expect(brief.body).not.toContain("data-testid");
   });
 
+  // t431: the control is named by its own words or by nothing, never by how it was found.
+  it("names no control when the step's control has no words, and leaks no locator", async () => {
+    const port = deps();
+    const wordless: AutomationStudioFlowDocument = { ...flow, nodes: [flow.nodes[0]!, { id: "s4", definitionId: "web.action.click", parameterValues: { target: { name: "#composer", role: "button" }, selector: "[data-testid=composer]" } }] };
+    await automationStudioStepFailureRepairPort(port)({ detail: failedDetail(GOAL_GONE), flow: wordless, deniedEvidenceKeys: ["selector"] });
+    const body = briefOf(port).body;
+    expect(body).not.toContain("by its own words");
+    expect(body).not.toContain("Write something...");
+    expect(body).not.toMatch(/data-testid|#composer|fingerprint|-0\.12/u);
+  });
+
   it("ends as today when the build builds nothing, with the attempt on the run", async () => {
     const port = deps({ generate: vi.fn(async () => { throw flowBootstrapPhaseFailure("provider_output_validation"); }) as never });
     const result = await repair(port, failedDetail(GOAL_GONE));
@@ -205,6 +217,42 @@ describe("what the re-author may spend", () => {
   it("asks no model when the ladder left nothing, and names the cost bound", async () => {
     const port = deps();
     const result = await repair(port, failedDetail({ ...GOAL_GONE, costAccounting: { calls: 12, estimatedCostUsd: CEILING } }));
+    expect(port.generate).not.toHaveBeenCalled();
+    expect(result?.reauthored).toBe(false);
+    expect(marker(result?.detail)).toMatchObject({ routed: true, code: "llm_budget.run_cost_limit", providerInvocation: "not_attempted" });
+    expect(marker(result?.detail).purse).toMatchObject({ refusedParts: ["reauthor"], bound: "cost", leftUsd: 0 });
+  });
+});
+
+// t438, run-mv4912r9-53b05a51: a Flow's build spent $0.0425, the in-run ladder
+// $0.0042, and the re-author was then handed $0.0958 of a fresh ceiling, so the
+// Flow spent $0.1203 against $0.10. The user's words (2026-10-01): "bring the
+// ceiling down to $0.1 per flow max". In a Lab-scoped run the Flow has one
+// purse; the ladder's calls were added to the Flow's record as they settled.
+describe("the Flow's one purse, in a Lab-scoped run", () => {
+  const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
+  const usd = (value: number): number => Math.round(value * 1_000_000_000) / 1_000_000_000;
+  const memoryStore = async (spentUsd: number) => {
+    const projectPaths = new AutomationStudioProjectPaths(undefined);
+    const store = new AutomationStudioFlowBootstrapCreationSpendStore(projectPaths, new AutomationStudioFlowPaths(projectPaths), {} as unknown as AutomationStudioProjectStore);
+    await store.add("project.one", "flow.one", spentUsd);
+    return store;
+  };
+
+  it("hands the re-author what the creation and the ladder left of the Flow's ceiling, charging the ladder once", async () => {
+    const store = await memoryStore(usd(CEILING * 0.4672));
+    const port = deps({ generate: vi.fn(async () => automationStudioReauthorProposed("adaptation.one", { estimatedCostUsd: usd(CEILING * 0.5) })) });
+    const result = await store.withFlowPurse("project.one", "flow.one", CEILING, async () => await repair(port, failedDetail({ ...GOAL_GONE, costAccounting: { calls: 2, estimatedCostUsd: usd(CEILING * 0.0424) } })));
+
+    expect((port.generate.mock.calls[0] as unknown[])[2]).toBe(usd(CEILING * 0.5328));
+    expect(marker(result?.detail).purse).toMatchObject({ limitUsd: CEILING, carriedUsd: usd(CEILING * 0.4672), spentUsd: usd(CEILING * 0.9672), averagedCalls: 2, averagedUsd: usd(CEILING * 0.0424) });
+  });
+
+  it("is refused at the ceiling: a Flow whose creation and ladder spent it asks no model, and ends on the cost bound", async () => {
+    const store = await memoryStore(CEILING);
+    const port = deps();
+    const result = await store.withFlowPurse("project.one", "flow.one", CEILING, async () => await repair(port, failedDetail({ ...GOAL_GONE, costAccounting: { calls: 2, estimatedCostUsd: usd(CEILING * 0.04) } })));
+
     expect(port.generate).not.toHaveBeenCalled();
     expect(result?.reauthored).toBe(false);
     expect(marker(result?.detail)).toMatchObject({ routed: true, code: "llm_budget.run_cost_limit", providerInvocation: "not_attempted" });

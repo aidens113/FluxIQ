@@ -376,3 +376,144 @@
   margin-top: -2px;
 }
 
+
+/* Handlers (state-aware recovery): the Handlers area, a Handler's card, the
+   steps of its body, and the entry, checkpoint and hook-port badges a step
+   carries. All of it is a view of what the graph stores. */
+
+.automation-react-flow-frame .react-flow__viewport-portal {
+  z-index: -1;
+}
+
+.automation-handler-area {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  border: 2px dashed var(--color-warning-border);
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--color-warning-surface) 45%, transparent);
+  pointer-events: none;
+}
+
+.automation-handler-area header {
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+}
+
+.automation-handler-area strong {
+  color: var(--color-warning-strong, var(--color-warning));
+  font-size: var(--font-size-body-large);
+}
+
+.automation-handler-area span {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-compact);
+}
+
+.automation-flow-node.automation-handler-node {
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-surface);
+}
+
+.automation-flow-node.automation-handler-node.selected {
+  border-color: var(--color-warning);
+}
+
+.automation-flow-node.automation-handler-node.unreadable {
+  border-style: dashed;
+}
+
+.automation-flow-node.automation-handler-node .node-icon {
+  border-color: var(--color-warning-border);
+  background: var(--color-surface);
+  color: var(--color-warning);
+}
+
+.node-badge.handler {
+  border-color: var(--color-warning-border);
+  background: var(--color-surface);
+  color: var(--color-warning);
+}
+
+.automation-handler-facts {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  font-size: var(--font-size-compact);
+}
+
+.automation-handler-facts > div {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.automation-handler-facts dt {
+  color: var(--color-text-muted);
+}
+
+.automation-handler-facts dd {
+  margin: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-weight: var(--font-weight-bold);
+}
+
+.react-flow__node.automation-handler-step .automation-flow-node {
+  border-style: dashed;
+  border-color: var(--color-warning-border);
+}
+
+.react-flow__edge.automation-handler-route .react-flow__edge-path {
+  stroke-dasharray: 6 4;
+}
+
+.node-handler-badges {
+  display: contents;
+}
+
+.node-state-marker,
+.node-hook-port {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 2px 6px;
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-bold);
+}
+
+.node-state-marker.entry {
+  border-color: var(--color-success-border);
+  background: var(--color-success-surface);
+  color: var(--color-success);
+}
+
+.node-state-marker.checkpoint {
+  border-color: var(--color-info-border);
+  background: var(--color-info-surface);
+  color: var(--color-info);
+}
+
+.node-state-marker.handler-step {
+  border-color: var(--color-warning-border);
+  background: var(--color-surface);
+  color: var(--color-warning);
+}
+
+.node-hook-port {
+  cursor: pointer;
+  border-color: var(--color-warning-border);
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+}
+
+.node-hook-port:hover,
+.node-hook-port:focus-visible {
+  border-color: var(--color-warning);
+}

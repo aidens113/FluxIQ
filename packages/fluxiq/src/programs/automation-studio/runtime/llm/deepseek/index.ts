@@ -12,7 +12,8 @@
 // the shape it must answer in (`output-schema.ts`), what goes on the wire
 // (`request-body.ts`), what may be said about that without quoting it
 // (`request-shape.ts`), what the request must satisfy before it is sent
-// (`preflight.ts`), what came back (`response-envelope.ts`), how much of it is
+// (`preflight.ts`), what came back (`response-envelope.ts`, which closes a
+// reply only brackets short with `unclosed-content.ts`), how much of it is
 // read (`bounded-read.ts`), and what a refusal says (`refusal.ts`).
 //
 // The export list below is what it was before the split, plus the refusal

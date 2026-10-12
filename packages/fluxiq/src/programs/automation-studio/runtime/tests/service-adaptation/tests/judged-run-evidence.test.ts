@@ -201,22 +201,23 @@ async function harness(options: { verdict: "yes" | "no"; reAimedFailsOnce?: bool
 describe("a target override on a Flow that declares no evidence", () => {
   it("carries the run on through the repair, and is applied once that whole run is judged to answer", { timeout: 180_000 }, async () => {
     const found = await harness({ verdict: "yes" });
-    const receipts = found.detail?.metadata?.runtimePatchAttempts as Array<Record<string, unknown>> | undefined;
+    const receipts = found.detail?.metadata?.inRunRepairs as Array<Record<string, unknown>> | undefined;
 
-    // The trial proved nothing on its own, and said the judged run would.
+    // The fix was held at the failing step (C6 step 8). Its re-attempt proves
+    // nothing on its own, and its record says the judged run will.
     expect(receipts?.[0]).toMatchObject({
       kind: "temporary_target_override",
-      resumable: false,
-      notResumableCode: "no_evidence",
-      verification: { status: "unverifiable", awaitsJudgedRun: true },
-      restoredExpectedState: false,
-      retryOriginalAction: true,
+      outcome: "overlaid",
+      retryOriginalAction: false,
       approvalDecision: { autoApply: true, applyAt: "judged_whole_run", evidence: "judged_whole_run" }
     });
+    expect(found.adaptation?.metadata?.verification).toMatchObject({ status: "unverifiable", reason: "in_run_trial", awaitsJudgedRun: true });
     // The run carried on past the repaired step, from the Flow's start to its end, and was judged.
     expect(found.run.status).toBe("succeeded");
     expect(found.run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
-    expect(found.detail?.metadata?.adaptiveRetry).toMatchObject({ attempted: true, status: "succeeded", candidateAdaptationIds: [found.adaptation?.adaptationId] });
+    expect(found.detail?.metadata).not.toHaveProperty("adaptiveRetry");
+    expect(found.run.trace?.repairs).toEqual([receipts?.[0]?.repairId]);
+    expect(receipts?.[0]?.adaptationId).toBe(found.adaptation?.adaptationId);
     expect(found.run.trace?.attempts[0]?.nodeId).toBe("start");
     // The judge saw a stored Flow the repair had not yet changed.
     expect(found.storedAtJudgement).toEqual([RECORDED_TARGET]);
@@ -235,21 +236,21 @@ describe("a target override on a Flow that declares no evidence", () => {
   // trial must not read the missed attempt as a contradiction (t375).
   it("carries on and is applied when the re-aimed press needs one automatic retry in its trial", { timeout: 180_000 }, async () => {
     const found = await harness({ verdict: "yes", reAimedFailsOnce: true });
-    const receipts = found.detail?.metadata?.runtimePatchAttempts as Array<Record<string, unknown>> | undefined;
+    const receipts = found.detail?.metadata?.inRunRepairs as Array<Record<string, unknown>> | undefined;
 
-    // The trial's first press at the re-aimed control missed, and its retry landed.
+    // The re-attempt's first press at the re-aimed control missed, and its retry landed.
     expect(found.reAimedPresses.slice(0, 2)).toEqual([false, true]);
     expect(receipts?.[0]).toMatchObject({
       kind: "temporary_target_override",
-      resumable: false,
-      notResumableCode: "no_evidence",
-      verification: { status: "unverifiable", awaitsJudgedRun: true },
-      retryOriginalAction: true,
+      outcome: "overlaid",
+      retryOriginalAction: false,
       approvalDecision: { autoApply: true, applyAt: "judged_whole_run", evidence: "judged_whole_run" }
     });
+    expect(found.adaptation?.metadata?.verification).toMatchObject({ status: "unverifiable", reason: "in_run_trial", awaitsJudgedRun: true });
     expect(found.run.status).toBe("succeeded");
     expect(found.run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });
-    expect(found.detail?.metadata?.adaptiveRetry).toMatchObject({ attempted: true, status: "succeeded" });
+    expect(found.detail?.metadata).not.toHaveProperty("adaptiveRetry");
+    expect(found.run.trace?.repairs).toEqual([receipts?.[0]?.repairId]);
     expect(found.storedTarget).toEqual(REPLACEMENT_TARGET);
     expect(found.adaptation).toMatchObject({
       status: "applied",

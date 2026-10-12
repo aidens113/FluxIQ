@@ -32,10 +32,12 @@
 // states `unacted`, or the fault was found while resolving the target, before
 // anything could act). Otherwise the act may have landed: the attempt is
 // refused with `actUncertain`, a run stopping on it says the step's outcome is
-// uncertain, and a Flow does not walk past it. An effect check that shows the
-// act landed -- the graph's state the node was to produce already holding
-// (`../recovery-ladder.ts`, `skip_satisfied_node`), or the caller's own check
-// outside a graph (`../outside-graph/retries.ts`) -- settles it as done. A node
+// uncertain, and a Flow does not walk past it. The effect check (`./effect-check.ts`,
+// C6 step 4) runs before any retry, route or alternative -- in a graph run the
+// host's waiting evaluation of the node's expected state
+// (`../step-loop/failed-attempt.ts`), outside a graph the caller's own check
+// (`../outside-graph/retries.ts`): `landed` settles it as done, `not_landed`
+// makes it unacted, `unknown` stops the run as Outcome uncertain. A node
 // that says repeating it is safe is never lasting.
 
 import type { AutomationStudioFlowNode } from "../../../model/index.ts";

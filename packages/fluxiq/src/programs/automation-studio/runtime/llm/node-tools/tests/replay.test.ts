@@ -61,6 +61,16 @@ describe("a replay call", () => {
     });
   });
 
+  it("checks a step with the effect its Flow node recorded, and sends none it did not record (t447)", () => {
+    const effect = { v: "web-effect.v1", added: ["0b1c2d3e"], removed: [] };
+    const carried: AutomationStudioFlowDraftStep = { ...step, routeSignatures: { before: { page: "item" }, effect } };
+    expect(automationStudioNodeReplayVerifyCall(carried)).toEqual({ ...ranWith, replay: "verify", from: { location: "https://a.example/" }, effect });
+    // A replay runs the step as the Flow does and is told nothing of it; a malformed record sends nothing.
+    expect(automationStudioNodeReplayStepCall(carried)).not.toHaveProperty("effect");
+    expect(automationStudioNodeReplayVerifyCall({ ...step, routeSignatures: { before: { page: "item" } } })).not.toHaveProperty("effect");
+    expect(automationStudioNodeReplayVerifyCall({ ...step, routeSignatures: { effect: {} } })).not.toHaveProperty("effect");
+  });
+
   it("takes either one alone", () => {
     expect(automationStudioNodeReplayStepCall(step, { item: { name: "Ada" } })).toMatchObject({ parameters: ranWith.parameters, item: { name: "Ada" } });
     expect(automationStudioNodeReplayVerifyCall(step, { parameters: { label: "x" } })).not.toHaveProperty("item");

@@ -73,17 +73,32 @@ function acceptedDecision(offers: AutomationStudioLlmUnusableDecisionOffers | un
 /** Which kinds of decision the loop offered the decision that could not be used. */
 export type AutomationStudioLlmUnusableDecisionOffers = { tools: boolean; complete: boolean; amend: boolean };
 
-/** A closed grammar correction, never a provider-authored key or value. */
-export type AutomationStudioLlmUnusableDecisionFieldIssue = {
-  code: "llm_output.unexpected_field";
-  path: "response.decision.write";
-  expectedPath: "response.decision.input.write";
-};
+/**
+ * A closed grammar correction, never a provider-authored key or value: a
+ * `write` placed beside the input instead of in it, or a decision `kind` that
+ * is none of the three (R4: `kind: "callId"` was refused nine times and the
+ * model was never told which field was at fault).
+ */
+export type AutomationStudioLlmUnusableDecisionFieldIssue =
+  | { code: "llm_output.unexpected_field"; path: "response.decision.write"; expectedPath: "response.decision.input.write" }
+  | { code: "llm_output.invalid_evidence_decision"; path: "response.decision.kind"; allowed: ["tool_call", "complete", "amend_draft"] };
 
-function screenedFieldIssues(issues: readonly AutomationStudioLlmUnusableDecisionFieldIssue[] | undefined): AutomationStudioLlmUnusableDecisionFieldIssue[] {
-  return issues?.some((issue) => issue?.code === "llm_output.unexpected_field"
-    && issue.path === "response.decision.write" && issue.expectedPath === "response.decision.input.write")
-    ? [{ code: "llm_output.unexpected_field", path: "response.decision.write", expectedPath: "response.decision.input.write" }] : [];
+const WRITE_FIELD_ISSUE: AutomationStudioLlmUnusableDecisionFieldIssue = { code: "llm_output.unexpected_field", path: "response.decision.write", expectedPath: "response.decision.input.write" };
+const KIND_FIELD_ISSUE: AutomationStudioLlmUnusableDecisionFieldIssue = { code: "llm_output.invalid_evidence_decision", path: "response.decision.kind", allowed: ["tool_call", "complete", "amend_draft"] };
+
+/**
+ * Each known correction the issues name whose code was listed, rebuilt from
+ * Core's own constant: nothing a caller passed is carried through.
+ */
+function screenedFieldIssues(issues: readonly AutomationStudioLlmUnusableDecisionFieldIssue[] | undefined, codes: readonly string[]): AutomationStudioLlmUnusableDecisionFieldIssue[] {
+  return [WRITE_FIELD_ISSUE, KIND_FIELD_ISSUE]
+    .filter((known) => codes.includes(known.code) && issues?.some((issue) => issue?.code === known.code && issue.path === known.path))
+    .map((known) => ({ ...known }));
+}
+
+/** The diagnostics a field correction is read from, by the code and path the harness gave them. */
+function fieldIssuesOf(errors: readonly { code: string; path?: string | undefined }[]): AutomationStudioLlmUnusableDecisionFieldIssue[] {
+  return [WRITE_FIELD_ISSUE, KIND_FIELD_ISSUE].filter((known) => errors.some((diagnostic) => diagnostic.code === known.code && diagnostic.path === known.path));
 }
 
 const DECISION_FEEDBACK_INSTRUCTION = "Your previous decision could not be used, for the listed issue codes, and nothing ran. "
@@ -113,6 +128,12 @@ const ISSUE_INSTRUCTIONS: Readonly<Record<string, string>> = {
   // `./evidence-loop-decision.ts` (t252, D3): a written node call with a binding that cannot be read.
   "run_node.binding_refused": "A binding in the written step could not be read; each run_node.binding_refused.<reason>:<path> code names where and why. "
     + "Write {\"$input\": \"<name>\", \"test\": <the value to test with>} with a name of letters and digits that starts lower case, or {\"$row\": \"<field>\"}, and nothing else in that object; {\"$step\": <n>, \"output\": \"<output id>\"} for the output of the earlier step n, as that step's node declares it, with \"path\": \"<field>\" for one field of a record output; n must be a step before this one that worked and is in the draft."
+};
+
+/** What each field correction tells the model, keyed by its code. */
+const FIELD_ISSUE_INSTRUCTIONS: Readonly<Record<AutomationStudioLlmUnusableDecisionFieldIssue["code"], string>> = {
+  "llm_output.unexpected_field": "Place write at response.decision.input.write, inside the tool call input, rather than response.decision.write. This corrects grammar only; existing permission and tool checks still apply.",
+  "llm_output.invalid_evidence_decision": "The field at fault is response.decision.kind: it must be exactly \"tool_call\", \"complete\" or \"amend_draft\", and a tool call also carries callId, toolId and input. This corrects grammar only; existing permission and tool checks still apply."
 };
 
 /**
@@ -150,7 +171,7 @@ export class AutomationStudioLlmUnusableDecisionError extends Error {
     if (account) this.reply = account;
     const paid = automationStudioLlmProviderPaidUsage(usage, { requireOutputTokens: false });
     if (paid) this.usage = Object.freeze(paid);
-    const fields = codes.includes("llm_output.unexpected_field") ? screenedFieldIssues(fieldIssues) : [];
+    const fields = screenedFieldIssues(fieldIssues, codes);
     if (fields.length) this.fieldIssues = Object.freeze(fields.map((field) => Object.freeze(field)));
   }
 }
@@ -177,10 +198,7 @@ export function automationStudioLlmUnusableDecisionError(result: AutomationStudi
   if (!automationStudioLlmTaskResultSpentWithoutDecision(result)) return undefined;
   const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
   const reply = errors.map((diagnostic) => providerReply(diagnostic.metadata)).find((account) => account !== undefined);
-  const fields: AutomationStudioLlmUnusableDecisionFieldIssue[] = errors.some((diagnostic) => diagnostic.code === "llm_output.unexpected_field"
-    && diagnostic.path === "response.decision.write")
-    ? [{ code: "llm_output.unexpected_field", path: "response.decision.write", expectedPath: "response.decision.input.write" }] : [];
-  return new AutomationStudioLlmUnusableDecisionError(errors.map((diagnostic) => diagnostic.code), reply, fields, result.usage);
+  return new AutomationStudioLlmUnusableDecisionError(errors.map((diagnostic) => diagnostic.code), reply, fieldIssuesOf(errors), result.usage);
 }
 
 /**
@@ -206,7 +224,7 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
 }): JsonObject {
   // Every well-formed issue code (2026-09-30): it was the first eight.
   const issueCodes = [...new Set(input.issueCodes.filter((code) => ISSUE_CODE.test(code)))];
-  const fieldIssues = issueCodes.includes("llm_output.unexpected_field") ? screenedFieldIssues(input.fieldIssues) : [];
+  const fieldIssues = screenedFieldIssues(input.fieldIssues, issueCodes);
   if (input.unreadable) {
     const { reply, inARow, maxInARow } = input.unreadable;
     const said = automationStudioLlmUnreadableReplySaid({ case: reply?.case, issueCodes: input.issueCodes });
@@ -230,7 +248,7 @@ export function automationStudioLlmUnusableDecisionFeedback(input: {
     ...(fieldIssues.length ? { fieldIssues } : {}),
     accepted: acceptedDecision(input.offers),
     instruction: [DECISION_FEEDBACK_INSTRUCTION,
-      ...(fieldIssues.length ? ["Place write at response.decision.input.write, inside the tool call input, rather than response.decision.write. This corrects grammar only; existing permission and tool checks still apply."] : []),
+      ...fieldIssues.map((issue) => FIELD_ISSUE_INSTRUCTIONS[issue.code]),
       ...[...new Set(input.issueCodes)].flatMap((code) => ISSUE_INSTRUCTIONS[code] ?? [])].join(" ")
   };
 }

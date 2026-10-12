@@ -15,32 +15,23 @@ import type {
 import type { AutomationStudioRuntimeRunSummary } from "../../../storage/index.ts";
 import { automationStudioFlowVersionsFromMetadata, automationStudioMetadataWithFlowVersions } from "../../flow-version/index.ts";
 import { classifyAutomationStudioAdaptiveFailure, compactAutomationStudioAdaptiveFailure } from "../../adaptive-orchestrator.ts";
+import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import type { AutomationStudioInstructionSummary } from "../indexes/index.ts";
-import { automationStudioDecisionAppliedAutomatically, automationStudioRunChangedDurableBehavior } from "../../durable-behavior/index.ts";
-import { compactJsonObject } from "../compact-json.ts";
+import { automationStudioRunChangedDurableBehavior } from "../../durable-behavior/index.ts";
 import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-values.ts";
 import { extractionSummaryFromOutputs } from "./extraction-summary.ts";
+import { automationStudioRunFailureCounts } from "./failure-counts.ts";
+import { automationStudioRunDetailAttemptsInRunOrder, type AutomationStudioRunDetailAttemptPlacement } from "./frame-attempts.ts";
 import { hostTargetResolutionFromOutputs } from "./host-target-resolution.ts";
+import { automationStudioRunDetailRecoveryTrace } from "./recovery-trace.ts";
+import { automationStudioRunStop } from "./run-stop.ts";
+import { automationStudioRunDetailSkipped } from "./skipped.ts";
 import { automationStudioRunDetailStateRouting } from "./state-routing.ts";
+import { automationStudioRunDetailStepCount } from "./step-count.ts";
 
 // Converting a runtime session into the run detail, summaries and intervention
 // records that the summary indexes and the public run views are built from.
 export const SUBFLOW_SUMMARY_MIGRATION_IO_CONCURRENCY = 16;
-
-export function adaptiveRuntimeMetricsFromRunDetail(detail: AutomationStudioFlowRunDetail): JsonObject {
-  const runtimePatchAttempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
-  const durableBehaviorChanged = runtimePatchAttempts.some((attempt) => automationStudioDecisionAppliedAutomatically(attempt.approvalDecision));
-  const tokenUsage = detail.summary.tokenUsage ?? flowRunSummaryWithInterventionSummaries(detail).tokenUsage;
-  return compactJsonObject({
-    llmCallCount: detail.interventions.filter((intervention) => intervention.provider || intervention.promptVersion || intervention.kind === "diagnosis" || intervention.kind === "runtime_patch").length,
-    tokenCount: tokenUsage?.totalTokens ?? 0,
-    estimatedCostUsd: tokenUsage?.estimatedCostUsd ?? 0,
-    recoveryAttemptCount: detail.recoveryAttempts?.length ?? 0,
-    adaptationApplyCount: durableBehaviorChanged ? 1 : 0,
-    durableBehaviorChanged,
-    deterministicSuccessAfterAdaptation: detail.metadata?.adaptiveRetry && isJsonRecord(detail.metadata.adaptiveRetry) ? detail.metadata.adaptiveRetry.status === "succeeded" : false
-  });
-}
 
 export function flowRunSummaryWithInterventionSummaries(detail: AutomationStudioFlowRunDetail): AutomationStudioFlowRunSummary {
   type TokenUsageSummary = NonNullable<AutomationStudioFlowRunSummary["tokenUsage"]>;
@@ -60,11 +51,21 @@ export function flowRunSummaryWithInterventionSummaries(detail: AutomationStudio
     estimatedCostUsd: (sum.estimatedCostUsd ?? 0) + (intervention.tokenUsage?.estimatedCostUsd ?? 0)
   }), {}) : detail.summary.tokenUsage ?? {};
   const hasTokenUsage = Object.values(tokenUsage).some((value) => typeof value === "number" && value > 0);
+  // A Call Subflow container's part's attempts count and the container does not (`step-count.ts`).
+  const steps = detail.actionAttempts ? automationStudioRunDetailStepCount(detail.actionAttempts) : detail.summary.actionAttemptCount;
+  // A container is a record and not a step, so where the two differ the action pages are told how many records there are.
+  const recordCount = detail.actionAttempts && detail.actionAttempts.length !== steps ? { actionRecordCount: detail.actionAttempts.length } : {};
+  // The run's own stop, from its detail (`run-stop.ts`): the summary says it and its words in place of "failed", and drops both once the detail no longer does.
+  const stop = automationStudioRunStop(detail.metadata?.stopCode);
+  const { stopCode: _stopCode, statusWords: _statusWords, ...summaryMetadata } = detail.summary.metadata ?? {};
+  const merged = { ...summaryMetadata, ...recordCount, ...(stop ? { stopCode: stop.code, statusWords: stop.statusWords } : {}) };
+  const metadata = detail.summary.metadata !== undefined || Object.keys(merged).length ? { metadata: merged } : {};
   return {
     ...detail.summary,
+    ...metadata,
     routeDecisionCount: detail.routeDecisions.length,
     subflowEntryCount: detail.subflows.length,
-    actionAttemptCount: detail.actionAttempts?.length ?? detail.summary.actionAttemptCount,
+    actionAttemptCount: steps,
     interventionCount: interventionSummaries.length,
     adaptationCount: new Set(detail.adaptationIds ?? []).size,
     durableBehaviorChanged: automationStudioRunChangedDurableBehavior(detail),
@@ -99,7 +100,11 @@ export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSe
   const actionAttempts = runtimeActionAttemptsFromSession(session, adaptations);
   const recoveryAttempts = runtimeRecoveryAttemptsFromSession(session);
   const interventions = runtimeInterventionsFromRecoveryAttempts(session, recoveryAttempts);
-  const terminalFailureReason = runtimeTerminalFailureReason(session, recoveryAttempts);
+  // A run stopped as Outcome uncertain says so as its own stop, beside the failed attempt's own failure (`run-stop.ts`).
+  const stop = session.status === "failed" ? automationStudioRunStop(session.trace?.failure?.code) : undefined;
+  const terminalFailureReason = stop?.reason ?? runtimeTerminalFailureReason(session, recoveryAttempts);
+  // The run's lifecycle handler executions, which the root frame's trace carries (`executor/step-loop/lifecycle-trace.ts`).
+  const handlerExecutions = session.trace?.handlerExecutions;
   return {
     schemaVersion: "0.1",
     summary: runtimeFlowRunSummaryFromSession(session, projectId),
@@ -108,6 +113,9 @@ export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSe
     subflows: [],
     actionAttempts,
     recoveryAttempts,
+    ...(handlerExecutions?.length ? { handlerExecutions: handlerExecutions.map((record) => ({ ...record, framePath: [...record.framePath] })) } : {}),
+    // Retries, planned fails and true failures, from the run's recovery incidents and in-run repairs, for every run (`failure-counts.ts`).
+    failureCounts: automationStudioRunFailureCounts(session.trace?.incidents, session.trace?.repairs),
     interventions,
     adaptationIds: [],
     changeProposalIds: [],
@@ -123,6 +131,7 @@ export function runtimeSessionToFlowRunDetail(session: AutomationStudioRuntimeSe
       recoveryAttemptCount: recoveryAttempts.length,
       comparisonCount: actionAttempts.filter((attempt) => attempt.comparisonStatus).length,
       ...(terminalFailureReason ? { terminalFailureReason } : {}),
+      ...(stop ? { stopCode: stop.code } : {}),
       ...(session.trace?.message ? { message: session.trace.message } : {}),
       ...(session.trace?.currentNodeId ? { currentNodeId: session.trace.currentNodeId } : {})
     }
@@ -140,7 +149,7 @@ export function runtimeSummaryFromSession(session: AutomationStudioRuntimeSessio
     ...(session.startedAt !== undefined ? { startedAt: session.startedAt } : {}),
     ...(session.finishedAt !== undefined ? { finishedAt: session.finishedAt } : {}),
     ...(session.flowId ? { flowId: session.flowId } : {}),
-    attemptCount: session.trace?.attempts?.length ?? 0,
+    attemptCount: automationStudioRunDetailStepCount(automationStudioRunDetailAttemptsInRunOrder(session.trace?.attempts ?? [])),
     effectCount: session.trace?.effects?.length ?? 0,
     updatedAt
   };
@@ -151,89 +160,105 @@ function graphStatusToFlowRunStatus(status: string): AutomationStudioFlowRunActi
   return "unknown";
 }
 
+// Every frame's attempts in run order (`frame-attempts.ts`). A part's attempt is matched against
+// no adaptation: the Flow's name the Flow's own nodes, and a part's node can share an id with one.
 function runtimeActionAttemptsFromSession(session: AutomationStudioRuntimeSession, adaptations?: AutomationStudioFlowAdaptation[]): AutomationStudioFlowRunActionAttemptRecord[] {
-  return (session.trace?.attempts ?? []).map((attempt, index) => {
-    const durationMs = attempt.finishedAt === undefined ? undefined : Math.max(0, attempt.finishedAt - attempt.startedAt);
-    // Session traces are read back from storage, so the record is parsed again.
-    const failure = parseAutomationStudioFailureRecord(attempt.failure);
-    const adaptiveFailure = attempt.status === "failed"
-      ? compactAutomationStudioAdaptiveFailure(classifyAutomationStudioAdaptiveFailure({
-        projectId: session.projectId ?? "",
-        flowId: session.flowId,
-        runId: session.runId,
-        attempt,
-        ...(adaptations?.length ? { adaptations } : {})
-      }))
-      : undefined;
-    const recordCount = datasetMarkerRecordCount(attempt.outputs);
-    const outputShape = attemptOutputShape(attempt.outputs);
-    const hostTargetResolution = hostTargetResolutionFromOutputs(attempt.outputs);
-    const extraction = extractionSummaryFromOutputs(attempt.outputs);
-    const stateRouting = automationStudioRunDetailStateRouting(attempt, failure?.code);
-    return {
-      attemptId: attempt.attemptId,
-      nodeId: attempt.nodeId,
-      definitionId: attempt.definitionId,
-      order: index + 1,
-      status: graphStatusToFlowRunStatus(attempt.status),
-      ...(attempt.route ? { route: attempt.route } : {}),
-      startedAt: attempt.startedAt,
-      ...(attempt.finishedAt !== undefined ? { finishedAt: attempt.finishedAt } : {}),
-      ...(durationMs !== undefined ? { durationMs } : {}),
-      ...(attempt.transitionComparison?.status ? { comparisonStatus: attempt.transitionComparison.status } : {}),
-      ...(attempt.message ? { message: attempt.message } : {}),
-      ...(failure ? { failure } : {}),
-      // A sometimes-present step the run passed over because its target was
-      // observed absent (`executor/step-skip/absent-step.ts`). The attempt reads
-      // `succeeded` down `route: "skipped"`, which alone a reader cannot tell
-      // from a press; this says the step was skipped and what observed it. A
-      // step state routing passed over (`executor/state-routing/`) also says
-      // where the run went on to, so a run's detail shows the routing decision.
-      ...(attempt.skipped ? { skipped: attempt.skipped.reason === "state_routed"
-        ? { reason: "state_routed", code: attempt.skipped.code, toNodeId: attempt.skipped.toNodeId, direction: attempt.skipped.direction }
-        : { reason: "target_absent", code: attempt.skipped.code } } : {}),
-      // What state routing made of the page, whatever it decided: a step whose
-      // routing found no way on otherwise reads like one that never consulted
-      // it (`state-routing.ts`).
-      ...(stateRouting ? { stateRouting } : {}),
-      metadata: {
-        ...(attempt.regionId ? { regionId: attempt.regionId } : {}),
-        ...(attempt.transitionComparison?.diffSummary ? { diffSummary: attempt.transitionComparison.diffSummary } : {}),
-        ...(attempt.recoveryDecision?.selected ? { recoverySelected: attempt.recoveryDecision.selected } : {}),
-        ...(attempt.hostCapabilities?.length ? { hostCapabilities: attempt.hostCapabilities } : {}),
-        ...(attempt.stateRefs ? { stateRefs: attempt.stateRefs } : {}),
-        ...(attempt.targetResolution ? { targetResolution: attempt.targetResolution } : {}),
-        // What the browser did once the command arrived, as against Core's
-        // pre-dispatch choice above. The strategy is the only record that the
-        // host re-resolved a control the recording named differently, which is
-        // a recovery the ladder never sees because it happens before a failure
-        // is reported.
-        ...(hostTargetResolution ? { hostTargetResolution } : {}),
-        // Which attempt of this node this is and which ladder rung asked for
-        // it: a closed rung name and two integers. Without it a retried node
-        // is indistinguishable from a Flow that authored the same node twice,
-        // and no rung can be attributed to anything.
-        ...(attempt.retry ? { retry: { attemptNumber: attempt.retry.attemptNumber, maxAttempts: attempt.retry.maxAttempts, backoffMs: attempt.retry.backoffMs, rung: attempt.retry.rung } } : {}),
-        // What the run did about the state the node expected to find before it
-        // ran. `message` is the host's sentence and stays behind.
-        ...(attempt.readiness ? { readiness: { ceilingMs: attempt.readiness.ceilingMs, waitedMs: attempt.readiness.waitedMs, satisfied: attempt.readiness.satisfied, checkedConditionCount: attempt.readiness.checkedConditionCount } } : {}),
-        ...(adaptiveFailure ? { adaptiveFailure } : {}),
-        // The question this attempt put to a person, and how it came out: closed
-        // words only, never the question or the answer. It is the only record
-        // that a failed attempt did not end its node -- a person cleared what the
-        // step met and the run went on down `route` (`executor/person-needed.ts`).
-        ...(attempt.ask ? { ask: { kind: attempt.ask.kind, status: attempt.ask.status, ...(attempt.ask.route ? { route: attempt.ask.route } : {}), ...(attempt.ask.personNeeded ? { personNeeded: true } : {}) } } : {}),
-        ...(recordCount !== undefined ? { recordCount } : {}),
-        // What a list read said about its own read: counts, flags, the field
-        // keys it declared, and whether the list it waited for was ever there.
-        // `recordCount` above says how much was stored and cannot say why that
-        // was the amount; this can. See `extractionSummaryFromOutputs`.
-        ...(extraction ? { extraction } : {}),
-        // What the step produced, as names and counts. See `attemptOutputShape`.
-        ...(outputShape ? { outputShape } : {})
-      }
-    };
-  });
+  return automationStudioRunDetailAttemptsInRunOrder(session.trace?.attempts ?? [])
+    .map((placement, index) => runtimeActionAttemptRecord(session, placement, index + 1, placement.parentAttemptId === undefined ? adaptations : undefined));
+}
+
+function runtimeActionAttemptRecord(session: AutomationStudioRuntimeSession, placement: AutomationStudioRunDetailAttemptPlacement, order: number, adaptations: AutomationStudioFlowAdaptation[] | undefined): AutomationStudioFlowRunActionAttemptRecord {
+  const { attempt, parentAttemptId } = placement;
+  const durationMs = attempt.finishedAt === undefined ? undefined : Math.max(0, attempt.finishedAt - attempt.startedAt);
+  // Session traces are read back from storage, so the record is parsed again.
+  const failure = parseAutomationStudioFailureRecord(attempt.failure);
+  const adaptiveFailure = attempt.status === "failed"
+    ? compactAutomationStudioAdaptiveFailure(classifyAutomationStudioAdaptiveFailure({
+      projectId: session.projectId ?? "",
+      flowId: session.flowId,
+      runId: session.runId,
+      attempt,
+      ...(adaptations?.length ? { adaptations } : {})
+    }))
+    : undefined;
+  const recordCount = datasetMarkerRecordCount(attempt.outputs);
+  const outputShape = attemptOutputShape(attempt.outputs);
+  const hostTargetResolution = hostTargetResolutionFromOutputs(attempt.outputs);
+  const extraction = extractionSummaryFromOutputs(attempt.outputs);
+  const stateRouting = automationStudioRunDetailStateRouting(attempt, failure?.code);
+  const skipped = automationStudioRunDetailSkipped(attempt);
+  // The frames, failure class, frame entry and handler of state-aware recovery, as ids and closed codes (`recovery-trace.ts`).
+  const recoveryTrace = automationStudioRunDetailRecoveryTrace(attempt);
+  // A step whose state already held reads as done, with its failure kept (`flow-change/attempt-projection.ts`).
+  const settled = automationStudioAttemptSettled(attempt);
+  return {
+    attemptId: placement.attemptId,
+    nodeId: attempt.nodeId,
+    definitionId: attempt.definitionId,
+    order,
+    status: graphStatusToFlowRunStatus(settled.status),
+    ...(settled.route ? { route: settled.route } : {}),
+    startedAt: attempt.startedAt,
+    ...(attempt.finishedAt !== undefined ? { finishedAt: attempt.finishedAt } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    ...(attempt.transitionComparison?.status ? { comparisonStatus: attempt.transitionComparison.status } : {}),
+    ...(attempt.message ? { message: attempt.message } : {}),
+    ...(failure ? { failure } : {}),
+    // A sometimes-present step the run passed over because its target was
+    // observed absent (`executor/step-skip/absent-step.ts`). The attempt reads
+    // `succeeded` down `route: "skipped"`, which alone a reader cannot tell
+    // from a press; this says the step was skipped and what observed it. A
+    // step state routing passed over (`executor/state-routing/`) also says
+    // where the run went on to, so a run's detail shows the routing decision;
+    // an act already done in this run names the row it was done for (`skipped.ts`).
+    ...(skipped ? { skipped } : {}),
+    // What state routing made of the page, whatever it decided: a step whose
+    // routing found no way on otherwise reads like one that never consulted
+    // it (`state-routing.ts`).
+    ...(stateRouting ? { stateRouting } : {}),
+    ...recoveryTrace,
+    // A called part's attempt names the Call Subflow attempt it ran under (`frame-attempts.ts`).
+    ...(parentAttemptId !== undefined ? { parentAttemptId } : {}),
+    ...(attempt.stateHeld && attempt.status === "failed" ? { stateHeld: { rung: attempt.stateHeld.rung } } : {}),
+    metadata: {
+      // A part's attempt's id within its own frame's trace (`frame-attempts.ts`).
+      ...(placement.attemptId !== attempt.attemptId ? { traceAttemptId: attempt.attemptId } : {}),
+      ...(attempt.regionId ? { regionId: attempt.regionId } : {}),
+      ...(attempt.transitionComparison?.diffSummary ? { diffSummary: attempt.transitionComparison.diffSummary } : {}),
+      ...(attempt.recoveryDecision?.selected ? { recoverySelected: attempt.recoveryDecision.selected } : {}),
+      ...(attempt.hostCapabilities?.length ? { hostCapabilities: attempt.hostCapabilities } : {}),
+      ...(attempt.stateRefs ? { stateRefs: attempt.stateRefs } : {}),
+      ...(attempt.targetResolution ? { targetResolution: attempt.targetResolution } : {}),
+      // What the browser did once the command arrived, as against Core's
+      // pre-dispatch choice above. The strategy is the only record that the
+      // host re-resolved a control the recording named differently, which is
+      // a recovery the ladder never sees because it happens before a failure
+      // is reported.
+      ...(hostTargetResolution ? { hostTargetResolution } : {}),
+      // Which attempt of this node this is and which ladder rung asked for
+      // it: a closed rung name and two integers. Without it a retried node
+      // is indistinguishable from a Flow that authored the same node twice,
+      // and no rung can be attributed to anything.
+      ...(attempt.retry ? { retry: { attemptNumber: attempt.retry.attemptNumber, maxAttempts: attempt.retry.maxAttempts, backoffMs: attempt.retry.backoffMs, rung: attempt.retry.rung } } : {}),
+      // What the run did about the state the node expected to find before it
+      // ran. `message` is the host's sentence and stays behind.
+      ...(attempt.readiness ? { readiness: { ceilingMs: attempt.readiness.ceilingMs, waitedMs: attempt.readiness.waitedMs, satisfied: attempt.readiness.satisfied, checkedConditionCount: attempt.readiness.checkedConditionCount } } : {}),
+      ...(adaptiveFailure ? { adaptiveFailure } : {}),
+      // The question this attempt put to a person, and how it came out: closed
+      // words only, never the question or the answer. It is the only record
+      // that a failed attempt did not end its node -- a person cleared what the
+      // step met and the run went on down `route` (`executor/person-needed.ts`).
+      ...(attempt.ask ? { ask: { kind: attempt.ask.kind, status: attempt.ask.status, ...(attempt.ask.route ? { route: attempt.ask.route } : {}), ...(attempt.ask.personNeeded ? { personNeeded: true } : {}) } } : {}),
+      ...(recordCount !== undefined ? { recordCount } : {}),
+      // What a list read said about its own read: counts, flags, the field
+      // keys it declared, and whether the list it waited for was ever there.
+      // `recordCount` above says how much was stored and cannot say why that
+      // was the amount; this can. See `extractionSummaryFromOutputs`.
+      ...(extraction ? { extraction } : {}),
+      // What the step produced, as names and counts. See `attemptOutputShape`.
+      ...(outputShape ? { outputShape } : {})
+    }
+  };
 }
 
 // A saved trace holds a `$dataset` marker where an attempt's captured rows were
@@ -283,9 +308,10 @@ function runtimeFlowRunSummaryFromSession(session: AutomationStudioRuntimeSessio
     updatedAt: Math.max(session.finishedAt ?? 0, session.startedAt ?? 0, session.queuedAt),
     routeDecisionCount: 0,
     subflowEntryCount: 0,
-    actionAttemptCount: session.trace?.attempts?.length ?? 0,
+    actionAttemptCount: automationStudioRunDetailStepCount(automationStudioRunDetailAttemptsInRunOrder(session.trace?.attempts ?? [])),
     interventionCount,
     adaptationCount: 0,
+    failureCounts: automationStudioRunFailureCounts(session.trace?.incidents, session.trace?.repairs),
     metadata: {
       compatibilitySource: "runtime-session",
       targetKind: session.targetKind,

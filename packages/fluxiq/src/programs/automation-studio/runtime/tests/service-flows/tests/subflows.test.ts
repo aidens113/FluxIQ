@@ -132,7 +132,7 @@ describe("AutomationStudioService recording persistence", () => {
     const summaries = await service.listAutomationFlowSummaries(project.id);
     const parentSummary = summaries.find((summary) => summary.flowId === flow.flowId);
 
-    expect(parentSummary?.hierarchySubflows).toEqual([{ subflowId: subflow.subflowId, name: "Live Path", graphFlowId: subflow.graphFlowId, parentCategoryId: "category.live" }]);
+    expect(parentSummary?.hierarchySubflows).toEqual([{ subflowId: subflow.subflowId, name: "Live Path", role: "utility", graphFlowId: subflow.graphFlowId, parentCategoryId: "category.live" }]);
     await expect(service.listFlowSubflowSummaries({ projectId: project.id, flowId: flow.flowId })).resolves.toMatchObject({
       subflows: [expect.objectContaining({ subflowId: subflow.subflowId, parentCategoryId: "category.live" })]
     });
@@ -209,7 +209,7 @@ describe("AutomationStudioService recording persistence", () => {
     }));
     expect(summaries).toContainEqual(expect.objectContaining({
       flowId: parent.flowId,
-      hierarchySubflows: [{ subflowId: subflow.subflowId, name: "Checkout", graphFlowId: subflow.graphFlowId, parentCategoryId: "category.checkout" }],
+      hierarchySubflows: [{ subflowId: subflow.subflowId, name: "Checkout", role: "primary", graphFlowId: subflow.graphFlowId, parentCategoryId: "category.checkout" }],
       subflowCategories: [{ id: "category.checkout", name: "Checkout paths" }]
     }));
     expect(repairedIndex.ownershipMetadataVersion).toBe(1);

@@ -13,6 +13,8 @@ import { isJsonRecord, jsonObjectFromUnknown, stringOrNull } from "../json-value
 import { mapWithConcurrency, uniqueStrings, upsertBy } from "../collections.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
+import { applyAutomationStudioUnitRepairPatch } from "./unit-repair-apply.ts";
+import { automationStudioIsUnitRepairChange } from "./unit-repair-change.ts";
 
 // Applying and reverting an adaptation durably: dispatching each patch to its
 // applier, recording what was mutated so a failure can be rolled back, and
@@ -37,7 +39,7 @@ export class AutomationStudioDurableAdaptations {
     const mutations: JsonObject[] = [];
     try {
       for (const patch of adaptation.patch) {
-        mutations.push(await this.applyFlowAdaptationPatchDurably(adaptation, patch, now));
+        mutations.push(...await this.applyFlowAdaptationPatchMutations(adaptation, patch, now));
       }
       mutations.push(await this.recordAppliedAdaptationOnFlow(adaptation, now, mutations));
     } catch (error) {
@@ -90,6 +92,20 @@ export class AutomationStudioDurableAdaptations {
     };
   }
 
+  /**
+   * Every mutation one patch makes. A unit repair (C12) may make two -- the
+   * automation's recovery Subflow it created, then the graph it wrote -- and
+   * both are rolled back together; every other kind makes one.
+   */
+  async applyFlowAdaptationPatchMutations(
+    adaptation: AutomationStudioFlowAdaptation,
+    patch: AutomationStudioFlowAdaptation["patch"][number],
+    now: number
+  ): Promise<JsonObject[]> {
+    if (!automationStudioIsUnitRepairChange(patch)) return [await this.applyFlowAdaptationPatchDurably(adaptation, patch, now)];
+    return await applyAutomationStudioUnitRepairPatch({ adaptation, patch, now, patches: this.patches, flowWriter: this.flowWriter, facade: this.facade });
+  }
+
   async applyFlowAdaptationPatchDurably(
     adaptation: AutomationStudioFlowAdaptation,
     patch: AutomationStudioFlowAdaptation["patch"][number],
@@ -111,6 +127,7 @@ export class AutomationStudioDurableAdaptations {
     if (patch.kind === "edit_subflow") return await this.patches.applySubflowAdaptationPatch(adaptation, patch, now);
     if (patch.kind === "create_subflow") return await this.patches.applyCreateSubflowAdaptationPatch(adaptation, patch, now);
     if (patch.kind === "edit_instruction") throw new Error("Instruction adaptation application is handled by the instruction review surface.");
+    if (automationStudioIsUnitRepairChange(patch)) throw new Error(`Adaptation patch ${patch.kind} is applied by the unit repair applier, which may make more than one mutation; ${adaptation.adaptationId} refused here.`);
     throw new Error(`Unsupported adaptation patch kind: ${patch.kind}`);
   }
 

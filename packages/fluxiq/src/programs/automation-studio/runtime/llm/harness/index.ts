@@ -26,6 +26,7 @@ export {
   type AutomationStudioLlmTokenLimits
 } from "./token-limits.ts";
 export {
+  AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION,
   resolveAutomationStudioLlmInstructions,
   type AutomationStudioInstructionResolution,
   type AutomationStudioInstructionResolutionInput,
@@ -89,14 +90,34 @@ export {
   type AutomationStudioLlmStructuredResponse,
   type AutomationStudioNoRepairReason,
   type AutomationStudioRuntimePatch,
+  type AutomationStudioRuntimePatchStep,
   type AutomationStudioRuntimeTargetOverrideTarget
 } from "./structured-response.ts";
 export type {
   AutomationStudioLlmHarnessInput,
+  AutomationStudioLlmInRunRepairAct,
+  AutomationStudioLlmInRunRepairAttempt,
+  AutomationStudioLlmInRunRepairContext,
+  AutomationStudioLlmInRunRepairContract,
+  AutomationStudioLlmInRunRepairIncident,
+  AutomationStudioLlmInRunRepairPort,
+  AutomationStudioLlmInRunRepairRecovery,
+  AutomationStudioLlmInRunRepairStep,
+  AutomationStudioLlmInRunRepairUnit,
   AutomationStudioLlmTaskRequest,
   AutomationStudioLlmTaskResult
 } from "./task-request.ts";
-export { automationStudioRuntimePatchOutputSchema } from "./runtime-patch-schema.ts";
+export { AUTOMATION_STUDIO_IN_RUN_REPAIR_PATCH_KINDS, automationStudioRuntimePatchOutputSchema } from "./runtime-patch-schema.ts";
+// The in-run repair kinds (state-aware recovery plan, C6 step 8 and C12).
+export {
+  automationStudioHandlerThenDisposition,
+  type AutomationStudioRuntimeAddHandlerPatch,
+  type AutomationStudioRuntimePatchHandlerScope,
+  type AutomationStudioRuntimePatchHandlerSpec,
+  type AutomationStudioRuntimePatchHandlerThen,
+  type AutomationStudioRuntimePatchUnit,
+  type AutomationStudioRuntimeReplaceUnitPatch
+} from "./structured-response.ts";
 export { validateAutomationStudioLlmOutput } from "./output-validation.ts";
 export { parseAutomationStudioLlmProviderResult } from "./provider-result.ts";
 export { runAutomationStudioLlmHarness } from "./run.ts";

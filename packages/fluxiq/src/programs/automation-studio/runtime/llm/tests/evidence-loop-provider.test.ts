@@ -305,7 +305,8 @@ describe("Automation Studio evidence-loop provider task", () => {
     // 6,000 since t081, for the consequence declaration the format now asks a
     // press step for; the reason and the byte cost are in
     // `flow-bootstrap/tests/plan.test.ts`, which holds the same ratchet.
-    expect(Buffer.byteLength(JSON.stringify(completion), "utf8")).toBeLessThan(6_000);
+    // 6,100 since t378, for the corrected `submit: true` clause; reason there.
+    expect(Buffer.byteLength(JSON.stringify(completion), "utf8")).toBeLessThan(6_100);
     expect(estimateAutomationStudioDeepSeekInputTokens(productionRequest)).toBeLessThanOrEqual(8_000);
     await expect(provider.runTask(productionRequest)).resolves.toMatchObject({ response: { kind: "evidence_tool_decision" } });
     expect(secretCalls).toBe(1);

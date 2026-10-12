@@ -334,6 +334,14 @@ export type AutomationStudioFlowDraftStep = {
    */
   routeSignatures?: JsonObject;
   /**
+   * The pace the Flow node a carried step stands for was authored with
+   * (`metadata.paceMs`: the least time, in whole milliseconds, between two
+   * starts of that node in one run), carried from the re-seed onto the plan
+   * node the step becomes (t378). Without it a repaired Flow lost the pace a
+   * trial had learned and ran the node unpaced again.
+   */
+  paceMs?: number;
+  /**
    * The step was written, not run (`core.run_node` with `write: true`, design
    * t252): the domain checked its node and parameters, froze what it names and
    * performed nothing. Set only when the domain answered that it wrote it, so a
@@ -351,6 +359,18 @@ export type AutomationStudioFlowDraftStep = {
    * never to the candidate. The lasting guard survives further retargets.
    */
   priorExecution?: Omit<AutomationStudioFlowDraftStep, "priorExecution" | "checkedCandidate"> & { lasting: true };
+  /**
+   * Where the rerun that ran this step found the target
+   * (`../llm/node-tools/step-place.ts`, t443): `put_back` to its start page,
+   * with the ids of the steps before it done again there first (`redone`, in
+   * order) and, when the walk back stopped at a step that recorded no start
+   * page, that step's position (`unknownBefore`); `already_there`, on the page
+   * in the state the step it replaced found it; `start_page_unknown`, wherever
+   * the last call left it. Absent on a step the loop ran as an ordinary call.
+   * The judge of a build's test reads it for a lasting step's landing
+   * (`../result-verification/build-test/summary.ts`).
+   */
+  rerunPlace?: { kind: "put_back"; redone: string[]; unknownBefore?: number } | { kind: "already_there" } | { kind: "start_page_unknown" };
   /**
    * The argument the step first ran with, kept when `bind` lifted a value of it
    * into a binding (`./amendment/bind.ts`): the evidence that the step worked with

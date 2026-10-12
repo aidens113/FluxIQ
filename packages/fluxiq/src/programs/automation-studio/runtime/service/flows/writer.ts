@@ -10,6 +10,7 @@ import {
   type AutomationStudioFlowScope,
   type AutomationStudioProjectArtifactKind,
   isAutomationStudioSubflowGraphMetadata,
+  type AutomationStudioFlowValidationContext,
   validateAutomationStudioFlow,
   withAutomationStudioFlowRepresentation
 } from "../../../model/index.ts";
@@ -34,6 +35,7 @@ import { projectArtifactDocumentFileName } from "../paths/index.ts";
 import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
 import { CanonicalAuthorityWholeOperation, CanonicalAuthorityValidation as V } from "../../../storage/canonical-authority/index.ts";
 import { flowSubflowCategoriesFromFlow } from "./mapping.ts";
+import { automationStudioFlowValidationContext } from "./validation-context.ts";
 
 // Writing a Flow document and everything derived from it: its representation
 // checks, the generated source file and config artifact, the summary index
@@ -86,7 +88,7 @@ export class AutomationStudioFlowWriter {
   }
 
   async saveFlowInternal(
-    input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number },
+    input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number; validation?: AutomationStudioFlowValidationContext },
     allowPublicationMutation: boolean,
     representationCreationKind?: AutomationStudioFlowRepresentationKind
   ): Promise<AutomationStudioFlowArtifact> {
@@ -103,7 +105,7 @@ export class AutomationStudioFlowWriter {
   }
 
   private async saveFlowUnheld(
-    input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number },
+    input: { projectId: string; flow: AutomationStudioFlowArtifact; expectedUpdatedAt?: number; validation?: AutomationStudioFlowValidationContext },
     allowPublicationMutation: boolean,
     representationCreationKind?: AutomationStudioFlowRepresentationKind
   ): Promise<AutomationStudioFlowArtifact> {
@@ -128,11 +130,13 @@ export class AutomationStudioFlowWriter {
     };
     await this.assertFlowRepresentationSaveAllowed(project.id, existing, flow, representationKind, representationCreationKind);
     if (existing) flow = recordManualRecordingProposalChanges(existing, flow, now);
-    const validation = validateAutomationStudioFlow(flow);
+    // The role of the Subflow a graph belongs to, which the graph does not carry (t398).
+    const context = await automationStudioFlowValidationContext(flow, (parentFlowId, subflowId) => this.facade.getFlowSubflow(project.id, parentFlowId, subflowId), input.validation);
+    const validation = validateAutomationStudioFlow(flow, context);
     if (!validation.ok) throw new Error(`Invalid Automation Studio Flow: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     if (!verifyCodeOwnedFlowCompilation(flow)) throw new Error("Code-owned Flow IR does not match its compiler digest.");
     flow = withFlowSourceFileMetadata(flow);
-    const validationWithSourceMetadata = validateAutomationStudioFlow(flow);
+    const validationWithSourceMetadata = validateAutomationStudioFlow(flow, context);
     if (!validationWithSourceMetadata.ok) throw new Error(`Invalid Automation Studio Flow: ${validationWithSourceMetadata.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
     const saved = await this.repositories.flows.put(flow);
     await this.flows.writeProjectFlow(project.id, saved);

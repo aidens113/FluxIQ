@@ -87,6 +87,17 @@
 // authored codes' sentences, so the routing codes' sentences are put back here
 // (`withRoutingSentence`, below).
 //
+// **Every issue names the step it is about (t378).** A refusal used to name a
+// plan path and nothing else, and a script's steps do not become nodes one for
+// one: lane B (`run-mv0fu9pb-57454dc4`, 0058) was refused at "nodes 10 and
+// 17", which were the steps at lines 32 and 58, guessed two others, resent its
+// script unchanged, and the repeat guard ended the build. The acceptance
+// carries a locator read off what the model wrote (`flow-bootstrap/authoring/
+// script-locator.ts`), and every issue of every failure -- assembly, the
+// domain's resolution, registry validation -- is placed with it: `step` as the
+// model wrote it, its `label`, and the script `line` (`located`, below). The
+// verdict carries the locator on, for the checks that run after it.
+//
 // None costs a provider call, and each refusal carries its own account of what
 // is missing beside the issue rather than only a code. A plan that cannot be
 // built at all -- it does not parse, a parameter does not resolve, the registry
@@ -109,6 +120,8 @@ import {
   automationStudioEvidenceFlowBootstrapLimitsExceeded,
   automationStudioFlowBootstrapDraftWithStartStep,
   automationStudioFlowBootstrapIssueFeedback,
+  automationStudioFlowBootstrapIssuePlace,
+  type AutomationStudioFlowBootstrapIssueLocator,
   checkAutomationStudioFlowBootstrapAnswersInstruction,
   checkAutomationStudioFlowBootstrapReachesStartLocation,
   checkAutomationStudioInstructedActPermissions,
@@ -126,6 +139,7 @@ import type { AutomationStudioLlmEvidenceCompletionCheck, AutomationStudioLlmEvi
 import type { AutomationStudioLlmEvidenceRestoredStep } from "../evidence-loop/index.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleReach } from "./binding.ts";
 import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY } from "./plan-node-handles.ts";
+import { automationStudioAmendedPlanParameters } from "./amended-plan-parameters.ts";
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView } from "./plan-parameter-resolution.ts";
 
@@ -169,6 +183,8 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
      * beside `check` for the same reason as `warnings`.
      */
     handleViews?: AutomationStudioFlowBootstrapPlanHandleView[];
+    /** Where each node of the accepted plan was written, for a check after this one to name the step it refuses (`automationStudioFlowBootstrapIssuePlace`). */
+    locator?: AutomationStudioFlowBootstrapIssueLocator;
   }
   | {
     ok: false;
@@ -181,11 +197,13 @@ export type AutomationStudioFlowBootstrapCompletionVerdict =
     check: Extract<AutomationStudioLlmEvidenceCompletionCheck, { ok: false }> & {
       answerability?: AutomationStudioLlmEvidenceLoopAnswerability;
     };
+    /** Where each issue's path was written (header); every feedback issue already carries its place. */
+    locator?: AutomationStudioFlowBootstrapIssueLocator;
   };
 
 const FEEDBACK_INSTRUCTION = "The completed plan was refused and nothing was created. Correct every listed issue and complete again. "
   + "Where an issue carries accepted, it is what that parameter takes: write only the keys it names, beside a handle where one belongs, and follow its example. "
-  + `Where a parameter needs something you observed, write {"${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY}": "<handle copied exactly from evidence>"} instead of writing a locator of your own; `
+  + `Where a parameter needs something you observed, write {"${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY}": "<handle copied exactly from evidence>"} and nothing of your own in its place; `
   + `if you explored more than one place, add "${AUTOMATION_STUDIO_PLAN_NODE_HANDLE_LOCATION_KEY}": "<the location the evidence reported for that handle>". `
   + "A code written <code>:<path> names where inside that node's parameters the issue is, with keys you chose given by their position; "
   + "a parameter's own description names any further keys it takes beside the handle. "
@@ -331,6 +349,9 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
         handlesIssued: true,
         permissionFor: input.permissionFor,
         inheritedNodeRefs: drafted?.inheritedNodeRefs,
+        // A plan from the reply is the model's writing; a draft's steps ran with what the domain resolved (t432).
+        writtenByModel: drafted === undefined,
+        modelWrittenParameters: drafted?.amendedParameters,
         ...(input.handleReach ? { handleReach: input.handleReach } : {})
       });
       if (resolved.ok) handleViews = resolved.handleViews;
@@ -399,7 +420,7 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
   }
   const restoredField = restoredStep ? { restoredStep } : {};
   if (failures.length || !buildPlan || !accepted.ok) {
-    const verdict = refused(failures, accepted.script, answerability);
+    const verdict = refused(failures, accepted.script, answerability, accepted.locator);
     return verdict.ok ? verdict : { ...verdict, check: { ...verdict.check, ...restoredField } };
   }
   const warnings = accepted.issues.filter((item) => item.severity === "warning");
@@ -410,7 +431,8 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
     check: { ok: true, answerability: answerability ?? { recordsRequested: false, recordProducerPresent: false, recordStorePresent: false }, ...restoredField },
     ...(warnings.length ? { warnings } : {}),
     ...(notes.length ? { notes } : {}),
-    ...(handleViews ? { handleViews } : {})
+    ...(handleViews ? { handleViews } : {}),
+    ...(accepted.locator ? { locator: accepted.locator } : {})
   };
 }
 
@@ -488,7 +510,7 @@ function fromDraft(
   resolution: AutomationStudioNodeRegistryResolution,
   instructionText: string | undefined,
   routeSignaturesOf: ((step: AutomationStudioFlowDraftStep) => AutomationStudioRouteSignatures | undefined) | undefined
-): AutomationStudioFlowBootstrapAcceptance & { inheritedNodeRefs?: ReadonlySet<string> } {
+): AutomationStudioFlowBootstrapAcceptance & { inheritedNodeRefs?: ReadonlySet<string>; amendedParameters?: ReadonlyMap<string, readonly string[]> } {
   // Bounded as the reply path bounds it (`flow-bootstrap/authoring/accept.ts`): a
   // summary is one sentence about the Flow, and refusing a whole Flow because the
   // sentence ran long was how `run-muncqlr0-3348202b` lost its first completion
@@ -510,7 +532,9 @@ function fromDraft(
   // The steps the Flow being extended already runs, untouched, which the gate
   // has nothing new to ask about (`./inherited-plan-nodes.ts`).
   const inheritedNodeRefs = automationStudioInheritedPlanNodeRefs({ plan: assembled.plan, steps, draftStepIdByNodeKey: assembled.draftStepIdByNodeKey ?? {} });
-  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE, inheritedNodeRefs };
+  // What amendments wrote over the steps, which is the model's writing (`./amended-plan-parameters.ts`, t432).
+  const amendedParameters = automationStudioAmendedPlanParameters({ plan: assembled.plan, steps, draftStepIdByNodeKey: assembled.draftStepIdByNodeKey ?? {} });
+  return { ok: true, plan: assembled.plan, summary, issues: assembled.issues, script: DRAFT_SCRIPT_NOTE, inheritedNodeRefs, amendedParameters };
 }
 
 /**
@@ -545,14 +569,15 @@ type CompletionFailure = {
 function refused(
   failures: readonly CompletionFailure[],
   previousScript?: string,
-  answerability?: AutomationStudioLlmEvidenceLoopAnswerability
+  answerability?: AutomationStudioLlmEvidenceLoopAnswerability,
+  locator?: AutomationStudioFlowBootstrapIssueLocator
 ): AutomationStudioFlowBootstrapCompletionVerdict {
   const all = failures.length ? failures : [{ code: "flow_bootstrap.evidence_completion_plan_invalid" as const, issues: [issue("bootstrap.invalid_plan", "plan")] }];
   // Every issue, and the refused script however long (2026-09-30): the model
   // was shown the first 16 issues, and the script only under 6,000 characters.
   const feedbackIssues = all.flatMap((failure) => failure.issues.length
     ? automationStudioFlowBootstrapIssueFeedback({ issues: failure.issues, ...(failure.about ? { plan: failure.about.plan, registry: failure.about.registry, resolution: failure.about.resolution } : {}) })
-      .map((entry, index) => withRoutingSentence(entry, failure.issues[index]))
+      .map((entry, index) => located(withRoutingSentence(entry, failure.issues[index]), failure.issues[index], locator))
     : []);
   const codes = [...new Set(all.map((failure) => failure.code))];
   const details = Object.fromEntries(all.flatMap((failure) => failure.detail ? [[failure.detail.key, failure.detail.value]] : []));
@@ -580,7 +605,23 @@ function refused(
   const check: Extract<AutomationStudioFlowBootstrapCompletionVerdict, { ok: false }>["check"] = answerability === undefined
     ? baseCheck
     : { ...baseCheck, answerability };
-  return { ok: false, code: codes[0]!, codes, issues: all.flatMap((failure) => failure.issues), check };
+  return { ok: false, code: codes[0]!, codes, issues: all.flatMap((failure) => failure.issues), check, ...(locator ? { locator } : {}) };
+}
+
+/** A feedback entry with the step its issue is about, as the model wrote it, where the locator can place it (header). */
+function located(entry: JsonObject, source: AutomationStudioFlowBootstrapIssue | undefined, locator: AutomationStudioFlowBootstrapIssueLocator | undefined): JsonObject {
+  const place = automationStudioFlowBootstrapIssuePlace(locator, source?.path);
+  if (!place) return entry;
+  const { code, path, message, ...rest } = entry;
+  return {
+    ...(code === undefined ? {} : { code }),
+    ...(path === undefined ? {} : { path }),
+    ...(message === undefined ? {} : { message }),
+    step: place.step,
+    ...(place.label === undefined ? {} : { label: place.label }),
+    ...(place.line === undefined ? {} : { line: place.line }),
+    ...rest
+  };
 }
 
 /**

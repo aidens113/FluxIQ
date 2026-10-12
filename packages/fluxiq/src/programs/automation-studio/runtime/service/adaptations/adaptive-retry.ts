@@ -15,6 +15,15 @@
 // re-ran the whole Flow from its start node, which re-runs every side effect
 // the run had already caused before it failed -- an order placed twice, a form
 // submitted twice. A repair applied at node five continues at node six.
+//
+// Since the in-run repair (state-aware recovery plan, C6 step 8) this is the
+// path only for a run that could not hold at its failing step: one whose
+// session supplied no `repairIncident`, or whose executor never asked it for
+// the incident. An adapting run asks the model at the failing step and carries
+// on with its loop positions and values kept
+// (`../runtime-session/in-run-repair.ts`); its incident is then never sent to a
+// model again after the run (`../../recovery/annotation/annotate.ts`), so no
+// receipt asks this for a retry.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
 import { automationStudioVerificationAwaitsJudgedRun } from "./verification-awaits-judged-run.ts";

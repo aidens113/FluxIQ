@@ -148,6 +148,8 @@ export type AutomationStudioLlmBuildPurseOptions = {
   carriedUsd?: number;
   /** Told of each call that reported costing more than it was held at. */
   onBreach?: () => void;
+  /** Told what each settled call was charged: what it reported, or its hold when it reported nothing. A Flow's purse writes it to the Flow's record (t438). */
+  onSettled?: (chargedUsd: number) => void;
 };
 
 /** Floating-point slack, so a call that lands exactly on the ceiling is allowed. */
@@ -321,7 +323,9 @@ export class AutomationStudioLlmBuildPurse {
           callHold.settle();
           const reported = usage?.estimatedCostUsd;
           const valid = typeof reported === "number" && Number.isFinite(reported) && reported >= 0;
-          this.settledUsd += valid ? reported : heldUsd;
+          const chargedUsd = valid ? reported : heldUsd;
+          this.settledUsd += chargedUsd;
+          this.options.onSettled?.(chargedUsd);
           if (valid) this.largestReportedUsd = Math.max(this.largestReportedUsd, reported);
           if (valid && projected !== undefined && reported > heldUsd + EPSILON_USD) {
             this.breaches += 1;

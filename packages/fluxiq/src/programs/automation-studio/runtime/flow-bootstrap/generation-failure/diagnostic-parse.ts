@@ -16,6 +16,7 @@ import { parseAutomationStudioFlowBootstrapEvidenceSteps } from "../evidence-loo
 import { automationStudioFlowBootstrapLargestSizeLimits } from "../plan/index.ts";
 import { parseAutomationStudioFlowBootstrapBuildEnding } from "./build-ending.ts";
 import { parseAutomationStudioFlowBootstrapCandidateKept } from "./candidate-kept.ts";
+import { automationStudioFlowBootstrapRefusedSteps } from "./refused-steps.ts";
 import { FLOW_BOOTSTRAP_PHASE_FAILURE_CODE_STAGE } from "./codes.ts";
 import type { AutomationStudioLlmProviderThrow, AutomationStudioLlmProviderThrowWithheld } from "../../llm/index.ts";
 import { DIAGNOSTIC_ISSUE_CODE, MAX_DIAGNOSTIC_ISSUE_CODES, type AutomationStudioFlowBootstrapFailureDiagnostic } from "./diagnostic.ts";
@@ -24,7 +25,7 @@ import { automationStudioFlowBootstrapFailureState, automationStudioFlowBootstra
 export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   value: unknown
 ): AutomationStudioFlowBootstrapFailureDiagnostic | null {
-  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending", "candidate", "totalProviderCallCount"])) return null;
+  if (!isRecord(value) || !hasExactFields(value, ["code", "stage", "retryable", "providerInvocation", "providerResponse", "accounting", "evidenceLoop", "issueCodes", "permissionRequest", "providerThrow", "ending", "candidate", "refusedSteps", "totalProviderCallCount"])) return null;
   if (typeof value.code !== "string") return null;
   if (value.totalProviderCallCount !== undefined && (!Number.isSafeInteger(value.totalProviderCallCount) || (value.totalProviderCallCount as number) < 0)) return null;
   // The stage a code belongs to, which is also the only stage it may claim. A
@@ -61,6 +62,9 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
   if (ending === null || (state.ending === "required") !== (ending !== undefined)) return null;
   const candidate = parseAutomationStudioFlowBootstrapCandidateKept(value.candidate);
   if (candidate === null) return null;
+  // The refused steps' own words stand only beside the no-progress ending they explain.
+  const refusedSteps = automationStudioFlowBootstrapRefusedSteps.parse(value.refusedSteps);
+  if (refusedSteps === null || (refusedSteps !== undefined && value.code !== REFUSED_STEPS_CODE)) return null;
   return {
     ...(value.totalProviderCallCount === undefined ? {} : { totalProviderCallCount: value.totalProviderCallCount as number }),
     code: value.code,
@@ -74,10 +78,13 @@ export function parseAutomationStudioFlowBootstrapFailureDiagnostic(
     ...(permissionRequest ? { permissionRequest } : {}),
     ...(providerThrow ? { providerThrow } : {}),
     ...(ending ? { ending } : {}),
-    ...(candidate ? { candidate } : {})
+    ...(candidate ? { candidate } : {}),
+    ...(refusedSteps ? { refusedSteps } : {})
   };
 }
 
+/** The code stored refused steps may stand beside. */
+const REFUSED_STEPS_CODE = "flow_bootstrap.evidence_repeat_without_progress";
 /** The code a stored provider throw may stand beside. */
 const PROVIDER_THROW_CODE = "flow_bootstrap.provider_transport_unknown";
 /**

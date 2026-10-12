@@ -126,6 +126,18 @@ describe("the judge is told what the rows a condition left out by itself are", (
   });
 });
 
+// t378, lane D (`run-mv0fuual-f9e6f089`): a Flow confirmed all eight friend
+// requests where four were asked, and both judges advised a condition on the
+// for-each and the press, which sent the model to a filter node a script cannot
+// wire. The rows a repeat visits are the rows its listing kept.
+describe("the judges send too many rows acted on to the listing's where", () => {
+  it("says the fix is the listing's where, not a condition on the repeat or the press, in both judges' prompts", () => {
+    const sentence = "A Flow that acts on more rows of a listing than the request asks -- a press repeated over every row where only some qualify -- is fixed with a where condition on the listing step the repeat goes over, which decides the rows each pass visits, not with a condition on the repeat or the press: name that listing step in changed.";
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain(sentence);
+    for (const buildTest of [false, true]) expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest })).toContain(sentence);
+  });
+});
+
 // Live run `run-muqk713g` (C3, C5): the build-test judge saw a replayed read as
 // counts only, and both judges read an item "with Wireless Charging Case" as the
 // accessory the request left out. The build-test judge is now told what a
@@ -173,6 +185,14 @@ describe("the post-run check is told it judges a finished run, and only a build'
     expect(finished).not.toContain("resultSummary.buildTest");
     expect(finished).not.toMatch(/build's test/u);
     expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true })).toContain("When resultSummary.buildTest is present");
+  });
+
+  // t443 (run `run-mv4dgmki-2b13db91`, R4b): a withheld act's earlier landing, credited only when it ran after the steps before it.
+  it("tells a build's judge how to read a withheld step's earlier landing, and the post-run check nothing of it", () => {
+    const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest: true });
+    expect(prompt).toContain("explored.landed, where present, is that act as the build did it earlier: with counts true it ran once after the steps before it");
+    expect(prompt).toContain("never ask for it to be run again; with counts false it did not run that way (why says how), and it shows nothing about the Flow.");
+    expect(automationStudioDiagnosisPromptInstruction("loop_verification")).not.toContain("explored.landed");
   });
 
   // Cause 7: neither judge was shown the page the run or test ended on.

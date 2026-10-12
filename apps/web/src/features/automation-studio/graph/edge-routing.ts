@@ -8,7 +8,7 @@ import {
   automationPortTone
 } from "./ports";
 
-type AutomationEdgeNodeData = { inputs?: AutomationNodePort[]; outputs?: AutomationNodePort[] };
+type AutomationEdgeNodeData = { inputs?: AutomationNodePort[]; outputs?: AutomationNodePort[]; nodeDefinitionId?: string };
 
 export function createAutomationConnectionEdge<T extends AutomationEdgeNodeData>(connection: { source: string | null; target: string | null; sourceHandle?: string | null; targetHandle?: string | null }, existingEdges: Edge[], prefix: string, nodes: Array<Node<T>>): Edge {
   const source = connection.source ?? "";
@@ -16,8 +16,9 @@ export function createAutomationConnectionEdge<T extends AutomationEdgeNodeData>
   const siblingIndex = existingEdges.filter((edge) => edge.source === source && edge.target === target).length;
   const routeIndex = existingEdges.filter((edge) => edge.source === source).length;
   const lane = chooseAutomationEdgeLane(source, target, existingEdges, nodes, `${prefix}-${source}-${target}-${siblingIndex}`, siblingIndex);
-  const sourcePort = nodes.find((node) => node.id === source)?.data.outputs?.find((port) => port.id === connection.sourceHandle);
-  const label = sourcePort ? automationPortDisplayLabel(sourcePort) : automationPortLabelFromId(connection.sourceHandle) ?? (routeIndex === 0 ? "Next" : `Branch ${routeIndex + 1}`);
+  const sourceNode = nodes.find((node) => node.id === source);
+  const sourcePort = sourceNode?.data.outputs?.find((port) => port.id === connection.sourceHandle);
+  const label = sourcePort ? automationPortDisplayLabel(sourcePort, sourceNode?.data.nodeDefinitionId) : automationPortLabelFromId(connection.sourceHandle) ?? (routeIndex === 0 ? "Next" : `Branch ${routeIndex + 1}`);
   const color = automationPortColor(automationPortTone(sourcePort ?? { id: connection.sourceHandle ?? "next", label, valueType: "any" }, "source"));
   return {
     id: `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -40,8 +41,9 @@ export function reconnectAutomationEdge<T extends AutomationEdgeNodeData>(oldEdg
   const targetHandle = connection.targetHandle ?? oldEdge.targetHandle ?? "in";
   const nextConnection = { source, target, sourceHandle, targetHandle };
   if (!automationConnectionIsValid(nextConnection, nodes)) return existingEdges;
-  const sourcePort = nodes.find((node) => node.id === source)?.data.outputs?.find((port) => port.id === sourceHandle);
-  const label = sourcePort ? automationPortDisplayLabel(sourcePort) : automationPortLabelFromId(sourceHandle) ?? String(oldEdge.label ?? "Next");
+  const sourceNode = nodes.find((node) => node.id === source);
+  const sourcePort = sourceNode?.data.outputs?.find((port) => port.id === sourceHandle);
+  const label = sourcePort ? automationPortDisplayLabel(sourcePort, sourceNode?.data.nodeDefinitionId) : automationPortLabelFromId(sourceHandle) ?? String(oldEdge.label ?? "Next");
   const color = automationPortColor(automationPortTone(sourcePort ?? { id: sourceHandle, label, valueType: "any" }, "source"));
   const siblingIndex = existingEdges.filter((edge) => edge.id !== oldEdge.id && edge.source === source && edge.target === target).length;
   const routeIndex = existingEdges.filter((edge) => edge.id !== oldEdge.id && edge.source === source).length;

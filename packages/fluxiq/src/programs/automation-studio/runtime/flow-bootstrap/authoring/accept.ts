@@ -17,6 +17,7 @@ import type { AutomationStudioFlowBootstrapAcceptance } from "./contracts.ts";
 import { normaliseAutomationStudioFlowBootstrapJsonPlan } from "./json-plan.ts";
 import { authoringKey } from "./keys.ts";
 import { parseAutomationStudioFlowScript } from "./parse.ts";
+import { automationStudioFlowBootstrapPlanLocator } from "./plan-locator.ts";
 import { isJsonObject } from "./values.ts";
 
 /** Keys a reply may carry a Flow script under. */
@@ -43,15 +44,18 @@ export function acceptAutomationStudioFlowBootstrapResult(input: {
     const summary = boundedSummary(stated ?? read.script.summary ?? read.script.blocks[0]?.steps[0]?.description);
     const assembled = assembleAutomationStudioFlowScriptPlan({ script: read.script, registry: input.registry, resolution: input.resolution, summary, namedColumns });
     const issues = [...read.issues, ...assembled.issues];
-    if (assembled.plan) return { ok: true, summary, plan: assembled.plan, issues, script };
-    return { ok: false, issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script };
+    // Where each refusal from here on is in the script (`./script-locator.ts`).
+    const located = assembled.locator ? { locator: assembled.locator } : {};
+    if (assembled.plan) return { ok: true, summary, plan: assembled.plan, issues, script, ...located };
+    return { ok: false, issues, ...(assembled.refusedPlan ? { refusedPlan: assembled.refusedPlan } : {}), script, ...located };
   }
   const written = planValue(input.result);
   const summary = boundedSummary(stated);
   const normalised = normaliseAutomationStudioFlowBootstrapJsonPlan({ value: written, registry: input.registry, resolution: input.resolution, summary, namedColumns });
+  // A JSON plan has no lines: a refusal names the node by its name and key (`./plan-locator.ts`).
   return normalised.plan
-    ? { ok: true, summary, plan: normalised.plan, issues: normalised.issues }
-    : { ok: false, issues: normalised.issues };
+    ? { ok: true, summary, plan: normalised.plan, issues: normalised.issues, locator: automationStudioFlowBootstrapPlanLocator(normalised.plan, written) }
+    : { ok: false, issues: normalised.issues, locator: automationStudioFlowBootstrapPlanLocator(written) };
 }
 
 /** The Flow script a result carries, however it carried it. */

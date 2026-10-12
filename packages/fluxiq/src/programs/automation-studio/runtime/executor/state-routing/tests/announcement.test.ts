@@ -49,4 +49,16 @@ describe("announceAutomationStudioStateRoute", () => {
     expect(text).toBe("Skipped “Open the store list”: the page is already past it. Continuing with step 4");
     expect(text).not.toMatch(/n\.[a-d]/u);
   });
+  it("says a declared skip of a step that does an act left it not done (r4b F4)", async () => {
+    const claim = node("n.v", "web.output.dom-click", { parameterValues: { element: { visibleText: "Claim voucher" } } });
+    const declared = async (notDone: boolean) => {
+      seen = [];
+      await runWithAutomationStudioActivity({ kind: "run", id: "run-announce", projectId: "p1" }, async () => {
+        announceAutomationStudioStateRoute(flow, claim, { kind: "declared", edge: edge("n.v", "n.d"), ...(notDone ? { notDone: true as const } : {}) });
+      });
+      return seen.at(-1)!.label;
+    };
+    expect(await declared(true)).toBe("Skipped “Claim voucher”: it was not shown, so it was not done");
+    expect(await declared(false)).toBe("Skipped “Claim voucher”: it was not shown");
+  });
 });

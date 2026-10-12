@@ -3,7 +3,7 @@ import { ClientGatewayCommandLedgerController as Rules, ClientGatewayCommandCont
 import { AutomationStudioProjectCommandLedgerStore as Store, type AutomationStudioCommandRunAdmission } from "../../../storage/project/index.ts";
 import { AutomationStudioCommandRunScope, type AutomationStudioCommandRunOwner, type AutomationStudioCommandRunPorts, type AutomationStudioCommandEffectProvenance } from "./contracts.ts";
 
-type Effect = { context: Context; capability: object; provenance: AutomationStudioCommandEffectProvenance; observer: ClientGatewayCommandOutcomeObserver; claim?: ClientGatewayCommandClaim; ticket?: object; receipt?: ClientGatewayCommandReceipt; consumed: boolean };
+type Effect = { context: Context; capability: object; provenance: AutomationStudioCommandEffectProvenance; observer: ClientGatewayCommandOutcomeObserver; claim?: ClientGatewayCommandClaim; ticket?: object; receipt?: ClientGatewayCommandReceipt; consumed: boolean; withdrawn?: true };
 type State = { owner: AutomationStudioCommandRunOwner; incarnation: string; fingerprint: string; store: Store; admission: AutomationStudioCommandRunAdmission; signal?: AbortSignal; detach(): void; first: ClientGatewayCommandClaim | null; blocked: string | null; closed: boolean; pipelines: Set<Promise<unknown>>; closing?: Promise<void>; effects: Map<Context, Effect>; consumed: Map<object, { claim: ClientGatewayCommandClaim; receipt: ClientGatewayCommandReceipt }> };
 /** Private receipt consumption contracts; actual executor issuance/Flow activation remain unwired. */
 export class AutomationStudioCommandRunController {
@@ -26,7 +26,7 @@ export class AutomationStudioCommandRunController {
       if (typeof provenance.executingFlowDigest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(provenance.executingFlowDigest) || !Number.isSafeInteger(provenance.effectOrdinal) || provenance.effectOrdinal < 0) throw new Error("command_run.invalid_effect_provenance");
       if (state.effects.size >= 4096 || [...state.effects.values()].some(effect => effect.capability === capability || effect.provenance.invocationId === provenance.invocationId && effect.provenance.attemptId === provenance.attemptId && effect.provenance.effectOrdinal === provenance.effectOrdinal)) throw new Error("command_run.duplicate_effect");
       const context = Context.issue({ projectId: state.owner.projectId, runId: state.owner.runId, flowId: state.owner.rootFlowId, invocationId: provenance.invocationId, attemptId: provenance.attemptId, effectOrdinal: provenance.effectOrdinal });
-      const effect: Effect = { context, capability, provenance: Object.freeze({ ...provenance }), observer: { completed: proof => this.observe(scope, state, effect, proof), uncertain: async received => { if (received !== context) throw new Error("command_run.foreign_uncertainty"); state.blocked ??= "command_run.outcome_unknown"; } }, consumed: false };
+      const effect: Effect = { context, capability, provenance: Object.freeze({ ...provenance }), observer: { completed: proof => this.observe(scope, state, effect, proof), uncertain: async received => { if (received !== context) throw new Error("command_run.foreign_uncertainty"); if (!this.withdraw(context)) state.blocked ??= "command_run.outcome_unknown"; } }, consumed: false };
       Outcome.require(context, effect.observer); state.effects.set(context, effect); this.contexts.set(context, { state, scope, effect }); return context;
     });
   }
@@ -47,6 +47,25 @@ export class AutomationStudioCommandRunController {
       if (state.blocked) throw new Error(state.blocked); effect.consumed = true;
     });
   }
+  /**
+   * Withdraws the command issued under `context` when it was provably never
+   * sent: nothing was ever claimed in the ledger for it, and the ledger claims
+   * before any send (`client-gateway/service/command-ledger/controller.ts`).
+   * From then on it can never be claimed, so it never will be sent; it no
+   * longer holds the run, and a new attempt may issue the act again. False once
+   * a claim exists: that command's outcome is the ledger's to say.
+   */
+  withdraw(context: Context): boolean {
+    const effect = this.contexts.get(context)?.effect;
+    if (!effect) throw new Error("command_run.foreign_context");
+    if (effect.claim || effect.ticket || effect.consumed) return false;
+    effect.withdrawn = true;
+    return true;
+  }
+  /** Whether the command issued under `context` came back with a committed receipt: false while it is in flight, and for good once its outcome is unknown. */
+  receipted(context: Context): boolean {
+    return this.contexts.get(context)?.effect.ticket !== undefined;
+  }
   open(input: AutomationStudioCommandRunOwner & { signal?: AbortSignal }): Promise<AutomationStudioCommandRunScope> {
     this.requireOpen();
     if (!input || typeof input !== "object" || Object.getPrototypeOf(input) !== Object.prototype || Reflect.ownKeys(input).some(key => typeof key !== "string" || !["projectId", "runId", "rootFlowId", "signal"].includes(key)) || Object.values(Object.getOwnPropertyDescriptors(input)).some(descriptor => !descriptor.enumerable || !Object.hasOwn(descriptor, "value"))) throw new Error("command_run.invalid_open_options");
@@ -59,7 +78,8 @@ export class AutomationStudioCommandRunController {
   claim(scope: AutomationStudioCommandRunScope, input: ClientGatewayCommandClaim): Promise<{ sendAllowed: boolean; record: ClientGatewayCommandRecord }> {
     const state = this.state(scope), claim = this.claimForState(state, input);
     const effect = this.effectClaim(state, claim);
-    if (state.first && Rules.digest(state.first) !== Rules.digest(claim) && (!effect || [...state.effects.values()].some(item => item !== effect && !item.consumed))) { state.blocked ??= "command_run.first_command_only"; throw new Error("command_run.first_command_only"); }
+    if (effect?.withdrawn) return Promise.reject(new Error("command_run.effect_withdrawn"));
+    if (state.first && Rules.digest(state.first) !== Rules.digest(claim) && (!effect || [...state.effects.values()].some(item => item !== effect && !item.consumed && !item.withdrawn))) { state.blocked ??= "command_run.first_command_only"; throw new Error("command_run.first_command_only"); }
     state.first = claim; if (effect) effect.claim ??= claim;
     return this.operation(state, async () => {
       // An exact first replay reconciles; it never grants send or continuation.
@@ -124,7 +144,7 @@ export class AutomationStudioCommandRunController {
   }
   private exactClaim(state: State, input: ClientGatewayCommandClaim): ClientGatewayCommandClaim { const claim = this.claimForState(state, input), effect = this.effectClaim(state, claim); if (effect?.claim && Rules.digest(effect.claim) === Rules.digest(claim)) return effect.claim; if (!state.first || Rules.digest(state.first) !== Rules.digest(claim)) throw new Error("command_run.not_first_claim"); return claim; }
   private effectClaim(state: State, claim: ClientGatewayCommandClaim): Effect | undefined { return [...state.effects.values()].find(effect => { const owner = Context.owner(effect.context); return owner.invocationId === claim.binding.invocationId && owner.attemptId === claim.binding.attemptId && owner.effectOrdinal === claim.binding.effectOrdinal; }); }
-  private available(state: State): void { if (state.blocked || [...state.effects.values()].some(effect => !effect.consumed) || state.first && !this.effectClaim(state, state.first)) throw new Error(state.blocked ?? "command_run.consumption_unsupported"); }
+  private available(state: State): void { if (state.blocked || [...state.effects.values()].some(effect => !effect.consumed && !effect.withdrawn) || state.first && !this.effectClaim(state, state.first)) throw new Error(state.blocked ?? "command_run.consumption_unsupported"); }
   private sameProvenance(a: AutomationStudioCommandEffectProvenance, b: AutomationStudioCommandEffectProvenance): boolean { return a.scope === b.scope && a.consumer === b.consumer && Rules.digest({ invocationId: a.invocationId, attemptId: a.attemptId, nodeId: a.nodeId, executingFlowId: a.executingFlowId, executingFlowDigest: a.executingFlowDigest, effectOrdinal: a.effectOrdinal }) === Rules.digest({ invocationId: b.invocationId, attemptId: b.attemptId, nodeId: b.nodeId, executingFlowId: b.executingFlowId, executingFlowDigest: b.executingFlowDigest, effectOrdinal: b.effectOrdinal }); }
   private observe(scope: AutomationStudioCommandRunScope, state: State, effect: Effect, proof: object): Promise<void> {
     return this.operation(state, async () => {

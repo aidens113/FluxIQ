@@ -3,7 +3,12 @@ import { activityActionFailureReason } from "../failure-reason.ts";
 
 describe("activityActionFailureReason", () => {
   it.each([
-    ["web.target.not_found", "it wasn't on the page"],
+    // Looked up by what FluxIQ saved of it, and not found that way: the box stood in plain sight (R4a, moment 06).
+    ["web.target.not_found", "FluxIQ couldn't find it where it was saved"],
+    ["web.target.no_match", "FluxIQ couldn't find it where it was saved"],
+    ["web.target.gone", "it wasn't on the page"],
+    // A step that ran and whose effect did not show is not a refusal (R4a, moment 08).
+    ["web.action.rejected.output_not_observed", "it ran, but the page didn't change the way it should have"],
     // Not looked for at all: the call named something FluxIQ had not seen (R2-U-6).
     ["example.unobserved", "FluxIQ didn't send it, as the step named something it hadn't seen on the page"],
     ["web.wait.timeout", "the page took too long"],
@@ -23,8 +28,12 @@ describe("activityActionFailureReason", () => {
     ["web.action.refused_by_page", "the page turned it down"],
     ["llm_evidence_loop.rejected.refused_by_page", "the page turned it down"],
     // t174-w85 D8 (run-murwd8le, 0081): a press the page answered as busy read "the page turned it down".
-    ["web.action.rate_limited", "the page was busy"],
-    ["web.action.throttled", "the page was busy"],
+    // Lane D (run-mv0fuual-f9e6f089, finding 1): the site's "You're going too fast" notice is
+    // the site asking FluxIQ to slow down, which "the page was busy" did not say.
+    ["web.action.rate_limited", "the site asked FluxIQ to slow down"],
+    ["web.action.throttled", "the site asked FluxIQ to slow down"],
+    ["web.action.too_many_requests", "the site asked FluxIQ to slow down"],
+    ["web.page.busy", "the page was busy"],
     ["bootstrap.invalid_parameter_value", "the step wasn't accepted"],
     ["llm_evidence_loop.rejected.repeat_without_progress", "it made no progress"],
     // t174-w111 D21 (run-musq0b1m): "Didn't work: it didn't work the same way again" said the result twice and no reason.
@@ -52,7 +61,7 @@ describe("activityActionFailureReason", () => {
     // A step the site remembered, was checked, or was already in place held (t193).
     for (const held of ["core.replay.remembered", "core.replay.verified", "core.replay.present"]) expect(activityActionFailureReason(held)).toBeNull();
     expect(activityActionFailureReason("example.unrecognised_state")).toBeNull();
-    expect(activityActionFailureReason("not_found")).toBe("it wasn't on the page");
+    expect(activityActionFailureReason("not_found")).toBe("FluxIQ couldn't find it where it was saved");
   });
 });
 
@@ -62,7 +71,7 @@ describe("activityActionFailureReason", () => {
 // U-12 (`run-muw60j7c-bb7c9a62`, moment 14): "since it named no control from
 // the page" was FluxIQ's own term; the words say what the step left out.
 describe("activityActionFailureReason: a refusal's own reason (t193)", () => {
-  const UNNAMED = "FluxIQ didn't send it, as the step didn't say which control on the page to use";
+  const UNNAMED = "FluxIQ didn't send it, as the step didn't name its control the way FluxIQ needs";
   it.each([
     ["target_not_a_handle", UNNAMED],
     ["malformed_handle", UNNAMED],
@@ -77,7 +86,7 @@ describe("activityActionFailureReason: a refusal's own reason (t193)", () => {
 
   it("falls back to the code when the reason names nothing it knows, and never says the reason", () => {
     expect(activityActionFailureReason("web.action.rejected.target_unobserved", "vendor_specific_thing")).toBe("FluxIQ didn't send it, as the step named something it hadn't seen on the page");
-    expect(activityActionFailureReason("web.target.not_found", "vendor_specific_thing")).toBe("it wasn't on the page");
+    expect(activityActionFailureReason("web.target.not_found", "vendor_specific_thing")).toBe("FluxIQ couldn't find it where it was saved");
     expect(activityActionFailureReason("web.action.failed", "vendor_specific_thing")).toBeNull();
   });
 });
@@ -116,7 +125,7 @@ describe("activityActionFailureReason: Core's own codes are no page miss (t194)"
     expect(activityActionFailureReason("core.something.missing")).toBeNull();
     expect(activityActionFailureReason("core.other.not_found")).toBeNull();
     expect(activityActionFailureReason("core.recall.not_found", "vendor_specific_thing")).toBe("no earlier result goes by that name");
-    expect(activityActionFailureReason("web.target.not_found")).toBe("it wasn't on the page");
+    expect(activityActionFailureReason("web.target.not_found")).toBe("FluxIQ couldn't find it where it was saved");
   });
 
   // t174-w111 D17 (run-musq0b1m, steps 0063 and 0067): the model reused handles from an
@@ -148,8 +157,8 @@ describe("activityActionFailureReason: a call never sent is no page miss (R2-U-6
   const UNOBSERVED = "web.action.rejected.target_unobserved";
 
   it("says a list read that named no list as not read, and why, in a list's words", () => {
-    expect(activityActionFailureReason(UNOBSERVED, "malformed_handle", "read")).toBe("FluxIQ didn't read it, as the step didn't say which list on the page to read");
-    expect(activityActionFailureReason(UNOBSERVED, "malformed_handle", "click")).toBe("FluxIQ didn't send it, as the step didn't say which control on the page to use");
+    expect(activityActionFailureReason(UNOBSERVED, "malformed_handle", "read")).toBe("FluxIQ didn't read it, as the step didn't name its list the way FluxIQ needs");
+    expect(activityActionFailureReason(UNOBSERVED, "malformed_handle", "click")).toBe("FluxIQ didn't send it, as the step didn't name its control the way FluxIQ needs");
     expect(activityActionFailureReason(UNOBSERVED, undefined, "read")).toBe("FluxIQ didn't read it, as the step named a list it hadn't seen on the page");
   });
 
@@ -163,5 +172,25 @@ describe("activityActionFailureReason: a call never sent is no page miss (R2-U-6
       for (const kind of [undefined, "read", "click"] as const) expect(activityActionFailureReason(UNOBSERVED, reason, kind)).not.toMatch(/wasn't on the page/u);
     }
     expect(activityActionFailureReason(UNOBSERVED, "changes_nothing")).toBe("it was already tried exactly this way on this same page");
+  });
+});
+
+// R4a (`run-mv2nlh9l-52e476da`, moment 08): a clear the site undid -- the
+// quantity box put "1" back -- read "Clear field · Didn't work: the step wasn't
+// accepted", as if it had been refused.
+describe("a step that ran and whose effect did not show", () => {
+  it("says the site set the box back for a typing step, and a list's words for a read", () => {
+    expect(activityActionFailureReason("web.action.rejected.output_not_observed", undefined, "type")).toBe("it ran, but the site set the box back");
+    expect(activityActionFailureReason("web.action.rejected", "output_not_observed", "type")).toBe("it ran, but the site set the box back");
+    expect(activityActionFailureReason("web.validation.output_not_observed", undefined, "read")).toBe("it ran, but didn't find the rows it should have");
+    expect(activityActionFailureReason("web.validation.state_mismatch", undefined, "click")).toBe("it ran, but the page didn't change the way it should have");
+    for (const kind of ["type", "read", "click", undefined] as const) {
+      expect(activityActionFailureReason("web.action.rejected.output_not_observed", undefined, kind)).not.toMatch(/accepted|allowed/u);
+    }
+  });
+
+  it("says a control not found by what FluxIQ saved of it in a list's words for a read", () => {
+    expect(activityActionFailureReason("web.target.not_found", undefined, "read")).toBe("FluxIQ couldn't find the list where it was saved");
+    expect(activityActionFailureReason("web.target.not_found", undefined, "type")).toBe("FluxIQ couldn't find it where it was saved");
   });
 });

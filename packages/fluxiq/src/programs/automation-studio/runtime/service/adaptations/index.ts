@@ -4,4 +4,6 @@ export * from "./graph-flow-patch.ts";
 export * from "./durable.ts";
 export * from "./patches.ts";
 export * from "./prior-manual-review.ts";
+export * from "./unit-repair-apply.ts";
+export * from "./unit-repair-change.ts";
 export * from "./verification-awaits-judged-run.ts";

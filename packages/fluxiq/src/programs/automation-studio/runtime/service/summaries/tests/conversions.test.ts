@@ -224,4 +224,47 @@ describe("flowRunSummaryWithInterventionSummaries durableBehaviorChanged", () =>
     expect(flowRunSummaryWithInterventionSummaries(held).durableBehaviorChanged).toBe(false);
     expect(adaptiveRuntimeMetricsFromRunDetail(held)).toMatchObject({ durableBehaviorChanged: false, adaptationApplyCount: 0 });
   });
+
+  // C6 step 8: a fix the run held in place has its receipt on `inRunRepairs`,
+  // and counts as a durable change once its judged end kept it, and only then.
+  it("counts a fix held in the run once its judged end kept it", () => {
+    const heldRun = runtimeSessionToFlowRunDetail({ ...session([]), trace: { status: "succeeded", startedAt: 5, finishedAt: 20, attempts: [], values: {}, effects: [], repairs: ["repair.one"] } }, "project.conversions");
+    const receipt = (approvalDecision: { [key: string]: JsonValue }) => ({ ...heldRun, adaptationIds: ["adaptation.one"], metadata: { ...(heldRun.metadata ?? {}), inRunRepairs: [{ repairId: "repair.one", adaptationId: "adaptation.one", outcome: "overlaid", approvalDecision }] } });
+    const waiting = receipt({ autoApply: true, applyAt: "judged_whole_run", applied: false });
+    const kept = receipt({ autoApply: true, applyAt: "judged_whole_run", applied: true });
+
+    expect(flowRunSummaryWithInterventionSummaries(waiting).durableBehaviorChanged).toBe(false);
+    expect(adaptiveRuntimeMetricsFromRunDetail(waiting)).toMatchObject({ durableBehaviorChanged: false, adaptationApplyCount: 0, deterministicSuccessAfterAdaptation: true });
+    expect(flowRunSummaryWithInterventionSummaries(kept).durableBehaviorChanged).toBe(true);
+    expect(adaptiveRuntimeMetricsFromRunDetail(kept)).toMatchObject({ durableBehaviorChanged: true, adaptationApplyCount: 1, deterministicSuccessAfterAdaptation: true });
+  });
+
+  it("reads no success after adaptation for a run that kept no fix, or did not succeed", () => {
+    const plain = runtimeSessionToFlowRunDetail(session([]), "project.conversions");
+    const failedHeld = runtimeSessionToFlowRunDetail({ ...session([]), status: "failed", trace: { status: "failed", startedAt: 5, finishedAt: 20, attempts: [], values: {}, effects: [], repairs: ["repair.one"] } }, "project.conversions");
+
+    expect(adaptiveRuntimeMetricsFromRunDetail(plain)).toMatchObject({ deterministicSuccessAfterAdaptation: false });
+    expect(adaptiveRuntimeMetricsFromRunDetail(failedHeld)).toMatchObject({ deterministicSuccessAfterAdaptation: false });
+  });
+});
+
+// t384: a step whose try failed where the state it was to produce already held
+// is done, and the run went on down `success`. The run's detail is what the Lab
+// and the web UI read, so it says done, and keeps the failure the try met.
+describe("runtimeSessionToFlowRunDetail attempt whose state already held", () => {
+  const failure = { category: "unexpected_state", code: "web.action.blocked_by_dialog", retryable: false, stage: "execution" } as const;
+
+  it("reads the step as succeeded down success, with the mark and the failure kept", () => {
+    const held = { ...failedAttempt(), message: "Blocked.", failure, stateHeld: { rung: "skip_satisfied_node", route: "success" } } as AutomationStudioNodeAttemptTrace;
+    const record = runtimeSessionToFlowRunDetail(session([held]), "project.conversions").actionAttempts?.[0];
+
+    expect(record).toMatchObject({ status: "succeeded", route: "success", stateHeld: { rung: "skip_satisfied_node" }, failure: { code: "web.action.blocked_by_dialog" }, message: "Blocked." });
+  });
+
+  it("still reads a failed step without the mark as failed", () => {
+    const record = runtimeSessionToFlowRunDetail(session([{ ...failedAttempt(), failure }]), "project.conversions").actionAttempts?.[0];
+
+    expect(record).toMatchObject({ status: "failed", route: "failed" });
+    expect(record).not.toHaveProperty("stateHeld");
+  });
 });

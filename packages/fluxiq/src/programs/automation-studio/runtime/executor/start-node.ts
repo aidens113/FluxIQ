@@ -1,3 +1,5 @@
+import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID } from "../../nodes/control-flow/index.ts";
+
 /** The node definition that declares where a Flow begins. */
 const START_DEFINITION_ID = "builtin.control.start";
 
@@ -30,6 +32,11 @@ export type AutomationStudioStartNodeChoice<Node> =
  *   no edge enters is a root only when no other node is: a run that begins at
  *   End finishes there, so an End node left unwired beside the nodes that do
  *   the work is not where a run begins.
+ * - A Handler node is never a root. It is a registration no route enters, and
+ *   its body is run only by the lifecycle dispatcher, never walked into by a
+ *   run (state-aware recovery plan, C4). Its body nodes are entered by its
+ *   `body` edge, so they are never roots either, and a graph whose only extra
+ *   parentless nodes are Handlers begins where it would without them.
  * - Several Start nodes, several roots, no root, or no nodes at all have no
  *   start. The run refuses rather than guessing, because a guess executes
  *   actions from a node nobody chose.
@@ -50,7 +57,7 @@ export function chooseAutomationStudioStartNode<Node extends { id: string; defin
   }
   const nodeIds = new Set(nodes.map((node) => node.id));
   const entered = new Set(edges.filter((edge) => edge.sourceNodeId !== edge.targetNodeId && nodeIds.has(edge.sourceNodeId)).map((edge) => edge.targetNodeId));
-  const roots = nodes.filter((node) => !entered.has(node.id));
+  const roots = nodes.filter((node) => !entered.has(node.id) && node.definitionId !== AUTOMATION_STUDIO_HANDLER_DEFINITION_ID);
   const startable = roots.some((node) => node.definitionId !== END_DEFINITION_ID) ? roots.filter((node) => node.definitionId !== END_DEFINITION_ID) : roots;
   if (startable.length === 1) return { status: "root", node: startable[0]! };
   if (!startable.length) {

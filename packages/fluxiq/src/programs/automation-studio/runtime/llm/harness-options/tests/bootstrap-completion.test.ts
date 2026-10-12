@@ -84,8 +84,9 @@ describe("the feedback on a completed plan that was refused", () => {
 
     expect(verdict.code).toBe("flow_bootstrap.evidence_completion_parameters_unresolved");
     expect(feedback.issues).toEqual([
-      { code: "web.handle.misplaced", path: "plan.subflows.0.nodes.0.parameters" },
-      { code: "web.handle.misplaced:extractList.fields.0", path: "plan.subflows.0.nodes.0.parameters", accepted: expect.objectContaining({ parameter: "extractList" }) }
+      // A JSON plan has no lines: each issue names its node by the name and key the model gave it (t378).
+      { code: "web.handle.misplaced", path: "plan.subflows.0.nodes.0.parameters", step: "scrape", label: "scrape" },
+      { code: "web.handle.misplaced:extractList.fields.0", path: "plan.subflows.0.nodes.0.parameters", step: "scrape", label: "scrape", accepted: expect.objectContaining({ parameter: "extractList" }) }
     ]);
     expect(feedback.instruction).toContain("A code written <code>:<path> names where inside that node's parameters the issue is");
     expect(feedback.instruction).toContain("a parameter's own description names any further keys it takes beside the handle.");

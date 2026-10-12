@@ -20,6 +20,7 @@ const SESSION_PROJECTION_METADATA_KEYS: ReadonlySet<string> = new Set([
   "recoveryAttemptCount",
   "comparisonCount",
   "terminalFailureReason",
+  "stopCode",
   "message",
   "currentNodeId"
 ]);
@@ -36,6 +37,8 @@ const SUMMARY_PROJECTION_METADATA_KEYS: ReadonlySet<string> = new Set([
   "targetId",
   "effectCount",
   "recoveryAttemptCount",
+  "stopCode",
+  "statusWords",
   "errorCount",
   "lastEventSequence"
 ]);
@@ -55,6 +58,7 @@ export function runDetailPreservingStored(
   if (!stored || stored.summary.runId !== incoming.summary.runId) return incoming;
   const actionAttempts = mergeOptionalRecords(stored.actionAttempts, incoming.actionAttempts, (record) => record.attemptId);
   const recoveryAttempts = mergeOptionalRecords(stored.recoveryAttempts, incoming.recoveryAttempts, (record) => record.recoveryId);
+  const handlerExecutions = mergeOptionalRecords(stored.handlerExecutions, incoming.handlerExecutions, (record) => record.executionId);
   const inputs = incoming.inputs ?? stored.inputs;
   const startingStateRefs = incoming.startingStateRefs ?? stored.startingStateRefs;
   const evidence = incoming.evidence ?? stored.evidence;
@@ -67,6 +71,7 @@ export function runDetailPreservingStored(
     subflows: mergeRecords(stored.subflows, incoming.subflows, (record) => record.entryId),
     ...(actionAttempts !== undefined ? { actionAttempts } : {}),
     ...(recoveryAttempts !== undefined ? { recoveryAttempts } : {}),
+    ...(handlerExecutions !== undefined ? { handlerExecutions } : {}),
     interventions: mergeRecords(stored.interventions, incoming.interventions, (record) => record.interventionId),
     adaptationIds: orderedUnion(stored.adaptationIds, incoming.adaptationIds),
     changeProposalIds: orderedUnion(stored.changeProposalIds, incoming.changeProposalIds),

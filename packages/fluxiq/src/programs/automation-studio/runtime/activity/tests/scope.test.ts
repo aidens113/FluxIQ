@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ClientGatewayActivity } from "@fluxiq/contracts/client-gateway";
 import { bindAutomationStudioActivityRun } from "../bind.ts";
+import { automationStudioConversationCallCause } from "../../conversations/commands/index.ts";
+import { AutomationStudioFlowBootstrapGenerationError } from "../../flow-bootstrap/generation-failure/index.ts";
 import { withAutomationStudioBuildActivity } from "../build.ts";
 import { automationStudioActivityHub } from "../default-hub.ts";
 import { emitAutomationStudioActivity } from "../emit.ts";
@@ -105,6 +107,17 @@ describe("withAutomationStudioBuildActivity", () => {
     expect(seen[5]!.label).not.toMatch(/model/u);
   });
 
+  // R4a (`run-mv2nlh9l-52e476da`, moment 10): the overlay read a bare "Build failed" while the
+  // chat's ending said why. A build's own failure with no ending says the chat's reason.
+  it("says why a build with no ending failed, in the chat ending's words", async () => {
+    const stuck = new AutomationStudioFlowBootstrapGenerationError({ code: "flow_bootstrap.evidence_repeat_without_progress", stage: "provider_output_validation", retryable: false, providerInvocation: "attempted", providerResponse: "received" });
+    await expect(withAutomationStudioBuildActivity({ projectId: "p1" }, async () => { throw stuck; })).rejects.toBe(stuck);
+    const why = "it kept trying without getting any further, so it was stopped";
+    expect(automationStudioConversationCallCause("the build", { ok: false, error: stuck.message, payload: { diagnostic: stuck.diagnostic } })).toBe(`the build failed: ${why}`);
+    expect(seen[1]).toMatchObject({ phase: "failed", final: true, label: `Build failed: ${why}`, detail: { title: `Build failed: ${why}`, text: "It kept trying without getting any further, so it was stopped.", status: "failed" } });
+    expect(JSON.stringify(seen[1])).not.toMatch(/flow_bootstrap|evidence_repeat/u);
+  });
+
   it("marks only a cancelled build's ending as stopped, from the cancellation's AbortError (t376)", async () => {
     const cancelled = new DOMException("Build stopped. The Flow was not promoted.", "AbortError");
     await expect(withAutomationStudioBuildActivity({ projectId: "p1", flowId: "f1" }, async () => { throw cancelled; })).rejects.toBe(cancelled);
@@ -192,6 +205,21 @@ describe("withAutomationStudioRunActivity", () => {
     await withAutomationStudioRunActivity({ projectId: "p1" }, async () => { bindAutomationStudioActivityRun("r6"); return { status: "failed" }; }, { readRecord: async () => { throw new Error("store closed"); } });
     expect(seen.at(-1)).toMatchObject({ label: "Run failed", detail: { title: "Run failed", status: "failed" } });
     expect(seen.at(-1)!.detail).not.toHaveProperty("text");
+  });
+
+  it("ends a run stopped as Outcome uncertain on \"Stopped\", not \"Run failed\", from its trace or its record (t412)", async () => {
+    const ending = "not sure the last step went through, so it was not repeated.";
+    await withAutomationStudioRunActivity({ projectId: "p1" }, async () => {
+      bindAutomationStudioActivityRun("r7");
+      return { status: "failed", trace: { failure: { code: "run.outcome_uncertain" } } };
+    });
+    expect(seen.at(-1)).toMatchObject({ phase: "failed", final: true, label: `Stopped: ${ending}`, detail: { kind: "step", title: "Stopped", status: "failed", text: ending } });
+    expect(seen.at(-1)).not.toHaveProperty("stopped");
+    await withAutomationStudioRunActivity({ projectId: "p1" }, async () => {
+      bindAutomationStudioActivityRun("r8");
+      return { status: "failed" };
+    }, { readRecord: async () => ({ stopCode: "run.outcome_uncertain" }) });
+    expect(seen.at(-1)).toMatchObject({ label: `Stopped: ${ending}`, detail: { title: "Stopped", text: ending } });
   });
 
   it("runs unobserved without a project", async () => {

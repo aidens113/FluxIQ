@@ -119,8 +119,9 @@ describe("Automation graph controller", () => {
 
     expect(editorSource).not.toContain("useMemo(() => automationFlowGraphProblems(flowNodes, flowEdges)");
     expect(validationEffectSource).toContain("scheduleAutomationGraphIdleTask");
-    expect(validationEffectSource).toContain("automationFlowGraphProblems(nodes, edges)");
-    expect(validationEffectSource).toContain("[flowGraphValidationRevision]");
+    // The open graph's Subflow role rides along as a third argument (t398); validation still runs in the idle task.
+    expect(validationEffectSource).toContain("automationFlowGraphProblems(nodes, edges, { subflowRole: props.subflowRole })");
+    expect(validationEffectSource).toContain("[flowGraphValidationRevision, props.subflowRole]");
     expect(publishSource).toContain("flowGraphDraftFlushCancelRef.current?.()");
     expect(publishSource).toContain("scheduleAutomationGraphIdleTask");
     expect(publishSource).toContain("delayMs: 160");

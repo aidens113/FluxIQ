@@ -12,3 +12,4 @@ export * from "./subflow-migration.ts";
 export * from "./summary-index-repair.ts";
 export * from "./version-order.ts";
 export * from "./writer.ts";
+export * from "./validation-context.ts";

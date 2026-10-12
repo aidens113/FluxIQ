@@ -64,6 +64,7 @@ import type { AutomationStudioFlowBootstrapIssue } from "../plan/index.ts";
 import type { AutomationStudioFlowScriptBranch, AutomationStudioFlowScriptStep } from "./contracts.ts";
 import { authoringError } from "./issue.ts";
 import { matchAuthoringDefinition } from "./matching.ts";
+import { automationStudioFlowScriptRepeatBounds, automationStudioFlowScriptRepeatPaces } from "../script-statements/index.ts";
 
 /**
  * The join, and the node a list is walked with.
@@ -93,6 +94,8 @@ export type AutomationStudioFlowDraftRoutedStep = {
   routeSignatures?: AutomationStudioRouteSignatures;
   /** What the node it becomes is named (`AutomationStudioFlowScriptStep.nodeLabel`). */
   nodeLabel?: string;
+  /** The least time between two starts of the node it becomes (`AutomationStudioFlowScriptStep.paceMs`), as the step carried it. */
+  paceMs?: number;
 };
 
 /**
@@ -219,8 +222,15 @@ export function routeAutomationStudioFlowScriptRepeats(input: {
   resolution: AutomationStudioNodeRegistryResolution;
 }): { steps: readonly AutomationStudioFlowScriptStep[]; issues: AutomationStudioFlowBootstrapIssue[] } {
   if (!input.steps.some((step) => step.repeat)) return { steps: input.steps, issues: [] };
-  const issues: AutomationStudioFlowBootstrapIssue[] = [];
-  const whiles = input.steps.some((step) => step.repeat?.while !== undefined);
+  // A span's `repeat pace:` becomes its first step's `paceMs`, and a `repeat
+  // most:` or `repeat pace:` written under a member of its span is the span's
+  // own (`../script-statements/`). The pace goes first: a member whose only
+  // repeat lines were most and pace must still carry most when the bound is read.
+  const paced = automationStudioFlowScriptRepeatPaces(input.steps);
+  const bounded = automationStudioFlowScriptRepeatBounds(paced.steps);
+  const issues: AutomationStudioFlowBootstrapIssue[] = [...paced.issues, ...bounded.issues];
+  const written = bounded.steps;
+  const whiles = written.some((step) => step.repeat?.while !== undefined);
   for (const id of [MERGE_NODE_ID, FOR_EACH_NODE_ID, ...(whiles ? [REPEAT_NODE_ID] : [])]) {
     if (input.registry.get(id, input.resolution)) continue;
     issues.push(authoringError("flow_script.repeat_unavailable", `A Flow that repeats needs "${id}", which this library does not offer.`, "flow"));
@@ -228,8 +238,8 @@ export function routeAutomationStudioFlowScriptRepeats(input: {
   }
   // Every step is labelled, so a span's first step and each step taking the
   // row can be pointed at; a step the model left unlabelled takes its line.
-  const steps = input.steps.map((written) => {
-    const step = { ...written, branches: [...written.branches], label: written.label ?? `${SCRIPT_DERIVED}line${written.line}` };
+  const steps = written.map((each) => {
+    const step = { ...each, branches: [...each.branches], label: each.label ?? `${SCRIPT_DERIVED}line${each.line}` };
     delete step.repeat;
     return step;
   });
@@ -241,12 +251,12 @@ export function routeAutomationStudioFlowScriptRepeats(input: {
   const consumed = new Set<number>();
   for (const [index, step] of steps.entries()) {
     if (consumed.has(index)) continue;
-    const repeat = input.steps[index]!.repeat;
+    const repeat = written[index]!.repeat;
     if (!repeat) {
       emitted.push(step);
       continue;
     }
-    const span = scriptSpan({ steps, written: input.steps, index, repeat, indexOf, emitted, consumed, registry: input.registry, resolution: input.resolution });
+    const span = scriptSpan({ steps, written, index, repeat, indexOf, emitted, consumed, registry: input.registry, resolution: input.resolution });
     if ("refusal" in span) {
       issues.push(authoringError(span.refusal.code, span.refusal.message, span.refusal.path ?? `flow.line.${repeat.line}`));
       emitted.push(step);
@@ -267,6 +277,8 @@ export function routeAutomationStudioFlowScriptRepeats(input: {
       const exit = nextDerived("exit");
       emitRepeatWhile({ emitted, head: span.head, loop, pass, exit, first: step.label, endings: span.endings, ...(span.most === undefined ? {} : { most: span.most }), body });
     }
+    // Every node this repeat added is said, in a refusal, to be the step that says repeat.
+    for (const added of emitted) if (!added.line && added.cause === undefined) added.cause = step.line;
   }
   return { steps: emitted, issues };
 }
@@ -314,7 +326,11 @@ function scriptSpan(input: {
     const step = steps[member]!;
     members.add(step.label);
     if (member > index && input.written[member]!.repeat) return refuse("flow_script.repeat_body_is_routed", `The step at line ${step.line} says repeat inside the span that starts at line ${steps[index]!.line}. A repeat inside a repeat is not supported: say repeat once, on the first step of the span.`);
-    if (step.branches.length) return refuse("flow_script.repeat_body_branches", `The step at line ${step.line} is inside the span that starts at line ${steps[index]!.line} and branches with \`on ${step.branches[0]!.port}:\`. A step inside a repeat runs in order, and where each pass goes is the repeat's: take the branch out, or end the span before this step.`, `flow.line.${step.branches[0]!.line}`);
+    // An optional step's way past itself is Core's, and goes to its join inside
+    // this span (`../script-statements/guarded-steps.ts`); only a branch the
+    // model wrote would leave the order the loop runs in.
+    const written = step.branches.find((each) => !each.guard);
+    if (written) return refuse("flow_script.repeat_body_branches", `The step at line ${step.line} is inside the span that starts at line ${steps[index]!.line} and branches with \`on ${written.port}:\`. A step inside a repeat runs in order, and where each pass goes is the repeat's: take the branch out, or end the span before this step.`, `flow.line.${written.line}`);
     if (step.runsBlock) return refuse("flow_script.repeat_body_branches", `The step at line ${step.line} is inside the span that starts at line ${steps[index]!.line} and runs a block. A step inside a repeat runs a node.`, `flow.line.${step.line}`);
   }
   for (const [other, step] of steps.entries()) {
@@ -730,6 +746,7 @@ function scriptStep(entry: AutomationStudioFlowDraftRoutedStep, label: string | 
     draftStepId: automationStudioFlowDraftStepId(entry.step),
     ...(entry.routeSignatures ? { routeSignatures: entry.routeSignatures } : {}),
     ...(entry.nodeLabel ? { nodeLabel: entry.nodeLabel } : {}),
+    ...(entry.paceMs !== undefined ? { paceMs: entry.paceMs } : {}),
     line: 0
   };
 }

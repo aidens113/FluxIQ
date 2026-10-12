@@ -198,3 +198,40 @@ describe("a refused handle is named", () => {
     expect(feedback[0]!.handles).toBeUndefined();
   });
 });
+
+// Lane B (`run-mv0fu9pb-57454dc4`, 0058) was refused `web.step.consequences_undeclared`
+// for two steps that typed a search and sent it, and nothing said that sending
+// a form is a press. An undeclared consequence now says what to write (t378).
+describe("the feedback on a step whose consequences are undeclared", () => {
+  const undeclared = (path: string): AutomationStudioFlowBootstrapIssue[] => [
+    { code: "web.step.consequences_undeclared", path, severity: "error", message: "" },
+    { code: "web.step.expected.consequences_classes_or_none", path, severity: "error", message: "" }
+  ];
+  const plan = (parameters: JsonObject): AutomationStudioFlowBootstrapPlan => ({
+    ...planWith({}),
+    subflows: [{ key: "primary", name: "Primary", role: "primary", nodes: [{ key: "s1", definitionId: "web.output.dom-type", definitionVersion: "1.0.0", parameters }], edges: [] }]
+  });
+
+  it("says once per step that sending its form is a press, and what to write instead", () => {
+    const feedback = automationStudioFlowBootstrapIssueFeedback({ plan: plan({ selector: "#q", text: "towels", submit: true }), issues: undeclared("plan.subflows.0.nodes.0.parameters") });
+    expect(feedback.map((entry) => entry.instead === undefined)).toEqual([false, true]);
+    const instead = String(feedback[0]!.instead);
+    expect(instead).toContain("sends its form (submit: true), which is a press");
+    expect(instead).toContain("`consequences: none`");
+    expect(instead).toContain("`consequences: <classes>`, naming those of move_money, delete, send_or_publish, modify_existing, create_new");
+    // Fixed words: nothing the step holds is quoted back.
+    expect(instead).not.toContain("towels");
+  });
+
+  it("says a step that presses needs the line, and gives each refused step its own sentence", () => {
+    const issues = [...undeclared("plan.subflows.0.nodes.0.parameters"), ...undeclared("plan.subflows.0.nodes.1.parameters")];
+    const feedback = automationStudioFlowBootstrapIssueFeedback({ plan: plan({ selector: "#buy" }), issues });
+    expect(feedback.filter((entry) => entry.instead !== undefined)).toHaveLength(2);
+    expect(String(feedback[0]!.instead)).toMatch(/^This step presses something/u);
+  });
+
+  it("says nothing instead for any other issue", () => {
+    const feedback = automationStudioFlowBootstrapIssueFeedback({ plan: plan({}), issues: [{ code: "web.handle.unknown", path: "plan.subflows.0.nodes.0.parameters", severity: "error", message: "" }] });
+    expect(feedback[0]!.instead).toBeUndefined();
+  });
+});

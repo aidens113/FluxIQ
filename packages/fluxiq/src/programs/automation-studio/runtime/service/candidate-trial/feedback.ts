@@ -19,19 +19,41 @@
 // `expected`/`actual`, which its contract keeps free of page content. The
 // failure's free-text message is still never shown.
 //
+// **Nothing says how a control was found (t426).** The producer's
+// `expected`/`actual` pass through the model-facing screen
+// (`../../llm/model-facing/failure-text.ts`): none for a failure about
+// finding the step's target, and otherwise only a text with no locator, score
+// or word for the finding in it. The model names elements by handle only.
+//
 // **A failed check says what it waited for (t368).** A failed wait or assert
 // adds what it waited for, whether the domain found that text hidden or absent,
 // the visible text most like it, and that a check which only confirms the act
 // before it is not needed (`./check-step.ts`, from lane A round 7). The
 // snippets are page text the extension screened by its sensitive-value rules
 // before they left the browser, bounded again here.
+//
+// **A step says what it got past (t378).** A refusal the run waited out and
+// tried again is no longer folded into `attempts: 2` alone: the step lists it
+// under `absorbed` (`./absorbed.ts`), and the paces the run learned from a site
+// asking it to slow down are said once under `paces`.
+//
+// **A control still on the page says so (t420).** A step that could not find
+// its control where it was saved, where the domain measured one like it still
+// on the page, says that plainly, that the script need not change, and is
+// retryable (`./target-on-page.ts`); the trial gate reads its
+// `targetOnPage` to tell the model to test again rather than look for it.
 
 import type { JsonObject } from "../../../../../core/index.ts";
-import type { AutomationStudioFlowArtifact } from "../../../model/index.ts";
+import type { AutomationStudioFlowArtifact, AutomationStudioFlowNode } from "../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
+import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
+import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../../llm/model-facing/index.ts";
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
+import { automationStudioTrialFailureHappened } from "./happened.ts";
+import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
 
 /** The most steps a feedback lists; a longer Flow says how many it left out. */
 const MAX_STEPS = 40;
@@ -40,7 +62,13 @@ const MAX_STEPS = 40;
 export const automationStudioCandidateTrialFeedback = Object.freeze({
   /** The run did not reach its end: no judge was asked. */
   executionFailed(input: { code: string; trialRunId?: string | undefined; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string }): { verdict: AutomationStudioCandidateTrialVerdict; feedback: JsonObject } {
-    return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...steps(input.trace, input.graph) } };
+    const graphFailure = input.trace?.failure?.code;
+    const graphEnding = graphFailure === "executor.graph.unvisited_nodes"
+      ? { code: graphFailure, happened: "The run reached a terminal step while required graph nodes remained unvisited.", instruction: "Check the Flow's connections and required steps. Continue to those steps, or use an explicit End only where the instruction is complete. This is a graph-level failure; no displayed successful step needs retrying." }
+      : graphFailure === "executor.graph.unmatched_route"
+        ? { code: graphFailure, happened: "The last step chose a route with no matching outgoing edge.", instruction: "Connect the step's settled route to the intended next step, then resubmit and test the new revision." }
+        : undefined;
+    return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...(graphEnding ? { graphEnding } : {}), ...steps(input.trace, input.graph) } };
   },
 
   /** The judge's verdict, read as the trial gate's. */
@@ -58,25 +86,68 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
   }
 });
 
-/** Each step that ran, in order: its definition, the control it acted on, its final status, how many attempts it took and, for a failure, what happened. */
+/**
+ * Each step that ran, in order: its definition, the control it acted on, its
+ * final status, how many attempts it took, what it absorbed on the way
+ * (`./absorbed.ts`) and, for a failure, what happened. Then the paces the run
+ * learned, once each.
+ */
 function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined): JsonObject {
   const ran = executedSteps(trace?.attempts ?? []);
   if (!ran.length) return { steps: [] };
   const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
-  const listed = ran.slice(0, MAX_STEPS).map(({ attempt, attempts }, index) => {
+  const listed = ran.slice(0, MAX_STEPS).map(({ attempt, attempts, absorbed, pass }, index) => {
     const node = nodes.get(attempt.nodeId);
     const failure = attempt.failure;
+    const control = automationStudioModelFacingControlWords(node?.parameterValues);
+    // A control the step could not find where it was saved, though the domain measured one like it on the page (t420).
+    const onPage = failure && !attempt.stateHeld ? automationStudioTrialTargetOnPage({ step: index + 1, node, control, attempt, earlier: absorbed.map((entry) => entry.failed) }) : undefined;
     const step = compact({
-      step: index + 1, definitionId: attempt.definitionId, label: node?.label, control: controlWords(node?.parameterValues), status: attempt.status,
+      step: index + 1, definitionId: attempt.definitionId, label: node?.label, control, status: automationStudioAttemptSettled(attempt).status,
       attempts: attempts > 1 ? attempts : undefined,
-      ...(attempt.skipped ? { skipped: attempt.skipped.reason === "target_absent" ? "Its control was not on the page, so the step was skipped." : "The page was already at another step, so the run went on from there." } : {}),
-      failureCode: failure?.code, happened: failure ? HAPPENED[failure.category] ?? HAPPENED.action_failed : undefined,
-      expected: failure?.expected, actual: failure?.actual
+      ...(attempt.skipped ? { skipped: skippedSaid(attempt.skipped) } : {}),
+      // Done, though its try failed: the page already showed what the step does (`stateHeld`).
+      ...(attempt.stateHeld ? { stateHeld: "The step's try failed, but the page already showed what the step does, so the run went on without doing it again." } : {}),
+      failureCode: failure?.code, happened: failure ? automationStudioTrialFailureHappened(failure.category) : undefined,
+      ...(failure ? automationStudioModelFacingFailureText(failure) : {})
     });
-    return failure ? { ...step, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt) } : step;
+    const withAbsorbed = absorbed.length ? { ...step, absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage !== undefined }) } : step;
+    // A step whose state already held is done: no retry or check advice for a failure the run went past.
+    return failure && !attempt.stateHeld ? { ...withAbsorbed, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt), ...onPage } : withAbsorbed;
   });
-  return { steps: listed, ...(ran.length > MAX_STEPS ? { stepsLeftOut: ran.length - MAX_STEPS } : {}) };
+  const paces = learnedPaces(trace, nodes);
+  return { steps: listed, ...(ran.length > MAX_STEPS ? { stepsLeftOut: ran.length - MAX_STEPS } : {}), ...(paces.length ? { paces } : {}) };
 }
+
+/**
+ * Why a step was passed over, in one sentence. A step that does a lasting act
+ * and was passed over says the act was not done, never only that it was
+ * skipped (r4b F4, `../../executor/step-skip/act-not-done.ts`).
+ */
+function skippedSaid(skipped: NonNullable<AutomationStudioNodeAttemptTrace["skipped"]>): string {
+  if (skipped.reason !== "target_absent") return "The page was already at another step, so the run went on from there.";
+  return skipped.notDone
+    ? "Its control was not on the page, so the step was skipped and what it does was not done. If the instruction asks for it, the step must not be optional."
+    : "Its control was not on the page, so the step was skipped.";
+}
+
+/** Each pace the run learned from a site asking it to slow down, with the step it holds, said once. */
+function learnedPaces(trace: AutomationStudioGraphExecutionTrace | undefined, nodes: ReadonlyMap<string, AutomationStudioFlowNode>): JsonObject[] {
+  return (trace?.pace ?? []).filter((pace) => pace.learnedMs !== undefined).map((pace) => {
+    const node = nodes.get(pace.nodeId);
+    return compact({ definitionId: node?.definitionId, label: node?.label, control: automationStudioModelFacingControlWords(node?.parameterValues), paceMs: pace.paceMs,
+      said: `The run learned to start this step at most once every ${(pace.paceMs / 1_000).toFixed(1)} s after the site asked it to slow down${pace.raisedCount > 1 ? ` ${pace.raisedCount} times` : ""}, and held every later pass to it.` });
+  });
+}
+
+type ExecutedStep = {
+  attempt: AutomationStudioNodeAttemptTrace;
+  attempts: number;
+  /** Each failed attempt the step was tried again after, with the attempt that followed it. */
+  absorbed: Array<{ failed: AutomationStudioNodeAttemptTrace; retry: AutomationStudioNodeAttemptTrace }>;
+  /** The outputs of the loop pass the step ran in, when it ran in one. */
+  pass?: AutomationStudioNodeAttemptTrace["outputs"] | undefined;
+};
 
 /**
  * The trace's attempts folded into steps (t365). Since t355 a node may make up
@@ -85,45 +156,26 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
  * failed step and a new one. An attempt of the same node right after a failed
  * attempt of it is that step tried again, so it replaces the step's outcome and
  * adds to its count; a node reached again after it succeeded (a loop, a
- * route back) is a new step.
+ * route back) is a new step. The attempts folded away are kept (t378): what the
+ * step absorbed is what the model needs to slow a loop down.
  */
-function executedSteps(attempts: readonly AutomationStudioNodeAttemptTrace[]): Array<{ attempt: AutomationStudioNodeAttemptTrace; attempts: number }> {
-  const folded: Array<{ attempt: AutomationStudioNodeAttemptTrace; attempts: number }> = [];
+function executedSteps(attempts: readonly AutomationStudioNodeAttemptTrace[]): ExecutedStep[] {
+  const folded: ExecutedStep[] = [];
+  let pass: ExecutedStep["pass"];
   for (const attempt of attempts) {
     const last = folded.at(-1);
-    if (last && last.attempt.nodeId === attempt.nodeId && last.attempt.status === "failed") folded[folded.length - 1] = { attempt, attempts: last.attempts + 1 };
-    else folded.push({ attempt, attempts: 1 });
+    if (last && last.attempt.nodeId === attempt.nodeId && automationStudioAttemptSettled(last.attempt).status === "failed") {
+      folded[folded.length - 1] = { ...last, attempt, attempts: last.attempts + 1, absorbed: [...last.absorbed, { failed: last.attempt, retry: attempt }] };
+      continue;
+    }
+    folded.push({ attempt, attempts: 1, absorbed: [], ...(pass ? { pass } : {}) });
+    if (LOOP_DEFINITION_IDS.has(attempt.definitionId)) pass = attempt.route === "body" ? attempt.outputs : undefined;
   }
   return folded;
 }
 
-/** Core's plain sentence for each failure category (`@fluxiq/contracts` `AUTOMATION_STUDIO_ADAPTIVE_FAILURE_CLASSES`). */
-const HAPPENED: Readonly<Record<string, string>> = Object.freeze({
-  action_failed: "The step ran and did not work.",
-  expected_state_missing: "The step ran, but what it should have changed was not seen.",
-  unexpected_state: "The step ended somewhere other than expected.",
-  timeout: "The step, or the wait for its result, ran out of time.",
-  blocked_by_capability_or_policy: "A permission or policy refused the step.",
-  missing_router_or_subflow_target: "The step named a route or Subflow that does not exist.",
-  graph_validation_or_unknown_node: "The step names a node that cannot run.",
-  external_side_effect_denied: "The step needed a lasting act it is not permitted to do.",
-  ambiguous_or_unknown: "The step failed for a reason the page did not make clear.",
-  target_not_found: "The step's control was not found on the page.",
-  target_ambiguous: "More than one control matched the step's control, and none could be chosen.",
-  navigation_unexpected: "The page went somewhere the step did not ask for, or did not reach where it asked to go.",
-  output_not_observed: "The step reported success, but its effect was never seen.",
-  page_changed: "The page changed under the step before it could act.",
-  auth_required: "The site asked to sign in before the step could go on.",
-  user_intervention_required: "The page needs a person before the step can go on."
-});
-
-/** The words of the element a node targets, from the identity its handle resolved to at submission (`parameters.element`). */
-function controlWords(parameters: JsonObject | undefined): string | undefined {
-  const element = parameters?.element;
-  if (!element || typeof element !== "object" || Array.isArray(element)) return undefined;
-  const words = [element.accessibleName, element.visibleText].find((value): value is string => typeof value === "string" && value.trim() !== "");
-  return words?.replace(/\s+/gu, " ").trim();
-}
+/** The nodes whose `body` passes a step can run in, as the executor keys them. */
+const LOOP_DEFINITION_IDS: ReadonlySet<string> = new Set(["builtin.control.for-each", "builtin.control.repeat"]);
 
 function compact(value: Record<string, string | number | undefined>): JsonObject {
   return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string | number] => entry[1] !== undefined && entry[1] !== ""));

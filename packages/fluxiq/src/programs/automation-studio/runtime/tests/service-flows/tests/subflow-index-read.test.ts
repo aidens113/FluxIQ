@@ -36,6 +36,8 @@ describe("listing Flows with their Subflows", () => {
     const flow = await createRunnableCanonicalFlow(service, project.id, { flowId: "flow.subflow-index" });
     const listed = await service.listAutomationFlowSummaries(project.id);
     expect(listed.find((summary) => summary.flowId === flow.flowId)?.hierarchySubflows).toHaveLength(1);
+    // Each entry carries its Subflow's role, which the editor validates the open graph with (t398).
+    expect(listed.find((summary) => summary.flowId === flow.flowId)?.hierarchySubflows?.[0]?.role).toEqual(expect.any(String));
 
     const indexFile = path.join(tempRoot, "programs", "automation-studio", "projects", project.id, "indexes", "subflows.json");
     await writeFile(indexFile, "{ this is not json", "utf8");

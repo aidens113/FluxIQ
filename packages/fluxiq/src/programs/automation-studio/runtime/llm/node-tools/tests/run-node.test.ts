@@ -58,7 +58,7 @@ describe("the run-node tool's declaration", () => {
   it("keeps the rules the model needs: handles not locators, lists by their detection handle", () => {
     const description = tool()!.description;
     expect(description).toContain("{\"handle\": \"<the handle the evidence printed, copied exactly>\"}");
-    expect(description).toContain("Never write a locator");
+    expect(description).toContain("Never write an address, a description or a guess of your own");
     expect(description).toContain("by the handle the detection tool issued");
   });
 

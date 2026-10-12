@@ -107,6 +107,17 @@ describe("a read's account", () => {
     expect(reads[0]).toMatchObject({ pagesRead: 5, kept: 8, attempts: 2 });
   });
 
+  // t406: a called part's read reaches the judge as a read of its own call,
+  // told by its counts, since the Flow's nodes are not the part's.
+  it("accounts for a called part's read apart from the Flow's own read of a node with the same id", () => {
+    const part = earbudsAttempt({ attemptId: "call.attempt.1:attempt.s6", parentAttemptId: "call.attempt.1", order: 8, metadata: { extraction: { recordCount: 3, pagesRead: 1, truncated: false } } });
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt(), part], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
+    expect(reads).toHaveLength(2);
+    expect(reads[0]).toMatchObject({ pagesRead: 5, kept: 8, paginates: true });
+    expect(reads[1]).toMatchObject({ pagesRead: 1, kept: 3 });
+    expect(reads[1]).not.toHaveProperty("paginates");
+  });
+
   it("says a step that reported no read nothing, and a record without the account nothing either", () => {
     const { reads } = automationStudioResultReadAccounts({ actionAttempts: [earbudsAttempt({ metadata: { recordCount: 8 } })], flowNodes: [earbudsNode()], deniedEvidenceKeys: [] });
     expect(reads).toEqual([]);

@@ -81,6 +81,11 @@ export type AutomationStudioResultReadAccountsInput = {
  * One account per step that reported a read, in the order each first read:
  * every one of them. A step outside a loop speaks with its last successful
  * read; one that ran as the passes of a loop, with every pass added up.
+ *
+ * A called part's read (`parentAttemptId`) is a step of its own call: its
+ * loops are read from its own frame's attempts, and it is told by its counts
+ * alone, because the Flow's authored nodes are not the part's and a part's
+ * node can share an id with one of them.
  */
 export function automationStudioResultReadAccounts(input: AutomationStudioResultReadAccountsInput): { reads: AutomationStudioResultReadAccount[] } {
   const latest = new Map<string, { attempt: AutomationStudioFlowRunActionAttemptRecord; extraction: JsonObject; attempts: number }>();
@@ -88,23 +93,26 @@ export function automationStudioResultReadAccounts(input: AutomationStudioResult
   for (const attempt of run) {
     const extraction = readExtraction(attempt);
     if (!extraction) continue;
-    const previous = latest.get(attempt.nodeId);
+    const key = attempt.parentAttemptId === undefined ? attempt.nodeId : `${attempt.parentAttemptId} ${attempt.nodeId}`;
+    const previous = latest.get(key);
     const attempts = (previous?.attempts ?? 0) + 1;
     // The last read that succeeded speaks for the step; a failed one only until a later one succeeds.
     const replaces = !previous || attempt.status === "succeeded" || previous.attempt.status !== "succeeded";
-    latest.set(attempt.nodeId, replaces ? { attempt, extraction, attempts } : { ...previous, attempts });
+    latest.set(key, replaces ? { attempt, extraction, attempts } : { ...previous, attempts });
   }
   const nodes = new Map((input.flowNodes ?? []).map((node) => [node.id, node]));
+  const authored = (attempt: AutomationStudioFlowRunActionAttemptRecord, nodeId: string) => attempt.parentAttemptId === undefined ? nodes.get(nodeId) : undefined;
   const reads = [...latest.values()].map(({ attempt, extraction, attempts }) => {
-    const node = nodes.get(attempt.nodeId);
-    // A step that ran as the passes of a loop speaks with every pass (`loop-passes.ts`, `looped-account.ts`).
-    const loop = automationStudioResultReadLoopPasses(run, (candidate) => candidate.nodeId === attempt.nodeId && readExtraction(candidate) !== undefined);
+    const node = authored(attempt, attempt.nodeId);
+    // A step that ran as the passes of a loop speaks with every pass (`loop-passes.ts`, `looped-account.ts`), read in its own frame.
+    const frame = run.filter((candidate) => candidate.parentAttemptId === attempt.parentAttemptId);
+    const loop = automationStudioResultReadLoopPasses(frame, (candidate) => candidate.nodeId === attempt.nodeId && readExtraction(candidate) !== undefined);
     if (!loop) return account(attempt, extraction, attempts, node, input.deniedEvidenceKeys);
     const passes = loop.passes.map((tries) => {
       const speaking = [...tries].reverse().find((tried) => tried.status === "succeeded") ?? tries[tries.length - 1]!;
       return account(speaking, readExtraction(speaking)!, 1, node, input.deniedEvidenceKeys);
     });
-    return automationStudioResultReadLoopedAccount({ passes, attempts, stop: loop.stop, pageLimit: mostPasses(nodes.get(loop.repeatNodeId)) });
+    return automationStudioResultReadLoopedAccount({ passes, attempts, stop: loop.stop, pageLimit: mostPasses(authored(attempt, loop.repeatNodeId)) });
   });
   return { reads };
 }

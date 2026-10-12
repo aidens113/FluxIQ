@@ -4,6 +4,10 @@ import type { AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationNodeExpectationEvaluation } from "../../nodes/index.ts";
 import { EXPECTATION_REJECTED_FAILURE } from "../../nodes/policy/index.ts";
 import { hostExpectationEvaluator, type AutomationStudioHostStateSnapshotRef } from "../host-runtime.ts";
+import { AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE, AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY, automationStudioHostActLanded, automationStudioNodeActLasts, type AutomationStudioEffectCheckResult, type AutomationStudioLastingActCheck } from "./defensive/index.ts";
+import { automationStudioFactConditionsHold, parseAutomationStudioFactConditions, type AutomationStudioFactCondition, type AutomationStudioFactTruth } from "./lifecycle/index.ts";
+import { observeAutomationStudioFacts } from "./lifecycle-run/index.ts";
+import { automationStudioRunWait } from "./pacing/index.ts";
 import { actualTransitionForAttempt } from "./actual-transition.ts";
 import { automationStudioExpectationRequest, automationStudioReadinessCeilingMs, automationStudioRecordedState } from "./recorded-state.ts";
 import type { AutomationStudioActualTransition, AutomationStudioExpectedTransition, AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace, AutomationStudioTransitionComparison, AutomationStudioTransitionComparisonStatus } from "./contracts.ts";
@@ -83,7 +87,12 @@ export function compareAutomationStudioTransition(node: AutomationStudioFlowNode
       statusMatched,
       stateCheckCount
     },
-    ...(message ? { message } : {})
+    ...(message ? { message } : {}),
+    // Set only where the host judged the expected state: a comparison read off
+    // the attempt's own route, or kept when the evaluator broke, proves nothing
+    // about the page (C9), and a held repair is validated only on this
+    // (`service/runtime-adaptation/held-fix-validation.ts`).
+    ...(evaluation ? { metadata: { hostEvaluated: true } } : {})
   };
 }
 
@@ -105,6 +114,13 @@ export function compareAutomationStudioTransition(node: AutomationStudioFlowNode
  * would have passed on a second look. The re-check spends the node's wait
  * ceiling, and only then is the record built.
  *
+ * **An expected state of page facts is read as facts (t413).** A step's own
+ * `done when:` is stored as `{ facts: [...] }` (`./defensive/effect-check.ts`):
+ * C9 fact conditions, asked through the batched fact check, read again until
+ * they hold or the node's wait ceiling passes. All `true` accepts; a `false`
+ * left at the end rejects, as a host's rejection does; `unknown` judges
+ * nothing, and the attempt keeps its own outcome.
+ *
  * Returns the attempt untouched when no evaluator is bound, the attempt has no
  * expected state or one with no keys, or the evaluator throws, and with only
  * its comparison replaced when the host accepts.
@@ -120,7 +136,10 @@ export async function attemptWithHostExpectationEvaluation(
   // the host itself, so neither is asked twice. An expected state with no keys
   // names nothing to check, so it counts as none.
   const evaluable = attempt.status === "succeeded" || attempt.status === "failed";
-  if (!evaluate || !expectedState || Object.keys(expectedState).length === 0 || !evaluable || node.definitionId === "builtin.policy.expectation") return attempt;
+  if (!expectedState || Object.keys(expectedState).length === 0 || !evaluable || node.definitionId === "builtin.policy.expectation") return attempt;
+  const facts = expectedFacts(expectedState);
+  if (facts) return attemptWithExpectedFacts(node, attempt, facts, options);
+  if (!evaluate) return attempt;
   const stateRef = currentStateRef(attempt);
   const ask = (timeoutMs?: number): Promise<AutomationNodeExpectationEvaluation> => {
     const request = automationStudioExpectationRequest(expectedState, timeoutMs);
@@ -151,7 +170,10 @@ export async function attemptWithHostExpectationEvaluation(
   // The host's record is parsed where it becomes the attempt's, as a node
   // result's is, and one that does not parse gives way to Core's own. The
   // comparison reads the same record, so its status never disagrees with it.
-  const failure: AutomationStudioFailureRecord = parseAutomationStudioFailureRecord(evaluation.failure) ?? { ...EXPECTATION_REJECTED_FAILURE };
+  // Either way it was found after the act answered success, so its stage is
+  // `verification`, which is what keeps a lasting act from being made again
+  // (`./defensive/assess.ts`, t413).
+  const failure: AutomationStudioFailureRecord = { ...(parseAutomationStudioFailureRecord(evaluation.failure) ?? EXPECTATION_REJECTED_FAILURE), stage: "verification" };
   return {
     ...attempt,
     status: "failed",
@@ -162,9 +184,174 @@ export async function attemptWithHostExpectationEvaluation(
   };
 }
 
+/**
+ * A graph run's effect check (C6 step 4, C8): whether a lasting act whose
+ * outcome was uncertain took effect, judged by the host's *waiting* expectation
+ * evaluation of the node's `expectedState` -- the same evaluator and request
+ * the success re-check above uses, given the longer of the node's wait ceiling
+ * and the window the expected state declares. A zero-wait `false` on a slow
+ * page would read as "did not land" and make the act a second time.
+ *
+ * `landed` when the attempt's own evaluation already saw the state hold, or
+ * when every condition was judged and held (`any`: one held); `not_landed` only
+ * when the page answered and a judged condition did not hold (`any`: every
+ * condition was judged and none held). `unknown` otherwise: no expected state the host could judge,
+ * no evaluator, a host that judged nothing or did not say how much it judged,
+ * an evaluator that threw. A missing acknowledgement is never `not_landed`.
+ *
+ * An expected state of page facts (t413) is asked through the batched fact
+ * check instead, read again until every fact holds or the same window passes:
+ * all `true` is `landed`; a `false` left at the end is `not_landed` only for
+ * an act that does not last -- for a lasting one it is `unknown`, so the run
+ * stops as Outcome uncertain rather than act twice on a page fact -- and
+ * anything else `unknown`: a host with no fact check, one that failed, a fact
+ * it could not settle.
+ *
+ * A node that declares no expected state is asked of the host from the act
+ * itself (`./defensive/host-act-landed.ts`, t430): the page, never the step's
+ * declaration, says whether a press whose answer was lost landed.
+ */
+export function automationStudioHostEffectCheck(node: AutomationStudioFlowNode, options: AutomationStudioGraphExecutionOptions): AutomationStudioLastingActCheck<AutomationStudioNodeAttemptTrace> {
+  return async (attempt) => {
+    const evaluate = hostExpectationEvaluator(options.hostRuntime);
+    const expectedState = attempt.transitionComparison?.expected.expectedState ?? expectedTransitionForNode(node, attempt).expectedState;
+    if (!expectedState || Object.keys(expectedState).length === 0) {
+      const timeoutMs = automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs);
+      return await automationStudioHostActLanded(options.hostRuntime, { node, attemptId: attempt.attemptId, timeoutMs, ...(options.signal ? { signal: options.signal } : {}) });
+    }
+    if (automationStudioExpectationSatisfiedAfterFailure(attempt.transitionComparison)) return "landed";
+    const facts = expectedFacts(expectedState);
+    if (facts) {
+      const windowMs = Math.max(automationStudioExpectationRequest(expectedState).timeoutMs, automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs));
+      const read = await readExpectedFacts(facts, attempt, options, windowMs);
+      if (read.truth === "true") return "landed";
+      return read.truth === "false" && !automationStudioNodeActLasts(node) ? "not_landed" : "unknown";
+    }
+    if (!evaluate) return "unknown";
+    const declared = automationStudioExpectationRequest(expectedState);
+    const windowMs = Math.max(declared.timeoutMs, automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs));
+    const request = automationStudioExpectationRequest(expectedState, windowMs);
+    const stateRef = currentStateRef(attempt);
+    const verdict = await evaluate(request.conditions, request.mode, request.timeoutMs, {
+      source: "transition_comparison",
+      nodeId: attempt.nodeId,
+      attemptId: attempt.attemptId,
+      ...(stateRef ? { stateRef } : {}),
+      ...(options.signal ? { signal: options.signal } : {})
+    });
+    return effectCheckVerdict(verdict, request.conditions.length, request.mode);
+  };
+}
+
+/** The host's verdict read by its count contract: judged conditions are the count, and `passed` speaks only of them. */
+function effectCheckVerdict(verdict: AutomationNodeExpectationEvaluation, total: number, mode: string): AutomationStudioEffectCheckResult {
+  const judged = verdict.checkedConditionCount;
+  if (judged === undefined || judged === 0) return "unknown";
+  if (mode === "any") {
+    if (verdict.passed) return "landed";
+    return judged >= total ? "not_landed" : "unknown";
+  }
+  if (!verdict.passed) return "not_landed";
+  return judged >= total ? "landed" : "unknown";
+}
+
 /** Whether the ladder may skip this node: its own comparison says the state it was to produce holds. */
 export function automationStudioExpectationSatisfiedAfterFailure(comparison: AutomationStudioTransitionComparison | undefined): boolean {
   return comparison?.metadata?.expectationSatisfiedAfterFailure === true;
+}
+
+/** How often an expected state's page facts are read again while the run waits for them to hold. */
+const EXPECTED_FACTS_POLL_MS = 500;
+
+/** What one wait for an expected state's facts came to: their joint truth, and how many facts the host settled. */
+type ExpectedFactsRead = { truth: AutomationStudioFactTruth; settled: number };
+
+/**
+ * The page facts an expected state holds (t413), or none when it is the host's
+ * expectation conditions. A facts list that does not parse is `[]`: it is
+ * still facts, and a stored state Core cannot read proves nothing either way.
+ */
+function expectedFacts(expectedState: JsonObject): AutomationStudioFactCondition[] | undefined {
+  const written = expectedState[AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY];
+  if (written === undefined) return undefined;
+  const parsed = parseAutomationStudioFactConditions(written, AUTOMATION_STUDIO_EXPECTED_STATE_FACTS_KEY);
+  return parsed.problems.length ? [] : parsed.conditions;
+}
+
+/**
+ * Asks the host's batched fact check about the facts, and again every
+ * `EXPECTED_FACTS_POLL_MS` until all hold or `windowMs` has been waited. A
+ * host that was not asked or failed (`calls` 0, a `problem`) answers no
+ * better for waiting, so it is not asked again. No facts, or facts Core could
+ * not read, are `unknown` without a question.
+ */
+async function readExpectedFacts(
+  facts: readonly AutomationStudioFactCondition[],
+  attempt: AutomationStudioNodeAttemptTrace,
+  options: AutomationStudioGraphExecutionOptions,
+  windowMs: number
+): Promise<ExpectedFactsRead> {
+  if (!facts.length) return { truth: "unknown", settled: 0 };
+  const context = {
+    inputs: options.invocation?.frame.inputs ?? options.inputs ?? {},
+    nodeId: attempt.nodeId,
+    attemptId: attempt.attemptId,
+    ...(options.signal ? { signal: options.signal } : {})
+  };
+  let waitedMs = 0;
+  for (;;) {
+    const observation = await observeAutomationStudioFacts({ hostRuntime: options.hostRuntime, groups: [{ key: "expected", conditions: facts }], context, ...(options.now ? { now: options.now } : {}) });
+    const answers = observation.results.get("expected") ?? [];
+    const read: ExpectedFactsRead = { truth: automationStudioFactConditionsHold(facts, answers), settled: answers.filter((answer) => answer.truth !== "unknown").length };
+    const final = read.truth === "true" || observation.calls === 0 || observation.problem !== undefined || waitedMs >= windowMs || options.signal?.aborted === true;
+    if (final) return read;
+    const waitMs = Math.min(EXPECTED_FACTS_POLL_MS, windowMs - waitedMs);
+    await automationStudioRunWait(options, waitMs);
+    waitedMs += waitMs;
+  }
+}
+
+/**
+ * An attempt judged by its expected state's page facts (t413), the way
+ * `attemptWithHostExpectationEvaluation` judges one by the host's evaluator:
+ * a failed attempt is read once and keeps its status, with whether the facts
+ * hold recorded beside it; a succeeded one is read until they hold or its wait
+ * ceiling passes, and is rejected only by a `false` left at the end -- as a
+ * failure found after acting, which never makes a lasting act again.
+ */
+async function attemptWithExpectedFacts(
+  node: AutomationStudioFlowNode,
+  attempt: AutomationStudioNodeAttemptTrace,
+  facts: readonly AutomationStudioFactCondition[],
+  options: AutomationStudioGraphExecutionOptions
+): Promise<AutomationStudioNodeAttemptTrace> {
+  if (attempt.status === "failed") {
+    const read = await readExpectedFacts(facts, attempt, options, 0);
+    return { ...attempt, transitionComparison: failedAttemptComparison(node, attempt, factsEvaluation(read)) };
+  }
+  const read = await readExpectedFacts(facts, attempt, options, automationStudioReadinessCeilingMs(automationStudioRecordedState(node).recordedGapMs));
+  // Nothing settled says nothing about the page, so the attempt keeps the outcome its own execution gave it.
+  if (read.truth === "unknown") return attempt;
+  const evaluation = factsEvaluation(read);
+  if (read.truth === "true") return { ...attempt, transitionComparison: compareAutomationStudioTransition(node, attempt, evaluation) };
+  // Found after the act answered success: a verification failure, never an unknown outcome (`./defensive/effect-check.ts`).
+  const failure: AutomationStudioFailureRecord = { ...AUTOMATION_STUDIO_EXPECTED_FACTS_FALSE_FAILURE };
+  return {
+    ...attempt,
+    status: "failed",
+    route: "failed",
+    message: FACTS_REJECTED_MESSAGE,
+    failure,
+    transitionComparison: compareAutomationStudioTransition(node, attempt, { ...evaluation, failure })
+  };
+}
+
+/** What an attempt rejected by its expected state's facts says. */
+const FACTS_REJECTED_MESSAGE = "The page does not show what this step is meant to leave it showing.";
+
+/** A facts read in the evaluation shape a comparison records: passed only when every fact held, and how many the host settled. */
+function factsEvaluation(read: ExpectedFactsRead): AutomationNodeExpectationEvaluation {
+  return { passed: read.truth === "true", checkedConditionCount: read.settled, ...(read.truth === "false" ? { message: FACTS_REJECTED_MESSAGE } : {}) };
 }
 
 // A failed attempt keeps the status its own outcome gave it; the host's verdict

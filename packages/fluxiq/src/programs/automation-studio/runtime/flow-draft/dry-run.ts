@@ -87,7 +87,7 @@
 // whatever it declared (t174-w83).
 
 import type { JsonObject } from "../../../../core/index.ts";
-import { automationStudioFlowDraftStepCarriedJoin } from "./carried-step/index.ts";
+import { automationStudioFlowDraftStepCarriedJoin, automationStudioFlowDraftStepCarriedPassedOver } from "./carried-step/index.ts";
 import { automationStudioFlowDraftScheduledCandidateCall } from "./scheduled-candidate/index.ts";
 import { automationStudioFlowDraftExcusedWords, type AutomationStudioFlowDraftExcusedReason } from "./excused.ts";
 import type { AutomationStudioFlowDraftStep } from "./step.ts";
@@ -221,7 +221,8 @@ export type AutomationStudioFlowDraftDryRun = {
 export function automationStudioFlowDraftReplayable(steps: readonly AutomationStudioFlowDraftStep[]): boolean {
   const proposed = steps.filter((step) => automationStudioFlowDraftStepIsProposed(step) && !automationStudioFlowDraftStepCarriedJoin(step));
   if (!proposed.length) return false;
-  if (!proposed.every((step) => step.scheduledCandidate !== undefined ? automationStudioFlowDraftScheduledCandidateCall(step) !== undefined : step.ranWith !== undefined && step.replay !== undefined)) return false;
+  // An optional carried step the test cannot run is passed over, never a reason the draft cannot be tested (`./carried-step/`, t439).
+  if (!proposed.every((step) => automationStudioFlowDraftStepCarriedPassedOver(step) || (step.scheduledCandidate !== undefined ? automationStudioFlowDraftScheduledCandidateCall(step) !== undefined : step.ranWith !== undefined && step.replay !== undefined))) return false;
   return automationStudioFlowDraftReplayFrom(steps) !== undefined;
 }
 

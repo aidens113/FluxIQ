@@ -31,6 +31,17 @@
 // and failed it ("a step with nothing to run it with"), and the judgement listed
 // it for a rerun the domain cannot do. It is a place two ways meet, not a step to
 // run, and the Flow still holds it.
+//
+// **An optional carried step the test cannot run is passed over, never
+// rerun live (t439).** A step the Flow runs only when its trigger shows -- the
+// notice it closes, the banner it answers -- is skipped by playback when the
+// trigger is absent, and the test excuses it the same way
+// (`../routing.ts`, `../excused.ts`). Live run `run-mv4912r9-53b05a51` listed
+// such a step for a live rerun while no notice stood on the page, and the
+// model, made to run it, pressed an unrelated account control (t870) to have
+// something to press. An unchanged one is scheduled like any other saved step
+// (`../scheduled-candidate/`); one the test cannot run as saved is sent with
+// nothing, fails, and is excused as the optional step it is.
 
 import { automationStudioFlowDraftScheduledCandidateCall } from "../scheduled-candidate/index.ts";
 import type { AutomationStudioFlowDraftStep } from "../step.ts";
@@ -56,15 +67,32 @@ export function automationStudioFlowDraftStepCarriedJoin(step: { id?: string | u
 }
 
 /**
+ * Whether a step is carried, the Flow runs it only when its trigger shows
+ * (`optional`, or the answer to an interruption), and the test cannot run it as
+ * saved: it is passed over as playback passes it, and never listed for a live
+ * rerun (header).
+ */
+export function automationStudioFlowDraftStepCarriedPassedOver(step: AutomationStudioFlowDraftStep): boolean {
+  if (!automationStudioFlowDraftStepCarried(step) || automationStudioFlowDraftStepCarriedJoin(step)) return false;
+  if (step.routing?.kind !== "optional" && step.interruption !== true) return false;
+  return !runnable(step);
+}
+
+/**
  * Whether a step is carried and the test cannot run it as the Flow saved it, so
  * only a live rerun makes it runnable (`not_run_in_this_build`,
  * `../full-run-required.ts`): it has no scheduled candidate -- it was changed
- * since it was seeded, declared nothing, or the run being repaired captured no
- * start for its node -- and was not rerun with what it ran with and where it
- * starts. Never a carried routing join.
+ * since it was seeded -- and was not rerun with what it ran with and where it
+ * starts. Never a carried routing join, and never an optional step the test
+ * passes over (`automationStudioFlowDraftStepCarriedPassedOver`).
  */
 export function automationStudioFlowDraftStepNotRunInThisBuild(step: AutomationStudioFlowDraftStep): boolean {
   if (!automationStudioFlowDraftStepCarried(step) || automationStudioFlowDraftStepCarriedJoin(step)) return false;
-  if (automationStudioFlowDraftScheduledCandidateCall(step) !== undefined) return false;
-  return step.ranWith === undefined || step.replay === undefined;
+  if (automationStudioFlowDraftStepCarriedPassedOver(step)) return false;
+  return !runnable(step);
+}
+
+/** Whether the test can send a step: as its scheduled candidate, or with what it ran with and where it starts. */
+function runnable(step: AutomationStudioFlowDraftStep): boolean {
+  return automationStudioFlowDraftScheduledCandidateCall(step) !== undefined || (step.ranWith !== undefined && step.replay !== undefined);
 }

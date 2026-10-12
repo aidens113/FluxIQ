@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AutomationStudioNodeRegistry, type AutomationStudioNodeDefinition } from "../../../../nodes/index.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceLoopDecision } from "../../../llm/evidence-loop.ts";
-import { runAutomationStudioFlowCandidateAuthoringLoop, AutomationStudioFlowCandidateSubmissionController } from "../index.ts";
+import { runAutomationStudioFlowCandidateAuthoringLoop, AutomationStudioFlowCandidateSubmissionController, automationStudioCandidateSubmissionRefusal } from "../index.ts";
 
 // Lane A round 4 (`run-muyrpbnk-fef374e7`, 0037-0068): twelve submissions refused for the same two start-page handles,
 // each refusal naming neither the handles nor a way out, until the no-progress guard stopped the build eight refusals
@@ -82,7 +82,19 @@ describe("a refused candidate submission", () => {
     expect(decided()).toBe(4);
     expect("value" in outcome && outcome.value.loop).toMatchObject({ ok: false, code: "llm_evidence_loop.repeat_without_progress" });
     const warning = latestOf("core.refusal_run", seen[3]!);
+    // The same refusal is one of the same issues: it is counted under the category and a digest of its codes and
+    // places (t378), but the warning the model reads names the category only, never the digest.
     expect(warning).toMatchObject({ code: "llm_evidence_loop.refused_in_a_row", refusal: "call:flow_bootstrap.evidence_completion_parameters_unresolved", inARow: 2 });
+  });
+
+  // R4a (`run-mv4dcf2j-cb68009a`, t442): the second submission changed every refused handle and was still counted as
+  // the same refusal, keyed on code and line alone. A correction is progress; the same values refused again are not.
+  it("counts a resubmission that changed the refused handles as a new refusal, not the same one again", async () => {
+    const decisions = [look, submit(["t925", "t1049"], "one"), submit(["t925", "t1051"], "two"), submit(["t925", "t1053"], "three"), look];
+    const { outcome, seen, decided } = await run(decisions);
+    expect(decided()).toBe(decisions.length + 1);
+    expect("value" in outcome && !outcome.value.loop.ok && outcome.value.loop.code).not.toBe("llm_evidence_loop.repeat_without_progress");
+    for (const evidence of seen) expect(latestOf("core.refusal_run", evidence)).toBeUndefined();
   });
 
   it("does not end the round when the refusals differ, or when a valid submission comes between", async () => {
@@ -92,5 +104,103 @@ describe("a refused candidate submission", () => {
     expect(decided()).toBe(decisions.length + 1);
     expect("value" in outcome && !outcome.value.loop.ok && outcome.value.loop.code).not.toBe("llm_evidence_loop.repeat_without_progress");
     expect(latestOf("core.submit_candidate", seen[3]!)).toMatchObject({ ok: true, revision: 2 });
+  });
+});
+
+// Lane D (`run-mv0pcfaf-cd251bdc`, step 0034): a condition named a column its step did not keep, refused
+// `web.handle.unknown_field`, and the advice said the list's right handle `extraction.3` named no control in any
+// view -- the advice for `web.handle.unknown`, given for every `*.handle.*` code. Each reason now has its own (t383).
+type RefusedSubmission = Parameters<typeof automationStudioCandidateSubmissionRefusal>[0];
+const refusedWith = (issues: JsonObject[]): RefusedSubmission => ({
+  ok: false, revision: 1,
+  check: { ok: false, issueCodes: issues.map((issue) => String(issue.code)), feedback: { ok: false, code: "flow_bootstrap.completion_refused", issues } }
+} as RefusedSubmission);
+const nextOf = (issues: JsonObject[]) => String(automationStudioCandidateSubmissionRefusal(refusedWith(issues)).evidence.next);
+
+/** Words only the advice for each reason says. */
+const ADVICE_WORDS = {
+  unknown: "does not name one control in any view",
+  renumbered_by_reload: "reload numbered its controls anew",
+  stale: "no longer holds",
+  not_unique: "same address to more than one element",
+  ambiguous: "reads more than one way",
+  misplaced: "takes no handle of its kind",
+  malformed: "not in a shape it takes",
+  frame_mismatch: "other than the one its control is in",
+  extraction_required: "read written out by hand is refused",
+  not_a_handle: "names a control by something other than a handle",
+  not_a_control: "not a control a press acts on",
+  wrong_control: "the handle is right and the node is not",
+  unknown_field: "neither one the list's detection printed nor a key this same step keeps"
+} as const;
+
+describe("the advice a refused handle is given", () => {
+  for (const [reason, words] of Object.entries(ADVICE_WORDS)) {
+    it(`for *.handle.${reason} is that reason's own, and no other's`, () => {
+      const next = nextOf([{ code: `web.handle.${reason}`, path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t12" }] }]);
+      expect(next).toContain(words);
+      for (const [other, otherWords] of Object.entries(ADVICE_WORDS)) if (other !== reason) expect(next, other).not.toContain(otherWords);
+      expect(next).toMatch(/submit the whole candidate again/u);
+    });
+  }
+
+  it("for a positioned code is the advice for its reason", () => {
+    expect(nextOf([{ code: "web.handle.stale:target", path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t12" }] }])).toContain(ADVICE_WORDS.stale);
+  });
+
+  it("for lane D's unknown column says the list is right and the condition must name a column of its own step", () => {
+    const list = [{ handle: "extraction.3" }];
+    const at = { path: "plan.subflows.0.nodes.9.parameters", step: "read the kept rows", label: "kept", line: 27 };
+    const next = nextOf([
+      { code: "web.handle.unknown_field", ...at, handles: list },
+      { code: "web.handle.expected.extract_list.handle_fields", ...at },
+      { code: "web.handle.unknown_field:extractList.where.0.field", ...at, handles: list }
+    ]);
+    expect(next).toMatch(/^The refused step is line 27, "read the kept rows" \(kept\): /u);
+    expect(next).toContain("The list extraction.3 is right, so changing its handle will not help");
+    expect(next).toContain("a key another step keeps is not one of its columns");
+    expect(next).not.toContain(ADVICE_WORDS.unknown);
+    // Said once, though two issues give the reason.
+    expect(next.split(ADVICE_WORDS.unknown_field)).toHaveLength(2);
+  });
+
+  it("gives each reason of a mixed refusal its own advice, naming only that reason's handles", () => {
+    const next = nextOf([
+      { code: "web.handle.unknown", path: "plan.subflows.0.nodes.1.parameters", handles: [{ handle: "t478" }] },
+      { code: "web.handle.not_a_control", path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t860" }] }
+    ]);
+    expect(next).toContain(`The handle t478 ${ADVICE_WORDS.unknown}`);
+    expect(next).toContain(`The handle t860 names text the view printed, ${ADVICE_WORDS.not_a_control}`);
+    expect(next.indexOf(ADVICE_WORDS.unknown)).toBeLessThan(next.indexOf(ADVICE_WORDS.not_a_control));
+  });
+
+  // R4a and R4b (t442): every view printing the popups' close controls had been replaced, so the model copied lines
+  // of text the presses removed. The advice for those reasons says where the pressed control's handle still is.
+  it("for a handle refused as unknown or as text names where a control the build acted on is still named, once", () => {
+    const acted = "the result of that call names the control by its handle";
+    for (const reason of ["unknown", "not_a_control"]) {
+      const next = nextOf([{ code: `web.handle.${reason}`, path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t1049" }] }]);
+      expect(next).toContain(acted);
+      expect(next).toContain("core.recall_result");
+    }
+    const mixed = nextOf([
+      { code: "web.handle.unknown", path: "plan.subflows.0.nodes.1.parameters", handles: [{ handle: "t484" }] },
+      { code: "web.handle.not_a_control", path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t479" }] }
+    ]);
+    expect(mixed.split(acted)).toHaveLength(2);
+    expect(nextOf([{ code: "web.handle.stale", path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t12" }] }])).not.toContain(acted);
+  });
+
+  it("keys a refusal on the handles each issue refused, so the same issue on other values is another refusal", () => {
+    const code = (handle: string) => automationStudioCandidateSubmissionRefusal(refusedWith([{ code: "web.handle.not_a_control", path: "plan.subflows.0.nodes.2.parameters", line: 4, handles: [{ handle }] }])).resultCode;
+    expect(code("t1049")).toBe(code("t1049"));
+    expect(code("t1049")).not.toBe(code("t1051"));
+    expect(code("t1049").startsWith("flow_bootstrap.completion_refused:")).toBe(true);
+  });
+
+  it("for a reason it has no advice for is the general advice, never another reason's", () => {
+    const next = nextOf([{ code: "web.handle.unheard_of", path: "plan.subflows.0.nodes.2.parameters", handles: [{ handle: "t12" }] }]);
+    expect(next).toMatch(/^Correct every listed issue in the script you sent/u);
+    for (const words of Object.values(ADVICE_WORDS)) expect(next).not.toContain(words);
   });
 });

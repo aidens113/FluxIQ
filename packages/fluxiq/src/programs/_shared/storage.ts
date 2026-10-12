@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
 import { mkdir, open as openFile, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { JsonObject, JsonValue } from "../../core/index.ts";
 import type { RepositoryScope } from "../database-manager/index.ts";
 import { createRecord, SQLiteRepository, type SQLiteTransaction } from "../database-manager/storage/sqlite-repository.ts";
+import { programStateConnections } from "./state-connections.ts";
+// The pool is kept here so a unit of work that reads program state opts in where it reads it.
+export { programStateConnections } from "./state-connections.ts";
+import { programStateRoot } from "./state-root.ts";
 
 export type JsonFileDocument<T extends JsonObject = JsonObject> = {
   version: 1;
@@ -309,46 +312,41 @@ export class ProgramDocumentTransaction {
 
 function sqliteStateForPath(targetPath: string, strict = false): { repository: SQLiteRepository<JsonObject>; id: string; rootDir: string; kind: string } | null {
   const resolved = path.resolve(targetPath);
-  let current = path.dirname(resolved);
-  while (true) {
-    const configPath = path.join(current, "config.json");
-    if (existsSync(configPath)) {
-      try {
-        const config = JSON.parse(readFileSync(configPath, "utf8")) as { layoutVersion?: unknown };
-        if (config.layoutVersion !== 2) {
-          if (strict && config.layoutVersion !== 1) throw new Error("program_state.readonly_layout");
-          return null;
-        }
-        const relative = path.relative(current, resolved).replaceAll("\\", "/");
-        const programPrefix = "programs/";
-        const automationPrefix = "artifacts/automation-studio/";
-        if (relative.startsWith(programPrefix)) {
-          return {
-            repository: new SQLiteRepository({ rootDir: current, kind: "program.state", layoutVersion: 2 }),
-            id: relative.slice(programPrefix.length).replace(/\.json$/i, ""),
-            rootDir: current,
-            kind: "program.state",
-          };
-        }
-        if (relative.startsWith(automationPrefix)) {
-          return {
-            repository: new SQLiteRepository({ rootDir: current, kind: "automation.state", layoutVersion: 2 }),
-            id: relative.slice(automationPrefix.length).replace(/\.json$/i, ""),
-            rootDir: current,
-            kind: "automation.state",
-          };
-        }
-        if (strict) throw new Error("program_state.readonly_path");
-      } catch (error) {
-        if (strict) throw error;
-        return null;
-      }
-      return null;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) return null;
-    current = parent;
+  let root: ReturnType<typeof programStateRoot>;
+  try {
+    root = programStateRoot(path.dirname(resolved));
+  } catch (error) {
+    if (strict) throw error;
+    return null;
   }
+  if (!root) return null;
+  const current = root.dir;
+  const config = root.config as { layoutVersion?: unknown } | null;
+  if (config?.layoutVersion !== 2) {
+    if (strict && config?.layoutVersion !== 1) throw new Error("program_state.readonly_layout");
+    return null;
+  }
+  const relative = path.relative(current, resolved).replaceAll("\\", "/");
+  const programPrefix = "programs/";
+  const automationPrefix = "artifacts/automation-studio/";
+  if (relative.startsWith(programPrefix)) {
+    return {
+      repository: new SQLiteRepository({ rootDir: current, kind: "program.state", layoutVersion: 2, connections: programStateConnections }),
+      id: relative.slice(programPrefix.length).replace(/\.json$/i, ""),
+      rootDir: current,
+      kind: "program.state",
+    };
+  }
+  if (relative.startsWith(automationPrefix)) {
+    return {
+      repository: new SQLiteRepository({ rootDir: current, kind: "automation.state", layoutVersion: 2, connections: programStateConnections }),
+      id: relative.slice(automationPrefix.length).replace(/\.json$/i, ""),
+      rootDir: current,
+      kind: "automation.state",
+    };
+  }
+  if (strict) throw new Error("program_state.readonly_path");
+  return null;
 }
 
 export function programDataFile(rootDir: string, programId: string, fileName: string): string {

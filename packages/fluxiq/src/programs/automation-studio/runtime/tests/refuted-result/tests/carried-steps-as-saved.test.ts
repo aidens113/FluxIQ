@@ -212,18 +212,19 @@ describe("a re-author's draft whose carried steps are unchanged (run-muw60j7c-bb
 });
 
 describe("a carried step the test cannot run as saved", () => {
-  it("is still listed, by number, with why: one changed since it was saved, or one whose start was never captured", async () => {
-    const flow = storedFlow();
-    delete flow.startPages["main.s4"];
-    const steps = loopSeed({ seed: automationStudioFlowDraftSeedFromFlow(flow).steps });
-    steps[1]!.input.parameters = { element: { tagName: "button", accessibleName: "Reject all" }, timeoutMs: 10000 };
-    expect(automationStudioFlowBootstrapStepsNotRunInThisBuild(steps)).toEqual([2, 4]);
+  // Since t439 a step whose start was never captured is still run as saved,
+  // and an optional step the test cannot run is passed over rather than
+  // listed (`./carried-steps-undeclared.test.ts`); a changed step remains.
+  it("is still listed, by number, with why: one changed since it was saved", async () => {
+    const steps = loopSeed({ seed: automationStudioFlowDraftSeedFromFlow(storedFlow()).steps });
+    steps[3]!.input.parameters = { element: { tagName: "button", accessibleName: "Maybe later" }, timeoutMs: 10000 };
+    expect(automationStudioFlowBootstrapStepsNotRunInThisBuild(steps)).toEqual([4]);
     const shown: JsonObject[] = [];
     const { calls, executeTool } = host();
     const refused = await gate(steps, executeTool, shown)();
     expect(refused).toEqual({ issueCodes: ["llm_evidence_loop.full_run_required"] });
-    expect(refused !== "cancelled" && refused?.steps).toEqual([2, 4]);
-    expect(shown[0]).toMatchObject({ steps: [{ step: 2, replayed: "not_run_in_this_build" }, { step: 4, replayed: "not_run_in_this_build" }] });
+    expect(refused !== "cancelled" && refused?.steps).toEqual([4]);
+    expect(shown[0]).toMatchObject({ steps: [{ step: 4, replayed: "not_run_in_this_build" }] });
     expect(calls).toEqual([]);
   });
 });

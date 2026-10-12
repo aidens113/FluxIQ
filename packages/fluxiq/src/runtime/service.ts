@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ClientGatewayCommandContext, ClientGatewayCommandOutcome } from "../client-gateway/service/command-ledger/index.ts";
-import { COMMAND_ANSWER_MARGIN_MS } from "../client-gateway/service/index.ts";
+import { COMMAND_ANSWER_MARGIN_MS, COMMAND_RECONCILE_ALLOWANCE_MS } from "../client-gateway/service/index.ts";
 import type {
   FluxIQRuntimeAdapter,
   FluxIQRuntimeCapability,
@@ -342,7 +342,12 @@ function runtimeClientMatchesCommand(client: FluxIQRuntimeClient, command: FluxI
 function capabilityMatchesCommand(capability: FluxIQRuntimeCapability, command: FluxIQRuntimeCommand): boolean {
   if (command.capabilityId && capability.id !== command.capabilityId) return false;
   if (command.domainId !== undefined && capability.domainId !== undefined && capability.domainId !== command.domainId) return false;
-  const outputMatches = command.outputId ? capability.outputIds?.includes(command.outputId) === true : false;
+  // An output is served by a capability that names it as an output or, as a
+  // client gateway capability can only do, as an action type: the same rule
+  // Automation Studio applies when it decides the runtime can dispatch it
+  // (`programs/automation-studio/runtime/io-policy.ts`), so the runtime never
+  // refuses a command it was just judged able to send.
+  const outputMatches = command.outputId ? capability.outputIds?.includes(command.outputId) === true || capability.actionTypes?.includes(command.outputId) === true : false;
   if (command.actionType && !outputMatches && !capability.actionTypes?.includes(command.actionType)) return false;
   if (command.inputId && !capability.inputIds?.includes(command.inputId)) return false;
   if (command.outputId && !outputMatches) return false;
@@ -373,9 +378,11 @@ async function withRuntimeBounds(
   if (command.timeoutMs !== undefined && command.timeoutMs > 0) {
     // `timeoutMs` is the time the target is given. A target that honours it
     // answers with its own timeout when that runs out, so the runtime waits the
-    // answer margin longer before it decides the target never answered.
-    const waitMs = command.timeoutMs + COMMAND_ANSWER_MARGIN_MS;
-    const message = `Runtime command timed out after ${waitMs}ms: no answer within its ${command.timeoutMs}ms timeout and ${COMMAND_ANSWER_MARGIN_MS}ms answer margin.`;
+    // answer margin longer before it decides the target never answered, and
+    // the reconcile allowance longer again, so a gateway target can first ask
+    // its client what became of a command whose answer never came.
+    const waitMs = command.timeoutMs + COMMAND_ANSWER_MARGIN_MS + COMMAND_RECONCILE_ALLOWANCE_MS;
+    const message = `Runtime command timed out after ${waitMs}ms: no answer within its ${command.timeoutMs}ms timeout, ${COMMAND_ANSWER_MARGIN_MS}ms answer margin and ${COMMAND_RECONCILE_ALLOWANCE_MS}ms reconcile allowance.`;
     bounds.push(new Promise((resolve, reject) => {
       timer = setTimeout(() => {
         void stop("runtime.timeout").then(() => resolve({ commandId: command.commandId, status: "timed_out", completedAt: now(), message, error: message }), reject);

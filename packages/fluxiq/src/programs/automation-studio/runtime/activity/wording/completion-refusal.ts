@@ -1,3 +1,5 @@
+import { automationStudioActivityRefusalTally } from "./refusal-tally.ts";
+
 /**
  * Why a proposed Flow was refused, by the tail of each refusal code the check
  * gives (`flow_bootstrap.evidence_completion_<tail>`): plain words, no code.
@@ -43,19 +45,25 @@ export function automationStudioActivityCheckRefusalReasons(feedback: unknown): 
 }
 
 /**
- * A refused completion, said in a person's words: which of Core's reasons
- * refused it (read from the check's feedback `refusal` and `refusals`, else
- * from the test's own issue codes) and how many things are to be fixed -- the
- * steps the test named, when it named any. Never an issue code; a refusal whose
- * codes name no known reason reads as the plain fallback.
+ * A refused completion, said in a person's words: why it was refused -- the
+ * reasons its issues give in their own words where they give any
+ * (`./issue-words.ts`, t378: lane B's search steps that sent their form without
+ * saying what sending does read "some steps point at things that weren't seen
+ * on the page", the words of the refusal's whole family), else which of Core's
+ * reasons refused it (read from the check's feedback `refusal` and `refusals`,
+ * else from the test's own issue codes) -- and how many things are to be
+ * fixed: the steps the test named, when it named any, else the distinct steps
+ * the issues name. Never an issue code; a refusal whose codes name no known
+ * reason reads as the plain fallback.
  */
 export function automationStudioActivityCompletionRefusal(check: { issueCodes: readonly string[]; feedback?: unknown; steps?: readonly number[] | undefined }): string {
-  const checked = automationStudioActivityCheckRefusalReasons(check.feedback);
+  const tally = automationStudioActivityRefusalTally(check.feedback, check.issueCodes);
+  const checked = tally.reasons.length ? tally.reasons : automationStudioActivityCheckRefusalReasons(check.feedback);
   const tested = refusalCodes(check.feedback).length ? [] : check.issueCodes.map((code) => TEST_BECAUSE[code]);
   const reasons = [...new Set([...checked, ...tested].filter((reason): reason is string => Boolean(reason)))];
   const steps = check.steps?.length ?? 0;
-  const count = steps || check.issueCodes.length;
-  const noun = steps ? ["step needs", "steps need"] : ["thing needs", "things need"];
+  const count = steps || tally.count;
+  const noun = steps || tally.steps ? ["step needs", "steps need"] : ["thing needs", "things need"];
   const things = count > 1 ? ` ${count} ${noun[1]} fixing.` : count === 1 ? ` One ${noun[0]} fixing.` : "";
   if (!reasons.length) return `${FALLBACK}${things}`;
   const joined = reasons.length === 1 ? reasons[0]! : `${reasons.slice(0, -1).join(", ")} and ${reasons.at(-1)!}`;

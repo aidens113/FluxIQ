@@ -31,7 +31,8 @@
 //
 // **Reasons a patch stays unapplied.** `not_rerun`: no pass ran it (the resume
 // was declined, or the Flow was re-authored before it ran). `run_cancelled`.
-// `run_failed`: the pass that ran it did not finish. `refuted`: it finished and
+// `run_failed`: the pass that ran it did not finish, an interrupted run's
+// included. `refuted`: it finished and
 // its result was not judged to answer. `not_judged`: it finished and nothing
 // judged it. `run_parked`: the run stopped waiting on a person; no Core path
 // continues a parked run on the candidate, so the settle is final.
@@ -40,20 +41,34 @@
 // settle could be read or written (t258); the session then says so. An unapplied adaptation keeps its trial evidence and stays
 // reviewable; a person can still apply it through review.
 //
+// **A fix the run made in place (C6 step 8).** An in-run repair overlays its
+// fix on the run's graph at the failing step and the executor re-attempts the
+// unit there; the run's receipts for it are `metadata.inRunRepairs`. Its pass
+// is this run itself: the fix ran when the executor kept its overlay, which the
+// root trace says by listing the repair's id in `trace.repairs`. That
+// re-attempt is its trial: once the run has ended, a held fix whose re-attempt
+// passed moves from `testing` to `validated`, with the trial recorded
+// (`./held-fix-validation.ts`), whether or not the run may promote. It is still
+// saved only here, after the judged end, and the judged run is still the
+// evidence the unattended apply rests on, exactly as for t267 below. A dropped
+// fix stays `testing`, and so does a held one whose re-attempt gave no positive
+// evidence: an expected state no host evaluated, or nothing declared but a route.
+//
 // **A patch whose trial proved nothing (t267).** A target override on a Flow
 // that declares no evidence has a trial that neither proves nor contradicts it
 // (`verification.awaitsJudgedRun`). Its evidence is this run: on `apply` the
 // judged run is recorded as its succeeded trial, before the apply, so the
 // apply's own evidence gate reads it. No other outcome records anything.
 
-import type { JsonObject } from "../../../../../core/index.ts";
+import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowArtifact, AutomationStudioFlowRunDetail, AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import { automationStudioDecisionAwaitsJudgedRun, automationStudioRunCandidateAdaptationIds } from "../../durable-behavior/index.ts";
-import { automationStudioGraphFlowWithAdaptationPatch, automationStudioVerificationAwaitsJudgedRun } from "../adaptations/index.ts";
+import { automationStudioGraphFlowWithAdaptationPatch, automationStudioUnitRepairWritesRecoveryGraph, automationStudioVerificationAwaitsJudgedRun } from "../adaptations/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord } from "../json-values.ts";
 import { AutomationStudioProjectStoreUnavailableError } from "../../../storage/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "./contracts.ts";
+import { automationStudioRunInRunRepairAdaptationIds, validateAutomationStudioHeldInRunRepairs } from "./held-fix-validation.ts";
 
 export type AutomationStudioJudgedPromotionReason = "not_rerun" | "run_cancelled" | "run_failed" | "refuted" | "not_judged" | "run_parked" | "run_errored" | "apply_failed" | "store_unavailable";
 
@@ -74,9 +89,14 @@ export type AutomationStudioJudgedPromotionPorts = {
  * and a patch whose receipt it dropped still has to be settled.
  */
 export function automationStudioRunAdaptationIds(detail: Pick<AutomationStudioFlowRunDetail, "adaptationIds" | "metadata">): string[] {
-  const attempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
+  const attempts = [...receiptsOf(detail, "runtimePatchAttempts"), ...receiptsOf(detail, "inRunRepairs")];
   const fromReceipts = attempts.flatMap((attempt) => (typeof attempt.adaptationId === "string" ? [attempt.adaptationId] : []));
   return [...new Set([...(detail.adaptationIds ?? []), ...fromReceipts])];
+}
+
+function receiptsOf(detail: Pick<AutomationStudioFlowRunDetail, "metadata">, key: "runtimePatchAttempts" | "inRunRepairs"): JsonObject[] {
+  const receipts = detail.metadata?.[key];
+  return Array.isArray(receipts) ? receipts.filter(isJsonRecord) : [];
 }
 
 /**
@@ -103,7 +123,8 @@ export function automationStudioJudgedPromotionCandidate(input: {
   for (const adaptation of input.adaptations) {
     if ((adaptation.subflowId || undefined) !== (input.subflowId || undefined)) continue;
     for (const patch of adaptation.patch) {
-      if (patch.kind !== "edit_recovery") flow = automationStudioGraphFlowWithAdaptationPatch(flow, adaptation, patch, input.flow.updatedAt);
+      // An automation-scoped handler is written to the recovery Subflow's graph, not this one.
+      if (patch.kind !== "edit_recovery" && !automationStudioUnitRepairWritesRecoveryGraph(patch)) flow = automationStudioGraphFlowWithAdaptationPatch(flow, adaptation, patch, input.flow.updatedAt);
     }
     adaptationIds.push(adaptation.adaptationId);
   }
@@ -117,6 +138,9 @@ export function automationStudioJudgedPromotionCandidate(input: {
 export function automationStudioJudgedPromotionOutcome(session: Pick<AutomationStudioRuntimeSession, "status" | "metadata">, ranIt: boolean): AutomationStudioJudgedPromotionOutcome {
   if (session.status === "cancelled") return { apply: false, reason: "run_cancelled" };
   if (session.status === "waiting") return { apply: false, reason: "run_parked" };
+  // A run its process left mid-flight did not finish, and nothing will finish it:
+  // never promoted, and never left waiting for an end that cannot come.
+  if (session.status === "interrupted") return { apply: false, reason: "run_failed" };
   if (session.status !== "succeeded" && session.status !== "failed") return { waiting: true };
   if (!ranIt) return { apply: false, reason: "not_rerun" };
   const verification = isJsonRecord(session.metadata?.resultVerification) ? session.metadata.resultVerification : undefined;
@@ -139,7 +163,8 @@ export async function settleAutomationStudioJudgedPromotions(input: {
   ports: AutomationStudioJudgedPromotionPorts;
   projectId: string;
   flowId: string;
-  session: Pick<AutomationStudioRuntimeSession, "runId" | "status" | "metadata">;
+  /** `trace.repairs`, when the session carries its trace: the in-run repairs whose fix the run kept. */
+  session: Pick<AutomationStudioRuntimeSession, "runId" | "status" | "metadata"> & { trace?: { repairs?: string[] | undefined } | undefined };
   detail: AutomationStudioFlowRunDetail;
   only?: "ran" | undefined;
   reason?: AutomationStudioJudgedPromotionReason | undefined;
@@ -147,7 +172,7 @@ export async function settleAutomationStudioJudgedPromotions(input: {
   const recorded = automationStudioRunAdaptationIds(input.detail);
   if (!recorded.length) return input.detail;
   if (!input.reason && "waiting" in automationStudioJudgedPromotionOutcome(input.session, false)) return input.detail;
-  const ran = new Set(automationStudioRunCandidateAdaptationIds(input.detail));
+  const ran = new Set([...automationStudioRunCandidateAdaptationIds(input.detail), ...automationStudioRunInRunRepairAdaptationIds(input.detail, input.session.trace?.repairs)]);
   const settled = new Map<string, JsonObject>();
   for (const adaptationId of recorded) {
     if (input.only === "ran" && !ran.has(adaptationId)) continue;
@@ -163,20 +188,25 @@ export async function settleAutomationStudioJudgedPromotions(input: {
   }
   if (!settled.size) return input.detail;
   const attempts = Array.isArray(input.detail.metadata?.runtimePatchAttempts) ? input.detail.metadata.runtimePatchAttempts : [];
+  const inRunRepairs = input.detail.metadata?.inRunRepairs;
   return {
     ...input.detail,
     metadata: {
       ...(input.detail.metadata ?? {}),
-      runtimePatchAttempts: attempts.map((attempt) => {
-        if (!isJsonRecord(attempt) || typeof attempt.adaptationId !== "string") return attempt;
-        const decision = settled.get(attempt.adaptationId);
-        if (!decision) return attempt;
-        // A trial's own pass rides on its receipt only until a pass adopts it (`./repair-rerun.ts`).
-        const { completedTrace: _adoptedOrNot, ...kept } = attempt;
-        return { ...kept, approvalDecision: decision };
-      })
+      runtimePatchAttempts: attempts.map((attempt) => withSettledDecision(attempt, settled)),
+      ...(Array.isArray(inRunRepairs) ? { inRunRepairs: inRunRepairs.map((receipt) => withSettledDecision(receipt, settled)) } : {})
     }
   };
+}
+
+/** A receipt answered with how its adaptation was settled, when it was. */
+function withSettledDecision(attempt: JsonValue, settled: ReadonlyMap<string, JsonObject>): JsonValue {
+  if (!isJsonRecord(attempt) || typeof attempt.adaptationId !== "string") return attempt;
+  const decision = settled.get(attempt.adaptationId);
+  if (!decision) return attempt;
+  // A trial's own pass rides on its receipt only until a pass adopts it (`./repair-rerun.ts`).
+  const { completedTrace: _adoptedOrNot, ...kept } = attempt;
+  return { ...kept, approvalDecision: decision };
 }
 
 /**
@@ -211,15 +241,21 @@ export async function settleAutomationStudioRunJudgedPromotions(input: {
   session: AutomationStudioRuntimeSession;
   reason?: AutomationStudioJudgedPromotionReason | undefined;
 }): Promise<AutomationStudioRuntimeSession> {
-  if (!input.flowId || input.context?.behavior.promoteAdaptations !== true) return input.session;
+  if (!input.flowId) return input.session;
+  const promotes = input.context?.behavior.promoteAdaptations === true;
+  // A held fix's trial is read off the run's trace, never off a run that threw.
+  const validates = !input.reason && Boolean(input.session.trace?.repairs?.length);
+  if (!promotes && !validates) return input.session;
   let detail: AutomationStudioFlowRunDetail | null;
   try {
     detail = await input.ports.getFlowRunDetail(input.projectId, input.session.runId);
   } catch (error) {
     if (!AutomationStudioProjectStoreUnavailableError.is(error)) throw error;
-    return await noteStoreUnavailable(input, "read_record", error, []);
+    return promotes ? await noteStoreUnavailable(input, "read_record", error, []) : input.session;
   }
   if (!detail) return input.session;
+  if (validates) await validateAutomationStudioHeldInRunRepairs({ ports: input.ports, projectId: input.projectId, flowId: input.flowId, session: input.session, detail });
+  if (!promotes) return input.session;
   const settled = await settleAutomationStudioJudgedPromotions({ ports: input.ports, projectId: input.projectId, flowId: input.flowId, session: input.session, detail, ...(input.reason ? { reason: input.reason } : {}) });
   const decided = settledForRun(settled, input.session.runId);
   if (settled !== detail) {
@@ -269,7 +305,7 @@ async function noteStoreUnavailable(
 
 /** What this run's settle decided, receipt by receipt, with the adaptation each is for. */
 function settledForRun(detail: AutomationStudioFlowRunDetail, runId: string): JsonObject[] {
-  const attempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
+  const attempts = [...receiptsOf(detail, "runtimePatchAttempts"), ...receiptsOf(detail, "inRunRepairs")];
   return attempts.flatMap((attempt) => {
     const decision = isJsonRecord(attempt.approvalDecision) ? attempt.approvalDecision : undefined;
     return decision && typeof attempt.adaptationId === "string" && decision.judgedRunId === runId && decision.settledAt !== undefined ? [{ ...decision, adaptationId: attempt.adaptationId }] : [];
@@ -277,7 +313,7 @@ function settledForRun(detail: AutomationStudioFlowRunDetail, runId: string): Js
 }
 
 function receiptDecision(detail: AutomationStudioFlowRunDetail, adaptationId: string): JsonObject | undefined {
-  const attempts = Array.isArray(detail.metadata?.runtimePatchAttempts) ? detail.metadata.runtimePatchAttempts.filter(isJsonRecord) : [];
+  const attempts = [...receiptsOf(detail, "runtimePatchAttempts"), ...receiptsOf(detail, "inRunRepairs")];
   const receipt = attempts.find((attempt) => attempt.adaptationId === adaptationId && isJsonRecord(attempt.approvalDecision));
   return receipt && isJsonRecord(receipt.approvalDecision) ? receipt.approvalDecision : undefined;
 }

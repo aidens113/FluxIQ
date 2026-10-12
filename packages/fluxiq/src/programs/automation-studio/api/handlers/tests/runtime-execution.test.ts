@@ -8,6 +8,7 @@ import { GlobalProgramApiRegistry, type ProgramApiActor } from "../../../../_sha
 import { AUTOMATION_STUDIO_ENDPOINTS } from "../../contracts.ts";
 import { automationStudioConversationEffectiveCaller } from "../../../runtime/conversations/commands/index.ts";
 import { registerAutomationStudioApi } from "../index.ts";
+import { AutomationStudioRunRequirementError } from "../../../runtime/service/runtime-session/index.ts";
 
 const actor: ProgramApiActor = { sessionId: "session.one", userId: "user.one", roleId: "admin", permissions: ["runtime.control"] };
 
@@ -97,6 +98,18 @@ describe("the run endpoint and a run's model intent", () => {
     }
   });
 
+  // t438: the chat's "Run it" sends what reading the message cost; a Lab-scoped run counts it against the Flow's one purse.
+  it("hands the run what reading the chat message cost, and refuses a figure that is not a cost", async () => {
+    const { response, runRuntimeSession } = await pairedRun("session.unlocked", { runIntent: "explore_and_adapt", interpretationCostUsd: 0.0003 });
+    expect(response).toMatchObject({ ok: true });
+    expect((runRuntimeSession.mock.calls[0] as unknown[])[0]).toMatchObject({ interpretationCostUsd: 0.0003 });
+    for (const value of [-1, "0.1", Number.NaN]) {
+      const refused = await pairedRun("session.unlocked", { runIntent: "explore_and_adapt", interpretationCostUsd: value });
+      expect(refused.response, String(value)).toEqual({ ok: false, error: "The run's interpretation cost is invalid." });
+      expect(refused.runRuntimeSession).not.toHaveBeenCalled();
+    }
+  });
+
   it("asks nothing of the result checks of a run the model takes no part in", async () => {
     const { response, runRuntimeSession } = await pairedRun("session.unlocked", { resultCheckCallerPays: "repair_checks" });
 
@@ -180,5 +193,35 @@ describe("the run endpoint's answer", () => {
         runDetailLink: { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, runId: "run.one" }
       }
     });
+  });
+});
+
+// A run the requirement gate refuses reaches the caller with the gate's closed
+// code and the missing id, beside the sentence a person reads (t402), so a
+// caller never has to match the sentence.
+describe("a run refused for a missing requirement", () => {
+  async function refusedBy(thrown: unknown) {
+    const runRuntimeSession = vi.fn(async () => { throw thrown; });
+    const registry = new GlobalProgramApiRegistry();
+    registerAutomationStudioApi(registry, { runRuntimeSession, getFlowRunDetail: vi.fn(), conversations: conversationsWith(null) } as any);
+    return registry.call({ programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.runRuntimeSession, scope: {}, actor, payload: { projectId: "project.one", flowId: "flow.one" } });
+  }
+
+  it("answers with code run.requirement_missing and the missing id", async () => {
+    const error = new AutomationStudioRunRequirementError({ missing: { id: "web.facts@1", side: "host", plainName: "page facts" }, reason: "This automation needs page facts, but no connected client offers it. Connect an up-to-date client and run it again." });
+
+    const response = await refusedBy(error);
+
+    expect(response).toEqual({
+      ok: false,
+      error: error.message,
+      payload: { diagnostic: { code: "run.requirement_missing", missing: ["web.facts@1"], side: "host", plainName: "page facts" } }
+    });
+  });
+
+  it("leaves any other failure to the registry, as its message alone", async () => {
+    const response = await refusedBy(new Error("Flow not found."));
+
+    expect(response).toEqual({ ok: false, error: "Flow not found." });
   });
 });

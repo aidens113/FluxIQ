@@ -9,6 +9,8 @@
  *   refusal reason (`programs/automation-studio/runtime/flow-draft/amendment/types.ts`).
  * - `repeated`: why a call, or a step asked to run again, was not run, by what
  *   the same call came to before (`programs/automation-studio/runtime/llm/repeat-guard/outcomes.ts`).
+ * - `resent`: why a whole Flow sent again unchanged (a candidate build's
+ *   submission) was not taken, by the same.
  *
  * Each finishes "Not done: ...", so each opens in lower case and is no code.
  */
@@ -53,5 +55,17 @@ export const ACTIVITY_ACTION_REFUSAL_WORDS = Object.freeze({
     changed_nothing: "it was already tried exactly this way and changed nothing",
     same_result: "it was already tried exactly this way, and trying it again would end the same way",
     same_answer: "it was already tried exactly this way, and trying it again would end the same way"
+  } as const),
+  /**
+   * Why a whole Flow sent again unchanged was not taken, by what the same
+   * Flow came to before: "it was already tried exactly this way" under "run
+   * the step again" read as one step run again (lane C, `run-mv0fuotv-805294d7`,
+   * defect 4).
+   */
+  resent: Object.freeze({
+    failed: "the same Flow was already sent exactly like this and was not accepted",
+    changed_nothing: "the same Flow was already sent exactly like this and changed nothing",
+    same_result: "the same Flow was already sent exactly like this, and sending it again would end the same way",
+    same_answer: "the same Flow was already sent exactly like this, and sending it again would end the same way"
   } as const)
 } as const);

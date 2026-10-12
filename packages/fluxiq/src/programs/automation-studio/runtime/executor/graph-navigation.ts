@@ -1,13 +1,25 @@
 import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge } from "../../model/index.ts";
+import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID } from "../../nodes/control-flow/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
+import { chooseAutomationStudioEdge } from "./graph-navigation/index.ts";
+// The owning module avoids loading the step-skip barrel's authored-act analysis
+// back through the compiler and graph navigation.
+import { automationStudioOptionalStepWayOn } from "./step-skip/optional-step.ts";
+export { chooseAutomationStudioEdge } from "./graph-navigation/index.ts";
 
-export function chooseAutomationStudioEdge(flow: Pick<AutomationStudioFlowDocument, "edges">, sourceNodeId: string, route: string, definitionId?: string): AutomationStudioFlowEdge | null {
-  const edges = flow.edges.filter((edge) => edge.sourceNodeId === sourceNodeId);
-  return edges.find((edge) => edge.sourcePortId === route)
-    ?? (definitionId === "builtin.control.start" && route === "success" ? edges.find((edge) => edge.sourcePortId === "next") : undefined)
-    ?? edges.find((edge) => !edge.sourcePortId && route === "success")
-    ?? null;
+/** The node definition that finishes a run where it is reached. */
+const END_DEFINITION_ID = "builtin.control.end";
+
+/**
+ * Whether reaching a node of this definition finishes the run there: an End
+ * node, or a Handler End, which finishes a handler's body run (state-aware
+ * recovery plan, C5). A Handler End is reached only inside a body, which the
+ * lifecycle dispatcher runs from the Handler's `body` port; what the run does
+ * next is the dispatcher's decision, read off the Handler End's outputs.
+ */
+export function automationStudioNodeEndsRun(definitionId: string): boolean {
+  return definitionId === END_DEFINITION_ID || definitionId === AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID;
 }
 
 /**
@@ -24,15 +36,71 @@ export function chooseAutomationStudioEdge(flow: Pick<AutomationStudioFlowDocume
  * "Went past" is exact: on some edge path from the routed node to the node it
  * went on at, those two left out. A node off every such path -- unreached,
  * disconnected, or on a branch the run did not take -- still counts.
+ *
+ * Handlers are not steps (state-aware recovery plan, C4): a Handler node and
+ * the nodes only its `body` leads to are never unvisited, because no run walks
+ * into them. A handler's body run, the one whose last attempt is its Handler
+ * End, has left nothing behind: the rest of the graph is not its to visit.
+ *
+ * A frame that began at an alternative entry (C2) never walks the steps before
+ * it, so there only the nodes reachable from where it started count; a run of
+ * a Flow without an End read as failed for that (recovery matrix row 2, t404).
+ * A frame that began at its default start keeps the whole-graph rule.
  */
 export function hasUnvisitedAutomationStudioNodes(flow: AutomationStudioFlowDocument, attempts: AutomationStudioNodeAttemptTrace[]): boolean {
-  const visited = new Set(attempts.map((attempt) => attempt.nodeId));
-  for (const attempt of attempts) {
+  if (attempts[attempts.length - 1]?.definitionId === AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID) return false;
+  const visited = new Set([...attempts.map((attempt) => attempt.nodeId), ...handlerOnlyNodes(flow)]);
+  for (const [index, attempt] of attempts.entries()) {
+    // Only the optional shape's guarded success chain is exempt, and only
+    // when this run actually took its way past into the join. In a repeat
+    // span that chain may be unused on every pass. General untaken branches,
+    // disconnected nodes and a mandatory continuation still count.
+    const bypassed = attempt.skipped?.reason === "target_absent" || attempt.status === "failed";
+    const node = bypassed ? flow.nodes.find((candidate) => candidate.id === attempt.nodeId) : undefined;
+    const wayOn = node && automationStudioOptionalStepWayOn(flow, node);
+    if (wayOn && attempts[index + 1]?.nodeId === wayOn.targetNodeId) {
+      let at = chooseAutomationStudioEdge(flow, attempt.nodeId, "success", attempt.definitionId)?.targetNodeId;
+      const seen = new Set<string>();
+      while (at !== undefined && at !== wayOn.targetNodeId && !seen.has(at)) {
+        seen.add(at);
+        visited.add(at);
+        const step = flow.nodes.find((candidate) => candidate.id === at);
+        at = step ? chooseAutomationStudioEdge(flow, at, "success", step.definitionId)?.targetNodeId : undefined;
+      }
+    }
     const skipped = attempt.skipped;
     if (skipped?.reason !== "state_routed" || skipped.direction !== "forward") continue;
     for (const id of passedOver(flow, attempt.nodeId, skipped.toNodeId)) visited.add(id);
   }
-  return flow.nodes.some((node) => !visited.has(node.id));
+  const first = attempts[0];
+  const enteredLater = first?.entry !== undefined && first.entry.kind !== "default";
+  const reachable = enteredLater ? reached(flow, first.nodeId, forward) : undefined;
+  return flow.nodes.some((node) => !visited.has(node.id) && (reachable === undefined || reachable.has(node.id)));
+}
+
+/**
+ * Every Handler node, and every node reached only through a Handler's `body`:
+ * reached from a body's first node, and not from any parentless node that is
+ * not a Handler (where a run may begin).
+ */
+function handlerOnlyNodes(flow: AutomationStudioFlowDocument): string[] {
+  const handlers = new Set(flow.nodes.filter((node) => node.definitionId === AUTOMATION_STUDIO_HANDLER_DEFINITION_ID).map((node) => node.id));
+  if (!handlers.size) return [];
+  const body = new Set<string>();
+  for (const edge of flow.edges) {
+    if (handlers.has(edge.sourceNodeId) && edge.sourcePortId === "body") for (const id of reached(flow, edge.targetNodeId, forward)) body.add(id);
+  }
+  const entered = new Set(flow.edges.filter((edge) => edge.sourceNodeId !== edge.targetNodeId).map((edge) => edge.targetNodeId));
+  const main = new Set<string>();
+  for (const node of flow.nodes) {
+    if (handlers.has(node.id) || entered.has(node.id)) continue;
+    for (const id of reached(flow, node.id, forward)) main.add(id);
+  }
+  return [...handlers, ...[...body].filter((id) => !main.has(id))];
+}
+
+function forward(edge: AutomationStudioFlowEdge): [string, string] {
+  return [edge.sourceNodeId, edge.targetNodeId];
 }
 
 /** The nodes on some edge path from `from` to `to`, the two left out. */

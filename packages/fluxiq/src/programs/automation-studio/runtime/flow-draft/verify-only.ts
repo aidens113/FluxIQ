@@ -81,7 +81,11 @@
 //                      says "Your store" (t193-wH, `run-munri5gr-94d7f8a0`). It
 //                      passes, and nothing was withheld. The host decides this
 //                      from where the step found the page (`replay.from`, sent
-//                      with the check), not from the model's word.
+//                      with the check), not from the model's word. A step
+//                      whose Flow node recorded its effect
+//                      (`routeSignatures.effect`) sends that too, and a page
+//                      already showing it answers `present` whatever the
+//                      control now reads (t447, `../llm/node-tools/replay.ts`).
 //   unreproducible  -- the target is gone and the page is not the one the step
 //                      acted on: the steps before it no longer reach it. That
 //                      blocks, exactly as a replayed step's does (`./dry-run.ts`).

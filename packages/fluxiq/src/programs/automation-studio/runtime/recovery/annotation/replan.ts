@@ -86,6 +86,8 @@ export type AutomationStudioRecoveryReplanInput = {
   > & { provider: AutomationStudioLlmProvider; runDetail: AutomationStudioFlowRunDetail; recoveryContext: AutomationStudioRuntimeRecoveryContext };
   /** Merged into the call's metadata, beside this module's own source and expectation. */
   metadata?: Record<string, string> | undefined;
+  /** Whether the run is held at its failing step, so the rebuilt plan also offers a handler and a unit's replacement (C6 step 8). */
+  inRunRepair?: boolean | undefined;
 };
 
 /**
@@ -123,7 +125,8 @@ export async function replanAutomationStudioRecoveryAfterExploration(
   const rebuilt = planAutomationStudioRuntimeRecovery({
     ...(input.deterministic ? { deterministic: input.deterministic } : {}),
     result,
-    policy: input.policy
+    policy: input.policy,
+    ...(input.inRunRepair ? { inRunRepair: true } : {})
   });
   const plan = rebuilt.patchRequest.request
     ? rebuilt

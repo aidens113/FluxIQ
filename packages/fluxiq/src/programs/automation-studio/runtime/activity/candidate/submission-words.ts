@@ -1,4 +1,4 @@
-import { automationStudioActivityCheckRefusalReasons } from "../wording/index.ts";
+import { automationStudioActivityCheckRefusalReasons, automationStudioActivityRefusalTally } from "../wording/index.ts";
 
 /**
  * How a candidate build's submission of its Flow's steps ended
@@ -24,7 +24,13 @@ const ACCEPTED = "the steps were accepted";
 
 const objectOf = (value: unknown): Record<string, unknown> | undefined => (value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined);
 
-/** Accepted (`Said`), or declined with why and how many things are to be fixed (`Declined`); nothing for evidence of another shape. */
+/**
+ * Accepted (`Said`), or declined with why and how many steps are to be fixed
+ * (`Declined`); nothing for evidence of another shape. Why is what the issues
+ * say in their own words where they say anything (`../wording/issue-words.ts`,
+ * t378), else the refusal's family; how many counts distinct steps, never
+ * issues: lane B's card read "4 things to fix" for two steps.
+ */
 export function automationStudioActivityCandidateSubmissionWords(evidence: unknown): { declined: boolean; words: string } | undefined {
   const answer = objectOf(evidence);
   if (answer?.ok === true) return { declined: false, words: ACCEPTED };
@@ -32,9 +38,9 @@ export function automationStudioActivityCandidateSubmissionWords(evidence: unkno
   const diagnostics = objectOf(answer.diagnostics) ?? {};
   const issueCodes = Array.isArray(answer.issueCodes) ? answer.issueCodes.filter((code): code is string => typeof code === "string") : [];
   const own = [diagnostics.code, ...issueCodes].map((code) => (typeof code === "string" ? OWN[code] : undefined)).filter((words): words is string => words !== undefined);
-  const reasons = [...new Set([...automationStudioActivityCheckRefusalReasons(diagnostics), ...own])];
+  const tally = automationStudioActivityRefusalTally(diagnostics, issueCodes);
+  const reasons = [...new Set([...(tally.reasons.length ? tally.reasons : automationStudioActivityCheckRefusalReasons(diagnostics)), ...own])];
   const because = reasons.length === 0 ? FALLBACK : reasons.length === 1 ? reasons[0]! : `${reasons.slice(0, -1).join(", ")} and ${reasons.at(-1)!}`;
-  const issues = Array.isArray(diagnostics.issues) ? diagnostics.issues.length : issueCodes.length;
-  const count = issues > 1 ? `; ${issues} things to fix` : "";
+  const count = tally.count > 1 ? `; ${tally.count} ${tally.steps ? "steps" : "things"} to fix` : "";
   return { declined: true, words: `${because}${count}` };
 }

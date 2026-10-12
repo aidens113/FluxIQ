@@ -5,8 +5,11 @@
 // and what to do instead, and the no-progress guard counts it. Refused repeats
 // in a row end the round as a stall (`AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW`):
 // a build then tests and judges the Flow so far, and repairs it or says why it
-// cannot be done (`../../flow-bootstrap/unfinished-build/phases.ts`). Never an
-// endless loop, and never silent.
+// cannot be done (`../../flow-bootstrap/unfinished-build/phases.ts`). In
+// candidate mode (`discoveryOnly`) there is no draft to test, so the build ends
+// with nothing tested, and the note says so and never names the draft
+// (`../repeat-guard/candidate-feedback.ts`). Never an endless loop, and never
+// silent.
 
 import { automationStudioLlmDecisionContextSignature, automationStudioLlmDecisionContextSupersede } from "../decision-context/index.ts";
 import { automationStudioLlmEvidenceLoopFailure as failure, type AutomationStudioLlmEvidenceLoopDecision, type AutomationStudioLlmEvidenceLoopResult } from "../evidence-loop/index.ts";
@@ -37,7 +40,7 @@ export function automationStudioLlmEvidenceHandleRefusedRepeat(
   const inARow = context.repeats.refusedAgain(iteration);
   const stop = automationStudioLlmEvidenceRepeatStop(context, inARow);
   if (stop) return stop;
-  const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: decision.toolId, earlier, inARow });
+  const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: decision.toolId, earlier, inARow, candidate: context.input.discoveryOnly === true });
   context.accountEvidence(note);
   automationStudioLlmDecisionContextSupersede(evidence, AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID);
   evidence.push({ callId: `${AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID}.${iteration}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID, value: note });

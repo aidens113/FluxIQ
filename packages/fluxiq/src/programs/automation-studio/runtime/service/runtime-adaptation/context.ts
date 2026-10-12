@@ -86,11 +86,31 @@ export function recoveryBudgetFromRuntimeAdaptationContext(context: AutomationSt
 export function runtimeRunDetailWithAdaptationContext(detail: AutomationStudioFlowRunDetail, context: AutomationStudioRuntimeAdaptationContext | null): AutomationStudioFlowRunDetail {
   if (!context) return detail;
   const annotated = annotateRunDetailWithTrainingMode(detail, context.settings, context.behavior);
+  // The fixes the run made at its failing steps (C6 step 8): each one's
+  // adaptation is the run's to settle at its judged end, like a patch a
+  // detached recovery recorded (`./judged-promotion.ts`).
+  const inRunRepairs = context.inRunRepairs?.receipts() ?? [];
+  const repairedAdaptationIds = inRunRepairs.flatMap((receipt) => (typeof receipt.adaptationId === "string" ? [receipt.adaptationId] : []));
+  // What each in-run recovery recorded, as a recovery after the run records it:
+  // its interventions (and so the run's usage), its review records, and the
+  // gate and trace of the latest one. The recovery after the run never asks
+  // about these incidents again, so these stand as the run's own.
+  const recoveries = context.inRunRepairs?.recoveries() ?? [];
+  const latest = recoveries.at(-1)?.metadata ?? {};
+  const patchAttempts = recoveries.flatMap((recovery) => (Array.isArray(recovery.metadata.runtimePatchAttempts) ? recovery.metadata.runtimePatchAttempts : []));
   return {
     ...annotated,
+    interventions: [...annotated.interventions, ...recoveries.flatMap((recovery) => recovery.interventions)],
+    adaptationIds: [...new Set([...annotated.adaptationIds, ...repairedAdaptationIds, ...recoveries.flatMap((recovery) => recovery.adaptationIds)])],
+    changeProposalIds: [...new Set([...annotated.changeProposalIds, ...recoveries.flatMap((recovery) => recovery.changeProposalIds)])],
     metadata: {
       ...(annotated.metadata ?? {}),
-      runtimeAdaptationContext: runtimeAdaptationContextSummary(context)
+      runtimeAdaptationContext: runtimeAdaptationContextSummary(context),
+      ...(inRunRepairs.length ? { inRunRepairs } : {}),
+      ...(latest.llmGate !== undefined ? { llmGate: latest.llmGate } : {}),
+      ...(latest.recoveryTrace !== undefined ? { recoveryTrace: latest.recoveryTrace } : {}),
+      ...(latest.permissionRequest !== undefined ? { permissionRequest: latest.permissionRequest } : {}),
+      ...(patchAttempts.length ? { runtimePatchAttempts: patchAttempts } : {})
     }
   };
 }

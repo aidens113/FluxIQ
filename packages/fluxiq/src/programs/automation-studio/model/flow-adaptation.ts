@@ -156,7 +156,29 @@ export type AutomationStudioChangeProposalKind =
   | "edit_recovery"
   | "insert_deterministic_path"
   | "promote_adaptation"
-  | "edit_instruction";
+  | "edit_instruction"
+  | "add_handler"
+  | "replace_unit";
+
+/**
+ * The durable form of a unit repair (state-aware recovery plan, C12), the two
+ * kinds an in-run repair keeps (C6 step 8). Both are applied by the unit repair
+ * applier (`runtime/service/adaptations/unit-repair-apply.ts`) through the same
+ * overlay the run used, so the saved graph gets exactly what the judged run ran.
+ *
+ * - `add_handler`: `targetId` is the node the failure was met at, where the
+ *   handler is named and drawn; `after` is the handler as the repair wrote it
+ *   (`event`, `scope`, `when`, `completionCheck`, `steps`, `then`). A scope of
+ *   `{ kind: "automation" }` is written into the automation's `recovery`
+ *   Subflow graph (C4).
+ * - `replace_unit`: `targetId` is the unit's id (a node's, a Handler node's, or
+ *   a part's Subflow id); `after` is `{ unit, steps?, handler?, failedEdgeTo? }`;
+ *   `before.unitDigest` is the unit's digest in the graph the repair was made
+ *   on, and the apply is refused when the saved unit no longer has it.
+ *
+ * Either kind is refused when it would change any unit but the one it names.
+ */
+export type AutomationStudioUnitRepairChangeKind = Extract<AutomationStudioChangeProposalKind, "add_handler" | "replace_unit">;
 
 /**
  * One action node a deterministic recovery path inserts into the graph it
@@ -233,7 +255,9 @@ export type AutomationStudioFlowRunStatus =
   | "waiting"
   | "succeeded"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  /** Left `running` by a process that ended; its last lasting act is unknown (C8, the orphaned-run sweep). */
+  | "interrupted";
 
 export type AutomationStudioFlowInterventionSummary = {
   interventionId: string;
@@ -269,7 +293,27 @@ export type AutomationStudioFlowRunSummary = {
   durableBehaviorChanged?: boolean;
   tokenUsage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; estimatedCostUsd?: number };
   interventionSummaries?: AutomationStudioFlowInterventionSummary[];
+  /** The run's retries, planned fails and true failures, counted from its recovery incidents. Set on every summary built from a run's session. */
+  failureCounts?: AutomationStudioFlowRunFailureCounts;
   metadata?: JsonObject;
+};
+
+/**
+ * What a run's failures came to, counted separately (state-aware recovery
+ * plan, C6, C7), from the recovery incidents its trace carries rather than
+ * from attempt stamps: `retries` is every retry an incident spent;
+ * `plannedFails` the incidents an On Fail path or a handler took on to another
+ * node, resolved, or led to an authored stop; `trueFailures` the incidents
+ * nothing moved on, the only trigger for in-run repair, whether the run then
+ * repaired them in place or not; `repairedInRun` those of them a fix made in
+ * the run took the run past (C6 step 8). A run that met no failure counts
+ * zero of each.
+ */
+export type AutomationStudioFlowRunFailureCounts = {
+  retries: number;
+  plannedFails: number;
+  trueFailures: number;
+  repairedInRun: number;
 };
 
 export type AutomationStudioRouteDecisionRecord = {
@@ -347,10 +391,26 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
    * state (`state_routed`, t243): the attempt reads `route: "state_routed"`,
    * and names the node the run went on to and whether that was `forward` or
    * `backward` in the Flow.
+   *
+   * Or a lasting act the run already completed (`already_done`, t411): the
+   * attempt reads `route: "success"` with the first attempt's outputs, names
+   * that attempt, and the row it was done for when the step runs per row
+   * (as a person reads it, "Lin Zhao"). It is no failure.
    */
   skipped?:
-    | { reason: "target_absent"; code: string }
-    | { reason: "state_routed"; code: string; toNodeId: string; direction: "forward" | "backward" };
+    /** `notDone`: the step does a lasting act, and the page did not show its effect, so the act was not done (r4b F4, `step-skip/act-not-done.ts`). */
+    | { reason: "target_absent"; code: string; notDone?: true }
+    | { reason: "state_routed"; code: string; toNodeId: string; direction: "forward" | "backward" }
+    | { reason: "already_done"; code: string; attemptId: string; row?: string };
+  /**
+   * Set when the step failed but the state it was recorded to produce already
+   * held, so the run went on down `success` rather than repeat an act that had
+   * already happened (the executor's `skip_satisfied_node` rung). The record
+   * then reads `status: "succeeded"` down `route: "success"`, because the step
+   * is done, and keeps the attempt's `failure` and `message`, because its
+   * first try did fail.
+   */
+  stateHeld?: { rung: "skip_satisfied_node" };
   /**
    * What state routing made of the page when this step could not run (t243,
    * `runtime/executor/state-routing/`), as closed words and node ids only:
@@ -368,13 +428,44 @@ export type AutomationStudioFlowRunActionAttemptRecord = {
    * `code` is the Core code that asked: `executor.ready_state.not_shown` when
    * the step's readiness gate did not hold, else the attempt's failure code.
    * It is absent when that code is not in the shape of a Core code.
+   *
+   * `refused` lists each matched way on a safety guard refused (t387), as the
+   * guard's closed code and the node it led to, in ranked order; absent when
+   * none was. A `no_match` with `refused` matched a node the run could not
+   * safely go to, not nothing.
    */
   stateRouting?:
-    | { outcome: "routed" | "effect_holds" }
-    | { outcome: "guard_stopped"; code?: string; toNodeId: string }
-    | { outcome: "no_match" | "unobserved" | "no_pre_states"; code?: string };
+    | { outcome: "routed" | "effect_holds"; refused?: AutomationStudioFlowRunStateRouteRefusal[] }
+    | { outcome: "guard_stopped"; code?: string; toNodeId: string; refused?: AutomationStudioFlowRunStateRouteRefusal[] }
+    | { outcome: "no_match" | "unobserved" | "no_pre_states"; code?: string; refused?: AutomationStudioFlowRunStateRouteRefusal[] };
+  /** The invocation ids of the frames this attempt ran in, outermost first (C1). */
+  framePath?: string[];
+  /** What this attempt's failure counted as (C6); absent on an attempt that did not fail. */
+  failureClass?: AutomationStudioFlowRunFailureClass;
+  /** Where the frame began, on a frame's first attempt only (C2). */
+  entry?: AutomationStudioFlowRunEntryRecord;
+  /** The lifecycle handler that ran at this attempt, when one did (C3, C5). */
+  lifecycle?: AutomationStudioFlowRunLifecycleRecord;
+  /**
+   * On a Call Subflow attempt that ran a part: the part's Subflow, its graph,
+   * and the revision it ran at (C1). The part's attempts follow this one in the
+   * detail, each naming it as `parentAttemptId`, so this attempt is their
+   * container and is not counted as a step of its own.
+   */
+  subflowTarget?: { subflowId: string; graphFlowId: string; graphRevision: number | null };
+  /**
+   * On an attempt a called part's frame ran: the `attemptId` of the Call
+   * Subflow attempt that called the part. Absent on the root frame's attempts,
+   * which are the only ones a reader acting on the Flow's own nodes reads: a
+   * part's node can share an id with one of them. Its `attemptId` is unique in
+   * the run and its id in its own frame's trace is `metadata.traceAttemptId`.
+   */
+  parentAttemptId?: string;
   metadata?: JsonObject;
 };
+
+/** One way on state routing refused: the guard's closed code and the node the route led to. */
+export type AutomationStudioFlowRunStateRouteRefusal = { guard: "unbound_value" | "repeats_lasting_act" | "not_checkpoint" | "checkpoint_when_not_true" | "ready_state_not_true"; toNodeId: string };
 
 export type AutomationStudioFlowRunRecoveryRecord = {
   recoveryId: string;
@@ -399,6 +490,10 @@ export type AutomationStudioFlowRunDetail = {
   subflows: AutomationStudioSubflowExecutionRecord[];
   actionAttempts?: AutomationStudioFlowRunActionAttemptRecord[];
   recoveryAttempts?: AutomationStudioFlowRunRecoveryRecord[];
+  /** Each lifecycle handler execution, folded from the runtime stream's `handler_execution` events. Absent when none ran. */
+  handlerExecutions?: AutomationStudioFlowRunHandlerExecutionRecord[];
+  /** The run's retries, planned fails and true failures, from its recovery incidents; set on every detail built from a run's session. */
+  failureCounts?: AutomationStudioFlowRunFailureCounts;
   interventions: AutomationStudioFlowIntervention[];
   adaptationIds: string[];
   changeProposalIds: string[];
@@ -532,4 +627,81 @@ export type AutomationStudioFlowExpansionInventory = {
   changeProposals?: AutomationStudioFlowChangeProposal[];
   adaptations?: AutomationStudioFlowAdaptation[];
   policy?: AutomationStudioAdaptationPolicy;
+};
+
+// What a run's detail keeps of state-aware recovery (state-aware recovery plan,
+// C6, C11): the lifecycle handler an attempt ran, where a frame began, what a
+// failure counted as, and the record of each handler execution the runtime
+// stream holds. Ids, closed codes and times only: never page text, a value
+// read from the page, or a handler's resolved outputs. The executor's trace
+// (`runtime/executor/contracts.ts`) holds the same shapes; the run detail is
+// projected from it (`runtime/service/summaries/recovery-trace.ts`).
+
+/** A lifecycle boundary a handler may fire at (C3). */
+export type AutomationStudioFlowRunLifecycleEvent = "start" | "before" | "retry" | "fail" | "before_next";
+
+/** A three-valued fact answer: `unknown` is never `true`. */
+export type AutomationStudioFlowRunFactTruth = "true" | "false" | "unknown";
+
+/** What one condition answered: its truth, a reference to the evidence kept, and when it was captured. */
+export type AutomationStudioFlowRunConditionEvidence = { truth: AutomationStudioFlowRunFactTruth; evidenceRef?: string; capturedAt: number };
+
+/**
+ * How a handler body ended once the dispatcher decided it (C5). An
+ * `unhandled` keeps why, as the executor's closed codes
+ * (`runtime/executor/lifecycle/unhandled-reason.ts`, t411): the body's own
+ * ending, a check that did not hold, a refused route and the `guard` that
+ * refused it, a spent budget. Absent on a record from before t411.
+ */
+export type AutomationStudioFlowRunHandlerDisposition =
+  | { kind: "resume" }
+  | { kind: "route"; checkpointId: string }
+  | { kind: "resolve" }
+  | {
+    kind: "unhandled";
+    reason?: "written_unhandled" | "body_failed" | "completion_check_not_true" | "disposition_not_allowed" | "resolve_missing_outputs" | "route_refused" | "budget_spent" | "already_tried" | "no_body" | "core_stop";
+    guard?: "checkpoint_not_found" | "checkpoint_not_holding" | "requires_unbound" | "passes_uncertain_act" | "unreachable" | "unguarded" | "repeats_unrecorded_act";
+  };
+
+/** The lifecycle handler that ran at an attempt. */
+export type AutomationStudioFlowRunLifecycleRecord = {
+  event: AutomationStudioFlowRunLifecycleEvent;
+  handlerId: string;
+  occurrence: string;
+  conditionEvidence: AutomationStudioFlowRunConditionEvidence[];
+  disposition: AutomationStudioFlowRunHandlerDisposition;
+  completionCheck: AutomationStudioFlowRunFactTruth;
+};
+
+/** Where a frame began, on its first attempt: `id` names the entry or checkpoint. */
+export type AutomationStudioFlowRunEntryRecord = {
+  kind: "default" | "entry" | "checkpoint";
+  id?: string;
+  evidence: AutomationStudioFlowRunConditionEvidence[];
+};
+
+/** What a failed attempt counted as (C6): only `true_failure` reaches in-run repair. */
+export type AutomationStudioFlowRunFailureClass = "true_failure" | "planned_fail" | "retry" | "skip" | "state_route" | "uncertain";
+
+/**
+ * One handler execution, as the runtime stream keeps it (`handler_execution`,
+ * beside `recovery_attempt`). `executionId` is unique within the run.
+ * `disposition` is the decided way on; `outcome` says whether the body ran to
+ * its end (`succeeded`), failed inside (`failed`), or was refused before it
+ * ran (`refused`: a budget, an occurrence already run, or a disposition the
+ * event does not allow). `incidentId` is absent at boundaries that open no
+ * incident (`start`, `before`, `before_next`).
+ */
+export type AutomationStudioFlowRunHandlerExecutionRecord = {
+  executionId: string;
+  handlerId: string;
+  event: AutomationStudioFlowRunLifecycleEvent;
+  /** The invocation ids of the frames the handler fired in, outermost first. */
+  framePath: string[];
+  nodeId: string;
+  incidentId?: string;
+  disposition: AutomationStudioFlowRunHandlerDisposition;
+  outcome: "succeeded" | "failed" | "refused";
+  startedAt: number;
+  finishedAt?: number;
 };

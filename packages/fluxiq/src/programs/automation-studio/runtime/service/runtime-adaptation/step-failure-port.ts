@@ -12,7 +12,10 @@
 // total, lowered by the Flow's own setting (`recovery/refuted-result/purse.ts`).
 // The ladder was the first part of this repair, so the purse is charged what
 // the ladder's gate record says it spent before the build is handed what is
-// left. A purse with nothing left starts no build: no model is asked, and the
+// left. In a Lab-scoped run the total is the Flow's one purse (`./flow-spend.ts`):
+// the pass opens with what the Flow has spent, read live from the Flow's
+// purse, which already holds the ladder's calls, so the ladder joins only the
+// averages and is never charged twice. A purse with nothing left starts no build: no model is asked, and the
 // attempt is recorded under the cost bound. The purse is written onto the
 // run's re-author marker, so a re-run whose answer is then refuted repairs
 // from what this left, not from a fresh ceiling.
@@ -27,12 +30,14 @@ import {
   automationStudioRefutedResultFlowWasReauthored,
   automationStudioRefutedResultReauthored,
   automationStudioResultRepairPurse,
+  automationStudioResultRepairPurseAveraged,
   automationStudioResultRepairPurseCharged,
   automationStudioResultRepairWithPurse,
   automationStudioStepFailureReauthorBrief,
   automationStudioStepFailureReauthorDecision,
   type AutomationStudioFailedStepRepairPort
 } from "../../recovery/refuted-result/index.ts";
+import { automationStudioLlmCurrentFlowPurse } from "../../llm/build-purse/index.ts";
 import { automationStudioReauthorBuild } from "./reauthor-build.ts";
 import type { AutomationStudioRefutedResultRepairPortDependencies } from "./refuted-result-port.ts";
 
@@ -46,7 +51,9 @@ export function automationStudioStepFailureRepairPort(deps: AutomationStudioStep
     const flowId = deps.flowId();
     const decision = automationStudioStepFailureReauthorDecision({ detail: failed.detail, ...(deps.projectId ? { projectId: deps.projectId } : {}), ...(flowId ? { flowId } : {}) });
     if (!decision.route) return undefined;
-    const opened = automationStudioResultRepairPurseCharged(automationStudioResultRepairPurse(failed.detail, deps.maxCostUsd?.()), ladderSpend(failed.detail));
+    const flowSpentUsd = automationStudioLlmCurrentFlowPurse()?.spentUsd();
+    const fresh = automationStudioResultRepairPurse(failed.detail, deps.maxCostUsd?.(), flowSpentUsd);
+    const opened = flowSpentUsd === undefined ? automationStudioResultRepairPurseCharged(fresh, ladderSpend(failed.detail)) : automationStudioResultRepairPurseAveraged(fresh, ladderSpend(failed.detail));
     const brief = automationStudioStepFailureReauthorBrief({
       projectId: decision.projectId,
       flowId: decision.flowId,

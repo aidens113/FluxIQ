@@ -5,9 +5,11 @@
 // (`judge.ts`); what a replayed step changed (`change-lines.ts`); a repeated
 // step's passes (`pass-lines.ts`), the rows they are named by (`span-rows.ts`)
 // and the inputs the test ran on (`test-inputs.ts`); what the Flow would store,
-// as the test's reads filled it (`stores.ts`).
+// as the test's reads filled it (`stores.ts`); what a checked step did while
+// the build explored it, and the landing its act rests on (`landing.ts`).
 export * from "./change-lines.ts";
 export * from "./judge.ts";
+export * from "./landing.ts";
 export * from "./observation.ts";
 export * from "./pass-lines.ts";
 export * from "./read-rows.ts";

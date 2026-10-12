@@ -18,6 +18,9 @@ export function expectedTransitionForNode(node: AutomationStudioFlowNode, attemp
         : attempt.status === "failed"
           ? "failed"
           : undefined;
+  // A Wait node answers `waiting` with its duration and a graph run takes the
+  // pause and settles it `succeeded` (`pacing/timed-pause.ts`): its own answer
+  // is a tolerated wait, its settled attempt a success. An approval parks.
   const tolerance = {
     ...(node.definitionId === "builtin.timing.wait" || node.definitionId === "builtin.routine.approval" ? { allowWaiting: true } : {}),
     ...(node.definitionId === "builtin.timing.timeout" ? { toleratedRoutes: ["timeout", "success"] } : {})
@@ -37,7 +40,7 @@ export function expectedTransitionForNode(node: AutomationStudioFlowNode, attemp
 }
 
 function expectedStatusForNode(node: AutomationStudioFlowNode): AutomationStudioGraphRunStatus | undefined {
-  if (node.definitionId === "builtin.timing.wait" || node.definitionId === "builtin.routine.approval") return "waiting";
+  if (node.definitionId === "builtin.routine.approval") return "waiting";
   if (node.definitionId === "builtin.control.end" && node.parameterValues?.resultStatus === "failed") return "failed";
   return "succeeded";
 }
@@ -48,7 +51,6 @@ function expectedEffectsForNode(node: AutomationStudioFlowNode): Array<{ type: s
   if (node.definitionId === "builtin.policy.expectation") return [{ type: "policy.expectation.checked" }];
   if (node.definitionId === "builtin.routine.approval") return [{ type: AUTOMATION_STUDIO_ASK_EFFECT }];
   if (node.definitionId === "builtin.routine.task-policy") return [{ type: "routine.task-policy.requested" }];
-  if (node.definitionId === "builtin.routine.subroutine") return [{ type: "routine.subroutine.requested" }];
   if (node.definitionId.startsWith("builtin.database.")) return [{ type: `${node.definitionId.replace("builtin.", "")}.requested` }];
   return [];
 }

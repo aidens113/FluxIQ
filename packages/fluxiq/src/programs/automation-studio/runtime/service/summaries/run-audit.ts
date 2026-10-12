@@ -6,6 +6,7 @@ import { compactJsonObject } from "../compact-json.ts";
 import type { AutomationStudioFacadePorts } from "../facade-ports.ts";
 import { isJsonRecord } from "../json-values.ts";
 import { flowRunSummaryWithInterventionSummaries } from "./conversions.ts";
+import { automationStudioRunDetailStepCount } from "./step-count.ts";
 
 function adaptationMutationEvidence(adaptation: AutomationStudioFlowAdaptation): JsonObject[] {
   const record = isJsonRecord(adaptation.metadata?.applicationRecord) ? adaptation.metadata.applicationRecord : undefined;
@@ -61,7 +62,7 @@ export class AutomationStudioFlowRunAudit {
       projectId,
       runId,
       manifest: {
-        actionCount: detail.actionAttempts?.length ?? detail.summary.actionAttemptCount ?? 0,
+        actionCount: detail.actionAttempts ? automationStudioRunDetailStepCount(detail.actionAttempts) : detail.summary.actionAttemptCount ?? 0,
         recoveryCount: detail.recoveryAttempts?.length ?? 0,
         routeDecisionCount: detail.routeDecisions.length,
         subflowEntryCount: detail.subflows.length,

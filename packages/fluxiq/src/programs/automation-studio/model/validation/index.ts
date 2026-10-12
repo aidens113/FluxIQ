@@ -6,5 +6,5 @@ export { validateStateSnapshot, validateStateVisualFrame, validateEvidenceAnchor
 export { validateStateFactReference, validateStateFact, validateNodeEvidenceBinding } from "./evidence.ts";
 export { validateNodeStateSource, validateNodeStateViewSelection, validateNodeStateRuntimeComparison } from "./node-state.ts";
 export { validateActionVisualEntityTarget } from "./visual-target.ts";
-export { validateAutomationStudioFlow } from "./flow.ts";
+export { validateAutomationStudioFlow, type AutomationStudioFlowValidationContext } from "./flow.ts";
 export { validateAutomationStudioFlowRouter, validateAutomationStudioFlowSubflow, validateAutomationStudioFlowInstruction, validateAutomationStudioFlowChangeProposal, validateAutomationStudioFlowAdaptation, validateAutomationStudioAdaptationPolicy, parseAutomationStudioFlowChangeOrigin, parseAutomationStudioDeterministicPath } from "./adaptation.ts";

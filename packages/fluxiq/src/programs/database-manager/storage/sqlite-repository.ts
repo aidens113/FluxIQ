@@ -5,11 +5,15 @@ import sqlite3 from "sqlite3";
 import type { JsonObject } from "../../../core/index.ts";
 import { recordSqlPerformance, withSqlPerformanceContext } from "../../_shared/performance-metrics.ts";
 import type { RecordEnvelope, Repository, RepositoryListPage, RepositoryListPageOptions, RepositoryScope } from "../types.ts";
+import type { SQLiteConnectionPool, SQLiteConnector } from "./connection-pool.ts";
+import { enqueueDatabaseOperation } from "./operation-queue.ts";
 
 export type SQLiteRepositoryOptions = {
   rootDir: string;
   kind: string;
   layoutVersion?: 1 | 2;
+  /** Keeps the connection open between operations (`./connection-pool.ts`); without one, each operation opens and closes its own. */
+  connections?: SQLiteConnectionPool;
 };
 
 export type SQLiteTransaction = {
@@ -26,8 +30,10 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
   readonly kind: string;
   readonly tableName: string;
   readonly layoutVersion: 1 | 2;
+  private readonly connections: SQLiteConnectionPool | undefined;
 
   constructor(options: SQLiteRepositoryOptions) {
+    this.connections = options.connections;
     this.rootDir = path.resolve(options.rootDir);
     this.kind = safeKind(options.kind);
     this.layoutVersion = options.layoutVersion ?? 1;
@@ -195,22 +201,8 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     const filePath = this.databasePath(scope);
     mkdirSync(path.dirname(filePath), { recursive: true });
     const db = await openDatabase(filePath);
-    // Every call opens its own connection, so this setup runs on every call.
-    // One script, in the same order and stopping at the first error as the
-    // separate statements did: one round trip per open instead of four.
     try {
-      await exec(db, [
-        "pragma foreign_keys = ON",
-        "pragma journal_mode = WAL",
-        `create table if not exists ${this.tableName} (
-          id text primary key,
-          kind text not null,
-          data text not null,
-          created_at_ms integer not null,
-          updated_at_ms integer not null
-        )`,
-        `create index if not exists ${quoteIdentifier(`${this.kind}_updated_idx`)} on ${this.tableName} (updated_at_ms)`
-      ].join(";\n"));
+      await this.prepare(db);
     } catch (error) {
       await close(db).catch(/* best-effort: the setup error is the one reported */ () => undefined);
       throw error;
@@ -218,17 +210,55 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     return db;
   }
 
+  // Without a pool every call opens its own connection, so this setup runs on
+  // every call; a pooled connection runs it once per table. One script, in the
+  // same order and stopping at the first error as the separate statements did:
+  // one round trip per open instead of four.
+  private async prepare(db: sqlite3.Database): Promise<void> {
+    await exec(db, [
+      "pragma foreign_keys = ON",
+      "pragma journal_mode = WAL",
+      `create table if not exists ${this.tableName} (
+        id text primary key,
+        kind text not null,
+        data text not null,
+        created_at_ms integer not null,
+        updated_at_ms integer not null
+      )`,
+      `create index if not exists ${quoteIdentifier(`${this.kind}_updated_idx`)} on ${this.tableName} (updated_at_ms)`
+    ].join(";\n"));
+  }
+
+  /** How the pool opens, readies and closes this repository's connections to `filePath`. */
+  private connector(filePath: string): SQLiteConnector {
+    return {
+      key: this.tableName,
+      open: async () => {
+        mkdirSync(path.dirname(filePath), { recursive: true });
+        return await openDatabase(filePath);
+      },
+      prepare: (db) => this.prepare(db),
+      close
+    };
+  }
+
+  /** `operation` on a connection to `filePath`: the pool's kept one when this repository has a pool, else its own, closed after. */
+  private async connected<TResult>(scope: RepositoryScope, filePath: string, operation: (db: sqlite3.Database) => Promise<TResult>): Promise<TResult> {
+    if (this.connections) return await this.connections.use(filePath, this.connector(filePath), operation);
+    const db = await this.open(scope);
+    try {
+      return await operation(db);
+    } finally {
+      await close(db);
+    }
+  }
+
   private async withDatabase<TResult>(scope: RepositoryScope, operation: (db: sqlite3.Database, normalizedScope: RepositoryScope) => Promise<TResult>): Promise<TResult> {
     const normalizedScope = normalizeScope(scope);
     const filePath = this.databasePath(normalizedScope);
     return enqueueDatabaseOperation(filePath, async () => {
       return withSqlPerformanceContext({ repositoryKind: this.kind, databaseName: path.basename(filePath) }, async () => {
-        const db = await this.open(normalizedScope);
-        try {
-          return await operation(db, normalizedScope);
-        } finally {
-          await close(db);
-        }
+        return await this.connected(normalizedScope, filePath, (db) => operation(db, normalizedScope));
       });
     });
   }
@@ -247,23 +277,22 @@ export class SQLiteRepository<T extends JsonObject = JsonObject> implements Repo
     const filePath = this.databasePath(scope);
     return enqueueDatabaseOperation(filePath, async () => {
       return withSqlPerformanceContext({ repositoryKind: this.kind, databaseName: path.basename(filePath) }, async () => {
-        const db = await this.open(scope);
-        await run(db, "begin immediate");
-        const transaction: SQLiteTransaction = {
-          run: (sql, params = []) => run(db, sql, params),
-          all: <T>(sql: string, params: unknown[] = []) => all<T>(db, sql, params),
-          get: <T>(sql: string, params: unknown[] = []) => get<T>(db, sql, params)
-        };
-        try {
-          const result = await operation(transaction);
-          await run(db, "commit");
-          return result;
-        } catch (error) {
-          await run(db, "rollback").catch(() => undefined);
-          throw error;
-        } finally {
-          await close(db);
-        }
+        return await this.connected(scope, filePath, async (db) => {
+          await run(db, "begin immediate");
+          const transaction: SQLiteTransaction = {
+            run: (sql, params = []) => run(db, sql, params),
+            all: <T>(sql: string, params: unknown[] = []) => all<T>(db, sql, params),
+            get: <T>(sql: string, params: unknown[] = []) => get<T>(db, sql, params)
+          };
+          try {
+            const result = await operation(transaction);
+            await run(db, "commit");
+            return result;
+          } catch (error) {
+            await run(db, "rollback").catch(() => undefined);
+            throw error;
+          }
+        });
       });
     });
   }
@@ -281,8 +310,6 @@ type RunResult = {
   changes: number;
   lastID: number;
 };
-
-const databaseOperationLocks = new Map<string, Promise<void>>();
 
 // Far below SQLite's bound-parameter limit on every supported build.
 const ID_BATCH_SIZE = 200;
@@ -339,24 +366,6 @@ function openDatabase(filePath: string): Promise<sqlite3.Database> {
     });
     db.configure("busyTimeout", 10_000);
   });
-}
-
-async function enqueueDatabaseOperation<TResult>(filePath: string, operation: () => Promise<TResult>): Promise<TResult> {
-  const previous = databaseOperationLocks.get(filePath) ?? Promise.resolve();
-  let release: () => void = () => undefined;
-  const current = previous.catch(() => undefined).then(() => new Promise<void>((resolve) => {
-    release = resolve;
-  }));
-  databaseOperationLocks.set(filePath, current);
-  await previous.catch(() => undefined);
-  try {
-    return await operation();
-  } finally {
-    release();
-    if (databaseOperationLocks.get(filePath) === current) {
-      databaseOperationLocks.delete(filePath);
-    }
-  }
 }
 
 function run(db: sqlite3.Database, sql: string, params: unknown[] = []): Promise<RunResult> {

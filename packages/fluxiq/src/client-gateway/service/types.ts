@@ -20,11 +20,25 @@ export type ClientGatewayServiceOptions = {
   publicUrl?: string;
   pairingTtlMs?: number;
   commandTimeoutMs?: number;
+  /**
+   * How long a client is given to answer what became of a command whose own
+   * answer never came (`./command-reconcile/`), and how long a command it says
+   * is still running is waited on before it is asked again. 5,000 ms.
+   */
+  reconcileAnswerMs?: number;
   trustedClientTtlMs?: number;
   trustedClientStore?: ClientGatewayTrustedClientStore;
   createToken?: () => string;
   now?: () => number;
   resolveCommandLedger?: (context: import("./command-ledger/index.ts").ClientGatewayCommandContext) => Promise<import("./command-ledger/index.ts").ClientGatewayCommandLedgerLease>;
+  /**
+   * The run an action command is being sent for, read as the command is
+   * dispatched, so a result that arrives after Core stopped waiting for it can
+   * be put on that run's evidence (`./command-history.ts`). A durable command
+   * names its run already; this is for the others. Unset, or answering
+   * nothing, a late result is still kept from being applied, only unattributed.
+   */
+  commandOwner?: () => import("./command-history.ts").ClientGatewayCommandOwnerRef | undefined;
 };
 
 /**

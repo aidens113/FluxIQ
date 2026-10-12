@@ -8,6 +8,20 @@ export type AutomationStudioExecutorCommandRun = {
   context(consumer: object, ordinal: number): Promise<{ capability: object; context: ClientGatewayCommandContext }>;
   consume(consumer: object, capability: object, context: ClientGatewayCommandContext): Promise<void>;
   stop(reason: string): Promise<void>;
+  /**
+   * Whether the command issued under `context` came back with a committed
+   * receipt. A dispatch that answered without one left its outcome unknown:
+   * the run is latched (no command, checkpoint or consumption succeeds after
+   * it) and stops there as Outcome uncertain (`../step-loop/uncertain-stop.ts`).
+   */
+  receipted(context: ClientGatewayCommandContext): boolean;
+  /**
+   * Withdraws the command issued under `context` when it provably never left:
+   * nothing was claimed for it, so nothing was sent, and from now on nothing
+   * can be. True means the act did not happen and the run is not latched by
+   * it; false means the command was claimed and its outcome is the ledger's.
+   */
+  withdraw(context: ClientGatewayCommandContext): boolean;
 };
 export type AutomationStudioExecutorNodeEntry = {
   readonly run: AutomationStudioExecutorCommandRun; readonly invocationId: string; readonly attemptId: string;

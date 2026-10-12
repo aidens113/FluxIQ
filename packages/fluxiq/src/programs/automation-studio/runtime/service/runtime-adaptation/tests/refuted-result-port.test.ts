@@ -16,6 +16,7 @@ import {
   type AutomationStudioReauthorEndingWatch
 } from "../../../recovery/refuted-result/index.ts";
 import type { AutomationStudioResultVerificationOutcome, AutomationStudioRunResultSummary } from "../../../result-verification/index.ts";
+import { AutomationStudioFlowBootstrapCreationSpendStore, AutomationStudioFlowPaths, AutomationStudioProjectPaths, type AutomationStudioProjectStore } from "../../index.ts";
 import { automationStudioRefutedResultRepairPort, type AutomationStudioRefutedResultRepairPortDependencies } from "../refuted-result-port.ts";
 import { automationStudioReauthorProposed } from "./reauthor-proposal.ts";
 
@@ -296,6 +297,57 @@ describe("the repair's one purse", () => {
     const second = await automationStudioRefutedResultRepairPort(deps({ annotate: spentLadder as never }))({ ...notWrongAnswer, detail: spentDetail });
     expect(spentLadder).not.toHaveBeenCalled();
     expect(marker(second).purse).toMatchObject({ refusedParts: ["patch_ladder"], bound: "cost" });
+  });
+});
+
+// t438: in a Lab-scoped run the Flow has one purse. The user's words
+// (2026-10-01): "bring the ceiling down to $0.1 per flow max". Each pass of the
+// repair opens with what the Flow's purse says the Flow has spent; the purse
+// itself adds every call to the Flow's record as it settles.
+describe("the Flow's one purse, in a Lab-scoped run", () => {
+  const CEILING = AUTOMATION_STUDIO_LLM_RUN_COST_CEILING_USD;
+  const usd = (value: number): number => Math.round(value * 1_000_000_000) / 1_000_000_000;
+  type Generate = AutomationStudioRefutedResultRepairPortDependencies["generate"];
+  const memoryStore = async (spentUsd: number) => {
+    const projectPaths = new AutomationStudioProjectPaths(undefined);
+    const store = new AutomationStudioFlowBootstrapCreationSpendStore(projectPaths, new AutomationStudioFlowPaths(projectPaths), {} as unknown as AutomationStudioProjectStore);
+    await store.add("project.one", "flow.one", spentUsd);
+    return store;
+  };
+
+  it("hands the re-author only what the Flow's creation and check left", async () => {
+    const store = await memoryStore(usd(CEILING * 0.425));
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", { requestId: "request.one", estimatedInputTokens: 10, estimatedCostUsd: usd(CEILING * 0.3) }));
+    const result = await store.withFlowPurse("project.one", "flow.one", CEILING, async () => await automationStudioRefutedResultRepairPort(deps({ generate: generate as unknown as Generate }))(request));
+
+    expect((generate.mock.calls as unknown[][])[0]![2]).toBe(usd(CEILING * 0.575));
+    expect(marker(result).purse).toMatchObject({ limitUsd: CEILING, carriedUsd: usd(CEILING * 0.425), spentUsd: usd(CEILING * 0.725), leftUsd: usd(CEILING * 0.275) });
+  });
+
+  it("opens a later pass from the Flow's record, which already holds the earlier pass's spend, never from the run's own figure", async () => {
+    const store = await memoryStore(usd(CEILING * 0.9));
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.three", {}));
+    const earlier = { ...detail, metadata: { ...(detail.metadata ?? {}), [AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY]: { routed: true, applied: true, purse: { limitUsd: CEILING, spentUsd: usd(CEILING * 0.5), averagedCalls: 4, averagedUsd: usd(CEILING * 0.04) } } } } as AutomationStudioFlowRunDetail;
+    await store.withFlowPurse("project.one", "flow.one", CEILING, async () => await automationStudioRefutedResultRepairPort(deps({ generate: generate as unknown as Generate }))({ ...request, detail: earlier }));
+    expect((generate.mock.calls as unknown[][])[0]![2]).toBe(usd(CEILING * 0.1));
+  });
+
+  it("asks no model once the Flow has spent the ceiling, and names the cost bound", async () => {
+    const store = await memoryStore(CEILING);
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", {}));
+    const port = deps({ generate: generate as unknown as Generate });
+    const result = await store.withFlowPurse("project.one", "flow.one", CEILING, async () => await automationStudioRefutedResultRepairPort(port)(request));
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(port.annotate).not.toHaveBeenCalled();
+    expect(marker(result).attempts[0]).toMatchObject({ code: "llm_budget.run_cost_limit", providerInvocation: "not_attempted" });
+    expect(marker(result).purse).toMatchObject({ carriedUsd: CEILING, spentUsd: CEILING, leftUsd: 0, bound: "cost" });
+  });
+
+  it("carries nothing outside a Lab-scoped run, where no Flow purse is current", async () => {
+    const generate = vi.fn(async () => automationStudioReauthorProposed("adaptation.one", {}));
+    await automationStudioRefutedResultRepairPort(deps({ generate: generate as unknown as Generate }))(request);
+    expect((generate.mock.calls as unknown[][])[0]![2]).toBe(CEILING);
   });
 });
 

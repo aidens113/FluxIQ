@@ -40,6 +40,56 @@
 // and the resolution returns them per node as a record of where the
 // candidate's targets were learned. Without it nothing is sent and nothing
 // beside `status` and `parameters` is accepted, exactly as before.
+//
+// **A repair's steps are resolved here too (t429).** The steps an in-run
+// repair writes -- a handler's body, a unit's replacement, steps inserted
+// before a node -- name controls by handle as a build's do, and are saved to
+// the Flow after the judged run, so they are put to the domain the same way
+// (`../../recovery/annotation/step-evidence-resolution.ts`). Their handles were
+// issued in the packets the repair's model was shown, not in a build's views,
+// so the caller names that one packet (`handleEvidence`) and the domain
+// resolves from it alone.
+//
+// **A page fact's target is resolved here too (t392).** A handler's `when`, an
+// entry's, a checkpoint's and a success check name a control by handle, as a
+// step's target does (`./plan-fact-targets.ts`). Each is put to the domain
+// first, as a step of `AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID` whose
+// only parameter is that `target`, declaring it does nothing lasting, and is
+// held to everything a step is: a refusal, an `unchanged` answer, or an answer
+// still naming a handle refuses it at its own path. What the domain answers
+// becomes the fact's target. A handler with a refused fact is not asked about
+// again; the fact's refusal already says why.
+//
+// **What the model wrote names elements by handle only (t432; user,
+// 2026-10-10).** A caller whose plan is the model's own writing -- a candidate
+// script, a reply's plan, a repair's steps -- says so (`writtenByModel`), and
+// it is handed to the domain with every node, which then refuses an element the
+// model named any other way rather than running it as written. A fact is
+// Core's own statement, so Core refuses one itself: a fact target that names
+// neither a handle nor a dialog -- an `at "<locator>"`, which only a
+// hand-authored Flow may write -- is refused at its path with a sentence that
+// says to name the element by its handle. A plan the host wrote (a draft, a
+// step the Flow already holds) carries the domain's own resolved parameters and
+// is never flagged.
+//
+// **A step the build acted on carries what its act made true (t447).** A step
+// a build created used to carry no route signatures at all: the candidate path
+// strips any the model wrote (`./bootstrap-completion.ts`) and has no build
+// routing to sign one from (`../../flow-bootstrap/candidate/submission.ts`), so
+// a run that met a page where the site already held the step's effect -- a
+// coupon already "Collected" in the same session -- could never pass it over as
+// done (`../../executor/state-routing/decision.ts`, `effect_holds`) and failed
+// it instead. Only the domain knows which act a handle's control came from, so
+// a resolved answer may carry that act's `effect`, in the host's own
+// route-effect form, and within a signature's bound
+// (`automationStudioReadRouteSignature`). It is written onto the plan node as
+// `routeSignatures.effect`, on the candidate and the draft path alike, where
+// the build signed no effect of its own: one signed from the step's own pages
+// stands. `../../flow-bootstrap/adaptation.ts` carries it to the Flow node's
+// metadata. A fact's answer is never one a run passes over, so an effect on it
+// is not kept. An effect only ever skips: state routing goes on along the
+// step's own success edge when the page shows it, and never runs a completed
+// lasting act again because of one (`../../executor/state-routing/repeated-act.ts`).
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -47,8 +97,11 @@ import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapN
 // From the module that owns them: `../harness.ts` and the harness barrel both lead back into this module's import cycle, and through them the two read as undefined when this module loads inside it.
 import { AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH, AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN } from "../harness/structured-response.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding, AutomationStudioPlanHandleReach, AutomationStudioPlanHandleView } from "./binding.ts";
+import { AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, automationStudioPlanFactTargetSites, automationStudioPlanFactTargetsNotNamingHandles, automationStudioPlanMetadataFactHandlePaths } from "./plan-fact-targets.ts";
 import { automationStudioPlanNodeHandleSites, automationStudioPlanNodeParametersNameHandle } from "./plan-node-handles.ts";
 import { automationStudioPlanStepConsequences } from "./plan-step-consequences.ts";
+// The leaf directory, not the route-state barrel: it imports nothing of the runtime but types.
+import { automationStudioReadRouteSignature } from "../../route-state/signatures/index.ts";
 
 type ParameterResolver = Pick<AutomationStudioLlmEvidenceRuntimeBinding, "resolvePlanNodeParameters">;
 
@@ -64,8 +117,13 @@ export const AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES = Object.freeze({
   /** The step declared consequences Core could not read as its own classes. */
   consequences: "bootstrap.step_consequences_invalid",
   /** The step would do something lasting that neither the instruction nor the person's permission allows. */
-  permission: "bootstrap.step_permission_required"
+  permission: "bootstrap.step_permission_required",
+  /** A fact the model wrote names its element by something other than a handle (header, t432). */
+  notAHandle: "bootstrap.target_not_a_handle"
 } as const);
+
+/** What the model is told about a fact naming its element by anything but a handle: Core's own words, quoting nothing (header). */
+const NOT_A_HANDLE_MESSAGE = "This fact names its element by something other than a handle. Name the element only by the handle the evidence printed for it, copied exactly, as a step does: `exists t5`, `text t7 contains \"Ready\"`.";
 
 const ISSUE_CODE = /^[a-z0-9_.:-]{1,100}$/i;
 const MAX_REFUSAL_CODES = 16;
@@ -112,16 +170,55 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
   inheritedNodeRefs?: ReadonlySet<string> | undefined;
   /** `view_history` for a candidate submission alone (header); absent, the domain resolves against the page as exploration last saw it. */
   handleReach?: AutomationStudioPlanHandleReach | undefined;
+  /**
+   * The one packet every handle of this plan was issued in, for the steps a
+   * repair wrote (header, t429). Handed to the domain with every node and
+   * every fact; absent for a build, whose handles resolve as they always have.
+   */
+  handleEvidence?: JsonObject | undefined;
+  /** The plan is the model's own writing, so every element in it is named by handle or refused (header, t432). */
+  writtenByModel?: boolean | undefined;
+  /**
+   * For a plan the host wrote, the parameters of each node, by
+   * `<subflow key>.<node key>`, that the model wrote over it: an amendment's
+   * settings on a draft step (`./amended-plan-parameters.ts`, t432). Handed to
+   * the domain with that node alone, and a locator fact in one of them is
+   * refused as one in a plan the model wrote is.
+   */
+  modelWrittenParameters?: ReadonlyMap<string, readonly string[]> | undefined;
 }): Promise<AutomationStudioFlowBootstrapPlanParameterResolution> {
   const plan = structuredClone(input.plan);
   const issues: AutomationStudioFlowBootstrapIssue[] = [];
+  for (const site of automationStudioPlanFactTargetsNotNamingHandles(plan)) {
+    if (!input.writtenByModel && !modelWroteFact(input.modelWrittenParameters?.get(site.ref), site.path)) continue;
+    issues.push({ severity: "error", code: AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.notAHandle, message: NOT_A_HANDLE_MESSAGE, path: site.path });
+  }
   const resolvedNodeKeys: string[] = [];
   const handleViews: AutomationStudioFlowBootstrapPlanHandleView[] = [];
+  // Page facts first (header): a handler's facts are its parameters, so they are resolved before the handler is asked about.
+  const refusedHandlers = new Set<string>();
+  for (const site of automationStudioPlanFactTargetSites(plan)) {
+    const fact = { key: site.ref, definitionId: AUTOMATION_STUDIO_PLAN_FACT_TARGET_DEFINITION_ID, definitionVersion: "1.0.0", parameters: { target: site.target }, consequences: [] };
+    const outcome = await resolveNode(fact, input, automationStudioActionPermissionDenied, false);
+    if (outcome.status === "needs_permission") {
+      issues.push(permissionIssue(outcome, site.path));
+      return { ok: false, issues };
+    }
+    if (outcome.status !== "resolved") {
+      // An `unchanged` answer leaves the handle in place, which `resolveNode` already refuses; this is the same refusal if it ever did not.
+      for (const code of outcome.status === "refused" ? outcome.issueCodes : [AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved]) issues.push(parameterIssue(code, site.path));
+      if (site.path.includes(".parameters.")) refusedHandlers.add(site.ref);
+      continue;
+    }
+    site.replace(outcome.parameters);
+    for (const view of outcome.handleViews ?? []) handleViews.push({ node: site.ref, handle: view.handle, view: view.view, location: view.location });
+  }
   for (const [subflowIndex, subflow] of plan.subflows.entries()) {
     for (const [nodeIndex, node] of subflow.nodes.entries()) {
       const ref = `${subflow.key}.${node.key}`;
+      if (refusedHandlers.has(ref)) continue;
       const permission = input.permissionFor?.({ definitionId: node.definitionId, ref }) ?? automationStudioActionPermissionDenied;
-      const outcome = await resolveNode(node, input, permission, input.inheritedNodeRefs?.has(ref) === true);
+      const outcome = await resolveNode(node, input, permission, input.inheritedNodeRefs?.has(ref) === true, input.modelWrittenParameters?.get(ref));
       const path = `plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`;
       if (outcome.status === "needs_permission") {
         // Not the model's mistake and not the model's to correct: the gate has
@@ -138,6 +235,8 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
       }
       if (outcome.status === "unchanged") continue;
       node.parameters = outcome.parameters;
+      // What the act on its control made true, where the build signed no effect of its own (header, t447).
+      if (outcome.effect && !node.routeSignatures?.effect) node.routeSignatures = { ...node.routeSignatures, effect: outcome.effect };
       resolvedNodeKeys.push(node.key);
       for (const view of outcome.handleViews ?? []) handleViews.push({ node: ref, handle: view.handle, view: view.view, location: view.location });
     }
@@ -147,28 +246,31 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
 }
 
 /**
- * Refuse a plan that still names a handle anywhere. For plans that reach
+ * Refuse a plan that still names a handle anywhere: in a node's parameters, or
+ * in a page fact's target in node or Subflow metadata. For plans that reach
  * persistence or apply without passing through resolution.
  */
 export function assertAutomationStudioFlowBootstrapPlanHandlesResolved(plan: AutomationStudioFlowBootstrapPlan): void {
-  const paths = plan.subflows.flatMap((subflow, subflowIndex) => subflow.nodes.flatMap((node, nodeIndex) =>
-    automationStudioPlanNodeParametersNameHandle(node.parameters)
-      ? [`plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters (${AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved})`]
-      : []));
+  const paths = [
+    ...plan.subflows.flatMap((subflow, subflowIndex) => subflow.nodes.flatMap((node, nodeIndex) =>
+      automationStudioPlanNodeParametersNameHandle(node.parameters) ? [`plan.subflows.${subflowIndex}.nodes.${nodeIndex}.parameters`] : [])),
+    ...automationStudioPlanMetadataFactHandlePaths(plan)
+  ].map((path) => `${path} (${AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved})`);
   if (paths.length) throw new Error(`Invalid Automation Studio Flow Bootstrap plan: ${paths.join(", ")}`);
 }
 
 type NodeOutcome =
   | { status: "unchanged" }
-  | { status: "resolved"; parameters: JsonObject; handleViews?: AutomationStudioPlanHandleView[] }
+  | { status: "resolved"; parameters: JsonObject; handleViews?: AutomationStudioPlanHandleView[]; effect?: JsonObject }
   | { status: "refused"; issueCodes: string[] }
   | { status: "needs_permission"; missing: string[]; requestId: string | null };
 
 async function resolveNode(
   node: AutomationStudioFlowBootstrapNode,
-  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean; handleReach?: AutomationStudioPlanHandleReach | undefined },
+  input: { projectId: string; flowId: string; binding?: ParameterResolver | undefined; handlesIssued: boolean; handleReach?: AutomationStudioPlanHandleReach | undefined; handleEvidence?: JsonObject | undefined; writtenByModel?: boolean | undefined },
   permission: AutomationStudioActionPermissionCheck,
-  inherited: boolean
+  inherited: boolean,
+  modelKeys?: readonly string[] | undefined
 ): Promise<NodeOutcome> {
   // The declaration comes off first, so nothing downstream -- the handle
   // search, the domain, the registry -- ever sees a parameter no node declares.
@@ -203,7 +305,11 @@ async function resolveNode(
       parameters: structuredClone(parameters),
       permission,
       ...(step.declared ? { declaredConsequences: [...step.declared] } : {}),
-      ...(input.handleReach ? { handleReach: input.handleReach } : {})
+      ...(input.handleReach ? { handleReach: input.handleReach } : {}),
+      // The packet as the caller holds it; the domain reads it and keeps nothing of this copy.
+      ...(input.handleEvidence ? { handleEvidence: structuredClone(input.handleEvidence) } : {}),
+      ...(input.writtenByModel ? { writtenByModel: true as const } : {}),
+      ...(!input.writtenByModel && modelKeys?.length ? { modelWrittenParameters: [...modelKeys] } : {})
     });
   } catch {
     return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.failed);
@@ -222,12 +328,18 @@ async function resolveNode(
   }
   let outcome: NodeOutcome;
   if (answer.status === "unchanged" && exactKeys(answer, ["status"])) outcome = stripped(step, parameters);
-  else if (answer.status === "resolved" && exactKeys(answer, ["status", "parameters"]) && isBoundedJsonObject(answer.parameters)) {
-    outcome = { status: "resolved", parameters: structuredClone(answer.parameters) };
-  } else if (answer.status === "resolved" && input.handleReach !== undefined && exactKeys(answer, ["status", "parameters", "handleViews"])
-    && isBoundedJsonObject(answer.parameters) && isHandleViews(answer.handleViews)) {
-    // Only an answer to a resolution that asked for the view history (header).
-    outcome = { status: "resolved", parameters: structuredClone(answer.parameters), handleViews: answer.handleViews.map((view) => ({ handle: view.handle, view: view.view, location: view.location })) };
+  else if (answer.status === "resolved" && isBoundedJsonObject(answer.parameters)
+    // `handleViews` only on an answer to a resolution that asked for the view history; `effect` on any (header).
+    && keysWithin(answer, ["status", "parameters"], input.handleReach !== undefined ? ["handleViews", "effect"] : ["effect"])
+    && (!Object.hasOwn(answer, "handleViews") || isHandleViews(answer.handleViews))) {
+    const effect = Object.hasOwn(answer, "effect") ? automationStudioReadRouteSignature(answer.effect) : undefined;
+    if (effect && !effect.ok) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
+    outcome = {
+      status: "resolved",
+      parameters: structuredClone(answer.parameters),
+      ...(isHandleViews(answer.handleViews) ? { handleViews: answer.handleViews.map((view) => ({ handle: view.handle, view: view.view, location: view.location })) } : {}),
+      ...(effect?.ok ? { effect: effect.signature } : {})
+    };
   } else return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.invalid);
   // Whatever the node leaves with -- its own parameters or the domain's --
   // names no handle.
@@ -244,6 +356,14 @@ async function resolveNode(
  */
 function stripped(step: { rodeOnParameters: boolean }, parameters: JsonObject): NodeOutcome {
   return step.rodeOnParameters ? { status: "resolved", parameters } : { status: "unchanged" };
+}
+
+/** Whether a fact at `path` sits in a node parameter the model wrote (`modelWrittenParameters`): `...nodes.N.parameters.<key>....`. */
+function modelWroteFact(modelKeys: readonly string[] | undefined, path: string): boolean {
+  const marker = ".parameters.";
+  const at = path.indexOf(marker);
+  const key = at < 0 ? undefined : path.slice(at + marker.length).split(".")[0];
+  return key !== undefined && modelKeys?.includes(key) === true;
 }
 
 function refused(issueCode: string): NodeOutcome {
@@ -285,6 +405,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
   const actual = Object.keys(value);
   return actual.length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+}
+
+/** Every key of `required` present, and nothing beside them but keys of `optional`. */
+function keysWithin(value: Record<string, unknown>, required: string[], optional: string[]): boolean {
+  return required.every((key) => Object.hasOwn(value, key)) && Object.keys(value).every((key) => required.includes(key) || optional.includes(key));
 }
 
 /** Plain JSON, no deeper or wider than a plan parameter may be, and small. */

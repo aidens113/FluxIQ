@@ -9,14 +9,16 @@
 // and a run, so the only assertions anyone wrote about it were about the four
 // pure functions it called.
 //
-// Naming the eight things it actually uses fixes both. They are ports, not a
-// service handle: each one is the narrowest signature the path calls, so a test
-// supplies eight small functions and the service supplies eight bound methods.
+// Naming the things it actually uses fixes both. They are ports, not a service
+// handle: each one is the narrowest signature the path calls, so a test
+// supplies small functions and the service supplies bound methods. The in-run
+// repair (`../in-run-repair/`) is supplied the same ports, bound once.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type {
   AutomationStudioFlowAdaptation,
   AutomationStudioFlowChangeProposal,
+  AutomationStudioFlowArtifact,
   AutomationStudioFlowInstruction,
   AutomationStudioFlowRouter,
   AutomationStudioFlowScope
@@ -117,6 +119,14 @@ export type AutomationStudioRuntimeRecoveryPorts = {
    * carries no conversation.
    */
   conversationForRecovery?: ((input: { projectId: string; flowId: string; runId: string }) => Promise<readonly AutomationStudioConversationTurn[]>) | undefined;
+  /**
+   * The saved graph of one of the Flow's Subflows, by Subflow id: the part an
+   * in-run repair (C6 step 8) is asked to replace when a called part broke its
+   * contract. Answers `undefined` when the Subflow or its graph cannot be read,
+   * and the repair is then refused for want of the part. Absent, no part is
+   * ever repaired in the run.
+   */
+  subflowGraphForRecovery?: ((projectId: string, flowId: string, subflowId: string) => Promise<AutomationStudioFlowArtifact | undefined>) | undefined;
   saveFlowChangeProposal(proposal: AutomationStudioFlowChangeProposal): Promise<AutomationStudioFlowChangeProposal>;
   saveFlowAdaptation(adaptation: AutomationStudioFlowAdaptation): Promise<AutomationStudioFlowAdaptation>;
   promoteRuntimeAdaptation(input: {

@@ -46,11 +46,13 @@ export async function automationStudioFlowBootstrapExtendSubject(input: {
    * its steps, so a rerun of a carried step starts where its node did.
    */
   startPages?: Readonly<Record<string, JsonObject>> | undefined;
+  /** Whether a step of a node must declare its consequences, from the node's definition (t439, `llm/node-tools/draft-from-flow.ts`). */
+  declarationRequired?: ((definitionId: string, parameters: JsonObject) => boolean) | undefined;
 }): Promise<AutomationStudioFlowBootstrapExtendSubject | undefined> {
   const subflow = automationStudioBootstrapExtendSubflow(await input.listSubflows());
   if (!subflow) return undefined;
   const graph = await input.getGraphFlow(subflow.graphFlowId);
-  const seed = automationStudioFlowDraftSeedFromFlow({ nodes: graph.nodes, edges: graph.edges, startPages: input.startPages });
+  const seed = automationStudioFlowDraftSeedFromFlow({ nodes: graph.nodes, edges: graph.edges, startPages: input.startPages, declarationRequired: input.declarationRequired });
   // A graph with no step the assembler would emit is nothing to extend: the
   // build would be starting from an empty draft, which is a creation, and
   // saying so is more useful than silently doing one under the other word.

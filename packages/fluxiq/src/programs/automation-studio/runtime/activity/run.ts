@@ -1,7 +1,7 @@
 import type { ClientGatewayActivityPhase } from "@fluxiq/contracts/client-gateway";
 import { emitAutomationStudioActivity } from "./emit.ts";
 import { runWithAutomationStudioActivity } from "./scope.ts";
-import { automationStudioActivityRunEnding, automationStudioActivityRunObjection } from "./wording/index.ts";
+import { automationStudioActivityRunEnding, automationStudioActivityRunObjection, automationStudioActivityRunUncertainEnding } from "./wording/index.ts";
 
 type Settled = { phase: ClientGatewayActivityPhase; label: string; kind: "step" | "ask"; status: "started" | "succeeded" | "failed"; final: boolean; stopped?: true };
 
@@ -42,7 +42,7 @@ type AutomationStudioRunActivityOptions<T> = {
  * the live line show, and the row's text, which the chat shows under "Run
  * failed", so both say the same thing.
  */
-export async function withAutomationStudioRunActivity<T extends { status: string; metadata?: unknown }>(target: { projectId?: string | null | undefined; flowId?: string | undefined }, fn: () => Promise<T>, options: AutomationStudioRunActivityOptions<T> = {}): Promise<T> {
+export async function withAutomationStudioRunActivity<T extends { status: string; metadata?: unknown; trace?: unknown }>(target: { projectId?: string | null | undefined; flowId?: string | undefined }, fn: () => Promise<T>, options: AutomationStudioRunActivityOptions<T> = {}): Promise<T> {
   if (!target.projectId) return await fn();
   const scope = { kind: "run" as const, id: "", projectId: target.projectId, ...(target.flowId ? { flowId: target.flowId } : {}) };
   return await runWithAutomationStudioActivity(scope, async () => {
@@ -56,6 +56,12 @@ export async function withAutomationStudioRunActivity<T extends { status: string
     const settled = SETTLED[session.status];
     if (!settled) return session;
     const failed = session.status === "failed" ? await failedRunEnding(session, options.readRecord) : undefined;
+    // A run stopped as Outcome uncertain is not said as failed: it stopped rather than repeat a step that may have gone through (`./wording/run-uncertain.ts`).
+    if (failed?.uncertain) {
+      const uncertain = failed.uncertain;
+      emitAutomationStudioActivity({ phase: settled.phase, label: uncertain.label, detail: { kind: settled.kind, title: uncertain.title, status: settled.status, text: uncertain.text }, final: true });
+      return session;
+    }
     const ending = failed?.ending;
     // The check's objection follows in the row's text only: the status line holds the ending alone (R3-U-3).
     const text = ending && failed?.objection ? `${ending} ${failed.objection}` : ending;
@@ -74,14 +80,18 @@ export async function withAutomationStudioRunActivity<T extends { status: string
  * The sentence after "Run failed", from the run's record over the session's
  * own metadata; undefined when neither says. The session's metadata answers
  * first, so a record that cannot be read leaves what the session already says.
+ * A run stopped as Outcome uncertain has its own ending instead, from the
+ * session's trace or the record (`./wording/run-uncertain.ts`).
  */
-async function failedRunEnding<T extends { metadata?: unknown }>(session: T, readRecord: AutomationStudioRunActivityOptions<T>["readRecord"]): Promise<{ ending?: string; objection?: string }> {
+async function failedRunEnding<T extends { metadata?: unknown; trace?: unknown }>(session: T, readRecord: AutomationStudioRunActivityOptions<T>["readRecord"]): Promise<{ ending?: string; objection?: string; uncertain?: ReturnType<typeof automationStudioActivityRunUncertainEnding> }> {
   const own = session.metadata !== null && typeof session.metadata === "object" && !Array.isArray(session.metadata) ? session.metadata as RunRecord : {};
   let read: RunRecord = own;
   try {
     const record = await readRecord?.(session);
     if (record) read = { ...own, ...record };
   } catch { /* best-effort: the stream must never fail the run it reports */ }
+  const uncertain = automationStudioActivityRunUncertainEnding(session.trace, read);
+  if (uncertain) return { uncertain };
   const ending = automationStudioActivityRunEnding(read);
   const objection = automationStudioActivityRunObjection(read);
   return { ...(ending ? { ending } : {}), ...(objection ? { objection } : {}) };

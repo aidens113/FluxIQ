@@ -80,7 +80,8 @@ describe("AutomationStudioService iterating recovery", () => {
       [1, "runtime_diagnosis", "gather", "run", "automation-studio.runtime-diagnosis.v1+stage.gather"],
       [2, "evidence_tool_decision", "gather", "exploration", "automation-studio.evidence-tool-decision.v1+stage.gather"],
       [3, "evidence_tool_decision", "gather", "exploration", "automation-studio.evidence-tool-decision.v1+stage.gather"],
-      [4, "runtime_patch", "implement", "run", "automation-studio.runtime-patch.v1+stage.implement"]
+      // An explore_and_adapt run repairs in place (C6 step 8), so its patch carries the in-run slot; a diagnose_and_adapt run only proposes, after the run.
+      [4, "runtime_patch", "implement", "run", `automation-studio.runtime-patch.v1+stage.implement${intent === "explore_and_adapt" ? "+in_run_repair" : ""}`]
     ]);
     for (const call of gate.providerCalls) {
       expect(call).toMatchObject({ provider: "deepseek", model: "deepseek-flash", validation: { ok: true, issueCodes: [] }, budgetBreach: false });

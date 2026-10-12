@@ -411,13 +411,28 @@ export type AutomationStudioBuildTestStep = {
   /** What the test observed for this step: the rows a read returned, or a check's answer. */
   observed?: JsonValue;
   /** What the step did while the build explored, for a step the test only checked. */
-  explored?: { changed: "yes" | "no" | "unknown"; resultCode?: string; stateChanged?: boolean };
+  explored?: { changed: "yes" | "no" | "unknown"; resultCode?: string; stateChanged?: boolean; landed?: AutomationStudioBuildTestLanding };
   /**
    * A repeated step's passes, one per row of the list its span repeats over,
    * in order (t252 D6). `outcome` above is the first pass that did not pass,
    * else `replayed`; each pass's own answer and observation are here.
    */
   passes?: AutomationStudioBuildTestPass[];
+};
+
+/**
+ * A checked step's act as the build did it earlier in this build, when a rerun
+ * did it or a later check replaced the step's record (t443): `counts` when it
+ * ran after the steps before it -- done again on its put-back page, or already
+ * in the state it found -- as the step now stands. `after` is those steps with
+ * their words (the choices it was made with); `pressed`, its own words when
+ * they are not the step's now; `why`, why it does not count.
+ */
+export type AutomationStudioBuildTestLanding = {
+  counts: boolean;
+  after?: Array<{ step: number; target?: string[] }>;
+  pressed?: string[];
+  why?: string;
 };
 
 /**

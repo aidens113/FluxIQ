@@ -96,9 +96,40 @@ export type ClientGatewayActionCommand = {
   metadata?: JsonObject;
 };
 
+/**
+ * What an action ended as, once Core has read it. `unknown` is an act that may
+ * have landed with its answer missing; a missing answer is never a failure that
+ * did nothing.
+ */
+export type ClientGatewayActionResultStatus = "succeeded" | "failed" | "timed_out" | "cancelled" | "unknown";
+
+/**
+ * The statuses a client may report for an action, in order of the wire:
+ * Core's own five, plus `interrupted` -- the client lost the command in flight
+ * (its background worker stopped, or its channel to the page closed) and does
+ * not know whether the act happened.
+ *
+ * Core reads `interrupted` the way it reads the wire status a client sent
+ * before it existed (state-aware recovery plan, C8 and B3): a committing act is
+ * `unknown`, its outcome uncertain (`effect: "ambiguous"`), and every other act
+ * is `failed` having done nothing (`effect: "unacted"`). Which acts commit is
+ * the domain's fact, so Core takes it from the result's `failure.effect`: only
+ * a record stating `unacted` makes it a failure, and a result that states
+ * nothing is held uncertain. A client built earlier sends `unknown` or `failed`
+ * with `payload.status: "interrupted"`, which Core still accepts and records as
+ * interrupted.
+ */
+export const CLIENT_GATEWAY_REPORTED_ACTION_STATUSES = Object.freeze(["succeeded", "failed", "timed_out", "cancelled", "unknown", "interrupted"] as const);
+export type ClientGatewayReportedActionStatus = (typeof CLIENT_GATEWAY_REPORTED_ACTION_STATUSES)[number];
+
+/**
+ * An action result as Core hands it to the caller that dispatched the command.
+ * A client's `interrupted` has already been read into `unknown` or `failed`
+ * (see `ClientGatewayReportedActionResult`), so no caller meets it.
+ */
 export type ClientGatewayActionResult = {
   commandId: string;
-  status: "succeeded" | "failed" | "timed_out" | "cancelled" | "unknown";
+  status: ClientGatewayActionResultStatus;
   startedAt?: number;
   completedAt?: number;
   message?: string;
@@ -110,6 +141,44 @@ export type ClientGatewayActionResult = {
   /** Structured failure the client reports; the runtime keeps it only when `parseAutomationStudioFailureRecord` accepts it. */
   failure?: AutomationStudioFailureRecord;
   metadata?: JsonObject;
+};
+
+/** An action result as a client sends it: Core's result, whose status may also be `interrupted`. */
+export type ClientGatewayReportedActionResult = Omit<ClientGatewayActionResult, "status"> & { status: ClientGatewayReportedActionStatus };
+
+/**
+ * What became of one command, as the client that was sent it answers
+ * `server.reconcile_command` (state-aware recovery plan, C8 and B3). The client
+ * answers from what it kept and never by acting:
+ *
+ * - `landed`: the command finished there; `result` is the result it kept, the
+ *   one whose delivery was lost;
+ * - `not_seen`: the client has no record of that id, so the act never reached
+ *   it and making it again is not a second act. A client that answers this
+ *   refuses the id from then on, so a copy still on its way cannot act later;
+ * - `running`: the command is still being carried out;
+ * - `unknown`: the client cannot say -- for example its record was cleared by a
+ *   restart before a result was kept. Core never makes the act again on it.
+ */
+export const CLIENT_GATEWAY_RECONCILE_STATES = Object.freeze(["landed", "not_seen", "running", "unknown"] as const);
+export type ClientGatewayReconcileState = (typeof CLIENT_GATEWAY_RECONCILE_STATES)[number];
+
+/**
+ * The capability metadata field a client sets to `true` to say it answers
+ * `server.reconcile_command`. Core asks only a session that declared it, on
+ * any capability; a session that did not is never asked, and a lost reply to
+ * it keeps the outcome it had (`timed_out`).
+ */
+export const CLIENT_GATEWAY_RECONCILE_ANSWER_METADATA_KEY = "answersReconcile";
+
+/** Core asking a client what became of a command it sent: answered, never executed. */
+export type ClientGatewayReconcileRequest = { commandId: string };
+
+/** A client's answer to `server.reconcile_command`. `result` is present only on `landed`. */
+export type ClientGatewayReconcileAnswer = {
+  commandId: string;
+  state: ClientGatewayReconcileState;
+  result?: ClientGatewayReportedActionResult;
 };
 
 /**
@@ -156,6 +225,74 @@ export const CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS = Object.freeze(["waited_out", 
 export type ClientGatewayActivityResolution = (typeof CLIENT_GATEWAY_ACTIVITY_RESOLUTIONS)[number];
 
 /**
+ * What kind of recovery a `step` row's `recovery` reports (state-aware
+ * recovery plan, C11):
+ *
+ * - `handler`: a lifecycle handler ran (On Start, On Before, On Retry, On Fail,
+ *   On Before Next);
+ * - `entry`: a frame began at an alternative entry rather than its Start node;
+ * - `route`: the run moved to a checkpoint, or state routing moved it to the
+ *   node the page is at;
+ * - `alternative`: a known alternative path or recovery Subflow was tried;
+ * - `interference`: the client closed a layer the page put over itself (a
+ *   notice, a promotion, a consent banner) by its dismiss control while the
+ *   step ran. Its `subject` is Core's own words by layer kind, never the
+ *   control's words or other page text.
+ *
+ * Additive: a client that does not know a kind reads the row as a plain step.
+ */
+export const CLIENT_GATEWAY_ACTIVITY_RECOVERY_KINDS = Object.freeze(["handler", "entry", "route", "alternative", "interference"] as const);
+export type ClientGatewayActivityRecoveryKind = (typeof CLIENT_GATEWAY_ACTIVITY_RECOVERY_KINDS)[number];
+
+/** How a recovery ended: it moved the run on, it failed, or a guard or budget refused it before it ran. */
+export const CLIENT_GATEWAY_ACTIVITY_RECOVERY_OUTCOMES = Object.freeze(["succeeded", "failed", "refused"] as const);
+export type ClientGatewayActivityRecoveryOutcome = (typeof CLIENT_GATEWAY_ACTIVITY_RECOVERY_OUTCOMES)[number];
+
+/** The lifecycle boundaries a handler fires at (C3), as a `handler` recovery names them. */
+export const CLIENT_GATEWAY_ACTIVITY_RECOVERY_EVENTS = Object.freeze(["start", "before", "retry", "fail", "before_next"] as const);
+export type ClientGatewayActivityRecoveryEvent = (typeof CLIENT_GATEWAY_ACTIVITY_RECOVERY_EVENTS)[number];
+
+/**
+ * The recovery a `step` row reports, so a client renders its card from closed
+ * fields rather than parsing Core's sentence. `subject` is the plain words the
+ * card shows ("Dismiss the sign-in popup"): an authored label or Core's own
+ * words, never page data. `event` is set on a `handler` recovery; `targetId`
+ * is the checkpoint, entry, node or Subflow it led to, when there is one.
+ */
+export type ClientGatewayActivityRecovery = {
+  kind: ClientGatewayActivityRecoveryKind;
+  subject: string;
+  outcome: ClientGatewayActivityRecoveryOutcome;
+  event?: ClientGatewayActivityRecoveryEvent;
+  targetId?: string;
+};
+
+/**
+ * Why a run step was skipped rather than run, on the `step` row that says so:
+ *
+ * - `already_done`: the run already completed the step's lasting act for the
+ *   same row, so it was not done again (the executor's completed-act ledger);
+ * - `optional_absent`: a sometimes-present step whose target was not shown;
+ * - `state_routed`: the page was elsewhere, so state routing passed the step
+ *   over and the run went on at the step the page is at.
+ *
+ * Additive: a client that does not know a reason reads the row as a plain step.
+ */
+export const CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS = Object.freeze(["already_done", "optional_absent", "state_routed"] as const);
+export type ClientGatewayActivitySkipReason = (typeof CLIENT_GATEWAY_ACTIVITY_SKIP_REASONS)[number];
+
+/**
+ * The skip a `step` row reports, so a client draws its card from a closed
+ * field rather than from the row's shape or Core's sentence. `subject` is the
+ * plain words naming what was skipped: the list row's label ("Lin Zhao") or the
+ * step's authored label, never other page data.
+ */
+export type ClientGatewayActivitySkip = {
+  reason: ClientGatewayActivitySkipReason;
+  subject?: string;
+};
+
+/**
  * One activity event: the current status of one unit of work (a build or a
  * run) plus an optional detail row for the chat stream. Bounded, and
  * content-free beyond what the person's own panel already shows: labels and
@@ -165,7 +302,9 @@ export type ClientGatewayActivityResolution = (typeof CLIENT_GATEWAY_ACTIVITY_RE
  * for that step (what it does next, on what, and why) or its diagnosis or
  * verdict, whitespace-collapsed, with token-shaped runs hidden, and bounded
  * (240 characters for a decision's reason). Core truncates `label` to 160
- * characters, `detail.title` to 160 and `detail.text` to 1,000.
+ * characters, `detail.title` to 160, `detail.recovery.subject` and
+ * `detail.skipped.subject` to 160 and
+ * `detail.text` to 1,000.
  *
  * A wait on the person is one `ask` row pair for one card. The wait opens as
  * `phase: "waiting_permission"`, `detail: { kind: "ask", ref: <askId>,
@@ -188,7 +327,18 @@ export type ClientGatewayActivity = {
   phase: ClientGatewayActivityPhase;
   /** Core's one-line status sentence, e.g. "Running step 2 of 5". */
   label: string;
-  step?: { index: number; count: number; nodeId?: string; label?: string };
+  step?: {
+    index: number;
+    count: number;
+    nodeId?: string;
+    label?: string;
+    /**
+     * On a step a list loop's pass runs: that pass's row as a person reads it
+     * ("Jonas Weber"), so a card can say "Confirm · Jonas Weber". Optional; a
+     * client that does not know it ignores it.
+     */
+    row?: string;
+  };
   /** A row for the chat stream; absent for a pure status change. */
   detail?: {
     kind: "thought" | "tool" | "step" | "check" | "ask" | "note";
@@ -202,6 +352,19 @@ export type ClientGatewayActivity = {
      * that does not know it reads the row by `status` alone.
      */
     resolution?: ClientGatewayActivityResolution;
+    /**
+     * On a `step` row only: the recovery the row reports (a handler that ran,
+     * an alternative entry, a route, an alternative path, a layer the client
+     * closed). Optional and
+     * additive; a client that does not know it reads the row as a plain step.
+     */
+    recovery?: ClientGatewayActivityRecovery;
+    /**
+     * On a `step` row only: the step was skipped rather than run, and why.
+     * Optional and additive; a client that does not know it reads the row as a
+     * plain step that succeeded.
+     */
+    skipped?: ClientGatewayActivitySkip;
   };
   /** The conversation this work speaks through, when it has one. */
   conversationId?: string;
@@ -318,7 +481,8 @@ export type ClientGatewayClientMessage =
   | ClientGatewayEnvelope<"client.recording_entry", ClientGatewayAppendRecordingEntryRequest>
   | ClientGatewayEnvelope<"client.recording_event", ClientGatewayRecordingEvent>
   | ClientGatewayEnvelope<"client.snapshot", ClientGatewaySnapshot>
-  | ClientGatewayEnvelope<"client.action_result", ClientGatewayActionResult>
+  | ClientGatewayEnvelope<"client.action_result", ClientGatewayReportedActionResult>
+  | ClientGatewayEnvelope<"client.reconcile_result", ClientGatewayReconcileAnswer>
   | ClientGatewayEnvelope<"client.error", { message: string; code?: string; metadata?: JsonObject }>;
 
 export type ClientGatewayServerMessage =
@@ -328,6 +492,7 @@ export type ClientGatewayServerMessage =
   | ClientGatewayEnvelope<"server.stop_recording", { recordingId?: string }>
   | ClientGatewayEnvelope<"server.capture_snapshot", { kind?: string; metadata?: JsonObject }>
   | ClientGatewayEnvelope<"server.execute_action", ClientGatewayActionCommand & { commandId: string }>
+  | ClientGatewayEnvelope<"server.reconcile_command", ClientGatewayReconcileRequest>
   | ClientGatewayEnvelope<"server.set_active_tab", { tabId: string }>
   | ClientGatewayEnvelope<"server.activity", ClientGatewayActivity>
   | ClientGatewayEnvelope<"server.ping", { nonce: string }>

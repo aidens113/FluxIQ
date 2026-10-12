@@ -31,6 +31,27 @@ describe("automationStudioActivityAction and the chat's action kinds", () => {
   });
 });
 
+// R4a (`run-mv2nlh9l-52e476da`, moment 04): a colour swatch and a size chip a
+// "check" node set read "Tick · Space Grey" and "Ticking “7-in-1”". An option
+// chosen from several is said as one; a box is still ticked.
+describe("a check that sets an option chosen from several", () => {
+  const said = (element: Record<string, unknown> | undefined) => automationStudioActivityAction({ id: "web.output.dom-check", parameters: element ? { checked: true, element } : { checked: true } });
+  it("says a swatch, a chip or a radio as Choosing, which its card reads as Choose", () => {
+    expect(said({ tagName: "div", accessibleName: "Space Grey" })).toBe("Choosing “Space Grey”");
+    expect(said({ tagName: "div", visibleText: "7-in-1" })).toBe("Choosing “7-in-1”");
+    expect(said({ tagName: "input", inputType: "radio", label: "Express" })).toBe("Choosing “Express”");
+    expect(said({ tagName: "button", role: "option", accessibleName: "Large" })).toBe("Choosing “Large”");
+    const card = activityActionOf({ phase: "running", step: { nodeId: "n1" }, detail: { kind: "step", title: said({ tagName: "div", accessibleName: "Space Grey" })!, status: "started", ref: "n1" } });
+    expect([card?.name, card?.target]).toEqual(["Choose", "Space Grey"]);
+  });
+
+  it("still ticks a box, and a step that says nothing of its element", () => {
+    expect(said({ tagName: "input", inputType: "checkbox", label: "Gift wrap" })).toBe("Ticking “Gift wrap”");
+    expect(said({ tagName: "div", role: "checkbox", accessibleName: "Remember me" })).toBe("Ticking “Remember me”");
+    expect(said(undefined)).toBe("Ticking a box");
+  });
+});
+
 // Every chat step says what it does (user rule: the chat shows every step with its reasoning).
 // "Looking at the page" and "Working on the page" stood for every find and every press of the
 // crossborder build (run-muqc07fh-eeffbc86); the domain's words for a call name the control a

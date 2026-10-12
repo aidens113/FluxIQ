@@ -4,6 +4,7 @@
 // nested, nothing quoted, nothing escaped. This module holds only the shapes
 // the parser produces and the acceptor returns; the grammar itself is in
 // `./parse.ts`, and what the model is shown is in `./format.ts`.
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioRouteSignatures } from "../../route-state/index.ts";
 import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapPlan } from "../plan/index.ts";
 
@@ -34,6 +35,14 @@ export type AutomationStudioFlowScriptBranch = {
    * wire the rows as the path.
    */
   targetPort?: string;
+  /**
+   * Core wrote this branch: an optional step's way past itself, to the join
+   * its guarded group meets at (`../script-statements/guarded-steps.ts`).
+   * Never written by a model. A span refuses a branch a model wrote inside it,
+   * because the loop's own edges would replace it; this one stays inside the
+   * span by construction, so the span takes it.
+   */
+  guard?: true;
   line: number;
 };
 
@@ -46,6 +55,33 @@ export type AutomationStudioFlowScriptStep = {
   node?: string;
   /** The block this step runs instead of doing anything itself. */
   runsBlock?: string;
+  /**
+   * The step's `call: <part>` line: the step runs the part the label names and
+   * waits for it, passing the part's inputs from its other lines
+   * (`../script-statements/called-parts.ts`). A `step: run subflow <label>`
+   * naming a part says the same.
+   */
+  calls?: AutomationStudioFlowScriptLabelLine;
+  /**
+   * The step's `checkpoint:` line, as written: a handler's `then: go to` may
+   * bring the run back to this step (`../script-statements/entry-points.ts`).
+   */
+  checkpoint?: AutomationStudioFlowScriptOptional;
+  /**
+   * The step's own `done when:` lines (t413): what the page shows once this
+   * step worked. Written right under the step line, before its `node:`, or
+   * among its lines with more of them after it (`./parse.ts`). It becomes the
+   * node's expected state, so an act whose answer was lost is settled from
+   * the page (`../script-statements/step-done-when.ts`).
+   */
+  done?: AutomationStudioFlowScriptCondition[];
+  /**
+   * Parameters Core set on a step it derived -- a handler's registration and
+   * the end of its body (`../script-statements/handler-blocks.ts`). Never
+   * written by a model; read before the written lines, which a derived step
+   * has none of.
+   */
+  derivedParameters?: JsonObject;
   entries: AutomationStudioFlowScriptEntry[];
   branches: AutomationStudioFlowScriptBranch[];
   /**
@@ -77,8 +113,11 @@ export type AutomationStudioFlowScriptStep = {
   /**
    * What the Flow node this step becomes is named: the draft step's described
    * name, in the domain's words (`does.target`, R3-U-12), which a run's step
-   * card shows. Never written by a model, and set only on a step a draft step
-   * became; a join or a loop routing adds has none.
+   * card shows. Never written by a model as such: set on a step a draft step
+   * became, and on a handler's registration and end from the words written
+   * for it (`../script-statements/handler-blocks.ts`). A step the model wrote
+   * without one is named by its description (`./assemble.ts`); a join or a
+   * loop routing adds has none.
    */
   nodeLabel?: string;
   /**
@@ -100,12 +139,48 @@ export type AutomationStudioFlowScriptStep = {
    * question, not the parser's.
    */
   optional?: AutomationStudioFlowScriptOptional;
+  /**
+   * The step's `only after: <label>` line, as written: the step runs only on
+   * the passes where the optional step it names was done, and is gone past
+   * with it otherwise (t378). It stands directly after that optional step, or
+   * after another step that says the same, in the same block and span
+   * (`../script-statements/guarded-steps.ts`).
+   */
+  onlyAfter?: AutomationStudioFlowScriptOnlyAfter;
+  /**
+   * The least time, in whole milliseconds, between two starts of the node this
+   * step becomes in one run: a span's `repeat pace:`, set on the span's first
+   * step (`../script-statements/repeat-pace.ts`). Never written by a model as
+   * such; it becomes the plan node's `paceMs`.
+   */
+  paceMs?: number;
+  /**
+   * For a step Core derived rather than the model wrote (`line` 0) -- the join
+   * after an optional step, the Merges, For Each and Repeat a loop is wired
+   * with -- the line of the written step whose statement made it. Never
+   * written by a model. A refusal about a derived node is said about this
+   * step (`./script-locator.ts`): the model can find and fix the step it wrote,
+   * and never a node it did not.
+   */
+  cause?: number;
   line: number;
 };
 
 /** A step's `optional:` line: its value as written, and where it was written. */
 export type AutomationStudioFlowScriptOptional = {
   text: string;
+  line: number;
+};
+
+/** A step's `only after:` line: the label it names, reduced as a branch target is (`./keys.ts`), and where it was written. */
+export type AutomationStudioFlowScriptOnlyAfter = {
+  label: string;
+  line: number;
+};
+
+/** A line naming a step or a block by label, reduced as a branch target is, and where it was written. */
+export type AutomationStudioFlowScriptLabelLine = {
+  label: string;
   line: number;
 };
 
@@ -123,6 +198,12 @@ export type AutomationStudioFlowScriptRepeat = {
   while?: string;
   /** The most passes a `while` span takes. */
   most?: string;
+  /** The `repeat most:` line itself, for a refusal that names it (`../script-statements/repeat-bound.ts`). */
+  mostLine?: number;
+  /** The least time between two passes, as written: `6 s`, `1500 ms`, `1 min`; a bare number is seconds (`../script-statements/repeat-pace.ts`). */
+  pace?: string;
+  /** The `repeat pace:` line itself, for a refusal that names it. */
+  paceLine?: number;
   /** The first `repeat` line, for a refusal that names one. */
   line: number;
 };
@@ -136,15 +217,69 @@ export type AutomationStudioFlowScriptCondition = {
   line: number;
 };
 
-/** A block of steps: the main sequence, or a named subflow. */
+/** A block of steps: the main sequence, a named subflow or part, or a handler's body. */
 export type AutomationStudioFlowScriptBlock = {
-  /** The label a `subflow <label>:` line gave; absent for the main block. */
+  /**
+   * The label a `subflow <label>:` or `part <label>:` line gave; absent for
+   * the main block. A handler's block has one Core gave it, starting `:`,
+   * which no written label can equal.
+   */
   label?: string;
   name: string;
   role?: AutomationStudioFlowBootstrapPlan["subflows"][number]["role"];
-  /** When the router runs this block; every line must hold. Absent, nothing routes to it by condition. */
+  /**
+   * When the router runs this block; every line must hold. Absent, nothing
+   * routes to it by condition. In a handler's block these are the facts that
+   * must hold for the handler to run (`../script-statements/fact-condition.ts`).
+   */
   when?: AutomationStudioFlowScriptCondition[];
+  /**
+   * The block's `done when:` lines: the facts that prove it worked -- a part's
+   * success check, or a handler's completion check. A line among one step's
+   * own lines is that step's instead (`AutomationStudioFlowScriptStep.done`).
+   */
+  done?: AutomationStudioFlowScriptCondition[];
+  /** A part's `input: <name>` lines. */
+  inputs?: AutomationStudioFlowScriptLabelLine[];
+  /** A part's `output: <name> = <binding>` lines. */
+  outputs?: AutomationStudioFlowScriptOutput[];
+  /** The block's `start at: <step>` lines, each with the `when:` lines written after it. */
+  entries?: AutomationStudioFlowScriptEntryPoint[];
+  /** Set on a handler's block: what its `on ...:` line said. */
+  handler?: AutomationStudioFlowScriptHandler;
   steps: AutomationStudioFlowScriptStep[];
+  line: number;
+};
+
+/** A part's `output: <name> = <binding>` line, as written. */
+export type AutomationStudioFlowScriptOutput = {
+  name: string;
+  binding: string;
+  line: number;
+};
+
+/** A `start at: <step>` line and the `when:` lines written after it. */
+export type AutomationStudioFlowScriptEntryPoint = {
+  /** The label of the step the run may start at, reduced as a branch target is. */
+  step: string;
+  when: AutomationStudioFlowScriptCondition[];
+  line: number;
+};
+
+/**
+ * A handler's `on <event> [for ...]: <situation>` line, as written. Its block
+ * holds its `when:` and `done when:` lines and the steps of its body; `then`
+ * is its `then:` line. What each means is
+ * `../script-statements/handler-blocks.ts`'s.
+ */
+export type AutomationStudioFlowScriptHandler = {
+  event: "before" | "retry" | "fail" | "start" | "next";
+  /** The words between the event and the colon: `for <labels>`, `for this part`, `everywhere`, or none. */
+  scope: string;
+  situation: string;
+  then?: AutomationStudioFlowScriptOptional;
+  /** The index, in `AutomationStudioFlowScript.blocks`, of the block it was written in; absent when that block holds no step. */
+  parent?: number;
   line: number;
 };
 
@@ -176,5 +311,52 @@ export type AutomationStudioFlowScript = {
  * deliberately not called `plan`, so no caller reaches it by widening a check.
  */
 export type AutomationStudioFlowBootstrapAcceptance =
-  | { ok: true; summary: string; plan: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[]; script?: string }
-  | { ok: false; issues: AutomationStudioFlowBootstrapIssue[]; refusedPlan?: AutomationStudioFlowBootstrapPlan; script?: string };
+  | { ok: true; summary: string; plan: AutomationStudioFlowBootstrapPlan; issues: AutomationStudioFlowBootstrapIssue[]; script?: string; locator?: AutomationStudioFlowBootstrapIssueLocator }
+  | { ok: false; issues: AutomationStudioFlowBootstrapIssue[]; refusedPlan?: AutomationStudioFlowBootstrapPlan; script?: string; locator?: AutomationStudioFlowBootstrapIssueLocator };
+
+/**
+ * Where one refusal is in what the model wrote: the step as it wrote it.
+ *
+ * A refusal used to name a plan path -- `plan.subflows.0.nodes.10.parameters`
+ * -- and nothing else. A script's steps do not become nodes one for one (an
+ * optional step becomes two, a loop several more), so "node 10" named no step
+ * the model could find: lane B (`run-mv0fu9pb-57454dc4`, 0058) guessed two
+ * other steps, sent its script again unchanged, and the repeat guard ended the
+ * build. Each field is the model's own writing or a line number of it.
+ */
+export type AutomationStudioFlowScriptPlace = {
+  /** The step's description as the model wrote it; for a block's own line, the block's name; for a JSON plan, the node's name. */
+  step: string;
+  /** The step's label, when it wrote one; for a JSON plan, the node's key. */
+  label?: string;
+  /** The 1-based script line the issue is about; absent for a JSON plan, which has no lines. */
+  line?: number;
+};
+
+/**
+ * Every place a refusal's path can name, read off the script (or JSON plan) an
+ * acceptance came from, so any check after it -- assembly, the domain's
+ * resolution, registry validation, the candidate's bindings -- can say which
+ * step it refused (`./locate-issue.ts`). Plain data: it travels on the
+ * acceptance and the completion verdict.
+ */
+export type AutomationStudioFlowBootstrapIssueLocator = {
+  /** Exact issue paths raised for a written step that became no node, such as one naming no node. */
+  paths: Record<string, AutomationStudioFlowScriptPlace>;
+  /** `plan.subflows.<S>.nodes.<M>`, by `"<S>.<M>"`: the written step the node is, or the one whose statement made it. */
+  nodes: Record<string, AutomationStudioFlowScriptPlace>;
+  /** `plan.subflows.<S>.edges.<E>`, by `"<S>.<E>"`: the step the edge leaves. */
+  edges: Record<string, AutomationStudioFlowScriptPlace>;
+  /** `plan.subflows.<S>`, by `"<S>"`: its block, or its first step for the steps outside every block. */
+  subflows: Record<string, AutomationStudioFlowScriptPlace>;
+  /** `plan.router.rules.<R>`, by `"<R>"`: the block the rule runs. */
+  rules: Record<string, AutomationStudioFlowScriptPlace>;
+  /** `plan.router.fallback`: the block that runs when no rule holds. */
+  fallback?: AutomationStudioFlowScriptPlace;
+  /**
+   * For `flow.line.<N>`: each written step by the line it starts on, and each
+   * block's own lines (`subflow`, `when:`, `unless:`) exactly, in line order.
+   * A line inside a step is that step's.
+   */
+  lines: { line: number; place: AutomationStudioFlowScriptPlace; exact?: true }[];
+};

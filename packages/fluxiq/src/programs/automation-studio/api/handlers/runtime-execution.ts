@@ -5,6 +5,7 @@ import { AUTOMATION_STUDIO_ENDPOINTS, type AppendRecordingDomainEventRequest, ty
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRunDetail } from "../../model/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REAUTHOR_METADATA_KEY, AUTOMATION_STUDIO_RUNTIME_SESSION_LLM_INTENTS, automationStudioRunChangedDurableBehavior, automationStudioWithWholeAttemptInputs, parseAutomationStudioPermittedConsequences, type AutomationStudioActionConsequence, type AutomationStudioRuntimeSessionLlm } from "../../runtime/index.ts";
 import type { AutomationStudioApiDependencies } from "./dependencies.ts";
+import { automationStudioRunRefusalResponse } from "./run-refusal/index.ts";
 
 export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudioApiDependencies): void {
   const { registry, service } = dependencies;
@@ -46,9 +47,11 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
     permission: "runtime.control",
     classification: "authoring",
     handler: async (request) => {
-      const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true; resultCheckCallerPays?: unknown } : {};
+      const raw = request.payload && typeof request.payload === "object" ? request.payload as { projectId?: string | null; runId?: string; newRunId?: string; flow?: AutomationStudioFlowDocument; flowId?: string; inputs?: any; maxSteps?: number; authorizedDomainIds?: string[]; adaptiveMode?: "fully_adaptive" | "manual_approval" | "no_llm_intervention" | "default" | "deterministic"; dryRunLlm?: boolean; authorizedExternalSideEffects?: boolean; subflowId?: string; idempotencyKey?: string; runIntent?: unknown; permittedConsequences?: unknown; useReusableContext?: true; resultCheckCallerPays?: unknown; interpretationCostUsd?: unknown } : {};
       if ((raw as Record<string, unknown>).useReusableContext !== undefined && raw.useReusableContext !== true) return { ok: false, error: "Runtime reusable-context flag is invalid." };
-      const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, resultCheckCallerPays: requestedCallerPays, ...payload } = raw;
+      const { runIntent: requestedIntent, permittedConsequences: requestedConsequences, resultCheckCallerPays: requestedCallerPays, interpretationCostUsd: readingCost, ...payload } = raw;
+      // What the chat's reading of the message that started the run cost (the chat's "Run it"): the Flow's spend in a Lab-scoped run (t438).
+      if (readingCost !== undefined && (typeof readingCost !== "number" || !Number.isFinite(readingCost) || readingCost < 0)) return { ok: false, error: "The run's interpretation cost is invalid." };
       // A caller may ask to pay for fewer of its run's result checks, never more: the chat's "Run it" for a
       // paired client calls as the person's unlocked session, so it says itself what the paired rule below says.
       if (requestedCallerPays !== undefined && requestedCallerPays !== "repair_checks") return { ok: false, error: "A run can only ask to pay for the result checks that judge a repair." };
@@ -91,7 +94,16 @@ export function registerRuntimeExecutionEndpoints(dependencies: AutomationStudio
       // it asked for the paired rule itself (the chat's "Run it").
       const resultCheckCallerPays = llmExecution && (pairedCaller || requestedCallerPays === "repair_checks") ? { resultCheckCallerPays: "repair_checks" as const } : {};
       // A saved trace keeps each value once; a client reads every attempt's whole inputs (t377).
-      const runtimeSession = automationStudioWithWholeAttemptInputs(await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays }));
+      // A run refused before its first step answers with its closed code (`./run-refusal/response.ts`).
+      let ran: Awaited<ReturnType<typeof service.runRuntimeSession>>;
+      try {
+        ran = await service.runRuntimeSession({ ...payload, ...(llmExecution ? { llmExecution } : {}), ...(permittedConsequences ? { permittedConsequences } : {}), ...resultCheckCallerPays, ...(readingCost === undefined ? {} : { interpretationCostUsd: readingCost }) });
+      } catch (error) {
+        const refusal = automationStudioRunRefusalResponse(error);
+        if (refusal) return refusal;
+        throw error;
+      }
+      const runtimeSession = automationStudioWithWholeAttemptInputs(ran);
       const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
       const runDetailLink = { endpoint: AUTOMATION_STUDIO_ENDPOINTS.getFlowRunDetail, runId: runtimeSession.runId };
       let runDetail: AutomationStudioFlowRunDetail | null = null;

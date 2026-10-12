@@ -1,6 +1,7 @@
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../model/index.ts";
 import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
+import { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID } from "../../nodes/control-flow/index.ts";
 import { AUTOMATION_STUDIO_MAX_RETRY_WAIT_MS, automationStudioAttemptFaultIsAbsorbed } from "./defensive/index.ts";
 
 /**
@@ -45,6 +46,13 @@ export const AUTOMATION_STUDIO_DEFAULT_NODE_RETRY_POLICY: AutomationStudioNodeRe
   backoffMs: Object.freeze([250, 1_000, 2_000])
 });
 
+/**
+ * A container's policy: one attempt. A Call Subflow node runs a whole Subflow
+ * whose own steps each keep the floor above; running the container again would
+ * repeat every act those steps already did (state-aware recovery plan, C1).
+ */
+const CONTAINER_RETRY_POLICY: AutomationStudioNodeRetryPolicy = Object.freeze({ maxAttempts: 1, backoffMs: Object.freeze([]) });
+
 /** The node that declares a retry policy for the branch its `success` port feeds. */
 const RETRY_NODE_DEFINITION_ID = "builtin.timing.retry";
 
@@ -52,7 +60,8 @@ const RETRY_NODE_DEFINITION_ID = "builtin.timing.retry";
 const MAX_DECLARED_ATTEMPTS = 25;
 
 /**
- * The policy this node runs under: its own declaration first, then a Retry node
+ * The policy this node runs under -- a Call Subflow container excepted, which
+ * runs once while its child steps keep their own -- its own declaration first, then a Retry node
  * guarding its branch, then the Flow's, then the run's, then Core's default;
  * never fewer attempts than that default, and capped by the run's
  * `maxRetriesPerAction` allowance only above it.
@@ -68,6 +77,7 @@ export function automationStudioNodeRetryPolicy(
   node: AutomationStudioFlowNode,
   options: AutomationStudioGraphExecutionOptions
 ): AutomationStudioNodeRetryPolicy {
+  if (node.definitionId === AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID) return CONTAINER_RETRY_POLICY;
   const asked = declaredRetryPolicy(node.parameterValues?.retry)
     ?? declaredRetryPolicy(node.metadata?.retry)
     ?? branchRetryPolicy(flow, node)

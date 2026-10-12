@@ -20,6 +20,8 @@ export * from "./binding-forms.ts";
 export * from "./binding-render.ts";
 export * from "./control-words.ts";
 export * from "./dry-run.ts";
+// An untested change to an optional saved step goes back to its saved version before the Flow is saved (t439).
+export { automationStudioFlowDraftKeepSavedUntestedEdits, type AutomationStudioFlowDraftKeptSaved } from "./carried-step/index.ts";
 export * from "./draft.ts";
 export * from "./entry.ts";
 export * from "./excused.ts";

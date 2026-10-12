@@ -17,15 +17,31 @@
 // and nothing runs, so the model is not asked for a field nothing reads.
 
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
+import { AUTOMATION_STUDIO_FACT_CONDITION_OPS } from "../../executor/lifecycle/index.ts";
+import { AUTOMATION_STUDIO_LIFECYCLE_EVENTS } from "../../../nodes/control-flow/index.ts";
 import {
   AUTOMATION_STUDIO_NO_REPAIR_REASONS,
+  AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_BOUNDS as BOUNDS,
   AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH,
   AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN,
-  AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES
+  AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES,
+  type AutomationStudioRuntimePatchHandlerEvent
 } from "./structured-response.ts";
 
 type JsonSchema = Record<string, unknown>;
+
+/**
+ * The patch kinds only an in-run repair is offered: the run is held at the
+ * failing step, so the fix can be a handler for what it met or one unit made
+ * new. A request that does not declare an in-run repair is never shown them.
+ */
+export const AUTOMATION_STUDIO_IN_RUN_REPAIR_PATCH_KINDS = Object.freeze(["add_handler", "replace_unit"] as const);
+
+/** The lifecycle points a repair may register a handler for, in the order they occur: every one but `start`. */
+export const AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS: readonly AutomationStudioRuntimePatchHandlerEvent[] = Object.freeze(
+  AUTOMATION_STUDIO_LIFECYCLE_EVENTS.filter((event): event is AutomationStudioRuntimePatchHandlerEvent => event !== "start")
+);
 
 const JSON_METADATA_SCHEMA = { type: "object" } as const;
 
@@ -53,16 +69,18 @@ function boundedStringSchema(): JsonSchema {
  * The boundary's job here is the bound: `provider-result.ts` holds each step to
  * a serialized ceiling so a page cannot arrive inside one.
  */
+const STEP_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["definitionId"],
+  properties: { definitionId: boundedStringSchema(), label: boundedStringSchema(), parameters: { type: "object" } }
+} as const;
+
 const INSERTED_STEPS_SCHEMA = {
   type: "array",
   minItems: 1,
   maxItems: AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS,
-  items: {
-    type: "object",
-    additionalProperties: false,
-    required: ["definitionId"],
-    properties: { definitionId: boundedStringSchema(), label: boundedStringSchema(), parameters: { type: "object" } }
-  }
+  items: STEP_SCHEMA
 } as const;
 
 function runtimePatchVariant(kind: string, requiredFields: string[], properties: JsonSchema): JsonSchema {
@@ -125,6 +143,151 @@ const RUNTIME_PATCH_VARIANTS: Readonly<Record<string, JsonSchema>> = Object.free
   temporary_reroute: runtimePatchVariant("temporary_reroute", ["fromNodeId", "toNodeId"], { fromNodeId: boundedStringSchema(), toNodeId: boundedStringSchema() })
 });
 
+// The shapes of `add_handler` and `replace_unit`. Their descriptions are the
+// model's guidance, so they speak of steps, facts and parts in general terms
+// and never describe a kind of site, a task or an answer: the repair is
+// measured on whether it generalises.
+
+const ID_SCHEMA = { type: "string", minLength: 1, maxLength: BOUNDS.maxIdLength } as const;
+const NAME_SCHEMA = { type: "string", minLength: 1, maxLength: BOUNDS.maxValueLength } as const;
+
+/** A condition's target names evidence handles only, as a target override's does. */
+const CONDITION_TARGET_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["handles"],
+  properties: {
+    handles: {
+      type: "object",
+      minProperties: 1,
+      maxProperties: AUTOMATION_STUDIO_RUNTIME_TARGET_MAX_HANDLES,
+      propertyNames: { pattern: AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN, maxLength: AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH },
+      additionalProperties: { type: "string", minLength: 1, maxLength: AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_MAX_LENGTH, pattern: AUTOMATION_STUDIO_RUNTIME_TARGET_HANDLE_PATTERN }
+    }
+  }
+} as const;
+
+const FACT_CONDITION_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["fact", "op"],
+  properties: {
+    fact: { type: "string", minLength: 1, maxLength: BOUNDS.maxFactLength, description: "What the host observes, in the host's own terms, as the evidence shows it." },
+    op: { enum: [...AUTOMATION_STUDIO_FACT_CONDITION_OPS] },
+    value: {
+      oneOf: [
+        { type: "string", maxLength: BOUNDS.maxValueLength },
+        { type: "number" },
+        { type: "boolean" },
+        { type: "null" },
+        { type: "object", additionalProperties: false, required: ["input"], properties: { input: NAME_SCHEMA } },
+        { type: "object", additionalProperties: false, required: ["value"], properties: { value: NAME_SCHEMA } }
+      ]
+    },
+    target: CONDITION_TARGET_SCHEMA
+  }
+} as const;
+
+function conditionsSchema(description: string, minItems: number): JsonSchema {
+  return { type: "array", minItems, maxItems: BOUNDS.maxConditions, items: FACT_CONDITION_SCHEMA, description };
+}
+
+function stepsSchema(stepSchema: JsonSchema, description: string): JsonSchema {
+  return { type: "array", minItems: 1, maxItems: AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS, items: stepSchema, description };
+}
+
+const SCOPE_SCHEMA = {
+  description: "Where the handler applies: the steps it names, or every step of this part. Never the whole automation.",
+  oneOf: [
+    { type: "object", additionalProperties: false, required: ["kind", "nodeIds"], properties: { kind: { const: "nodes" }, nodeIds: { type: "array", minItems: 1, maxItems: BOUNDS.maxScopeNodeIds, items: ID_SCHEMA } } },
+    { type: "object", additionalProperties: false, required: ["kind"], properties: { kind: { const: "subflow" }, inherit: { type: "boolean" } } }
+  ]
+} as const;
+
+const THEN_SCHEMA = {
+  description: "How the run continues after the handler's steps: resume the step (not after a failure), go to a checkpoint, use these outputs in place of a failed step's, or give up and leave the failure as it was.",
+  oneOf: [
+    { type: "object", additionalProperties: false, required: ["kind"], properties: { kind: { const: "resume" } } },
+    { type: "object", additionalProperties: false, required: ["kind", "checkpointId"], properties: { kind: { const: "route" }, checkpointId: ID_SCHEMA } },
+    { type: "object", additionalProperties: false, required: ["kind", "outputs"], properties: { kind: { const: "resolve" }, outputs: { type: "object" } } },
+    { type: "object", additionalProperties: false, required: ["kind"], properties: { kind: { const: "give_up" } } }
+  ]
+} as const;
+
+function handlerProperties(stepSchema: JsonSchema): JsonSchema {
+  return {
+    event: { enum: [...AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS], description: "When the handler runs: before each attempt, before a permitted retry, when the step fails, or after it succeeds." },
+    scope: SCOPE_SCHEMA,
+    when: conditionsSchema("The facts that identify the situation this handler is for; all must hold. Required for before and retry.", 0),
+    completionCheck: conditionsSchema("The facts that prove the handler's steps worked. Required for before and retry.", 1),
+    steps: stepsSchema(stepSchema, "The steps the handler runs, in order."),
+    then: THEN_SCHEMA
+  };
+}
+
+const HANDLER_REQUIRED = ["event", "scope", "when", "steps", "then"];
+
+/**
+ * `add_handler`: a scoped handler for a situation the run met, so the next
+ * time it appears the run deals with it itself.
+ */
+function addHandlerPatchSchema(input: { stepSchema: JsonSchema; consequencesSchema: JsonSchema; reasonSchema: JsonSchema }): JsonSchema {
+  return {
+    type: "object",
+    additionalProperties: false,
+    description: "Add a handler: steps that run when a situation the run met appears at this point, then say how the run continues.",
+    required: ["kind", "reason", "consequences", ...HANDLER_REQUIRED],
+    properties: {
+      kind: { const: "add_handler" },
+      reason: input.reasonSchema,
+      consequences: input.consequencesSchema,
+      metadata: { type: "object" },
+      ...handlerProperties(input.stepSchema)
+    }
+  };
+}
+
+/**
+ * `replace_unit`: the one unit that failed, replaced whole. A node or a part
+ * by steps, a handler by a handler.
+ */
+function replaceUnitPatchSchema(input: { stepSchema: JsonSchema; consequencesSchema: JsonSchema; reasonSchema: JsonSchema }): JsonSchema {
+  return {
+    type: "object",
+    additionalProperties: false,
+    description: "Replace exactly one unit: a step by steps, a handler by a handler, or a part by steps. Nothing outside that unit changes.",
+    required: ["kind", "reason", "consequences", "unit"],
+    properties: {
+      kind: { const: "replace_unit" },
+      reason: input.reasonSchema,
+      consequences: input.consequencesSchema,
+      metadata: { type: "object" },
+      unit: {
+        oneOf: [
+          { type: "object", additionalProperties: false, required: ["kind", "nodeId"], properties: { kind: { const: "node" }, nodeId: ID_SCHEMA } },
+          { type: "object", additionalProperties: false, required: ["kind", "nodeId"], properties: { kind: { const: "handler" }, nodeId: ID_SCHEMA } },
+          { type: "object", additionalProperties: false, required: ["kind", "subflowId"], properties: { kind: { const: "part" }, subflowId: ID_SCHEMA } }
+        ]
+      },
+      steps: stepsSchema(input.stepSchema, "The steps that replace a step or a part, in order."),
+      handler: { type: "object", additionalProperties: false, required: HANDLER_REQUIRED, properties: handlerProperties(input.stepSchema), description: "The handler that replaces a handler." },
+      failedEdgeTo: { ...ID_SCHEMA, description: "For a replaced step only: an existing step its failure goes to, so the same failure next time is a planned path." }
+    }
+  };
+}
+
+/**
+ * The kinds only an in-run repair is shown (state-aware recovery plan, C6 step
+ * 8): a handler for what the run met, or one unit made new. They are never in
+ * the default list, so a request that declares no allowed kinds sees exactly
+ * the five it always did; only a request whose allowed kinds name them, which
+ * the recovery plan does for an in-run repair, is offered them.
+ */
+const IN_RUN_REPAIR_PATCH_VARIANTS: Readonly<Record<string, JsonSchema>> = Object.freeze({
+  add_handler: addHandlerPatchSchema({ stepSchema: STEP_SCHEMA, consequencesSchema: CONSEQUENCES_SCHEMA, reasonSchema: boundedStringSchema() }),
+  replace_unit: replaceUnitPatchSchema({ stepSchema: STEP_SCHEMA, consequencesSchema: CONSEQUENCES_SCHEMA, reasonSchema: boundedStringSchema() })
+});
+
 /**
  * The patch kinds this schema offers, narrowed to the recovery plan's allowed
  * kinds when the request declares them.
@@ -138,7 +301,8 @@ const RUNTIME_PATCH_VARIANTS: Readonly<Record<string, JsonSchema>> = Object.free
  */
 function runtimePatchVariantsFor(allowedKinds: readonly string[] | undefined): JsonSchema[] {
   const kinds = allowedKinds === undefined ? Object.keys(RUNTIME_PATCH_VARIANTS) : Object.keys(RUNTIME_PATCH_VARIANTS).filter((kind) => allowedKinds.includes(kind));
-  return kinds.map((kind) => RUNTIME_PATCH_VARIANTS[kind]!);
+  const inRun = allowedKinds === undefined ? [] : Object.keys(IN_RUN_REPAIR_PATCH_VARIANTS).filter((kind) => allowedKinds.includes(kind));
+  return [...kinds.map((kind) => RUNTIME_PATCH_VARIANTS[kind]!), ...inRun.map((kind) => IN_RUN_REPAIR_PATCH_VARIANTS[kind]!)];
 }
 
 /** The declined answer, with its reason from Core's closed list. */

@@ -129,7 +129,11 @@ describe("activityActionOf: outcome and why", () => {
     ["started", tool("Clicking on the page", undefined, "started"), "working", null],
     ["succeeded", tool("Clicking on the page", "Result: web.action.succeeded"), "done", null],
     ["failed with no code", tool("Clicking on the page", undefined, "failed"), "failed", null],
-    ["a not_found code", tool("Clicking “Buy”", "Result: web.target.not_found · Node: web.output.dom-click"), "failed", "it wasn't on the page"],
+    ["a not_found code", tool("Clicking “Buy”", "Result: web.target.not_found · Node: web.output.dom-click"), "failed", "FluxIQ couldn't find it where it was saved"],
+    // R4a moment 08: a clear the site undid is said of the box, never as a refusal.
+    ["a clear the site undid", tool("Clearing “Quantity”", "Result: web.action.rejected.output_not_observed · Node: web.output.dom-clear"), "failed", "it ran, but the site set the box back"],
+    // R4a attempt 2 (`run-mv2pgqkj-f3552c70`, trial 3): the code the clear step really returned read "done".
+    ["a clear whose effect never showed", tool("Clearing “Quantity”", "Result: web.validation.output_not_observed · Node: web.output.dom-clear"), "failed", "it ran, but the site set the box back"],
     ["a timeout code", tool("Waiting for the page", "Result: web.wait.timeout · Node: web.output.wait"), "failed", "the page took too long"],
     ["a replay that changed", tool("Clicking “Next”", "Result: core.replay.changed", "succeeded", RUN_NODE, "verifying"), "failed", "it did nothing this time, where it did something before"],
     ["a replay the site remembered (t193)", tool("Clicking “Set as my store”", "Result: core.replay.remembered · Node: web.output.dom-click", "succeeded", RUN_NODE, "verifying"), "done", null],
@@ -286,10 +290,10 @@ describe("activityActionOf: what each card says (t193 chat wording)", () => {
   // "Didn't work: it wasn't on the page". Nothing was looked up.
   it("lets a refusal's own reason say why it failed, before its code's words", () => {
     const refused = tool("Clicking “Add to cart”", "Result: web.action.rejected.target_unobserved · Reason: target_not_a_handle · Node: web.output.dom-click");
-    expect(outputsOf(activityActionOf(refused))).toEqual(["click", "Add to cart", "failed", "FluxIQ didn't send it, as the step didn't say which control on the page to use"]);
+    expect(outputsOf(activityActionOf(refused))).toEqual(["click", "Add to cart", "failed", "FluxIQ didn't send it, as the step didn't name its control the way FluxIQ needs"]);
     // A reason with no words of its own leaves the code to say it.
     const unknown = tool("Clicking “Add to cart”", "Result: web.target.not_found · Reason: vendor_specific_thing · Node: web.output.dom-click");
-    expect(activityActionOf(unknown)?.why).toBe("it wasn't on the page");
+    expect(activityActionOf(unknown)?.why).toBe("FluxIQ couldn't find it where it was saved");
   });
 
   // 00019, 00020: the navigate card read "Open page" with no page named.
@@ -471,7 +475,7 @@ describe("activityActionOf: a list read Core never sent (R2-U-6)", () => {
   const read = (reason: string) => activityActionOf(tool("Reading the list of “name, price and 4 more”", `Result: web.action.rejected.target_unobserved · Reason: ${reason} · Node: web.output.dom-extract_list`));
 
   it("says it was not read, and why, never that the list wasn't on the page", () => {
-    expect(read("malformed_handle")).toMatchObject({ kind: "read", target: "name, price and 4 more", outcome: "failed", why: "FluxIQ didn't read it, as the step didn't say which list on the page to read" });
+    expect(read("malformed_handle")).toMatchObject({ kind: "read", target: "name, price and 4 more", outcome: "failed", why: "FluxIQ didn't read it, as the step didn't name its list the way FluxIQ needs" });
     expect(read("answered_the_same_again")?.why).toBe("FluxIQ didn't read it, for the same reason as the time before");
     expect(activityActionOf(tool("Reading the list", "Result: web.action.rejected.target_unobserved · Node: web.output.dom-extract_list"))?.why).not.toMatch(/wasn't on the page/u);
   });
@@ -517,5 +521,58 @@ describe("activityActionOf: a candidate build's own calls (t373)", () => {
     for (const action of [test("Result: candidate.trial_yes · Said: the test passed", "succeeded"), test("Result: candidate.trial_no · Said: it didn't", "failed")]) {
       expect(JSON.stringify(action)).not.toMatch(DOTTED);
     }
+  });
+});
+
+// t378: the words a card says are the act a person would name, never a node's
+// id or a command's name.
+describe("activityActionOf: a card names the act, the row and a Flow sent again (t378)", () => {
+  // Lane A U1: an option chosen and a box ticked read "Click".
+  it("names an option chosen and a box ticked by their act, keeping the click's kind and icon", () => {
+    const chose = activityActionOf(tool("Choosing an option in “Size”", "Result: web.select.succeeded · Node: web.output.dom-select"));
+    expect([chose?.kind, chose?.name, chose?.target]).toEqual(["click", "Choose", "Size"]);
+    const ticked = activityActionOf(tool("Ticking “Gift wrap”", "Result: web.check.succeeded · Node: web.output.dom-check"));
+    expect([ticked?.kind, ticked?.name, ticked?.target]).toEqual(["click", "Tick", "Gift wrap"]);
+    // R4a moment 04: a colour swatch a "check" node set read "Tick · Space Grey".
+    const swatch = activityActionOf(tool("Choosing “Space Grey”", "Result: web.check.succeeded · Node: web.output.dom-check"));
+    expect([swatch?.kind, swatch?.name, swatch?.target]).toEqual(["click", "Choose", "Space Grey"]);
+    const clicked = activityActionOf(tool("Clicking “Add to cart”", "Result: web.click.succeeded · Node: web.output.dom-click"));
+    expect([clicked?.kind, clicked?.target]).toEqual(["click", "Add to cart"]);
+    expect(clicked).not.toHaveProperty("name");
+  });
+
+  // Lane C (run-mv0fuotv-805294d7): "Action · Dom next page".
+  it("reads a list's next page as Next page, never the node's id words", () => {
+    const next = activityActionOf(tool("Running the “Next page” step", "Result: web.next_page.succeeded · Node: web.output.dom-next_page"));
+    expect([next?.kind, next?.name, next?.target, next?.outcome]).toEqual(["navigate", "Next page", null, "done"]);
+    const named = activityActionOf(tool("Running the “Next page” step", "Result: web.next_page.succeeded · Node: web.output.dom-next_page"));
+    expect(JSON.stringify(named)).not.toMatch(/Dom/u);
+  });
+
+  // Lane D (run-mv0fuual-f9e6f089, finding 2): every pass read "Click · Confirm".
+  it("names the row a step inside a repeat acted on, from the step's own row", () => {
+    const pass = (row: string | undefined): ActivityActionEvent => ({
+      phase: "running",
+      step: { nodeId: "n8", label: "Confirm", ...(row === undefined ? {} : { row }) },
+      detail: { kind: "step", title: "Step 8 of 9: Confirm", status: "started", ref: "n8", text: "Node: web.output.dom-click" }
+    });
+    expect(activityActionOf(pass("Jonas Weber"))?.target).toBe("Confirm · Jonas Weber");
+    expect(activityActionOf(pass(undefined))?.target).toBe("Confirm");
+    expect(activityActionOf(pass("  "))?.target).toBe("Confirm");
+    // A test's title that names the same row says it once.
+    const tested = activityActionOf({ ...tool("Clicking “Confirm” for “Jonas Weber”", "Result: web.click.succeeded", "succeeded", "web.output.dom-click", "verifying"), step: { row: "Jonas Weber" } });
+    expect(tested?.target).toBe("Confirm · Jonas Weber");
+  });
+
+  // Lane C defect 4: "Change the Flow · run the step again" for a whole Flow resent unchanged.
+  it("reads a candidate's Flow refused as sent again unchanged, never as a step run again", () => {
+    const resent = activityActionOf(tool("Saving the Flow's steps", "Result: llm_evidence_loop.repeat_refused · Reason: failed", "failed", "core.submit_candidate", "building"));
+    expect(resent).toMatchObject({ kind: "draft", name: "Send the Flow again", target: null, outcome: "failed", refused: { all: true } });
+    expect(resent?.why).toBe("the same Flow was already sent exactly like this and was not accepted");
+    expect(JSON.stringify(resent)).not.toMatch(/run the step again|tried exactly this way/u);
+    // An edit to the draft asking a step to run again is still named so.
+    const rerun = activityActionOf(tool("Changing the Flow", "Result: llm_evidence_loop.repeat_refused · Reason: failed", "failed", "core.flow_draft", "building"));
+    expect([rerun?.target, rerun?.why]).toEqual(["run the step again", "it was already tried exactly this way and did not work"]);
+    expect(rerun).not.toHaveProperty("name");
   });
 });

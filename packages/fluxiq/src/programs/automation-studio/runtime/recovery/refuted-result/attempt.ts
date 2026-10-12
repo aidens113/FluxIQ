@@ -104,7 +104,8 @@ export function automationStudioRefutedResultAttempt(input: AutomationStudioRefu
   // the verdict reaches here through the same contract a domain's record does.
   const failure = parseAutomationStudioFailureRecord(outcome.failure);
   if (!failure || failure.stage !== "verification") return undefined;
-  const succeeded = [...(input.detail.actionAttempts ?? [])].reverse().filter((attempt) => attempt.status === "succeeded");
+  // The root frame's steps: a called part's node (`parentAttemptId`) is not one of the Flow's to repair.
+  const succeeded = [...(input.detail.actionAttempts ?? [])].reverse().filter((attempt) => attempt.status === "succeeded" && attempt.parentAttemptId === undefined);
   if (!succeeded.length) return undefined;
   const source = resultProducingAttempt(succeeded);
   const nodeId = source?.nodeId ?? AUTOMATION_STUDIO_REFUTED_RESULT_NODE_ID;

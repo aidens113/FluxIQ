@@ -1,11 +1,14 @@
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES, isAutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import { parseAutomationStudioFlowBootstrapPlan, type AutomationStudioFlowBootstrapSizeLimits } from "../../flow-bootstrap/index.ts";
+import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmDiagnostic } from "./diagnostic.ts";
 import { isBoundedString, isFiniteNumber, isJsonObject, isJsonValue, isRecord, validRequestIdentity } from "./json-bounds.ts";
 import { validateAutomationStudioLlmOutput } from "./output-validation.ts";
 import type { AutomationStudioLlmUsageSummary } from "./provider.ts";
+import { AUTOMATION_STUDIO_FACT_CONDITION_OPS } from "../../executor/lifecycle/index.ts";
 import {
   AUTOMATION_STUDIO_LLM_DIAGNOSIS_TEXT_MAX_LENGTH,
+  AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_BOUNDS as BOUNDS,
   AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS,
   AUTOMATION_STUDIO_RUNTIME_PATCH_STEP_MAX_SERIALIZED_LENGTH,
   isAutomationStudioModelAuthoredTargetOverrideTarget,
@@ -14,6 +17,10 @@ import {
   type AutomationStudioLlmStructuredResponse
 } from "./structured-response.ts";
 import type { AutomationStudioLlmHarnessInput, AutomationStudioLlmTaskRequest } from "./task-request.ts";
+import { AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS } from "./runtime-patch-schema.ts";
+
+/** Every runtime patch kind a model may answer with; the in-run repair's two are offered only when a request declares them. */
+const RUNTIME_PATCH_KINDS: readonly string[] = ["temporary_action_sequence", "temporary_wait_retry", "temporary_target_override", "temporary_recovery_subflow_call", "temporary_reroute", "add_handler", "replace_unit"];
 
 export function parseAutomationStudioLlmProviderResult(
   value: unknown,
@@ -54,6 +61,8 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     return undefined;
   }
   const commonFields = ["kind", "summary", "metadata"];
+  // An evidence decision as read: the one sent, or the tool call it can only be (`inferredEvidenceToolCall`).
+  let decision: unknown = value.decision;
   rejectUnexpectedFields(value, kind === "flow_bootstrap"
     ? [...commonFields, "plan"]
     : kind === "evidence_tool_decision"
@@ -71,7 +80,8 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
     const parsed = parseAutomationStudioFlowBootstrapPlan(value.plan, size);
     diagnostics.push(...parsed.issues.map((issue) => ({ ...issue, severity: issue.severity, path: issue.path ? `response.${issue.path}` : "response.plan" })));
   } else if (kind === "evidence_tool_decision") {
-    validateUnknownEvidenceToolDecision(value.decision, diagnostics);
+    decision = inferredEvidenceToolCall(value.decision, diagnostics);
+    validateUnknownEvidenceToolDecision(decision, diagnostics);
   } else if (kind === "diagnosis") {
     if (value.confidence !== undefined && (!isFiniteNumber(value.confidence) || value.confidence < 0 || value.confidence > 1)) diagnostics.push({ severity: "error", code: "llm_output.invalid_confidence", message: "Diagnosis confidence must be between 0 and 1.", path: "response.confidence" });
     validateUnknownDiagnosisFields(value.diagnosis, diagnostics);
@@ -103,6 +113,7 @@ function parseAutomationStudioLlmStructuredResponse(value: unknown, diagnostics:
   }
   if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) return undefined;
   if (kind === "diagnosis" && isRecord(value.diagnosis)) return { ...value, diagnosis: readDiagnosisText(value.diagnosis) } as unknown as AutomationStudioLlmStructuredResponse;
+  if (kind === "evidence_tool_decision" && decision !== value.decision) return { ...value, decision } as unknown as AutomationStudioLlmStructuredResponse;
   return value as unknown as AutomationStudioLlmStructuredResponse;
 }
 
@@ -200,6 +211,58 @@ function validateUnknownDiagnosisFields(value: unknown, diagnostics: AutomationS
   }
 }
 
+/** The kinds an evidence decision may name; the feedback for a refused kind lists the same three. */
+const EVIDENCE_DECISION_KINDS: readonly string[] = ["tool_call", "complete", "amend_draft"];
+
+/**
+ * A decision that can only be a tool call, read as one when its `kind` says
+ * nothing Core knows.
+ *
+ * **Every refused decision of 81 logged runs was this shape** (R4,
+ * 2,728 decisions, 9 refused in 7 runs): `kind` held `"callId"` -- the key's
+ * name written as the value -- and 6 of the 9 left the id out, while each named
+ * an offered tool with a valid input object. Each refusal cost a paid call and
+ * the next decision re-sent the same call, which ran.
+ *
+ * A `toolId` string and an `input` object, with no `result` and no
+ * `amendments`, can be nothing but a tool call: `complete` needs `result` and
+ * `amend_draft` needs `amendments`. So the kind is filled in, and where the
+ * `callId` is missing or not a valid id one is derived from the tool and its
+ * input -- an identical call gets the same id, which the loop already makes
+ * unique (`../evidence-loop/call-id.ts`). Nothing else is relaxed: the tool
+ * call's keys, the tool being offered and its input schema are checked exactly
+ * as for a decision that named its kind. A known kind is never relabelled, so a
+ * `complete` carrying a `toolId` is still refused.
+ *
+ * The repair is a warning, `llm_output.decision_kind_inferred`, so the step
+ * log shows that a reply was read rather than taken as written.
+ */
+function inferredEvidenceToolCall(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): unknown {
+  if (!isRecord(value)) return value;
+  if (typeof value.kind === "string" && EVIDENCE_DECISION_KINDS.includes(value.kind)) return value;
+  if (typeof value.toolId !== "string" || !isJsonObject(value.input) || value.result !== undefined || value.amendments !== undefined) return value;
+  const callIdFilled = !validRequestIdentity(value.callId as string);
+  const callId = callIdFilled ? derivedCallId(value.toolId, value.input) : value.callId;
+  diagnostics.push({
+    severity: "warning",
+    code: "llm_output.decision_kind_inferred",
+    message: `The decision named no known kind but carried a toolId and an input object, so it was read as tool_call${callIdFilled ? ", with a callId derived from the tool and its input" : ""}.`,
+    path: "response.decision.kind",
+    metadata: { kindWritten: value.kind === undefined ? "absent" : typeof value.kind === "string" ? "unknown" : "not_a_string", callIdFilled }
+  });
+  return { ...value, kind: "tool_call", callId };
+}
+
+/** `call.` and the FNV-1a hash of the tool and its input: the same call, the same id. */
+function derivedCallId(toolId: string, input: JsonObject): string {
+  let hash = 0x811c9dc5;
+  for (const char of `${toolId}\u0000${JSON.stringify(input)}`) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return `call.${hash.toString(16).padStart(8, "0")}`;
+}
+
 function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: AutomationStudioLlmDiagnostic[]): void {
   const path = "response.decision";
   if (!isRecord(value)) {
@@ -229,7 +292,7 @@ function validateUnknownEvidenceToolDecision(value: unknown, diagnostics: Automa
     }
     return;
   }
-  diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: "Evidence decision kind is unsupported.", path: `${path}.kind` });
+  diagnostics.push({ severity: "error", code: "llm_output.invalid_evidence_decision", message: `Evidence decision kind is unsupported: decision.kind must be one of ${EVIDENCE_DECISION_KINDS.join(", ")}.`, path: `${path}.kind` });
 }
 
 function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics: AutomationStudioLlmDiagnostic[]): void {
@@ -245,9 +308,10 @@ function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics:
       : kind === "temporary_target_override" ? [...common, "targetNodeId", "target", "consequences"]
         : kind === "temporary_recovery_subflow_call" ? [...common, "subflowId"]
           : kind === "temporary_reroute" ? [...common, "fromNodeId", "toNodeId"]
-            : common;
+            : kind === "add_handler" || kind === "replace_unit" ? [...common, ...UNIT_REPAIR_PATCH_FIELDS[kind]]
+              : common;
   rejectUnexpectedFields(value, fields, path, diagnostics);
-  if (!["temporary_action_sequence", "temporary_wait_retry", "temporary_target_override", "temporary_recovery_subflow_call", "temporary_reroute"].includes(String(kind))) diagnostics.push({ severity: "error", code: "llm_output.unsupported_runtime_patch", message: "Runtime patch kind is unsupported.", path: `${path}.kind` });
+  if (!RUNTIME_PATCH_KINDS.includes(String(kind))) diagnostics.push({ severity: "error", code: "llm_output.unsupported_runtime_patch", message: "Runtime patch kind is unsupported.", path: `${path}.kind` });
   if (!isBoundedString(value.reason)) diagnostics.push({ severity: "error", code: "llm_output.invalid_patch_reason", message: "Runtime patch reason must be a bounded string.", path: `${path}.reason` });
   if (value.metadata !== undefined && !isJsonObject(value.metadata)) diagnostics.push({ severity: "error", code: "llm_output.invalid_metadata", message: "Runtime patch metadata must be a JSON object.", path: `${path}.metadata` });
   // What an acting patch says it would lastingly do: Core's classes only, since
@@ -267,6 +331,11 @@ function validateUnknownRuntimePatch(value: unknown, index: number, diagnostics:
     if (!isBoundedString(value.targetNodeId) || !isAutomationStudioModelAuthoredTargetOverrideTarget(value.target)) diagnostics.push({ severity: "error", code: "llm_output.invalid_target_override", message: "Temporary target override requires a target node and a target naming only opaque evidence handles.", path });
   } else if (kind === "temporary_recovery_subflow_call" && !isBoundedString(value.subflowId)) diagnostics.push({ severity: "error", code: "llm_output.invalid_recovery_subflow", message: "Recovery Subflow call requires a bounded subflowId.", path });
   else if (kind === "temporary_reroute" && (!isBoundedString(value.fromNodeId) || !isBoundedString(value.toNodeId))) diagnostics.push({ severity: "error", code: "llm_output.invalid_reroute", message: "Temporary reroute requires bounded from/to node IDs.", path });
+  // A handler and a unit replacement are checked whole: every field bounded,
+  // every fact condition well formed, and a target naming handles only.
+  else if (kind === "add_handler" || kind === "replace_unit") {
+    for (const message of unitRepairPatchProblems(value)) diagnostics.push({ severity: "error", code: `llm_output.invalid_${kind}`, message, path });
+  }
 }
 
 function validateUnknownChangePatch(value: unknown, index: number, diagnostics: AutomationStudioLlmDiagnostic[]): void {
@@ -378,7 +447,8 @@ function isOptionalNonNegativeInteger(value: unknown): boolean {
 }
 
 /**
- * One inserted step, checked at the boundary: a definition id, an optional
+ * One step a repair runs -- inserted before a node, a handler's body, or a
+ * unit's replacement -- checked at the boundary: a definition id, an optional
  * label, and parameters that are JSON and small.
  *
  * The parameters are not read here and must not be. They are the node
@@ -396,6 +466,134 @@ function isRuntimePatchStep(value: unknown): boolean {
   if (value.label !== undefined && !isBoundedString(value.label)) return false;
   if (value.parameters !== undefined && !isJsonObject(value.parameters)) return false;
   return JSON.stringify(value).length <= AUTOMATION_STUDIO_RUNTIME_PATCH_STEP_MAX_SERIALIZED_LENGTH;
+}
+
+// The boundary check of a model's `add_handler` and `replace_unit` patch: the
+// shape, each field bounded, and nothing the shapes do not name. What depends
+// on the event or the unit -- a completion check a `before` handler must
+// carry, a disposition its event may not take -- is the output validation's
+// (`./output-validation.ts`), which reads the typed patch.
+
+/** The fields a handler is written with, in `add_handler` itself and in a `replace_unit`'s `handler`. */
+const HANDLER_FIELDS = ["event", "scope", "when", "completionCheck", "steps", "then"] as const;
+
+/** The fields each unit-repair kind may carry, beside the ones every patch carries. */
+const UNIT_REPAIR_PATCH_FIELDS: Readonly<Record<"add_handler" | "replace_unit", readonly string[]>> = Object.freeze({
+  add_handler: [...HANDLER_FIELDS, "consequences"],
+  replace_unit: ["unit", "steps", "handler", "failedEdgeTo", "consequences"]
+});
+
+const EVENTS: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS);
+/** The words a handler's `then` may use. */
+const HANDLER_THEN_KINDS = ["resume", "route", "resolve", "give_up"] as const;
+const THEN_KINDS: ReadonlySet<string> = new Set(HANDLER_THEN_KINDS);
+const OPS: ReadonlySet<string> = new Set(AUTOMATION_STUDIO_FACT_CONDITION_OPS);
+
+/**
+ * What is wrong with a raw unit-repair patch, in plain sentences; empty when
+ * nothing is. `value.kind` is `add_handler` or `replace_unit`.
+ */
+function unitRepairPatchProblems(value: Record<string, unknown>): string[] {
+  if (value.kind === "add_handler") return handlerProblems(value, "The handler");
+  if (value.kind !== "replace_unit") return [];
+  const problems: string[] = [];
+  const unit = value.unit;
+  if (!isRecord(unit) || !["node", "handler", "part"].includes(String(unit.kind))) {
+    return ["The unit must be { kind: \"node\", nodeId }, { kind: \"handler\", nodeId } or { kind: \"part\", subflowId }."];
+  }
+  const idKey = unit.kind === "part" ? "subflowId" : "nodeId";
+  if (Object.keys(unit).some((key) => key !== "kind" && key !== idKey) || !isRepairId(unit[idKey])) problems.push(`A ${String(unit.kind)} unit is named by ${idKey} alone, a bounded identifier.`);
+  if (unit.kind === "handler") {
+    if (value.steps !== undefined) problems.push("A handler is replaced by a handler, not by steps.");
+    if (!isRecord(value.handler)) problems.push("A handler unit's replacement must be a handler.");
+    else {
+      if (Object.keys(value.handler).some((key) => !(HANDLER_FIELDS as readonly string[]).includes(key))) problems.push("The replacement handler carries a field a handler does not have.");
+      problems.push(...handlerProblems(value.handler, "The replacement handler"));
+    }
+  } else {
+    if (value.handler !== undefined) problems.push(`A ${String(unit.kind)} is replaced by steps, not by a handler.`);
+    problems.push(...stepsProblems(value.steps, "The replacement"));
+  }
+  if (value.failedEdgeTo !== undefined && (unit.kind !== "node" || !isRepairId(value.failedEdgeTo))) {
+    problems.push("Only a node's replacement may name where its failure goes, by a bounded node id.");
+  }
+  return problems;
+}
+
+function handlerProblems(value: Record<string, unknown>, subject: string): string[] {
+  const problems: string[] = [];
+  if (!EVENTS.has(String(value.event))) problems.push(`${subject} must run at one of ${AUTOMATION_STUDIO_RUNTIME_PATCH_HANDLER_EVENTS.join(", ")}.`);
+  const scopeProblem = handlerScopeProblem(value.scope);
+  if (scopeProblem) problems.push(`${subject}'s scope ${scopeProblem}`);
+  problems.push(...conditionListProblems(value.when, `${subject}'s when`));
+  if (value.completionCheck !== undefined) problems.push(...conditionListProblems(value.completionCheck, `${subject}'s completionCheck`));
+  problems.push(...stepsProblems(value.steps, `${subject}'s body`));
+  const thenProblem = handlerThenProblem(value.then);
+  if (thenProblem) problems.push(`${subject}'s then ${thenProblem}`);
+  return problems;
+}
+
+function handlerScopeProblem(value: unknown): string | undefined {
+  if (!isRecord(value)) return "must be { kind: \"nodes\", nodeIds } or { kind: \"subflow\" }.";
+  if (value.kind === "nodes") {
+    const ids = value.nodeIds;
+    if (Object.keys(value).some((key) => key !== "kind" && key !== "nodeIds")) return "names nodes by nodeIds alone.";
+    if (!Array.isArray(ids) || !ids.length || ids.length > BOUNDS.maxScopeNodeIds || !ids.every(isRepairId)) return `must name between one and ${BOUNDS.maxScopeNodeIds} node ids.`;
+    return undefined;
+  }
+  if (value.kind === "subflow") {
+    if (Object.keys(value).some((key) => key !== "kind" && key !== "inherit")) return "for a part carries only inherit.";
+    if (value.inherit !== undefined && typeof value.inherit !== "boolean") return "inherit must be true or false.";
+    return undefined;
+  }
+  return "must be nodes or this part; a repair never registers a handler for the whole automation.";
+}
+
+function handlerThenProblem(value: unknown): string | undefined {
+  if (!isRecord(value) || !THEN_KINDS.has(String(value.kind))) return `must be one of ${HANDLER_THEN_KINDS.join(", ")}.`;
+  const extra = (allowed: string[]) => Object.keys(value).some((key) => key !== "kind" && !allowed.includes(key));
+  if (value.kind === "route") return extra(["checkpointId"]) || !isRepairId(value.checkpointId) ? "route names its checkpoint by checkpointId alone." : undefined;
+  if (value.kind === "resolve") {
+    if (extra(["outputs"]) || !isJsonObject(value.outputs)) return "resolve carries its outputs as one JSON object.";
+    return JSON.stringify(value.outputs).length > BOUNDS.maxResolveOutputsLength ? `resolve's outputs exceed ${BOUNDS.maxResolveOutputsLength} characters.` : undefined;
+  }
+  return extra([]) ? `${String(value.kind)} carries nothing else.` : undefined;
+}
+
+function stepsProblems(value: unknown, subject: string): string[] {
+  if (!Array.isArray(value) || !value.length || value.length > AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS) return [`${subject} must be between one and ${AUTOMATION_STUDIO_RUNTIME_PATCH_MAX_STEPS} steps.`];
+  return value.every(isRuntimePatchStep) ? [] : [`${subject} has a step that does not name a definition or carries more than bounded parameters.`];
+}
+
+function conditionListProblems(value: unknown, subject: string): string[] {
+  if (!Array.isArray(value) || value.length > BOUNDS.maxConditions) return [`${subject} must be a list of at most ${BOUNDS.maxConditions} fact conditions.`];
+  return value.flatMap((condition, index) => (isModelFactCondition(condition) ? [] : [`${subject} entry ${index + 1} is not a fact condition: a non-empty fact of at most ${BOUNDS.maxFactLength} characters, an op of ${AUTOMATION_STUDIO_FACT_CONDITION_OPS.join(", ")}, an optional bounded value, and an optional target naming only evidence handles.`]));
+}
+
+/**
+ * A fact condition as a model may write one. Its `target`, when there is one,
+ * names evidence handles and nothing else, the rule a target override keeps:
+ * a locator never enters a graph through a model.
+ */
+function isModelFactCondition(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (Object.keys(value).some((key) => !["fact", "op", "value", "target"].includes(key))) return false;
+  if (typeof value.fact !== "string" || !value.fact.trim() || value.fact.length > BOUNDS.maxFactLength) return false;
+  if (!OPS.has(String(value.op))) return false;
+  if (value.value !== undefined && !isConditionValue(value.value)) return false;
+  return value.target === undefined || isAutomationStudioModelAuthoredTargetOverrideTarget(value.target);
+}
+
+function isConditionValue(value: unknown): boolean {
+  if (value === null || typeof value === "boolean" || isFiniteNumber(value)) return true;
+  if (typeof value === "string") return value.length <= BOUNDS.maxValueLength;
+  if (!isRecord(value) || Object.keys(value).length !== 1) return false;
+  const name = value.input ?? value.value;
+  return typeof name === "string" && name.trim().length > 0 && name.length <= BOUNDS.maxValueLength;
+}
+
+function isRepairId(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.length <= BOUNDS.maxIdLength;
 }
 
 function isRiskLevel(value: unknown): value is "low" | "medium" | "high" | "destructive" {

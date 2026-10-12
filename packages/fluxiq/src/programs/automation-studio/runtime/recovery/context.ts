@@ -97,6 +97,7 @@ import type { AutomationStudioFlowAdaptation, AutomationStudioFlowRunActionAttem
 import type { AutomationStudioNodeAttemptTrace } from "../executor.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowRouter } from "../../model/index.ts";
 import { automationStudioWithoutLocators, screenAutomationStudioLlmEvidence } from "../llm/harness/index.ts";
+import { automationStudioModelFacingControlWords, automationStudioModelFacingFailureText } from "../llm/model-facing/index.ts";
 import { automationStudioFlowGraphSection, automationStudioScreenedAuthoredState, automationStudioStepParametersSection } from "./repair-context/index.ts";
 
 /**
@@ -280,7 +281,7 @@ function recoveryContextSections(
   const metadata = record?.metadata;
   const adaptations = matchingAdaptations(input.adaptations, record);
   return withoutEmptySections({
-    failure: failureSection(record, input.failedAttempt),
+    failure: failureSection(record, input.failedAttempt, input.flow),
     expected_transition: comparison ? boundedSection({
       nodeId: comparison.expected.nodeId,
       definitionId: comparison.expected.definitionId,
@@ -336,7 +337,7 @@ function recoveryContextSections(
  * was built for.
  */
 function stepParametersSection(input: AutomationStudioRuntimeRecoveryContextInput): AutomationStudioRecoveryContextSectionValue | undefined {
-  const attempts = input.detail.actionAttempts ?? [];
+  const attempts = rootFrameAttempts(input.detail);
   if (!attempts.length) return undefined;
   if (input.deniedEvidenceKeys === undefined) return WITHHELD_SECTION;
   return automationStudioStepParametersSection({
@@ -348,10 +349,20 @@ function stepParametersSection(input: AutomationStudioRuntimeRecoveryContextInpu
 
 /** The last failed or unknown attempt the run recorded: the one the recovery is about. */
 function failedActionRecord(detail: AutomationStudioFlowRunDetail): AutomationStudioFlowRunActionAttemptRecord | undefined {
-  return [...(detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
+  return [...rootFrameAttempts(detail)].reverse().find((attempt) => attempt.status === "failed" || attempt.status === "unknown");
 }
 
-function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | undefined, failedAttempt: AutomationStudioNodeAttemptTrace | undefined): JsonObject | undefined {
+/**
+ * The root frame's attempts: the Flow's own steps, which every section here is
+ * about. A called part's attempts (`parentAttemptId`) are its Call Subflow
+ * attempt's, whose outcome is the root frame's, and a part's node can share an
+ * id with one of the Flow's.
+ */
+function rootFrameAttempts(detail: AutomationStudioFlowRunDetail): AutomationStudioFlowRunActionAttemptRecord[] {
+  return (detail.actionAttempts ?? []).filter((attempt) => attempt.parentAttemptId === undefined);
+}
+
+function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | undefined, failedAttempt: AutomationStudioNodeAttemptTrace | undefined, flow: AutomationStudioFlowDocument | undefined): JsonObject | undefined {
   if (!record) return undefined;
   // Stored records are parsed again before use, as everywhere else that reads
   // one. `message` is deliberately not carried: the record's own `expected`
@@ -365,11 +376,25 @@ function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | und
   // and `selector` inside a free-text field is not a key. Both fields now go
   // through `locator-text.ts` with the rest of the context: the scores and the
   // visible names survive, and anything shaped like a locator does not.
+  //
+  // Since t426 not even that: finding a control is the extension's work, never
+  // the model's (user, 2026-10-10), so a repair reads no score, no word for how
+  // a control was found, and no text at all for a failure about finding the
+  // target (`../llm/model-facing/failure-text.ts`). The record in the
+  // trace and the run log keeps every word.
+  //
+  // What the repair does read is the failed step's control by its own words
+  // (t431): its name, text, label or placeholder, read from the step's own
+  // node parameters and screened like the texts above
+  // (`../llm/model-facing/control-words.ts`). That is what the model sees on
+  // the page, and the one thing about the control it can look for again.
+  const control = automationStudioModelFacingControlWords(flow?.nodes.find((node) => node.id === record.nodeId)?.parameterValues);
   const failure = parseAutomationStudioFailureRecord(record.failure);
   return boundedSection({
     attemptId: record.attemptId,
     nodeId: record.nodeId,
     definitionId: record.definitionId,
+    control,
     status: record.status,
     route: record.route,
     comparisonStatus: record.comparisonStatus,
@@ -378,8 +403,7 @@ function failureSection(record: AutomationStudioFlowRunActionAttemptRecord | und
       code: failure.code,
       retryable: failure.retryable,
       stage: failure.stage,
-      expected: failure.expected,
-      actual: failure.actual,
+      ...automationStudioModelFacingFailureText(failure),
       // A refuted result's synthetic live attempt carries the full screened
       // directive here. Unlike the 1,024-character prose fields, this keeps
       // the judge's bounded advice structurally intact for the repair.
@@ -401,23 +425,21 @@ function resultRepairSection(value: JsonValue | undefined): JsonObject | undefin
 }
 
 /**
- * The failed target, as metadata about how resolution went rather than as
- * anything that addresses an element.
+ * The failed target, as how resolution ended rather than as anything that
+ * addresses an element: its status and how many controls were weighed.
  *
  * `candidateId` is not carried. It is minted by whichever domain supplied the
  * candidates, so Core cannot promise it is not a locator, and Phase T's whole
- * point is that no such string reaches the model.
+ * point is that no such string reaches the model. Since t426 neither are the
+ * scores, the confidence bar or the names of the signals that matched or
+ * failed: they say how a control is found, which is the extension's work and
+ * never the model's (user, 2026-10-10). The run record keeps them.
  */
 function targetResolutionSection(value: JsonValue | undefined): JsonObject | undefined {
   if (!isJsonRecordValue(value)) return undefined;
   return boundedSection({
     status: value.status,
-    candidateCount: value.candidateCount,
-    minimumConfidence: value.minimumConfidence,
-    confidence: value.confidence,
-    normalizedScore: value.normalizedScore,
-    matchedSignals: boundedStringList(value.matchedSignals),
-    failedSignals: boundedStringList(value.failedSignals)
+    candidateCount: value.candidateCount
   });
 }
 
@@ -494,7 +516,7 @@ function routeContextSection(detail: AutomationStudioFlowRunDetail): JsonObject 
  * that every string in this context passes.
  */
 function recoveredFailuresSection(detail: AutomationStudioFlowRunDetail, record: AutomationStudioFlowRunActionAttemptRecord | undefined): JsonObject | undefined {
-  const attempts = detail.actionAttempts ?? [];
+  const attempts = rootFrameAttempts(detail);
   const survived = attempts.filter((attempt) => attempt.status === "failed" && attempt.attemptId !== record?.attemptId);
   if (!survived.length) return undefined;
   // The run's own start, so an offset is a number a reader can compare across
@@ -532,7 +554,7 @@ function recoveredFailuresSection(detail: AutomationStudioFlowRunDetail, record:
 
 function recentNodesSection(detail: AutomationStudioFlowRunDetail, record: AutomationStudioFlowRunActionAttemptRecord | undefined): JsonObject | undefined {
   const order = record?.order ?? Number.MAX_SAFE_INTEGER;
-  const succeeded = (detail.actionAttempts ?? [])
+  const succeeded = rootFrameAttempts(detail)
     .filter((attempt) => attempt.status === "succeeded" && attempt.order < order)
     .map((attempt) => ({ nodeId: attempt.nodeId, definitionId: attempt.definitionId, order: attempt.order, ...(attempt.route ? { route: attempt.route } : {}) }));
   return succeeded.length ? boundedSection({ succeeded }) : undefined;

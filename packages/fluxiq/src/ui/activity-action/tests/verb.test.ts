@@ -15,6 +15,8 @@ describe("activityActionVerb", () => {
     expect(activityActionVerb("clicking", "gerund")).toEqual({ verb: "click", kind: "click" });
     expect(activityActionVerb("checking", "gerund")).toEqual({ verb: "assert", kind: "look" });
     expect(activityActionVerb("ticking", "gerund")).toEqual({ verb: "check", kind: "click" });
+    // A list's next page (lane C, run-mv0fuotv-805294d7): its node's id read "Dom next page".
+    expect(activityActionVerb("next")).toEqual({ verb: "next", kind: "navigate" });
     expect(activityActionVerb("clicking")).toBeUndefined();
   });
 

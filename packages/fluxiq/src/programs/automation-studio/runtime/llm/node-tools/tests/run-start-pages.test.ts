@@ -67,4 +67,16 @@ describe("where each node of a run started", () => {
     (pages.a as { location: string }).location = "changed";
     expect(automationStudioRunNodeStartPages(run)).toEqual({ a: { location: "/" } });
   });
+
+  // t406: a called part's node can share an id with the Flow's own.
+  it("reads the root frame's nodes alone, never a called part's of the same id", () => {
+    const pages = automationStudioRunNodeStartPages({
+      actionAttempts: [
+        attempt(1, "s1", { location: "/" }),
+        attempt(2, "s2", { location: "/part" }, { attemptId: "attempt.1:s2", parentAttemptId: "attempt.1" }),
+        attempt(3, "s2", { location: "/flow" })
+      ]
+    });
+    expect(pages).toEqual({ s1: { location: "/" }, s2: { location: "/flow" } });
+  });
 });

@@ -40,7 +40,7 @@ describe("a failed build's stored answer", () => {
     expect(outcome.summary).not.toMatch(RAW);
     expect(outcome.error).not.toMatch(RAW);
     // Run with no person turn behind it, so the words saved are the argument's, and it says so (t349).
-    expect(outcome.summary).toBe('"Improve a Flow that already has steps" stopped because the build failed: FluxIQ could not tell which part of this Flow to build on, as it builds on a Flow with one main part. Before that I saved what should change as an instruction on the Flow, as the request worded it, since no message of yours came with it.');
+    expect(outcome.summary).toBe('The build failed: FluxIQ could not tell which part of this Flow to build on, as it builds on a Flow with one main part. Before that I saved what should change as an instruction on the Flow, as the request worded it, since no message of yours came with it.');
   });
 
   it("says a code with no words of its own by its stage, and one with neither as something that went wrong", () => {

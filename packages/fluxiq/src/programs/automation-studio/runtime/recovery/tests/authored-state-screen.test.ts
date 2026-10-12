@@ -95,10 +95,10 @@ describe("expected_transition discloses authored state under the same guards as 
     const detail = runDetail();
     // A domain's own failure prose, which is free text no key rule can see into.
     detail.actionAttempts![1]!.failure = {
-      category: "target_not_found",
-      code: "web.target.selector_miss",
+      category: "expected_state_missing",
+      code: "web.validation.failed",
       retryable: false,
-      stage: "target_resolution",
+      stage: "verification",
       expected: `a Pay button reachable with ${BEARER}`,
       actual: "no matching control"
     };

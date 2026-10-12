@@ -153,3 +153,36 @@ describe("a graph run with no named start node", () => {
     expect(trace).toMatchObject({ status: "failed", attempts: [], message: "No start node is available in this flow." });
   });
 });
+
+describe("a graph that holds handlers", () => {
+  const HANDLER = "builtin.control.handler";
+  const HANDLER_END = "builtin.control.handler-end";
+  const handlerParts = (id: string) => ({
+    nodes: [{ id, definitionId: HANDLER, parameterValues: { event: "fail", scope: { kind: "subflow" } } }, actionNode(`${id}.dismiss`), { id: `${id}.end`, definitionId: HANDLER_END, parameterValues: { disposition: "unhandled" } }],
+    edges: [{ id: `${id}.body`, sourceNodeId: id, sourcePortId: "body", targetNodeId: `${id}.dismiss` }, successEdge(`${id}.dismiss`, `${id}.end`)]
+  });
+
+  it("chooses the start it would without them: a Handler and its body are never roots", async () => {
+    const one = handlerParts("handler.a");
+    const two = handlerParts("handler.b");
+    const flow = flowOf(inIdOrder([...one.nodes, ...two.nodes, actionNode("z.first"), actionNode("z.second")]), [...one.edges, ...two.edges, successEdge("z.first", "z.second")]);
+    expect(flow.nodes[0]?.id).toBe("handler.a");
+    expect(chooseAutomationStudioStartNode(flow)).toMatchObject({ status: "root", node: { id: "z.first" } });
+    const { trace, dispatched } = await runWithoutNamedStart(flow);
+    expect(trace.status).toBe("succeeded");
+    expect(trace.attempts.map((attempt) => attempt.nodeId)).toEqual(["z.first", "z.second"]);
+    expect(dispatched).toBe(2);
+  });
+
+  it("keeps a declared Start node beside a Handler", () => {
+    const parts = handlerParts("handler.a");
+    const flow = flowOf([...parts.nodes, startNode("start"), actionNode("work")], [...parts.edges, successEdge("start", "work")]);
+    expect(chooseAutomationStudioStartNode(flow)).toMatchObject({ status: "declared", node: { id: "start" } });
+  });
+
+  it("still refuses two real roots beside a Handler, naming only the real ones", () => {
+    const parts = handlerParts("handler.a");
+    const flow = flowOf([...parts.nodes, actionNode("x"), actionNode("y")], parts.edges);
+    expect(chooseAutomationStudioStartNode(flow)).toMatchObject({ status: "several_roots", message: expect.stringContaining("2 nodes have no edge into them (x, y)") });
+  });
+});

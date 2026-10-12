@@ -3,6 +3,12 @@
 // matches, before any recovery rung or model call. The Flow's own declared way
 // past a sometimes-present step (`../step-skip/`) is its first case.
 export { announceAutomationStudioStateRoute } from "./announcement.ts";
+export {
+  automationStudioStateRouteFactGate,
+  type AutomationStudioStateRouteFactGate,
+  type AutomationStudioStateRouteFactGuard,
+  type AutomationStudioStateRouteFactRefusal
+} from "./checkpoint-facts.ts";
 export { automationStudioCouldNotRun, automationStudioNotShownAttempt } from "./could-not-run.ts";
 export { decideAutomationStudioStateRoute, type AutomationStudioStateRouteDecision, type AutomationStudioStateRouteInput } from "./decision.ts";
 export {
@@ -13,4 +19,8 @@ export {
   type AutomationStudioStateRouteGuard
 } from "./progress-guard.ts";
 export { automationStudioRankStateRoutes, type AutomationStudioRankedStateRoute, type AutomationStudioStateRouteMatch } from "./ranking.ts";
+export type { AutomationStudioGuardedStateRoutingRecord, AutomationStudioStateRouteRefusal, AutomationStudioStateRouteRefusalGuard } from "./refusal.ts";
+export { automationStudioRepeatedLastingAct, type AutomationStudioRepeatedLastingAct } from "./repeated-act.ts";
+export { automationStudioStateRouteOnward, automationStudioStateRouteSpan } from "./route-path.ts";
 export { automationStudioStateRoutedAttempt } from "./routed-attempt.ts";
+export { automationStudioUnboundSkippedValue, type AutomationStudioUnboundSkippedValue } from "./skipped-values.ts";

@@ -256,3 +256,33 @@ describe("a replay that needed an automatic retry", () => {
     expect(outcome.demoted).toBe(true);
   });
 });
+
+// t384: a changed node whose try failed where the state it was to produce
+// already held is done, and the run went on down `success`. The replay reads it
+// as the trial does (`flow-change/attempt-projection.ts`), so the change is not
+// demoted for a step that had already happened.
+describe("a replay whose changed node found its state already held", () => {
+  const held = { rung: "skip_satisfied_node" as const, route: "success" as const };
+  const failedHeld = () => stamped({ status: "failed", failure: { category: "unexpected_state", code: "web.action.blocked_by_dialog", retryable: false, stage: "execution" }, stateHeld: held, expectedRoute: "success" });
+
+  it("reads the node as done down success, and records a succeeded replay", () => {
+    const outcome = replay([failedHeld(), attempt("node.after")], subject({ validationResults: [succeededTrial] }));
+    expect(outcome.verdict).toMatchObject({ outcome: "verified" });
+    expect(outcome.verdict?.checks).toContainEqual(expect.objectContaining({ kind: "changed_node_succeeded", status: "passed" }));
+    expect(outcome.result).toMatchObject({ status: "succeeded", kind: "replay" });
+    expect(outcome.demoted).toBe(false);
+  });
+
+  it("does not read the executor's `failed` default as the route the node declared", () => {
+    const outcome = replay([stamped({ status: "failed", stateHeld: held, expectedRoute: "failed" }), attempt("node.after")]);
+    expect(outcome.verdict?.checks).not.toContainEqual(expect.objectContaining({ kind: "expected_route", status: "failed" }));
+    expect(outcome.verdict?.checks).toContainEqual(expect.objectContaining({ kind: "changed_node_succeeded", status: "passed" }));
+  });
+
+  it("still reads the same failure without the mark as the node failing", () => {
+    const { stateHeld: _held, ...unmarked } = failedHeld();
+    const outcome = replay([unmarked, attempt("node.after")], subject({ validationResults: [succeededTrial] }));
+    expect(outcome.verdict?.outcome).toBe("contradicted");
+    expect(outcome.demoted).toBe(true);
+  });
+});

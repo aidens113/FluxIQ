@@ -80,13 +80,17 @@ describe("Flow script routes", () => {
     expect(quiet.decision.metadata?.evaluations).toEqual([expect.objectContaining({ matched: false, reason: "state.page.dialog does not exist." })]);
   });
 
-  it("refuses a block the router could never run, and a step that runs a block saying nothing about when", () => {
+  // Since t388 a step that runs a block with no `when:` calls it as a part
+  // (`../../script-statements/called-parts.ts`), rather than being refused as a
+  // route with no condition; this library offers no Call Subflow, so the call
+  // is refused for that, at its line.
+  it("refuses a block the router could never run, and a call this library cannot make", () => {
     const unreachable = build(["subflow extra: an extra read", "  step: read", "    node: web.dom.extract_list", "    extractList.item: li", "end", ...TWO_SITUATIONS.slice(11)]);
     expect(unreachable.accepted.ok).toBe(false);
     if (!unreachable.accepted.ok) expect(unreachable.accepted.issues.map((issue) => issue.code)).toContain("flow_script.subflow_unreachable");
     const called = build(["step: run subflow extra", "subflow extra: an extra read", "  step: read", "    node: web.dom.extract_list", "    extractList.item: li", "end"]);
     expect(called.accepted.ok).toBe(false);
-    if (!called.accepted.ok) expect(called.accepted.issues.map((issue) => issue.code)).toContain("flow_script.route_condition_missing");
+    if (!called.accepted.ok) expect(called.accepted.issues.map((issue) => issue.code)).toEqual(["flow_script.call_unavailable"]);
   });
 
   it("refuses a condition it cannot read, and a branch to the step written next", () => {

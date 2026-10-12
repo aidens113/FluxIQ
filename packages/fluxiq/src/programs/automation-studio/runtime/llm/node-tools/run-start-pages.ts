@@ -36,7 +36,8 @@ import type { AutomationStudioFlowRunActionAttemptRecord } from "../../../model/
 export function automationStudioRunNodeStartPages(run: { actionAttempts?: readonly AutomationStudioFlowRunActionAttemptRecord[] | undefined }): Record<string, JsonObject> {
   const first = new Map<string, AutomationStudioFlowRunActionAttemptRecord>();
   for (const attempt of [...(run.actionAttempts ?? [])].sort((left, right) => left.order - right.order)) {
-    if (!first.has(attempt.nodeId)) first.set(attempt.nodeId, attempt);
+    // The root frame's nodes only: a called part's node (`parentAttemptId`) can share an id with one.
+    if (attempt.parentAttemptId === undefined && !first.has(attempt.nodeId)) first.set(attempt.nodeId, attempt);
   }
   const pages: Record<string, JsonObject> = {};
   for (const [nodeId, attempt] of first) {

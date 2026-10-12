@@ -4,6 +4,15 @@
 // Both tests run one Flow with a node that costs something -- `charge` -- ahead
 // of the node that fails. `calls.charge` is therefore the measurement that
 // matters: a run that restarts its Flow charges twice for one order.
+//
+// An adapting run holds in place at its failing step, has the step fixed and
+// tries it again there (state-aware recovery plan, C6 step 8), so these run on
+// that path. The detached resume, which stays only for a run that cannot hold
+// in place, cannot be reached through the service with a fix to resume on: a
+// run is held by a pause only at a checkpoint, never at a failing step, and an
+// uncertain stop is never patched (`../../in-run-repair/tests/service-proofs.test.ts`).
+// Its resume point and its refusals are covered where it is decided,
+// `../../../service/adaptations/tests/adaptive-retry.test.ts`.
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -123,7 +132,8 @@ async function runChargingFlow(input: { flowId: string; driftParameterValues: Re
   });
   const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId });
   const detail = await service.getFlowRunDetail(project.id, run.runId);
-  return { run, detail, calls };
+  const adaptation = detail?.adaptationIds[0] ? await service.getFlowAdaptation(project.id, flow.flowId, detail.adaptationIds[0]) : null;
+  return { run, detail, calls, adaptation };
 }
 
 describe("adaptive retry resumption", () => {
@@ -137,45 +147,55 @@ describe("adaptive retry resumption", () => {
     await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
   });
 
-  it("continues at the node the trial reached instead of re-running the Flow from its start", async () => {
+  it("carries on at the failing step with the fix held instead of re-running the Flow from its start", async () => {
     const { run, detail, calls } = await runChargingFlow({
       flowId: "flow.resume-from-trial",
       driftParameterValues: { expectedOutputs: { done: true } }
     });
 
     expect(run.status).toBe("succeeded");
-    expect(detail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded" } });
-    // The one measurement that separates resuming from restarting. `charge` ran
-    // once in the original run; the trial started at `drift`, and the retry
-    // resumed after it. A Flow re-run from its start node charges again.
+    expect(detail?.metadata).not.toHaveProperty("adaptiveRetry");
+    // The one measurement that separates carrying on from restarting. `charge`
+    // ran once; the run held at `drift`, tried it again there with the fix, and
+    // went on to `end`. A Flow re-run from its start node charges again.
     expect(calls.charge).toBe(1);
-    expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
+    expect(run.trace?.attempts.map((attempt) => [attempt.nodeId, attempt.status])).toEqual([["start", "succeeded"], ["charge", "succeeded"], ["drift", "failed"], ["drift", "succeeded"], ["end", "succeeded"]]);
+    expect(run.trace?.attempts[2]?.repair).toMatchObject({ outcome: "held", unit: { kind: "node", nodeId: "drift" } });
+    expect(detail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({
       kind: "temporary_wait_retry",
-      resumable: true,
-      resumeFrom: expect.objectContaining({ nodeId: "end", route: "success", subflowId: expect.any(String) })
+      outcome: "overlaid",
+      repairId: run.trace?.repairs?.[0],
+      unit: { kind: "node", nodeId: "drift" }
     })]);
   });
 
-  it("refuses to continue past a repair the verdict did not vouch for, and records why", async () => {
+  it("keeps a held fix whose step's expected state no host evaluated unsaved until a judged run vouches for it", async () => {
     // The changed node declares an expected state and no host is bound to
-    // evaluate it. The trial still verifies the change by the outputs the node
-    // declared, so the repair is applied -- but one of the checks it made came
-    // back unevaluated, and an unevaluated check is never a pass to the
-    // question "may the run carry on?".
-    const { run, detail, calls } = await runChargingFlow({
+    // evaluate it. The detached path's verdict read that as an unevaluated
+    // check and refused to carry on (`check_unknown`). In the run, the
+    // re-attempt is an ordinary attempt of the step, and the executor reads an
+    // unevaluated expected state from the attempt's own route, as it does for
+    // every step (`executor/transition-comparison.ts`); so the run carries on,
+    // still charging once. A route is not evidence the state holds (C6 step 8:
+    // the fix holds when "the node's expected state ... is `true`"), so the
+    // fix's trial proved nothing and it stays `testing`, unverifiable, though
+    // the step's declared output was observed. What vouches for the fix is the
+    // judged end, which never came: the fix is not saved, and its record says
+    // why.
+    const { run, detail, calls, adaptation } = await runChargingFlow({
       flowId: "flow.refuse-unvouched",
       driftParameterValues: { expectedOutputs: { done: true }, expectedState: { settled: true } }
     });
 
-    expect(run.status).toBe("failed");
-    // Not a bare stop: the run says which check left it unable to continue.
-    expect(detail?.metadata?.adaptiveRetry).toEqual({ attempted: false, notResumableCode: "check_unknown" });
+    expect(run.status).toBe("succeeded");
     expect(calls.charge).toBe(1);
-    expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
+    expect(run.metadata?.resultVerification).toMatchObject({ performed: false });
+    expect(detail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({
       kind: "temporary_wait_retry",
-      retryOriginalAction: true,
-      resumable: false,
-      notResumableCode: "check_unknown"
+      approvalDecision: expect.objectContaining({ autoApply: true, applyAt: "judged_whole_run", applied: false, notAppliedReason: "not_judged" })
     })]);
+    expect(adaptation?.status).toBe("testing");
+    expect(adaptation?.validationResults ?? []).toEqual([]);
+    expect(adaptation?.metadata?.verification).toMatchObject({ status: "unverifiable", reason: "in_run_trial", awaitsJudgedRun: true });
   });
 });

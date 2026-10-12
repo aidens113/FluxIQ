@@ -3,11 +3,12 @@
 // nor rerun live.
 //
 // A seed from a stored Flow (`../../llm/node-tools/draft-from-flow.ts`) names
-// each step it carries `f<n>`. One left unchanged, whose node declared its
-// consequences and whose start the run being repaired captured, holds a
-// scheduled candidate, and the test runs it fresh as saved; the Merge an
-// optional step joins at is passed through. Anything else carried -- changed
-// since it was seeded, declaring nothing, or with no captured start -- the test
+// each step it carries `f<n>`. One left unchanged holds a scheduled candidate,
+// with or without a captured start, where it declared or its node need not
+// (t439), and the test runs it fresh as saved; the Merge an optional step joins
+// at is passed through, and so is an optional step the test cannot run.
+// Anything else carried -- changed since it was seeded, or a press that
+// declared nothing -- the test
 // refuses as `not_run_in_this_build` (`../../flow-draft/full-run-required.ts`)
 // until it is rerun live, and a rerun is a step of its own (`d<n>`). A round
 // whose Flow holds one has no test to measure it by (t194-w70, `./phases.ts`).

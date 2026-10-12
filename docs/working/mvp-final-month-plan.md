@@ -1,9 +1,9 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: Acceptance/cancellation, receipt/executor infrastructure and opt-in draft facade pushed; executing Core identity pushed; loaded host and durable restart proof integrated; atomic graph import independently verified; production promotion pending.
+Status detail: Candidate trials and state-aware recovery are integrated; live continuation is recovering lane evidence and validating candidate finishing fixes on t274; parked production-integrity work remains separate.
 Created: 2026-10-06
-Last updated: 2026-10-07
+Last updated: 2026-10-11
 Owner: Codex senior supervisor
 Scope: Generic Core acceptance, candidate authoring/execution/promotion, cancellation and uncertain-outcome contracts required by the downstream MVP plan. Browser behavior and live qualification remain downstream.
 Paired document: C:/Users/osrs_/FluxStuff/!FluxIQWebExtension/docs/working/mvp-final-month-plan.md
@@ -13,7 +13,34 @@ Related: [authoring](./flow-authoring-and-defensive-runtime-plan.md), [version h
 
 ## Current State
 
-Implementation of the complete downstream plan remains active, with continuous handoff documentation. Downstream owns schedule, briefs and live qualification; Core owns generic contracts. Latest pushed Core5eac215b includes the actual t331 executor and t332 non-service whole-writer foundation, in addition to earlier durable gateway and private-consumption fences. Older acceptance, candidate draft, staged snapshot, loaded host/native server identity and restart receipts are preserved below/archive; none establishes production promotion.
+The active execution order is downstream `docs/working/live-testing-handoff-audit-2026-10-11.md`.
+Core dev at intake is `01621c94`; downstream owns browser qualification, task instructions/oracles,
+Lab supervision and schedules. Generic candidate, executor, feedback and storage behavior stay in Core.
+
+**Integrated before this continuation:** candidate submission/reset-start trials and judged proposal
+promotion, state-aware lifecycle handlers/subflows, safe routing and in-run repair through t448.
+Downstream saved R4a/R4b proofs passed. Those proofs do not certify the separate parked authority chain.
+
+**Current t274 unit:** recover lane C's unfinished completion/endings and finishing-tool changes;
+retain submit/test while observations are withdrawn and through the last counted candidate decision;
+accepted submissions name the exact revision/digest to test next. Supervisor validation and integration
+are recorded downstream. The mandatory trial gate, hard limits and whole-Flow purse are unchanged.
+No trial runner still means an unverified draft. The product default remains legacy pending A's gate.
+
+**Next:** integrate verified t274 downstream first and Core second; repair D's graph-completion/feedback
+defect in paired t449; qualify live lanes on identified source pairs. A's two creation passes need the
+separate no-model replay receipts; B's latest build never tested a submitted candidate. No user panel
+management is inferred from isolated Lab authorization. Full sweeps remain at most twice daily under
+the newer downstream user rule; owning tests, affected typechecks and audit gate each task.
+
+**Parked production-integrity work:** t334/t335/t337 and the older native-command/closed-writer/
+original-requirements joins below remain distinct work. Do not execute their old next-order in place
+of the active lane plan, or infer authority acceptance from a model verdict or a stored draft.
+
+## Historical Production-Integrity Scope
+
+The following boundary records are retained from the October 7 handoff. They describe the parked
+production-integrity chain, not the current lane execution order.
 
 **t329/t325/t330/t331/t332 integrated and pushed.** Actual executor node-entry ownership, reviewed Runtime/IO propagation, post-capture handling and private SQL consumption are now integrated. Reviewed local outputs and policy.action only; native web execution remains the next serial join. Same-process consumption is not restart clearance. t332 supports opted-in NEW project and empty orchestration create/save helper operations, without production service/host selection or adoption.
 
@@ -24,6 +51,14 @@ Implementation of the complete downstream plan remains active, with continuous h
 Next close these serial actual production joins, then candidate original requirements/declared-start reset/private oracle/exact execution receipt and sole original-project CAS promotion. Shared protocol, current Flow schema/executor and permission/purse/cancel ownership remain authoritative. Actual production Next probe needs separately pending user panel-management authorization. No providers/paid qualification/user panel/full validation sweeps run; narrow owner checks and task audits gate integration. Supervisor alone verifies/commits/merges/pushes paired dev branches.
 
 ## Work Ledger
+
+### 2026-10-11 — Candidate finishing fixes recovered and independently verified
+- Agent: Codex senior supervisor; c-validation worker on t274.
+- Changed: candidate completion/endings, observation withdrawal, final counted decision and exact test-next receipt guidance; architecture and downstream Lists guidance.
+- Why: C's unfinished changes survived the handoff; B's failed build was forced to complete an untested revision after its trial tool was withdrawn.
+- Validation: supervisor six owning vitest files -> 80/80; cache-free Core `tsc --noEmit -p tsconfig.json --incremental false` -> exit 0; downstream instructions runner -> 14/14; domain check -> current Core and matching successful check stamp. Final task structure gate follows integration.
+- Outcome: Accepted bounded source unit; response to the guidance requires live requalification.
+- Follow-up: finish downstream t274 then Core, push both devs; B/C qualification on the integrated pair.
 
 Earlier receipts preserved intact in [the foundation archive](./mvp-final-month-plan/archive/2026-10-07-core-foundation-receipts.md).
 

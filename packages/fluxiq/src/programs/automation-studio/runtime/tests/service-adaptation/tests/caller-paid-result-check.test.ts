@@ -214,12 +214,15 @@ describe("a run whose caller pays only for the checks that judge a repair", () =
 
   // With a standing authorization available, so the record carries the
   // schedule's own `after_repair` decision and the caller's key still wins it.
-  it("judges a run repaired by its resumed retry with the caller's key", { timeout: 180_000 }, async () => {
+  // The fix is held at the failing step and the run carries on in place (C6 step 8): the run that is judged is the repaired run itself.
+  it("judges a run repaired at its failing step with the caller's key", { timeout: 180_000 }, async () => {
     const found = await harness({ standing: true });
     const run = await found.service.runRuntimeSession({ projectId: found.projectId, flowId: found.flowId, llmExecution, resultCheckCallerPays: "repair_checks" });
     const detail = await found.service.getFlowRunDetail(found.projectId, run.runId);
 
-    expect(detail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded" } });
+    expect(detail?.metadata).not.toHaveProperty("adaptiveRetry");
+    expect(run.trace?.repairs).toHaveLength(1);
+    expect(detail?.metadata?.inRunRepairs).toEqual([expect.objectContaining({ kind: "temporary_wait_retry", outcome: "overlaid", repairId: run.trace?.repairs?.[0] })]);
     expect(verifications(found)).toEqual([{ taskKind: "loop_verification", hasCaller: true }]);
     expect(found.standingCalls).toEqual([]);
     expect(run.metadata?.resultVerification).toMatchObject({ performed: true, verdict: "answers" });

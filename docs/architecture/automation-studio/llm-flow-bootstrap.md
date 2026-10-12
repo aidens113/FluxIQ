@@ -19,9 +19,20 @@ refuses instead of falling back. Nothing else holds a mode literal of its own.
   tests and judges, then approve and apply the proposed adaptation onto the blank
   Flow and say the automation is ready. `flow.improve` asks before applying its
   extend. The web panel's Explore and Improve show the proposal for review.
-- `candidate` is t330's draft-only behaviour: the same callers request
-  `authoringMode: "candidate"`, a successful build saves an unverified candidate
-  draft, the Flow's steps stay unchanged and nothing is applied or asked about.
+- `candidate` separates discovery from submission of a complete Flow. Submission
+  alone stores an unverified draft. With a trial runner, Core runs the exact
+  submitted revision from its declared start and judges the trial before
+  completion can promote through the ordinary proposal path. Without a trial
+  runner, completion remains draft-only; a stored draft grants no acceptance.
+
+Submission and trial tools remain offered when repeated observations are withdrawn
+and through the final counted budget decision. An accepted submission names the
+exact revision/digest to test next; resubmission requires a new trial. The budget
+count is guidance: the purse and hard limits still decide whether a request runs,
+and the trial gate still refuses an untested revision. Completion without any
+submission explicitly says that no Flow has been submitted and supplies no invented
+revision or digest. The conversation ending distinguishes that failure from a
+refused submission.
 
 The conversation commands read the setting through
 `automationStudioConversationAuthorsCandidates` in `runtime/conversations/commands/build.ts`, for their descriptors, their
@@ -101,6 +112,135 @@ Exact detached execution, declared start reset, independent requirements/observe
 receipts, command/subject acknowledgements and durable promotion reconciliation
 remain separate integration work. Static candidate submission does not prove
 the user's requested outcome, and this facade never accepts or promotes it.
+
+### What a refused candidate is told
+
+**Every issue names the step it is about** (since t378). A script's steps do
+not become plan nodes one for one, so a refusal that named only a plan path
+("nodes 10 and 17") sent the model to the wrong lines. Each issue a refused
+candidate shows the model is `{code, path?, message?, step?, label?, line?,
+instead?, ...}`:
+
+- `step` is the step's description as the model wrote it, `label` its label
+  when it wrote one, and `line` the 1-based script line the issue is about:
+  the step's own `step:` line for an issue about the node, the specific line
+  (a `repeat most:`, an `only after:`) for one about a line.
+- The acceptor builds a locator from what assembly actually built
+  (`flow-bootstrap/authoring/script-locator.ts`), so indexes are never
+  recounted. A node Core derived -- the join after an optional step, a loop
+  head -- maps through its `cause` to the written step whose line made it.
+  `automationStudioFlowBootstrapIssuePlace` (`authoring/locate-issue.ts`)
+  resolves a path to its place. Both acceptance answers and the completion
+  verdict carry the map as `locator`, so assembly, the domain's parameter
+  resolution, registry validation and the binding check after it
+  (`candidate/submission.ts`) all place their issues the same way
+  (`llm/harness-options/bootstrap-completion.ts`).
+- A JSON-plan submission has no lines: its issues carry the node's name as
+  `step` and its key as `label` (`authoring/plan-locator.ts`).
+- Only issues about the whole Flow carry no line, and they are one explicit
+  list: `flow_script.no_steps`, `flow_script.too_many_lines`,
+  `flow_script.repeat_unavailable` and `bootstrap.invalid_plan`
+  (`WHOLE_FLOW`).
+- `instead` is one fixed sentence saying what to write, given where Core
+  knows it. A step whose consequences are undeclared gets it on its first
+  issue; a typing step with `submit: true` is told it sends its form, which is
+  a press, so it needs `consequences: none` or its classes
+  (`plan/issue-feedback.ts`).
+- The refusal's `next` names the refused steps by line and words ("line 32,
+  "search for the paper towels""), each held to 120 characters
+  (`candidate/submission-refusal.ts`).
+
+The contract is enforced by
+`flow-bootstrap/candidate/tests/refusal-locator-corpus.test.ts`: a corpus of
+scripts, each refused at one stage, goes through the real submission
+controller and is read back as the model is shown it, and every issue must
+have a `line` and a `step` unless its code is in `WHOLE_FLOW`. A source scan
+of `authoring/` and `script-statements/` requires every refusal code they can
+raise to be met by a case, be in `WHOLE_FLOW`, or be listed, with its reason,
+as one a written script never reaches (`NOT_FROM_A_SCRIPT`).
+
+**A run of refusals is counted by its issues.** A refused submission's kind is
+`<category>:<8-hex digest>` over the sorted set of `code@line` (`code@path`
+where an issue has no line). An identical resubmission is the same refusal;
+correcting one step makes a different one and breaks the run. The refused-in-a-
+row warning shows the category without the digest and lists the recurring
+issues ("..., the same issues each time: <code> at line <n>",
+`llm/decision-handlers/refusal-run.ts`).
+
+**An identical resubmission is told so in candidate terms.** The repeat guard
+keys `core.submit_candidate` on its `flow` (or `plan`) alone, so a changed
+`summary` does not make an unchanged script a new call
+(`llm/repeat-guard/outcomes.ts`). A refused script sent again is not checked
+again: its note says so, carries the earlier refusal's `issues` as given, tells
+the model to change the lines they name and keep the rest, and says what one
+more unchanged send does -- the build ends with nothing tested at three repeats
+refused in a row (`llm/repeat-guard/candidate-feedback.ts`). Candidate mode is
+`discoveryOnly`; the note and the refusal-run warning never mention the draft,
+a rerun, marking a step optional or the Flow being tested and judged as it
+stands, which the legacy notes still say.
+
+### Script statements a candidate may write
+
+These are taught in `AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT`
+(`flow-bootstrap/plan/flow-script-format.ts`) and assembled by
+`flow-bootstrap/script-statements/`:
+
+- **`repeat most: <n>`** bounds a `repeat while` span and goes on the span's
+  first step, beside `repeat while:`. Written under a later member of the
+  span, it is moved to the first step, since nesting is refused and it can
+  bound only that span. Written where no `while` span takes it, or on a span
+  that already has a bound, it is refused `flow_script.repeat_most_misplaced`
+  at its own line (`repeat-bound.ts`).
+- **`optional: yes` inside a span.** A step inside a repeat span may be
+  optional (an optional step that is the last step of a `repeat while` span,
+  the check that repeats it, is still refused `flow_script.optional_misplaced`).
+- **`only after: <label>`** on the steps written directly after an optional
+  step makes them a guarded group: they run only when the optional step was
+  done, and the pass then continues where it was. The optional step's `failed`
+  edge goes to a Merge after the group (a `guard` branch, which a span
+  allows), and a span that ended on the group's last step closes at that
+  Merge. So "if the notice shows, close it, wait, and go on with the loop" is
+  an optional dismiss plus an `only after:` wait. Every misplacement -- no
+  such step, another block or span, a step that is not optional, not written
+  directly after the group, on an optional or branching step, on the last
+  step of a `while` span -- is refused `flow_script.only_after_misplaced` at
+  that line (`guarded-steps.ts`).
+- **`repeat pace: <time>`** on a span's first step is the least time between
+  two passes: a number with `ms`, `s` or `min` (a bare number is seconds),
+  from 1 ms to 10 min. A pace under a later member moves to the first step; a
+  second pace, or one no span takes, is `flow_script.repeat_pace_misplaced`,
+  and one that cannot be read or is out of range
+  `flow_script.repeat_pace_invalid` (`repeat-pace.ts`). It lands on that
+  step's plan node as `paceMs`.
+
+A plan node's `paceMs` is a whole number of milliseconds from 1 to 600,000
+(`AUTOMATION_STUDIO_FLOW_BOOTSTRAP_PACE_LIMITS`; anything else is
+`bootstrap.invalid_pace`), and adaptation writes it to the Flow node as
+`metadata.paceMs`, which the executor honours (Core's
+[Router Runtime](../automation-studio.md#router-runtime) section).
+
+The executor skips a guarded group's optional step as it skips any optional
+step (`executor/step-skip/optional-step.ts`): besides a step whose `failed`
+and `success` edges enter the same Merge, it accepts one whose `failed` edge
+enters a Merge that its success path reaches through at most 32 steps that do
+not branch, and the `failed` edge stays the way on. So on a pass where the
+site's notice is absent the group is gone past without spending retries or
+recovery (`executor/step-skip/tests/guarded-group-run.test.ts`).
+
+### What a trial says it absorbed
+
+A candidate trial's feedback lists, for each step, every refused attempt it
+got past (`absorbed`, `service/candidate-trial/absorbed.ts`): the failure
+code, what happened ("The site asked the run to slow down on pass 4 (Jonas),
+and to try again in 5.5 s." when the failure carried a wait hint, else Core's
+category sentence), the pass and row, the wait asked, the wait taken and the
+pace, and a `said` sentence ending "From then on the run started this step at
+most once every 5.5 s." when a pace was learned. The paces a run learned are
+also said once at the top level under `paces`. The failure's own message is
+never read. Promotion keeps a learned pace: the deciding trial's learned pace
+raises the matching plan node's `paceMs` (never lowers an authored one, held
+to the plan's bound), and the `candidateTrial` audit detail names
+`learnedPaces` and `raisedPaces` (`service/candidate-trial/promotion.ts`).
 
 ## Context boundary
 
@@ -195,6 +335,24 @@ and a refusal says so (`described`, or `definition` when it already was) with
 `undeclaredParameters` listing any parameter it gave that the definition does
 not declare (`runtime/llm/node-tools/describing-failures.ts`). Core's own
 replays of the draft pass through untouched.
+
+**A parameter the host fills is never shown (t432).** A node parameter
+declared `shownToModel: false` (`nodes/contracts.ts`) is one the host fills
+from what the model names and the model never writes -- on the web, a node's
+`selector`, `element` and `visualTarget`, filled from the handle the model
+writes in `target`. It is left out of every catalog entry, so of
+`describedNodes` and `core.describe_nodes` too
+(`runtime/flow-bootstrap/plan/catalog.ts`), and out of the shape a refused
+parameter is answered with (`accepted`) and the list an undeclared one is
+answered with (`runtime/flow-bootstrap/plan/issue-feedback.ts`). The node
+still declares it, so a Flow that holds it validates and runs. Everything a
+model reads about naming an element -- the Flow script format, the library
+verb's description, the in-run repair instruction, the advice on a refused
+candidate, Core's own refusals -- speaks of the handle the evidence printed and
+never of a selector, a locator, CSS or XPath; a guard test fails if one does
+(`runtime/tests/model-facing/tests/handle-only.test.ts`). A model told "never
+write a locator" has still been taught that a locator is a thing it could
+write, so the prohibitions are worded without the word too.
 
 ## Permission on the authoring path
 
@@ -545,6 +703,7 @@ code of Core's own:
 | `bootstrap.parameter_resolution_invalid` | The answer has another shape, or its resolved parameters are not plain JSON within 16,384 bytes. |
 | `bootstrap.parameters_refused` | The domain refused without a usable code. |
 | `bootstrap.handle_unresolved` | The parameters still name a handle after resolution, `unchanged` ones included. |
+| `bootstrap.target_not_a_handle` | A fact the model wrote names its element by something other than a handle or a dialog (t432, below). |
 
 A refused node fails the plan and never reaches dispatch. In evidence-guided
 generation the refusal is fed back to the model (see
@@ -552,6 +711,42 @@ generation the refusal is fed back to the model (see
 `createFlowBootstrapAdaptation` and Bootstrap apply both run
 `assertAutomationStudioFlowBootstrapPlanHandlesResolved`, so a plan that
 reaches either without resolution is refused if any handle survives.
+
+### What the model wrote names an element by handle only (t432)
+
+The user's rule (2026-10-10): every saved element carries the full
+multi-signal fingerprint, and the model "shouldnt have to worry about any of
+that, that's all handled by extension". So a caller says who wrote what it asks
+the domain about, and the domain refuses an element the model named any other
+way -- a locator, an identity or a description of its own -- instead of running
+it as written. Two optional fields of `resolvePlanNodeParameters`'s input say
+it, never both:
+
+- `writtenByModel: true`: every parameter of the node is the model's. Set for a
+  plan from the reply -- a candidate submission, a legacy completion with no
+  draft (`bootstrap-completion.ts`) -- for the one-shot `flow_bootstrap` plan of
+  a build that explored nothing (`service.ts`), and for every step and fact an
+  in-run repair writes (`runtime/recovery/annotation/step-evidence-resolution.ts`).
+- `modelWrittenParameters: string[]`: for a node the host wrote -- a plan built
+  from the draft, whose steps ran with what the domain resolved -- the
+  top-level parameters the model wrote over it: the `settings` an
+  `amend_draft` decision carried onto the step, which replace that parameter
+  whole (`runtime/llm/harness-options/amended-plan-parameters.ts`). Only those
+  are judged.
+
+A step the draft ran, a step the Flow being extended already holds, and a
+hand-authored Flow compiled without a build (the Lab's recovery matrix) are
+never flagged, so their literal locators still run.
+
+A fact is Core's own statement, so Core judges its target itself: with
+`writtenByModel`, or in a parameter `modelWrittenParameters` names, a fact
+target that names neither a handle nor a dialog -- the `at "<locator>"` form,
+which only a hand-authored Flow may write
+(`runtime/flow-bootstrap/script-statements/fact-locator.ts`) -- is refused as
+`bootstrap.target_not_a_handle` at its path, with a fixed sentence saying to
+name the element by the handle the evidence printed. An in-run repair's fact
+whose target is anything but `handles` is refused the same way before any
+domain is asked.
 
 ## Core-derived fields
 
@@ -584,6 +779,14 @@ extra branches are excluded unless an active instruction explicitly requests
 them. The bootstrap directives are absent from the untrusted user context and
 other task messages. Requests disable thinking and set temperature to zero;
 the strict Bootstrap response schema remains authoritative.
+
+A reply that stopped of its own accord (`finish_reason: stop`) but never
+closes its object, short only of closing brackets at its end, has the closers
+its open brackets need appended (`llm/deepseek/unclosed-content.ts`, since
+t378). The closed text must parse and is validated as any reply; content that
+does not start with `{`, ends inside a string or closes the wrong bracket is
+still refused `content_unclosed`, and a `length` reply is refused as
+truncated before this runs. The reply as sent stays in the step log.
 
 ### Domain system instructions
 
@@ -1102,6 +1305,30 @@ effect for a step it cannot run, to pass over a step the site already did
 (`../automation-studio.md`, "A step that cannot run continues where the page
 is").
 
+**A step the build acted on also carries its effect from the domain (t447).**
+The candidate path has no build routing to sign a step with, and the model's
+own `routeSignatures` are dropped, so until t447 a candidate's steps reached
+the Flow with no signatures at all: in the same browser session a coupon the
+build collected stays "Collected", the step's saved control ("Get coupons",
+t442) is not on the page, and the run failed a step whose act was done. Only
+the domain knows which act a handle's control came from, so its answer to
+`resolvePlanNodeParameters` may carry `effect`: what that act made true, in the
+host's own route-effect form (`signRouteEffect`) and within a signature's
+2,048-character bound (`automationStudioReadRouteSignature`); anything else
+refuses the node as `bootstrap.parameter_resolution_invalid`. Core accepts it
+on any resolved answer, candidate or draft, and writes it onto the plan node as
+`routeSignatures.effect` where the build signed no effect of its own: an effect
+signed from the step's own pages stands. A fact's answer keeps none
+(`runtime/llm/harness-options/plan-parameter-resolution.ts`). From there it
+rides validation and `adaptation.ts` to the Flow node exactly as a signed one
+does. An effect only ever skips a step: state routing goes on along the step's
+own success edge when the page shows it (`effect_holds`), and the repeated-act
+guard never sends a run back to a completed lasting act because of one. A
+build test's check of a step carried from a Flow node sends that node's
+recorded effect with it (`effect` on the `replay: "verify"` call,
+`runtime/llm/node-tools/replay.ts`), and a host that finds it on the page
+answers `present` whatever the control now reads.
+
 **The instructed acts are the model's checklist from the first decision**
 (audit A1, cause 1). The draft entry carries `acts`: each lasting act the
 instruction asks for, in the person's words, with `done` naming the step of the
@@ -1322,17 +1549,30 @@ actually run (causes C-F, UI-4).
 
 A round that could not be measured is never "not doable" (t194-w70). A
 re-author or extend build seeds its draft from a stored Flow. Each step it
-carries (`f<n>`) has nothing it ran with. An unchanged carried step whose node
-declared its consequences and whose start page the repaired run captured holds a
-scheduled candidate, and the test runs it fresh as the Flow saved it; the Merge
-an optional step joins at is passed through (`runtime/flow-draft/carried-step/`,
+carries (`f<n>`) has nothing it ran with. An unchanged carried step holds a
+scheduled candidate where it declared its consequences or its node need not
+(the domain says which on each node definition, `consequenceDeclaration`, read
+by `automationStudioNodeDeclarationRequired`; unsaid, it must), with the start
+page the repaired run captured where it captured one (t439), and the test runs
+it fresh as the Flow saved it. A saved press that declared nothing is never run
+blind: the permission gate is asked about an action from its declaration, so
+it is listed to be rerun with one. The Merge an optional step joins at is
+passed through, and so is an optional carried step the test cannot run as
+saved, which is excused as optional and never listed for a live rerun. A change
+to an optional saved step that the test never exercised is not saved: once the
+build is finished the step goes back to its saved version, the plan is built
+again, and the chat says "Kept the saved version of ..."
+(`runtime/flow-draft/carried-step/untested-edit.ts`; `runtime/flow-draft/carried-step/`,
 t274 C-4: live run `run-muw60j7c-bb7c9a62`'s re-author was told to rerun every
 carried step live, the domain refused each rerun of the stored type step,
 which names an element and no handle, as `target_not_a_handle`, and five
-rounds ended without a test). Any other carried step has nothing to put the
-target back with until it is rerun live, and Core never runs such a step
-itself, because the permission gate reads its missing consequence declaration
-as "none". A round whose Flow still holds one of those is not tested at its
+rounds ended without a test; t439: live run `run-mv4912r9-53b05a51`'s script
+-authored Flow declared only its presses and its failed playback never started
+the nodes after the failing one, so the gate demanded live reruns of steps the
+domain then refused, repair never completed, and the optional notice step was
+forced into a press of an unrelated control). Any other carried step -- one
+changed since it was seeded -- has nothing to run until it is rerun live. A
+round whose Flow still holds one of those is not tested at its
 end; its judgement names those steps (`notRunInThisBuild`), and neither `repeated_unchanged` nor
 `no_progress` is concluded from it, since there is no measurement to compare.
 Live run `run-murwcmx2`'s re-author ended not doable with the advised fix in its
@@ -1544,9 +1784,35 @@ instruction, every decision, the test and the judge are all held against it.
 - **The spend outlives a build.** It is kept on a per-Flow creation record
   (`runtime/flow-bootstrap/creation-spend/`, stored as `creation-spend.json`
   beside the Flow by `runtime/service/creation-spend.ts`), carried into the
-  next build's purse as `carriedUsd`, and cleared when the creation ends. A
-  refuted-result repair during a later scheduled run keeps its own run ceiling
-  and never touches the record.
+  next build's purse as `carriedUsd`, and, outside the Lab, cleared when the
+  creation ends. In a product run a refuted-result repair during a later
+  scheduled run keeps its own run ceiling and never touches the record.
+- **In a Lab-scoped run the record is the Flow's one purse (t438).** The
+  user's words (2026-10-01): "bring the ceiling down to $0.1 per flow max".
+  One purse per Flow: its build, re-authors, repairs and judge all count
+  against it, in billed dollars, with no cap on output. Where the run cost
+  ceiling is Lab-scoped (`FLUXIQ_LLM_RUN_COST_CEILING_SCOPE=test`), a Flow's
+  builds and its runs (`runRuntimeSession`, through
+  `service/runtime-adaptation/flow-spend.ts`) run under a second purse, the
+  Flow's (`runtime/llm/build-purse/flow-scope.ts`), at the run cost ceiling.
+  The harness holds every call against it as well as against any build purse
+  (`build-purse/harness-hold.ts`); its spend is the Flow's record read live,
+  and each settled call is added to the record as it settles, with a
+  compare-and-add the store serializes, so no two additions read the same
+  total. So the build and its judge, the chat's reading of the message that
+  asked for the build or the run (added when the build or run opens), the
+  run's in-run repairs (sized to what the Flow has left at each incident, not
+  once per run), its recovery after the run, its result check, its re-authors
+  and their re-runs all draw on one ceiling, whether the run succeeds or
+  fails. Each pass of a refuted-result repair opens its purse from the Flow's
+  record (`recovery/refuted-result/purse.ts`); a ladder already in the record
+  joins only the averages. A call the Flow's purse cannot pay for is refused
+  unsent and ends its part on the cost bound, as a part's own ceiling does.
+  The record outlives the creation, so a later build of the same Flow -- an
+  extend after it was proposed -- carries everything the Flow has spent.
+  Product scope keeps one purse per creation and a per-run repair purse: a
+  product Flow runs on a schedule indefinitely, and a lifetime purse would
+  leave every later run with nothing.
 - **Holds price what is sent, with an observed reply reserve (t254).** Each
   call is held at the input its provider will send -- never the packed request,
   which carries the whole node catalog and is kept only for the window refusal
@@ -1976,11 +2242,12 @@ stands; any edit after that run needs another. Three pieces hold it:
 
 **Re-authored and extended Flows.** A re-author or an improve is an extend
 build seeded from the stored Flow (`runtime/llm/node-tools/draft-from-flow.ts`):
-its carried steps `f<n>` have no `ranWith` and no `replay`. One whose node
-declared its consequences and whose start page the repaired run captured is
-run by the test as saved (its scheduled candidate) while unchanged; a carried
-Merge is passed through; any other must be rerun live before the Flow can be
-tested whole (t274 C-4).
+its carried steps `f<n>` have no `ranWith` and no `replay`. Each is run by the
+test as saved (its scheduled candidate) while unchanged, where it declared or
+its node need not, with its captured start where the repaired run captured one
+(t439); a carried Merge,
+and an optional carried step the test cannot run, are passed through; any other
+must be rerun live before the Flow can be tested whole (t274 C-4).
 The rerun is a new step; it records `standsFor`, the id of the step whose place
 it took (`runtime/flow-draft/step.ts`,
 `runtime/llm/evidence-loop/rerun-replacement.ts`), so the written Flow keeps

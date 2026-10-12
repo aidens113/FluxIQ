@@ -47,15 +47,33 @@ describe("a Flow read back as a draft", () => {
     expect(seed.steps[0]!.priorExecution).toBeUndefined();
   });
 
-  it("refuses missing declarations or captured start, changed configuration and copied steps", () => {
+  it("refuses a first step with no captured start, changed configuration and copied steps", () => {
     const node = { id: "saved", definitionId: "fixture.open", metadata: { declaredConsequences: [] } };
     expect(automationStudioFlowDraftReplayable(automationStudioFlowDraftSeedFromFlow({ nodes: [node], edges: [] }).steps)).toBe(false);
-    expect(automationStudioFlowDraftReplayable(automationStudioFlowDraftSeedFromFlow({ nodes: [{ id: "saved", definitionId: "fixture.open" }], edges: [], startPages: { saved: { location: "fixture://start" } } }).steps)).toBe(false);
     const seed = declaredSeed();
     expect(automationStudioFlowDraftReplayable(seed.steps.map((step) => ({ ...step })))).toBe(false);
     seed.steps[0]!.input.parameters = { changed: true };
     expect(automationStudioFlowDraftReplayable(seed.steps)).toBe(false);
   });
+  // t439 (`run-mv4912r9-53b05a51`): a script-authored Flow declares only its
+  // presses, and a failed run never starts the nodes after the one it failed at.
+  it("schedules an undeclared saved step its node need not declare, and a later step whose start was never captured, keeping no declaration it lacked", () => {
+    const undeclared = (declarationRequired: (definitionId: string) => boolean) => automationStudioFlowDraftSeedFromFlow({
+      nodes: [{ id: "open", definitionId: "fixture.open" }, { id: "tick", definitionId: "fixture.tick" }],
+      edges: [{ id: "e1", sourceNodeId: "open", targetNodeId: "tick" }],
+      startPages: { open: { location: "fixture://start" } },
+      declarationRequired
+    });
+    const seed = undeclared(() => false);
+    expect(seed.steps.map((step) => Object.hasOwn(step.input, "consequences"))).toEqual([false, false]);
+    expect(seed.steps.map((step) => step.scheduledCandidate?.sourceNodeId)).toEqual(["open", "tick"]);
+    expect(automationStudioFlowDraftReplayable(seed.steps)).toBe(true);
+    // A node whose steps must declare (a press) is not scheduled undeclared (supervisor review, t439).
+    const pressing = undeclared((definitionId) => definitionId === "fixture.tick");
+    expect(pressing.steps.map((step) => step.scheduledCandidate?.sourceNodeId)).toEqual(["open", undefined]);
+    expect(automationStudioFlowDraftReplayable(pressing.steps)).toBe(false);
+  });
+
   it("orders the steps the way the Flow runs them, not the way the document lists them", () => {
     const seed = automationStudioFlowDraftSeedFromFlow(flow());
     expect(seed.steps.map((step) => step.actionId)).toEqual(["web.page.navigate", "web.dom.extract_list"]);
@@ -283,6 +301,26 @@ describe("a re-authored Flow keeps the routing it inherited", () => {
     // And every node the Flow already had keeps its id, the join included.
     expect(automationStudioFlowDraftPlanNodeIds({ steps, nodeIdByStepId: seed.nodeIdByStepId }))
       .toEqual({ s1: "node.s1", s2: "node.s2", s3: "node.s3", s4: "node.s4", s5: "node.s5" });
+  });
+
+  // t378 (W17): a repair read the saved Flow back as a draft and dropped the
+  // pace a trial had learned, so the repaired Flow ran the node unpaced again.
+  it("keeps a node's authored pace on the same node once the draft is assembled", () => {
+    const nodes = built().nodes.map((each) => each.id === "node.s3" ? { ...each, metadata: { paceMs: 6000 } } : each);
+    const seed = automationStudioFlowDraftSeedFromFlow({ ...built(), nodes });
+    expect(seed.steps.map((step) => step.paceMs ?? null)).toEqual([null, null, 6000, null, null, null]);
+    const assembled = assemble(seed.steps);
+    expect(assembled.issues.filter((item) => item.severity === "error")).toEqual([]);
+    const paced = assembled.plan!.subflows[0]!.nodes.filter((item) => item.paceMs !== undefined);
+    expect(paced.map((item) => item.paceMs)).toEqual([6000]);
+    expect(seed.nodeIdByStepId[assembled.draftStepIdByNodeKey![paced[0]!.key]!]).toBe("node.s3");
+  });
+
+  it("carries no pace that is not a positive whole number of milliseconds", () => {
+    for (const paceMs of [0, -5, 1.5, "6000", null]) {
+      const nodes = built().nodes.map((each) => ({ ...each, metadata: { paceMs } }));
+      expect(automationStudioFlowDraftSeedFromFlow({ ...built(), nodes }).steps.every((each) => each.paceMs === undefined)).toBe(true);
+    }
   });
 });
 

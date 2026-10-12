@@ -481,7 +481,9 @@ describe("the extension's chat, end to end in Core", () => {
     expect(response?.execution).toMatchObject({ capabilityId: "flow.createHere", status: "started" });
     await automationStudioConversationCommandWork.idle();
     const [result] = resultTurns((await world.thread()).turns, "flow.createHere");
-    expect(result?.text).toMatch(/stopped because/u);
+    // Why it stopped, opening the answer, and never the command's name (t378).
+    expect(result?.text).toMatch(/^The build failed: /u);
+    expect(result?.text).not.toContain("Create an automation here");
     // How far it got: the Flow it made, empty, never "created" as work done after a failed build.
     expect(result?.text).toMatch(/The Flow "[^"]+" has no steps yet, but it keeps your instruction, so you can build it again\./u);
     expect(result?.text).not.toMatch(/Before that I created the Flow/u);

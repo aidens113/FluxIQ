@@ -73,6 +73,15 @@ describe("Run it", () => {
     expect(calls[0]).toEqual({ endpoint: "run-runtime-session", payload: { projectId: "project.run", flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks" } });
   });
 
+  // t438: what reading the message cost travels with the run, so a Lab-scoped run counts it against the Flow's one purse.
+  it("carries what reading the message cost to the run", async () => {
+    const { context, calls } = contextWith({ "run-runtime-session": ended("succeeded"), "get-flow": named }, { interpretationCostUsd: 0.0003 });
+
+    await AUTOMATION_STUDIO_CONVERSATION_RUN_FLOW.run(context, { flowId: "flow.kettle" });
+
+    expect(calls[0]?.payload).toEqual({ projectId: "project.run", flowId: "flow.kettle", runIntent: "explore_and_adapt", resultCheckCallerPays: "repair_checks", interpretationCostUsd: 0.0003 });
+  });
+
   it("asks a paired client's run to pay only for the result checks that judge a repair", async () => {
     const { context, calls } = contextWith({ "run-runtime-session": ended("succeeded") }, { paired: true, sessionId: "session.unlocked" });
 

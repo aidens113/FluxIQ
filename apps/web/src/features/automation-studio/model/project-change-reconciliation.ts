@@ -124,6 +124,7 @@ export function upsertSubflowSummaryIntoProjectFlows(current: any[], parentFlowI
     const summary = {
       subflowId: subflow.subflowId,
       ...(subflow.name ? { name: subflow.name } : {}),
+      ...(typeof subflow.role === "string" && subflow.role ? { role: subflow.role } : {}),
       ...(subflow.graphFlowId ? { graphFlowId: subflow.graphFlowId } : {}),
       ...(typeof parentCategoryId === "string" && parentCategoryId ? { parentCategoryId, metadata: { subflowCategoryId: parentCategoryId } } : {})
     };

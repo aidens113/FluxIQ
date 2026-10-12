@@ -1,12 +1,14 @@
 import type { AutomationStudioFlowDocument, AutomationStudioFlowNode } from "../../../model/index.ts";
-import { automationStudioActivityAction, automationStudioActivityHumanLabel, automationStudioActivityStepNumbers, emitAutomationStudioActivity } from "../../activity/index.ts";
+import { automationStudioActivityAction, automationStudioActivityHumanLabel, automationStudioActivityStepNumbers, emitAutomationStudioActivityStepSkipped } from "../../activity/index.ts";
 import { chooseAutomationStudioStartNode } from "../start-node.ts";
 import type { AutomationStudioStateRouteDecision } from "./decision.ts";
 
 /**
  * Tells the chat that a step that could not run was passed over, and where the
  * run went on. A declared skip says what it always said ("Skipped “Not now”:
- * it was not shown"); a state route names the step it skipped and the step
+ * it was not shown"), and, for a step that does a lasting act, that the act
+ * was not done ("Skipped “Get coupons”: it was not shown, so it was not done",
+ * r4b F4); a state route names the step it skipped and the step
  * the run continues with, in the same voice, since a step named by what it does
  * ("clicking “Set as my store”") reads after "Skipped" and "Continuing with" but
  * not after "Passed over" or "Continuing at" (`run-muw5zv4m-52d83027`). Neither
@@ -15,13 +17,18 @@ import type { AutomationStudioStateRouteDecision } from "./decision.ts";
 export function announceAutomationStudioStateRoute(flow: AutomationStudioFlowDocument, node: AutomationStudioFlowNode, decision: AutomationStudioStateRouteDecision): void {
   if (decision.kind !== "declared" && decision.kind !== "routed") return;
   const said = decision.kind === "declared"
-    ? automationStudioActivityAction({ parameters: node.parameterValues, label: node.label, notShown: true }) ?? "Skipped a step"
+    ? `${automationStudioActivityAction({ parameters: node.parameterValues, label: node.label, notShown: true }) ?? "Skipped a step"}${decision.notDone ? ", so it was not done" : ""}`
     : decision.record.outcome === "effect_holds"
       ? `Skipped ${stepName(flow, node)}: the page already shows what it does. Continuing with ${stepName(flow, decision.node)}`
       : decision.direction === "forward"
       ? `Skipped ${stepName(flow, node)}: the page is already past it. Continuing with ${stepName(flow, decision.node)}`
       : `Skipped ${stepName(flow, node)}: the page went back to an earlier step. Continuing with ${stepName(flow, decision.node)}`;
-  emitAutomationStudioActivity({ phase: "running", label: said, detail: { kind: "step", title: said, status: "succeeded", ref: node.id } });
+  const subject = node.label?.trim();
+  emitAutomationStudioActivityStepSkipped({
+    nodeId: node.id,
+    said,
+    skipped: { reason: decision.kind === "declared" ? "optional_absent" : "state_routed", ...(subject ? { subject } : {}) }
+  });
 }
 
 /**

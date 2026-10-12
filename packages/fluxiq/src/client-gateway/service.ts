@@ -8,6 +8,7 @@ import type {
   ClientGatewayClientMessage,
   ClientGatewayEventHandler,
   ClientGatewayPairingChallenge,
+  ClientGatewayReconcileAnswer,
   ClientGatewayServerMessage,
   ClientGatewaySession,
   ClientGatewaySocket,
@@ -33,6 +34,10 @@ import {
 } from "./service/index.ts";
 
 export type {
+  ClientGatewayCommandClosure,
+  ClientGatewayCommandOwnerRef,
+  ClientGatewayLateActionResult,
+  ClientGatewayLateActionResultListener,
   ClientGatewayItemKind,
   ClientGatewayServiceOptions,
   ClientGatewaySummaryItem,
@@ -40,7 +45,7 @@ export type {
   ClientGatewayTrustedClientStore
 } from "./service/index.ts";
 
-import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayServiceOptions, ClientGatewaySummaryPage } from "./service/index.ts";
+import type { ClientGatewayFacadePorts, ClientGatewayItemKind, ClientGatewayLateActionResultListener, ClientGatewayServiceOptions, ClientGatewaySummaryPage } from "./service/index.ts";
 
 /**
  * The client gateway: pairing, durable client trust, session lifecycle, and the
@@ -83,7 +88,7 @@ export class ClientGatewayService {
     };
     const pairingFlow = new ClientGatewayPairingFlow({ config, pairings, sessions, trustedClients, transport, audit, events, facade });
     const lifecycle = new ClientGatewayLifecycle({ config, sessions, trustedClients, transport, audit, events, pairingFlow, facade });
-    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger });
+    const commands = new ClientGatewayCommands({ config, sessions, transport, audit, events, resolveCommandLedger: options.resolveCommandLedger, commandOwner: options.commandOwner });
 
     this.trustedClients = trustedClients;
     this.audit = audit;
@@ -93,7 +98,7 @@ export class ClientGatewayService {
     this.lifecycle = lifecycle;
     this.commands = commands;
     this.access = new ClientGatewayAccess({ sessions, trustedClients, transport, audit, lifecycle, facade });
-    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands });
+    this.inbound = new ClientGatewayInbound({ sessions, transport, events, lifecycle, pairingFlow, commands, audit, facade });
     this.activity = new ClientGatewayActivityPublisher(sessions, transport);
     this.views = new ClientGatewayViews({ config, sessions, pairings, trustedClients, audit });
   }
@@ -157,6 +162,16 @@ export class ClientGatewayService {
     return this.events.subscribe(handler);
   }
 
+  /**
+   * Hears every action result that arrives after Core stopped waiting for its
+   * command -- timed out, marked uncertain, closed or already settled -- from
+   * the client the command was sent to. Such a result resolves nothing; this is
+   * how it reaches the run's evidence.
+   */
+  onLateActionResult(listener: ClientGatewayLateActionResultListener): () => void {
+    return this.commands.onLateActionResult(listener);
+  }
+
   async receiveRaw(sessionId: string, rawMessage: string): Promise<void> {
     await this.inbound.receiveRaw(sessionId, rawMessage);
   }
@@ -181,6 +196,18 @@ export class ClientGatewayService {
   executeAction(sessionId: string, command: ClientGatewayActionCommand, options: ClientGatewayDurableActionOptions): ClientGatewayDurableActionResponse;
   executeAction(sessionId: string, command: ClientGatewayActionCommand, options?: ClientGatewayDurableActionOptions): ClientGatewayActionResponse | ClientGatewayDurableActionResponse {
     return arguments.length > 2 ? this.commands.executeAction(sessionId, command, options!) : this.commands.executeAction(sessionId, command);
+  }
+
+  /**
+   * Asks the client a command was sent to what became of it -- `landed` with
+   * the result it kept, `not_seen`, `running` or `unknown` -- by command id,
+   * as a question it answers from what it kept and never by acting (C8, B3).
+   * A command whose answer never came is asked about this way before it is
+   * settled `timed_out`. `undefined` when no session of that client declared
+   * it answers, or the command is not one this gateway remembers sending.
+   */
+  reconcileAction(commandId: string): Promise<ClientGatewayReconcileAnswer | undefined> {
+    return this.commands.reconcileAction(commandId);
   }
   /** Finish pending action accounting and leased durable ports before program storage shuts down. */
   close(): Promise<void> { return this.commands.close(); }

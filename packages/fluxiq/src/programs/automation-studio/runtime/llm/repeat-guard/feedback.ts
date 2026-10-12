@@ -4,6 +4,7 @@
 // value.
 
 import type { JsonObject } from "../../../../../core/index.ts";
+import { automationStudioLlmEvidenceCandidateRepeatInstruction } from "./candidate-feedback.ts";
 import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "./outcomes.ts";
 
 /** The entry a refused repeat is shown under; a newer one replaces the older. */
@@ -15,7 +16,9 @@ export const AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE = "llm_evidence_
 /**
  * Decisions in a row refused as repeats after which the round ends as a stall:
  * the Flow so far is then tested, judged and repaired, or the build says why it
- * cannot be done (`../../flow-bootstrap/unfinished-build/phases.ts`).
+ * cannot be done (`../../flow-bootstrap/unfinished-build/phases.ts`). In
+ * candidate mode there is no Flow so far: the build ends, with nothing tested
+ * (`./candidate-feedback.ts`).
  */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW = 3;
 
@@ -94,7 +97,12 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
   inARow: number;
   /** For a refused `amend_draft`, the step its rerun was of. */
   rerunStep?: number | undefined;
+  /** The loop authors a candidate (`discoveryOnly`): no draft, and a stall ends the build untested (`./candidate-feedback.ts`). */
+  candidate?: boolean | undefined;
 }): JsonObject {
+  const candidate = input.candidate === true
+    ? automationStudioLlmEvidenceCandidateRepeatInstruction({ toolId: input.toolId, earlier: input.earlier, inARow: input.inARow, maxInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW })
+    : undefined;
   return {
     ok: false,
     code: AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_REFUSED_CODE,
@@ -107,8 +115,9 @@ export function automationStudioLlmEvidenceRepeatRefusalNote(input: {
       ...(input.earlier.handleUnshown ? { handleUnshown: true } : {}),
       ...(input.earlier.rerunFailed ? { rerunFailed: true } : {})
     },
+    ...(candidate?.issues ? { issues: candidate.issues } : {}),
     refusedInARow: input.inARow,
     maxRefusedInARow: AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_REFUSED_REPEATS_IN_A_ROW,
-    instruction: instructionFor(input.earlier, input.rerunStep)
+    instruction: candidate ? candidate.instruction : instructionFor(input.earlier, input.rerunStep)
   };
 }

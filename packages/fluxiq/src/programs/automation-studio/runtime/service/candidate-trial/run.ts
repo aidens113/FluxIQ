@@ -26,6 +26,7 @@ import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateSta
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart } from "./contracts.ts";
 import { automationStudioCandidateTrialFeedback as Feedback } from "./feedback.ts";
+import { automationStudioTrialLearnedPaces } from "./learned-paces.ts";
 import { automationStudioCandidateTrialSummary } from "./summary.ts";
 
 const NO_SPEND: AutomationStudioCandidateTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
@@ -75,10 +76,12 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
   await ports.writeSession(ended);
   signal.throwIfAborted();
   const shown = { trialRunId: runId, trace: executed.trace, graph: executed.graph, start: start.status };
+  // What the run learned to slow down for is kept with the trial, for a promotion of it to keep (`./promotion.ts`).
+  const learned = automationStudioTrialLearnedPaces(executed.trace, executed.graph), paced = learned.length ? { learnedPaces: learned } : {};
   if (executed.receipt.status !== "succeeded") {
     const code = executed.code ?? `candidate.trial_${executed.receipt.status}`;
     const failed = Feedback.executionFailed({ code, ...shown });
-    return answer(failed.verdict, failed.feedback, { trialRunId: runId, start, execution: executed.receipt.status, code, judge: { ...NO_SPEND } });
+    return answer(failed.verdict, failed.feedback, { trialRunId: runId, start, execution: executed.receipt.status, code, ...paced, judge: { ...NO_SPEND } });
   }
   let summary: AutomationStudioRunResultSummary;
   try {
@@ -88,13 +91,13 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
   } catch (error) {
     // What the run stored could not be read, so nobody can say whether it answers: not judged, and never a yes.
     const code = "candidate.trial_result_unreadable";
-    return answer("not_judged", { code, trialRunId: runId, start: start.status, failure: error instanceof Error && error.name ? error.name : "unknown error" }, { trialRunId: runId, start, execution: "succeeded", code, judge: { ...NO_SPEND } });
+    return answer("not_judged", { code, trialRunId: runId, start: start.status, failure: error instanceof Error && error.name ? error.name : "unknown error" }, { trialRunId: runId, start, execution: "succeeded", code, ...paced, judge: { ...NO_SPEND } });
   }
   const verdict: AutomationStudioBuildTestVerdict = await ports.judge({ summary });
   signal.throwIfAborted();
   const read = Feedback.judged({ verdict, summary, ...shown });
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
-  return answer(read.verdict, read.feedback, { trialRunId: runId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } });
+  return answer(read.verdict, read.feedback, { trialRunId: runId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...paced, judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } });
 }
 
 /** The trial's start: the deployment's hook when it has one, otherwise the target as it stands. */

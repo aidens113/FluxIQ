@@ -6,6 +6,7 @@ import type { JsonObject } from "../../../../../../core/index.ts";
 import { createBlankAutomationStudioFlowArtifact, withAutomationStudioFlowRepresentation } from "../../../../model/index.ts";
 import { generateFlowTypeScript } from "../../../../dsl/index.ts";
 import { AUTOMATION_STUDIO_WITHHELD_VALUE, automationStudioAttemptInputs } from "../../../executor/index.ts";
+import type { AutomationStudioLlmTaskRequest, AutomationStudioRuntimePatch } from "../../../llm/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 
 // Heavy service test: under full-suite load it ran past the 15 s default (t289).
@@ -351,23 +352,31 @@ describe("Automation Studio run inputs at rest", () => {
 // Obviously synthetic, for the same reason as the run input above.
 const LIVE_PATCH_NOTE = "synthetic-live-patch-input-that-must-never-be-persisted";
 
-describe("Automation Studio live-patch reruns and run inputs", () => {
+// The in-run repair (state-aware recovery plan, C6 step 8) holds the run at
+// `gate` and asks once. The scripted model replaces `gate` with a division of
+// the run's inputs, and that replacement's trial is the fix's proof: it runs in
+// the run, on the values the run holds, so 6 / 3 succeeds, where `[withheld]`
+// would read as 0 and fail it. What is saved -- the trace, the run detail, the
+// fix's review records -- withholds them all the same.
+describe("Automation Studio in-run repair and run inputs", () => {
   let dataDir: string;
   let service: AutomationStudioService;
+  let requests: AutomationStudioLlmTaskRequest[];
 
   beforeEach(async () => {
     dataDir = await mkdtemp(path.join(os.tmpdir(), "fluxiq-live-patch-inputs-"));
+    requests = [];
     service = new AutomationStudioService({
       dataDir,
       seedFixture: false,
       llmProviderResolver: () => ({
         metadata: { provider: "mock", model: "patch-model" },
-        runTask: async (request) => request.taskKind === "runtime_patch"
-          ? {
-            response: { kind: "runtime_patch", summary: "Retry the division.", riskLevel: "low", patches: [{ kind: "temporary_wait_retry", targetNodeId: "divide", retryCount: 1, reason: "Retry the division with the run's inputs." }] },
-            usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.002 }
-          }
-          : { response: { kind: "diagnosis", summary: "The gate failed." }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } }
+        runTask: async (request) => {
+          requests.push(request);
+          return request.taskKind === "runtime_patch"
+            ? { response: { kind: "runtime_patch", summary: "Divide the run's inputs at the gate.", riskLevel: "low", patches: [divideAtGate()] }, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, estimatedCostUsd: 0.002 } }
+            : { response: { kind: "diagnosis", summary: "The gate failed." }, usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6, estimatedCostUsd: 0.001 } };
+        }
       })
     });
   });
@@ -378,48 +387,58 @@ describe("Automation Studio live-patch reruns and run inputs", () => {
   });
 
   for (const representation of ["routed", "legacy single graph"] as const) {
-    it(`seeds a rerun from the failed attempt as the run executed it, while the saved trace withholds its inputs (${representation})`, async () => {
-      const project = await service.createProject({ name: `Live-patch rerun inputs, ${representation}` });
+    it(`tries an in-run fix on the run's own inputs, while the saved trace withholds them (${representation})`, async () => {
+      const project = await service.createProject({ name: `In-run repair inputs, ${representation}` });
       const flowId = representation === "routed" ? await createRoutedGateFlow(service, project.id) : await createLegacyGateFlow(service, project.id);
 
       const run = await service.runRuntimeSession({ projectId: project.id, flowId, inputs: { left: 6, right: 3, note: LIVE_PATCH_NOTE } });
       if (representation !== "routed") expect(run.metadata).toMatchObject({ compatibilityDiagnostics: [expect.objectContaining({ code: "flow.legacy_single_graph_execution" })] });
 
-      // The rerun starts at `divide`, which divides the failed attempt's run
-      // inputs: 6 / 3 succeeds, while `[withheld]` reads as 0 and fails it.
-      const detail = await service.getFlowRunDetail(project.id, run.runId);
-      // `traceStatus: "succeeded"` is what proves the rerun ran on the run's own
-      // inputs rather than on `[withheld]`. The synthetic gate's derived
-      // expectation carries nothing the disconnected divide can verify, so the
-      // rerun is correctly recorded as unverifiable rather than restored.
-      expect(detail?.metadata?.runtimePatchAttempts).toEqual([expect.objectContaining({
-        kind: "temporary_wait_retry",
-        traceStatus: "succeeded",
-        restoredExpectedState: false,
-        verification: { status: "unverifiable", reason: "expectation_empty" }
-      })]);
+      expect(run.status).toBe("succeeded");
+      expect(requests.map((request) => request.taskKind)).toEqual(["runtime_diagnosis", "runtime_patch"]);
+      expect(JSON.stringify(requests)).not.toContain(LIVE_PATCH_NOTE);
       const saved = await service.getRuntimeSession(project.id, run.runId);
       const savedAttempts = saved?.trace?.attempts ?? [];
-      const gate = savedAttempts.findIndex((attempt) => attempt.nodeId === "gate");
-      expect(savedAttempts[gate]?.status).toBe("failed");
-      // The saved trace keeps each value once; the attempt's inputs are read back whole.
-      expect(automationStudioAttemptInputs(savedAttempts, gate)).toMatchObject({ left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE, note: AUTOMATION_STUDIO_WITHHELD_VALUE });
+      const failed = savedAttempts.findIndex((attempt) => attempt.nodeId === "gate" && attempt.status === "failed");
+      const trial = savedAttempts.findIndex((attempt) => attempt.nodeId === "gate" && attempt.status === "succeeded");
+      expect(savedAttempts[failed]?.repair).toMatchObject({ outcome: "held", unit: { kind: "node", nodeId: "gate" } });
+      // The trial is the replacement, run in place: only the run's own 6 / 3 makes 2.
+      expect(savedAttempts[trial]).toMatchObject({ definitionId: "builtin.math.divide", outputs: { result: 2 } });
+      expect(saved?.trace?.repairs).toEqual([savedAttempts[failed]?.repair?.repairId]);
+      // No detached rerun: the run never left its step loop.
+      const detail = await service.getFlowRunDetail(project.id, run.runId);
+      expect(detail?.metadata?.runtimePatchAttempts ?? []).toEqual([]);
+      expect(detail?.metadata).not.toHaveProperty("adaptiveRetry");
+      // The saved trace keeps each value once; both attempts' inputs are read back whole, and withheld.
+      const withheld = { left: AUTOMATION_STUDIO_WITHHELD_VALUE, right: AUTOMATION_STUDIO_WITHHELD_VALUE, note: AUTOMATION_STUDIO_WITHHELD_VALUE };
+      expect(automationStudioAttemptInputs(savedAttempts, failed)).toMatchObject(withheld);
+      expect(automationStudioAttemptInputs(savedAttempts, trial)).toMatchObject(withheld);
       expect(await filesHolding(service, dataDir, LIVE_PATCH_NOTE)).toEqual([]);
     });
   }
 });
 
+/** The fix the scripted model answers: `gate` replaced by a division of the run's inputs. */
+function divideAtGate(): AutomationStudioRuntimePatch {
+  return {
+    kind: "replace_unit",
+    unit: { kind: "node", nodeId: "gate" },
+    steps: [{ definitionId: "builtin.math.divide", parameters: {} }],
+    consequences: [],
+    reason: "Divide the run's inputs where the gate stood."
+  };
+}
+
 // `gate` fails on a repair-eligible execution error, with the run's inputs in
-// its attempt; `divide` is disconnected until a patch starts a rerun there.
+// its attempt and nothing to take the run on: a true failure.
 const gateNodes = [
   { id: "start", definitionId: "builtin.control.start" },
   { id: "gate", definitionId: "builtin.random.choice", parameterValues: { allowEmpty: false } },
-  { id: "divide", definitionId: "builtin.math.divide", parameterValues: {} },
   { id: "end", definitionId: "builtin.control.end", parameterValues: { status: "success" } }
 ];
 const gateEdges = [
   { id: "start.gate", sourceNodeId: "start", sourcePortId: "success", targetNodeId: "gate", targetPortId: "in" },
-  { id: "divide.end", sourceNodeId: "divide", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
+  { id: "gate.end", sourceNodeId: "gate", sourcePortId: "success", targetNodeId: "end", targetPortId: "in" }
 ];
 
 function adaptiveMetadata(): JsonObject {

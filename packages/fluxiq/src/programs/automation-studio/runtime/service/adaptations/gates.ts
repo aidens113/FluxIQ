@@ -52,5 +52,10 @@ export const AUTOMATION_STUDIO_ADAPTATION_PATCH_GATES: Record<AutomationStudioCh
   promote_adaptation: { requiresProposal: false, major: true, structural: true },
   edit_expectation: OPEN,
   edit_action_target: OPEN,
-  edit_instruction: OPEN
+  edit_instruction: OPEN,
+  // A unit repair (C12) writes a handler or replaces a unit's steps: executable
+  // nodes on a recovery path or the path a run takes. Structural, and linked to
+  // its review record like every recovery path the plan names.
+  add_handler: GATED,
+  replace_unit: GATED
 };

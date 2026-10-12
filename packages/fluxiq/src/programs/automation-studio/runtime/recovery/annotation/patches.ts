@@ -54,8 +54,8 @@ import { checkAutomationStudioRuntimeTargetOverride } from "../../live-patch/ind
 import { automationStudioRuntimePatchKindPolicyRefusal, type AutomationStudioRuntimePatchKind } from "../plan.ts";
 import { compactJsonObject, isJsonRecord } from "../../service/index.ts";
 import type { AutomationStudioRuntimeAdaptationContext } from "../../service.ts";
-import { automationStudioExploredEvidenceHandle } from "./exploration.ts";
 import type { AutomationStudioRuntimeRecoveryPorts } from "./ports.ts";
+import { automationStudioRecoveryTargetEvidenceCheck, type AutomationStudioRecoveryTargetEvidenceSource } from "./target-evidence-check.ts";
 
 export type AutomationStudioRuntimeRecoveryPatchInput = {
   ports: Pick<AutomationStudioRuntimeRecoveryPorts, "llmEvidenceRuntime" | "saveFlowChangeProposal" | "saveFlowAdaptation" | "promoteRuntimeAdaptation">;
@@ -129,20 +129,21 @@ export async function applyAutomationStudioRuntimeRecoveryPatches(
     }));
     return { attempts, adaptationIds, changeProposalIds };
   }
-  const targetCheck = targetOverrideEvidenceCheck(input);
+  const targetCheck = automationStudioRecoveryTargetEvidenceCheck(input);
   for (const patch of input.patches) {
     // Only a patch that acts is held to the plan's list. A wait or a reroute
     // the plan did not name costs a rerun and changes nothing durable; a target
     // override presses a control and an inserted step runs one, and the plan's
     // list is the only thing that says the failure is one either could fix at
-    // all.
-    if ((patch.kind === "temporary_target_override" || patch.kind === "temporary_action_sequence") && !input.allowedPatchKinds.includes(patch.kind)) {
+    // all. A new handler and a replaced unit run steps of their own, and only
+    // a plan for an in-run repair lists them.
+    if ((patch.kind === "temporary_target_override" || patch.kind === "temporary_action_sequence" || patch.kind === "add_handler" || patch.kind === "replace_unit") && !input.allowedPatchKinds.includes(patch.kind)) {
       attempts.push(unplannedPatchAttempt(input, patch));
       continue;
     }
     // Which evidence the accepted target came from, for the receipt. Set only
     // when the domain accepted it.
-    let targetEvidence: TargetEvidenceSource | undefined;
+    let targetEvidence: AutomationStudioRecoveryTargetEvidenceSource | undefined;
     const patchInput = {
       projectId: input.context.projectId,
       flowId: input.context.flowId,
@@ -324,77 +325,6 @@ function heldPatchAttempt(kind: AutomationStudioRuntimePatch["kind"], permission
     traceStatus: "not-run"
   });
 }
-
-type TargetEvidenceSource = "failure_evidence" | "exploration_evidence";
-type TargetEvidenceJudgement = { validation: AutomationStudioRuntimeTargetOverrideEvidenceValidation; source?: TargetEvidenceSource };
-type TargetEvidenceCheck = (target: AutomationStudioRuntimeTargetOverrideTarget, failedAction: AutomationStudioRuntimeTargetOverrideFailedAction) => TargetEvidenceJudgement;
-
-/**
- * The target check a patch is judged by, or none when there is nothing to judge
- * it with -- no domain check bound, or no packet at all -- which the live patch
- * refuses as `domain_check_unavailable`.
- *
- * Without an exploration slot this is the check it always was: every handle,
- * as written, against the failure packet. With one, the handles say which
- * packet they came from. A target naming one explored packet is judged against
- * that packet alone, with Core's qualifier removed; one naming none is judged
- * against the failure packet. A target that mixes packets, or names an explored
- * packet the request did not carry, was not shown to the model as one thing
- * and is refused without asking the domain -- so a handle that no packet
- * issued is refused exactly as it was before explored packets existed.
- */
-function targetOverrideEvidenceCheck(input: AutomationStudioRuntimeRecoveryPatchInput): TargetEvidenceCheck | undefined {
-  const binding = input.ports.llmEvidenceRuntime;
-  const validate = binding?.validateTargetOverrideEvidence;
-  if (!binding || !validate) return undefined;
-  // One question to the domain about one packet. A throw is read as `absent`,
-  // as it always was: the domain could not vouch for the target.
-  const askDomain = (evidence: JsonObject, target: AutomationStudioRuntimeTargetOverrideTarget, failedAction: AutomationStudioRuntimeTargetOverrideFailedAction): AutomationStudioRuntimeTargetOverrideEvidenceValidation => {
-    try {
-      return validate.call(binding, evidence, target, failedAction);
-    } catch {
-      return { status: "absent" };
-    }
-  };
-  const failureEvidence = input.failureEvidence;
-  const exploration = input.explorationEvidence;
-  if (!exploration) {
-    if (!failureEvidence) return undefined;
-    return (target, failedAction) => ({ validation: askDomain(failureEvidence, target, failedAction), source: "failure_evidence" });
-  }
-  const carried = new Map(exploration.packets.map((entry) => [entry.evidenceId, entry.packet] as const));
-  return (target, failedAction) => {
-    const route = handleRoute(target);
-    if (route.kind === "mixed") return { validation: { status: "absent", reason: "handle_not_issued" } };
-    if (route.kind === "unqualified") {
-      if (!failureEvidence) return { validation: { status: "absent", reason: "domain_check_unavailable" } };
-      return { validation: askDomain(failureEvidence, target, failedAction), source: "failure_evidence" };
-    }
-    const packet = carried.get(route.evidenceId);
-    if (!packet) return { validation: { status: "absent", reason: "handle_not_issued" } };
-    const validation = askDomain(packet, route.target, failedAction);
-    // `matched` means the target stands as the domain was shown it, which is
-    // without Core's qualifier: that is the target to carry, with whatever the
-    // domain said it names.
-    return { validation: validation.status === "matched" ? { status: "resolved", target: route.target, ...(validation.control ? { control: validation.control } : {}) } : validation, source: "exploration_evidence" };
-  };
-}
-
-/** Which packet every handle of a target came from, and the target as that packet issued it. */
-function handleRoute(target: AutomationStudioRuntimeTargetOverrideTarget):
-  | { kind: "unqualified" }
-  | { kind: "mixed" }
-  | { kind: "qualified"; evidenceId: string; target: AutomationStudioRuntimeTargetOverrideTarget } {
-  // A target that is not a handle map is the domain's to refuse, as it always was.
-  if (!isJsonRecord(target.handles)) return { kind: "unqualified" };
-  const read = Object.entries(target.handles).map(([parameter, handle]) => [parameter, typeof handle === "string" ? automationStudioExploredEvidenceHandle(handle) : undefined] as const);
-  const qualified = new Set(read.flatMap(([, handle]) => handle?.kind === "qualified" ? [handle.evidenceId] : []));
-  if (qualified.size === 0) return { kind: "unqualified" };
-  if (qualified.size > 1 || read.some(([, handle]) => handle?.kind !== "qualified")) return { kind: "mixed" };
-  const handles = Object.fromEntries(read.map(([parameter, handle]) => [parameter, handle!.handle]));
-  return { kind: "qualified", evidenceId: [...qualified][0]!, target: { ...target, handles } };
-}
-
 
 /**
  * The receipt a declined repair leaves: the model was asked, looked, and

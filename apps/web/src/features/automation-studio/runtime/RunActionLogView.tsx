@@ -11,7 +11,8 @@ import {
   RuntimeRunStory,
   RuntimeMetricsPanel,
   JsonPreview,
-  RuntimeActionDetailPanel
+  RuntimeActionDetailPanel,
+  type RuntimeActionDetailView
 } from "./RunDetailPanels";
 import {
   runtimeAttemptsForRunDetail,
@@ -24,6 +25,7 @@ import {
   runtimeAttemptKey,
 } from "./run-format";
 import { RUNTIME_ACTION_PAGE_SIZE, RUNTIME_EVENT_PAGE_SIZE } from "./run-queries";
+import { runtimeRunLogFrames } from "./action-log-frames";
 import { RunDatasetsPanel } from "../datasets";
 import { useRuntimeDetailCommands, type RuntimeDetailCommands } from "./runtime-host";
 import { runtimeAuditBlob } from "./audit-export";
@@ -86,12 +88,14 @@ function RuntimeLogScope(props: RunActionLogViewProps & { commands: RuntimeDetai
   const eventDetailAbortRef = useRef<AbortController | null>(null);
   const exportAbortRef = useRef<AbortController | null>(null);
   const actionQueryRef = useRef({ offset: 0, cursor: null as string | null, index: 0 });
-  const [actionDetailView, setActionDetailView] = useState<"summary" | "data" | "effects" | "state" | "raw">("summary");
+  const [actionDetailView, setActionDetailView] = useState<RuntimeActionDetailView>("summary");
   const recoveryAttempts = runDetail?.recoveryAttempts ?? [];
   const interventions = Array.isArray(runDetail?.interventions) ? runDetail.interventions : [];
   const metrics = isRuntimeJsonRecord(runDetail?.metadata?.adaptiveMetrics) ? runDetail.metadata.adaptiveMetrics : {};
   const nextAttemptOffset = actionPage.offset + actionPage.limit;
   const visibleAttempts = actionPage.actions;
+  // A called part's steps sit under the step that called them (`action-log-frames.ts`).
+  const visibleFrames = runtimeRunLogFrames(visibleAttempts);
   const actionTotal = actionPage.total;
   const loadActionPage = async (offset: number, cursor: string | null = null, index = actionPageIndex) => {
     if (!isCurrent() || !props.projectId || !props.runId) return;
@@ -333,7 +337,7 @@ function RuntimeLogScope(props: RunActionLogViewProps & { commands: RuntimeDetai
         <div className="automation-runtime-log-toolbar"><span>{actionTotal ? `${actionPage.offset + 1}-${Math.min(actionTotal, nextAttemptOffset)} of ${actionTotal} actions` : loadingActions ? "Loading actions..." : "No actions loaded yet"}</span><div><button disabled={loadingActions || actionPageIndex <= 0} onClick={previousActionPage} type="button">Previous</button><button disabled={loadingActions || !actionPage.hasMore} onClick={nextActionPage} type="button">Next</button></div></div>
         {actionError ? <div className="automation-runtime-inline-error" role="alert"><span>{actionError}</span><button className="button" aria-label="Retry actions" disabled={loadingActions} onClick={retryActions} type="button">Retry</button></div> : null}
         <ol aria-busy={loadingActions} className="automation-runtime-action-log">
-          {visibleAttempts.map((attempt: any, index: number) => <li key={runtimeAttemptKey(attempt, actionPage.offset + index)}><RuntimeAttemptRow attempt={attempt} index={actionPage.offset + index} /></li>)}
+          {visibleAttempts.map((attempt: any, index: number) => <li key={runtimeAttemptKey(attempt, actionPage.offset + index)}><RuntimeAttemptRow attempt={attempt} frame={visibleFrames[index]} index={actionPage.offset + index} /></li>)}
         </ol>
       </section>
     );
@@ -400,6 +404,7 @@ function RuntimeLogScope(props: RunActionLogViewProps & { commands: RuntimeDetai
               <li key={runtimeAttemptKey(attempt, actionPage.offset + index)}>
                 <RuntimeAttemptRow
                   attempt={attempt}
+                  frame={visibleFrames[index]}
                   index={actionPage.offset + index}
                   selected={selectedAttempt?.attemptId === attempt.attemptId}
                   onSelect={() => void selectAttempt(attempt)}

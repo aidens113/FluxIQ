@@ -35,6 +35,8 @@ import { adaptiveTrainingMetadata } from "../../service-fixtures.ts";
 
 /** The node ids of every Flow a finished run's result was judged against, in order. */
 const judged = vi.hoisted(() => [] as string[][]);
+/** The drift step's parameters in each Flow judged, in the same order. */
+const judgedDrift = vi.hoisted(() => [] as unknown[]);
 
 vi.mock("../../../result-verification/index.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../result-verification/index.ts")>();
@@ -42,6 +44,7 @@ vi.mock("../../../result-verification/index.ts", async (importOriginal) => {
     ...actual,
     verifyAutomationStudioRuntimeSessionResult: async (input: Parameters<typeof actual.verifyAutomationStudioRuntimeSessionResult>[0]) => {
       judged.push((input.flow?.nodes ?? []).map((node) => node.id));
+      judgedDrift.push(input.flow?.nodes?.find((node) => node.id === "drift")?.parameterValues);
       return await actual.verifyAutomationStudioRuntimeSessionResult(input);
     }
   };
@@ -98,6 +101,7 @@ const services = new Set<AutomationStudioService>();
 
 beforeEach(async () => {
   judged.length = 0;
+  judgedDrift.length = 0;
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-retry-verification-"));
 });
 
@@ -108,7 +112,13 @@ afterEach(async () => {
 });
 
 describe("a repaired run's result", () => {
-  it("is judged against the Flow the retry ran, not the one held from before the repair", { timeout: 180_000 }, async () => {
+  // In the run (C6 step 8) the fix is held at the failing step on the run's
+  // in-memory graph, and the run carries on there; nothing re-reads the stored
+  // document. The Flow the run ran is that graph with the fix on it, so that is
+  // the Flow its result is judged against, not the stored one a later save
+  // changed, nor the one held from before the repair
+  // (`service/runtime-session/held-repair-verification.ts`).
+  it("is judged against the Flow with the fix held, not the stored one or the one held from before the repair", { timeout: 180_000 }, async () => {
     let addRepairedStep: (() => Promise<void>) | undefined;
 
     const io = new IoRegistry();
@@ -203,18 +213,18 @@ describe("a repaired run's result", () => {
 
     const run = await service.runRuntimeSession({ projectId: project.id, flowId: created.flowId });
 
-    // The retry happened, which is the precondition for the assertion below
+    // The fix was held, which is the precondition for the assertion below
     // meaning anything at all.
-    const detail = await service.getFlowRunDetail(project.id, run.runId);
-    expect(detail?.metadata).toMatchObject({ adaptiveRetry: { attempted: true, status: "succeeded" } });
-    // The retried session is verified, rather than returned unjudged.
+    expect(run.status).toBe("succeeded");
+    expect(run.trace?.repairs).toHaveLength(1);
+    // The repaired session is verified, rather than returned unjudged.
     expect(run.metadata?.resultVerification).toMatchObject({ performed: false, code: "core.result.no_model_available" });
 
-    // One verification, of the retried session, against the Flow the retry read
-    // back. `repaired` is in the stored document and in nothing the service was
-    // holding from before the repair, so its presence here is the assertion.
+    // One verification, of the repaired session, against the graph the run
+    // ran: the fix's retry setting is on its drift step, and `repaired`, which
+    // only the stored document gained, is not.
     expect(judged).toHaveLength(1);
-    expect(judged[0]).toContain("repaired");
-    expect(judged[0]).toEqual(["start", "extract", "drift", "end", "repaired"]);
+    expect(judged[0]).toEqual(["start", "extract", "drift", "end"]);
+    expect(judgedDrift[0]).toMatchObject({ retryCount: 2 });
   });
 });

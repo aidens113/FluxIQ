@@ -4,6 +4,7 @@ import {
   type AutomationStudioFlowArtifact,
   type AutomationStudioFlowRouter,
   type AutomationStudioFlowSubflow,
+  type AutomationStudioFlowValidationContext,
   validateAutomationStudioFlow,
   validateAutomationStudioFlowRouter,
   validateAutomationStudioFlowSubflow
@@ -53,8 +54,10 @@ export class AutomationStudioAdaptationPatches {
     const before = target.graphFlow;
     // Written by the same function a judged run's candidate is built with (`graph-flow-patch.ts`).
     const after = automationStudioGraphFlowWithAdaptationPatch(before, adaptation, patch, now);
-    assertFlowValidationOk(after, "Flow node adaptation patch");
-    const saved = await this.flowWriter.saveFlowInternal({ projectId: adaptation.projectId, flow: after }, false);
+    // The Subflow's role, which the graph does not carry (t398).
+    const validationContext = target.validation;
+    assertFlowValidationOk(after, "Flow node adaptation patch", validationContext);
+    const saved = await this.flowWriter.saveFlowInternal({ projectId: adaptation.projectId, flow: after, validation: validationContext }, false);
     return durableAdaptationMutationRecord({
       patchKind: patch.kind,
       artifactKind: "flow",
@@ -63,7 +66,7 @@ export class AutomationStudioAdaptationPatches {
       targetId: patch.targetId,
       before,
       after: saved,
-      validation: validateAutomationStudioFlow(saved),
+      validation: validateAutomationStudioFlow(saved, validationContext),
       ...(target.subflowId ? {
         rollback: compactJsonObject({
           kind: "restore_owned_subflow_graph",
@@ -77,12 +80,12 @@ export class AutomationStudioAdaptationPatches {
 
   async resolveFlowNodeAdaptationTarget(
     adaptation: AutomationStudioFlowAdaptation
-  ): Promise<{ graphFlow: AutomationStudioFlowArtifact; subflowId?: string }> {
+  ): Promise<{ graphFlow: AutomationStudioFlowArtifact; subflowId?: string; validation: AutomationStudioFlowValidationContext }> {
     const parent = await this.facade.getFlow(adaptation.projectId, adaptation.flowId);
     const representation = this.flowWriter.persistedFlowRepresentation(parent);
     if (representation === "legacy_single_graph") {
       if (adaptation.subflowId) throw new Error("Legacy single-graph adaptations cannot declare a Subflow target.");
-      return { graphFlow: parent };
+      return { graphFlow: parent, validation: {} };
     }
     if (representation !== "orchestration") throw new Error("Flow adaptations must remain scoped to a top-level orchestration Flow.");
     const subflowId = adaptation.subflowId?.trim();
@@ -97,7 +100,7 @@ export class AutomationStudioAdaptationPatches {
     if (graphFlow.metadata?.parentFlowId !== parent.flowId || graphFlow.metadata?.parentSubflowId !== subflowId) {
       throw new Error(`Subflow ${subflowId} graph ownership does not match orchestration Flow ${parent.flowId}; node adaptation refused.`);
     }
-    return { graphFlow, subflowId };
+    return { graphFlow, subflowId, validation: { subflowRole: subflow.role } };
   }
 
   async applyRouterAdaptationPatch(
@@ -112,8 +115,9 @@ export class AutomationStudioAdaptationPatches {
       const target = await this.resolveFlowNodeAdaptationTarget(adaptation);
       const before = target.graphFlow;
       const after = automationStudioGraphFlowWithAdaptationPatch(before, adaptation, patch, now);
-      assertFlowValidationOk(after, "Router reroute adaptation patch");
-      const saved = await this.flowWriter.saveFlowInternal({ projectId: adaptation.projectId, flow: after }, false);
+      const validationContext = target.validation;
+      assertFlowValidationOk(after, "Router reroute adaptation patch", validationContext);
+      const saved = await this.flowWriter.saveFlowInternal({ projectId: adaptation.projectId, flow: after, validation: validationContext }, false);
       return durableAdaptationMutationRecord({
         patchKind: patch.kind,
         artifactKind: "flow",
@@ -122,7 +126,7 @@ export class AutomationStudioAdaptationPatches {
         targetId: patch.targetId,
         before,
         after: saved,
-        validation: validateAutomationStudioFlow(saved),
+        validation: validateAutomationStudioFlow(saved, validationContext),
         ...(target.subflowId ? {
           rollback: compactJsonObject({
             kind: "restore_owned_subflow_graph",
@@ -237,8 +241,8 @@ export class AutomationStudioAdaptationPatches {
   }
 }
 
-export function assertFlowValidationOk(flow: AutomationStudioFlowArtifact, context: string): void {
-  const validation = validateAutomationStudioFlow(flow);
+export function assertFlowValidationOk(flow: AutomationStudioFlowArtifact, context: string, validationContext: AutomationStudioFlowValidationContext = {}): void {
+  const validation = validateAutomationStudioFlow(flow, validationContext);
   if (!validation.ok) throw new Error(`${context} failed validation: ${validation.issues.map((issue) => `${issue.path} (${issue.code})`).join(", ")}`);
 }
 
