@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: Candidate trials and state-aware recovery are integrated; live continuation is recovering lane evidence and validating candidate finishing fixes on t274; parked production-integrity work remains separate.
+Status detail: t274 finishing, t449 optional-path completion, t450 candidate default and t380 fixture fixes integrated and pushed; B/C/D round-four semantic/oracle failures debugged, generic feedback fixes on t452.
 Created: 2026-10-06
 Last updated: 2026-10-11
 Owner: Codex senior supervisor
@@ -21,7 +21,7 @@ Lab supervision and schedules. Generic candidate, executor, feedback and storage
 promotion, state-aware lifecycle handlers/subflows, safe routing and in-run repair through t448.
 Downstream saved R4a/R4b proofs passed. Those proofs do not certify the separate parked authority chain.
 
-**Current t274 unit:** recover lane C's unfinished completion/endings and finishing-tool changes;
+**Integrated t274 unit:** recovered lane C's unfinished completion/endings and finishing-tool changes;
 retain submit/test while observations are withdrawn and through the last counted candidate decision;
 accepted submissions name the exact revision/digest to test next. Supervisor validation and integration
 are recorded downstream. The mandatory trial gate, hard limits and whole-Flow purse are unchanged.
@@ -29,9 +29,16 @@ No trial runner still means an unverified draft. A's two same-pair creations and
 replays now pass; t450 changes the configured product default to candidate, preserving explicit legacy
 opt-out and raw omitted-mode API compatibility. Supervisor source/tests and integration gates are recorded downstream.
 
-**Next:** integrate verified t274 downstream first and Core second; repair D's graph-completion/feedback
-defect in paired t449; qualify live lanes on identified source pairs. A's two creation passes need the
-separate no-model replay receipts; B's latest build never tested a submitted candidate. No user panel
+**Also integrated:** t449 optional-path accounting and safe graph-terminal feedback; t450 candidate default
+with explicit legacy/raw API compatibility; t380 fixture copying/sidecar isolation independently verified by
+45 owning tests including 16 rebuilt child-process race/crash probes, current build/typecheck/audit.
+
+**Next:** t452 generic candidate cached/stall/wrong-control feedback and truthful result-card cause;
+downstream category-versus-incidental-mention guidance. A is qualified with both separate zero-model replay
+receipts. Round-four B/C trials executed but judges rejected semantic results; D promoted an incomplete
+cohort that the independent oracle rejected. Inspect D judge evidence coverage before fixing/relaunching.
+User raised future testing purse to $0.25 via launch environment, leaving historical $0.10 receipts intact;
+normal user defaults and provider output length unchanged. No user panel
 management is inferred from isolated Lab authorization. Full sweeps remain at most twice daily under
 the newer downstream user rule; owning tests, affected typechecks and audit gate each task.
 
