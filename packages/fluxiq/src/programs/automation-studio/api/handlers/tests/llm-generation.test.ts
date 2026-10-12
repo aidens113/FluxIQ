@@ -82,7 +82,7 @@ describe("Automation Studio LLM execution API", () => {
     const actor: ProgramApiActor = { sessionId: "session", userId: "user", roleId: "admin", permissions: ["flows.write"] };
     const request = { programId: "automation-studio", endpoint: AUTOMATION_STUDIO_ENDPOINTS.generateFlowBootstrapAdaptation, scope: {}, actor, payload: { projectId: "project", flowId: "flow", authSessionId: "session", authoringMode: "configured", evidenceGuided: true } };
     try {
-      vi.stubEnv("FLUXIQ_AUTHORING_MODE", "");
+      vi.stubEnv("FLUXIQ_AUTHORING_MODE", "legacy");
       generate.mockResolvedValue(proposed);
       expect(await registry.call(request)).toMatchObject({ ok: true, payload: { adaptation: { adaptationId: "adaptation", status: "proposed" } } });
       expect(generate.mock.calls[0]![0]).not.toHaveProperty("authoringMode");
@@ -90,12 +90,19 @@ describe("Automation Studio LLM execution API", () => {
       generate.mockResolvedValue(draft);
       expect(await registry.call(request)).toMatchObject({ ok: false });
 
-      vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate");
-      generate.mockClear().mockResolvedValue(draft);
-      expect(await registry.call(request)).toMatchObject({ ok: true, payload: { candidate: { candidateId: "candidate", verification: "not_performed", promotionAllowed: false } } });
-      expect(generate).toHaveBeenCalledWith(expect.objectContaining({ authoringMode: "candidate", evidenceGuided: true }));
-      generate.mockResolvedValue(proposed);
-      expect(await registry.call(request)).toMatchObject({ ok: false });
+      for (const mode of [undefined, "", "  ", "candidate"]) {
+        vi.stubEnv("FLUXIQ_AUTHORING_MODE", mode);
+        generate.mockClear().mockResolvedValue(draft);
+        expect(await registry.call(request)).toMatchObject({ ok: true, payload: { candidate: { candidateId: "candidate", verification: "not_performed", promotionAllowed: false } } });
+        expect(generate).toHaveBeenCalledWith(expect.objectContaining({ authoringMode: "candidate", evidenceGuided: true }));
+        generate.mockResolvedValue(proposed);
+        expect(await registry.call(request)).toMatchObject({ ok: false });
+
+        // Raw callers that omit the mode keep the legacy wire contract even when the configured product mode is candidate.
+        generate.mockClear().mockResolvedValue(proposed);
+        expect(await registry.call({ ...request, payload: { ...request.payload, authoringMode: undefined } })).toMatchObject({ ok: true, payload: { adaptation: { status: "proposed" } } });
+        expect(generate.mock.calls[0]![0]).not.toHaveProperty("authoringMode");
+      }
 
       // A request without the field stays a proposal whatever the setting, and a misconfigured setting refuses before any build.
       generate.mockClear().mockResolvedValue(proposed);

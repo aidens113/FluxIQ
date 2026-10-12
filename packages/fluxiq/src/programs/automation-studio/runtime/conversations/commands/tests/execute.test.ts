@@ -5,7 +5,7 @@
 // a failure says why and how far it got; the work's own questions and
 // activity land in the chat thread; an improvement asks before it applies, and
 // a yes applies exactly the change it asked about. All of that is Core's
-// default legacy authoring mode; the candidate mode at the end saves an
+// explicit legacy authoring mode; the candidate mode at the end saves an
 // unverified draft and applies or asks nothing.
 
 import { mkdtemp, rm } from "node:fs/promises";
@@ -93,7 +93,7 @@ const NOTHING_KEPT = 'The Flow "Kettles" has no steps yet, but it keeps your ins
 describe("conversation commands", () => {
   beforeEach(async () => {
     rootDir = await mkdtemp(path.join(os.tmpdir(), "automation-studio-conversation-commands-test-"));
-    vi.stubEnv("FLUXIQ_AUTHORING_MODE", "");
+    vi.stubEnv("FLUXIQ_AUTHORING_MODE", "legacy");
   });
 
   afterEach(async () => {
