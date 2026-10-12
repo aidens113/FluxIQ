@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { AutomationStudioCandidateVerificationStore, type AutomationStudioCandidateLedgerRequest } from "../index.ts";
+import { AUTOMATION_STUDIO_CANDIDATE_VERIFICATION_MIGRATION, AutomationStudioCandidateVerificationStore, type AutomationStudioCandidateLedgerRequest } from "../index.ts";
 import { AutomationStudioProjectDatabasePool } from "../../database.ts";
 import { AutomationStudioProjectFlowResourceRepository } from "../../flow-resource-repository.ts";
 import { automationStudioCandidateRequirementsDigest } from "../../../../runtime/flow-bootstrap/verification/index.ts";
@@ -69,7 +69,7 @@ describe("real project candidate ledger", () => {
         await store.claim(request());
         expect(await lease.database.get("pragma user_version")).toEqual({ user_version: 42 });
         const after = await lease.database.all<{ migration_id: string; checksum: string }>("select migration_id, checksum from automation_schema_migrations order by migration_id");
-        expect(after.filter(value => value.migration_id !== "0025_candidate_verification_receipts_v1")).toEqual(before);
+        expect(after.filter(value => value.migration_id !== AUTOMATION_STUDIO_CANDIDATE_VERIFICATION_MIGRATION.id)).toEqual(before);
         expect(await lease.database.get("select name from flows where flow_id = 'flow.1'")).toEqual({ name: "Existing" });
       } finally { await store.close(); await lease.release(); }
     } finally { await pool.closeAll(); await rm(root, { recursive: true, force: true }); }
