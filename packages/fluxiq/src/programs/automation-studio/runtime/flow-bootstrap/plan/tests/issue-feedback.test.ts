@@ -45,6 +45,20 @@ function feedbackFor(parameters: JsonObject): { issues: AutomationStudioFlowBoot
 const extractList = { item: "li.product", fields: { name: ".name" } };
 
 describe("the feedback on a refused plan", () => {
+  it("retains Core's authored handler-scope explanation without admitting unlisted messages", () => {
+    const message = "The handler at line 8 is for \"notices\", which labels no step of the block it is written in.";
+    const feedback = automationStudioFlowBootstrapIssueFeedback({ issues: [
+      { severity: "error", code: "flow_script.handler_invalid", message, path: "flow.line.8" },
+      { severity: "error", code: "flow_script.handler_invalid_external", message: "private-provider-text", path: "flow.line.9" },
+      { severity: "error", code: "web.action.invalid", message: "private-page-text", path: "flow.line.10" }
+    ] });
+    expect(feedback).toEqual([
+      { code: "flow_script.handler_invalid", path: "flow.line.8", message },
+      { code: "flow_script.handler_invalid_external", path: "flow.line.9" },
+      { code: "web.action.invalid", path: "flow.line.10" }
+    ]);
+  });
+
   it("names every issue at its path, and gives the record output shape it accepts once for that parameter", () => {
     const { issues, feedback } = feedbackFor({ extractList, recordOutput: { name: "products", fields: ["name", "price"] } });
 

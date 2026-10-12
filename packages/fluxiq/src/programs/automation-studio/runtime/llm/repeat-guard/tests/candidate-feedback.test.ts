@@ -25,6 +25,26 @@ function storedRefusal() {
 }
 
 describe("a repeat refused in candidate mode", () => {
+  it("keeps the trusted handler-scope explanation on an unchanged refused candidate", () => {
+    const issues = [{
+      code: "flow_script.handler_invalid", path: "flow.line.6", step: "a session notice", line: 6,
+      message: "The handler at line 6 is for \"notices\", which labels no step of the block it is written in."
+    }];
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    guard.seen("s1");
+    guard.recorded({
+      callId: "submit-handler", toolId: "core.submit_candidate", input: SCRIPT, effect: "observe", proposes: true,
+      effectApplied: false, refused: true, resultCode: "flow_bootstrap.completion_refused",
+      answer: JSON.stringify({ ...REFUSAL, diagnostics: { ...REFUSAL.diagnostics, issues }, issueCodes: ["flow_script.handler_invalid"] })
+    });
+    const note = automationStudioLlmEvidenceRepeatRefusalNote({
+      toolId: "core.submit_candidate", earlier: guard.blocks("core.submit_candidate", SCRIPT)!, inARow: 1, candidate: true
+    });
+    expect(note).toMatchObject({ sameAsCall: "submit-handler", issues });
+    expect(JSON.stringify(note)).toContain("which labels no step");
+    expect(note.maxRefusedInARow).toBe(3);
+  });
+
   it("keeps a refusal's issues, as it listed them, with its outcome", () => {
     expect(storedRefusal()).toEqual({ callId: "submit-2", outcome: "failed", resultCode: "flow_bootstrap.completion_refused", issues: ISSUES });
   });
