@@ -16,6 +16,7 @@
 import type { AutomationConditionExpression } from "../../../model/index.ts";
 import type { AutomationStudioFlowBootstrapRouteCondition, AutomationStudioFlowBootstrapRouteTest } from "../plan/index.ts";
 import { AUTOMATION_STUDIO_ROUTE_CONDITION_FORM, AUTOMATION_STUDIO_ROUTE_CONDITION_LIMITS, AUTOMATION_STUDIO_ROUTE_SIGNAL_PATH } from "../plan/index.ts";
+import { authoringQuotedValue } from "./quoted-value.ts";
 
 export type AutomationStudioRouteConditionReading =
   | { ok: true; condition: AutomationStudioFlowBootstrapRouteCondition }
@@ -213,9 +214,9 @@ function splitOutsideQuotes(line: string): { ok: true; parts: string[]; joiner: 
   return { ok: true, parts: parts.map((part) => part.trim()).filter(Boolean), joiner: joiners.has("or") ? "or" : "and" };
 }
 
+/** The value a test compares with: quoted, the text inside the quotes, by the one rule a step's value is read by too (`./quoted-value.ts`, t464). */
 function unquoted(text: string): string {
-  const match = /^(["'`])([\s\S]*)\1$/u.exec(text);
-  return (match ? match[2]! : text).trim();
+  return (authoringQuotedValue(text) ?? text).trim();
 }
 
 function escapePattern(text: string): string {
