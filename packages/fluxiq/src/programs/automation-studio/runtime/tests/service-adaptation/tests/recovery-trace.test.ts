@@ -1,7 +1,7 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import { AutomationStudioService } from "../../../service.ts";
 import { adaptiveTrainingMetadata, createFailingCanonicalFlow, installPrimaryRouter } from "../../service-fixtures.ts";
@@ -28,7 +28,45 @@ function traceStages(detail: { metadata?: JsonObject | undefined } | null | unde
 /** Small usage keeps the run budget from refusing the second call on reservation alone. */
 const usage = { inputTokens: 8, outputTokens: 4, totalTokens: 12, estimatedCostUsd: 0.001 };
 
+async function openSidecars(dir: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) found.push(...await openSidecars(path.join(dir, entry.name)));
+    else if (/-(wal|shm|journal)$/.test(entry.name)) found.push(path.join(dir, entry.name));
+  }
+  return found;
+}
+
+// Three tests below run the same failing Flow. Building it (create, save, the
+// primary subflow, its graph and the fallback) is about 400 ms of each 750 ms
+// test alone and is not their subject, so it is built once, at rest with the
+// service closed, and copied into each test's own data directory.
+let failing: { root: string; projectId: string; flowId: string } | undefined;
+
+async function copyFailingFlow(): Promise<{ projectId: string; flowId: string }> {
+  await cp(failing!.root, tempRoot, { recursive: true });
+  return { projectId: failing!.projectId, flowId: failing!.flowId };
+}
+
 describe("AutomationStudioService runtime recovery stages", () => {
+  beforeAll(async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-studio-recovery-template-"));
+    failing = { root, projectId: "", flowId: "" };
+    const service = new AutomationStudioService({ dataDir: root, seedFixture: false });
+    try {
+      const project = await service.createProject({ name: "Failing" });
+      const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.failing", metadata: adaptiveTrainingMetadata() });
+      failing = { root, projectId: project.id, flowId: flow.flowId };
+    } finally { await service.close(); }
+    // An open WAL would make the copy a torn snapshot; closing the service checkpoints and removes it.
+    const open = await openSidecars(root);
+    if (open.length) throw new Error(`Template still has open SQLite sidecars: ${open.join(", ")}`);
+  });
+
+  afterAll(async () => {
+    if (failing) await rm(failing.root, { recursive: true, force: true, maxRetries: 10, retryDelay: 25 });
+  });
+
   beforeEach(async () => {
     tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-automation-studio-recovery-"));
   });
@@ -91,6 +129,8 @@ describe("AutomationStudioService runtime recovery stages", () => {
   it("stages the diagnosis as gather and the patch as implement, with a deterministic plan between them", async () => {
     const stages: Array<string | undefined> = [];
     const promptVersions: string[] = [];
+    // Copied before the service opens its data directory.
+    const flow = await copyFailingFlow();
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
@@ -105,11 +145,8 @@ describe("AutomationStudioService runtime recovery stages", () => {
         }
       })
     });
-    const project = await service.createProject({ name: "Staged" });
-    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.staged", metadata: adaptiveTrainingMetadata() });
-
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
-    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    const run = await service.runRuntimeSession({ projectId: flow.projectId, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
+    const detail = await service.getFlowRunDetail(flow.projectId, run.runId);
 
     expect(stages).toEqual(["gather", "implement"]);
     expect(promptVersions).toEqual(["automation-studio.runtime-diagnosis.v1+stage.gather", "automation-studio.runtime-patch.v1+stage.implement+in_run_repair"]);
@@ -126,6 +163,8 @@ describe("AutomationStudioService runtime recovery stages", () => {
   // still holding now that the plan sits between them.
   it("asks for no patch when the diagnosis call did not return a diagnosis", async () => {
     const taskKinds: string[] = [];
+    // Copied before the service opens its data directory.
+    const flow = await copyFailingFlow();
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
@@ -137,11 +176,8 @@ describe("AutomationStudioService runtime recovery stages", () => {
         }
       })
     });
-    const project = await service.createProject({ name: "Bad diagnosis" });
-    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.bad-diagnosis", metadata: adaptiveTrainingMetadata() });
-
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
-    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    const run = await service.runRuntimeSession({ projectId: flow.projectId, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
+    const detail = await service.getFlowRunDetail(flow.projectId, run.runId);
 
     expect(taskKinds).toEqual(["runtime_diagnosis"]);
     expect(detail?.metadata?.llmGate).toMatchObject({ patchSkipped: expect.stringContaining("diagnosis") });
@@ -154,6 +190,8 @@ describe("AutomationStudioService runtime recovery stages", () => {
   // today and the deterministic verdicts stand. When the `AS/runtime/llm/**`
   // diff in this phase's report lands, this fails and is updated deliberately.
   it("records the deterministic verdicts, and no model prose, because Core strips response metadata", async () => {
+    // Copied before the service opens its data directory.
+    const flow = await copyFailingFlow();
     const service = createService({
       dataDir: tempRoot,
       seedFixture: false,
@@ -165,11 +203,8 @@ describe("AutomationStudioService runtime recovery stages", () => {
         })
       })
     });
-    const project = await service.createProject({ name: "Content free" });
-    const flow = await createFailingCanonicalFlow(service, project.id, { flowId: "flow.content-free", metadata: adaptiveTrainingMetadata() });
-
-    const run = await service.runRuntimeSession({ projectId: project.id, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
-    const detail = await service.getFlowRunDetail(project.id, run.runId);
+    const run = await service.runRuntimeSession({ projectId: flow.projectId, flowId: flow.flowId, inputs: { numerator: 1, denominator: 0 } });
+    const detail = await service.getFlowRunDetail(flow.projectId, run.runId);
 
     expect(JSON.stringify(detail?.metadata?.recoveryTrace)).not.toContain("PRIVATE_OBSERVED_TEXT");
     expect(JSON.stringify(detail?.metadata?.recoveryTrace)).not.toContain("PRIVATE_MODEL_PROSE");

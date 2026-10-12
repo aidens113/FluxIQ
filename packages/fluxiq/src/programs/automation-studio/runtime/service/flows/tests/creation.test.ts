@@ -1,7 +1,7 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ProgramJsonStore } from "../../../../../_shared/storage.ts";
 import { CanonicalAuthorityWholeOperation } from "../../../../storage/canonical-authority/index.ts";
 import { createCanonicalAutomationStudioSQLiteRepositories, AutomationStudioProjectDatabasePool } from "../../../../storage/index.ts";
@@ -11,21 +11,67 @@ import { AutomationStudioServiceIndexes } from "../../indexes/index.ts";
 import type { AutomationStudioFacadePorts } from "../../facade-ports.ts";
 import { AutomationStudioFlowCreation, AutomationStudioFlowWriter, AutomationStudioFlowStore } from "../index.ts";
 
+type Mode = "sql" | "file";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
-async function fixture(mode: "sql" | "file") {
-  const root = await mkdtemp(path.join(os.tmpdir(), "whole-flow-")), globalRoot = path.join(root, ".fluxiq"), databaseRoot = mode === "sql" ? path.join(globalRoot, "artifacts", "automation-studio") : path.join(root, "automation");
-  await mkdir(globalRoot); if (mode === "sql") await writeFile(path.join(globalRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }));
-  const projectRoot = path.join(databaseRoot, "projects"), paths = new AutomationStudioProjectPaths(projectRoot), flowPaths = new AutomationStudioFlowPaths(paths);
-  await new ProgramJsonStore(path.join(projectRoot, "index.json"), () => ({})).write({ projects: [], categories: [] });
+async function removeRoot(root: string) {
+  if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith("whole-flow-")) throw new Error("Unsafe fixture cleanup");
+  // A connection closed a moment ago can still hold global.sqlite on Windows.
+  await rm(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 });
+}
+function layout(root: string, mode: Mode) {
+  const globalRoot = path.join(root, ".fluxiq"), databaseRoot = mode === "sql" ? path.join(globalRoot, "artifacts", "automation-studio") : path.join(root, "automation");
+  return { globalRoot, databaseRoot, projectRoot: path.join(databaseRoot, "projects") };
+}
+async function wire(root: string, mode: Mode) {
+  const { globalRoot, databaseRoot, projectRoot } = layout(root, mode), paths = new AutomationStudioProjectPaths(projectRoot), flowPaths = new AutomationStudioFlowPaths(paths);
   const repositories = createCanonicalAutomationStudioSQLiteRepositories(globalRoot), authority = await CanonicalAuthorityWholeOperation.fromFactory(repositories, { projectRootDir: projectRoot, projectDatabaseRootDir: databaseRoot });
   const pool = new AutomationStudioProjectDatabasePool({ rootDir: databaseRoot });
-  cleanups.push(async () => { await pool.closeAll(); if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith("whole-flow-")) throw new Error("Unsafe fixture cleanup"); await rm(root, { recursive: true, force: true }); });
   const projects = new AutomationStudioProjectStore(paths, undefined, authority), indexes = new AutomationStudioServiceIndexes(paths, projects, authority), flows = new AutomationStudioFlowStore(paths, flowPaths, projects, indexes, repositories, pool, authority);
   const writer = new AutomationStudioFlowWriter(paths, flowPaths, projects, indexes, flows, {} as never, {} as never, repositories, {} as AutomationStudioFacadePorts, pool, authority);
   const creation = new AutomationStudioFlowCreation(projects, flows, repositories, writer, authority);
-  const project = await new AutomationStudioProjectCreation(projects, paths, undefined, authority).createProject({ name: "Original" });
-  return { repositories, authority, project, creation, writer, paths, flowPaths, pool };
+  return { repositories, authority, creation, writer, projects, paths, flowPaths, pool };
+}
+type Project = Awaited<ReturnType<AutomationStudioProjectCreation["createProject"]>>;
+async function openSidecars(dir: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) found.push(...await openSidecars(path.join(dir, entry.name)));
+    else if (/-(wal|shm|journal)$/.test(entry.name)) found.push(path.join(dir, entry.name));
+  }
+  return found;
+}
+// Each mode's project is created once and copied into every test that uses it.
+// Creating it is setup, not the subject (about 400 ms and 250 SQL statements
+// alone); the tests below exercise the Flow create and save after it.
+const created = new Map<Mode, { root: string; project: Project }>(), templateRoots: string[] = [];
+beforeAll(async () => {
+  for (const mode of ["sql", "file"] as const) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "whole-flow-")), { globalRoot, projectRoot } = layout(root, mode);
+    templateRoots.push(root);
+    await mkdir(globalRoot);
+    if (mode === "sql") await writeFile(path.join(globalRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }));
+    await new ProgramJsonStore(path.join(projectRoot, "index.json"), () => ({})).write({ projects: [], categories: [] });
+    const { projects, paths, authority, pool } = await wire(root, mode);
+    try { created.set(mode, { root, project: await new AutomationStudioProjectCreation(projects, paths, undefined, authority).createProject({ name: "Original" }) }); }
+    finally { await pool.closeAll(); }
+    // An open WAL would make the copy a torn snapshot; the last close checkpoints and removes it.
+    const open = await openSidecars(root);
+    if (open.length) throw new Error(`Template still has open SQLite sidecars: ${open.join(", ")}`);
+  }
+});
+afterAll(async () => {
+  for (const root of templateRoots.splice(0)) await removeRoot(root);
+  created.clear();
+});
+async function fixture(mode: Mode) {
+  const template = created.get(mode)!, root = await mkdtemp(path.join(os.tmpdir(), "whole-flow-"));
+  let pool: AutomationStudioProjectDatabasePool | undefined;
+  cleanups.push(async () => { await pool?.closeAll(); await removeRoot(root); });
+  await cp(template.root, root, { recursive: true });
+  const wired = await wire(root, mode);
+  pool = wired.pool;
+  return { ...wired, project: structuredClone(template.project) };
 }
 describe("real generated orchestration Flow writer ingress", () => {
   for (const mode of ["sql", "file"] as const) it(`creates and saves through all actual ${mode} effects under one parent`, async () => {
