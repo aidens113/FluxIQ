@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: t455/t456/t457/t458/t459/t454 integrated; round-six B/C/D failed; changed-source round-seven preparation at $0.25/64build calls underway downstream.
+Status detail: Round-seven B/D creations passed; replay settlement failed; C final-slot offer/execution contradiction. Scoped t460 repairs underway downstream and Core.
 Created: 2026-10-06
 Last updated: 2026-10-11
 Owner: Codex senior supervisor
@@ -16,6 +16,17 @@ Related: [authoring](./flow-authoring-and-defensive-runtime-plan.md), [version h
 The active execution order is downstream `docs/working/live-testing-handoff-audit-2026-10-11.md`.
 Core dev at intake is `01621c94`; downstream owns browser qualification, task instructions/oracles,
 Lab supervision and schedules. Generic candidate, executor, feedback and storage behavior stay in Core.
+
+Round-seven frozenCore5036fb8c/downstreamd19a8d50 ended: B/D creations passed exact oracles at$0.177387264/
+$0.113476884; separate replay goals/hash preservation passed but raw qualification failed missing accounting.
+Supervisor independently validated immutable runtime chunks for both: latest explicit zero ledger with no
+pending/provider rows and settled unverified/no_model_available. D annotation landed380ms after first success;
+initial capture timing unlogged. Preserve failed receipts; no permanent publication-loss claim or inferred zero.
+C failed at$0.212390292: duration-estimated last slot advertised test then refused as not_offered before purse
+admission. Four trials match13records/52values but column order differs and judges remained unconfirmed.
+t460 owns generic Core final-slot offer/execution consistency and downstream bounded replay-settlement repair;
+no raised deadline/purse, relaxed promotion/counter gate or scenario guidance. All runs stopped, no balance error,
+second creation or relaunch. Source freeze released; qualification on changed source begins a new pair.
 
 **Integrated before this continuation:** candidate submission/reset-start trials and judged proposal
 promotion, state-aware lifecycle handlers/subflows, safe routing and in-run repair through t448.
