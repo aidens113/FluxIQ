@@ -48,6 +48,13 @@ submission explicitly says that no Flow has been submitted and supplies no inven
 revision or digest. The conversation ending distinguishes that failure from a
 refused submission.
 
+An offered candidate submission or trial can use the last estimated decision
+slot through the ordinary tool and purse gates. If its decision returns at or
+after the actual duration deadline, it cannot start another tool; the paid
+decision retains a `llm_evidence_loop.duration_limit` trace and duration-bound
+ending. Estimated time does not guarantee that a trial fits. Literal decision
+ceilings, cancellation, result checks and promotion requirements still apply.
+
 Candidate cached-answer and no-progress redirects carry the latest validated
 submission's revision/digest and direct its exact trial before completion. They
 do not refer to a legacy accumulated draft; a later refused submission clears
