@@ -3,6 +3,8 @@ export * from "./summary.ts";
 export * from "./check-step.ts";
 export * from "./happened.ts";
 export * from "./absorbed.ts";
+export * from "./interruptions.ts";
+export * from "./way-outs.ts";
 export * from "./target-on-page.ts";
 export * from "./executed-steps.ts";
 export * from "./landed-acts.ts";

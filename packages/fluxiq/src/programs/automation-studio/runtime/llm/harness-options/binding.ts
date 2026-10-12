@@ -72,6 +72,24 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     signal?: AbortSignal;
   }): Promise<JsonObject | undefined>;
   /**
+   * The handle the model can name each pressed way out by (t470). A trial's
+   * run may close a layer the page put in the way -- a slow-down notice, a
+   * promotion -- by its way out, and the client reports each layer with the
+   * domain's opaque `wayOut` reference to the control it pressed
+   * (`../../executor/contracts.ts` `AutomationStudioClearedLayer`). Core hands
+   * those references back here, for the Flow being built, and names each
+   * answered handle in the trial's feedback, so a step that dismisses the layer
+   * is written against the control that actually closed it, never a look-alike.
+   * The domain makes the handle resolvable for this Flow before it answers. A
+   * reference it does not know, or cannot give a handle for, is left out.
+   * Absent, the feedback names no handle and asks for no dismissing step.
+   */
+  clearedControlHandles?(input: {
+    projectId: string;
+    flowId: string;
+    wayOuts: readonly string[];
+  }): Promise<Readonly<Record<string, string>>>;
+  /**
    * What this domain tells the model on every request made for its work, in
    * its own words: how its pages, controls and evidence read, and the habits
    * that work on its medium.

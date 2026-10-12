@@ -23,12 +23,14 @@ import { createHash, randomUUID } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../flow-bootstrap/verification/index.ts";
+import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart } from "./contracts.ts";
 import { automationStudioCandidateTrialFeedback as Feedback } from "./feedback.ts";
 import { automationStudioCandidateTrialLandedActs } from "./landed-acts.ts";
 import { automationStudioTrialLearnedPaces } from "./learned-paces.ts";
 import { automationStudioCandidateTrialSummary } from "./summary.ts";
+import { automationStudioTrialWayOuts } from "./way-outs.ts";
 
 const NO_SPEND: AutomationStudioCandidateTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
 
@@ -76,7 +78,8 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
     metadata: { ...(opened.metadata ?? {}), candidateTrial: { candidateId: request.candidateId, revision: request.revision, digest: request.digest, start: start.status, execution: executed.receipt.status, ...(executed.code ? { code: executed.code } : {}) } } };
   await ports.writeSession(ended);
   signal.throwIfAborted();
-  const shown = { trialRunId: runId, trace: executed.trace, graph: executed.graph, start: start.status };
+  // The handle of each way out the run pressed to close a layer the page put in the way, named by the domain (`./interruptions.ts`, t470).
+  const shown = { trialRunId: runId, trace: executed.trace, graph: executed.graph, start: start.status, wayOuts: await wayOutHandles(executed.trace?.attempts ?? [], ports) };
   // What the run learned to slow down for is kept with the trial, for a promotion of it to keep (`./promotion.ts`).
   const learned = automationStudioTrialLearnedPaces(executed.trace, executed.graph), paced = learned.length ? { learnedPaces: learned } : {};
   // The lasting acts the run left on the site, whatever its verdict, for the build to undo before its next trial (t462).
@@ -101,6 +104,16 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
   const read = Feedback.judged({ verdict, summary, ...shown });
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
   return answer(read.verdict, read.feedback, { trialRunId: runId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...paced, judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts);
+}
+
+/**
+ * The handles the domain names the trial's pressed ways out by. Asked only when
+ * the run pressed one and the domain can name it; a way out it leaves out is
+ * said without a handle, and the format then asks for no step closing it.
+ */
+async function wayOutHandles(attempts: readonly AutomationStudioNodeAttemptTrace[], ports: AutomationStudioCandidateTrialPorts): Promise<Readonly<Record<string, string>>> {
+  const wayOuts = automationStudioTrialWayOuts(attempts);
+  return wayOuts.length && ports.clearedControlHandles ? await ports.clearedControlHandles(wayOuts) : {};
 }
 
 /** The trial's start: the deployment's hook when it has one, otherwise the target as it stands. */

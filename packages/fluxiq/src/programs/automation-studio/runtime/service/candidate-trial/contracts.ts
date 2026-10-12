@@ -79,6 +79,12 @@ export type AutomationStudioCandidateTrialPorts = {
   observedStateKeys?: readonly string[] | undefined;
   deniedEvidenceKeys?: readonly string[] | undefined;
   prepareStart?: AutomationStudioPrepareCandidateStart | undefined;
+  /**
+   * The handle the model can name each way out the trial's run pressed by, from
+   * the bound domain (`clearedControlHandles`, t470), keyed by the client's
+   * `wayOut` reference. Absent, or a reference left out, names no handle.
+   */
+  clearedControlHandles?: ((wayOuts: readonly string[]) => Promise<Readonly<Record<string, string>>>) | undefined;
   /** The build-test judge (`automationStudioBuildTestJudge`), bound to the build's provider, instructions and signal. */
   judge(input: AutomationStudioBuildTestJudgeInput): Promise<AutomationStudioBuildTestVerdict>;
   /** The detached runner; replaced only by tests. */
