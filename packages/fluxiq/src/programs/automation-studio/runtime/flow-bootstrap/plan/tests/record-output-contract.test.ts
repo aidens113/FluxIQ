@@ -13,6 +13,7 @@ import {
   automationStudioFlowBootstrapRecordOutputIssues,
   automationStudioFlowBootstrapSuppliedRecordsPath
 } from "../record-output-contract.ts";
+import { automationStudioFlowBootstrapParameterTextAccount } from "../parameter-text.ts";
 import { webDomainNodeDefinitionsFixture } from "./web-domain-definitions-fixture.ts";
 
 // A live Flow creation wrote the list extraction's record output three times
@@ -52,7 +53,7 @@ describe("the record output contract a model is shown", () => {
 
   it("lists exactly the keys the parser accepts, and requires exactly the ones it requires", () => {
     const contract = automationStudioFlowBootstrapRecordOutputContract(policyAction);
-    const full: JsonObject = { ...contract.example, label: "Items", maxRecords: 10, recordsPath: "result.records" };
+    const full: JsonObject = { ...contract.example, label: "Items", maxRecords: 10, recordsPath: "result.records", process: { dedupe: { by: ["name"] } } };
 
     expect(Object.keys(full).sort()).toEqual([...contract.keys].sort());
     expect(parseAutomationStudioRecordOutput(full)).toMatchObject({ ok: true });
@@ -86,14 +87,38 @@ describe("the record output contract a model is shown", () => {
     for (const key of ["datasetId", "schema", "writeMode", "schemaVersion", "fields"]) expect(condensedText).toContain(key);
   });
 
-  it("leaves room in the catalog's 600-character parameter text for the node's own words", () => {
+  it("describes supported processing in full and condensed formats and delivers it without cuts", () => {
     for (const definition of [extractList, policyAction, writeRecords]) {
       const contract = automationStudioFlowBootstrapRecordOutputContract(definition);
-      expect(contract.text.length).toBeLessThanOrEqual(460);
-      expect(contract.condensedText.length).toBeLessThanOrEqual(200);
-      expect(Buffer.byteLength(JSON.stringify(contract.example), "utf8")).toBeLessThanOrEqual(200);
+      for (const text of [contract.text, contract.condensedText]) {
+        for (const shape of ["process", "dedupe", "by", "where", "sort", "limit", "columns", "minRows", "asc", "desc"]) expect(text).toContain(shape);
+      }
+      const parameter = definition.parameters.find((entry) => entry.id === "recordOutput")!;
+      const sent = automationStudioFlowBootstrapParameterTextAccount(definition, parameter);
+      expect(sent.parameter.description).toContain(contract.text);
+      expect(sent.withheld).toBe(false);
     }
   });
+
+  it.each([
+    { dedupe: { by: ["name"] } }, { dedupe: false },
+    { where: [{ field: "name", contains: "memo" }] },
+    { sort: [{ field: "name", order: "asc", as: "text" }] },
+    { limit: 2 }, { columns: ["name"] }, { minRows: 0 }
+  ])("accepts the advertised processing shape %j", (process) => {
+    const contract = automationStudioFlowBootstrapRecordOutputContract(policyAction);
+    expect(parseAutomationStudioRecordOutput({ ...contract.example, process })).toMatchObject({ ok: true });
+  });
+
+  it("keeps unknown processing keys refused while showing the supported dedupe shape", () => {
+    const contract = automationStudioFlowBootstrapRecordOutputContract(policyAction);
+    expect(parseAutomationStudioRecordOutput({ ...contract.example, process: { unique: ["name"] } })).toMatchObject({
+      ok: false, issues: ["record_output.process_unknown_key"]
+    });
+    expect(contract.text).toContain("dedupe: false | {by:[fieldId,...]}");
+    expect(contract.keys).toContain("process");
+  });
+
 });
 
 // A live Flow creation (`run-mu4yk4u1-60a1c3a4`) added a node that writes
