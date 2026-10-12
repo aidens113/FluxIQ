@@ -14,13 +14,18 @@
 // look, a look that found the page moved, an amendment or a completion. A look
 // the loop answered from memory, or refused as a repeat, runs nothing and
 // leaves the count as it was: the repeat policy and the repeat guard already
-// answer those (`../repeat-policy.ts`, `./outcomes.ts`). At
+// answer those (`../repeat-policy.ts`, `./outcomes.ts`). So does a look the
+// domain refused: it looked at nothing, and the repeat guard records it as a
+// failed call (`run-mv5uu9g1-9d80deea`, where four refusals of one stale
+// handle were four of the eight looks that ended the build). At
 // `AUTOMATION_STUDIO_LLM_EVIDENCE_SEARCH_NOTE_AT` the model is told it has been
 // searching without acting, with the looks it made, and pushed to act
 // (`../decision-handlers/searching.ts`); at
 // `AUTOMATION_STUDIO_LLM_EVIDENCE_MAX_LOOKS_IN_A_ROW` the round stalls, as three
-// refused repeats do. Information first, then the guard -- never a refusal of
-// the look itself.
+// refused repeats do -- and a stall the caller can recover from, such as a
+// candidate's latest revision with a retest left, runs that instead of ending
+// (`../decision-handlers/stall-recovery.ts`). Information first, then the
+// guard -- never a refusal of the look itself.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 

@@ -2,7 +2,8 @@
 // judgement; build-test checks require an affirmative confirming judgement.
 // Unknown, silent, unavailable or absent confirmation leaves the result unsure.
 // Only two agreeing negatives refute; conflicting answers remain unverified.
-// This pure boundary preserves any negative reading for the repair controller.
+// This pure boundary preserves any negative reading for the repair controller,
+// and on a split the reading of the call that said yes beside it (t477).
 
 import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "./repair-directive.ts";
@@ -109,6 +110,13 @@ function passedOverRows(verification: AutomationStudioResultVerification): boole
  * narrowing a condition, the second did not come back, and the build's repair
  * was told only "unverified"). At most one of the two calls can have judged
  * `does_not_answer` here -- two did is a refutation -- so nothing is spliced.
+ *
+ * Where the two split (`model_disagreed`), it keeps the other call's reading
+ * too, as `answeredReading`: what the yes compared. Live run
+ * `run-mv5uu9g1-9d80deea` passed on only the no, which had read the start
+ * view's pagination as the read's page; the yes had read the end view's
+ * "14 of 14 results", and the model hunted for pages that were not there.
+ * Each reading stays its own call's, never merged into the other.
  */
 function unsettled(
   first: AutomationStudioResultVerification,
@@ -119,7 +127,16 @@ function unsettled(
   verdicts: AutomationStudioResultVerdict[]
 ): AutomationStudioResultVerification {
   const reading = unconfirmedReading(first) ?? unconfirmedReading(second);
-  return { schemaVersion: first.schemaVersion, verdict: "unsure", basis, code, reason, observation: first.observation, verdicts, calls: 2, ...(reading ? { unconfirmedReading: reading } : {}) };
+  const answered = basis === "model_disagreed" ? answeredReadingOf(first) ?? answeredReadingOf(second) : undefined;
+  return { schemaVersion: first.schemaVersion, verdict: "unsure", basis, code, reason, observation: first.observation, verdicts, calls: 2, ...(reading ? { unconfirmedReading: reading } : {}), ...(answered ? { answeredReading: answered } : {}) };
+}
+
+/** What a call that judged `answers` compared, copied; nothing for any other call or an empty reading. */
+function answeredReadingOf(verification: AutomationStudioResultVerification): NonNullable<AutomationStudioResultVerification["answeredReading"]> | undefined {
+  if (verification.verdict !== "answers" || !verification.answeredReading) return undefined;
+  const { expected, observed } = verification.answeredReading;
+  const reading = { ...(expected ? { expected } : {}), ...(observed ? { observed } : {}) };
+  return Object.keys(reading).length ? reading : undefined;
 }
 
 /** What a call that judged `does_not_answer` said, copied off its directive; nothing for any other call or an empty reading. */

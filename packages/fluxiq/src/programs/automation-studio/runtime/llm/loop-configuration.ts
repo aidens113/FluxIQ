@@ -178,6 +178,18 @@ export type AutomationStudioLlmEvidenceLoopInput = {
     }): unknown;
   };
   /**
+   * What a stall runs instead of ending, while the caller still has a move
+   * that may get the build further (t477; user: a build never gives up on a
+   * recoverable failure). Asked when a run of looks or of refused repeats
+   * would stall the round (`decision-handlers/stall-recovery.ts`), with the
+   * issue codes it would stall under. `call` is run as the loop's own call --
+   * a candidate build's retest of its latest revision -- its answer is shown to
+   * the model with a note saying why, and the round goes on. `endedBecause`
+   * says why nothing was left, and joins the stall's issue codes. Absent, or
+   * answering neither, the stall ends the round as before.
+   */
+  recoverStall?(stall: { issueCodes: readonly string[] }): { call: { toolId: string; input: JsonObject } } | { endedBecause: string } | undefined;
+  /**
    * Check a completed result before the loop accepts it.
    *
    * A result the check refuses was a paid call that produced nothing usable.

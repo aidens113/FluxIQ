@@ -47,6 +47,18 @@
 // in a row stall the round. Looks in a row of any kind are counted as well
 // (`./searching.ts`).
 //
+// **A look the domain refused is a failed call, not a fresh look.** Lane C
+// round 10 (`run-mv5uu9g1-9d80deea`, steps 0034-0044) sent one detection on a
+// stale handle four times on one page, each refused `target_unobserved`. A
+// refused look kept no answer, so no outcome was stored for its key and the
+// identical refused look ran again every time; and each one counted as one
+// more look in a row, so the run of looks (`./searching.ts`) ended the build
+// while a revision with two retests left stood untested. A refused look is now
+// recorded like any refused call: `failed` on its page, so the identical look
+// there is refused unrun and counts in `refusedAgain`, with the
+// `HANDLE_UNSHOWN` lifting as for any call; and it leaves the run of looks as
+// it was, since it looked at nothing.
+//
 // **A call that runs the draft is keyed on the draft too.** In
 // `run-musr9pv3-f4bf6256` (t195) the model sent `core.run_flow {from: 15, to: 16}`
 // about twenty times from step 0066 to 0178, between unchanged `complete`s the
@@ -136,8 +148,9 @@
 // **What still runs.**
 //
 // - Anything after the page changed: the key holds the page.
-// - A look, which changes nothing by nature: looks stay with the repeat policy,
-//   which answers one asked again from memory and runs one after an attempt.
+// - A look that ran, which changes nothing by nature: looks stay with the
+//   repeat policy, which answers one asked again from memory and runs one after
+//   an attempt. A look the domain refused is a failed call (above).
 // - A call whose earlier outcome said to wait and try again: a rate limit, a
 //   control briefly disabled, a page still loading (`./retry-later.ts`).
 // - A call that threw: nothing answered it, so it is not a repeat.
@@ -227,6 +240,12 @@ export type AutomationStudioLlmEvidenceRepeatGuard = AutomationStudioLlmEvidence
   /** Decision `iteration` was refused as a repeat; returns how many decisions in a row have been, this one included. */
   refusedAgain(iteration: number): number;
   /**
+   * A stall was answered by running a recoverable move instead of ending
+   * (`../decision-handlers/stall-recovery.ts`, t477): the runs of refused
+   * repeats and of looks it ended start again from nothing.
+   */
+  stallRecovered(): void;
+  /**
    * An `amend_draft` decision whose rerun ran has settled: `signature` is the
    * decision's (`../decision-context/signature.ts`), `draft` the draft's key
    * after it (`./draft-key.ts`), `changed` whether it changed the Flow or what
@@ -280,14 +299,16 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       if (call.stateAfter !== undefined) latest = call.stateAfter;
       const look = call.effect === "observe" && !call.proposes;
       // A look seen to leave the page as it found it is one more look in a row; anything else -- a look whose page was not seen
-      // included, since nothing says it did not move -- ends the run (`./searching.ts`).
-      if (look && state !== undefined && call.stateAfter === state) searching.looked({ callId: call.callId, toolId: call.toolId, input: call.input });
-      else searching.acted();
+      // included, since nothing says it did not move -- ends the run (`./searching.ts`). A refused look looked at nothing and
+      // leaves the run as it was: it is a failed call, refused unrun if sent again here (header, `run-mv5uu9g1-9d80deea`).
+      const counted = !(look && call.refused);
+      if (counted && look && state !== undefined && call.stateAfter === state) searching.looked({ callId: call.callId, toolId: call.toolId, input: call.input });
+      else if (counted) searching.acted();
       // A check ran nothing: no outcome of its input to record (run `run-mux74k5q-1c3c2127`, C3).
       if (state === undefined || call.checked === true) return;
-      if (look) {
+      if (look && !call.refused) {
         const at = key(call.toolId, call.input, state);
-        const answer = call.answer === undefined || call.refused ? undefined : createHash("sha256").update(call.answer).digest("hex");
+        const answer = call.answer === undefined ? undefined : createHash("sha256").update(call.answer).digest("hex");
         if (answer !== undefined && answered.get(at) === answer) outcomes.set(at, { callId: call.callId, outcome: "same_answer", ...(call.resultCode ? { resultCode: call.resultCode } : {}) });
         else if (answer !== undefined) {
           answered.set(at, answer);
@@ -348,6 +369,11 @@ export function automationStudioLlmEvidenceRepeatGuard(options: { draftOf?: ((to
       refusedInARow = iteration === lastRefused + 1 ? refusedInARow + 1 : 1;
       lastRefused = iteration;
       return refusedInARow;
+    },
+    stallRecovered() {
+      refusedInARow = 0;
+      lastRefused = Number.NEGATIVE_INFINITY;
+      searching.acted();
     }
   };
 }

@@ -345,3 +345,12 @@ describe("the build-test judge is told a named route is part of what was asked",
     expect(automationStudioDiagnosisPromptInstruction("loop_verification")).not.toContain("name a route to follow");
   });
 });
+
+// Live run `run-mv5uu9g1-9d80deea` (t477): a trial searched, filtered and read one page of 14 results; one judge read the
+// start view -- the unfiltered search page, with five pages -- as the read's page and answered no for pages never read.
+describe("each judge is told the start view is not the page a list read ran on", () => {
+  const SENTENCE = "startView is never the page a list read ran on once an earlier step searched, filtered, sorted or went to another page: a read's pages, and whether a further page was found, are in that read's own account (reads, or its step's observed), so never judge a read's paging or count from what startView shows.";
+  it("tells the post-run check and the build-test judge alike", () => {
+    for (const buildTest of [false, true]) expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest }), String(buildTest)).toContain(SENTENCE);
+  });
+});

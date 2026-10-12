@@ -331,6 +331,17 @@ describe("run murwcmx2: a build's yes is confirmed by a second call", () => {
     expect(unconfirmed).not.toHaveProperty("oneCallSaidYes");
   });
 
+  // Live run `run-mv5uu9g1-9d80deea` (t477): on a split only the no's reading reached the build, though the yes had read
+  // the end view the no ignored. The yes's expected and observed now travel beside it, never its advice; and only on a split.
+  it("no, then yes, carries the yes's reading beside the no's; no, then unknown, carries none", async () => {
+    const YES = { answersRequest: "yes", expected: "The cart holds the item for pickup.", observed: "The end view shows the item in the cart for pickup.", changed: "Remove step 4." };
+    const split = await judge(PICKUP_CART, { provider: answering(NO, YES).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(split).toMatchObject({ verdict: "unknown", oneCallSaidYes: true, unconfirmedReading: { observed: NO.observed }, answeredReading: { expected: YES.expected, observed: YES.observed } });
+    expect(JSON.stringify(split)).not.toContain(YES.changed);
+    const unconfirmed = await judge(PICKUP_CART, { provider: answering(NO, { answersRequest: "unknown" }).provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
+    expect(unconfirmed).not.toHaveProperty("answeredReading");
+  });
+
   // t296 (`../../agreement.ts`): a build-finishing yes needs a confirming yes. An unknown or a reply without an
   // answer confirms nothing, so the yes does not stand: the verdict is unknown and the build does not finish on it.
   it("yes, then unknown or a reply without an answer, is unknown -- the yes is not confirmed", async () => {
