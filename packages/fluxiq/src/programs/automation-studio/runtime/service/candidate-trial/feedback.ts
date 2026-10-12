@@ -43,6 +43,12 @@
 // retryable (`./target-on-page.ts`); the trial gate reads its
 // `targetOnPage` to tell the model to test again rather than look for it.
 //
+// **A step says what the run closed over the page, and by which control (t470).**
+// A layer the client closed while a step ran -- a slow-down notice, a
+// promotion -- is listed under `interruptions`, with the handle of the way out
+// it pressed when the domain could name it (`./interruptions.ts`), so a
+// dismissing step is written against that control and no look-alike.
+//
 // **A read says what it saw and kept (t466).** A judged trial lists each list
 // read with the rows it saw, kept and each condition rejected (`./reads.ts`).
 // A read that kept no rows is a valid ending -- the loop over it ran no passes,
@@ -61,8 +67,12 @@ import { automationStudioTrialAbsorbedFeedback } from "./absorbed.ts";
 import { automationStudioTrialCheckStepFeedback } from "./check-step.ts";
 import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
 import { automationStudioTrialFailureHappened } from "./happened.ts";
+import { automationStudioTrialInterruptions } from "./interruptions.ts";
 import { automationStudioTrialReadsFeedback } from "./reads.ts";
 import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
+
+/** The handle the domain named each pressed way out by, keyed by the client's reference (`./interruptions.ts`). */
+type WayOutHandles = Readonly<Record<string, string>>;
 
 /** The most steps a feedback lists; a longer Flow says how many it left out. */
 const MAX_STEPS = 40;
@@ -70,22 +80,22 @@ const MAX_STEPS = 40;
 /** A trial's verdict for the model, from the judge's verdict on the trial run. */
 export const automationStudioCandidateTrialFeedback = Object.freeze({
   /** The run did not reach its end: no judge was asked. */
-  executionFailed(input: { code: string; trialRunId?: string | undefined; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string }): { verdict: AutomationStudioCandidateTrialVerdict; feedback: JsonObject } {
+  executionFailed(input: { code: string; trialRunId?: string | undefined; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string; wayOuts?: WayOutHandles }): { verdict: AutomationStudioCandidateTrialVerdict; feedback: JsonObject } {
     const graphFailure = input.trace?.failure?.code;
     const graphEnding = graphFailure === "executor.graph.unvisited_nodes"
       ? { code: graphFailure, happened: "The run reached a terminal step while required graph nodes remained unvisited.", instruction: "Check the Flow's connections and required steps. Continue to those steps, or use an explicit End only where the instruction is complete. This is a graph-level failure; no displayed successful step needs retrying." }
       : graphFailure === "executor.graph.unmatched_route"
         ? { code: graphFailure, happened: "The last step chose a route with no matching outgoing edge.", instruction: "Connect the step's settled route to the intended next step, then resubmit and test the new revision." }
         : undefined;
-    return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...(graphEnding ? { graphEnding } : {}), ...steps(input.trace, input.graph) } };
+    return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...(graphEnding ? { graphEnding } : {}), ...steps(input.trace, input.graph, input.wayOuts) } };
   },
 
   /** The judge's verdict, read as the trial gate's. */
-  judged(input: { verdict: AutomationStudioBuildTestVerdict; summary: AutomationStudioRunResultSummary; trialRunId: string; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string }): { verdict: AutomationStudioCandidateTrialVerdict; code?: string; feedback: JsonObject } {
+  judged(input: { verdict: AutomationStudioBuildTestVerdict; summary: AutomationStudioRunResultSummary; trialRunId: string; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string; wayOuts?: WayOutHandles }): { verdict: AutomationStudioCandidateTrialVerdict; code?: string; feedback: JsonObject } {
     const judged = input.verdict;
     // What each list read saw, kept and rejected: a read that kept no rows is said as a valid outcome of its conditions (`./reads.ts`, t466).
     const reads = automationStudioTrialReadsFeedback(input.summary.reads, input.graph);
-    const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored: { rows: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired }, ...(reads.length ? { reads } : {}), ...steps(input.trace, input.graph) };
+    const common: JsonObject = { trialRunId: input.trialRunId, start: input.start, stored: { rows: input.summary.totalRecordCount, refused: input.summary.totalRefusedCount, missingRequired: input.summary.totalRowsMissingRequired }, ...(reads.length ? { reads } : {}), ...steps(input.trace, input.graph, input.wayOuts) };
     if (judged.verdict === "yes") return { verdict: "yes", feedback: { ...common, judge: "The trial was judged twice to do what the instruction asks." } };
     if (judged.verdict === "no") {
       return { verdict: "no", code: "candidate.trial_judged_no", feedback: { ...common, code: "candidate.trial_judged_no", judge: compact({ expected: judged.expected, observed: judged.observed, advice: judged.advice, stillAchievable: judged.stillAchievable }), ...(judged.findings.length ? { findings: [...judged.findings] } : {}), ...(judged.fix?.length ? { fix: [...judged.fix] } : {}), ...(judged.checked?.length ? { checked: [...judged.checked] } : {}) } };
@@ -103,7 +113,7 @@ export const automationStudioCandidateTrialFeedback = Object.freeze({
  * (`./absorbed.ts`) and, for a failure, what happened. Then the paces the run
  * learned, once each.
  */
-function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined): JsonObject {
+function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: AutomationStudioFlowArtifact | undefined, wayOuts: WayOutHandles | undefined): JsonObject {
   const ran = automationStudioTrialExecutedSteps(trace?.attempts ?? []);
   if (!ran.length) return { steps: [] };
   const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
@@ -122,9 +132,11 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
       failureCode: failure?.code, happened: failure ? automationStudioTrialFailureHappened(failure.category) : undefined,
       ...(failure ? automationStudioModelFacingFailureText(failure) : {})
     });
-    const withAbsorbed = absorbed.length ? { ...step, absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage !== undefined }) } : step;
+    // What the run closed over the page while the step ran, and the handle of the way out it pressed when the domain named one (t470).
+    const interruptions = automationStudioTrialInterruptions([...absorbed.map((entry) => entry.failed), attempt], wayOuts);
+    const told = { ...step, ...(absorbed.length ? { absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage !== undefined }) } : {}), ...(interruptions.length ? { interruptions } : {}) };
     // A step whose state already held is done: no retry or check advice for a failure the run went past.
-    return failure && !attempt.stateHeld ? { ...withAbsorbed, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt), ...onPage } : withAbsorbed;
+    return failure && !attempt.stateHeld ? { ...told, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt), ...onPage } : told;
   });
   const paces = learnedPaces(trace, nodes);
   return { steps: listed, ...(ran.length > MAX_STEPS ? { stepsLeftOut: ran.length - MAX_STEPS } : {}), ...(paces.length ? { paces } : {}) };

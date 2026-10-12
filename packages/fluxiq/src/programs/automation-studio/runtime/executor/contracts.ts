@@ -344,6 +344,8 @@ export type AutomationStudioClearedLayerKind = "consent" | "rate_limit" | "promo
 export type AutomationStudioClearedLayer = {
   kind: AutomationStudioClearedLayerKind;
   control: string;
+  /** The domain's opaque reference to the control it pressed (t470), handed back for that control's handle (`../service/candidate-trial/interruptions.ts`). */
+  wayOut?: string;
 };
 
 export type AutomationStudioNodeAttemptTrace = {

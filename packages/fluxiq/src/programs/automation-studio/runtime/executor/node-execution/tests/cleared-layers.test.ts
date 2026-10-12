@@ -36,6 +36,22 @@ describe("automationStudioClearedLayersOf", () => {
     expect(automationStudioClearedLayersOf(payload)).toEqual([{ kind: "assistant", control: "Hide" }]);
   });
 
+  // t470: the domain's reference to the control it pressed rides beside the words, opaque to Core.
+  it("keeps a way-out reference only as a short opaque token", () => {
+    const payload = { clearedLayers: [
+      { kind: "rate_limit", control: "OK", wayOut: "way-out.3f2a9c" },
+      { kind: "dialog", control: "Close", wayOut: "Close this notice now" },
+      { kind: "dialog", control: "Close", wayOut: { selector: "#ok" } },
+      { kind: "promotion", control: "No thanks", wayOut: "x".repeat(81) }
+    ] };
+    expect(automationStudioClearedLayersOf(payload)).toEqual([
+      { kind: "rate_limit", control: "OK", wayOut: "way-out.3f2a9c" },
+      { kind: "dialog", control: "Close" },
+      { kind: "dialog", control: "Close" },
+      { kind: "promotion", control: "No thanks" }
+    ]);
+  });
+
   it("keeps at most twelve layers", () => {
     const clearedLayers = Array.from({ length: 20 }, () => ({ kind: "rate_limit", control: "OK" }));
     expect(automationStudioClearedLayersOf({ clearedLayers })).toHaveLength(12);

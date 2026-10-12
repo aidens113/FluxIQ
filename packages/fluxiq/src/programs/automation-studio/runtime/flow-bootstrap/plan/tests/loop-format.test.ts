@@ -8,7 +8,8 @@ import {
   AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA,
   AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE,
   AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT,
-  AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT
+  AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT,
+  AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT
 } from "../index.ts";
 import { webDomainNodeDefinitionsFixture } from "./index.ts";
 
@@ -107,7 +108,17 @@ describe("the Flow script loop format", () => {
     expect(text).toContain("An `optional: yes` step may stand inside a span");
     expect(text).toContain("with `only after: <its label>` runs only on the passes where that step was done");
     expect(text).toContain("`repeat pace: <time>` goes beside `repeat over:` or `repeat while:`, on the span's first step");
-    expect(text).toContain("a `builtin.timing.wait` step with `only after: <that step's label>` that waits at least the wait the feedback named; and `repeat pace:` of at least that wait on the span's first step.");
+    expect(text).toContain("adapt the Flow rather than send it again: `repeat pace:` of at least that wait on the span's first step.");
+    expect(text).toContain("a `builtin.timing.wait` step with `only after: <that step's label>` that waits at least the wait the feedback named.");
+  });
+
+  // t470, lane D round 8 (`run-mv5jnc5m-a47c3e59`): the run closed the notice itself and named no control, and the
+  // step written to close it pressed the chat's "Close chat". A closing step is asked for only against a named way out.
+  it("asks for a step closing the notice only against the way out the trial named, and for the pace alone otherwise", () => {
+    const text = AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT;
+    expect(text).toContain("When that step's feedback also lists the notice under `interruptions` with the handle of its way out, `wayOut`, add right after the step, inside the span, an `optional: yes` step that presses that handle");
+    expect(text).toContain("A notice listed with no `wayOut` was closed by the run itself: write no step for it, and never close it through any other handle.");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT).toContain("one with a `wayOut` is dismissed through that handle and no other; one with none was closed by the run itself and needs no step.");
   });
 
   it("builds the slow-down example as written: the notice's way past and the wait meet at a join that closes the loop, and the press keeps its pace", () => {

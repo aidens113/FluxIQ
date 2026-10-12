@@ -324,6 +324,16 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
  * the passes where it did (`only after:`), and a pace between passes
  * (`repeat pace:`), which the saved Flow keeps
  * (`../script-statements/`).
+ *
+ * The closing step is asked for only against a handle the trial named (t470).
+ * Lane D round 8 (`run-mv5jnc5m-a47c3e59`) was told to close a notice it had
+ * never been shown: the client had closed it by its way out, and the feedback
+ * named no control, so the step was written against the only close-like handle
+ * the model knew, the chat's "Close chat", and closed the chat. The feedback
+ * now lists what the run closed under `interruptions`, with the way out's
+ * handle as `wayOut` when the domain could name it
+ * (`../../service/candidate-trial/interruptions.ts`); with no handle, the Flow
+ * answers with its pace alone and writes no step for the notice.
  */
 export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "Repetitive work is a loop, never the same steps written again. A step starts a span that repeats with lines beside its node:",
@@ -334,7 +344,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "A span holds no `on <port>:` line and no second repeat, and no branch goes into it.",
   "An `optional: yes` step may stand inside a span: it is done on the passes that need it and gone past on the others. A step written directly after an optional step with `only after: <its label>` runs only on the passes where that step was done, and so does each step after it with the same line; then the pass goes on where it was. Keep them in the same span, its `repeat through:` naming the last of them.",
   "`repeat pace: <time>` goes beside `repeat over:` or `repeat while:`, on the span's first step: each pass then starts at least that long after the one before. Write `6 s`, `1500 ms` or `1 min`; a bare number is seconds.",
-  "When a trial says a step in a loop met the site's request to slow down -- its feedback names the pass, the row and the wait -- adapt the Flow rather than send it again: right after that step, inside the span, a step that closes the site's notice when it shows, with `optional: yes`; directly after it, a `builtin.timing.wait` step with `only after: <that step's label>` that waits at least the wait the feedback named; and `repeat pace:` of at least that wait on the span's first step.",
+  "When a trial says a step in a loop met the site's request to slow down -- its feedback names the pass, the row and the wait -- adapt the Flow rather than send it again: `repeat pace:` of at least that wait on the span's first step. When that step's feedback also lists the notice under `interruptions` with the handle of its way out, `wayOut`, add right after the step, inside the span, an `optional: yes` step that presses that handle, and directly after it a `builtin.timing.wait` step with `only after: <that step's label>` that waits at least the wait the feedback named. A notice listed with no `wayOut` was closed by the run itself: write no step for it, and never close it through any other handle.",
   "A value that changes between rows or runs is bound, never typed in: `$row.<field>` is a field the listing reads, of the row the pass is on, and only inside a repeat over that listing; `$input.<name> = <value>` is a Flow input, written with the value the person gave; `$step.<label>.<output>` is an output of an earlier step, by its label.",
   "The rows a `repeat over` acts on are the rows its listing kept. To act on only some, put the condition on the listing step: `extractList.where: [{\"field\": \"amount\", \"atLeast\": 100}]`.",
   "Rows a Flow reads are also collected over the whole run, and `recordOutput.process` on the reading step only shapes that saved answer at the end -- keep some, drop repeats, sort, limit -- over the columns `recordOutput.columns` saves. It never changes which rows a repeat visits.",
@@ -440,7 +450,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT = [
   "An interruption, wherever it comes, is dismissed through its way out -- close, no thanks, not now, the X -- never through the control that accepts, joins, buys or continues: on a real site that press takes the offer. A cookie or consent banner is the exception: its reject or necessary-only answer is preferred, and its accept is allowed.",
   "An interruption that can only come at one place is an `optional: yes` step there, with its `only after:` steps. One that can come at several places, or at any pass of a loop, is one handler instead -- `on before everywhere:` or `on retry for <steps>:` -- so one rule covers every place. A loop the site asked to slow down still takes `repeat pace:` as well.",
   "A second known way to do a step is a `fail` handler for it whose steps call another part and end `then: use <output> = $step.<label>.<output>`. Give both parts the same `done when:`, so either way is checked the same.",
-  "Write a handler only for an interruption you met while gathering evidence or in a trial, or one the instruction names; never one you imagine.",
+  "Write a handler only for an interruption you met while gathering evidence or in a trial, or one the instruction names; never one you imagine. A trial lists what the run closed under a step's `interruptions`: one with a `wayOut` is dismissed through that handle and no other; one with none was closed by the run itself and needs no step.",
   "Example, starting where the page already is:",
   "flow: Renew the parking permit for the plate the person gave",
   "step: open the permit portal",
