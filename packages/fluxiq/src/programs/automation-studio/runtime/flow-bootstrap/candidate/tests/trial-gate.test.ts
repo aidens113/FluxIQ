@@ -107,9 +107,9 @@ describe("candidate trial gate", () => {
     expect(result.promotionAllowed).toBe(false);
   });
 
-  it("does not let a yes on R1 complete R2, even when R2 is the same Flow", async () => {
+  it("does not let a yes on R1 complete a changed R2", async () => {
     const asked: AutomationStudioCandidateTrialRequest[] = [];
-    const { outcome, seen } = await run([submit(), test, submit(), complete, complete], verdictPort(["yes"], asked));
+    const { outcome, seen } = await run([submit(), test, submit("changed"), complete, complete], verdictPort(["yes"], asked));
     expect(asked.map((request) => request.revision)).toEqual([1]);
     expect(completionFeedback(seen[4]!)).toMatchObject({ code: "candidate.trial_required" });
     expect(String(completionFeedback(seen[4]!)?.instruction)).toContain("revision 2");
@@ -117,6 +117,25 @@ describe("candidate trial gate", () => {
     expect(result.loop.ok).toBe(false);
     expect(result.candidate?.revision).toBe(2);
     expect(result.trial).toBeUndefined();
+  });
+
+  it("does not make the same Flow sent again a new revision: R1 and its yes stand (t464)", async () => {
+    const asked: AutomationStudioCandidateTrialRequest[] = [];
+    // The refusal carries no digest of its own, so completion names the receipt that was accepted.
+    const completeAccepted: Step = (evidence) => {
+      const value = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate" && (entry.value as JsonObject).ok === true)!.value as JsonObject;
+      return { kind: "complete", result: { revision: value.revision as number, digest: value.digest as string } };
+    };
+    const { outcome, seen } = await run([submit(), test, submit(), completeAccepted], verdictPort(["yes"], asked));
+    expect(asked.map((request) => request.revision)).toEqual([1]);
+    const resent = latestOf("core.submit_candidate", seen[3]!);
+    expect(resent).toMatchObject({ ok: false, revision: 1, issueCodes: ["candidate.unchanged_submission"],
+      diagnostics: { code: "candidate.unchanged_submission", unchanged: true, revision: 1, lastTrial: { verdict: "yes" } } });
+    expect(String(resent?.next)).toContain("Nothing changed");
+    const result = loopOf(outcome);
+    expect(result.loop.ok).toBe(true);
+    expect(result.candidate?.revision).toBe(1);
+    expect(result.trial).toMatchObject({ verdict: "yes", revision: 1 });
   });
 
   it.each(["unsure", "not_judged", "execution_failed"] as const)("refuses completion after a %s trial and shows the trial's feedback", async (verdict) => {
@@ -279,14 +298,19 @@ describe("candidate trial gate", () => {
     const asked: AutomationStudioCandidateTrialRequest[] = [];
     const { outcome, seen } = await run([submit("first"), test, complete, test, submit("first"), test, submit("revised"), test, complete], verdictPort(["no", "yes"], asked));
     expect(completionFeedback(seen[3]!)).toMatchObject({ code: "candidate.trial_unchanged_after_no", previousFeedback: { said: "judge said no" } });
-    // Testing it again, or resubmitting the same Flow as a new revision, never reaches the judge.
+    // Testing it again, or resubmitting the same Flow, never reaches the judge:
+    // the resubmission is refused as unchanged after the no, with what the judge
+    // found, and is no new revision told to "test next" (t464, lane C round 8).
     expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)).toMatchObject({ ok: false, code: "candidate.trial_unchanged_after_no" });
+    const resent = latestOf("core.submit_candidate", seen[5]!);
+    expect(resent).toMatchObject({ ok: false, revision: 1, issueCodes: ["candidate.unchanged_after_no"], diagnostics: { code: "candidate.unchanged_after_no", judged: { said: "judge said no" } } });
+    expect(String(resent?.next)).not.toContain("Test next");
     expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[6]!)).toMatchObject({ ok: false, code: "candidate.trial_unchanged_after_no" });
-    expect(asked.map((request) => request.revision)).toEqual([1, 3]);
+    expect(asked.map((request) => request.revision)).toEqual([1, 2]);
     const result = loopOf(outcome);
     expect(result.loop.ok).toBe(true);
-    expect(result.candidate?.revision).toBe(3);
-    expect(result.trial).toMatchObject({ verdict: "yes", revision: 3 });
+    expect(result.candidate?.revision).toBe(2);
+    expect(result.trial).toMatchObject({ verdict: "yes", revision: 2 });
   });
 
   it("tests only the latest submission, without asking the port for a stale one", async () => {

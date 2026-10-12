@@ -129,8 +129,13 @@ export function automationStudioCandidateSubmissionRefusal(submitted: Extract<Au
 } {
   const feedback = submitted.check.feedback ?? {};
   const advice = handleAdvice(feedback);
+  // A Flow sent again unchanged lists no issue to correct: its own instruction
+  // says what failed last and the way out (t464, `./unchanged-submission.ts`).
+  const next = feedback.unchanged === true && typeof feedback.instruction === "string"
+    ? `${feedback.instruction} ${RESUBMIT}`
+    : refusedSteps(feedback) + (advice ? advice + HANDLE_TAIL : GENERAL_NEXT);
   return {
-    evidence: { ok: false, revision: submitted.revision, diagnostics: feedback, issueCodes: [...submitted.check.issueCodes], next: refusedSteps(feedback) + (advice ? advice + HANDLE_TAIL : GENERAL_NEXT) },
+    evidence: { ok: false, revision: submitted.revision, diagnostics: feedback, issueCodes: [...submitted.check.issueCodes], next },
     resultCode: refusalCode(feedback, submitted.check.issueCodes),
     draft: { proposes: true }
   };

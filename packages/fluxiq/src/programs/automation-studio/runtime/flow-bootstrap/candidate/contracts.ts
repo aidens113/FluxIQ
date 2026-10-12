@@ -43,6 +43,18 @@ export type AutomationStudioFlowCandidateSubmission =
   | { ok: false; revision: number; check: Extract<AutomationStudioFlowBootstrapCompletionVerdict, { ok: false }>["check"] };
 
 /**
+ * What a submission is compared with before it becomes a new revision (t464):
+ * the trial verdict standing for the current revision, and whether the judge
+ * refuted a Flow by its digest. Both are the trial gate's (`./trial-gate.ts`),
+ * handed to `submit` by the loop that owns both, so the controller never
+ * holds a second copy of a verdict.
+ */
+export type AutomationStudioFlowCandidateSubmissionHistory = {
+  trialOf?: (candidate: Pick<AutomationStudioFlowCandidate, "revision" | "digest">) => AutomationStudioCandidateTrialResult | undefined;
+  refuted?: (digest: string) => JsonObject | undefined;
+};
+
+/**
  * One trial of a submitted candidate: Core runs that exact candidate once from
  * its declared start and judges only what the trial did. The port is injected
  * by the service that owns execution and judging; the authoring loop only asks
