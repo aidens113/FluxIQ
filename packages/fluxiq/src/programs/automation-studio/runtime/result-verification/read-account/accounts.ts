@@ -43,6 +43,10 @@
 // stored, came by label alone, and `../request-rows/` took them as tests of
 // the name.
 //
+// **A condition over a column the rows do not store says what it read on a
+// row it kept** (`stored-columns.ts`, `condition.ts`): a column read only to
+// filter by reaches no row, so that value is the judge's only sight of it.
+//
 // **Every read, every condition and every dedupe key** (user, 2026-09-30:
 // "Remove ANY AND ALL LIMITS ON THE NUMBER OF ELEMENTS PASSED TO MODEL. DO NOT
 // HIDE INFORMATION"). Until then a judge saw four reads, eight conditions each
@@ -58,6 +62,7 @@ import { automationStudioResultReadConditionColumn, automationStudioResultReadCo
 import { automationStudioResultReadDedupe } from "./dedupe.ts";
 import { automationStudioResultReadLoopedAccount } from "./looped-account.ts";
 import { automationStudioResultReadLoopPasses } from "./loop-passes.ts";
+import { automationStudioResultReadStoredColumns } from "./stored-columns.ts";
 
 /** The members that mark an object as a read's own parameters. */
 const READ_PARAMETER_KEYS = ["where", "paginate", "dedupe", "fields"];
@@ -140,7 +145,9 @@ function account(
   const stop = typeof extraction.paginationStop === "string" && STOP_WORD.test(extraction.paginationStop) ? extraction.paginationStop : undefined;
   const itemsSeen = count(extraction.itemsSeen);
   const filter = isRecord(extraction.conditions) ? extraction.conditions : undefined;
-  const conditions = conditionAccounts(filter, authored, deniedKeys);
+  // A condition over a column the rows do not store says what it read (`condition.ts`, `stored-columns.ts`).
+  const stored = authored ? automationStudioResultReadStoredColumns(extraction, node?.parameterValues) : undefined;
+  const conditions = conditionAccounts(filter, authored, deniedKeys, stored);
   const paginate = authored?.paginate;
   const pageLimit = isRecord(paginate) ? firstLimit(paginate) : undefined;
   const columns = isRecord(authored?.fields) ? Object.keys(authored.fields) : [];
@@ -177,7 +184,8 @@ function account(
 function conditionAccounts(
   filter: JsonObject | undefined,
   authored: JsonObject | undefined,
-  deniedKeys: readonly string[] | undefined
+  deniedKeys: readonly string[] | undefined,
+  stored: ReadonlySet<string> | undefined
 ): NonNullable<AutomationStudioResultReadAccount["conditions"]> {
   const rejected = Array.isArray(filter?.rejected) ? filter.rejected : [];
   // What each condition's own read found, positionally like the counts; `condition.ts` decides whether it may be said.
@@ -192,7 +200,7 @@ function conditionAccounts(
   const total = Math.max(rejected.length, written.length);
   const accounts: NonNullable<AutomationStudioResultReadAccount["conditions"]> = [];
   for (let index = 0; index < total; index += 1) {
-    const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index]) : undefined;
+    const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index], stored) : undefined;
     const rows = count(rejected[index]);
     const byItself = count(alone[index]);
     const tested = automationStudioResultReadConditionColumn(written[index], columns);

@@ -8,6 +8,16 @@
 // pass, the rows a condition left out by itself are every pass's, in pass
 // order, and `keptPerPage` keeps what each pass kept. `stop` is how the loop
 // ended and `pageLimit` the loop's own bound, where the Flow authored one.
+//
+// **A witness says the page of the whole read.** Each pass numbers its pages
+// from 1, so run `run-mv5jnc51-9eac63f2`'s judges were told every left-out row
+// of a five-page read was on page 1, and two repeats of one row across a page
+// break read as one page's item 20 twice. So each pass's witness pages are
+// moved on by the pages the passes before it read.
+//
+// **A condition is worded from a pass that kept rows**, where one did: the
+// wording carries what the condition read on a row it kept (`condition.ts`),
+// and a first pass that kept nothing has no such row to say.
 
 import type { AutomationStudioResultReadAccount } from "../contracts.ts";
 
@@ -55,16 +65,26 @@ export function automationStudioResultReadLoopedAccount(input: AutomationStudioR
 /** Each condition, by position, with every pass's counts added and every pass's left-out rows in pass order. */
 function mergedConditions(passes: readonly AutomationStudioResultReadAccount[]): Condition[] {
   const total = Math.max(0, ...passes.map((pass) => pass.conditions?.length ?? 0));
+  // The pages every pass before each one read, which its own page numbers start after.
+  const before = passes.map((_, at) => passes.slice(0, at).reduce((pages, pass) => pages + pass.pagesRead, 0));
   const merged: Condition[] = [];
   for (let index = 0; index < total; index += 1) {
-    const each = passes.map((pass) => pass.conditions?.[index]).filter((entry): entry is Condition => entry !== undefined);
-    const condition = each.find((entry) => entry.condition !== undefined)?.condition;
-    const rejected = sum(each.map((entry) => entry.rejected));
-    const alone = sum(each.map((entry) => entry.alone));
-    const leftOut = each.flatMap((entry) => entry.leftOutOnlyByThis ?? []);
-    const observations = each.some(entry => entry.leftOutObservations !== undefined)
-      ? each.flatMap(entry => (entry.leftOutOnlyByThis ?? []).map((_, row) => entry.leftOutObservations?.[row] ?? null)) : undefined;
-    const withRows = each.filter((entry) => entry.leftOutOnlyByThis?.length);
+    const each = passes.flatMap((pass, at) => {
+      const entry = pass.conditions?.[index];
+      return entry === undefined ? [] : [{ entry, kept: pass.kept, pagesBefore: before[at]! }];
+    });
+    const worded = each.filter(({ entry }) => entry.condition !== undefined);
+    const condition = (worded.find(({ kept }) => kept > 0) ?? worded[0])?.entry.condition;
+    const rejected = sum(each.map(({ entry }) => entry.rejected));
+    const alone = sum(each.map(({ entry }) => entry.alone));
+    const leftOut = each.flatMap(({ entry }) => entry.leftOutOnlyByThis ?? []);
+    const observations = each.some(({ entry }) => entry.leftOutObservations !== undefined)
+      ? each.flatMap(({ entry, pagesBefore }) => (entry.leftOutOnlyByThis ?? []).map((_, row) => {
+        const observed = entry.leftOutObservations?.[row];
+        return observed ? { ...observed, page: observed.page + pagesBefore } : null;
+      }))
+      : undefined;
+    const withRows = each.filter(({ entry }) => entry.leftOutOnlyByThis?.length).map(({ entry }) => entry);
     merged.push({
       ...(condition !== undefined ? { condition } : {}),
       ...(rejected !== undefined ? { rejected } : {}),

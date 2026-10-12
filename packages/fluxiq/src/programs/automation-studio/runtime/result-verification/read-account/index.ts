@@ -6,6 +6,7 @@
 // whether its step ran as the passes of a loop (`loop-passes.ts`) and the one
 // account every pass adds up to (`looped-account.ts`),
 // the columns its own conditions keep empty (`emptied-columns.ts`), the
+// columns its rows store (`stored-columns.ts`), the
 // instruction's named columns no stored column reads (`unread-columns.ts`),
 // and the summary as a model is shown it, without Core's `testedLabel`
 // (`without-tested-label.ts`).
@@ -21,5 +22,6 @@ export * from "./pages-clause.ts";
 export * from "./emptied-columns.ts";
 export * from "./sentence.ts";
 export * from "./stop.ts";
+export * from "./stored-columns.ts";
 export * from "./unread-columns.ts";
 export * from "./without-tested-label.ts";
