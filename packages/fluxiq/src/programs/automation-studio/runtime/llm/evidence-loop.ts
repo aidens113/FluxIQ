@@ -738,10 +738,15 @@ export async function runAutomationStudioLlmEvidenceLoop(
       return failure(draftSteps, "llm_evidence_loop.invalid_decision", trace, accounting);
     }
     counters.unusableInARow = 0;
-    // The last decision the budget allowed was offered only completion, and was
-    // spent on something else. The budget is still what ran out, and the paid decision leaves its row (`./evidence-loop/final-decision-row.ts`).
-    // Not when cost is the bound: its count only informs, so the loop carries on and the purse decides.
-    if (finalDecision && remaining && remaining.limitedBy !== "cost") { recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds)); return exhausted("budget"); }
+    // A candidate's offered finishing tool may use the final slot; ordinary
+    // tool/cash gates still apply. An expired deadline cannot start a new tool.
+    const candidateOfferedTool = input.discoveryOnly === true && offered.some((tool) => tool.toolId === decision.toolId);
+    if (candidateOfferedTool && input.budget?.maxDurationMs !== undefined && clock() - startedAtMs >= input.budget.maxDurationMs) {
+      lastRemaining = { ...lastRemaining, decisionsLeft: 0, limitedBy: "duration", secondsLeft: 0 };
+      recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds, "llm_evidence_loop.duration_limit"));
+      return exhausted("budget");
+    }
+    if (finalDecision && remaining && remaining.limitedBy !== "cost" && !candidateOfferedTool) { recordRow(automationStudioLlmEvidenceFinalDecisionRow(iteration, decision, toolIds)); return exhausted("budget"); }
     if (!toolIds.has(decision.toolId)) return failure(draftSteps, "llm_evidence_loop.unknown_tool", trace, accounting);
     // A repeat is answered from what the loop already holds. Checked before the
     // call id, so a request repeated word for word is a repeat, not a clash.
