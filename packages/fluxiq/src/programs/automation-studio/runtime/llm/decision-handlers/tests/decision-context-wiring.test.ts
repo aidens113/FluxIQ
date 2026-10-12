@@ -6,6 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 // The loop first: `runtime/loop-limits/` imports back into the llm directory.
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_HISTORY_TOOL_ID, runAutomationStudioLlmEvidenceLoop } from "../../evidence-loop.ts";
+import { automationStudioLlmEvidenceAnsweredRequestNote } from "../../evidence-loop/index.ts";
 import { AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_REDIRECT_AT_STEPS_WITHOUT_PROGRESS } from "../../../loop-limits/index.ts";
 import type { JsonObject } from "../../../../../../core/index.ts";
 
@@ -184,4 +185,58 @@ describe("an amendment that withdraws a step that worked", () => {
     expect(amendment.slice(0, 2)).toEqual([2, "amendment"]);
     expect(JSON.stringify(amendment)).toContain('"withdrewChanged":[1]');
   });
+});
+
+
+describe("candidate submissions answered from memory", () => {
+  it("keeps the exact trial receipt in cached and stalled feedback without rerunning submission", async () => {
+    const receipt = { ok: true, revision: 4, digest: "a".repeat(64), verification: "not_performed", promotionAllowed: false };
+    const submit = { kind: "tool_call", callId: "submit", toolId: "core.submit_candidate", input: { flow: "flow: Publish an internal status board" } };
+    const decide = vi.fn()
+      .mockResolvedValueOnce(submit)
+      .mockResolvedValueOnce({ ...submit, callId: "duplicate.1" })
+      .mockResolvedValueOnce({ ...submit, callId: "duplicate.2" })
+      .mockResolvedValueOnce({ kind: "tool_call", callId: "trial", toolId: "core.test_candidate", input: { revision: receipt.revision, digest: receipt.digest } })
+      .mockResolvedValueOnce({ kind: "complete", result: { revision: receipt.revision, digest: receipt.digest } });
+    let tested = false;
+    const executeTool = vi.fn(async ({ toolId, value }: { toolId: string; value: JsonObject }) => {
+      if (toolId === "core.submit_candidate") return receipt;
+      expect(value).toEqual({ revision: receipt.revision, digest: receipt.digest });
+      tested = true;
+      return { ok: true, verdict: "yes" };
+    });
+    const outcome = await runAutomationStudioLlmEvidenceLoop({
+      discoveryOnly: true, draft: false, tools: [
+        { toolId: "core.submit_candidate", description: "Submit a candidate.", inputSchema: { type: "object" }, effect: "observe" },
+        { toolId: "core.test_candidate", description: "Test the exact receipt.", inputSchema: { type: "object" }, effect: "observe" }
+      ], decide, executeTool, maxStepsWithoutProgress: 4,
+      checkCompletion: async () => tested ? { ok: true } : { ok: false, issueCodes: ["candidate.trial_required"], feedback: {} }
+    });
+    expect("code" in outcome ? outcome.code : "ok").toBe("ok");
+    expect(executeTool.mock.calls.map(([call]) => call.toolId)).toEqual(["core.submit_candidate", "core.test_candidate"]);
+    const cached = ofTool(shownAt(decide, 2), "core.request_check")[0]!.value;
+    expect(cached).toMatchObject({ code: "llm_evidence_loop.already_answered", candidate: { revision: receipt.revision, digest: receipt.digest } });
+    expect(cached.instruction).toContain(`{"revision":4,"digest":"${receipt.digest}"}`);
+    expect(cached.instruction).toContain("core.test_candidate");
+    expect(cached.instruction).not.toContain("choose a different tool or input, or complete");
+    const stalled = ofTool(shownAt(decide, 3), "core.no_progress")[0]!.value;
+    expect(stalled).toMatchObject({ candidate: { revision: receipt.revision, digest: receipt.digest }, stepsLeftBeforeStopping: 2 });
+    expect(stalled.instruction).toContain("core.test_candidate");
+    expect(stalled.instruction).not.toMatch(/Your draft|amend_draft|run a step|or complete/u);
+  });
+});
+
+
+it.each([
+  ["llm_evidence_loop.not_offered", "This call was not offered, so it was not run"],
+  ["llm_evidence_loop.looked_again_unchanged", "Core looked again and the page was unchanged"],
+  ["llm_evidence_loop.already_observed", "This request was already answered and was not run again"]
+] as const)("candidate note preserves what happened for %s", (code, prefix) => {
+  const note = automationStudioLlmEvidenceAnsweredRequestNote({
+    code, toolId: "inspect", answeredByCallId: "answer", stepsWithoutProgress: 1, maxStepsWithoutProgress: 8,
+    discoveryOnly: true, candidate: { revision: 2, digest: "e".repeat(64) }
+  });
+  expect(String(note.instruction).startsWith(prefix)).toBe(true);
+  expect(note.instruction).toContain("core.test_candidate");
+  expect(note.instruction).not.toContain("amend it");
 });

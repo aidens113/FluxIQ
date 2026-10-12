@@ -464,6 +464,15 @@ describe("activityActionOf: a refuted check says how many rows and why (R2-U-1)"
     expect(why).not.toMatch(/\(|e\.g\./u);
   });
 
+  it("never uses a bare stored count as the cause of a refuted result", () => {
+    for (const finding of ["7 rows stored; the read finished.", "7 records stored.", "Stored 7 rows."]) {
+      const text = `7 rows came back. ${VERDICT} What it found: ${finding}`;
+      expect(activityActionOf(check(text))?.why).toBe("7 rows came back, but the check found they don't answer what you asked");
+    }
+    expect(activityActionOf(check(`7 rows came back. ${VERDICT} What it found: The filter omitted relevant documents.`))?.why)
+      .toBe("7 rows came back, but the filter omitted relevant documents");
+  });
+
   it("leaves a check with no count and no finding to Core's own sentence, and an unconfirmed one alone", () => {
     expect(activityActionOf(check("Two checks disagreed."))?.why).toBeNull();
     expect(activityActionOf(check(`82 rows would be stored. ${VERDICT}`, ACTIVITY_RESULT_CHECK_LABELS.unconfirmed))).toMatchObject({ why: null, unconfirmed: true });

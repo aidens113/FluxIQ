@@ -34,6 +34,15 @@ submission explicitly says that no Flow has been submitted and supplies no inven
 revision or digest. The conversation ending distinguishes that failure from a
 refused submission.
 
+Candidate cached-answer and no-progress redirects carry the latest validated
+submission's revision/digest and direct its exact trial before completion. They
+do not refer to a legacy accumulated draft; a later refused submission clears
+the older receipt from this guidance. Dedupe and no-progress bounds still apply.
+Wrong-control feedback distinguishes a known control from the intended target:
+correcting the node or choosing another observed handle remains an explicit choice.
+Result-check cards use the ordinary refusal explanation when a screened finding
+only repeats a stored-row count; a count alone is not presented as a failure cause.
+
 The conversation commands read the setting through
 `automationStudioConversationAuthorsCandidates` in `runtime/conversations/commands/build.ts`, for their descriptors, their
 first reply, the build request and the result. The web panel cannot read Core's

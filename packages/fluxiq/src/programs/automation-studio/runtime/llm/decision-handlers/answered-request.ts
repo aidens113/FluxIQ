@@ -13,6 +13,7 @@ import { automationStudioLlmDecisionContextSupersede } from "../decision-context
 import {
   AUTOMATION_STUDIO_LLM_EVIDENCE_REQUEST_CHECK_TOOL_ID,
   automationStudioLlmEvidenceAnsweredRequestNote,
+  automationStudioLlmEvidenceLatestCandidateReceipt,
   automationStudioLlmEvidenceLoopFailure as failure,
   type AutomationStudioLlmEvidenceAnsweredRequestCode,
   type AutomationStudioLlmEvidenceLoopDecision,
@@ -51,6 +52,7 @@ export function automationStudioLlmEvidenceHandleAnsweredRequest(
   const answering = records.find((record) => (record.decision.kind === "call" || record.decision.kind === "look") && record.decision.callId === answeredByCallId);
   const note = automationStudioLlmEvidenceAnsweredRequestNote({
     code, toolId: decision.toolId, answeredByCallId, stepsWithoutProgress: noProgress.steps, maxStepsWithoutProgress: limits.maxStepsWithoutProgress,
+    ...(context.input.discoveryOnly ? { discoveryOnly: true, candidate: automationStudioLlmEvidenceLatestCandidateReceipt(evidence) } : {}),
     ...(repeat ? { timesAsked: repeat.times, askedAt: repeat.iterations } : {}),
     ...(answering ? { answeredAt: answering.iteration } : {}),
     ...(context.lastAction ? { lastActionBefore: context.lastAction } : {})

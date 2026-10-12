@@ -14,6 +14,8 @@ const MAX_CLAUSE = 140;
 const PLAIN_OPENING = /^(?:a|an|the|it|its|this|that|these|those|they|there|some|all|no|none|every|each|only|most|many|one|step|stored|rows?|nothing|several|both|neither)$/iu;
 /** Where a clause joins a second one that only says more: a colon, a semicolon or a dash. */
 const MORE = /\s*(?:[:;](?=\s|$)|\s[–—-]\s)/u;
+/** A stored count alone says what came back, never why the check refused it. */
+const BARE_STORED = /^(?:(?:\d{1,9}|no) (?:rows?|records?) (?:would be )?stored|stored (?:\d{1,9}|no) (?:rows?|records?))$/iu;
 /** Core's own words where the check's reading says nothing a person can read, for one row and for more. */
 const NOT_ANSWERED = { one: "the check found it doesn't answer what you asked", more: "the check found they don't answer what you asked" } as const;
 
@@ -31,7 +33,7 @@ function findingOf(sentence: string | undefined): string | undefined {
     plain = plain.replace(/\s*\([^()]*\)/gu, "");
   }
   const clause = plain.split(MORE)[0]!.replace(/[\s.!?,;:]+$/u, "").trim();
-  if (!clause || clause.length > MAX_CLAUSE || /[()]/u.test(clause)) return undefined;
+  if (!clause || clause.length > MAX_CLAUSE || /[()]/u.test(clause) || BARE_STORED.test(clause)) return undefined;
   const first = /^\S+/u.exec(clause)?.[0] ?? "";
   return PLAIN_OPENING.test(first) ? `${clause.charAt(0).toLowerCase()}${clause.slice(1)}` : clause;
 }

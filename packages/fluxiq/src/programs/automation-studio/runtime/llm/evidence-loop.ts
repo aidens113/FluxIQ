@@ -56,6 +56,7 @@ import {
   automationStudioLlmEvidenceResumeEntry,
   automationStudioLlmEvidenceLoopAddUsage,
   automationStudioLlmEvidenceLoopEmptyAccounting,
+  automationStudioLlmEvidenceRedirectFacts,
   automationStudioLlmEvidenceLoopFailure as failure,
   automationStudioLlmEvidenceNoProgress, automationStudioLlmEvidenceRefusalRun,
   automationStudioLlmEvidenceUnusedCallId, automationStudioLlmEvidenceLoopProgressTrace, automationStudioLlmEvidenceFinalDecisionRow, automationStudioLlmEvidenceLoopPurse,
@@ -276,15 +277,9 @@ export async function runAutomationStudioLlmEvidenceLoop(
   const noProgress = automationStudioLlmEvidenceNoProgress({
     max: limits.maxStepsWithoutProgress,
     redirectAt: limits.redirectAtStepsWithoutProgress,
-    facts: () => ({
-      proposableSteps: draftSteps.filter((step) => step.disposition === "kept" && automationStudioFlowDraftStepIsProposable(step)).length,
-      completionAttempts: counters.completionAttempts,
-      canComplete: offeredCompletion,
-      answerability: rows.answerability,
-      looksWithdrawn: looks.active(counters.attemptEpoch),
-      actsMissing: input.draft ? input.draft.actsMissing?.(draftSteps) : undefined,
-      // The checklist, so a stall note about an act a step already names corrects that step (`./evidence-progress/stall-redirect.ts`).
-      acts: input.draft ? input.draft.acts?.(draftSteps) : undefined
+    facts: () => automationStudioLlmEvidenceRedirectFacts({
+      config: input, steps: draftSteps, evidence, completionAttempts: counters.completionAttempts,
+      canComplete: offeredCompletion, answerability: rows.answerability, looksWithdrawn: looks.active(counters.attemptEpoch)
     }),
     show: (iteration: number, note: JsonObject) => {
       accountEvidence(note);
