@@ -25,7 +25,9 @@ Downstream saved R4a/R4b proofs passed. Those proofs do not certify the separate
 retain submit/test while observations are withdrawn and through the last counted candidate decision;
 accepted submissions name the exact revision/digest to test next. Supervisor validation and integration
 are recorded downstream. The mandatory trial gate, hard limits and whole-Flow purse are unchanged.
-No trial runner still means an unverified draft. The product default remains legacy pending A's gate.
+No trial runner still means an unverified draft. A's two same-pair creations and separate no-model
+replays now pass; t450 changes the configured product default to candidate, preserving explicit legacy
+opt-out and raw omitted-mode API compatibility. Supervisor source/tests and integration gates are recorded downstream.
 
 **Next:** integrate verified t274 downstream first and Core second; repair D's graph-completion/feedback
 defect in paired t449; qualify live lanes on identified source pairs. A's two creation passes need the

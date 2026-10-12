@@ -20,7 +20,7 @@ import { plan } from "../../../tests/service-bootstrap/tests/fixtures.ts";
 // also answers as the judge, and an improvement -- an extend build, which
 // carries the Flow's steps -- reruns each carried step before it finishes.
 //
-// All of that is Core's default legacy authoring mode. In candidate mode
+// All of that is Core's explicit legacy authoring mode. In candidate mode
 // (`FLUXIQ_AUTHORING_MODE=candidate`, the describe at the end) the model
 // submits a candidate and asks for its test; Core runs it once from its start,
 // the judge says yes twice, and the chat applies the proposal that makes (t340).
@@ -59,7 +59,7 @@ let world: World | null = null;
 
 beforeEach(async () => {
   tempRoot = await mkdtemp(path.join(os.tmpdir(), "fluxiq-extension-chat-"));
-  vi.stubEnv("FLUXIQ_AUTHORING_MODE", "");
+  vi.stubEnv("FLUXIQ_AUTHORING_MODE", "legacy");
 });
 
 afterEach(async () => {
@@ -490,8 +490,8 @@ describe("the extension's chat, end to end in Core", () => {
     expect(result?.text).toMatch(/model key is locked/u);
   }, 60_000);
 
-  describe("in candidate authoring mode", () => {
-    beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", "candidate"); });
+  describe("in the default candidate authoring mode", () => {
+    beforeEach(() => { vi.stubEnv("FLUXIQ_AUTHORING_MODE", ""); });
 
     it("actual registry chat creation tests the candidate, applies its proposal and says the automation is ready", async () => {
       world = await createWorld({ unlocked: UNLOCKED_SESSION });
