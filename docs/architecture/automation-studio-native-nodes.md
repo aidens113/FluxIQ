@@ -313,6 +313,11 @@ those recorded actions to fail wherever the evaluator rejects the state.
 
 ### Record outputs and run-end processing
 
+Flow-authoring catalog entries and early validation feedback publish the parser's
+supported `process` shapes in both full and condensed help: `dedupe.by`, `where`,
+`sort`, `limit`, `columns` and `minRows`, with the same field and value constraints.
+Unsupported processing keys remain validation errors.
+
 Read-list redesign, stage S1. A node that carries a `recordOutput` stores the
 rows its output returns as a batch of a run dataset
 (`storage/project/run-dataset-store.ts`, `appendBatch`). With `writeMode:

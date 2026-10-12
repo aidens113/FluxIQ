@@ -30,6 +30,14 @@
 //
 // A test runs Core's two nodes against the verdict here, value by value.
 
+import {
+  AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS,
+  AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES,
+  AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS,
+  AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS,
+  AUTOMATION_STUDIO_RECORD_SORT_ORDERS,
+  AUTOMATION_STUDIO_RECORD_SORT_TYPES
+} from "@fluxiq/contracts/automation-studio";
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import {
   AUTOMATION_STUDIO_RECORD_FIELD_HANDLINGS,
@@ -53,7 +61,7 @@ export type AutomationStudioFlowBootstrapRecordOutputContract = {
   example: JsonObject;
 };
 
-const KEYS = ["datasetId", "label", "recordsPath", "schema", "writeMode", "maxRecords"] as const;
+const KEYS = ["datasetId", "label", "recordsPath", "schema", "writeMode", "maxRecords", "process"] as const;
 const ALWAYS_REQUIRED = ["datasetId", "schema", "writeMode"] as const;
 
 /**
@@ -103,14 +111,16 @@ export function automationStudioFlowBootstrapRecordOutputContract(definition: Au
   // Encryption is refused until record keys exist, so it is not offered.
   const handlings = AUTOMATION_STUDIO_RECORD_FIELD_HANDLINGS.filter((handling) => handling !== "encrypt").join("|");
   const writeModes = AUTOMATION_STUDIO_RECORD_WRITE_MODES.join("|");
+  const processing = processingText();
   const text = [
-    `${nullable ? "null, or an object" : "Required: an object"} with only these keys: datasetId, schema, writeMode, and optional label, maxRecords, recordsPath.`,
+    `${nullable ? "null, or an object" : "Required: an object"} with only these keys: datasetId, schema, writeMode, and optional label, maxRecords, recordsPath, process.`,
     "datasetId: 1-200 of A-Za-z0-9._:-.",
     `schema: {schemaVersion:"0.1", fields:[{id, label, valueType, required?, handling?}]}; ids A-Za-z0-9_-, labels unique; valueType ${valueTypes}; handling ${handlings}.`,
     `writeMode: ${writeModes}. maxRecords: 1-${AUTOMATION_STUDIO_RECORD_OUTPUT_LIMITS.maxRecordsCeiling}.`,
-    supplied ? "recordsPath: leave out, this node supplies it." : "recordsPath: required, dot path to the rows in the result."
+    supplied ? "recordsPath: leave out, this node supplies it." : "recordsPath: required, dot path to the rows in the result.",
+    processing
   ].join(" ");
-  const condensedText = `${nullable ? "null, or only" : "Required, only"}: datasetId, schema {schemaVersion:"0.1",fields:[{id,label,valueType}]}, writeMode ${writeModes}; optional label, maxRecords${supplied ? ", recordsPath (supplied)." : "; recordsPath required."}`;
+  const condensedText = `${nullable ? "null, or only" : "Required, only"}: datasetId, schema {schemaVersion:"0.1",fields:[{id,label,valueType}]}, writeMode ${writeModes}; optional label, maxRecords, process${supplied ? ", recordsPath (supplied)." : "; recordsPath required."} ${processing}`;
   return {
     keys: [...KEYS],
     requiredKeys: supplied ? [...ALWAYS_REQUIRED] : [...ALWAYS_REQUIRED, "recordsPath"],
@@ -123,6 +133,24 @@ export function automationStudioFlowBootstrapRecordOutputContract(definition: Au
       ...(supplied ? {} : { recordsPath: "result.records" })
     }
   };
+}
+
+// The processing parser owns its option vocabulary and bounds. This help is
+// delivered whole in the catalog and in a refused parameter's accepted shape.
+function processingText(): string {
+  const bounds = AUTOMATION_STUDIO_RECORD_CONDITION_BOUNDS.join("|");
+  const texts = AUTOMATION_STUDIO_RECORD_CONDITION_TEXTS.join("|");
+  return [
+    "process is optional, with only dedupe, where, sort, limit, columns, minRows; every member is optional.",
+    "dedupe: false | {by:[fieldId,...]}; by is a nonempty list of distinct stored field ids. Absent dedupe uses the whole row (selected columns when columns is set); false keeps duplicates.",
+    `where: [{field:fieldId, is?:${AUTOMATION_STUDIO_RECORD_CONDITION_PRESENCES.join("|")}, ${bounds}?:number, equals?:string|number|nonempty list, ${texts}?:string|nonempty string list, not?:boolean}].`,
+    "Every comparison in a condition must hold; a value list means any; not inverts the condition. No comparison means presence; absent cannot accompany a comparison. Numbers must be finite, text nonblank, matches a valid regex.",
+    `sort: [{field:fieldId, order:${AUTOMATION_STUDIO_RECORD_SORT_ORDERS.join("|")}, as?:${AUTOMATION_STUDIO_RECORD_SORT_TYPES.join("|")}}]; at most ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.maxSortKeys} keys; absent as means auto.`,
+    `limit: integer 1-${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.limitCeiling}. columns: nonempty list of distinct stored field ids, in answer order.`,
+    `minRows: nonnegative integer, default ${AUTOMATION_STUDIO_RECORD_PROCESSING_LIMITS.minRowsDefault}; a shortfall is reported, never a failure.`,
+    "Every field id must be stored in schema, not excluded; every where field must remain in columns when columns is set.",
+    "Processing shapes the collected answer at run end in order where, dedupe, sort, limit, columns; it never changes which rows a repeat visits."
+  ].join(" ");
 }
 
 // As `nodes/data/write-records.ts` reads it: its own path over any other, and

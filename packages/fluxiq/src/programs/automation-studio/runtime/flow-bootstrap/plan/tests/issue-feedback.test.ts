@@ -70,7 +70,7 @@ describe("the feedback on a refused plan", () => {
     expect(accepted[0]).toBe(feedback[0]);
     expect(accepted[0]!.accepted).toEqual({
       parameter: "recordOutput",
-      keys: ["datasetId", "label", "recordsPath", "schema", "writeMode", "maxRecords"],
+      keys: ["datasetId", "label", "recordsPath", "schema", "writeMode", "maxRecords", "process"],
       requiredKeys: ["datasetId", "schema", "writeMode"],
       shape: expect.stringContaining("this node supplies it"),
       example: expect.any(Object)
