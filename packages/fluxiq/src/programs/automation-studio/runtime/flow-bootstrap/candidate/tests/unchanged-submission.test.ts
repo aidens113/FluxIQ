@@ -94,7 +94,43 @@ describe("an unchanged resubmission", () => {
     await accepted(controller, script("hello"));
     expect((await controller.submit(script("hello", ["  node: missing.node"]))).ok).toBe(false);
     expect(controller.latest()).toBeUndefined();
-    // With nothing standing, the same script is checked and accepted again.
-    expect((await controller.submit(script("hello"))).ok).toBe(true);
+    // With nothing standing, a changed Flow is checked and accepted.
+    expect((await controller.submit(script("goodbye"))).ok).toBe(true);
+  });
+});
+
+// t474, lane D round 9 (`run-mv5q4j2n-25784472`, 0124 to 0126): revision 15 was resubmitted word for word after a
+// refused revision 16 and accepted as revision 17 with `changedPaths: []` and a fresh trial count, because the refusal
+// had cleared the revision t464 compares with. The comparison is now with the last accepted revision.
+describe("an unchanged resubmission after a refusal", () => {
+  it("is refused as the last accepted revision, with its last trial, and that revision stands again", async () => {
+    const controller = new AutomationStudioFlowCandidateSubmissionController(submission);
+    const first = await accepted(controller, script("hello"));
+    expect((await controller.submit(script("hello", ["  node: missing.node"]))).ok).toBe(false);
+    expect(controller.latest()).toBeUndefined();
+    const lastTrial = { revision: first.revision, digest: first.digest, verdict: "execution_failed" as const, feedback: { code: "candidate.trial_execution_failed" } };
+    const again = await controller.submit(script("hello"), { trialOf: (candidate) => (candidate.revision === first.revision && candidate.digest === first.digest ? lastTrial : undefined) });
+    expect(again).toMatchObject({ ok: false, revision: 1, check: { issueCodes: ["candidate.unchanged_submission"], feedback: { unchanged: true, revision: 1, digest: first.digest, lastTrial: { verdict: "execution_failed" } } } });
+    expect(controller.matches(first)).toBe(true);
+    expect(controller.latest()?.revision).toBe(1);
+    // A changed Flow after it is the next revision.
+    expect((await accepted(controller, script("goodbye"))).revision).toBe(3);
+  });
+
+  it("is refused when it reads to the last accepted revision's plan, though written differently", async () => {
+    const controller = new AutomationStudioFlowCandidateSubmissionController(submission);
+    const first = await accepted(controller, script("hello"));
+    expect((await controller.submit(script("hello", ["  node: missing.node"]))).ok).toBe(false);
+    expect(await controller.submit(script("\"hello\""))).toMatchObject({ ok: false, revision: 1, check: { issueCodes: ["candidate.unchanged_submission"] } });
+    expect(controller.matches(first)).toBe(true);
+  });
+
+  it("names a refuted last revision without making it stand again", async () => {
+    const controller = new AutomationStudioFlowCandidateSubmissionController(submission);
+    const first = await accepted(controller, script("hello"));
+    expect((await controller.submit(script("hello", ["  node: missing.node"]))).ok).toBe(false);
+    const back = await controller.submit(script("hello"), { refuted: (digest) => (digest === first.digest ? { said: "judge said no" } : undefined) });
+    expect(back).toMatchObject({ ok: false, revision: 1, check: { issueCodes: ["candidate.unchanged_after_no"], feedback: { judged: { said: "judge said no" } } } });
+    expect(controller.latest()).toBeUndefined();
   });
 });
