@@ -1,5 +1,5 @@
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge, AutomationStudioFlowNode } from "../../../model/index.ts";
-import { chooseAutomationStudioEdge } from "../graph-navigation.ts";
+import { chooseAutomationStudioEdge } from "../graph-navigation/index.ts";
 
 /** The node a build joins an optional step's two ways out at (`flow-bootstrap/authoring/draft-routing.ts`). */
 const MERGE_DEFINITION_ID = "builtin.control.merge";
