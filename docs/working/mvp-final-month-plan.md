@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: t274 finishing, t449 optional-path completion, t450 candidate default and t380 fixture fixes integrated and pushed; B/C/D round-four semantic/oracle failures debugged, generic feedback fixes on t452.
+Status detail: t452 feedback/t453 judge guidance integrated and pushed; $0.25 round5 B first creation/replay passed then second failed, C startup and D cohort failed; t454 recording index/t455 browser recovery/t457 handler feedback isolated.
 Created: 2026-10-06
 Last updated: 2026-10-11
 Owner: Codex senior supervisor
@@ -33,10 +33,23 @@ opt-out and raw omitted-mode API compatibility. Supervisor source/tests and inte
 with explicit legacy/raw API compatibility; t380 fixture copying/sidecar isolation independently verified by
 45 owning tests including 16 rebuilt child-process race/crash probes, current build/typecheck/audit.
 
-**Next:** t452 generic candidate cached/stall/wrong-control feedback and truthful result-card cause;
-downstream category-versus-incidental-mention guidance. A is qualified with both separate zero-model replay
-receipts. Round-four B/C trials executed but judges rejected semantic results; D promoted an incomplete
-cohort that the independent oracle rejected. Inspect D judge evidence coverage before fixing/relaunching.
+**Integrated t452/t453:** exact candidate receipts remain available in cached/stall guidance; wrong-control
+feedback distinguishes observed target from intended semantics; count-only result-card reasons are truthful.
+Generic judge guidance covers complete quantities and included/excluded witnesses, without scenario examples.
+Supervisor observed owning tests/current types/fresh builds/audits and pushed both repositories.
+
+**Round-five ($0.25) complete, not qualified:** B first creation passed exact oracle at$0.120890772 and
+separate disabled-model unchanged-hash replay; B second failed static handler scope/build at$0.110844924.
+D failed exact3of4cohort at$0.080175204 despite three yes judgements, all complete evidence and new guidance;
+existing domain numeric parser is correct, authored regex selected the wrong cohort. C failed extension
+worker observation before provider dispatch/cost0, while Chrome reported a live worker. Full available
+debug recorded downstream; B/D all four actual identities supervisor-verified. A remains historically qualified.
+
+**Next:** t454 recording sequence/read ownership plus durable incremental identity index after measured
+history-reread cost, preserving chunks/public sequence/retries/removals/legacy state. t457 safely restores
+trusted authored handler-scope explanation to early static refusal. Downstream t455 handles the proven
+Chrome/Playwright observation split through one owned browser restart with strict worker/network proofs;
+t456 corrects numeric tool description. All stay isolated pending supervisor gates. No unchanged paid relaunch.
 User raised future testing purse to $0.25 via launch environment, leaving historical $0.10 receipts intact;
 normal user defaults and provider output length unchanged. No user panel
 management is inferred from isolated Lab authorization. Full sweeps remain at most twice daily under
