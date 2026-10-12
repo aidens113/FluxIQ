@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: t457 handler feedback and downstream t455/t456 integrated; $0.25 B first creation/replay passed then second failed, C/D failed; t454 recording consistency probes pending.
+Status detail: t455/t456/t457 integrated; round-six B/C/D failed; t454 recording compatibility, t458 processing help and t459 passive result-view isolated.
 Created: 2026-10-06
 Last updated: 2026-10-11
 Owner: Codex senior supervisor
@@ -54,6 +54,18 @@ cache-free types/current domain and audits passed. Core's legacy full-check fini
 these observed narrow gates. Downstream t455 guarded browser recovery and t456 numeric tool description
 are integrated; injected actual-browser recovery/containment passed, natural race remains unreproduced.
 Fresh live qualification remains required. No unchanged paid relaunch.
+Round-six on Core190d7bda/downstream921f0296 has now ended: B saved quantity/cart oracle failed while
+final judge inferred an absent add confirmation ($0.044999439). The reset trial did have both confirmations;
+its yes verdict is not disproved by the later saved failure. C/D each used48build calls plus initialchat1 and
+ended evidence_iteration_limit ($0.09098706/$0.068919444), with all trials negative/unconfirmed. All12actual
+running identities verified; startup passed and the source freeze is released. Total$0.204905943, no balance
+failure. Fresh terminal captures saw intentionally stale visible text; hidden current state was omitted by
+domain observation policy, not a Core cache replacement. Exact neutral owner fixes are isolated as t458
+supported record-processing help (parser unchanged) and t459 optional passive domain result observation.
+t454 private incarnation repair now preserves normal undo IDs/sequences; a further supported fresh input
+without packet IDs after undo regresses and blocks acceptance until capture-content proof/gates pass.
+No original profile reset, paid relaunch or claim that extra money/calls alone fixes semantics. Future ready
+plans may use the existing64call upper bound within the same$0.25whole-test ceiling after relevant repair.
 User raised future testing purse to $0.25 via launch environment, leaving historical $0.10 receipts intact;
 normal user defaults and provider output length unchanged. No user panel
 management is inferred from isolated Lab authorization. Full sweeps remain at most twice daily under
