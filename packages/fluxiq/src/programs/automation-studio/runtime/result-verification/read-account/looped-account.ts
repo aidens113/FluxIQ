@@ -62,12 +62,15 @@ function mergedConditions(passes: readonly AutomationStudioResultReadAccount[]):
     const rejected = sum(each.map((entry) => entry.rejected));
     const alone = sum(each.map((entry) => entry.alone));
     const leftOut = each.flatMap((entry) => entry.leftOutOnlyByThis ?? []);
+    const observations = each.some(entry => entry.leftOutObservations !== undefined)
+      ? each.flatMap(entry => (entry.leftOutOnlyByThis ?? []).map((_, row) => entry.leftOutObservations?.[row] ?? null)) : undefined;
     const withRows = each.filter((entry) => entry.leftOutOnlyByThis?.length);
     merged.push({
       ...(condition !== undefined ? { condition } : {}),
       ...(rejected !== undefined ? { rejected } : {}),
       ...(alone !== undefined && (rejected === undefined || alone <= rejected) ? { alone } : {}),
       ...(leftOut.length ? { leftOutOnlyByThis: leftOut } : {}),
+      ...(observations ? { leftOutObservations: observations } : {}),
       ...(withRows.length && withRows.every((entry) => entry.testedLabel) ? { testedLabel: true as const } : {})
     });
   }

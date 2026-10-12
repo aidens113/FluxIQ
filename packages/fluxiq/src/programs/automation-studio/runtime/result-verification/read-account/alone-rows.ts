@@ -33,7 +33,9 @@
 // name may not be said, and the label beside it stays.
 
 import type { JsonValue } from "../../../../../core/index.ts";
-import { screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
+import { automationStudioLocatorShapedText, screenAutomationStudioLlmEvidence } from "../../llm/index.ts";
+import type { AutomationStudioResultConditionObservation } from "../contracts.ts";
+import { screenAutomationStudioResultConditionObservation } from "../condition-observation/index.ts";
 
 /** What a label or a tested value that may not be said reads as. */
 const WITHHELD_LABEL = "(withheld)";
@@ -46,10 +48,18 @@ const NO_VALUE = "(no value)";
  * anything that is not that list. `onWithheld` is called when the screen
  * withheld anything, so a caller can say so.
  */
-export function automationStudioResultReadAloneRows(value: JsonValue | undefined, deniedKeys: readonly string[], onWithheld?: () => void): string[] | undefined {
+export function automationStudioResultReadAloneRows(value: JsonValue | undefined, deniedKeys: readonly string[], onWithheld?: () => void, companion?: {
+  observations: JsonValue | undefined; conditionIndex: number; evidenceKey?: string | undefined;
+  onScreened: (observations: Array<AutomationStudioResultConditionObservation | null>) => void;
+}): string[] | undefined {
   if (!Array.isArray(value) || value.length === 0) return undefined;
   const labels: string[] = [];
-  for (const row of value) {
+  const evidenceKey = companion?.evidenceKey;
+  const keyDenied = evidenceKey !== undefined && (screenAutomationStudioLlmEvidence({ [evidenceKey]: "" }, deniedKeys).deniedKey || screenAutomationStudioLlmEvidence(evidenceKey, []).secretShaped);
+  const observations = companion && Array.isArray(companion.observations) && companion.observations.length === value.length
+    ? companion.observations.map(entry => screenAutomationStudioResultConditionObservation(entry, companion.conditionIndex, text => keyDenied || screenAutomationStudioLlmEvidence(text, []).secretShaped || automationStudioLocatorShapedText(text))) : undefined;
+  const aligned: Array<AutomationStudioResultConditionObservation | null> = [];
+  for (const [index, row] of value.entries()) {
     if (typeof row !== "object" || row === null || Array.isArray(row)) continue;
     const [cell, tested] = Object.entries(row);
     if (cell === undefined || typeof cell[1] !== "string") continue;
@@ -57,7 +67,11 @@ export function automationStudioResultReadAloneRows(value: JsonValue | undefined
     const label = found.deniedKey || found.secretShaped ? WITHHELD_LABEL : cell[1];
     if (label !== cell[1]) onWithheld?.();
     labels.push(tested !== undefined && typeof tested[1] === "string" ? `${label} — ${testedText(tested[0], tested[1], deniedKeys, onWithheld)}` : label);
+    if (observations?.[index]?.withheld) onWithheld?.();
+    const observation = observations?.[index]?.observation;
+    if (observation !== undefined) aligned.push(observation);
   }
+  if (observations && observations.every(entry => entry.observation !== undefined) && aligned.length === labels.length) companion?.onScreened(aligned);
   return labels.length ? labels : undefined;
 }
 

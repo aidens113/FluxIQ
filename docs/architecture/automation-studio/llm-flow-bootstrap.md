@@ -22,6 +22,15 @@ the original instruction was fulfilled; the existing result checks remain.
 
 ## Authoring mode
 
+Result accounts may include an optional passive condition-observation companion
+beside rejected-row labels. Core validates its closed shape and original condition
+ordinal, preserves alignment across repeated read passes, and screens values before
+model-facing publication. Present text, including empty text, absent successful
+reads, unavailable legacy evidence and privacy withholding remain distinct.
+Missing legacy entries remain unknown. Trial and saved-result projections carry
+the same evidence without importing domain contracts, evaluating a domain predicate,
+adding an executable binding or granting a positive judgement.
+
 How the product's own creation and improvement builds are authored is one runtime
 setting with one owner, `model/authoring-mode/`: `FLUXIQ_AUTHORING_MODE` in the
 Core process environment, `candidate` (the default) or `legacy`. Any other value

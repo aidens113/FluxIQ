@@ -92,6 +92,7 @@
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { isJsonRecord } from "../json-values.ts";
+import { automationStudioResultConditionObservation } from "../../result-verification/condition-observation/index.ts";
 
 /** The two words the read uses for whether its `item` selector ever named an element (contract C2). */
 const LIST_PRESENCE = new Set(["appeared", "never_appeared"]);
@@ -177,7 +178,10 @@ export function extractionSummaryFromOutputs(outputs: unknown): JsonObject | und
   const sampled = reported !== undefined && summary.rejectedSamples !== undefined && summary.rejectedSamplesAlone !== undefined;
   const aloneRows = sampled ? aloneRowLabels(summary.rejectedSamples, summary.rejectedSamplesAlone, fieldNames, (reported.rejected as number[]).length) : undefined;
   if (sampled && aloneRows === undefined) return undefined;
-  const conditions = reported && aloneRows ? { ...reported, aloneRows } : reported;
+  const aloneObservations = summary.rejectedObservations === undefined ? undefined :
+    aloneObservationRows(summary.rejectedObservations, summary.rejectedSamples, summary.rejectedSamplesAlone, fieldNames, reported ? (reported.rejected as number[]).length : -1);
+  if (summary.rejectedObservations !== undefined && (!sampled || aloneObservations === undefined)) return undefined;
+  const conditions = reported && aloneRows ? { ...reported, aloneRows, ...(aloneObservations ? { aloneObservations } : {}) } : reported;
   // The two counts a zero read is diagnosed by, absent from a producer that did
   // not count them and held to the same rule as every other count when sent.
   // They are deliberately not cross-checked against `recordCount` or against
@@ -286,6 +290,21 @@ function aloneRowLabels(samples: unknown, leads: unknown, fieldNames: readonly s
     }));
   }
   return labels;
+}
+
+/** Validate against full witness lists, then retain exactly the same alone/label positions. */
+function aloneObservationRows(value: unknown, samples: unknown, leads: unknown, fieldNames: readonly string[], conditions: number): Array<Array<Exclude<ReturnType<typeof automationStudioResultConditionObservation>, undefined>>> | undefined {
+  if (!Array.isArray(value) || !Array.isArray(samples) || !Array.isArray(leads) || value.length !== conditions || samples.length !== conditions || leads.length !== conditions) return undefined;
+  const groups: Array<Array<Exclude<ReturnType<typeof automationStudioResultConditionObservation>, undefined>>> = [];
+  for (const [index, witnesses] of value.entries()) {
+    const rows = samples[index], lead = count(leads[index]);
+    if (!Array.isArray(witnesses) || !Array.isArray(rows) || witnesses.length !== rows.length || lead === undefined || lead > rows.length) return undefined;
+    const parsed = witnesses.map(entry => automationStudioResultConditionObservation(entry, index));
+    if (parsed.some(entry => entry === undefined)) return undefined;
+    const valid = parsed.filter((entry): entry is Exclude<typeof entry, undefined> => entry !== undefined);
+    groups.push(valid.slice(0, lead).filter((_entry, position) => rowLabel(rows[position] as Record<string, string | null>, fieldNames) !== undefined));
+  }
+  return groups;
 }
 
 /**

@@ -171,6 +171,15 @@ export type AutomationStudioResultFlowStepSummary = {
  * labels with the value it tested on each, and the value its own read found,
  * each screened.
  */
+/** Passive condition witness, retaining original text and no executable address or inferred eligibility. */
+export type AutomationStudioResultConditionObservation = {
+  conditionIndex: number;
+  source: "field" | "read";
+  readKind?: "text" | "attribute" | "value" | "link" | "column";
+  page: number;
+  item: number;
+} & ({ state: "present"; value: string } | { state: "absent" | "unavailable" | "withheld"; value?: never });
+
 export type AutomationStudioResultReadAccount = {
   nodeId: string;
   definitionId: string;
@@ -229,7 +238,7 @@ export type AutomationStudioResultReadAccount = {
    * label, and two non-Plus pairs naming a charging case were flagged as the
    * item asked for (`request-rows/left-out-naming-the-item.ts`).
    */
-  conditions?: Array<{ condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[]; testedLabel?: true }>;
+  conditions?: Array<{ condition?: string; rejected?: number; alone?: number; leftOutOnlyByThis?: string[]; leftOutObservations?: Array<AutomationStudioResultConditionObservation | null>; testedLabel?: true }>;
   /** True when every row failed the conditions and the read answered with the unfiltered rows instead. */
   unfiltered?: boolean;
   /**
