@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: t460 published; B/D provider-free repair replays passed; t461 witnesses/order passed independent checks and bounded headed proof; combined-source gates passed; owning paired integration pending.
+Status detail: t460 published; B/D provider-free repair replays passed; t461 witnesses/order passed independent checks and bounded headed proof; t461 integrated downstream493b1749/Core1f6580bb; new .25 ready preflights next.
 Created: 2026-10-06
 Last updated: 2026-10-12
 Owner: Codex senior supervisor
@@ -26,8 +26,9 @@ No predicate duplication, DOM dependency, addressing/binding, numeric truth, sce
 judge pass. Supervisor independently observed72Core/78domain/83extension tests and fresh types/native audits0.
 Bounded headed Chrome134 T2 packet/DOM/schema-order proof passed independently; background transport,
 model verdict, live continuation/withholding unproved. Current dev merged; combined146Core/78domain/83extension/7replay tests/types/audits0; owning current
-Core build/inventories/reached110 rootverified at artifact9a6b1e41. Owning paired integration/push pending.
-No t461 push or live qualification claimed.
+Core build/inventories/reached110 rootverified at artifact9a6b1e41. Owning paired integration completed downstreamfirst/Coresecond; bothdev push next.
+Core legacy full finish wrapper skipped only after observed narrow gates and final native audit0.
+No new live qualification claimed; isolated t461 logs retained before downstream cleanup.
 Core dev at intake is `01621c94`; downstream owns browser qualification, task instructions/oracles,
 Lab supervision and schedules. Generic candidate, executor, feedback and storage behavior stay in Core.
 
