@@ -20,6 +20,7 @@ import { emitAutomationStudioActivity, emitAutomationStudioActivityClearedWait, 
 import { attemptWithHostExpectationEvaluation } from "../transition-comparison.ts";
 
 import { automationStudioClearedLayersOf } from "./cleared-layers.ts";
+import { automationStudioAttemptWithRecordedEffect } from "./recorded-effect.ts";
 import { automationStudioNodeAttemptFailure } from "./failure.ts";
 import { automationStudioCallSubflow } from "../frames/index.ts";
 import { AUTOMATION_STUDIO_CALL_SUBFLOW_DEFINITION_ID, controlFlowNodes } from "../../../nodes/control-flow/index.ts";
@@ -127,7 +128,7 @@ export class AutomationStudioNodeAttemptExecution {
       }
       // Its `inputs` were resolved above, as every parameter is: each holds the value it gives the child.
       const called = await automationStudioCallSubflow({ node: executionNode, options: this.callFlowChildOptions(options, attemptId) });
-      return await this.finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, called.result), ...(called.childTrace ? { childTrace: called.childTrace } : {}), ...(called.subflowTarget ? { subflowTarget: called.subflowTarget } : {}) }, options, beforeAction, hostCapabilities);
+      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, called.result), ...(called.childTrace ? { childTrace: called.childTrace } : {}), ...(called.subflowTarget ? { subflowTarget: called.subflowTarget } : {}) }, options, beforeAction, hostCapabilities);
     }
     if (!definition?.execute) {
       const native = await (!options.commandRun ? options.nativeNodeExecutor?.({
@@ -150,7 +151,7 @@ export class AutomationStudioNodeAttemptExecution {
         // An importer's definition is the native runtime's, so it says which routes the node declares.
         const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
         const result = await this.dispatchAutomationStudioEffects(native.result, options, withholding, target, this.declaredBranchRoutes(definition?.outputs ?? native.declaredOutputs));
-        return await this.finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
+        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target), ...(native.logs?.length ? { logs: native.logs } : {}) }, options, beforeAction, hostCapabilities);
       }
       if (options.commandRun && (!options.compositeExecutor || !options.commandRun.acceptsComposite(options.compositeExecutor))) {
         await options.commandRun.stop("executor.unsupported_native_or_composite");
@@ -158,7 +159,7 @@ export class AutomationStudioNodeAttemptExecution {
       }
       const composite = await options.compositeExecutor?.({ node: executionNode, inputs, options: this.callFlowChildOptions(options, attemptId) });
       if (composite) {
-        return await this.finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities);
+        return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, composite.result), ...(composite.childTrace ? { childTrace: composite.childTrace } : {}), ...(composite.compositeTarget ? { compositeTarget: composite.compositeTarget } : {}) }, options, beforeAction, hostCapabilities);
       }
       return await enrichAttemptWithHostState(executionNode, {
         attemptId,
@@ -196,7 +197,7 @@ export class AutomationStudioNodeAttemptExecution {
       let result = await definition.execute(context);
       const target: RecordCaptureTarget = { runState, nodeId: node.id, attemptId, cleared: [], ...(consumer ? { consumer } : {}) };
       result = await this.dispatchAutomationStudioEffects(result, options, withholding, target, this.declaredBranchRoutes(definition.outputs));
-      return await this.finishAttempt(executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target) }, options, beforeAction, hostCapabilities);
+      return await this.finishAttempt(flow, executionNode, { ...nodeAttemptFromResult(executionNode, startedAt, options.now?.() ?? Date.now(), attemptNumber, inputs, result), ...this.clearedLayersSaid(node.id, target) }, options, beforeAction, hostCapabilities);
     } catch (error) {
       await options.commandRun?.stop("executor.attempt_failed");
       // The one place a node's throw becomes an attempt, and therefore the one
@@ -211,8 +212,10 @@ export class AutomationStudioNodeAttemptExecution {
   }
 
   // Host state is captured first, so the expectation evaluator is asked about the
-  // snapshot the attempt actually ended on.
+  // snapshot the attempt actually ended on. A lasting step judged by no expected
+  // state is then held to its recorded effect (`./recorded-effect.ts`, t476).
   private static async finishAttempt(
+    flow: AutomationStudioFlowDocument,
     node: AutomationStudioFlowNode,
     attempt: AutomationStudioNodeAttemptTrace,
     options: AutomationStudioGraphExecutionOptions,
@@ -220,7 +223,8 @@ export class AutomationStudioNodeAttemptExecution {
     hostCapabilities: string[]
   ): Promise<AutomationStudioNodeAttemptTrace> {
     const enriched = await enrichAttemptWithHostState(node, attempt, options, beforeAction, hostCapabilities);
-    return await attemptWithHostExpectationEvaluation(node, enriched, options);
+    const judged = await attemptWithHostExpectationEvaluation(node, enriched, options);
+    return await automationStudioAttemptWithRecordedEffect(flow, node, judged, options);
   }
 
   /** The attempt a dispatch belongs to, and the run state its captured rows are recorded in. */
