@@ -28,7 +28,8 @@ async function wire(root: string, mode: Mode) {
 }
 async function setup(mode: Mode) {
   const root = await mkdtemp(path.join(os.tmpdir(), PREFIX)), { globalRoot, projectRoot } = roots(root, mode);
-  await mkdir(globalRoot); if (mode === "sql") await writeFile(path.join(globalRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }));
+  await mkdir(globalRoot);
+  if (mode === "sql") await writeFile(path.join(globalRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }));
   // Explicit isolated existing-catalogue setup, not production initialization/adoption.
   await new ProgramJsonStore(path.join(projectRoot, "index.json"), () => ({})).write({ projects: [], categories: [] });
   const wired = await wire(root, mode);
@@ -80,7 +81,11 @@ export async function wholeFlowTemplate(mode: Mode): Promise<WholeFlowTemplate> 
     const open = await sidecars(fixture.root);
     if (open.length) throw new Error(`Template still has open SQLite sidecars: ${open.join(", ")}`);
     return { mode, root: fixture.root, project: structuredClone(fixture.project), flow: structuredClone(flow) };
-  } catch (error) { await fixture.pool.closeAll(); await removeRoot(fixture.root); throw error; }
+  } catch (error) {
+    await fixture.pool.closeAll();
+    await removeRoot(fixture.root);
+    throw error;
+  }
 }
 export async function disposeWholeFlowTemplate(template: WholeFlowTemplate | undefined): Promise<void> {
   if (template) await removeRoot(template.root);
@@ -93,5 +98,8 @@ export async function wholeFlowFromTemplate(template: WholeFlowTemplate, run: (f
     await cp(template.root, root, { recursive: true });
     fixture = { ...await wire(root, template.mode), project: structuredClone(template.project), flow: structuredClone(template.flow) };
     await run(fixture);
-  } finally { await fixture?.pool.closeAll(); await removeRoot(root); }
+  } finally {
+    await fixture?.pool.closeAll();
+    await removeRoot(root);
+  }
 }

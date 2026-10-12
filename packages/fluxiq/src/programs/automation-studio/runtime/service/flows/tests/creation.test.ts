@@ -49,22 +49,28 @@ beforeAll(async () => {
   for (const mode of ["sql", "file"] as const) {
     const root = await mkdtemp(path.join(os.tmpdir(), "whole-flow-")), { globalRoot, projectRoot } = layout(root, mode);
     templateRoots.push(root);
-    await mkdir(globalRoot); if (mode === "sql") await writeFile(path.join(globalRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }));
+    await mkdir(globalRoot);
+    if (mode === "sql") await writeFile(path.join(globalRoot, "config.json"), JSON.stringify({ layoutVersion: 2 }));
     await new ProgramJsonStore(path.join(projectRoot, "index.json"), () => ({})).write({ projects: [], categories: [] });
     const { projects, paths, authority, pool } = await wire(root, mode);
     try { created.set(mode, { root, project: await new AutomationStudioProjectCreation(projects, paths, undefined, authority).createProject({ name: "Original" }) }); }
     finally { await pool.closeAll(); }
     // An open WAL would make the copy a torn snapshot; the last close checkpoints and removes it.
-    const open = await openSidecars(root); if (open.length) throw new Error(`Template still has open SQLite sidecars: ${open.join(", ")}`);
+    const open = await openSidecars(root);
+    if (open.length) throw new Error(`Template still has open SQLite sidecars: ${open.join(", ")}`);
   }
 });
-afterAll(async () => { for (const root of templateRoots.splice(0)) await removeRoot(root); created.clear(); });
+afterAll(async () => {
+  for (const root of templateRoots.splice(0)) await removeRoot(root);
+  created.clear();
+});
 async function fixture(mode: Mode) {
   const template = created.get(mode)!, root = await mkdtemp(path.join(os.tmpdir(), "whole-flow-"));
   let pool: AutomationStudioProjectDatabasePool | undefined;
   cleanups.push(async () => { await pool?.closeAll(); await removeRoot(root); });
   await cp(template.root, root, { recursive: true });
-  const wired = await wire(root, mode); pool = wired.pool;
+  const wired = await wire(root, mode);
+  pool = wired.pool;
   return { ...wired, project: structuredClone(template.project) };
 }
 describe("real generated orchestration Flow writer ingress", () => {
