@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: t452 feedback/t453 judge guidance integrated and pushed; $0.25 round5 B first creation/replay passed then second failed, C startup and D cohort failed; t454 recording index/t455 browser recovery/t457 handler feedback isolated.
+Status detail: t457 handler feedback and downstream t455/t456 integrated; $0.25 B first creation/replay passed then second failed, C/D failed; t454 recording consistency probes pending.
 Created: 2026-10-06
 Last updated: 2026-10-11
 Owner: Codex senior supervisor
@@ -46,10 +46,14 @@ worker observation before provider dispatch/cost0, while Chrome reported a live 
 debug recorded downstream; B/D all four actual identities supervisor-verified. A remains historically qualified.
 
 **Next:** t454 recording sequence/read ownership plus durable incremental identity index after measured
-history-reread cost, preserving chunks/public sequence/retries/removals/legacy state. t457 safely restores
-trusted authored handler-scope explanation to early static refusal. Downstream t455 handles the proven
-Chrome/Playwright observation split through one owned browser restart with strict worker/network proofs;
-t456 corrects numeric tool description. All stay isolated pending supervisor gates. No unchanged paid relaunch.
+history-reread cost remains isolated. Independent review identified four unverified interleavings involving
+cached removal, removal retry, late append after finalization and regressing header counts; bounded fail-first
+probes/fixes must pass before acceptance. t457 trusted authored handler-scope explanation is integrated
+(Core69f74e95/downstream00f44168): supervisor22tests, compiled refusal/privacy/repeat proof, fresh build,
+cache-free types/current domain and audits passed. Core's legacy full-check finish was bypassed only after
+these observed narrow gates. Downstream t455 guarded browser recovery and t456 numeric tool description
+are integrated; injected actual-browser recovery/containment passed, natural race remains unreproduced.
+Fresh live qualification remains required. No unchanged paid relaunch.
 User raised future testing purse to $0.25 via launch environment, leaving historical $0.10 receipts intact;
 normal user defaults and provider output length unchanged. No user panel
 management is inferred from isolated Lab authorization. Full sweeps remain at most twice daily under
