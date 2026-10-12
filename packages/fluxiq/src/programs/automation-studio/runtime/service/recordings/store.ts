@@ -1,3 +1,5 @@
+import { loadRecordingTimeline } from "./load-timeline.ts";
+import { automationStudioRecordingEntry, AutomationStudioProjectRuntimeStreamStore, type AutomationStudioProjectDatabasePool } from "../../../storage/index.ts";
 import type { JsonObject } from "../../../../../core/index.ts";
 import { ProgramJsonStore, safeSegment } from "../../../../_shared/storage.ts";
 import type { LearnedTaskModel } from "../../../learning/index.ts";
@@ -38,11 +40,42 @@ export class AutomationStudioRecordingStore {
     private readonly indexes: AutomationStudioServiceIndexes,
     private readonly objectDocuments: AutomationStudioObjectDocuments,
     private readonly repositories: CanonicalAutomationStudioRepositories,
-    private readonly objectStore?: AutomationStudioObjectStore
+    private readonly objectStore?: AutomationStudioObjectStore,
+    private readonly runtimeProjectDatabasePool?: AutomationStudioProjectDatabasePool
   ) {}
 
   bindReady(ready: Promise<void>): void {
     this.ready = ready;
+  }
+
+  appendResult(prepared: RecordingSession, stored: RecordingSession): RecordingSession {
+    const landed = new Map(stored.timeline.map(entry => [entry.id, entry]));
+    return { ...prepared, timeline: prepared.timeline.map(entry => {
+      const original = landed.get(entry.id);
+      if (!original || original.sequence !== entry.sequence) throw new Error("Recording append result identity conflict.");
+      // Preserve prepared/public bodies, including legacy inline state. Only landed generated fields change.
+      return { ...entry, timestamp: original.timestamp, monotonicOffsetMs: original.monotonicOffsetMs };
+    }) };
+  }
+
+  async savePublic(recording: RecordingSession, projectId: string | null | undefined, persist: (projectId: string, stored: RecordingSession) => Promise<void>): Promise<void> {
+    const stored = await this.objectDocuments.dehydrateRecordingStateSnapshotRefs(recording, projectId);
+    if (projectId) await persist(projectId, stored);
+    await this.repositories.recordingSessions.put(stored);
+  }
+
+  async saveRemoval(projectId: string, recording: RecordingSession, persist: () => Promise<void>, writeTimeline: () => Promise<void>): Promise<void> {
+    const previous = await this.getRawRecordingSession(recording.recordingId, projectId);
+    if (this.runtimeProjectDatabasePool && this.paths.root) {
+      const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+      try {
+        await store.putRecording(previous);
+        await store.removeRecordingEntries(previous, recording);
+      } finally { await store.close(); }
+    }
+    await persist();
+    await writeTimeline();
+    await this.repositories.recordingSessions.put(recording);
   }
 
   async getRecordingSession(recordingId: string, projectId?: string | null): Promise<RecordingSession> {
@@ -172,7 +205,11 @@ export class AutomationStudioRecordingStore {
   async loadProjectRecording(projectId: string, recordingId: string): Promise<void> {
     if (!this.paths.root) return;
     const existing = await this.repositories.recordingSessions.get(recordingId);
-    if (existing && existing.metadata?.summaryOnly !== true) return;
+    if (existing && existing.metadata?.summaryOnly !== true) {
+      const recovered = await this.recoverCompletion(projectId, existing);
+      if (recovered !== existing) await this.repositories.recordingSessions.put(recovered);
+      return;
+    }
     const stored = await new ProgramJsonStore<JsonObject>(
       path.join(this.recordingPaths.recordingSessionDirectory(projectId, recordingId), "recording.json"),
       () => ({})
@@ -181,8 +218,32 @@ export class AutomationStudioRecordingStore {
     if (recording?.recordingId) {
       const storedTimeline = await this.readRecordingTimeline(projectId, recordingId);
       const timeline = storedTimeline.length ? storedTimeline : recording.timeline;
-      await this.repositories.recordingSessions.put({ ...recording, timeline });
+      await this.repositories.recordingSessions.put(await this.recoverCompletion(projectId, { ...recording, timeline }));
     }
+  }
+
+  private async recoverCompletion(projectId: string, recording: RecordingSession): Promise<RecordingSession> {
+    if (recording.endedAt !== undefined || !this.runtimeProjectDatabasePool) return recording;
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+    try {
+      const completion = await store.getRecordingCompletion(recording.recordingId);
+      if (!completion) {
+        const proofs = new Set((await store.getRemovedRecordingEntryProofs(recording.recordingId)).map(proof => `${proof.id}:${proof.bodyDigest}`));
+        const removed = new Set(recording.timeline.filter(entry => proofs.has(`${entry.id}:${automationStudioRecordingEntry.digest(entry)}`)).map(entry => entry.id));
+        if (!removed.size) return recording;
+        const timeline = recording.timeline.filter(entry => !removed.has(entry.id));
+        const notes = recording.notes.map(note => {
+          if (!note.linkedEntryIds?.some(id => removed.has(id))) return note;
+          const { linkedEntryIds, ...rest } = note;
+          const kept = linkedEntryIds.filter(id => !removed.has(id));
+          return kept.length ? { ...rest, linkedEntryIds: kept } : rest;
+        });
+        return { ...recording, timeline, notes };
+      }
+      const timeline = await this.readRecordingTimeline(projectId, recording.recordingId);
+      if (timeline.length !== completion.event_count) throw new Error("Durable recording completion timeline count mismatch.");
+      return { ...recording, timeline, endedAt: completion.ended_at_ms };
+    } finally { await store.close(); }
   }
 
   async pipelineArtifactRecordingId(projectId: string, kind: PipelineArtifactKind, artifact: JsonObject): Promise<string | null> {
@@ -263,20 +324,8 @@ export class AutomationStudioRecordingStore {
   }
 
   async readRecordingTimeline(projectId: string, recordingId: string): Promise<RecordingSession["timeline"]> {
-    const filePath = this.recordingPaths.recordingTimelineFile(projectId, recordingId);
-    const text = await readFile(filePath, "utf8").catch((error: unknown) => {
-      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return "";
-      throw error;
-    });
-    const entries: RecordingSession["timeline"] = [];
-    for (const line of text.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      entries.push(JSON.parse(trimmed) as RecordingSession["timeline"][number]);
-    }
-    return entries;
+    return await loadRecordingTimeline(this.recordingPaths.recordingTimelineFile(projectId, recordingId), projectId, recordingId, this.runtimeProjectDatabasePool);
   }
-
   async removeRecordingPipelineArtifactId(projectId: string, recordingId: string, kind: "policyProposals" | "recordingFlowProposals", id: string): Promise<void> {
     const key = kind === "policyProposals" ? "policyProposalIds" : "recordingFlowProposalIds";
     const store = new ProgramJsonStore<RecordingPipelineDocument>(

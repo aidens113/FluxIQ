@@ -18,6 +18,7 @@ import type {
 import type { AutomationStudioProjectDatabaseLease, AutomationStudioProjectDatabasePool } from "./database.ts";
 import { AutomationStudioProjectContentStore } from "./content-store.ts";
 import { AutomationStudioProjectEventChunkStore, type AutomationStudioChunkEvent } from "./event-chunk-store.ts";
+import { AutomationStudioRecordingStreamStore, AutomationStudioRecordingStreamSummary, AutomationStudioRecordingStreamProjection } from "./recording-stream/index.ts";
 import { runDatasetSummariesForRun } from "./run-dataset-store.ts";
 import { automationStudioRuntimeActionRowFrame } from "./action-rows/index.ts";
 import { automationStudioFilterHash, automationStudioPageLimit, decodeAutomationStudioPageCursor, encodeAutomationStudioPageCursor } from "../paging.ts";
@@ -382,30 +383,42 @@ export class AutomationStudioProjectRuntimeStreamStore {
     return row ? JSON.parse(row.detail_json) as AutomationStudioFlowRunActionAttemptRecord : null;
   }
 
-  async upsertRecordingSummary(recording: RecordingSession): Promise<RecordingSession> {
-    const summary = recordingSummary(recording);
-    await this.lease.database.run(
-      `insert into recordings (recording_id, name, task_id, domain_id, status, started_at_ms, ended_at_ms, event_count, action_count, state_snapshot_count, updated_at_ms)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       on conflict(recording_id) do update set name = excluded.name, task_id = excluded.task_id, domain_id = excluded.domain_id,
-         status = excluded.status, ended_at_ms = excluded.ended_at_ms, event_count = excluded.event_count,
-         action_count = excluded.action_count, state_snapshot_count = excluded.state_snapshot_count, updated_at_ms = excluded.updated_at_ms`,
-      [summary.recordingId, summary.name, summary.taskId ?? null, summary.domainId ?? null, summary.status, summary.startedAt, summary.endedAt ?? null, summary.eventCount, summary.actionCount, summary.stateSnapshotCount, summary.updatedAt]
-    );
+  async upsertRecordingSummary(recording: RecordingSession, proof?: { generation: string; indexed_cursor: number }): Promise<RecordingSession> {
+    requiredId(recording.recordingId, "recording");
+    await new AutomationStudioRecordingStreamSummary(this.lease).publish(recording, proof);
     return recording;
   }
 
   async putRecording(recording: RecordingSession): Promise<RecordingSession> {
-    await this.upsertRecordingSummary(recording);
-    const row = await this.lease.database.get<{ last_sequence: number | null }>("select max(last_sequence) as last_sequence from recording_event_chunks where recording_id = ?", [requiredId(recording.recordingId, "recording")]);
-    if ((row?.last_sequence ?? 0) === 0 && recording.timeline.length) {
-      await this.appendRecordingEvents({ recordingId: recording.recordingId, events: recording.timeline.map((entry, index) => ({ ...entry, sequence: index + 1 } as AutomationStudioChunkEvent)) });
-      await this.upsertRecordingSummary(recording);
+    if (!await this.lease.database.get("select recording_id from recordings where recording_id = ?", [requiredId(recording.recordingId, "recording")])) {
+      const { endedAt: _endedAt, ...open } = recording;
+      await this.upsertRecordingSummary({ ...open, timeline: [] });
     }
+    const stream = new AutomationStudioRecordingStreamStore(this.chunks, this.lease);
+    await stream.reconcile(recording);
+    const proof = recording.endedAt !== undefined ? await stream.completionProof(recording) : undefined;
+    await this.upsertRecordingSummary(recording, proof);
     await this.putStateSnapshot({ sourceKind: "recording", sourceId: recording.recordingId, sequence: 0, snapshot: recording.initialState, metadata: { phase: "initial" } });
     return recording;
   }
 
+  async getRecordingCompletion(recordingId: string): Promise<{ ended_at_ms: number; event_count: number } | null> {
+    return await this.lease.database.get<{ ended_at_ms: number; event_count: number }>("select ended_at_ms, event_count from recordings where recording_id = ? and ended_at_ms is not null", [requiredId(recordingId, "recording")]) ?? null;
+  }
+
+  async getRemovedRecordingEntryProofs(recordingId: string): Promise<{ id: string; bodyDigest: string }[]> {
+    await new AutomationStudioRecordingStreamProjection(this.chunks, this.lease).synchronize(requiredId(recordingId, "recording"));
+    return await new AutomationStudioRecordingStreamSummary(this.lease).removedProofs(recordingId);
+  }
+
+  async removeRecordingEntries(previous: RecordingSession, next: RecordingSession): Promise<void> {
+    await new AutomationStudioRecordingStreamStore(this.chunks, this.lease).remove({ previous, next });
+    await this.upsertRecordingSummary(next);
+  }
+
+  async readRecordingTimeline(recordingId: string, legacy: RecordingSession["timeline"] = []): Promise<RecordingSession["timeline"]> {
+    return await new AutomationStudioRecordingStreamStore(this.chunks, this.lease).readTimeline(requiredId(recordingId, "recording"), legacy) as RecordingSession["timeline"];
+  }
   async listRecordingSummaries(input: { limit?: unknown; offset?: unknown } = {}): Promise<AutomationStudioRecordingSummaryPage> {
     const limit = clampInteger(input.limit, 1, 100, 25);
     const offset = clampInteger(input.offset, 0, 10_000_000, 0);
@@ -417,21 +430,16 @@ export class AutomationStudioProjectRuntimeStreamStore {
     return { recordings: result.rows.map(recordingFromRow), total: result.total, limit, offset };
   }
 
-  async appendRecordingEvents(input: { recordingId: string; events: AutomationStudioChunkEvent[]; maxEvents?: number }): Promise<{ nextCursor: string | null; lastSequence: number }> {
+  async appendRecordingEvents(input: { recordingId: string; events: AutomationStudioChunkEvent[]; maxEvents?: number; generatedFields?: { id: string; timestamp: boolean; monotonicOffset: boolean }[] }): Promise<{ nextCursor: string | null; lastSequence: number; entries: AutomationStudioChunkEvent[] }> {
     const recordingId = requiredId(input.recordingId, "recording");
-    const row = await this.lease.database.get<{ last_sequence: number | null }>("select max(last_sequence) as last_sequence from recording_event_chunks where recording_id = ?", [recordingId]);
-    const events = normalizeGenericEvents(input.events, (row?.last_sequence ?? 0) + 1);
-    const chunk = await this.chunks.writeChunk({ streamKind: "recording", streamId: recordingId, events, maxEvents: input.maxEvents ?? 2_000 });
-    await this.lease.database.run("update recordings set event_count = event_count + ?, action_count = action_count + ?, state_snapshot_count = state_snapshot_count + ?, updated_at_ms = ? where recording_id = ?", [events.length, events.filter(recordingEventIsActionLike).length, events.filter(recordingEventIsStateSnapshotLike).length, Date.now(), recordingId]);
-    return { nextCursor: String(chunk.lastSequence), lastSequence: chunk.lastSequence };
+    const { counts: _counts, ...result } = await new AutomationStudioRecordingStreamStore(this.chunks, this.lease).append(recordingId, input.events, input.maxEvents, input.generatedFields);
+    await new AutomationStudioRecordingStreamSummary(this.lease).publishCounts(recordingId);
+    return result;
   }
 
   async listRecordingEvents(input: { recordingId: string; afterSequence?: unknown; limit?: unknown }): Promise<{ events: AutomationStudioChunkEvent[]; nextCursor: string | null; hasMore: boolean; lastSequence: number }> {
-    const afterSequence = clampInteger(input.afterSequence, 0, 10_000_000_000, 0);
-    const page = await this.chunks.readEventsBySequence({ streamKind: "recording", streamId: requiredId(input.recordingId, "recording"), afterSequence, limit: clampInteger(input.limit, 1, 500, 100) });
-    return { events: page.events, nextCursor: page.nextCursor, hasMore: page.hasMore, lastSequence: page.events.at(-1)?.sequence ?? afterSequence };
+    return await new AutomationStudioRecordingStreamStore(this.chunks, this.lease).page(requiredId(input.recordingId, "recording"), clampInteger(input.afterSequence, 0, 10_000_000_000, 0), clampInteger(input.limit, 1, 500, 100));
   }
-
   async putStateSnapshot(input: { sourceKind: string; sourceId: string; sequence: number; snapshot: StateSnapshot; previousSnapshotId?: string | null; screenshotObjectId?: string | null; metadata?: JsonObject }): Promise<AutomationStudioStateSnapshotRecord> {
     const sourceKind = requiredId(input.sourceKind, "state source kind");
     const sourceId = requiredId(input.sourceId, "state source");
@@ -715,10 +723,6 @@ function runtimeSummaryFromRow(projectId: string, row: RuntimeRunRow): Automatio
   return { schemaVersion: "0.1", ...persisted, runId: row.run_id, flowId: row.flow_id, projectId, flowVersion: String(row.flow_revision), status: row.status, ...(row.started_at_ms !== null ? { startedAt: row.started_at_ms } : {}), ...(row.finished_at_ms !== null ? { finishedAt: row.finished_at_ms } : {}), updatedAt: row.updated_at_ms, routeDecisionCount: persisted.routeDecisionCount ?? 0, subflowEntryCount: persisted.subflowEntryCount ?? 0, actionAttemptCount: row.action_count, interventionCount: persisted.interventionCount ?? 0, adaptationCount: row.adaptation_count, metadata: { ...compactJsonObject(persisted.metadata), effectCount: row.effect_count, errorCount: row.error_count, lastEventSequence: row.last_event_sequence } };
 }
 
-function recordingSummary(recording: RecordingSession): { recordingId: string; name: string; taskId?: string; domainId?: string; status: string; startedAt: number; endedAt?: number; eventCount: number; actionCount: number; stateSnapshotCount: number; updatedAt: number } {
-  return { recordingId: requiredId(recording.recordingId, "recording"), name: String(recording.metadata?.name ?? recording.recordingId), ...(recording.taskId ? { taskId: recording.taskId } : {}), ...(typeof recording.metadata?.domainId === "string" ? { domainId: recording.metadata.domainId } : {}), status: recording.endedAt ? "completed" : "recording", startedAt: recording.startedAt, ...(recording.endedAt !== undefined ? { endedAt: recording.endedAt } : {}), eventCount: recording.timeline.length, actionCount: recording.timeline.filter(recordingEventIsActionLike).length, stateSnapshotCount: recording.timeline.filter(recordingEventIsStateSnapshotLike).length, updatedAt: Math.max(recording.endedAt ?? 0, recording.timeline.at(-1)?.timestamp ?? 0, recording.startedAt) };
-}
-
 function recordingFromRow(row: RecordingRow): RecordingSession {
   return { schemaVersion: "0.1", recordingId: row.recording_id, ...(row.task_id ? { taskId: row.task_id } : {}), startedAt: row.started_at_ms, ...(row.ended_at_ms !== null ? { endedAt: row.ended_at_ms } : {}), environment: { id: row.domain_id ?? "unknown", kind: "browser", label: row.domain_id ?? "Unknown" }, sources: [], actionChannels: [], initialState: { timestamp: row.started_at_ms, namespaces: {} }, timeline: [], notes: [], metadata: { name: row.name, summaryOnly: true, eventCount: row.event_count, actionCount: row.action_count, stateSnapshotCount: row.state_snapshot_count, updatedAt: row.updated_at_ms, ...(row.domain_id ? { domainId: row.domain_id } : {}) } };
 }
@@ -749,8 +753,6 @@ function statePathFromRow(row: StatePathRow): AutomationStudioStatePathRecord {
 }
 
 function isRuntimeEventKind(value: unknown): value is AutomationStudioRuntimeEventKind { return value === "run_summary" || value === "route_decision" || value === "subflow_execution" || value === "action_attempt" || value === "recovery_attempt" || value === "handler_execution" || value === "late_action_result" || value === "intervention"; }
-function recordingEventIsActionLike(event: unknown): boolean { const value = event as { type?: unknown; actionType?: unknown; eventType?: unknown }; return value.type === "action" || value.type === "domain_event" || typeof value.actionType === "string" || typeof value.eventType === "string"; }
-function recordingEventIsStateSnapshotLike(event: unknown): boolean { const value = event as { type?: unknown; observationType?: unknown }; return value.type === "state_checkpoint" || value.observationType === "client.state_snapshot"; }
 // `interrupted` is stored as itself (migration 0024_runtime_run_interrupted_status lets the column hold it):
 // a run whose process ended mid-flight is neither a failure it reported nor a
 // success, and a reader that filters on `failed` must not find it there.

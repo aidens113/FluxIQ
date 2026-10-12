@@ -442,7 +442,7 @@ export class AutomationStudioService {
     this.creationSpends = new AutomationStudioFlowBootstrapCreationSpendStore(this.projectPaths, this.flowPaths, this.projects); this.candidateDrafts = new AutomationStudioFlowCandidateDraftStore(this.projectPaths, this.flowPaths, this.projects);
     this.objectDocuments = new AutomationStudioObjectDocuments(this.projectPaths, this.recordingPaths, this.projects, this.objectStore);
     this.flows = new AutomationStudioFlowStore(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.repositories, this.projectDatabasePool);
-    this.recordings = new AutomationStudioRecordingStore(this.projectPaths, this.recordingPaths, this.projects, this.indexes, this.objectDocuments, this.repositories, this.objectStore);
+    this.recordings = new AutomationStudioRecordingStore(this.projectPaths, this.recordingPaths, this.projects, this.indexes, this.objectDocuments, this.repositories, this.objectStore, this.runtimeProjectDatabasePool);
     this.flowWriter = new AutomationStudioFlowWriter(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.legacy, this.objectDocuments, this.repositories, automationStudioFacadePorts(this), this.runtimeProjectDatabasePool);
     this.flowMutations = new AutomationStudioFlowMutations(this.projectPaths, this.flowPaths, this.projects, this.indexes, this.flows, this.flowWriter, automationStudioFacadePorts(this));
     this.adaptationPatches = new AutomationStudioAdaptationPatches(this.flows, this.flowWriter, this.flowMutations, automationStudioFacadePorts(this));
@@ -725,22 +725,21 @@ export class AutomationStudioService {
       const preparedEntries = await this.objectDocuments.prepareRecordingEntriesForStorage(input.projectId, input.recordingId, input.entries);
       const next = preparedEntries.reduce((current, entry) => appendRecordingEntry(current, entry), recording);
       const stored = await this.objectDocuments.dehydrateRecordingStateSnapshotRefs(next, input.projectId);
-      await this.repositories.recordingSessions.put(stored);
       if (input.projectId && next.endedAt !== undefined) {
         await this.writeProjectRecordingSession(input.projectId, stored);
       } else if (input.projectId) {
-        const typedAppend = await this.tryAppendRecordingEntries(input.projectId, stored, stored.timeline.slice(recording.timeline.length));
+        const typedAppend = await this.tryAppendRecordingEntries(input.projectId, stored, stored.timeline.slice(recording.timeline.length), input.entries);
         if (!typedAppend) await this.writeRecordingTimeline(input.projectId, stored.recordingId, stored.timeline);
         await this.writeRecordingStateIndex(input.projectId, stored);
         await this.writeProjectRecordingIndexSummary(input.projectId, stored);
       }
-      return next;
+      await this.repositories.recordingSessions.put(stored);
+      return this.recordings.appendResult(next, stored);
     });
   }
 
   // t182: undo one captured step of an open recording (`service/recordings/entry-removal-command.ts`). A collaborator, not a method: the ports run only when called.
-  readonly recordingEntryRemoval = new AutomationStudioRecordingEntryRemoval({ lock: (projectId, recordingId, run) => this.locks.withRecordingMutationLock(projectId, recordingId, run), read: (projectId, recordingId) => this.recordings.getRawRecordingSession(recordingId, projectId), save: async (projectId, recording) => { await this.repositories.recordingSessions.put(recording); await this.writeProjectRecordingSession(projectId, recording); await this.writeRecordingTimeline(projectId, recording.recordingId, recording.timeline); } });
-
+  readonly recordingEntryRemoval = new AutomationStudioRecordingEntryRemoval({ lock: (projectId, recordingId, run) => this.locks.withRecordingMutationLock(projectId, recordingId, run), read: (projectId, recordingId) => this.recordings.getRawRecordingSession(recordingId, projectId), save: (projectId, recording) => this.recordings.saveRemoval(projectId, recording, () => this.writeProjectRecordingSession(projectId, recording), () => this.writeRecordingTimeline(projectId, recording.recordingId, recording.timeline)) });
   summarizeRecordingSession(recording: RecordingSession): RecordingSession {
     return summaryRecordingSession(recording);
   }
@@ -751,8 +750,8 @@ export class AutomationStudioService {
       if (recording.endedAt !== undefined) return recording;
       const finalized = finalizeRecordingSession(recording, input.endedAt);
       const stored = await this.objectDocuments.dehydrateRecordingStateSnapshotRefs(finalized, input.projectId);
-      await this.repositories.recordingSessions.put(stored);
       if (input.projectId) await this.writeProjectRecordingSession(input.projectId, stored);
+      await this.repositories.recordingSessions.put(stored);
       return finalized;
     });
   }
@@ -895,8 +894,7 @@ export class AutomationStudioService {
         ...(typeof input.archived === "boolean" ? { archived: input.archived } : {})
       };
       const next = { ...recording, metadata };
-      await this.repositories.recordingSessions.put(next);
-      if (input.projectId) await this.writeProjectRecordingSession(input.projectId, next);
+      await this.recordings.savePublic(next, input.projectId, (projectId, stored) => this.writeProjectRecordingSession(projectId, stored));
       return next;
     });
   }
@@ -986,8 +984,7 @@ export class AutomationStudioService {
         ...(typeof input.endOffsetMs === "number" ? { endOffsetMs: input.endOffsetMs } : {}),
         ...(linkedEntryIds.length ? { linkedEntryIds } : {})
       });
-      await this.repositories.recordingSessions.put(next);
-      if (input.projectId) await this.writeProjectRecordingSession(input.projectId, next);
+      await this.recordings.savePublic(next, input.projectId, (projectId, stored) => this.writeProjectRecordingSession(projectId, stored));
       return next;
     });
   }
@@ -1190,8 +1187,7 @@ export class AutomationStudioService {
       if (recording.endedAt !== undefined) throw new Error("Finalized recordings are immutable.");
       const result = await processRecordingDomainEvent(this.recordingDomains, recording, input);
       if (result.accepted) {
-        await this.repositories.recordingSessions.put(result.recording);
-        if (input.projectId) await this.writeProjectRecordingSession(input.projectId, result.recording);
+        await this.recordings.savePublic(result.recording, input.projectId, (projectId, stored) => this.writeProjectRecordingSession(projectId, stored));
       }
       return result;
     });
@@ -4071,21 +4067,21 @@ export class AutomationStudioService {
   }
 
   private async tryPersistRecordingSession(projectId: string, recording: RecordingSession): Promise<boolean> {
-    const written = await this.summaries.tryWithRuntimeStreamStore(projectId, async (store) => {
+    const written = await this.summaries.withRecordingRuntimeStreamStore(projectId, async (store) => {
       await store.putRecording(recording);
       return true;
     });
     return written === true;
   }
 
-  private async tryAppendRecordingEntries(projectId: string, recording: RecordingSession, entries: RecordingSession["timeline"]): Promise<boolean> {
+  private async tryAppendRecordingEntries(projectId: string, recording: RecordingSession, entries: RecordingSession["timeline"], inputs: AppendRecordingEntryInput[]): Promise<boolean> {
+    if (inputs.length !== entries.length) throw new Error("Recording append omission proof must match the input entries.");
     if (!entries.length) {
-      await this.summaries.tryWithRuntimeStreamStore(projectId, async (store) => await store.upsertRecordingSummary(recording));
-      return true;
+      return await this.summaries.withRecordingRuntimeStreamStore(projectId, async (store) => { await store.upsertRecordingSummary(recording); return true; }) === true;
     }
-    const written = await this.summaries.tryWithRuntimeStreamStore(projectId, async (store) => {
-      await store.upsertRecordingSummary(recording);
-      await store.appendRecordingEvents({ recordingId: recording.recordingId, events: entries as any[] });
+    const written = await this.summaries.withRecordingRuntimeStreamStore(projectId, async (store) => {
+      const appended = await store.appendRecordingEvents({ recordingId: recording.recordingId, events: entries as any[], generatedFields: entries.map((entry, i) => ({ id: entry.id, timestamp: inputs[i]?.timestamp === undefined, monotonicOffset: inputs[i]?.monotonicOffsetMs === undefined })) });
+      recording.timeline = [...recording.timeline.slice(0, recording.timeline.length - entries.length), ...appended.entries as RecordingSession["timeline"]];
       await store.upsertRecordingSummary(recording);
       return true;
     });

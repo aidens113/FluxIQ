@@ -8,6 +8,55 @@ Automation Studio project artifacts are owned by the project file tree under
 repositories are caches used by service code and tests; they are not the source
 of truth for recordings, proposals, Flows, state assets, or runtime runs.
 
+## Durable recording timelines
+
+With a configured project runtime database, recording timelines use the typed
+recording stream and immutable content-addressed event chunks. Private envelopes
+use positive storage cursors; public entry identifiers and zero-based sequences
+are preserved, including normal identifier reuse after an explicit undo. Reads
+join the typed stream with legacy JSONL by exact identity, sequence and body.
+Conflicting split histories refuse rather than guessing an offset or silently
+falling back to a stale file. File-only configurations retain their read owner.
+
+Migration `0025_recording_stream_identity_index` adds a derived recording head,
+active identity rows, archived incarnation proofs and reconciliation claims.
+The index stores hashes, cursors, identity metadata and counts, not another copy
+of captured page bodies. Chunk descriptor changes invalidate the projection;
+rebuilding it preserves historical bytes. Explicit removal appends an
+incarnation-bound control and archives the removed identity, so an old control
+cannot remove a fresh entry that reused its public identifier. Project deletion
+unlinks only that recording's exact chunk references and retains unrelated
+references and shared objects.
+
+Append retries may recover already-landed timestamps and offsets only when the
+caller originally omitted those owner-assigned fields and the durable identity
+and body proof match. Supplied source-event/correlation identity and all caller
+metadata remain part of admission. A complete uncorrelated packet identical to
+a removed packet remains ambiguous and refuses; this is not a general gateway
+exactly-once guarantee. Durable head counts cannot be overwritten by a delayed
+older summary. Finalization preserves the first completed end time and refuses
+ordinary late appends or removals.
+
+Public rename, note and registered domain-event writers keep their hydrated
+input and response semantics. Before persistence, an already-ref-bearing
+snapshot is compared with its durable snapshot object and its hydrated `state`
+copy is removed. Conflicting ref/body pairs refuse. The normalized recording
+is published to the canonical repository cache only after durable persistence;
+failed writes do not publish a speculative hydrated mirror. Completion and
+removal recovery reconcile stale cache entries from the typed owner.
+
+Finalized legacy backfill uses a private single-use claim tied to the complete
+timeline digest, end time, count, head generation, cursor range and exact chunk
+SHA. Descriptor insertion rechecks and consumes that proof. After a writer dies,
+only an OS `ESRCH` result plus an exact SQL compare-and-swap can transfer its
+claim; live, permission-denied, unknown or reused-live PIDs refuse. This recovery
+requires all writers to share one host and OS PID namespace. It does not support
+cross-host or cross-namespace claim recovery, expiry-based takeover or reopening
+completed recordings. Process and storage tests cover this owner; live browser
+recording-drain performance remains a separate validation requirement.
+
+## Other persistence foundations
+
 The isolated `storage/project/accepted-state` foundation stores explicitly supplied
 complete visual-project snapshots in project SQLite. Its immutable snapshot and
 staged/tombstoned head are written with the existing unit-of-work mutation result
