@@ -76,7 +76,7 @@ export function automationStudioConversationCallCause(what: string, response: Au
   const ending = diagnostic?.ending?.message;
   if (typeof ending === "string" && ending.trim()) return `${what} could not finish. ${ending.trim().replace(/\.$/u, "")}`;
   const code = typeof diagnostic?.code === "string" ? diagnostic.code : codesIn(response.error ?? "")[0];
-  const meant = (code && NO_PROGRESS.test(code) ? refusedWords(diagnostic) : undefined)
+  const meant = (code && NO_PROGRESS.test(code) ? refusedWords(diagnostic) ?? neverSubmittedWords(diagnostic) : undefined)
     ?? (code && ITERATION_LIMIT.test(code) ? exhaustedWords(diagnostic?.evidenceLoop?.exhausted) : undefined)
     ?? (code ? CODE_WORDS.find(([pattern]) => pattern.test(code))?.[1] : undefined)
     ?? (typeof diagnostic?.stage === "string" && Object.hasOwn(STAGE_WORDS, diagnostic.stage) ? STAGE_WORDS[diagnostic.stage] : undefined);
@@ -131,6 +131,27 @@ function refusedWords(diagnostic: Diagnostic | undefined): string | undefined {
   const candidate = diagnostic?.candidate;
   const untested = candidate && candidate.revision === undefined && candidate.trialCount === 0 ? ", so nothing was tested" : "";
   return `the Flow it wrote was refused${times}${because}${again}${untested}`;
+}
+
+/** The code a candidate build's completion is refused under when it names no accepted submission (`../../flow-bootstrap/candidate/authoring-loop.ts`). */
+const LATEST_SUBMISSION_REQUIRED = "candidate.latest_submission_required";
+
+/**
+ * Why a candidate build stopped for no progress when it never had a Flow
+ * accepted and kept trying to finish anyway, in words that finish
+ * "failed: ...". Lane C (`run-mv0pa79q-ef91811b`) looked at five pages, never
+ * submitted a Flow, and tried to finish four times; it ended "it kept trying
+ * without getting any further", which named no cause. Said only when the
+ * failure's codes hold a refused finish, it carries no refused submission
+ * (`refusedWords` says that one), and its candidate shows nothing accepted and
+ * nothing tested; nothing otherwise.
+ */
+function neverSubmittedWords(diagnostic: Diagnostic | undefined): string | undefined {
+  const codes = Array.isArray(diagnostic?.issueCodes) ? diagnostic.issueCodes : [];
+  if (!codes.includes(LATEST_SUBMISSION_REQUIRED)) return undefined;
+  const candidate = diagnostic?.candidate;
+  if (!candidate || candidate.revision !== undefined || candidate.trialCount !== 0) return undefined;
+  return "it never wrote a Flow to test: it kept trying to finish without one, so it was stopped";
 }
 
 /** A build that ran out of an allowance: what ran out says why (`exhaustedWords`). */

@@ -20,6 +20,37 @@ function result(text = "reusable criterion"): JsonObject {
 const submission = { projectId: "project.test", flowId: "flow.test", registry, resolution, baseDependencyDigest: "accepted.base" };
 
 describe("explicit candidate authoring", () => {
+  it("tests an accepted receipt with one cost-counted decision left before completing", async () => {
+    let receipt: JsonObject = {};
+    let trialCalls = 0;
+    const outcome = await runAutomationStudioFlowCandidateAuthoringLoop({ submission,
+      trial: { candidateId: "candidate.last-budget", port: async (request) => {
+        trialCalls += 1;
+        expect(request.revision).toBe(receipt.revision);
+        expect(request.digest).toBe(receipt.digest);
+        return { revision: request.revision, digest: request.digest, verdict: "yes", feedback: {} };
+      } },
+      loop: {
+        tools: [], maxIterations: 6, maxToolCalls: 6, budget: { maxCostUsd: 0.1 },
+        executeTool: async () => ({}),
+        decide: async ({ iteration, tools, evidence }) => {
+          if (iteration === 1) return { kind: "tool_call", toolId: "core.submit_candidate", callId: "submit", input: result(), usage: { totalTokens: 100, estimatedCostUsd: 0.06 } };
+          receipt = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate")!.value as JsonObject;
+          expect(receipt.next).toBe(`Test next with core.test_candidate using exactly {"revision": ${receipt.revision}, "digest": "${receipt.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.`);
+          if (iteration === 2) {
+            expect(evidence.at(-1)?.value).toMatchObject({ decisionsLeft: 1 });
+            expect(tools.map((tool) => tool.toolId)).toContain("core.test_candidate");
+            return { kind: "tool_call", toolId: "core.test_candidate", callId: "test", input: { revision: receipt.revision, digest: receipt.digest }, usage: { totalTokens: 100, estimatedCostUsd: 0.005 } };
+          }
+          return { kind: "complete", result: { revision: receipt.revision, digest: receipt.digest }, usage: { totalTokens: 100, estimatedCostUsd: 0.005 } };
+        }
+      }
+    });
+    expect(trialCalls).toBe(1);
+    expect(outcome.loop.ok).toBe(true);
+    expect(outcome.trial?.verdict).toBe("yes");
+  });
+
   it("records discovery evidence, omits a wrong turn, submits and revises without draft grammar", async () => {
     let receipt: JsonObject = {};
     const seen: string[] = [];
@@ -126,4 +157,62 @@ it("protects canonical candidate snapshots and receipt base identity", async () 
   first.candidate.buildPlan.plan.subflows[0]!.nodes[0]!.parameters = { text: "tampered" };
   expect(controller.latest()?.buildPlan.plan.subflows[0]?.nodes[0]?.parameters?.text).toBe("reusable criterion");
   expect(controller.matches({ ...first.candidate, baseDependencyDigest: "changed.accepted.base" })).toBe(false);
+});
+
+// Lane C (`run-mv0pa79q-ef91811b`) never submitted a Flow and completed four times with an invented revision and
+// digest; each refusal said only "Submit a valid complete candidate", never that nothing had been submitted.
+describe("a completion the loop refuses says why", () => {
+  type Entry = { toolId: string; value: unknown };
+  async function completions(decisions: Array<(evidence: readonly Entry[]) => ReturnType<NonNullable<Parameters<typeof runAutomationStudioFlowCandidateAuthoringLoop>[0]["loop"]["decide"]>>>) {
+    const seen: Entry[][] = [];
+    let stalledCodes: readonly string[] | undefined;
+    let index = 0;
+    await runAutomationStudioFlowCandidateAuthoringLoop({ submission, loop: {
+      tools: [{ toolId: "demo.look", effect: "observe", description: "Look", inputSchema: { type: "object" } }], maxIterations: decisions.length + 1, maxToolCalls: decisions.length + 1,
+      unusableDecisions: { maxConsecutive: 3, maxInARow: 3, stalled: ({ issueCodes }) => {
+        stalledCodes = issueCodes;
+        return new Error("stalled");
+      } },
+      executeTool: async () => ({ kind: "llm_evidence_tool_execution", evidence: { looked: true }, effectApplied: false }),
+      decide: async ({ evidence }) => {
+        seen.push(evidence.map((entry) => ({ ...entry })));
+        const next = decisions[index++];
+        if (!next) throw new Error("script exhausted");
+        return next(evidence);
+      }
+    } }).catch(() => undefined);
+    const feedback = seen.map((evidence) => [...evidence].reverse().find((entry) => entry.toolId === "core.completion_check")?.value as JsonObject | undefined);
+    return { feedback, stalledCodes: () => stalledCodes };
+  }
+  const look = async () => ({ kind: "tool_call" as const, toolId: "demo.look", callId: "look", input: {} });
+  const invented = async () => ({ kind: "complete" as const, result: { revision: 1, digest: "f".repeat(64) } });
+
+  it("with nothing submitted: says no Flow was submitted, names the submit tool, and never offers a revision", async () => {
+    const { feedback, stalledCodes } = await completions([look, invented, invented, invented, invented]);
+    const told = feedback[2]!;
+    expect(told).toMatchObject({ code: "candidate.latest_submission_required", submitted: false });
+    expect(String(told.instruction)).toMatch(/^No Flow has been submitted yet/u);
+    expect(String(told.instruction)).toContain("core.submit_candidate");
+    expect(String(told.instruction)).toMatch(/never invent/u);
+    expect(told).not.toHaveProperty("revision");
+    // No trial runner here, so it is not told to test with one.
+    expect(String(told.instruction)).not.toContain("core.test_candidate");
+    // The stall carries the code the build's ending reads (`../../../conversations/commands/progress.ts`).
+    expect(stalledCodes()).toContain("candidate.latest_submission_required");
+  });
+
+  it("with a submission: names the latest revision and digest to complete with", async () => {
+    let receipt: JsonObject = {};
+    const submit = async () => ({ kind: "tool_call" as const, toolId: "core.submit_candidate", callId: "submit", input: result() });
+    const keep = async (evidence: readonly Entry[]) => {
+      receipt = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate")!.value as JsonObject;
+      return invented();
+    };
+    const { feedback } = await completions([look, submit, keep, invented]);
+    const told = feedback[3]!;
+    expect(receipt).toMatchObject({ ok: true, revision: 1 });
+    expect(told).toMatchObject({ code: "candidate.latest_submission_required", submitted: true, revision: receipt.revision, digest: receipt.digest });
+    expect(String(told.instruction)).toContain(`{"revision": ${String(receipt.revision)}, "digest": "${String(receipt.digest)}"}`);
+    expect(String(told.instruction)).not.toMatch(/No Flow has been submitted/u);
+  });
 });

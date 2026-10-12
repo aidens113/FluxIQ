@@ -306,11 +306,10 @@ describe("a candidate's wrap-up (t383)", () => {
   const offeredIds = (decisionsLeft: number, candidate: boolean) =>
     automationStudioLlmEvidenceLoopWrapUp({ remaining: left(decisionsLeft), canComplete: true, candidate, tools: candidateTools }).offered.map((tool) => tool.toolId);
 
-  it("starts at five decisions left and keeps the submission and the trial until the last decision", () => {
+  it("starts at five decisions left and keeps submission and trial through the last counted decision", () => {
     expect(AUTOMATION_STUDIO_LLM_EVIDENCE_LOOP_CANDIDATE_WRAP_UP_DECISIONS).toBe(5);
     expect(offeredIds(6, true)).toEqual(["inspect", "core.submit_candidate", "core.test_candidate"]);
-    for (const decisionsLeft of [5, 4, 3, 2]) expect(offeredIds(decisionsLeft, true)).toEqual(["core.submit_candidate", "core.test_candidate"]);
-    expect(offeredIds(1, true)).toEqual([]);
+    for (const decisionsLeft of [5, 4, 3, 2, 1]) expect(offeredIds(decisionsLeft, true)).toEqual(["core.submit_candidate", "core.test_candidate"]);
     const wrapUp = automationStudioLlmEvidenceLoopWrapUp({ remaining: left(3), canComplete: true, candidate: true, tools: candidateTools });
     expect(wrapUp).toMatchObject({ wrappingUp: true });
     expect([wrapUp.withholds("inspect"), wrapUp.withholds("core.submit_candidate"), wrapUp.withholds("core.test_candidate")]).toEqual([true, false, false]);
@@ -328,7 +327,8 @@ describe("a candidate's wrap-up (t383)", () => {
     const instruction = (decisionsLeft: number, candidate: boolean) => String(automationStudioLlmEvidenceBudgetEntry(2, left(decisionsLeft), undefined, candidate).value.instruction);
     expect(instruction(8, true)).toMatch(/submit the whole candidate, test that revision, and complete once its trial answers yes\. From 5 decisions left/u);
     expect(instruction(4, true)).toMatch(/submit the whole candidate now with core\.submit_candidate; test that exact revision with core\.test_candidate/u);
-    expect(instruction(1, true)).toMatch(/only complete is offered: complete with the revision and digest of your latest submission/u);
+    expect(instruction(1, true)).toMatch(/submitting, testing and completing are still offered/u);
+    expect(instruction(1, true)).toMatch(/only after that exact revision's trial answers yes/u);
     expect(instruction(4, false)).toMatch(/^What this exploration has left/u);
     expect(instruction(3, false)).toMatch(/^Only a few decisions are left, so new tools are no longer offered: complete now from the draft you have/u);
     expect(instruction(1, false)).toMatch(/^This is your last decision, so only complete is offered: write the result now/u);

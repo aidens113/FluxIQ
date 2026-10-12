@@ -19,9 +19,20 @@ refuses instead of falling back. Nothing else holds a mode literal of its own.
   tests and judges, then approve and apply the proposed adaptation onto the blank
   Flow and say the automation is ready. `flow.improve` asks before applying its
   extend. The web panel's Explore and Improve show the proposal for review.
-- `candidate` is t330's draft-only behaviour: the same callers request
-  `authoringMode: "candidate"`, a successful build saves an unverified candidate
-  draft, the Flow's steps stay unchanged and nothing is applied or asked about.
+- `candidate` separates discovery from submission of a complete Flow. Submission
+  alone stores an unverified draft. With a trial runner, Core runs the exact
+  submitted revision from its declared start and judges the trial before
+  completion can promote through the ordinary proposal path. Without a trial
+  runner, completion remains draft-only; a stored draft grants no acceptance.
+
+Submission and trial tools remain offered when repeated observations are withdrawn
+and through the final counted budget decision. An accepted submission names the
+exact revision/digest to test next; resubmission requires a new trial. The budget
+count is guidance: the purse and hard limits still decide whether a request runs,
+and the trial gate still refuses an untested revision. Completion without any
+submission explicitly says that no Flow has been submitted and supplies no invented
+revision or digest. The conversation ending distinguishes that failure from a
+refused submission.
 
 The conversation commands read the setting through
 `automationStudioConversationAuthorsCandidates` in `runtime/conversations/commands/build.ts`, for their descriptors, their
