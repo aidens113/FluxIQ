@@ -120,6 +120,16 @@ export type AutomationStudioHostRuntimeBoundary = {
    * already chosen, a page already turned -- so the run goes on past it.
    */
   routeEffectHolds?(effect: JsonObject, observed: JsonObject): boolean;
+  /**
+   * Whether a lasting step's recorded effect appeared on the page observed just
+   * after the step answered success (t476): `seen`, `not_seen`, or `unknown`.
+   * Pure and synchronous. `not_seen` is the host's strong evidence that the
+   * act never took effect -- nothing the recorded act brought is there -- and a
+   * graph run then counts the step as not done, so neither a trial's acts nor a
+   * playback take it as landed (`executor/node-execution/recorded-effect.ts`).
+   * Anything short of that evidence is `unknown`, which judges nothing.
+   */
+  routeEffectSeen?(effect: JsonObject, observed: JsonObject): AutomationStudioRouteEffectSighting;
   captureStateSnapshot?(input: AutomationStudioHostRuntimeActionContext & { point: "before_action" | "after_action" | "after_wait_retry" | "after_patch_test" }): AutomationStudioHostStateSnapshotRef | Promise<AutomationStudioHostStateSnapshotRef>;
   inspectStateDiff?(input: { before?: AutomationStudioHostStateSnapshotRef; after?: AutomationStudioHostStateSnapshotRef; node: AutomationStudioFlowNode; attemptId: string }): JsonObject | Promise<JsonObject>;
   rollbackHint?(input: AutomationStudioHostRuntimeActionContext): JsonObject | Promise<JsonObject>;
@@ -161,6 +171,9 @@ export type AutomationStudioHostActLandedInput = {
   timeoutMs: number;
   signal?: AbortSignal;
 };
+
+/** The host's answer about whether a lasting step's recorded effect appeared after it answered success. */
+export type AutomationStudioRouteEffectSighting = "seen" | "not_seen" | "unknown";
 
 /** The host's answer about an act whose answer was lost: the effect check's three values. */
 export type AutomationStudioHostActLanding = "landed" | "not_landed" | "unknown";
