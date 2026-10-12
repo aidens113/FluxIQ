@@ -6,6 +6,20 @@ in `runtime/flow-bootstrap/plan.ts` and integrated with the existing LLM harness
 the `flow_bootstrap` task. It does not execute a provider request, persist a
 proposal, or mutate a Flow by itself.
 
+## Passive result observation
+
+A domain evidence binding may supply `observeResult` for the fresh end view used
+by both candidate-trial and saved-run verification. Core treats its result as
+opaque evidence: only declared top-level `observedStateKeys` survive projection,
+and existing result-summary privacy screening still applies. The callback gets
+project, Flow and call identifiers, denied-lasting-action permission and the
+existing ten-second cancellation signal. It grants no executable tool binding.
+
+When omitted, the reader retains the domain's free initial-observation fallback.
+When supplied but absent, failed or timed out, its answer is not replaced with
+that ordinary observation. More complete evidence does not itself establish that
+the original instruction was fulfilled; the existing result checks remain.
+
 ## Authoring mode
 
 How the product's own creation and improvement builds are authored is one runtime

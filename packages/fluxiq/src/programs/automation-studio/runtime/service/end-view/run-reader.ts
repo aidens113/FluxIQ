@@ -21,11 +21,15 @@ export function automationStudioRunEndViewReader(
   if (!binding) return undefined;
   const initial = binding.runsNodes?.initial;
   // The domain's own tools first, then the library's look, in the order a build offers them (`../../llm/harness-options/binding.ts`).
-  const tools = [...binding.tools, ...(initial ? [{ toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, initialObservation: { input: initial } }] : [])];
+  const tools = binding.observeResult
+    ? [{ toolId: "result-observation", initialObservation: { input: {} } }]
+    : [...binding.tools, ...(initial ? [{ toolId: AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, initialObservation: { input: initial } }] : [])];
   const look = automationStudioEndViewLook({ tools, viewKeys: binding.observedStateKeys, ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) });
   if (!look) return undefined;
   return async ({ projectId, runId, flowId }) => await look({
     callId: `result-check.end-view.${runId}`,
-    executeTool: (call) => binding.executeTool({ projectId, flowId, ...call, permission: automationStudioActionPermissionDenied })
+    executeTool: (call) => binding.observeResult
+      ? binding.observeResult({ projectId, flowId, callId: call.callId, permission: automationStudioActionPermissionDenied, ...(call.signal ? { signal: call.signal } : {}) }).then((view) => view ?? {})
+      : binding.executeTool({ projectId, flowId, ...call, permission: automationStudioActionPermissionDenied })
   });
 }
