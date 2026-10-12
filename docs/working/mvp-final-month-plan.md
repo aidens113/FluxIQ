@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: t455/t456/t457/t458/t459 integrated; round-six B/C/D failed; t454 recording combined-source supervisor gates remain.
+Status detail: t455/t456/t457/t458/t459/t454 integrated; round-six B/C/D failed; changed-source round-seven preparation at $0.25/64build calls underway downstream.
 Created: 2026-10-06
 Last updated: 2026-10-11
 Owner: Codex senior supervisor
@@ -69,8 +69,12 @@ proof pass. Hidden updated state and stale visible-price evidence reach exact sa
 hidden locators/bindings. Harness runtime stub excludes full background/gateway/model-verdict qualification;
 empty sensitive fields leave withholding proved by owner units. Failed probe drivers/evidence retained.
 t454 private incarnations, fresh no-packet inputs, hydrated public-writer normalization and orphan claim repair
-pass worker107tests/14files (14actual process). Supervisor final combined-source build/types/domain and93owner
-tests pass; process/32state/final audit acceptance remains. Same-host/PID namespace only for death recovery.
+are integrated/pushed at Core4fcb0940/downstream3b40d762. Supervisor final combined-source Core build51.174s,
+cache-free types/domain freshness-types and107tests/14files (14actual process) pass, as do native audits/staged
+whitespace. Original32state FIFO probe reopens exact history from typed32/file0/chunkreads32, drain3.173s.
+Same-host/PID namespace only for death recovery; live/unknown/reused-live owners refuse; identical complete
+uncorrelated removed packets remain ambiguous. Historical bytes, public IDs/sequences and hydrated returns
+preserved. Evidence archived outside owning cleanup; browser/gateway recording-drain qualification remains.
 No original profile reset, paid relaunch or claim that extra money/calls alone fixes semantics. Future ready
 plans may use the existing64call upper bound within the same$0.25whole-test ceiling after relevant repair.
 User raised future testing purse to $0.25 via launch environment, leaving historical $0.10 receipts intact;
