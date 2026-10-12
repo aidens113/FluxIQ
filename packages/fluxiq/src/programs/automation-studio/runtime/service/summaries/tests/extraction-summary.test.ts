@@ -28,6 +28,35 @@ const READ = { recordCount: 8, pagesRead: 1, truncated: false, fieldNames: ["nam
 const WAIT = { stoppedOn: "page_settled", waitedMs: 2089, waitedFor: 1 };
 
 describe("a list read's summary on a saved attempt", () => {
+  it("validates full companion dimensions before slicing the alone prefix and dropping unlabeled rows together", () => {
+    const witness = (item: number) => ({ conditionIndex: 0, state: "present", value: "unit text", source: "read", page: 1, item });
+    const base = { recordCount: 0, pagesRead: 1, truncated: false, fieldNames: ["label"], missingFields: [],
+      conditions: { applied: 3, kept: 0, rejected: [3], alone: [2], unfiltered: false },
+      rejectedSamples: [[{ label: "" }, { label: "Unit alpha" }, { label: "Unit beta" }]], rejectedSamplesAlone: [2] };
+    const admit = (rejectedObservations: unknown) => extractionSummaryFromOutputs({ result: { extraction: { ...base, rejectedObservations } } });
+    expect(admit([[witness(1), witness(2), null]])?.conditions).toMatchObject({
+      aloneRows: [[{ label: "Unit alpha" }]], aloneObservations: [[witness(2)]]
+    });
+    for (const malformed of [[], [[witness(1)]], [[witness(1), { ...witness(2), conditionIndex: 1 }, null]], [[witness(1), { ...witness(2), selector: "unit" }, null]]]) {
+      expect(admit(malformed)).toBeUndefined();
+    }
+    expect(extractionSummaryFromOutputs({ result: { extraction: base } })?.conditions).not.toHaveProperty("aloneObservations");
+  });
+  it("preserves aligned passive condition observations on an actual stored attempt", async () => {
+    const observations = [
+      { conditionIndex: 0, state: "present", value: "14 plus 2", source: "read", readKind: "attribute", page: 1, item: 1 },
+      { conditionIndex: 0, state: "absent", source: "read", readKind: "attribute", page: 1, item: 2 },
+      { conditionIndex: 0, state: "present", value: "", source: "read", readKind: "attribute", page: 1, item: 3 }
+    ];
+    const detail = await runDetailFor({ extraction: {
+      recordCount: 0, pagesRead: 1, truncated: false, fieldNames: ["label"], missingFields: [],
+      conditions: { applied: 3, kept: 0, rejected: [3], alone: [3], unfiltered: false },
+      rejectedSamples: [[{ label: "Unit alpha" }, { label: "Unit beta" }, { label: "Unit gamma" }]],
+      rejectedSamplesAlone: [3], rejectedObservations: [observations]
+    } });
+    const extraction = detail.actionAttempts?.[0]?.metadata?.extraction as JsonObject;
+    expect((extraction.conditions as JsonObject).aloneObservations).toEqual([observations]);
+  });
   it("reaches the run detail, so a read that found rows says how many over how many pages", async () => {
     const detail = await runDetailFor({
       commandId: "command.runtime",

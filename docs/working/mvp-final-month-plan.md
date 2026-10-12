@@ -14,6 +14,17 @@ Related: [authoring](./flow-authoring-and-defensive-runtime-plan.md), [version h
 ## Current State
 
 The active execution order is downstream `docs/working/live-testing-handoff-audit-2026-10-11.md`.
+
+t460 final-slot/replay-settlement repairs are independently accepted and pushed at Core563c37bd/
+downstreamd18a3268 (latest doc head). Separate provider-disabled B/D repair probes passed their original
+goal/dataset, unchanged hashes/all5zero; supervisor independently validated exact immutable fullzero ledgers.
+Replay entry lacks four creation-style running identity receipts; normal owner/current inventories and actual
+replay metadata are available. These changed-source diagnostics do not qualify a new two-creation streak.
+Active t461 adds optional generic rejection observations, preserving legacy/unknown/withheld states, repeated
+pass alignment and privacy before model text. Downstream owns real reads/wire and authored-column order.
+No predicate duplication, DOM dependency, addressing/binding, numeric truth, scenario guidance or forced
+judge pass. Core source/unit/type/build claims are frozen; supervisor combined gates and browser evidence
+validation remain owed. No t461 push or live qualification claimed.
 Core dev at intake is `01621c94`; downstream owns browser qualification, task instructions/oracles,
 Lab supervision and schedules. Generic candidate, executor, feedback and storage behavior stay in Core.
 

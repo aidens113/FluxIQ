@@ -52,7 +52,7 @@ import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_RECORD_SCHEMA_LIMITS } from "@fluxiq/contracts/automation-studio";
 import type { AutomationStudioFlowNode, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
 import { automationStudioEvidenceKey } from "../../llm/index.ts";
-import type { AutomationStudioResultReadAccount } from "../contracts.ts";
+import type { AutomationStudioResultConditionObservation, AutomationStudioResultReadAccount } from "../contracts.ts";
 import { automationStudioResultReadAloneRows } from "./alone-rows.ts";
 import { automationStudioResultReadConditionColumn, automationStudioResultReadConditionText } from "./condition.ts";
 import { automationStudioResultReadDedupe } from "./dedupe.ts";
@@ -186,6 +186,7 @@ function conditionAccounts(
   const alone = Array.isArray(filter?.alone) ? filter.alone : [];
   // The rows each condition removed by itself, by label, positionally like the counts; absent from a read that did not send them (`alone-rows.ts`).
   const aloneRows = Array.isArray(filter?.aloneRows) ? filter.aloneRows : [];
+  const aloneObservations = Array.isArray(filter?.aloneObservations) && filter.aloneObservations.length === aloneRows.length ? filter.aloneObservations : [];
   const written = Array.isArray(authored?.where) ? authored.where : [];
   const columns = isRecord(authored?.fields) ? authored.fields : undefined;
   const total = Math.max(rejected.length, written.length);
@@ -195,14 +196,19 @@ function conditionAccounts(
     const rows = count(rejected[index]);
     const byItself = count(alone[index]);
     const tested = automationStudioResultReadConditionColumn(written[index], columns);
+    const authoredCondition = written[index];
+    const read = isRecord(authoredCondition) && isRecord(authoredCondition.read) ? authoredCondition.read : undefined;
+    const evidenceKey = tested ?? (typeof read?.attribute === "string" ? read.attribute : undefined);
+    let leftOutObservations: Array<AutomationStudioResultConditionObservation | null> | undefined;
     const leftOutOnlyByThis = deniedKeys
-      ? automationStudioResultReadAloneRows(withTestedValue(aloneRows[index], tested), deniedKeys)
+      ? automationStudioResultReadAloneRows(withTestedValue(aloneRows[index], tested), deniedKeys, undefined, { observations: aloneObservations[index], conditionIndex: index, evidenceKey, onScreened: observations => { leftOutObservations = observations; } })
       : undefined;
     accounts.push({
       ...(condition ? { condition } : {}),
       ...(rows !== undefined ? { rejected: rows } : {}),
       ...(byItself !== undefined && (rows === undefined || byItself <= rows) ? { alone: byItself } : {}),
       ...(leftOutOnlyByThis ? { leftOutOnlyByThis } : {}),
+      ...(leftOutObservations ? { leftOutObservations } : {}),
       ...(leftOutOnlyByThis?.length && labelledBy(aloneRows[index], tested) ? { testedLabel: true as const } : {})
     });
   }

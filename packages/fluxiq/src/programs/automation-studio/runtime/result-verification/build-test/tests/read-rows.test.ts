@@ -52,6 +52,34 @@ function answer(readRows: JsonObject): JsonObject {
 }
 
 describe("a replayed list read's rows, as the build-test judge is shown them", () => {
+  it("screens trial witnesses before flattening and preserves unknown legacy companion alignment", () => {
+    const observation = { conditionIndex: 2, state: "present", value: "token sk-live-4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c", source: "read", readKind: "attribute", page: 2, item: 7 };
+    const summary = judged(answer({ leftOutOnlyByThis: [{ condition: "unit_flag", conditionIndex: 2,
+      rows: [{ label: "Unit alpha" }, { label: "Unit beta" }], observations: [observation, null] }] }));
+    expect(summary.withheld).toBe(true);
+    expect(JSON.stringify(summary)).not.toContain("sk-live");
+    expect(observedOf(summary)).toMatchObject({ readRows: { leftOutOnlyByThis: [{
+      rows: ["Unit alpha", "Unit beta"], observations: [{ conditionIndex: 2, state: "withheld", source: "read", readKind: "attribute", page: 2, item: 7 }, null]
+    }] } });
+    const legacy = observedOf(judged(answer({ leftOutOnlyByThis: [{ condition: "unit_flag", rows: [{ label: "Unit alpha" }], observations: [null] }] })));
+    expect(legacy).toMatchObject({ readRows: { leftOutOnlyByThis: [{ rows: ["Unit alpha"], observations: [null] }] } });
+    expect(JSON.stringify(legacy)).not.toContain("conditionIndex");
+  });
+  it("preserves the neutral trial witness companion beside its rejection labels", () => {
+    const observations = [
+      { conditionIndex: 0, state: "present", value: "14 plus 2", source: "read", readKind: "attribute", page: 1, item: 1 },
+      { conditionIndex: 0, state: "absent", source: "read", readKind: "attribute", page: 1, item: 2 }
+    ];
+    const summary = judged(answer({ leftOutOnlyByThis: [{ condition: "unit_flag", conditionIndex: 0, rows: [{ label: "Unit alpha" }, { label: "Unit beta" }], observations }] }));
+    expect(observedOf(summary)).toMatchObject({ readRows: { leftOutOnlyByThis: [{ condition: "unit_flag", conditionIndex: 0, rows: ["Unit alpha", "Unit beta"], observations }] } });
+  });
+  it("retains original condition ordinals for sparse trial groups and refuses a mismatched companion", () => {
+    const observation = { conditionIndex: 4, state: "present", value: "14 plus 2", source: "read", readKind: "attribute", page: 2, item: 3 };
+    const summary = judged(answer({ leftOutOnlyByThis: [{ condition: "unit_flag", conditionIndex: 4, rows: [{ label: "Unit alpha" }], observations: [observation] }] }));
+    expect(observedOf(summary)).toMatchObject({ readRows: { leftOutOnlyByThis: [{ conditionIndex: 4, observations: [observation] }] } });
+    const wrong = judged(answer({ leftOutOnlyByThis: [{ condition: "unit_flag", conditionIndex: 1, rows: [{ label: "Unit alpha" }], observations: [observation] }] }));
+    expect(JSON.stringify(observedOf(wrong))).not.toContain('"observations"');
+  });
   it("names the rows it returned and, per condition, the rows that condition alone left out, each by its label", () => {
     const summary = judged(answer({
       rows: [{ name: "Trevio T5 Wireless Earbuds, Ivory" }, { name: "Soundcrest Air Lite" }],

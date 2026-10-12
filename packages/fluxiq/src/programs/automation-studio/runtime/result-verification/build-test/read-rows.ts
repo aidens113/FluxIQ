@@ -60,8 +60,14 @@ function readRows(sent: JsonObject, deniedKeys: readonly string[]): { value: Jso
   const rows = labels(sent.rows);
   const conditions = Array.isArray(sent.leftOutOnlyByThis) ? sent.leftOutOnlyByThis.flatMap((entry): JsonObject[] => {
     if (!isObject(entry) || typeof entry.condition !== "string" || !entry.condition.trim() || entry.condition.length > CONDITION_NAME_MAX) return [];
-    const said = labels(entry.rows);
-    return said ? [{ condition: entry.condition, rows: said, ...notShown(entry.rowsNotShown) }] : [];
+    const conditionIndex = typeof entry.conditionIndex === "number" && Number.isSafeInteger(entry.conditionIndex) && entry.conditionIndex >= 0 ? entry.conditionIndex : undefined;
+    const unknown = entry.conditionIndex === undefined && Array.isArray(entry.observations) && entry.observations.every(value => value === null);
+    let observations: JsonValue[] | undefined;
+    const said = automationStudioResultReadAloneRows(entry.rows, deniedKeys, () => { withheld = true; }, {
+      observations: conditionIndex !== undefined || unknown ? entry.observations : undefined,
+      conditionIndex: conditionIndex ?? 0, evidenceKey: entry.condition, onScreened: values => { observations = values; }
+    });
+    return said ? [{ condition: entry.condition, rows: said, ...(conditionIndex !== undefined ? { conditionIndex } : {}), ...(observations ? { observations } : {}), ...notShown(entry.rowsNotShown) }] : [];
   }) : [];
   if (!rows && !conditions.length) return undefined;
   return {
