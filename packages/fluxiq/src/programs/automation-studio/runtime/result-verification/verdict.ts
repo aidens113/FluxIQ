@@ -222,7 +222,7 @@ export function automationStudioResultObservation(summary: AutomationStudioRunRe
   const refused = summary.totalRefusedCount > 0 ? `, ${summary.totalRefusedCount} refused by record validation` : "";
   const sets = tested
     ? `, in ${tested.length} dataset${tested.length === 1 ? "" : "s"}`
-    : `, across ${summary.recordSetCount} record set${summary.recordSetCount === 1 ? "" : "s"}`;
+    : `, across ${summary.recordSetCount} record set${summary.recordSetCount === 1 ? "" : "s"}${eachSet(summary)}`;
   // Every step, named: the observation reaches the repair, which is shown the
   // whole Flow.
   const listed = summary.flowShape.map((step) => step.definitionId);
@@ -233,6 +233,19 @@ export function automationStudioResultObservation(summary: AutomationStudioRunRe
   // repair acts on, where a definition id only says the step exists.
   const reads = (summary.reads ?? []).map((read) => `; ${automationStudioResultReadSentence(read, "brief")}`).join("");
   return `${stored}${refused}${sets}${reads}${shape}${cut}.`;
+}
+
+/**
+ * Each record set's rows, when the run stored more than one and every one is
+ * summarized: " (4, 4 rows)". The check's card says the answer's rows from it
+ * (`check-words.ts`), never their sum: live run `run-mv5jnc5m-a47c3e59` (lane D
+ * round 8) stored the 4 qualifying requests twice, once from the listing that
+ * chose them and once from the read of the accepted ones, and the card said
+ * "8 rows came back" of a 4-row answer.
+ */
+function eachSet(summary: AutomationStudioRunResultSummary): string {
+  if (summary.recordSetCount < 2 || summary.recordSets.length !== summary.recordSetCount) return "";
+  return ` (${summary.recordSets.map((set) => set.recordCount).join(", ")} rows)`;
 }
 
 /** "30 records would be stored": every row of every dataset a build's Flow would write, which the card says as rows that would be stored. */

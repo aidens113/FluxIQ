@@ -218,6 +218,12 @@ export class AutomationStudioFlowCandidateTrialGate {
     return step;
   }
 
+  /** The judge's feedback when a trial of a Flow with this digest was judged no, which closes that Flow (header); undefined otherwise. */
+  refuted(digest: string): JsonObject | undefined {
+    const closed = this.closedDigests.get(digest);
+    return closed ? structuredClone(closed) : undefined;
+  }
+
   /** The verdict standing for this candidate, when it was tried; undefined for an untested candidate. */
   standing(candidate: Pick<AutomationStudioFlowCandidate, "revision" | "digest"> | undefined): AutomationStudioCandidateTrialResult | undefined {
     const answer = candidate ? this.verdicts.get(key(candidate)) : undefined;

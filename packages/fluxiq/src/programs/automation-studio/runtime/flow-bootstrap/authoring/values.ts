@@ -6,9 +6,16 @@
 // spells, and a bare name where an object belongs is the handle the evidence
 // issued. A value this module cannot read is returned as `undefined`, and the
 // caller refuses the parameter naming the shape it accepts -- it never guesses.
+//
+// A value written inside one pair of quote marks is the text inside them
+// (`./quoted-value.ts`, t464): `value: "2"` sends 2, never the three characters
+// with their quotes, and `count: "2"` reads as the number 2. A state binding,
+// a list and an object are read as before; their items and fields go through
+// `authoringNestedValue`, which reads a quoted item as its text the same way.
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { isAutomationNodeParameterStateBinding, type AutomationNodeParameter } from "../../../nodes/index.ts";
 import { authoringKey } from "./keys.ts";
+import { authoringQuotedValue } from "./quoted-value.ts";
 
 /**
  * The key a handle reference is written under.
@@ -42,14 +49,14 @@ export function authoringParameterValue(text: string, parameter: AutomationNodeP
   if (parameter.options) return optionValue(text, parameter);
   // A record output is filled in from the contract, not read as an object
   // here: a bare name written for one is the dataset's name, never a handle.
-  if (parameter.ui?.control === "record-output") return jsonValue(text) ?? text;
+  if (parameter.ui?.control === "record-output") return jsonValue(text) ?? authoringQuotedValue(text) ?? text;
   switch (parameter.valueType) {
     case "boolean": return booleanValue(text);
-    case "number": return numberValue(text);
+    case "number": return numberValue(authoringQuotedValue(text) ?? text);
     case "array": return listValue(text);
     case "object":
     case "json": return objectValue(text);
-    default: return text;
+    default: return authoringQuotedValue(text) ?? text;
   }
 }
 
@@ -63,10 +70,15 @@ export function authoringParameterValue(text: string, parameter: AutomationNodeP
  * 0` into `false` and `extractList.maxItems: 1` into `true`: a count silently
  * replaced by a boolean, which the request reader then refused as malformed.
  * Under a dotted key, anything that is a number is a number.
+ *
+ * A value written inside quote marks is the text inside them, and is text:
+ * quoting is how a reader says "this is a string" (`./quoted-value.ts`).
  */
 export function authoringNestedValue(text: string): JsonValue {
   const parsed = jsonValue(text);
   if (parsed !== undefined) return parsed;
+  const quoted = authoringQuotedValue(text);
+  if (quoted !== undefined) return quoted;
   const numeric = numberValue(text);
   if (numeric !== undefined) return numeric;
   if (TRUE_WORDS.has(authoringKey(text))) return true;

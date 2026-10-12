@@ -24,7 +24,8 @@ describe("candidate facade uses the actual service", () => {
       const evidence = request.context.evidenceLoop?.evidence ?? [];
       const latest = [...evidence].reverse().find((entry) => entry.toolId === "core.submit_candidate")?.value as { revision?: number; digest?: string } | undefined;
       const decision = calls === 1 ? { kind: "tool_call", callId: "wrong-turn", toolId: "inspect", input: { area: "wrong" } }
-        : calls < 4 ? { kind: "tool_call", callId: `submit-${calls}`, toolId: "core.submit_candidate", input: { summary: `complete revision ${calls - 1}`, plan: plan() } }
+        // Revision 2 changes the router's name: the same Flow sent again is no new revision (t464).
+        : calls < 4 ? { kind: "tool_call", callId: `submit-${calls}`, toolId: "core.submit_candidate", input: { summary: `complete revision ${calls - 1}`, plan: calls === 2 ? plan() : { ...plan(), router: { ...plan().router, name: "Instruction router, revised" } } } }
         : calls === 4 ? { kind: "tool_call", callId: "test-2", toolId: "core.test_candidate", input: { revision: latest?.revision, digest: latest?.digest } }
         : { kind: "complete", result: { revision: latest?.revision, digest: latest?.digest } };
       if (calls === 5) { stale = ending === "stale"; if (ending === "cancel") service.buildCancellation.cancel(projectId, flowId); }

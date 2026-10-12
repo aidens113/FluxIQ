@@ -27,8 +27,19 @@
 // found on an item it held of (the summary's `conditions.seen`) is said beside
 // the subject -- `attribute aria-label (read "Brightaisle Plus" on a row it kept)
 // is present` -- whole, and withheld entirely when it would trip either screen
-// or is a key the domain denies. A condition over a column says no value: the
-// column's own values are the rows.
+// or is a key the domain denies.
+//
+// **And when it names a column the answer does not store.** A condition over a
+// stored column says no value: the column's own values are the rows. A column
+// read only to filter by reaches no row -- the stored schema leaves it out, and
+// the domain takes it out of the read the page runs -- so its values reach the
+// judge nowhere else. Run `run-mv5jnc51-9eac63f2` filtered on `plus is present`
+// over such a column; its judges saw that, eight `attribute absent` witnesses
+// and no value read on a kept row, and three times refuted an exact answer as a
+// broken read. So a column the caller says is not stored is said with its value
+// exactly as a read of its own is: `plus (read "…" on a row it kept) is present`.
+// Where the caller does not say which columns are stored, every column is taken
+// as stored and nothing changes.
 //
 // **What is said about it.** Every other key of the condition is a relation the
 // model wrote, spelled as it wrote it (the domain's reader accepts several
@@ -67,12 +78,14 @@ export function automationStudioResultReadConditionText(
   condition: JsonValue | undefined,
   columns: JsonObject | undefined,
   deniedKeys: readonly string[],
-  seen?: JsonValue | undefined
+  seen?: JsonValue | undefined,
+  stored?: ReadonlySet<string> | undefined
 ): string | undefined {
   if (!isRecord(condition)) return undefined;
   const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
   const named = subjectOf(condition, columns, denied);
-  const found = named.ownRead ? foundText(seen, denied) : undefined;
+  const unstored = named.column !== undefined && stored !== undefined && !stored.has(named.column);
+  const found = named.ownRead || unstored ? foundText(seen, denied) : undefined;
   const subject = found ? `${named.text} (read ${found} on a row it kept)` : named.text;
   const relations = Object.entries(condition)
     .filter(([key, value]) => !NAMING_KEYS.has(key) && key !== "not" && value !== null && value !== undefined && WORD.test(key))
@@ -101,16 +114,16 @@ export function automationStudioResultReadConditionColumn(condition: JsonValue |
 
 /**
  * What the condition tests: a column key, or its own read described without the
- * part that addresses the page -- and whether it is the latter, which is the
- * only subject a value the read found is said beside.
+ * part that addresses the page -- and whether it is the latter, or which column
+ * it is, which decide whether a value the read found is said beside it.
  */
-function subjectOf(condition: JsonObject, columns: JsonObject | undefined, denied: ReadonlySet<string>): { text: string; ownRead: boolean } {
+function subjectOf(condition: JsonObject, columns: JsonObject | undefined, denied: ReadonlySet<string>): { text: string; ownRead: boolean; column?: string } {
   const named = condition.field;
-  if (typeof named === "string" && plainName(named, denied)) return { text: named, ownRead: false };
+  if (typeof named === "string" && plainName(named, denied)) return { text: named, ownRead: false, column: named };
   const read = condition.read;
   if (!isRecord(read)) return { text: "a value", ownRead: false };
   const column = columns ? Object.entries(columns).find(([key, declared]) => plainName(key, denied) && sameRead(declared, read))?.[0] : undefined;
-  if (column) return { text: column, ownRead: false };
+  if (column) return { text: column, ownRead: false, column };
   const kind = typeof read.kind === "string" && WORD.test(read.kind) ? read.kind : "value";
   const attribute = read.attribute;
   const text = kind === "attribute" && typeof attribute === "string" && plainName(attribute, denied) ? `attribute ${attribute}` : `the item's ${kind}`;

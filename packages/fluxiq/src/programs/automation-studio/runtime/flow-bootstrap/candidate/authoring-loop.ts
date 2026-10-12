@@ -95,7 +95,10 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
         if (startCheck && opening) await startCheck.capture(call.signal ?? signal);
         return ran;
       }
-      const submitted = await controller.submit(call.value);
+      // What the gate knows of the current revision's trial, so a Flow sent again
+      // unchanged, or one the judge refuted, is refused with what failed last
+      // rather than made a new revision told to "test next" (t464, `./unchanged-submission.ts`).
+      const submitted = await controller.submit(call.value, { trialOf: (candidate) => gate.standing(candidate), refuted: (digest) => gate.refuted(digest) });
       // A refused submission names its way out and counts in the loop's run of refusals of one kind (`./submission-refusal.ts`).
       if (!submitted.ok) return { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, ...automationStudioCandidateSubmissionRefusal(submitted) };
       input.accepted?.(structuredClone(submitted.candidate));

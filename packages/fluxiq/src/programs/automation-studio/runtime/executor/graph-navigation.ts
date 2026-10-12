@@ -2,7 +2,7 @@ import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge } from "../../model/index.ts";
 import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID } from "../../nodes/control-flow/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
-import { chooseAutomationStudioEdge } from "./graph-navigation/index.ts";
+import { automationStudioZeroPassLoopBodies, chooseAutomationStudioEdge } from "./graph-navigation/index.ts";
 // The owning module avoids loading the step-skip barrel's authored-act analysis
 // back through the compiler and graph navigation.
 import { automationStudioOptionalStepWayOn } from "./step-skip/optional-step.ts";
@@ -42,6 +42,10 @@ export function automationStudioNodeEndsRun(definitionId: string): boolean {
  * into them. A handler's body run, the one whose last attempt is its Handler
  * End, has left nothing behind: the rest of the graph is not its to visit.
  *
+ * A loop that ran no passes (`./graph-navigation/zero-pass-loop.ts`, t466):
+ * the nodes only its body leads to count as visited. A list its conditions kept
+ * no rows of is a valid outcome, and the steps after the loop were still owed.
+ *
  * A frame that began at an alternative entry (C2) never walks the steps before
  * it, so there only the nodes reachable from where it started count; a run of
  * a Flow without an End read as failed for that (recovery matrix row 2, t404).
@@ -49,7 +53,7 @@ export function automationStudioNodeEndsRun(definitionId: string): boolean {
  */
 export function hasUnvisitedAutomationStudioNodes(flow: AutomationStudioFlowDocument, attempts: AutomationStudioNodeAttemptTrace[]): boolean {
   if (attempts[attempts.length - 1]?.definitionId === AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID) return false;
-  const visited = new Set([...attempts.map((attempt) => attempt.nodeId), ...handlerOnlyNodes(flow)]);
+  const visited = new Set([...attempts.map((attempt) => attempt.nodeId), ...handlerOnlyNodes(flow), ...automationStudioZeroPassLoopBodies(flow, attempts)]);
   for (const [index, attempt] of attempts.entries()) {
     // Only the optional shape's guarded success chain is exempt, and only
     // when this run actually took its way past into the join. In a repeat
