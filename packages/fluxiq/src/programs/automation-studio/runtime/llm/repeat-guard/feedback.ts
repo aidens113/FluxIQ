@@ -6,6 +6,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioLlmEvidenceCandidateRepeatInstruction } from "./candidate-feedback.ts";
 import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "./outcomes.ts";
+import { automationStudioLlmEvidenceRepeatPermissionRefused } from "./permission-refused.ts";
 
 /** The entry a refused repeat is shown under; a newer one replaces the older. */
 export const AUTOMATION_STUDIO_LLM_EVIDENCE_REPEAT_CHECK_TOOL_ID = "core.repeat_check";
@@ -27,6 +28,12 @@ const INSTRUCTION = "You already made this exact call -- the same tool with the 
   + "Do something different instead: amend the draft (rerun a step with a corrected argument, mark it optional, or drop it), "
   + "look at or search the page for what you need, use a different control or a different input, or ask the person. "
   + "A call that runs after the page has changed is not a repeat. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
+
+/** Said instead for a call the permission gate refused (`./permission-refused.ts`, t471): no other input or page gets past it. */
+const PERMISSION_INSTRUCTION = "You already made this exact call, and it was refused because it needs a person's permission that it does not have (then.resultCode, then.resultReason): "
+  + "it would do something gated -- delete, move money, send or publish -- that nobody granted, or that the person declined. "
+  + "Sending it again cannot get past that, on this page or any other, so it was not run. Do not make this call again. "
+  + "Go on without it: take a way that needs no such permission, or amend the draft so no step needs it. Repeats refused in a row end this round, and the Flow so far is then tested and judged.";
 
 /** Said instead for a look that already answered the same on this page (`same_answer`). */
 const LOOK_INSTRUCTION = "You already made this exact look -- the same tool with the same input -- on this exact page, and it answered the same twice: its answer is above, under sameAsCall. "
@@ -87,7 +94,8 @@ function instructionFor(earlier: AutomationStudioLlmEvidenceRepeatedOutcome, rer
   if (earlier.outcome === "same_answer") return LOOK_INSTRUCTION;
   if (earlier.outcome === "same_draft") return DRAFT_INSTRUCTION;
   if (earlier.outcome === "same_amendment") return earlier.rerunFailed ? failedAmendmentInstruction(rerunStep) : AMENDMENT_INSTRUCTION;
-  return earlier.handleUnshown ? HANDLE_UNSHOWN_INSTRUCTION : INSTRUCTION;
+  if (earlier.handleUnshown) return HANDLE_UNSHOWN_INSTRUCTION;
+  return automationStudioLlmEvidenceRepeatPermissionRefused(earlier) ? PERMISSION_INSTRUCTION : INSTRUCTION;
 }
 
 /** The note shown for one refused repeat. */

@@ -33,6 +33,21 @@ describe("automationStudioLlmBuildTrace", () => {
     expect(lines.join("\n")).not.toContain("secret");
   });
 
+  it("says a build failure's code from its diagnostic, which is where a build's own failure keeps it (t471)", async () => {
+    const lines: string[] = [];
+    // Shaped as `AutomationStudioFlowBootstrapGenerationError` is: a name, and its code only on the diagnostic.
+    const failure = Object.assign(new Error("secret page words"), { name: "AutomationStudioFlowBootstrapGenerationError", diagnostic: { code: "flow_bootstrap.evidence_repeat_without_progress" } });
+    await expect(automationStudioLlmBuildTrace.timed("build", async () => { throw failure; }, undefined, ON, (line) => lines.push(line))).rejects.toBe(failure);
+    expect(lines[1]!.replace(LINE, "")).toMatch(/^build throw ms=\d+ name=AutomationStudioFlowBootstrapGenerationError code=flow_bootstrap\.evidence_repeat_without_progress$/u);
+  });
+
+  it("says a dash for a throw that is not an object, or carries no code anywhere", async () => {
+    const lines: string[] = [];
+    await expect(automationStudioLlmBuildTrace.timed("build", async () => { throw "words"; }, undefined, ON, (line) => lines.push(line))).rejects.toBe("words");
+    await expect(automationStudioLlmBuildTrace.timed("build", async () => { throw Object.assign(new Error("x"), { diagnostic: "words" }); }, undefined, ON, (line) => lines.push(line))).rejects.toThrow("x");
+    expect(lines.filter((line) => line.includes("throw")).map((line) => line.replace(LINE, "").replace(/ms=\d+/u, "ms=n"))).toEqual(["build throw ms=n name=- code=-", "build throw ms=n name=Error code=-"]);
+  });
+
   it("keeps an outcome to code-shaped words", async () => {
     const lines: string[] = [];
     await automationStudioLlmBuildTrace.timed("judge", async () => 1, () => "verdict=no why=The page said Cart (3)", ON, (line) => lines.push(line));

@@ -41,6 +41,33 @@ describe("one candidate trial", () => {
     expect(fixture.sessions.at(-1)).toMatchObject({ runId: "trial.1", trace: { status: "succeeded" }, metadata: { candidateTrial: { candidateId: "candidate.1", revision: 1, start: "not_reset", execution: "succeeded" } } });
   });
 
+  // Lane D round 9 (`run-mv5q4j2n-25784472`, t471): the judge was never told the site already held the build's acts.
+  it("tells the judge what of the build the site already held when the trial began, and nothing when it held nothing", async () => {
+    const fixture = trialFixture();
+    pressing(fixture);
+    fixture.ports.deniedEvidenceKeys = [];
+    const startedWith = ["already done by this build (act-1): press button"];
+    await runAutomationStudioCandidateTrial({ ...fixture.request(), startedWith }, fixture.ports);
+    await runAutomationStudioCandidateTrial(fixture.request(), fixture.ports);
+    expect(fixture.judged.map((input) => input.summary.startedWith)).toEqual([startedWith, undefined]);
+  });
+
+  it("carries what the trial started with into the real judge's request, past the harness's checks", async () => {
+    const fixture = trialFixture();
+    pressing(fixture);
+    const requests: AutomationStudioLlmTaskRequest[] = [];
+    const provider = mockProvider(async (request) => {
+      requests.push(request);
+      return judgeReply("yes");
+    });
+    fixture.ports.judge = automationStudioBuildTestJudge({ provider, instructions: [], deniedEvidenceKeys: [], projectId: "project", flowId: "parent" });
+    const startedWith = ["already done by this build (act-1): press button"];
+    const { result } = await runAutomationStudioCandidateTrial({ ...fixture.request(), startedWith }, fixture.ports);
+    expect(result.verdict).toBe("yes");
+    expect(requests.length).toBeGreaterThan(0);
+    expect(requests.every((request) => JSON.stringify(request.context.resultSummary?.startedWith) === JSON.stringify(startedWith))).toBe(true);
+  });
+
   it("keeps the pace a refusal that asked the run to wait taught it, by the plan's keys, and tells the model what the press got past", async () => {
     const fixture = trialFixture();
     let presses = 0;

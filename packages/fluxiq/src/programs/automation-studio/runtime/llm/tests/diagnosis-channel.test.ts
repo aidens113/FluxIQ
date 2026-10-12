@@ -170,6 +170,16 @@ describe("the judge is told what the rows a condition left out by itself are", (
   });
 });
 
+// t471, lane D round 9 (`run-mv5q4j2n-25784472`): a trial ran on a site that
+// still held acts the build could not undo, and the judge was told nothing.
+describe("the judge is told what the build had already done when the run began", () => {
+  it("reads resultSummary.startedWith as already done, neither the run's doing nor its failure", () => {
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("resultSummary.startedWith, where present, lists what the build itself had already done on the site");
+    expect(AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION).toContain("neither this run's doing nor its failure");
+    for (const buildTest of [false, true]) expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest })).toContain("resultSummary.startedWith");
+  });
+});
+
 // t378, lane D (`run-mv0fuual-f9e6f089`): a Flow confirmed all eight friend
 // requests where four were asked, and both judges advised a condition on the
 // for-each and the press, which sent the model to a filter node a script cannot

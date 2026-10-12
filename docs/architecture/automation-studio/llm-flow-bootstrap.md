@@ -68,28 +68,59 @@ build made and nothing that was there before it began
   for.
 - **Undo through the normal tool.** In candidate mode with a trial runner,
   `core.run_node` takes an optional `undoes: "act-N"`. The wrapper strips it
-  before the domain sees the call. The ledger accepts it only for an act of the
-  current phase. An accepted undo of an act that created something may
-  `delete` without asking (`AutomationStudioActionPermissionAction.undoes`).
-  Any other undo is gated as any call is, so an act on something that
-  pre-existed still asks. The record carries `undoes`, and the cross-check
-  against the instruction leaves undo records out, so a reset never raises a
-  question or finding. A landed undo marks its act undone. An undo is not a
-  repeat of a lasting act.
+  before the domain sees the call. The ledger accepts it only for an act still
+  to undo. An accepted undo of an act that created something may `delete`
+  without asking (`AutomationStudioActionPermissionAction.undoes`), once per
+  act: the allowance is spent only by a landed undo of that act that declared
+  `delete`, never by a navigation or a look under the claim (t471, lane B round
+  9). Naming an act whose allowance is spent is refused unrun as
+  `candidate.undo_already_done`, naming the call that spent it. Any other undo
+  is gated as any call is, so an act on something that pre-existed still asks.
+  The record carries `undoes`, and the cross-check against the instruction
+  leaves undo records out, so a reset never raises a question or finding. An
+  undo is not a repeat of a lasting act.
+- **An undo counts only when the act's effect is gone** (t471, lane D round 9).
+  A call naming an act never marks it undone. The candidate loop reads the
+  target in place just before and just after each exploration call that
+  declares a lasting class (`site-reset/act-places.ts`), and keeps with the act
+  its page's state before it, that page's `location`, and what it changed
+  there, worded and as lines. Before a trial the reset takes the target back to
+  each act's page through the arrival's node with that location
+  (`AutomationStudioSiteResetStartCheck.compareAt`) and the act is undone once
+  nothing it changed there is still there. A line the act removed is excused
+  when another act of the build added it: two acts that each change one total
+  share that line. An act with no such place (a trial's act, or one whose page
+  could not be read) counts as undone once an undo of it landed and changed the
+  page it ran on without leaving it; where the target cannot be read at all, a
+  landed undo counts as before.
+- **Acts the site cannot undo.** An act the reset made no progress on, or asked
+  for twice, or one the model names under `core.test_candidate`'s `cannotUndo`
+  once the reset has listed it, is kept: never asked for again, refused if
+  named (`candidate.undo_act_kept`), and every later trial runs with it in
+  place under `startedWith.cannotUndo`, with words telling the model to make
+  the Flow pass over an item already done. The trial request carries
+  `startedWith` lines (`candidate/started-with.ts`), and the judge reads them as
+  `resultSummary.startedWith`: already done, neither the run's doing nor its
+  failure.
 - **The start state.** As the build begins, right after the loop's opening
   arrival, Core asks the domain's optional `startState` binding for the state
   to keep. Before a trial that is due, the gate takes the target back to the
   build's start with the run-node tool's own arrival, asks `startState` again
-  with that state, and reads its `differs`.
+  with that state, and reads its `differs`. `startState` also answers the
+  `location` it read and the same differences as `lines` (gone, added), which
+  Core compares only for equality.
 - **The gate** (`candidate/trial-gate.ts`, `site-reset/trial-policy.ts`). A
   trial is due when an act was recorded since the build began or since the
-  last trial, or one is still in place. An empty `differs` means the site is
-  back: every act is marked undone and the trial runs. Otherwise the test is
-  refused, and the refusal is not a trial:
-  - `candidate.trial_reset_required`, listing `actsToUndo` and `differs`,
-    while acts are in place;
-  - `candidate.trial_start_differs`, once per phase, when every act is undone
-    but the start still differs.
+  last trial, or one is still to undo. A clean start page never vouches for an
+  act: lane D's start page showed nothing of the requests its trial had
+  confirmed. With nothing left to undo and the start back, or different while
+  acts are kept, the trial runs. Otherwise the test is refused, and the
+  refusal is not a trial:
+  - `candidate.trial_reset_required`, listing `actsToUndo` (each with
+    `stillThere` where its page was looked at), `differs` and any kept acts,
+    while acts are still to undo;
+  - `candidate.trial_start_differs`, once per phase, when nothing is left to
+    undo, none is kept, but the start still differs.
 
   The refusal answers `retry_allowed` and reports whether the arrival moved
   the page, so the identical retest reaches the gate. That matters in the

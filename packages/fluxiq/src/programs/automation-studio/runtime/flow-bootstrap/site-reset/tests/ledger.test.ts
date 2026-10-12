@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioActionConsequence } from "../../../action-permissions/index.ts";
-import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored } from "../index.ts";
+import { AutomationStudioSiteResetLedger, type AutomationStudioSiteResetComparison, type AutomationStudioSiteResetExplored, type AutomationStudioSiteResetPlace } from "../index.ts";
 
 // The ledger as the permission wrapper and the trial gate drive it: what
-// becomes an act, which claims it accepts, and how a trial restarts a phase.
+// becomes an act, which claims it accepts, how an act is found undone or
+// kept, and how a trial restarts a phase.
 
 function acted(callId: string, consequences: AutomationStudioActionConsequence[], extra: Partial<AutomationStudioSiteResetExplored> = {}): AutomationStudioSiteResetExplored {
   return { callId, toolId: "core.run_node", landed: true, declared: { permitted: true, effect: "mutate", consequences, control: { name: "Save", kind: "button" }, verb: "press" }, ...extra };
@@ -16,6 +17,8 @@ describe("site reset ledger", () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("call.1", ["create_new"]));
     expect(ledger.inPlace()).toEqual([{ act: "act-1", did: "press \"Save\" button", call: "call.1" }]);
+    expect(ledger.actOf("call.1")).toBe("act-1");
+    expect(ledger.actOf("call.2")).toBeUndefined();
   });
 
   it("ignores calls that did not land, were not permitted, only looked, or declared nothing lasting", () => {
@@ -60,24 +63,173 @@ describe("site reset ledger", () => {
     expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
   });
 
-  it("marks an act undone by a landed undo, which never becomes an act of its own, and accepts it again only until the next trial", async () => {
+  it("never counts an act undone because an undo of it landed: it is undone once its own page no longer shows what it changed (t471)", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("call.1", ["create_new"]));
-    ledger.explored(acted("call.undo.failed", ["delete"], { undoes: "act-1", landed: false }));
-    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+    ledger.placed("act-1", { state: { page: "item" }, location: "https://site.test/item", changed: ["new: 2 in basket"] });
     ledger.explored(acted("call.undo", ["delete"], { undoes: "act-1" }));
+    expect(ledger.inPlace().map((act) => act.act)).toEqual(["act-1"]);
+    // Its page still shows the change: refused, naming what is still there.
+    const looked: AutomationStudioSiteResetPlace[] = [];
+    const compareAt = async (place: AutomationStudioSiteResetPlace): Promise<AutomationStudioSiteResetComparison> => {
+      looked.push(place);
+      return { moved: true, differs: ["new: 2 in basket"] };
+    };
+    const still = await ledger.beforeTrial({ compare: back, compareAt });
+    expect(still).toMatchObject({ kind: "refuse", moved: true, evidence: { code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1", stillThere: ["new: 2 in basket"] }] } });
+    expect(looked).toEqual([{ state: { page: "item" }, location: "https://site.test/item", changed: ["new: 2 in basket"] }]);
+    // Gone from its page: undone, and the trial runs.
+    expect(await ledger.beforeTrial({ compare: back, compareAt: async () => ({ moved: true, differs: [] }) })).toEqual({ kind: "admit" });
     expect(ledger.inPlace()).toEqual([]);
-    // A second try is accepted, but removes nothing more without asking.
-    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: [] } });
-    await ledger.beforeTrial(unknown);
+  });
+
+  it("keeps no place for an act that changed nothing on its page", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.1", ["create_new"]));
+    ledger.placed("act-1", { state: { page: "item" }, location: "https://site.test/item", changed: [] });
+    ledger.placed("act-9", { state: { page: "item" }, location: "https://site.test/item", changed: ["x"] });
+    expect(ledger.inPlace()).toEqual([{ act: "act-1", did: "press \"Save\" button", call: "call.1" }]);
+  });
+
+  it("spends an act's one unasked removal only on a landed undo that declared delete, then refuses naming it again (t471)", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.1", ["create_new"]));
+    // Going to the page the line is on, under the act, spends nothing.
+    ledger.explored(acted("call.go", [], { undoes: "act-1" }));
+    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: ["delete"] } });
+    ledger.explored(acted("call.undo", ["delete"], { undoes: "act-1" }));
+    const claim = ledger.claim("act-1");
+    expect(claim).toMatchObject({ kind: "refused", evidence: { ok: false, code: "candidate.undo_already_done", act: "act-1", undoneBy: "call.undo", actsToUndo: [] } });
+    if (claim.kind === "refused") expect(String(claim.evidence.instruction)).toContain("checked on its own page before the next trial");
+  });
+
+  it("leaves an act's removal unspent when the undo only looked, was refused, or put nothing to the gate", () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.1", ["create_new"]));
+    ledger.explored({ ...acted("call.look", ["delete"], { undoes: "act-1" }), declared: { permitted: true, effect: "observe", consequences: [], control: { name: null, kind: null }, verb: "read" } });
+    ledger.explored({ ...acted("call.refused", ["delete"], { undoes: "act-1" }), declared: { permitted: false, effect: "mutate", consequences: ["delete"], control: { name: "Remove", kind: "button" }, verb: "press" } });
+    ledger.explored({ callId: "call.bare", toolId: "core.run_node", undoes: "act-1", landed: true });
+    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: ["delete"] } });
+  });
+
+  it("counts an act with no page of its own undone only when an undo of it changed the page it ran on and stayed there", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.trialRan([{ step: 2, definitionId: "demo.press", label: "Keep it", consequences: ["modify_existing"] }, { step: 3, definitionId: "demo.press", label: "Keep it", consequences: ["modify_existing"] }], "trial.1");
+    // act-1: a click on words that changed nothing. act-2: a press that changed its page.
+    ledger.explored(acted("click.words", [], { undoes: "act-1" }));
+    ledger.undoSeen("act-1", false);
+    ledger.explored(acted("press.back", ["modify_existing"], { undoes: "act-2" }));
+    ledger.undoSeen("act-2", true);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }] } });
+  });
+
+  it("counts a landed undo as before where the target cannot be read at all", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.1", ["create_new"]));
+    ledger.explored(acted("call.undo", ["delete"], { undoes: "act-1" }));
+    expect(await ledger.beforeTrial(unknown)).toEqual({ kind: "admit" });
+  });
+
+  it("runs the trial with an act the reset made no progress on, and keeps it: naming it is refused, and every later trial says so", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.1", ["modify_existing"]));
+    ledger.placed("act-1", { state: { page: "a" }, location: "https://site.test/a", changed: ["new: \"Done\""] });
+    const there = { compare: back, compareAt: async () => ({ moved: true, differs: ["new: \"Done\""] }) };
+    expect(await ledger.beforeTrial(there)).toMatchObject({ kind: "refuse" });
+    ledger.explored(acted("click.words", [], { undoes: "act-1" }));
+    // The same act still there, the same way: no progress, so the trial runs with it.
+    const ran = await ledger.beforeTrial(there);
+    expect(ran).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1", did: "press \"Save\" button", stillThere: ["new: \"Done\""] }] } });
+    expect(ledger.inPlace()).toEqual([]);
+    expect(ledger.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_act_kept", act: "act-1" } });
     ledger.trialRan([], "trial.1");
-    expect(ledger.claim("act-1")).toMatchObject({ kind: "refused" });
+    expect(await ledger.beforeTrial(there)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+  });
+
+  it("keeps an act still there after the reset asked for it twice, though other acts were undone between", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.1", ["modify_existing"]));
+    ledger.placed("act-1", { state: { page: "a" }, location: "https://site.test/a", changed: ["new: kept"] });
+    ledger.explored(acted("call.2", ["modify_existing"]));
+    ledger.placed("act-2", { state: { page: "b" }, location: "https://site.test/b", changed: ["new: gone later"] });
+    let secondThere = true;
+    const checks = { compare: back, compareAt: async (place: AutomationStudioSiteResetPlace) => ({ moved: true, differs: place.location.endsWith("/a") ? ["new: kept"] : secondThere ? ["new: gone later"] : [] }) };
+    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }, { act: "act-2" }] } });
+    secondThere = false;
+    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }] } });
+    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+  });
+
+  it("keeps an act the model says cannot be undone, but only once the reset has asked for it", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    ledger.explored(acted("call.1", ["modify_existing"]));
+    expect(await ledger.beforeTrial(back, ["act-1"])).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }] } });
+    expect(await ledger.beforeTrial(back, ["act-1", "act-9"])).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+  });
+
+  // Lane D round 9 (`run-mv5q4j2n-25784472`): three requests confirmed; no control takes a confirmation back, and the
+  // model clicked the words that replaced a Confirm button under `undoes`. The page the build began on shows nothing
+  // of the requests, so the start comparison is clean throughout.
+  it("lane D's sequence: three confirms no control undoes; the trial runs with them, and every later trial says so", async () => {
+    const ledger = new AutomationStudioSiteResetLedger();
+    for (const n of [1, 2, 3]) {
+      ledger.explored(acted(`confirm-${n}`, ["modify_existing"]));
+      ledger.placed(`act-${n}`, { state: { page: "requests" }, location: "https://site.test/requests", changed: [`gone: button "Confirm" ${n}`, `new: "Request accepted" ${n}`],
+        lines: { gone: [`button "Confirm" ${n}`], added: [`"Request accepted" ${n}`] } });
+    }
+    const everyRow = { gone: [1, 2, 3].map((n) => `button "Confirm" ${n}`), added: [1, 2, 3].map((n) => `"Request accepted" ${n}`) };
+    const requests = { compare: back, compareAt: async () => ({ moved: true, differs: ["(worded)"], lines: everyRow }) };
+    expect(await ledger.beforeTrial(requests)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1", stillThere: ["\"Request accepted\" 1", "button \"Confirm\" 1"] }, { act: "act-2" }, { act: "act-3" }] } });
+    ledger.explored(acted("click-words", [], { undoes: "act-1" }));
+    ledger.undoSeen("act-1", false);
+    // A clean start page and a landed click vouch for nothing; with no progress the trial runs with all three in place.
+    expect(await ledger.beforeTrial(requests)).toMatchObject({ kind: "admit", startedWith: { acts: [{ act: "act-1" }, { act: "act-2" }, { act: "act-3" }] } });
+    ledger.trialRan([], "trial.1");
+    expect(await ledger.beforeTrial(requests)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [{ act: "act-1" }, { act: "act-2" }, { act: "act-3" }] } });
+  });
+
+  // Lane B round 9 (`run-mv5q4j33-d04ac463`): two lines added to a basket that already held one, both removed, the
+  // second declaring delete; the line that was there before is never removed unasked.
+  it("lane B's sequence: two adds that each change one basket total, both removed once each unasked, and the earlier line is never an act's", async () => {
+    const site = { lines: ["soap"] };
+    const total = () => `basket: ${site.lines.join(",")}`;
+    const ledger = new AutomationStudioSiteResetLedger();
+    const add = (call: string, act: string, item: string) => {
+      ledger.explored(acted(call, ["create_new"]));
+      const before = total();
+      site.lines.push(item);
+      ledger.placed(act, { state: { total: before }, location: `https://site.test/${item}`, changed: [`gone: ${before}`, `new: ${total()}`], lines: { gone: [before], added: [total()] } });
+    };
+    add("add-first", "act-1", "first");
+    add("add-second", "act-2", "second");
+    const checks = {
+      compare: back,
+      compareAt: async (place: AutomationStudioSiteResetPlace) => {
+        const was = String(place.state.total), now = total();
+        return was === now ? { moved: true, differs: [], lines: { gone: [], added: [] } } : { moved: true, differs: [`gone: ${was}`, `new: ${now}`], lines: { gone: [was], added: [now] } };
+      }
+    };
+    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }, { act: "act-2" }] } });
+    ledger.explored(acted("go-to-basket", [], { undoes: "act-1" }));
+    expect(ledger.claim("act-2")).toEqual({ kind: "undo", undo: { act: "act-2", allowed: ["delete"] } });
+    ledger.explored(acted("remove-second", ["delete"], { undoes: "act-2" }));
+    site.lines.pop();
+    // Only the second line removed: the first act's line is still there, the second's is gone.
+    expect(await ledger.beforeTrial(checks)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1", stillThere: ["basket: soap,first", "basket: soap"] }] } });
+    expect(ledger.claim("act-1")).toEqual({ kind: "undo", undo: { act: "act-1", allowed: ["delete"] } });
+    ledger.explored(acted("remove-first", ["delete"], { undoes: "act-1" }));
+    site.lines.pop();
+    // The earlier line, named under either act, is refused unrun.
+    expect(ledger.claim("act-1")).toMatchObject({ kind: "refused", evidence: { code: "candidate.undo_already_done", undoneBy: "remove-first" } });
+    expect(await ledger.beforeTrial(checks)).toEqual({ kind: "admit" });
+    expect(site.lines).toEqual(["soap"]);
   });
 
   it("numbers acts once and never reuses a number, the trial's own acts included", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("call.1", ["create_new"]));
     ledger.explored(acted("call.2", ["create_new"]));
+    ledger.explored(acted("undo.1", ["delete"], { undoes: "act-1" }));
     ledger.explored(acted("undo.2", ["delete"], { undoes: "act-2" }));
     expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
     const left = ledger.trialRan([{ step: 3, definitionId: "demo.press", label: "Keep it", control: "Save", consequences: ["create_new"] }, { step: 4, definitionId: "demo.pay", consequences: ["move_money"] }], "trial.1");
@@ -103,22 +255,16 @@ describe("site reset ledger", () => {
     const left = { act: "act-1", did: "press \"Save\" button", call: "call.1" };
     ledger.explored(acted("call.1", ["create_new"]));
     expect(await ledger.beforeTrial(unknown)).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required" } });
-    expect(await ledger.beforeTrial(unknown)).toEqual({ kind: "admit", startedWith: { acts: [left] } });
+    expect(await ledger.beforeTrial(unknown)).toMatchObject({ kind: "admit", startedWith: { acts: [left] } });
     expect(ledger.trialRan([], "trial.1")).toEqual([left]);
-    // Nothing new was recorded, but an act is still in place: the next trial is due all the same.
-    expect(await ledger.beforeTrial(unknown)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [left] } });
-    expect(await ledger.beforeTrial(unknown)).toEqual({ kind: "admit", startedWith: { acts: [left] } });
-    ledger.trialRan([], "trial.2");
-    ledger.explored(acted("call.2", ["modify_existing"]));
-    expect(await ledger.beforeTrial(unknown)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }, { act: "act-2" }] } });
+    // Nothing new was recorded, but the act is still in place: the next trial is due all the same, and asked for twice it is now kept.
+    expect(await ledger.beforeTrial(unknown)).toMatchObject({ kind: "admit", startedWith: { cannotUndo: [left] } });
   });
 
-  it("marks every act undone when the start check finds the site back", async () => {
+  it("no longer marks every act undone because the start page is as the build found it (t471)", async () => {
     const ledger = new AutomationStudioSiteResetLedger();
     ledger.explored(acted("call.1", ["create_new"]));
     ledger.explored(acted("call.2", ["modify_existing"]));
-    expect(await ledger.beforeTrial(back)).toEqual({ kind: "admit" });
-    expect(ledger.inPlace()).toEqual([]);
-    expect(ledger.trialRan([], "trial.1")).toEqual([]);
+    expect(await ledger.beforeTrial(back)).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [{ act: "act-1" }, { act: "act-2" }] } });
   });
 });

@@ -68,6 +68,14 @@ export type AutomationStudioCandidateTrialRequest = {
   digest: string;
   signal: AbortSignal;
   candidate: Readonly<AutomationStudioFlowCandidate>;
+  /**
+   * What of this build was already on the site when the trial began, one
+   * entry per act or difference in Core's or the domain's words
+   * (`../site-reset/trial-policy.ts`, `startedWith`; t471). The judge is told,
+   * so a row the build had already done is read as done, not as the Flow's
+   * work or its failure. Absent when the site was as the build found it.
+   */
+  startedWith?: readonly string[];
 };
 
 export const AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS = Object.freeze(["yes", "no", "unsure", "not_judged", "execution_failed"] as const);

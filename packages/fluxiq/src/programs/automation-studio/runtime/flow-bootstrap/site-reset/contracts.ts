@@ -64,8 +64,32 @@ export type AutomationStudioSiteResetCalls = {
  * One lasting act of this build as the model is shown it: its id, which
  * `undoes` names, what it did, and for an act made while exploring the call id
  * the model gave that call, so it can find the act in its own evidence.
+ * `stillThere` is what the act changed on its own page that is still there,
+ * in the domain's words, when the reset went back and looked (t471).
  */
-export type AutomationStudioSiteResetNamedAct = { act: string; did: string; call?: string };
+export type AutomationStudioSiteResetNamedAct = { act: string; did: string; call?: string; stillThere?: string[] };
+
+/** One read of the target where it stands (`startState`): its opaque state, what differs from the state it was given, and where it was read. */
+export type AutomationStudioSiteResetRead = { state: JsonObject; differs: string[]; location?: string; lines?: AutomationStudioSiteResetLines };
+
+/** A read, or why there is none: the domain has no `startState`, it answered nothing usable, or reading failed (kept on the start check as `failure`). */
+export type AutomationStudioSiteResetReadAnswer = AutomationStudioSiteResetRead | { unread: "no_reader" | "no_answer" | "failed" };
+
+/**
+ * Where one act of this build happened (t471): the state of its page just
+ * before it, where that page is, and what the act changed there, in the
+ * domain's words. An undo counts only once those changes are gone from that
+ * page; a call that names the act under `undoes` never counts it alone.
+ */
+export type AutomationStudioSiteResetPlace = { state: JsonObject; location: string; changed: string[]; lines?: AutomationStudioSiteResetLines };
+
+/** What the reset may ask of the target before a trial (`./start-check.ts`). */
+export type AutomationStudioSiteResetChecks = {
+  /** Takes the target back to the build's start and says what differs there. */
+  compare(): Promise<AutomationStudioSiteResetComparison>;
+  /** Takes the target to `place` and says what differs from its state before the act; `differs` absent when that cannot be said. */
+  compareAt?(place: AutomationStudioSiteResetPlace): Promise<AutomationStudioSiteResetComparison>;
+};
 
 /**
  * What the start check found before a trial: whether taking the target back
@@ -74,7 +98,16 @@ export type AutomationStudioSiteResetNamedAct = { act: string; did: string; call
  * could not say -- no start state, no arrival, or a failure -- and the
  * ledger alone decides.
  */
-export type AutomationStudioSiteResetComparison = { moved: boolean; differs?: string[] };
+export type AutomationStudioSiteResetComparison = { moved: boolean; differs?: string[]; lines?: AutomationStudioSiteResetLines };
+
+/**
+ * The same differences as the lines themselves, when the domain gives them
+ * (t471): those the earlier state had that are gone, and those that are new.
+ * Opaque strings to Core, compared only for equality, so it can tell which act
+ * changed which line -- a total two acts both changed is one line -- without
+ * reading the domain's words.
+ */
+export type AutomationStudioSiteResetLines = { gone: string[]; added: string[] };
 
 /**
  * The reset's answer before a trial: run it, saying under `startedWith` what
@@ -97,7 +130,12 @@ export type AutomationStudioSiteResetTrialAct = {
 
 /** What the trial gate (`../candidate/trial-gate.ts`) is given: asked before each trial, and told what each trial left. */
 export type AutomationStudioSiteResetTrialReset = {
-  beforeTrial(signal?: AbortSignal): Promise<AutomationStudioSiteResetDecision>;
+  /**
+   * Asked before each trial. `cannotUndo` names acts the model says the site
+   * offers no way to undo (`core.test_candidate`'s own key): each one the reset
+   * already asked for is kept, and the trial runs with it in place (t471).
+   */
+  beforeTrial(signal?: AbortSignal, cannotUndo?: readonly string[]): Promise<AutomationStudioSiteResetDecision>;
   /** Restarts the reset phase and answers the acts now on the site, the trial's own among them (`leftOnSite`). */
   trialRan(acts: readonly AutomationStudioSiteResetTrialAct[], trialRunId?: string): AutomationStudioSiteResetNamedAct[];
 };

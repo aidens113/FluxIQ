@@ -345,6 +345,14 @@ export type AutomationStudioRunResultSummary = {
    */
   buildTest?: AutomationStudioBuildTestAccount;
   /**
+   * A candidate build's trial only (t471): what of the build itself was
+   * already on the site when the trial began, because the build could not
+   * undo it -- one line per act it had done and per difference from how it
+   * found the site (`../flow-bootstrap/candidate/started-with.ts`). The judge
+   * reads each as already done, neither the run's doing nor its failure.
+   */
+  startedWith?: string[];
+  /**
    * The page the run or test ended on, as the domain produced it, screened
    * (`./result-summary.ts`, `automationStudioResultEndView`). Absent when the
    * caller held none or it was withheld; a withheld one sets `withheld`.
