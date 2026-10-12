@@ -45,13 +45,16 @@ describe("complete quantity and cohort guidance in the actual verification reque
     const resultSummary: AutomationStudioRunResultSummary = {
       schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: 0, totalRefusedCount: 0, totalRowsMissingRequired: 0,
       recordSetCount: 0, recordSets: [], flowShape: [], withheld: false,
-      ...(buildTest ? { buildTest: { kind: "build_test" as const, steps: [] } } : {})
+      ...(buildTest ? { buildTest: { kind: "build_test" as const, test: "ran" as const, steps: [] } } : {})
     };
     const prepared = await runAutomationStudioLlmHarness({ ...base, taskKind: "loop_verification", instructions: [instruction], resultSummary, deniedEvidenceKeys: [] });
     let outbound = "";
     const provider = createAutomationStudioDeepSeekProvider({
       secretReference: { kind: "secret_reference", id: "secret:mock-verification" },
-      resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
+      resolveSecret: async (input) => {
+        outbound = input.outboundBody;
+        return "test-secret";
+      },
       fetchImpl: (async () => new Response(JSON.stringify({
         choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "diagnosis", summary: "The evidence is inconclusive.", diagnosis: { answersRequest: "unknown" } }) } }],
         usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 }
