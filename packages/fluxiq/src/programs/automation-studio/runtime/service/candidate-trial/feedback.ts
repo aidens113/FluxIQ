@@ -62,7 +62,13 @@ const MAX_STEPS = 40;
 export const automationStudioCandidateTrialFeedback = Object.freeze({
   /** The run did not reach its end: no judge was asked. */
   executionFailed(input: { code: string; trialRunId?: string | undefined; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string }): { verdict: AutomationStudioCandidateTrialVerdict; feedback: JsonObject } {
-    return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...steps(input.trace, input.graph) } };
+    const graphFailure = input.trace?.failure?.code;
+    const graphEnding = graphFailure === "executor.graph.unvisited_nodes"
+      ? { code: graphFailure, happened: "The run reached a terminal step while required graph nodes remained unvisited.", instruction: "Check the Flow's connections and required steps. Continue to those steps, or use an explicit End only where the instruction is complete. This is a graph-level failure; no displayed successful step needs retrying." }
+      : graphFailure === "executor.graph.unmatched_route"
+        ? { code: graphFailure, happened: "The last step chose a route with no matching outgoing edge.", instruction: "Connect the step's settled route to the intended next step, then resubmit and test the new revision." }
+        : undefined;
+    return { verdict: "execution_failed", feedback: { code: input.code, ...(input.trialRunId ? { trialRunId: input.trialRunId } : {}), start: input.start, ...(graphEnding ? { graphEnding } : {}), ...steps(input.trace, input.graph) } };
   },
 
   /** The judge's verdict, read as the trial gate's. */

@@ -2,14 +2,11 @@ import type { JsonValue } from "../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowEdge } from "../../model/index.ts";
 import { AUTOMATION_STUDIO_HANDLER_DEFINITION_ID, AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID } from "../../nodes/control-flow/index.ts";
 import type { AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "./contracts.ts";
-
-export function chooseAutomationStudioEdge(flow: Pick<AutomationStudioFlowDocument, "edges">, sourceNodeId: string, route: string, definitionId?: string): AutomationStudioFlowEdge | null {
-  const edges = flow.edges.filter((edge) => edge.sourceNodeId === sourceNodeId);
-  return edges.find((edge) => edge.sourcePortId === route)
-    ?? (definitionId === "builtin.control.start" && route === "success" ? edges.find((edge) => edge.sourcePortId === "next") : undefined)
-    ?? edges.find((edge) => !edge.sourcePortId && route === "success")
-    ?? null;
-}
+import { chooseAutomationStudioEdge } from "./graph-navigation/index.ts";
+// The owning module avoids loading the step-skip barrel's authored-act analysis
+// back through the compiler and graph navigation.
+import { automationStudioOptionalStepWayOn } from "./step-skip/optional-step.ts";
+export { chooseAutomationStudioEdge } from "./graph-navigation/index.ts";
 
 /** The node definition that finishes a run where it is reached. */
 const END_DEFINITION_ID = "builtin.control.end";
@@ -53,7 +50,24 @@ export function automationStudioNodeEndsRun(definitionId: string): boolean {
 export function hasUnvisitedAutomationStudioNodes(flow: AutomationStudioFlowDocument, attempts: AutomationStudioNodeAttemptTrace[]): boolean {
   if (attempts[attempts.length - 1]?.definitionId === AUTOMATION_STUDIO_HANDLER_END_DEFINITION_ID) return false;
   const visited = new Set([...attempts.map((attempt) => attempt.nodeId), ...handlerOnlyNodes(flow)]);
-  for (const attempt of attempts) {
+  for (const [index, attempt] of attempts.entries()) {
+    // Only the optional shape's guarded success chain is exempt, and only
+    // when this run actually took its way past into the join. In a repeat
+    // span that chain may be unused on every pass. General untaken branches,
+    // disconnected nodes and a mandatory continuation still count.
+    const bypassed = attempt.skipped?.reason === "target_absent" || attempt.status === "failed";
+    const node = bypassed ? flow.nodes.find((candidate) => candidate.id === attempt.nodeId) : undefined;
+    const wayOn = node && automationStudioOptionalStepWayOn(flow, node);
+    if (wayOn && attempts[index + 1]?.nodeId === wayOn.targetNodeId) {
+      let at = chooseAutomationStudioEdge(flow, attempt.nodeId, "success", attempt.definitionId)?.targetNodeId;
+      const seen = new Set<string>();
+      while (at !== undefined && at !== wayOn.targetNodeId && !seen.has(at)) {
+        seen.add(at);
+        visited.add(at);
+        const step = flow.nodes.find((candidate) => candidate.id === at);
+        at = step ? chooseAutomationStudioEdge(flow, at, "success", step.definitionId)?.targetNodeId : undefined;
+      }
+    }
     const skipped = attempt.skipped;
     if (skipped?.reason !== "state_routed" || skipped.direction !== "forward") continue;
     for (const id of passedOver(flow, attempt.nodeId, skipped.toNodeId)) visited.add(id);

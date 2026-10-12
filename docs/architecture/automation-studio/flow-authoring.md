@@ -712,3 +712,22 @@ completed no-provider checks and prevention of late writes. Actual public
 FluxIQ disabled construction also executed a saved native Flow, preserving a
 nonempty fixture key/session and publishing explicit zero with fresh network
 and key-release observers. Live browser saved reuse remains separate.
+
+### Terminal coverage after optional steps
+
+An optional step's success path may contain `only after:` steps before its
+failure path joins it at a Merge. When a run takes that validated optional
+way past directly into the join, the guarded success chain is not required
+to execute. This also holds when every pass of a repeat span bypasses the
+chain and the Flow ends at a final read without an explicit End. The executor
+uses the same bounded, nonbranching optional-shape rule as absent-step skips
+and recovery; it does not exempt general untaken branches, disconnected nodes
+or required continuations.
+
+Terminal coverage and unmatched-route failures carry closed Core codes
+`executor.graph.unvisited_nodes` and `executor.graph.unmatched_route` on the
+frame trace. Candidate trial feedback explains these as graph endings and
+names the connection correction, separately from successful step outcomes.
+It never forwards the frame's free-text message, node identifiers, page text
+or selectors. An untested or incompletely executed candidate still cannot
+complete or be promoted.
