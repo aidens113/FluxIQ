@@ -1,10 +1,15 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
+import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/index.ts";
+import { AutomationStudioSiteResetStartCheck, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidate } from "./contracts.ts";
 import { AutomationStudioFlowCandidateSubmissionController } from "./submission.ts";
 import { automationStudioCandidateSubmissionRefusal } from "./submission-refusal.ts";
 import { AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, AutomationStudioFlowCandidateTrialGate } from "./trial-gate.ts";
+
+/** The loop's opening call, which takes the target to the build's start (`../../llm/evidence-loop.ts`). */
+const OPENING_CALL = "initial.";
 
 /** The code a completion is refused under when it does not name the latest accepted submission, or there is none. */
 const LATEST_REQUIRED = "candidate.latest_submission_required";
@@ -24,8 +29,16 @@ function automationStudioCandidateNothingSubmitted(submitId: string, testId: str
  */
 export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   loop: Omit<AutomationStudioLlmEvidenceLoopInput, "draft" | "dryRun" | "checkCompletion" | "completionSchema" | "fullRunRequired" | "discoveryOnly">;
-  submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0];
+  /** `binding.startState`, when the domain has it, is how the site reset reads where the build began (`../site-reset/start-check.ts`). */
+  submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0] & { binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "startState"> | undefined };
   trial?: { candidateId: string; port: AutomationStudioCandidateTrialPort };
+  /**
+   * This build's ledger of its own lasting acts (t462), the one its permission
+   * wrapper tells every call it ran. With a trial port, each trial then runs
+   * only once the model has put the site back (`./trial-gate.ts`), and the
+   * library tool takes `undoes`. Without a trial port it changes nothing.
+   */
+  siteReset?: AutomationStudioSiteResetLedger | undefined;
   /** Told each submission Core accepted, so a caller whose loop then fails still knows the latest one (t362: a refused resubmission clears `latest`). */
   accepted?: (candidate: Readonly<AutomationStudioFlowCandidate>) => void;
   /**
@@ -39,7 +52,13 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   const signals = [input.loop.signal, input.submission.signal].filter((value): value is AbortSignal => value !== undefined);
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
   const controller = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, ...(signal ? { signal } : {}) });
-  const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: input.trial, signal });
+  const ledger = input.trial ? input.siteReset : undefined;
+  const startCheck = ledger ? new AutomationStudioSiteResetStartCheck({ binding: input.submission.binding, projectId: input.submission.projectId, flowId: input.submission.flowId, tools: input.loop.tools, executeTool: (call) => input.loop.executeTool(call) }) : undefined;
+  const reset: AutomationStudioSiteResetTrialReset | undefined = ledger && startCheck ? {
+    beforeTrial: (resetSignal) => ledger.beforeTrial(() => startCheck.compare(resetSignal)),
+    trialRan: (acts, trialRunId) => ledger.trialRan(acts, trialRunId)
+  } : undefined;
+  const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: input.trial, signal, ...(reset ? { reset } : {}) });
   const submitId = "core.submit_candidate", testId = AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID;
   const tool: AutomationStudioLlmEvidenceTool = {
     toolId: submitId, effect: "observe",
@@ -64,11 +83,18 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   };
   const discovery: AutomationStudioLlmEvidenceLoopInput = {
     ...input.loop, ...(signal ? { signal } : {}), draft: false, dryRun: false, discoveryOnly: true,
-    tools: [...input.loop.tools.filter((item) => item.toolId !== "core.run_flow" && item.toolId !== submitId && item.toolId !== testId), tool, gate.tool],
+    tools: [...input.loop.tools.filter((item) => item.toolId !== "core.run_flow" && item.toolId !== submitId && item.toolId !== testId).map((item) => reset ? automationStudioSiteResetUndoesTool(item) : item), tool, gate.tool],
     completionSchema: { type: "object", properties: { revision: { type: "integer" }, digest: { type: "string" } }, required: ["revision", "digest"], additionalProperties: false },
     executeTool: async (call) => {
+      // The start is read once, right after the opening call, or before the first later call when there was none (`../site-reset/start-check.ts`).
+      const opening = call.callId.startsWith(OPENING_CALL);
+      if (startCheck && !opening) await startCheck.capture(call.signal ?? signal);
       if (call.toolId === testId) return gate.test(call.value, call.signal);
-      if (call.toolId !== submitId) return input.loop.executeTool(call);
+      if (call.toolId !== submitId) {
+        const ran = await input.loop.executeTool(call);
+        if (startCheck && opening) await startCheck.capture(call.signal ?? signal);
+        return ran;
+      }
       const submitted = await controller.submit(call.value);
       // A refused submission names its way out and counts in the loop's run of refusals of one kind (`./submission-refusal.ts`).
       if (!submitted.ok) return { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, ...automationStudioCandidateSubmissionRefusal(submitted) };

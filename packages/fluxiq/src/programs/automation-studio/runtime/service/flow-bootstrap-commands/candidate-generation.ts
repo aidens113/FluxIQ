@@ -9,6 +9,7 @@ import type { AutomationStudioInstructionAuthorityUsage } from "../index.ts";
 import { AutomationStudioCandidateSource as Source } from "../candidate-drafts/index.ts";
 import { automationStudioCandidateFingerprint as fingerprint } from "../../flow-bootstrap/candidate/index.ts";
 import type { AutomationStudioCandidateOriginalSourceBinding, AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult, AutomationStudioCandidateTrialVerdict, AutomationStudioFlowCandidate } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioSiteResetLedger } from "../../flow-bootstrap/site-reset/index.ts";
 import { automationStudioFlowBootstrapUnusableDecisions } from "./unusable-decisions.ts";
 import { automationStudioFlowBootstrapFailureWithSpend } from "./failure-spend.ts";
 
@@ -68,6 +69,8 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
   trialSpend?: () => { inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number };
   /** Every trial the runner has run of this candidate so far, in order, for a failure to name (`../candidate-trial/`, `records`). */
   trialRecords?: () => ReadonlyArray<{ revision: number; verdict: AutomationStudioCandidateTrialVerdict; trialRunId?: string; code?: string }>;
+  /** The build's ledger of its own lasting acts, which its permission wrapper is told every call it ran; with `trial`, each trial waits for the site to be put back (t462). */
+  siteReset?: AutomationStudioSiteResetLedger;
 }): Promise<{ record: AutomationStudioFlowCandidateDraftRecord; trial: AutomationStudioCandidateTrialResult | undefined }> {
   if (input.trial && (typeof input.candidateId !== "string" || !input.candidateId)) throw new Error("candidate.trial_candidate_id_required");
   const candidateId = input.candidateId ?? `candidate.${randomUUID()}`;
@@ -142,7 +145,7 @@ export async function generateAutomationStudioFlowCandidateDraft(input: {
     }
   });
   const authored = await runAutomationStudioFlowCandidateAuthoringLoop({
-    submission: input.submission, ...(input.trial ? { trial: { candidateId, port: input.trial } } : {}),
+    submission: input.submission, ...(input.trial ? { trial: { candidateId, port: input.trial } } : {}), ...(input.siteReset ? { siteReset: input.siteReset } : {}),
     accepted: (candidate) => { accepted = structuredClone(candidate); },
     // The loop observes its whole input, its own two tools among the calls, so saving and testing the Flow are cards in the chat (t373).
     observe: (loop) => noteRefusedSteps(submissions.observe(observeAutomationStudioEvidenceLoop(loop))),

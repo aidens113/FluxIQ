@@ -48,6 +48,62 @@ refuses instead of falling back. Nothing else holds a mode literal of its own.
   completion can promote through the ordinary proposal path. Without a trial
   runner, completion remains draft-only; a stored draft grants no acceptance.
 
+### The site is put back before each trial
+
+A candidate trial runs the whole Flow live, so a trial run on what exploration
+or an earlier trial left behind measures nothing (user, 2026-10-12, t462).
+Before every trial the model returns the site to the state the build started
+from, through the site's own controls, undoing exactly the lasting acts this
+build made and nothing that was there before it began
+(`runtime/flow-bootstrap/site-reset/`):
+
+- **The ledger.** The build's permission wrapper tells
+  `AutomationStudioSiteResetLedger` every exploration call it ran. One that was
+  permitted, acted (`mutate`), landed and declared `create_new`,
+  `modify_existing` or `delete` becomes an act `act-N`, shown with the gate's
+  verb and control words and the call id the model gave it. Each trial's own
+  lasting steps that landed (`AutomationStudioCandidateTrialAct`, read off the
+  trial's trace by `service/candidate-trial/landed-acts.ts`) become acts too.
+  An act that moved money or sent something cannot be undone and is never asked
+  for.
+- **Undo through the normal tool.** In candidate mode with a trial runner,
+  `core.run_node` takes an optional `undoes: "act-N"`. The wrapper strips it
+  before the domain sees the call. The ledger accepts it only for an act of the
+  current phase. An accepted undo of an act that created something may
+  `delete` without asking (`AutomationStudioActionPermissionAction.undoes`).
+  Any other undo is gated as any call is, so an act on something that
+  pre-existed still asks. The record carries `undoes`, and the cross-check
+  against the instruction leaves undo records out, so a reset never raises a
+  question or finding. A landed undo marks its act undone. An undo is not a
+  repeat of a lasting act.
+- **The start state.** As the build begins, right after the loop's opening
+  arrival, Core asks the domain's optional `startState` binding for the state
+  to keep. Before a trial that is due, the gate takes the target back to the
+  build's start with the run-node tool's own arrival, asks `startState` again
+  with that state, and reads its `differs`.
+- **The gate** (`candidate/trial-gate.ts`, `site-reset/trial-policy.ts`). A
+  trial is due when an act was recorded since the build began or since the
+  last trial, or one is still in place. An empty `differs` means the site is
+  back: every act is marked undone and the trial runs. Otherwise the test is
+  refused, and the refusal is not a trial:
+  - `candidate.trial_reset_required`, listing `actsToUndo` and `differs`,
+    while acts are in place;
+  - `candidate.trial_start_differs`, once per phase, when every act is undone
+    but the start still differs.
+
+  The refusal answers `retry_allowed` and reports whether the arrival moved
+  the page, so the identical retest reaches the gate. That matters in the
+  wrap-up, which offers only submit and test. The gate never deadlocks: a
+  refusal identical to the last one, or a fourth in one phase, admits the
+  trial and says under `startedWith` what was still in place or different.
+  A trial's answer lists the acts now on the site under `leftOnSite`.
+
+Legacy mode is unchanged. Its dry-run test verifies lasting steps rather than
+redoing them (`flow-draft/verify-only.ts`), so it needs exploration's effects
+in place and has no reset. The deployment's optional start hook
+(`prepareCandidateStart`, the Lab's fixture reset) still runs after the gate
+admits a trial.
+
 Submission and trial tools remain offered when repeated observations are withdrawn
 and through the final counted budget decision. An accepted submission names the
 exact revision/digest to test next; resubmission requires a new trial. The budget

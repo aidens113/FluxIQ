@@ -21,11 +21,12 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
-import type { AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
+import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialRequest, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../flow-bootstrap/verification/index.ts";
 import type { AutomationStudioBuildTestVerdict, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart } from "./contracts.ts";
 import { automationStudioCandidateTrialFeedback as Feedback } from "./feedback.ts";
+import { automationStudioCandidateTrialLandedActs } from "./landed-acts.ts";
 import { automationStudioTrialLearnedPaces } from "./learned-paces.ts";
 import { automationStudioCandidateTrialSummary } from "./summary.ts";
 
@@ -36,8 +37,8 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
   const { signal, candidate } = request;
   signal.throwIfAborted();
   const now = ports.now ?? Date.now;
-  const answer = (verdict: AutomationStudioCandidateTrialResult["verdict"], feedback: AutomationStudioCandidateTrialResult["feedback"], record: Omit<AutomationStudioCandidateTrialRecord, "candidateId" | "revision" | "digest" | "verdict">) => ({
-    result: { revision: request.revision, digest: request.digest, verdict, feedback, ...(record.trialRunId ? { trialRunId: record.trialRunId } : {}) },
+  const answer = (verdict: AutomationStudioCandidateTrialResult["verdict"], feedback: AutomationStudioCandidateTrialResult["feedback"], record: Omit<AutomationStudioCandidateTrialRecord, "candidateId" | "revision" | "digest" | "verdict">, acts: AutomationStudioCandidateTrialAct[] = []) => ({
+    result: { revision: request.revision, digest: request.digest, verdict, feedback, ...(record.trialRunId ? { trialRunId: record.trialRunId } : {}), ...(acts.length ? { acts } : {}) },
     record: { candidateId: request.candidateId, revision: request.revision, digest: request.digest, verdict, ...record }
   });
   const start = await prepared(request, ports);
@@ -78,10 +79,12 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
   const shown = { trialRunId: runId, trace: executed.trace, graph: executed.graph, start: start.status };
   // What the run learned to slow down for is kept with the trial, for a promotion of it to keep (`./promotion.ts`).
   const learned = automationStudioTrialLearnedPaces(executed.trace, executed.graph), paced = learned.length ? { learnedPaces: learned } : {};
+  // The lasting acts the run left on the site, whatever its verdict, for the build to undo before its next trial (t462).
+  const acts = automationStudioCandidateTrialLandedActs(executed.trace, executed.graph);
   if (executed.receipt.status !== "succeeded") {
     const code = executed.code ?? `candidate.trial_${executed.receipt.status}`;
     const failed = Feedback.executionFailed({ code, ...shown });
-    return answer(failed.verdict, failed.feedback, { trialRunId: runId, start, execution: executed.receipt.status, code, ...paced, judge: { ...NO_SPEND } });
+    return answer(failed.verdict, failed.feedback, { trialRunId: runId, start, execution: executed.receipt.status, code, ...paced, judge: { ...NO_SPEND } }, acts);
   }
   let summary: AutomationStudioRunResultSummary;
   try {
@@ -91,13 +94,13 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
   } catch (error) {
     // What the run stored could not be read, so nobody can say whether it answers: not judged, and never a yes.
     const code = "candidate.trial_result_unreadable";
-    return answer("not_judged", { code, trialRunId: runId, start: start.status, failure: error instanceof Error && error.name ? error.name : "unknown error" }, { trialRunId: runId, start, execution: "succeeded", code, ...paced, judge: { ...NO_SPEND } });
+    return answer("not_judged", { code, trialRunId: runId, start: start.status, failure: error instanceof Error && error.name ? error.name : "unknown error" }, { trialRunId: runId, start, execution: "succeeded", code, ...paced, judge: { ...NO_SPEND } }, acts);
   }
   const verdict: AutomationStudioBuildTestVerdict = await ports.judge({ summary });
   signal.throwIfAborted();
   const read = Feedback.judged({ verdict, summary, ...shown });
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
-  return answer(read.verdict, read.feedback, { trialRunId: runId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...paced, judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } });
+  return answer(read.verdict, read.feedback, { trialRunId: runId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...paced, judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts);
 }
 
 /** The trial's start: the deployment's hook when it has one, otherwise the target as it stands. */

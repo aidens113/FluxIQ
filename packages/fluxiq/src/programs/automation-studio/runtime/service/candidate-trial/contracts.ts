@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioPublishedFlowSnapshot, AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
-import type { AutomationStudioGraphExecutionOptions } from "../../executor/index.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import type { runAutomationStudioDetachedCandidate } from "../../flow-bootstrap/verification/index.ts";
 import type { AutomationStudioBuildTestJudgeInput, AutomationStudioBuildTestVerdict, AutomationStudioResultEndView, AutomationStudioResultRecordSetInput } from "../../result-verification/index.ts";
@@ -85,4 +85,18 @@ export type AutomationStudioCandidateTrialPorts = {
   execute?: typeof runAutomationStudioDetachedCandidate | undefined;
   now?: (() => number) | undefined;
   newRunId?: (() => string) | undefined;
+};
+
+/**
+ * One step a trial ran, its retries folded in (`./executed-steps.ts`): the
+ * step's final attempt, how many it took, the failed attempts it was tried
+ * again after, and the loop pass it ran in.
+ */
+export type AutomationStudioTrialExecutedStep = {
+  attempt: AutomationStudioNodeAttemptTrace;
+  attempts: number;
+  /** Each failed attempt the step was tried again after, with the attempt that followed it. */
+  absorbed: Array<{ failed: AutomationStudioNodeAttemptTrace; retry: AutomationStudioNodeAttemptTrace }>;
+  /** The outputs of the loop pass the step ran in, when it ran in one. */
+  pass?: AutomationStudioNodeAttemptTrace["outputs"] | undefined;
 };

@@ -4,6 +4,8 @@ export * from "./check-step.ts";
 export * from "./happened.ts";
 export * from "./absorbed.ts";
 export * from "./target-on-page.ts";
+export * from "./executed-steps.ts";
+export * from "./landed-acts.ts";
 export * from "./feedback.ts";
 export * from "./learned-paces.ts";
 export * from "./run.ts";

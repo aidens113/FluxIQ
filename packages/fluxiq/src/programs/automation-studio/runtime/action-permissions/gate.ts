@@ -288,6 +288,16 @@ export class AutomationStudioActionPermissionGate {
     }
   }
 
+  /**
+   * A control's name as this gate would carry it to a person now: bounded,
+   * or `null` when the model was never shown it. For a caller that reports
+   * what an action declared beside the gate's own record (t462's site-reset
+   * ledger), so the name obeys the same evidence rule there.
+   */
+  carriedControlName(name: string): string | null {
+    return this.carriedName(name.replace(/\s+/gu, " ").trim());
+  }
+
   /** The check handed to the domain with one action. */
   checkFor(action: AutomationStudioActionPermissionAction): AutomationStudioActionPermissionCheck {
     return async (declaration) => {
@@ -316,6 +326,7 @@ export class AutomationStudioActionPermissionGate {
           if (!verdict.permitted) entry.missing = [...verdict.missing];
           if (!verdict.permitted && verdict.requestId !== null) entry.requestId = verdict.requestId;
           if (disregarded.length) entry.disregarded = [...disregarded];
+          if (action.undoes) entry.undoes = action.undoes.act;
           this.records.push(entry);
         }
         return verdict;
@@ -355,7 +366,12 @@ export class AutomationStudioActionPermissionGate {
         this.lastDeclined = declined.request;
         return record({ permitted: false, missing: [...declined.request.missing], requestId: declined.request.requestId, declined: true });
       }
-      const missing = automationStudioDestructiveConsequences(consequences.filter((consequence) => !this.permitted.has(consequence)));
+      // Undoing an act this build made may do what its ledger allowed, for
+      // this one action: the classes are held here and never join `permitted`,
+      // so the next action -- on anything that was there before the build --
+      // is asked about exactly as before (t462). A decline above still wins.
+      const undoing = new Set((action.undoes?.allowed ?? []).filter(isAutomationStudioActionConsequence));
+      const missing = automationStudioDestructiveConsequences(consequences.filter((consequence) => !this.permitted.has(consequence) && !undoing.has(consequence)));
       if (!missing.length) return record({ permitted: true });
       if (this.outstanding) {
         this.latest = this.outstanding;

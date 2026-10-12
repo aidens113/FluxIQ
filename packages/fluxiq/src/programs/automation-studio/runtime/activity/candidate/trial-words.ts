@@ -23,7 +23,9 @@ const NOT_RUN: Readonly<Record<string, string>> = Object.freeze({
   "candidate.trial_unavailable": "no test can run here, so the Flow is kept as an untested draft",
   "candidate.trial_unchanged_after_no": "these exact steps already failed the test, so they have to change first",
   "candidate.trial_same_failure": "these steps stopped at the same step twice, so that step has to change first",
-  "candidate.trial_retest_limit": "these steps were already tested as often as they may be, so they have to change first"
+  "candidate.trial_retest_limit": "these steps were already tested as often as they may be, so they have to change first",
+  "candidate.trial_reset_required": "the site first has to be put back the way the build found it",
+  "candidate.trial_start_differs": "the start page still differs from the way the build found it"
 });
 const NOT_RUN_FALLBACK = "the test couldn't start";
 

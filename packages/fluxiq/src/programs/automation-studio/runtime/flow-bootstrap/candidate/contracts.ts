@@ -1,4 +1,5 @@
 import type { JsonObject } from "../../../../../core/index.ts";
+import type { AutomationStudioActionConsequence } from "../../action-permissions/index.ts";
 import type { AutomationStudioFlowBuildPlan } from "../plan/index.ts";
 import type { AutomationStudioFlowBootstrapCompletionVerdict, AutomationStudioFlowBootstrapPlanHandleView } from "../../llm/harness-options/index.ts";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
@@ -60,6 +61,23 @@ export type AutomationStudioCandidateTrialRequest = {
 export const AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS = Object.freeze(["yes", "no", "unsure", "not_judged", "execution_failed"] as const);
 export type AutomationStudioCandidateTrialVerdict = (typeof AUTOMATION_STUDIO_CANDIDATE_TRIAL_VERDICTS)[number];
 
+/**
+ * One lasting act a trial's run made that landed (t462): a step whose node
+ * declared a lasting consequence and that succeeded, so the site keeps its
+ * effect after the trial. Read off the trial's own trace
+ * (`../../service/candidate-trial/`); the build undoes it before its next
+ * trial (`../site-reset/`).
+ */
+export type AutomationStudioCandidateTrialAct = {
+  /** The step's number, as the trial's `feedback.steps` numbers it. */
+  step: number;
+  definitionId: string;
+  label?: string;
+  /** The words of the control the step acted on, as the feedback gives them. */
+  control?: string;
+  consequences: AutomationStudioActionConsequence[];
+};
+
 /** What the trial port answers. Only `yes` for the exact latest revision and digest lets the model complete. */
 export type AutomationStudioCandidateTrialResult = {
   revision: number;
@@ -68,6 +86,8 @@ export type AutomationStudioCandidateTrialResult = {
   /** Bounded JSON for the model: what the trial did and why the verdict, never exploration evidence. */
   feedback: JsonObject;
   trialRunId?: string;
+  /** The trial's lasting acts that landed, whatever its verdict (t462). Absent when it made none or ran nothing. */
+  acts?: AutomationStudioCandidateTrialAct[];
 };
 
 export type AutomationStudioCandidateTrialPort = (request: AutomationStudioCandidateTrialRequest) => Promise<AutomationStudioCandidateTrialResult>;

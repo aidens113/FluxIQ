@@ -94,14 +94,18 @@ export function automationStudioActionDeclarationCrossCheck(input: {
   declarations: readonly AutomationStudioActionDeclarationRecord[];
   instructed: readonly AutomationStudioInstructedConsequence[];
 }): AutomationStudioActionDeclarationCrossCheck {
-  const declared = automationStudioDeclaredConsequences(input.declarations);
+  // An action that undid one of the build's own acts put the site back; it is
+  // no part of what the person asked for, so it is neither evidence for nor
+  // against the instruction, and a reset never becomes a finding (t462).
+  const declarations = input.declarations.filter((record) => record.undoes === undefined);
+  const declared = automationStudioDeclaredConsequences(declarations);
   const instructedClasses = automationStudioConsequencesInOrder(input.instructed.map((entry) => entry.consequence));
-  const undeclared = input.declarations.length
+  const undeclared = declarations.length
     ? instructedClasses.filter((consequence) => !declared.includes(consequence))
     : [];
   const beyondInstruction = declared.filter((consequence) => !instructedClasses.includes(consequence));
-  const declaredNothing = automationStudioDeclaredNothingLasting(input.declarations).length;
-  const verdict: AutomationStudioActionDeclarationCrossCheckVerdict = !input.declarations.length
+  const declaredNothing = automationStudioDeclaredNothingLasting(declarations).length;
+  const verdict: AutomationStudioActionDeclarationCrossCheckVerdict = !declarations.length
     ? "not_comparable"
     : undeclared.length
       ? "undeclared"
@@ -119,7 +123,7 @@ export function automationStudioActionDeclarationCrossCheck(input: {
     instructed: instructedClasses,
     undeclared,
     beyondInstruction,
-    actions: input.declarations.length,
+    actions: declarations.length,
     declaredNothing,
     quotes,
     sentence: sentenceFor({ verdict, undeclared, beyondInstruction, quotes })
