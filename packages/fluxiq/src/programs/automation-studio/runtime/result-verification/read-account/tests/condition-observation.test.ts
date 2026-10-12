@@ -53,7 +53,8 @@ it("aggregates actual repeated read passes without deduplicating labels or inven
   const repeat = (order: number): AutomationStudioFlowRunActionAttemptRecord => ({ attemptId: `repeat.${order}`, nodeId: "repeat", definitionId: "builtin.control.repeat", order, status: "succeeded", startedAt: order, route: "body" });
   const first = recorded([witness("first pass"), witness("(withheld)")]);
   const second = recorded();
-  const third = recorded([witness("last pass", 3), witness("new reading", 3)]);
+  // Each pass is its own node run and numbers its one page 1; the account says the page of the whole read.
+  const third = recorded([witness("last pass"), witness("new reading")]);
   const result = automationStudioResultReadAccounts({ actionAttempts: [repeat(0), first, repeat(2), second, repeat(4), third], flowNodes: [authored], deniedEvidenceKeys: [] }).reads[0];
   expect(result?.pagesRead).toBe(3);
   expect(result?.conditions?.[0]?.leftOutOnlyByThis).toEqual(["Unit alpha", "Unit beta", "Unit alpha", "Unit beta", "Unit alpha", "Unit beta"]);
