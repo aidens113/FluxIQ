@@ -39,6 +39,18 @@ import { AutomationStudioHarnessOptionRegistry } from "./registry.ts";
  */
 export type AutomationStudioLlmEvidenceRuntimeBinding = {
   domainId: string;
+  /** A domain's passive result view, independent of executable tool bindings.
+   * Omitted, result checks keep using the domain's free initial observation.
+   * The reader is given the same denied-lasting-action permission and bounded
+   * signal as that fallback; its answer is projected and screened normally.
+   */
+  observeResult?(input: {
+    projectId: string;
+    flowId: string;
+    callId: string;
+    permission: AutomationStudioActionPermissionCheck;
+    signal?: AbortSignal;
+  }): Promise<JsonObject | undefined>;
   /**
    * What this domain tells the model on every request made for its work, in
    * its own words: how its pages, controls and evidence read, and the habits
