@@ -5,5 +5,6 @@ export * from "./candidate-feedback.ts";
 export * from "./draft-key.ts";
 export * from "./feedback.ts";
 export * from "./outcomes.ts";
+export * from "./permission-refused.ts";
 export * from "./retry-later.ts";
 export * from "./searching.ts";

@@ -21,6 +21,17 @@ function coded(outcome: string): string {
   }).join(" ");
 }
 
+/**
+ * The code a build's own failure carries on its diagnostic
+ * (`AutomationStudioFlowBootstrapGenerationError`, which has no `code` of its
+ * own). Lane B round 9 (`run-mv5q4j33-d04ac463`, t471) ended
+ * `flow_bootstrap.evidence_repeat_without_progress`, and its trace said `code=-`.
+ */
+function diagnosticCode(record: { diagnostic?: unknown }): unknown {
+  const diagnostic = record.diagnostic;
+  return typeof diagnostic === "object" && diagnostic !== null ? (diagnostic as { code?: unknown }).code : undefined;
+}
+
 type Env = Readonly<Record<string, string | undefined>>;
 type Write = (line: string) => void;
 const console_log: Write = (line) => console.log(line);
@@ -56,8 +67,8 @@ export const automationStudioLlmBuildTrace = Object.freeze({
       say(`${name} end ms=${Date.now() - started}${said ? ` ${said}` : ""}`);
       return value;
     } catch (error) {
-      const record = (typeof error === "object" && error !== null ? error : {}) as { name?: unknown; code?: unknown };
-      say(`${name} throw ms=${Date.now() - started} name=${codeOf(record.name)} code=${codeOf(record.code)}`);
+      const record = (typeof error === "object" && error !== null ? error : {}) as { name?: unknown; code?: unknown; diagnostic?: unknown };
+      say(`${name} throw ms=${Date.now() - started} name=${codeOf(record.name)} code=${codeOf(record.code ?? diagnosticCode(record))}`);
       throw error;
     }
   }

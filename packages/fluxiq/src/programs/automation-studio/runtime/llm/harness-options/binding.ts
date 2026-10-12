@@ -55,6 +55,13 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
    * the domain's own words, empty when nothing differs, and the model is shown
    * it. Undefined, or absent, when the domain cannot read its state: the build
    * then relies on undoing its own acts alone (`../../flow-bootstrap/site-reset/`).
+   * Also asked without moving the target, just before and just after a lasting
+   * act, so the reset can later go back to that act's own page and look for
+   * what it changed there (t471): `location` is where the state was read, as
+   * `runsNodes.arrival`'s parameter takes it. Absent, an act's page is never
+   * revisited and its undo is judged by what the undo call changed. `lines`
+   * gives the same differences as the lines themselves (gone, and new), which
+   * Core compares only for equality, to tell which act changed which line.
    */
   startState?(input: {
     projectId: string;
@@ -63,7 +70,7 @@ export type AutomationStudioLlmEvidenceRuntimeBinding = {
     start?: JsonObject;
     permission: AutomationStudioActionPermissionCheck;
     signal?: AbortSignal;
-  }): Promise<{ state: JsonObject; differs: string[] } | undefined>;
+  }): Promise<{ state: JsonObject; differs: string[]; location?: string; lines?: { gone: string[]; added: string[] } } | undefined>;
   observeResult?(input: {
     projectId: string;
     flowId: string;

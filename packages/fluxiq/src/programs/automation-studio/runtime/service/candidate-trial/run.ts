@@ -105,7 +105,7 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
   try {
     summary = await automationStudioCandidateTrialSummary({ recordSets: await ports.recordSets(runId), graph: executed.graph, trace: executed.trace,
       ...(ports.readEndView ? { readEndView: () => ports.readEndView!({ runId }) } : {}), actionAttempts: ports.actionAttempts?.(ended),
-      observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys });
+      observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys, ...(request.startedWith?.length ? { startedWith: request.startedWith } : {}) });
   } catch (error) {
     // What the run stored could not be read, so nobody can say whether it answers: not judged, and never a yes.
     const code = "candidate.trial_result_unreadable";

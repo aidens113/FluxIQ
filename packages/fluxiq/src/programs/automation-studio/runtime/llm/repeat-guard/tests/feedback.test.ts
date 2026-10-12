@@ -17,6 +17,14 @@ describe("the note for a refused repeat", () => {
     expect(String(note.instruction)).not.toMatch(/never shown/u);
   });
 
+  it("says a call the permission gate refused cannot get past it by being sent again (t471)", () => {
+    const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", inARow: 1, earlier: { callId: "undo-2", outcome: "failed", resultCode: "web.action.rejected.permission_required", resultReason: "consequences_declined" } });
+    expect(note.then).toEqual({ outcome: "failed", resultCode: "web.action.rejected.permission_required", resultReason: "consequences_declined" });
+    expect(String(note.instruction)).toMatch(/needs a person's permission/u);
+    expect(String(note.instruction)).toMatch(/Do not make this call again/u);
+    expect(String(note.instruction)).not.toMatch(/use a different control or a different input/u);
+  });
+
   it("tells a part run refused on an unchanged draft to change the draft first (run-musr9pv3-f4bf6256)", () => {
     const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_flow", inARow: 2, earlier: { callId: "c1", outcome: "same_draft", resultCode: "core.run_flow.ran" } });
     expect(note.then).toEqual({ outcome: "same_draft", resultCode: "core.run_flow.ran" });

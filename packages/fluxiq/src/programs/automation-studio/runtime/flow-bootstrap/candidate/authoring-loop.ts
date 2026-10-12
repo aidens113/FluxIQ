@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/index.ts";
-import { AutomationStudioSiteResetStartCheck, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
+import { AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidate } from "./contracts.ts";
 import { AutomationStudioFlowCandidateSubmissionController } from "./submission.ts";
@@ -30,7 +30,7 @@ function automationStudioCandidateNothingSubmitted(submitId: string, testId: str
 export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   loop: Omit<AutomationStudioLlmEvidenceLoopInput, "draft" | "dryRun" | "checkCompletion" | "completionSchema" | "fullRunRequired" | "discoveryOnly">;
   /** `binding.startState`, when the domain has it, is how the site reset reads where the build began (`../site-reset/start-check.ts`). */
-  submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0] & { binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "startState"> | undefined };
+  submission: ConstructorParameters<typeof AutomationStudioFlowCandidateSubmissionController>[0] & { binding?: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "startState" | "runsNodes"> | undefined };
   trial?: { candidateId: string; port: AutomationStudioCandidateTrialPort };
   /**
    * This build's ledger of its own lasting acts (t462), the one its permission
@@ -55,7 +55,8 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   const ledger = input.trial ? input.siteReset : undefined;
   const startCheck = ledger ? new AutomationStudioSiteResetStartCheck({ binding: input.submission.binding, projectId: input.submission.projectId, flowId: input.submission.flowId, tools: input.loop.tools, executeTool: (call) => input.loop.executeTool(call) }) : undefined;
   const reset: AutomationStudioSiteResetTrialReset | undefined = ledger && startCheck ? {
-    beforeTrial: (resetSignal) => ledger.beforeTrial(() => startCheck.compare(resetSignal)),
+    // Each act still to undo is looked for on its own page, then the start is compared (`../site-reset/ledger.ts`, t471).
+    beforeTrial: (resetSignal, cannotUndo) => ledger.beforeTrial({ compare: () => startCheck.compare(resetSignal), compareAt: (place) => startCheck.compareAt(place, resetSignal) }, cannotUndo),
     trialRan: (acts, trialRunId) => ledger.trialRan(acts, trialRunId)
   } : undefined;
   const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: input.trial, signal, ...(reset ? { reset } : {}) });
@@ -91,7 +92,10 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
       if (startCheck && !opening) await startCheck.capture(call.signal ?? signal);
       if (call.toolId === testId) return gate.test(call.value, call.signal);
       if (call.toolId !== submitId) {
-        const ran = await input.loop.executeTool(call);
+        // A call that makes or undoes an act is read around, so the reset can look for it on its own page (`../site-reset/act-places.ts`).
+        const ran = ledger && startCheck && !opening
+          ? await automationStudioSiteResetPlacedCall({ call, ledger, reader: startCheck, signal: call.signal ?? signal, run: () => input.loop.executeTool(call) })
+          : await input.loop.executeTool(call);
         if (startCheck && opening) await startCheck.capture(call.signal ?? signal);
         return ran;
       }

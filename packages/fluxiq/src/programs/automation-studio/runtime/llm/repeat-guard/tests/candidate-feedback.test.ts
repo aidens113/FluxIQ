@@ -81,6 +81,24 @@ describe("a repeat refused in candidate mode", () => {
     }
   });
 
+  // Lane B round 9 (`run-mv5q4j33-d04ac463`, t471): a remove press refused by the permission gate was sent three more
+  // times, each told only to try a different control or input, and the build ended.
+  it("says a call the permission gate refused cannot get past it by being sent again, and to test or submit instead", () => {
+    const guard = automationStudioLlmEvidenceRepeatGuard();
+    const input = { node: "web.output.dom-click", parameters: { target: { handle: "t9" } }, consequences: ["delete"] };
+    guard.seen("cart");
+    guard.recorded({ callId: "undo-2", toolId: "core.run_node", input, effect: "mutate", proposes: false, effectApplied: false, refused: true, resultCode: "web.action.rejected.permission_required", resultReason: "consequences_declined" });
+    const earlier = guard.blocks("core.run_node", input)!;
+    expect(earlier).toMatchObject({ callId: "undo-2", outcome: "failed", resultCode: "web.action.rejected.permission_required" });
+    const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.run_node", earlier, inARow: 1, candidate: true });
+    const instruction = String(note.instruction);
+    expect(instruction).toMatch(/needs a person's permission/u);
+    expect(instruction).toMatch(/Do not make this call again/u);
+    expect(instruction).toMatch(/test or submit the candidate/u);
+    expect(instruction).not.toMatch(LEGACY);
+    expect(instruction).toContain("nothing tested");
+  });
+
   it("leaves the legacy note as it was outside candidate mode, issues and all", () => {
     const note = automationStudioLlmEvidenceRepeatRefusalNote({ toolId: "core.submit_candidate", earlier: storedRefusal(), inARow: 1 });
     expect(String(note.instruction)).toContain("amend the draft");

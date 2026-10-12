@@ -13,8 +13,10 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   resetRequired(differs: boolean): string {
     return "Before this trial, put the site back the way this build found it, so the trial measures only what the Flow does. "
       + `Undo each act listed under actsToUndo with core.run_node, adding "${UNDOES}": "<act>" to that call: remove what the act added, or set back what it changed. `
+      + "stillThere lists what the act changed on its own page that is still there; an act counts as undone only once that is gone. "
       + "Undoing this build's own act needs no permission and is not a repeat. Do not change anything that was there before the build began. "
       + (differs ? "differs lists what is still not as the build found it. " : "")
+      + "If the site offers no control that reverses an act, do not keep trying: test the same revision again with its id under cannotUndo, and the trial runs with that act already done. "
       + "Then test the same revision again.";
   },
   /** A trial refused because every act is undone but the start still differs. */
@@ -22,6 +24,24 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
     return "Every act this build recorded is undone, but the site still differs from how this build found it (differs lists how). "
       + "If any of it is something this build did, set it back with core.run_node. Do not change anything that was there before the build began. "
       + "Then test the same revision again; if nothing listed is this build's doing, the trial runs as the site stands.";
+  },
+  /** A trial that ran with acts of this build still in place (`startedWith`). */
+  startedWith(kept: boolean): string {
+    return "This trial ran on a site that was not wholly as the build found it: what is listed here was already in place when it began, and the judge was told so. "
+      + (kept ? "The acts under cannotUndo could not be undone on this site, so they will be in place before every later trial too. " : "")
+      + "A step that would do one of these acts again may find it already done; write the Flow so it passes over an item that is already done rather than failing on it.";
+  },
+  /** A call whose `undoes` names an act whose one unasked removal is spent. */
+  alreadyUndone(acts: boolean): string {
+    return "An undo of that act already removed something without asking (the call under undoneBy), and an act's undo removes without asking only once, so this call was not run. "
+      + "Whether that act is gone is checked on its own page before the next trial. Whatever this call would change now is not something that act made: "
+      + `do not name the act again. To change it anyway, make the call without "${UNDOES}", and anything it would delete is asked about. `
+      + (acts ? "Undo the acts still listed under actsToUndo, then test the same revision again." : "Test the same revision again.");
+  },
+  /** A call whose `undoes` names an act kept because the site cannot undo it. */
+  keptAct(): string {
+    return "That act is one this build could not undo on this site, so it is kept: every trial runs with it already done, and the judge is told. It was not run. "
+      + `Do not try to undo it again; make the call without "${UNDOES}" if it does something else, or test the same revision again.`;
   },
   /** A call whose `undoes` names no act of this build that may be undone now. */
   unknownAct(acts: boolean): string {

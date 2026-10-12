@@ -18,7 +18,7 @@ describe("site reset trial policy", () => {
       return { moved: true, differs: ["x"] };
     };
     const answer = await automationStudioSiteResetTrialPolicy({ phase: { ...due, recorded: 0 }, inPlace: [], compare });
-    expect(answer).toEqual({ kind: "admit", allUndone: false, moved: false });
+    expect(answer).toEqual({ kind: "admit", moved: false });
     expect(asked).toBe(false);
   });
 
@@ -27,8 +27,13 @@ describe("site reset trial policy", () => {
     expect(answer).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [act] } });
   });
 
-  it("admits and marks everything undone when the site is back", async () => {
-    expect(await policy(due, [act], { moved: true, differs: [] })).toEqual({ kind: "admit", allUndone: true, moved: true });
+  // Lane D round 9 (`run-mv5q4j2n-25784472`, t471): a start page that shows nothing of an act never vouches for it.
+  it("refuses while an act is still to undo though the start page is as the build found it", async () => {
+    expect(await policy(due, [act], { moved: true, differs: [] })).toMatchObject({ kind: "refuse", evidence: { code: "candidate.trial_reset_required", actsToUndo: [act] } });
+  });
+
+  it("admits when nothing is left to undo and the start is back", async () => {
+    expect(await policy(due, [], { moved: true, differs: [] })).toEqual({ kind: "admit", moved: true });
   });
 
   it("refuses while acts are in place, naming them and what differs, in generic words", async () => {
@@ -50,14 +55,14 @@ describe("site reset trial policy", () => {
   });
 
   it("admits with nothing in place and nothing known to differ", async () => {
-    expect(await policy(due, [], { moved: false })).toEqual({ kind: "admit", allUndone: false, moved: false });
+    expect(await policy(due, [], { moved: false })).toEqual({ kind: "admit", moved: false });
   });
 
   it("refuses a start that still differs once per phase, then admits saying what differed", async () => {
     const first = await policy(due, [], { moved: true, differs: ["a"] });
     expect(first).toMatchObject({ kind: "refuse", startDiffers: true, evidence: { code: "candidate.trial_start_differs", differs: ["a"] } });
     const second = await policy({ ...due, refusals: 1, startDiffersSent: true, lastRefusal: "other" }, [], { moved: true, differs: ["b"] });
-    expect(second).toEqual({ kind: "admit", allUndone: false, startedWith: { differs: ["b"] }, moved: true });
+    expect(second).toMatchObject({ kind: "admit", startedWith: { differs: ["b"] }, moved: true });
   });
 
   it("never deadlocks: the same acts and differences as the last refusal admit the trial", async () => {
@@ -65,13 +70,50 @@ describe("site reset trial policy", () => {
     expect(first.kind).toBe("refuse");
     if (first.kind !== "refuse") return;
     const again = await policy({ ...due, refusals: 1, lastRefusal: first.signature }, [act], { moved: false, differs: ["a"] });
-    expect(again).toEqual({ kind: "admit", allUndone: false, startedWith: { acts: [act], differs: ["a"] }, moved: false });
+    expect(again).toMatchObject({ kind: "admit", startedWith: { acts: [act], differs: ["a"] }, moved: false });
   });
 
   it("never deadlocks: past three refusals in one phase the trial runs", async () => {
     const progress = await policy({ ...due, refusals: 2, lastRefusal: "older" }, [act], { moved: true, differs: ["a"] });
     expect(progress.kind).toBe("refuse");
     const capped = await policy({ ...due, refusals: 3, lastRefusal: "older" }, [act], { moved: true, differs: ["c"] });
-    expect(capped).toEqual({ kind: "admit", allUndone: false, startedWith: { acts: [act], differs: ["c"] }, moved: true });
+    expect(capped).toMatchObject({ kind: "admit", startedWith: { acts: [act], differs: ["c"] }, moved: true });
+    if (capped.kind === "admit") expect(String(capped.startedWith?.instruction)).toContain("already in place when it began");
+  });
+
+  it("names what of each act is still there, and lets the model say an act cannot be undone", async () => {
+    const still = { ...act, stillThere: ["new: \"Done\""] };
+    const answer = await policy(due, [still], { moved: true, differs: [] });
+    expect(answer).toMatchObject({ kind: "refuse", evidence: { actsToUndo: [still] } });
+    if (answer.kind === "refuse") {
+      expect(String(answer.evidence.instruction)).toContain("stillThere");
+      expect(String(answer.evidence.instruction)).toContain("cannotUndo");
+    }
+  });
+
+  it("runs a trial with kept acts in place, saying so, without comparing when nothing else is due", async () => {
+    let asked = false;
+    const kept = [{ act: "act-2", did: "press \"Confirm\" button" }];
+    const compare = async (): Promise<AutomationStudioSiteResetComparison> => {
+      asked = true;
+      return { moved: true, differs: [] };
+    };
+    const answer = await automationStudioSiteResetTrialPolicy({ phase: { ...due, recorded: 0 }, inPlace: [], kept, compare });
+    expect(answer).toMatchObject({ kind: "admit", moved: false, startedWith: { cannotUndo: kept } });
+    expect(asked).toBe(false);
+    if (answer.kind === "admit") {
+      const said = String(answer.startedWith?.instruction);
+      expect(said).toContain("could not be undone on this site");
+      expect(said).toContain("passes over an item that is already done");
+      expect(said).not.toMatch(/(cart|friend|request|confirm|store|shop)/iu);
+    }
+  });
+
+  it("runs with kept acts though the start differs, presuming the difference theirs, and still asks for an act to undo", async () => {
+    const kept = [{ act: "act-2", did: "press \"Confirm\" button" }];
+    expect(await automationStudioSiteResetTrialPolicy({ phase: due, inPlace: [], kept, compare: comparing({ moved: true, differs: ["new: x"] }) }))
+      .toMatchObject({ kind: "admit", startedWith: { cannotUndo: kept, differs: ["new: x"] } });
+    expect(await automationStudioSiteResetTrialPolicy({ phase: due, inPlace: [act], kept, compare: comparing({ moved: true, differs: [] }) }))
+      .toMatchObject({ kind: "refuse", evidence: { actsToUndo: [act], cannotUndo: kept } });
   });
 });

@@ -13,6 +13,7 @@
 
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "./outcomes.ts";
+import { automationStudioLlmEvidenceRepeatPermissionRefused } from "./permission-refused.ts";
 
 /** The candidate submission tool (`../../flow-bootstrap/candidate/authoring-loop.ts`), read as a plain string so this module does not reach into the build. */
 const SUBMIT_CANDIDATE = "core.submit_candidate";
@@ -21,6 +22,13 @@ const SAME_CALL = "You already made this exact call -- the same tool with the sa
   + "Making it again from this page does the same, so it was not run and cost nothing but this decision. "
   + "Do something different instead: look at or search the page for what you need, use a different control or a different input, submit a corrected candidate, or ask the person. "
   + "A call that runs after the page has changed is not a repeat.";
+
+/** Said instead for a call the permission gate refused (`./permission-refused.ts`, t471). */
+const AUTOMATION_STUDIO_LLM_EVIDENCE_PERMISSION_REPEAT_INSTRUCTION = "You already made this exact call, and it was refused because it needs a person's permission that it does not have (then.resultCode, then.resultReason): "
+  + "it would do something gated -- delete, move money, send or publish -- that nobody granted, or that the person declined. "
+  + "Sending it again cannot get past that, on this page or any other, so it was not run. Do not make this call again. "
+  + "If it was meant to undo something this build did, that is already undone or is not this build's: check what this build did against what the page shows. "
+  + "Then go on without it: take a way that needs no such permission, or test or submit the candidate with what you have.";
 
 const SAME_LOOK = "You already made this exact look -- the same tool with the same input -- on this exact page, and it answered the same twice: its answer is above, under sameAsCall. "
   + "The page has not changed, so asking again answers the same again; it was not run. "
@@ -58,5 +66,6 @@ export function automationStudioLlmEvidenceCandidateRepeatInstruction(input: {
   }
   if (earlier.outcome === "same_answer") return { instruction: SAME_LOOK + ending(inARow, maxInARow, "the same look") };
   if (earlier.handleUnshown) return { instruction: HANDLE_UNSHOWN + ending(inARow, maxInARow, "this call") };
+  if (automationStudioLlmEvidenceRepeatPermissionRefused(earlier)) return { instruction: AUTOMATION_STUDIO_LLM_EVIDENCE_PERMISSION_REPEAT_INSTRUCTION + ending(inARow, maxInARow, "this call") };
   return { instruction: SAME_CALL + ending(inARow, maxInARow, "this call") };
 }

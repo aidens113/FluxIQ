@@ -22,9 +22,11 @@ export async function automationStudioCandidateTrialSummary(input: {
   actionAttempts?: readonly AutomationStudioFlowRunActionAttemptRecord[] | undefined;
   observedStateKeys?: readonly string[] | undefined;
   deniedEvidenceKeys?: readonly string[] | undefined;
+  /** What of the build was already on the site when the trial began (t471, `AutomationStudioCandidateTrialRequest.startedWith`). */
+  startedWith?: readonly string[] | undefined;
 }): Promise<AutomationStudioRunResultSummary> {
   const ended = await automationStudioResultEndViewRead(input.readEndView);
-  return summarizeAutomationStudioRunResult({
+  const summary = summarizeAutomationStudioRunResult({
     recordSets: input.recordSets,
     ...(input.graph ? { flowNodes: input.graph.nodes, flowEdges: input.graph.edges } : {}),
     ...ended,
@@ -32,4 +34,5 @@ export async function automationStudioCandidateTrialSummary(input: {
     ...(input.trace ? { sessionAttempts: input.trace.attempts, ...(input.observedStateKeys ? { observedStateKeys: input.observedStateKeys } : {}) } : {}),
     ...(input.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.deniedEvidenceKeys } : {})
   });
+  return input.startedWith?.length ? { ...summary, startedWith: [...input.startedWith] } : summary;
 }

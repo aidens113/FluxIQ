@@ -62,8 +62,10 @@ function site() {
     const adds = value.node === "demo.add";
     if (adds) state.lines += 1;
     if (claim.kind === "undo") state.lines -= 1;
+    // As the real wrapper does, every call the domain put to the gate is reported with what it declared.
+    const consequences = Array.isArray(value.consequences) ? value.consequences as Array<"create_new" | "delete"> : undefined;
     ledger.explored({ callId: call.callId, toolId: call.toolId, landed: true, ...(claim.kind === "undo" ? { undoes: claim.undo.act } : {}),
-      ...(adds ? { declared: { permitted: true, effect: "mutate" as const, consequences: ["create_new" as const], control: { name: "Add", kind: "button" }, verb: "press" } } : {}) });
+      ...(consequences && value.node !== "demo.look" ? { declared: { permitted: true, effect: "mutate" as const, consequences, control: { name: adds ? "Add" : "Remove", kind: "button" }, verb: "press" } } : {}) });
     return { kind: "llm_evidence_tool_execution", evidence: { ok: true, lines: state.lines }, effectApplied: true };
   };
   return { state, ledger, binding, executeTool };
@@ -173,5 +175,31 @@ describe("candidate trial gate: the site is put back first", () => {
     expect(ran.evidence).toMatchObject({ verdict: "unsure", retestsLeft: 2, startedWith: { differs: ["d"] }, leftOnSite: [{ act: "act-3", did: "trial step 4" }] });
     expect(told).toEqual([[[{ step: 4, definitionId: "n", control: "Keep", consequences: ["modify_existing"] }], "trial.1"]]);
     expect(gate.standing(latest)?.acts).toEqual([{ step: 4, definitionId: "n", control: "Keep", consequences: ["modify_existing"] }]);
+  });
+  it("lets the model say an act listed for undoing cannot be undone: the trial runs with it, and the judge is told (t471)", async () => {
+    const asked: AutomationStudioCandidateTrialRequest[] = [];
+    const cannot: Step = (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId: `test.${++calls}`, input: { ...receipt(evidence), cannotUndo: ["act-1"] } });
+    const { seen } = await run([act(), submit, test, cannot, submit], portOf(asked));
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ code: "candidate.trial_reset_required" });
+    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[4]!)!;
+    expect(ran).toMatchObject({ verdict: "unsure", startedWith: { cannotUndo: [{ act: "act-1", did: "press \"Add\" button" }] } });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.startedWith).toEqual(["already done by this build (act-1): press \"Add\" button", "not as the build found it: 1 lines where the start had 0"]);
+  });
+
+  it("tells the judge nothing when the trial started as the build found the site", async () => {
+    const asked: AutomationStudioCandidateTrialRequest[] = [];
+    await run([submit, test, submit], portOf(asked));
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.startedWith).toBeUndefined();
+  });
+
+  it("refuses a test whose cannotUndo is not a list of act ids", async () => {
+    const latest = { revision: 1, digest: "d1", baseDependencyDigest: "b", status: "draft", summary: "s", buildPlan: {}, changedPaths: [] } as unknown as AutomationStudioFlowCandidate;
+    const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => latest, trial: { candidateId: "c", port: portOf([]) } });
+    for (const cannotUndo of ["act-1", [1], new Array(51).fill("act-1")]) {
+      expect((await gate.test({ revision: 1, digest: "d1", cannotUndo } as JsonObject)).evidence).toMatchObject({ ok: false, code: "candidate.trial_input_invalid" });
+    }
+    expect((gate.tool.inputSchema.properties as JsonObject).cannotUndo).toMatchObject({ type: "array", items: { pattern: "^act-[1-9][0-9]{0,3}$" } });
   });
 });
