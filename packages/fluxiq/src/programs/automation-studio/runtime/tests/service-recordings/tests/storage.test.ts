@@ -133,7 +133,14 @@ describe("AutomationStudioService recording persistence", () => {
 
     const projectRoot = path.join(tempRoot, "programs", "automation-studio", "projects", project.id);
     await expect(readFile(path.join(projectRoot, "recordings", "recording.service-test", "recording.json"), "utf8")).resolves.toContain("\"recordingId\": \"recording.service-test\"");
-    await expect(readFile(path.join(projectRoot, "recordings", "recording.service-test", "timeline.jsonl"), "utf8")).resolves.toContain("\"type\":\"marker\"");
+    await expect(readFile(path.join(projectRoot, "recordings", "recording.service-test", "timeline.jsonl"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    const persisted = await service.getRecordingSession("recording.service-test", project.id);
+    expect(persisted.timeline.map(entry => entry.type)).toEqual(["marker"]);
+    await service.close();
+    const reopened = createService({ dataDir: tempRoot, seedFixture: false });
+    const restarted = await reopened.getRecordingSession("recording.service-test", project.id);
+    expect(restarted.timeline).toEqual(persisted.timeline);
+    expect(restarted.endedAt).toBe(persisted.endedAt);
     await expect(readFile(path.join(projectRoot, "recordings", "recording.service-test", "derived", "index.json"), "utf8")).resolves.toContain("\"recordingId\": \"recording.service-test\"");
     await expect(readFile(path.join(projectRoot, "recordings", "recording.service-test", "derived", "normalization", "timelines", `${normalized.normalizedTimelineId}.json`), "utf8")).resolves.toContain("\"normalizedTimelineId\"");
     await expect(readFile(path.join(projectRoot, "indexes", "recordings.json"), "utf8")).resolves.toContain("\"normalizedTimelineId\"");
@@ -213,8 +220,14 @@ describe("AutomationStudioService recording persistence", () => {
     expect(full.timeline).toHaveLength(8);
 
     await service.finalizeRecording({ projectId: project.id, recordingId: recording.recordingId, endedAt: 20 });
-    const finalizedTimeline = await readFile(path.join(projectRoot, "recordings", recording.recordingId, "timeline.jsonl"), "utf8");
-    expect(finalizedTimeline.trim().split(/\r?\n/)).toHaveLength(8);
+    await expect(readFile(path.join(projectRoot, "recordings", recording.recordingId, "timeline.jsonl"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    const finalized = await service.getRecordingSession(recording.recordingId, project.id);
+    await service.close();
+    const reopened = createService({ dataDir: tempRoot, seedFixture: false });
+    const restarted = await reopened.getRecordingSession(recording.recordingId, project.id);
+    expect(restarted.timeline).toEqual(finalized.timeline);
+    expect(restarted.timeline).toHaveLength(8);
+    expect(restarted.endedAt).toBe(finalized.endedAt);
   });
 
   it("accepts only registered domain recording events and records derived state", async () => {

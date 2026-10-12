@@ -337,6 +337,15 @@ export class AutomationStudioSummaryStore {
     }
   }
 
+  /** Recording durability errors must reach the caller; only absent typed storage permits file mode. */
+  async withRecordingRuntimeStreamStore<T>(projectId: string, operation: (store: AutomationStudioProjectRuntimeStreamStore) => Promise<T>): Promise<T | null> {
+    if (!this.runtimeProjectDatabasePool || !this.paths.root) return null;
+    await this.projects.requireProject(projectId);
+    const store = await AutomationStudioProjectRuntimeStreamStore.open({ pool: this.runtimeProjectDatabasePool, projectId });
+    try { return await operation(store); }
+    finally { await store.close(); }
+  }
+
   async writeFlowAdaptationSummary(projectId: string, summary: AutomationStudioAdaptationSummary): Promise<void> {
     if (!this.paths.root) return;
     await this.flowAdaptationSummaryRepository(projectId).put(createRecord({

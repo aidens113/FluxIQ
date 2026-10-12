@@ -43,3 +43,4 @@ export * from "./candidate-verification/index.ts";
 export * from "./accepted-state/index.ts";
 export * from "./command-ledger/index.ts";
 export * from "./authority-guard/index.ts";
+export * from "./recording-stream/index.ts";

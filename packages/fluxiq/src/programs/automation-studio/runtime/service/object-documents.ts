@@ -1,5 +1,6 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { JsonObject } from "../../../../core/index.ts";
 import { ProgramJsonStore, safeSegment } from "../../../_shared/storage.ts";
 import { normalizeAutomationStudioElementTarget, type AppendRecordingEntryInput, type AutomationStudioProjectArtifactKind, type RecordingSession, type StateSnapshot } from "../../model/index.ts";
@@ -141,7 +142,13 @@ export class AutomationStudioObjectDocuments {
     const payload = entry.payload;
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) return entry;
     const state = payload.state;
-    if (!isStateSnapshotObject(state) || typeof payload.stateRef === "string") return entry;
+    if (!isStateSnapshotObject(state)) return entry;
+    if (typeof payload.stateRef === "string") {
+      const original = await this.readIndexedStateSnapshot(projectId, payload.stateRef);
+      if (!isDeepStrictEqual(JSON.parse(JSON.stringify(state)), JSON.parse(JSON.stringify(original)))) throw new Error("Recording snapshot state conflicts with its durable ref.");
+      const { state: _hydratedState, ...storedPayload } = payload;
+      return { ...entry, payload: storedPayload } as TEntry;
+    }
     const content = Buffer.from(JSON.stringify(state), "utf8");
     const reference = await this.objectStore.putBytes(projectId, content, "application/vnd.fluxiq.state-snapshot+json", { recordingId, extension: "json" });
     const stateRef = this.objectStore.contentRef(projectId, reference);
