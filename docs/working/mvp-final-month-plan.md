@@ -1,7 +1,7 @@
 # MVP Final Month Plan - Core implementation
 
 Status: Active
-Status detail: t455/t456/t457/t458 integrated; round-six B/C/D failed; t454 recording restart/public-writer repairs and t459 passive result-view verification remain isolated.
+Status detail: t455/t456/t457/t458/t459 integrated; round-six B/C/D failed; t454 recording combined-source supervisor gates remain.
 Created: 2026-10-06
 Last updated: 2026-10-11
 Owner: Codex senior supervisor
@@ -63,10 +63,14 @@ failure. Fresh terminal captures saw intentionally stale visible text; hidden cu
 domain observation policy, not a Core cache replacement. t458 supported record-processing help is integrated
 at Core0cfb4f45/downstreamf191802a; supervisor52focused tests, fresh Core typecheck, compiled help/parser
 parity, downstream freshness/typecheck and both native audits passed. Parser/runtime semantics unchanged.
-t459 optional passive domain result observation remains isolated for independent gates and provider-free
-actual content-capture proof. t454 private incarnations and fresh no-packet inputs after undo now pass;
-final review reproduced hydrated public-writer conflicts and a killed-child orphan reconciliation claim.
-Bounded repairs and independent process/public-facade gates are required before accepting that storage unit.
+t459 optional passive result observation is integrated/pushed at Cored13bce9b/downstreamb102c0b3;
+supervisor24Core/17domain tests, fresh types/built adapter/native audits and actual headed content-harness
+proof pass. Hidden updated state and stale visible-price evidence reach exact saved/trial projections without
+hidden locators/bindings. Harness runtime stub excludes full background/gateway/model-verdict qualification;
+empty sensitive fields leave withholding proved by owner units. Failed probe drivers/evidence retained.
+t454 private incarnations, fresh no-packet inputs, hydrated public-writer normalization and orphan claim repair
+pass worker107tests/14files (14actual process). Supervisor final combined-source build/types/domain and93owner
+tests pass; process/32state/final audit acceptance remains. Same-host/PID namespace only for death recovery.
 No original profile reset, paid relaunch or claim that extra money/calls alone fixes semantics. Future ready
 plans may use the existing64call upper bound within the same$0.25whole-test ceiling after relevant repair.
 User raised future testing purse to $0.25 via launch environment, leaving historical $0.10 receipts intact;
