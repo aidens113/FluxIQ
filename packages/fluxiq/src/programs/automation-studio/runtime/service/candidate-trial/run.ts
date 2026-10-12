@@ -18,6 +18,16 @@
 //
 // A cancelled build is not a verdict: the abort is thrown, before any judge
 // call, for the build to end cancelled.
+//
+// **A trial its judge did not judge is judged again, not run again (t473).**
+// When the judge could not answer -- its calls failed, its deadline passed, or
+// the purse refused it -- the trial's evidence is still whole: the run ended,
+// and what it stored was read. So the trial hands that evidence back
+// (`unjudged`), and the port asks the judge again on it when the same revision
+// is tested again (`rejudgeAutomationStudioCandidateTrial`, `./port.ts`),
+// instead of running the identical Flow again. Live run
+// `run-mv5q4j5c-49bfb5e2` re-ran an 84-second trial only to get a judgement
+// its timed-out judge would have given in 5 seconds.
 
 import { createHash, randomUUID } from "node:crypto";
 import type { AutomationStudioRuntimeSession } from "../../../model/index.ts";
@@ -25,7 +35,7 @@ import type { AutomationStudioCandidateTrialAct, AutomationStudioCandidateTrialR
 import { runAutomationStudioDetachedCandidate, type AutomationStudioCandidateStartReceipt, type AutomationStudioCandidateVerificationIdentity } from "../../flow-bootstrap/verification/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import { automationStudioResultReadAccounts, type AutomationStudioBuildTestVerdict, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
-import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart } from "./contracts.ts";
+import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialStart, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
 import { automationStudioCandidateTrialFeedback as Feedback } from "./feedback.ts";
 import { automationStudioCandidateTrialLandedActs } from "./landed-acts.ts";
 import { automationStudioTrialLearnedPaces } from "./learned-paces.ts";
@@ -34,15 +44,15 @@ import { automationStudioTrialWayOuts } from "./way-outs.ts";
 
 const NO_SPEND: AutomationStudioCandidateTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
 
+/** One trial's answer and record; `unjudged` only when its judge did not judge it, with the evidence to ask the judge again on (header). */
+export type AutomationStudioCandidateTrialOutcome = { result: AutomationStudioCandidateTrialResult; record: AutomationStudioCandidateTrialRecord; unjudged?: AutomationStudioCandidateTrialUnjudged };
+
 /** Runs and judges one trial; the result is the trial gate's answer, the record Core's audit of it. */
-export async function runAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts): Promise<{ result: AutomationStudioCandidateTrialResult; record: AutomationStudioCandidateTrialRecord }> {
+export async function runAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts): Promise<AutomationStudioCandidateTrialOutcome> {
   const { signal, candidate } = request;
   signal.throwIfAborted();
   const now = ports.now ?? Date.now;
-  const answer = (verdict: AutomationStudioCandidateTrialResult["verdict"], feedback: AutomationStudioCandidateTrialResult["feedback"], record: Omit<AutomationStudioCandidateTrialRecord, "candidateId" | "revision" | "digest" | "verdict">, acts: AutomationStudioCandidateTrialAct[] = []) => ({
-    result: { revision: request.revision, digest: request.digest, verdict, feedback, ...(record.trialRunId ? { trialRunId: record.trialRunId } : {}), ...(acts.length ? { acts } : {}) },
-    record: { candidateId: request.candidateId, revision: request.revision, digest: request.digest, verdict, ...record }
-  });
+  const answer = answerFor(request);
   const start = await prepared(request, ports);
   if (start.status === "failed") return answer("execution_failed", { code: start.code, start: start.status }, { start, execution: "not_run", code: start.code, judge: { ...NO_SPEND } });
 
@@ -101,11 +111,37 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
     const code = "candidate.trial_result_unreadable";
     return answer("not_judged", { code, trialRunId: runId, start: start.status, failure: error instanceof Error && error.name ? error.name : "unknown error" }, { trialRunId: runId, start, execution: "succeeded", code, ...paced, judge: { ...NO_SPEND } }, acts);
   }
+  return await judged(request, ports, { summary, shown, start, ...paced }, acts);
+}
+
+/**
+ * Asks the judge again about a trial it did not judge, on that trial's own
+ * evidence: nothing is run, and no act is answered as left on the site, since
+ * none was made (header). Its verdict is the trial's, under the trial's run id.
+ */
+export async function rejudgeAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, unjudged: AutomationStudioCandidateTrialUnjudged, ports: AutomationStudioCandidateTrialPorts): Promise<AutomationStudioCandidateTrialOutcome> {
+  request.signal.throwIfAborted();
+  return await judged(request, ports, unjudged, [], true);
+}
+
+/** The judge's verdict on a trial's evidence, as the gate's answer and Core's record; the evidence handed back when it was not judged. */
+async function judged(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, evidence: AutomationStudioCandidateTrialUnjudged, acts: AutomationStudioCandidateTrialAct[], again = false): Promise<AutomationStudioCandidateTrialOutcome> {
+  const { summary, shown, start, learnedPaces } = evidence;
   const verdict: AutomationStudioBuildTestVerdict = await ports.judge({ summary });
-  signal.throwIfAborted();
+  request.signal.throwIfAborted();
   const read = Feedback.judged({ verdict, summary, ...shown });
   const { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } = verdict.spent;
-  return answer(read.verdict, read.feedback, { trialRunId: runId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...paced, judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts);
+  const feedback = again ? { ...read.feedback, judgedAgain: "The judge was asked again about the same trial run on the same evidence; the Flow was not run again." } : read.feedback;
+  const outcome = answerFor(request)(read.verdict, feedback, { trialRunId: shown.trialRunId, start, execution: "succeeded", ...(read.code ? { code: read.code } : {}), ...(learnedPaces ? { learnedPaces } : {}), ...(again ? { judgedAgain: true as const } : {}), judge: { calls, inputTokens, outputTokens, totalTokens, estimatedCostUsd } }, acts);
+  return verdict.verdict === "not_judged" ? { ...outcome, unjudged: evidence } : outcome;
+}
+
+/** The gate's answer and Core's record of one trial of `request`'s revision. */
+function answerFor(request: AutomationStudioCandidateTrialRequest) {
+  return (verdict: AutomationStudioCandidateTrialResult["verdict"], feedback: AutomationStudioCandidateTrialResult["feedback"], record: Omit<AutomationStudioCandidateTrialRecord, "candidateId" | "revision" | "digest" | "verdict">, acts: AutomationStudioCandidateTrialAct[] = []): AutomationStudioCandidateTrialOutcome => ({
+    result: { revision: request.revision, digest: request.digest, verdict, feedback, ...(record.trialRunId ? { trialRunId: record.trialRunId } : {}), ...(acts.length ? { acts } : {}) },
+    record: { candidateId: request.candidateId, revision: request.revision, digest: request.digest, verdict, ...record }
+  });
 }
 
 /**

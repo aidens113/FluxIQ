@@ -180,10 +180,11 @@ describe("a build's judge", () => {
       instructionText: ASKS_FOR_A_TABLE, plan: () => undefined
     });
     const judged = await judge.judge({ round: 1, loop: { ok: true, result: {}, trace: [], steps: [read], accounting: {} }, budget: { maxCostUsd: 1 } } as never);
-    expect(judged.verdict).toBe("unknown");
-    // A build no longer finishes unverified (t244): an unsure verdict opens a
+    // A judge that could not answer did not judge (t473): never an unsure verdict, and never a no.
+    expect(judged.verdict).toBe("not_judged");
+    // A build no longer finishes unverified (t244): an unjudged verdict opens a
     // repair round, and that round's announcement is what the chat says.
-    if (judged.verdict === "yes") throw new Error("expected an unsure verdict");
+    if (judged.verdict === "yes") throw new Error("expected an unjudged verdict");
     const { judgement } = automationStudioFlowBootstrapJudgeFinished({ round: 1, steps: [read], verdict: judged, checklist: () => undefined });
     const text = automationStudioFlowBootstrapRepairingJudgedSaid(judgement.judge!);
     expect(text).toContain("the judge's reply could not be read");

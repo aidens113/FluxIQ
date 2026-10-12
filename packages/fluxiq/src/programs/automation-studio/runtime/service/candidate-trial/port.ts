@@ -2,10 +2,16 @@
 // (`AutomationStudioCandidateTrialPort`, pinned by U1): one per build, bound to
 // the candidate id Core minted before the loop, keeping a record of every
 // trial it ran for the promotion's audit and the build's accounting.
+//
+// **A trial its judge did not judge is judged again (t473).** The port keeps
+// the evidence of the last trial of each revision and digest that came back
+// `not_judged` from its judge (`./run.ts`), and a request to test that same
+// revision asks the judge again on it, once per request, instead of running
+// the identical Flow again. A verdict, or a new trial, drops it.
 
 import type { AutomationStudioCandidateTrialPort, AutomationStudioCandidateTrialResult } from "../../flow-bootstrap/candidate/index.ts";
-import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord } from "./contracts.ts";
-import { runAutomationStudioCandidateTrial } from "./run.ts";
+import type { AutomationStudioCandidateTrialPorts, AutomationStudioCandidateTrialRecord, AutomationStudioCandidateTrialUnjudged } from "./contracts.ts";
+import { rejudgeAutomationStudioCandidateTrial, runAutomationStudioCandidateTrial } from "./run.ts";
 
 /** The port, the trials it ran, and what their judges spent. */
 export function automationStudioCandidateTrialPort(candidateId: string, ports: AutomationStudioCandidateTrialPorts): {
@@ -14,13 +20,18 @@ export function automationStudioCandidateTrialPort(candidateId: string, ports: A
   spent(): AutomationStudioCandidateTrialRecord["judge"];
 } {
   const records: AutomationStudioCandidateTrialRecord[] = [];
+  /** The evidence of the last trial of each revision and digest its judge did not judge (header). */
+  const unjudged = new Map<string, AutomationStudioCandidateTrialUnjudged>();
   const port: AutomationStudioCandidateTrialPort = async (request) => {
     // A request for another candidate, or whose frozen bytes are not the revision and digest it names, runs nothing.
     if (request.candidateId !== candidateId || request.candidate.revision !== request.revision || request.candidate.digest !== request.digest) {
       const refused: AutomationStudioCandidateTrialResult = { revision: request.revision, digest: request.digest, verdict: "execution_failed", feedback: { code: "candidate.trial_identity_mismatch" } };
       return refused;
     }
-    const trial = await runAutomationStudioCandidateTrial(request, ports);
+    const key = `${request.revision}:${request.digest}`, kept = unjudged.get(key);
+    unjudged.delete(key);
+    const trial = kept ? await rejudgeAutomationStudioCandidateTrial(request, kept, ports) : await runAutomationStudioCandidateTrial(request, ports);
+    if (trial.unjudged) unjudged.set(key, trial.unjudged);
     records.push(structuredClone(trial.record));
     return trial.result;
   };

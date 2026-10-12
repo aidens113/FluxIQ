@@ -22,6 +22,8 @@
 //                                                         reading of a call that
 //                                                         judged no, unconfirmed
 //   not performed (no model), or the deadline passed  -> not_judged
+//   no call came back usable, each asked again after a -> not_judged, saying why and how
+//     temporary fault (`../verify.ts`)                     many times it was asked (t473)
 //   a call the build's purse would not pay for        -> not_judged, saying the spending limit stopped it
 //
 // A yes the verdict did not take -- one that did not name each row a condition
@@ -58,13 +60,22 @@
 // confirmation that failed any other way leaves the yes unconfirmed: unknown. A cancelled
 // build is not a verdict: the cancellation is thrown, for the phases to end the
 // build as cancelled.
+//
+// **Its calls run under the build's own per-call timeout (t473).** `timeoutMs`
+// is the one every other call of the build gets, from the provider the build
+// resolved; without it the harness's 20-second default applied, and live run
+// `run-mv5q4j5c-49bfb5e2` cut a judge off at 19,985 ms in a window where the
+// build's own decisions took 35 seconds and answered. The judgement's deadline
+// is sized from it (`../deadline.ts`). A judge whose every call still failed is
+// `not_judged` with the cause -- it says nothing about the Flow -- never
+// `unknown` and never a no.
 
 import { randomUUID } from "node:crypto";
 import type { AutomationStudioFlowInstruction, AutomationStudioFlowIntervention } from "../../../model/index.ts";
 import { automationStudioLlmCurrentBuildPurse, type AutomationStudioLlmBuildPurseRefusal } from "../../llm/build-purse/index.ts";
 import type { AutomationStudioLlmProvider } from "../../llm/index.ts";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultRepairDirective, type AutomationStudioRunResultSummary } from "../contracts.ts";
-import { automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
+import { automationStudioResultVerificationDeadlineMs, automationStudioResultVerificationWithinDeadline } from "../deadline.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "../repair-directive.ts";
 import { automationStudioResultCheckedRowsNamed, type AutomationStudioRequestRowsNamed } from "../request-rows/index.ts";
 import {
@@ -166,8 +177,10 @@ export function automationStudioBuildTestJudge(deps: {
   flowId: string;
   signal?: AbortSignal | undefined;
   now?: (() => number) | undefined;
-  /** The whole judgement's deadline; `deadline.ts`'s default when absent. */
+  /** The whole judgement's deadline; sized from `timeoutMs` by `../deadline.ts` when absent. */
   deadlineMs?: number | undefined;
+  /** Each judge call's own deadline: the build's per-call timeout (header); the harness default when absent. */
+  timeoutMs?: number | undefined;
 }): (input: AutomationStudioBuildTestJudgeInput) => Promise<AutomationStudioBuildTestVerdict> {
   const verify = deps.verify ?? verifyAutomationStudioRunResult;
   return async (input) => {
@@ -182,7 +195,7 @@ export function automationStudioBuildTestJudge(deps: {
     const refusedBefore = purse?.refusal;
     const callsBefore = purse?.spentCalls();
     const bounded = await automationStudioResultVerificationWithinDeadline({
-      ...(deps.deadlineMs !== undefined ? { deadlineMs: deps.deadlineMs } : {}),
+      deadlineMs: deps.deadlineMs ?? automationStudioResultVerificationDeadlineMs(deps.timeoutMs),
       signal: deps.signal,
       judge: () => verify({
         projectId: deps.projectId,
@@ -196,6 +209,7 @@ export function automationStudioBuildTestJudge(deps: {
         confirmAnswer: true,
         // Under a purse each call is held at its true worst case there. Outside one, verify asks twice after any answer (`../verify.ts`), each call under this cap: half each, so the judgement never spends more than the build has left.
         ...(maxCostUsd !== undefined && !purse ? { maxEstimatedCostUsd: maxCostUsd / 2 } : {}),
+        ...(deps.timeoutMs !== undefined ? { timeoutMs: deps.timeoutMs } : {}),
         ...(deps.signal ? { signal: deps.signal } : {}),
         ...(deps.now ? { now: deps.now } : {})
       })
@@ -219,6 +233,8 @@ export function automationStudioBuildTestJudge(deps: {
     const spent = judgeSpend;
     const outcome = bounded.value.outcome;
     if (!outcome.performed) return { verdict: "not_judged", why: outcome.reason, ...carried, spent };
+    // No call came back usable, each asked again where its fault was temporary: the test was not judged (header).
+    if (outcome.basis === "model_unavailable") return { verdict: "not_judged", why: couldNotJudge(outcome.reason, spent.calls), ...carried, spent };
     if (outcome.verdict === "answers") return { verdict: "yes", spent };
     if (outcome.verdict === "does_not_answer" && automationStudioResultVerificationFailsRun(outcome)) {
       const judgement = outcome.repair?.judgement;
@@ -269,6 +285,17 @@ function refusedSaid(refusal: AutomationStudioLlmBuildPurseRefusal): string {
   const call = refusal.projectedCostUsd !== undefined ? `the judge's call, which could have cost up to $${refusal.projectedCostUsd.toFixed(3)}` : "the judge's call";
   const left = Math.max(0, refusal.ceilingUsd - refusal.spentUsd - refusal.pendingUsd);
   return `The build's spending limit of $${refusal.ceilingUsd.toFixed(2)} had $${left.toFixed(3)} left, too little for ${call}, so its test was not judged.`;
+}
+
+/**
+ * Why a judge whose every call failed did not judge: the cause first, in the
+ * verdict's words -- the chat says only the first sentences that fit
+ * (`../../flow-bootstrap/unfinished-build/not-done.ts`) -- then how often it
+ * was asked, and that this says nothing against the Flow.
+ */
+function couldNotJudge(reason: string, calls: number): string {
+  const asked = calls === 1 ? "once" : `${calls} times`;
+  return `${reason} The judge was asked ${asked} with the same evidence and could not answer, so the test was not judged; this is not a finding about the Flow.`;
 }
 
 /** What every call cost, summed; a call that reported nothing counts nothing. */

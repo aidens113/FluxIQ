@@ -1,10 +1,10 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowRunActionAttemptRecord, AutomationStudioPublishedFlowSnapshot, AutomationStudioRuntimeSession } from "../../../model/index.ts";
 import type { AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
-import type { AutomationStudioGraphExecutionOptions, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
+import type { AutomationStudioGraphExecutionOptions, AutomationStudioGraphExecutionTrace, AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import type { AutomationStudioCandidateTrialVerdict } from "../../flow-bootstrap/candidate/index.ts";
 import type { runAutomationStudioDetachedCandidate } from "../../flow-bootstrap/verification/index.ts";
-import type { AutomationStudioBuildTestJudgeInput, AutomationStudioBuildTestVerdict, AutomationStudioResultEndView, AutomationStudioResultRecordSetInput } from "../../result-verification/index.ts";
+import type { AutomationStudioBuildTestJudgeInput, AutomationStudioBuildTestVerdict, AutomationStudioResultEndView, AutomationStudioResultRecordSetInput, AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 
 /**
  * The deployment's start hook (decision D1, 2026-10-07): puts the target back
@@ -51,7 +51,26 @@ export type AutomationStudioCandidateTrialRecord = {
    * learned none.
    */
   learnedPaces?: AutomationStudioCandidateTrialLearnedPace[];
+  /**
+   * True when this record is the judge asked again about an earlier trial it
+   * did not judge, on that trial's evidence and under its run id; nothing ran
+   * (`./run.ts`, t473).
+   */
+  judgedAgain?: true;
   judge: { calls: number; inputTokens: number; outputTokens: number; totalTokens: number; estimatedCostUsd: number };
+};
+
+/**
+ * A trial its judge did not judge, kept whole so the judge can be asked again
+ * on it rather than the Flow run again (`./run.ts`, t473): the summary the
+ * judge was shown, what its feedback reads beside it, and the record's start
+ * and paces.
+ */
+export type AutomationStudioCandidateTrialUnjudged = {
+  summary: AutomationStudioRunResultSummary;
+  shown: { trialRunId: string; trace?: AutomationStudioGraphExecutionTrace | undefined; graph?: AutomationStudioFlowArtifact | undefined; start: string; wayOuts?: Readonly<Record<string, string>> };
+  start: AutomationStudioCandidateTrialStart;
+  learnedPaces?: AutomationStudioCandidateTrialLearnedPace[];
 };
 
 /** What a trial reaches outside itself. Every read is the trial's own: nothing here sees the build's exploration. */
