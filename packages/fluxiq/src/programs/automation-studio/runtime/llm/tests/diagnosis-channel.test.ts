@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AutomationStudioFlowInstruction } from "../../../model/index.ts";
+import type { AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
 import { createAutomationStudioDeepSeekProvider } from "../deepseek/index.ts";
 import { runAutomationStudioLlmHarness, type AutomationStudioLlmDiagnosisFields } from "../harness.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION, automationStudioDiagnosisPromptInstruction } from "../diagnosis-instructions.ts";
@@ -34,6 +35,46 @@ const fields: AutomationStudioLlmDiagnosisFields = {
   explorationNeeded: true,
   patchNeeded: true
 };
+
+describe("complete quantity and cohort guidance in the actual verification request", () => {
+  it.each([false, true])("delivers the same cohort comparison to the provider (buildTest=%s) without changing its answer schema", async (buildTest) => {
+    const instruction: AutomationStudioFlowInstruction = {
+      schemaVersion: "0.1", instructionId: "instruction.cohort", title: "Required cohort", body: "Return every subject meeting the stated requirements.",
+      scope: { kind: "flow", projectId: base.projectId, flowId: base.flowId }, priority: 1, status: "active", requirement: "required", createdAt: 1, updatedAt: 1
+    };
+    const resultSummary: AutomationStudioRunResultSummary = {
+      schemaVersion: "automation-studio.run-result-summary.v1", totalRecordCount: 0, totalRefusedCount: 0, totalRowsMissingRequired: 0,
+      recordSetCount: 0, recordSets: [], flowShape: [], withheld: false,
+      ...(buildTest ? { buildTest: { kind: "build_test" as const, steps: [] } } : {})
+    };
+    const prepared = await runAutomationStudioLlmHarness({ ...base, taskKind: "loop_verification", instructions: [instruction], resultSummary, deniedEvidenceKeys: [] });
+    let outbound = "";
+    const provider = createAutomationStudioDeepSeekProvider({
+      secretReference: { kind: "secret_reference", id: "secret:mock-verification" },
+      resolveSecret: async (input) => { outbound = input.outboundBody; return "test-secret"; },
+      fetchImpl: (async () => new Response(JSON.stringify({
+        choices: [{ finish_reason: "stop", message: { content: JSON.stringify({ kind: "diagnosis", summary: "The evidence is inconclusive.", diagnosis: { answersRequest: "unknown" } }) } }],
+        usage: { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 }
+      }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch
+    });
+    const answered = await provider.runTask(prepared.request) as { response: { diagnosis: AutomationStudioLlmDiagnosisFields } };
+    const body = JSON.parse(outbound) as { messages: Array<{ role: string; content: string }> };
+    const system = body.messages.find((message) => message.role === "system")!.content;
+    const user = JSON.parse(body.messages.find((message) => message.role === "user")!.content);
+    expect(system).toContain("including explicitly identified members and additional components");
+    expect(system).toContain("every relevant left-out witness against the original request independently of the authored filter or pattern");
+    expect(system).toContain("Count distinct required subjects, not the sum of before-and-after reads");
+    expect(system).toContain("answer unknown instead of accepting the authored condition");
+    expect(system.includes("When resultSummary.buildTest is present")).toBe(buildTest);
+    expect(user.context.instructions.instructions[0].body).toBe(instruction.body);
+    expect(user.context.resultSummary.totalRecordCount).toBe(0);
+    expect(user.outputSchema.properties.diagnosis.additionalProperties).toBe(false);
+    expect(Object.keys(user.outputSchema.properties.diagnosis.properties)).toEqual([
+      "expected", "observed", "changed", "stillAchievable", "deterministicRecoveryPossible", "answersRequest", "explorationNeeded", "patchNeeded"
+    ]);
+    expect(answered.response.diagnosis.answersRequest).toBe("unknown");
+  });
+});
 
 describe("Automation Studio LLM structured diagnosis channel", () => {
   it("carries the named diagnosis fields through and still strips metadata", async () => {
