@@ -1,7 +1,6 @@
-// A lasting press whose producer saw it certainly change nothing is made once
-// more, and only once, in a graph run -- a saved Flow's playback and a
-// candidate trial (t517). The attempt that makes it says so on its trace
-// (`retry.repress`), and every other unacted failure keeps its retries.
+// Confirmed no-effect presses share the ordinary first attempt and three
+// retries in saved playback and candidate trials. Retry provenance stays on
+// the trace; a later uncertain lasting effect still stops another press.
 
 import type { AutomationStudioFailureRecord } from "@fluxiq/contracts/automation-studio";
 import { describe, expect, it } from "vitest";
@@ -48,6 +47,25 @@ function site(answers: readonly AutomationStudioFailureRecord[]) {
 const lasting = post({ declaredConsequences: ["send_or_publish"] });
 
 describe("a lasting press that certainly changed nothing, in a graph run", () => {
+  it.each([2, 3])("succeeds after %i confirmed no-effect attempts within the ordinary retry budget", async (failures) => {
+    const { pressed, options } = site(Array.from({ length: failures }, () => IGNORED));
+    const trace = await runAutomationStudioGraph(line(lasting), options);
+    expect(trace.status).toBe("succeeded");
+    expect(pressed.count).toBe(failures + 1);
+    const presses = trace.attempts.filter((attempt) => attempt.nodeId === "post");
+    expect(presses.slice(1).every((attempt) => attempt.retry?.repress === true)).toBe(true);
+    expect(presses.at(-1)?.retry?.maxAttempts).toBe(4);
+  });
+
+  it("stops if a later press leaves its lasting effect uncertain", async () => {
+    const uncertain: AutomationStudioFailureRecord = { category: "action_failed", code: "test.reply_lost", retryable: true, stage: "execution", effect: "ambiguous" };
+    const { pressed, options } = site([IGNORED, uncertain]);
+    const trace = await runAutomationStudioGraph(line(lasting), options);
+    expect(pressed.count).toBe(2);
+    expect(trace.status).toBe("failed");
+    expect(trace.attempts.some((attempt) => attempt.nodeId === "done")).toBe(false);
+  });
+
   it("is pressed once more, and the attempt that does so says it is that press", async () => {
     const { pressed, options } = site([IGNORED]);
     const trace = await runAutomationStudioGraph(line(lasting), options);
@@ -58,33 +76,33 @@ describe("a lasting press that certainly changed nothing, in a graph run", () =>
     expect(presses[1]?.retry).toMatchObject({ attemptNumber: 2, previousAttemptId: presses[0]?.attemptId, repress: true });
   });
 
-  it("is never pressed a third time when the press made once more changed nothing either", async () => {
+  it("fails after exactly four confirmed no-effect presses", async () => {
     const { pressed, options } = site([IGNORED, IGNORED, IGNORED, IGNORED]);
     const trace = await runAutomationStudioGraph(line(lasting), options);
-    expect(pressed.count).toBe(2);
+    expect(pressed.count).toBe(4);
     expect(trace.status).toBe("failed");
     expect(trace.attempts.some((attempt) => attempt.nodeId === "done")).toBe(false);
     const presses = trace.attempts.filter((attempt) => attempt.nodeId === "post");
-    expect(presses.map((attempt) => attempt.status)).toEqual(["failed", "failed"]);
+    expect(presses.map((attempt) => attempt.status)).toEqual(["failed", "failed", "failed", "failed"]);
     const last = presses.at(-1);
     expect(last?.failure?.certainNoEffect).toBe(true);
     expect(last?.retry?.repress).toBe(true);
   });
 
   it("preserves an authored failed route after the lasting press is exhausted", async () => {
-    const { pressed, options } = site([IGNORED, IGNORED]);
+    const { pressed, options } = site([IGNORED, IGNORED, IGNORED, IGNORED]);
     const flow = line(lasting);
     flow.edges.push({ id: "failed", sourceNodeId: "post", targetNodeId: "done", sourcePortId: "failed", targetPortId: "in" });
     const trace = await runAutomationStudioGraph(flow, options);
-    expect(pressed.count).toBe(2);
+    expect(pressed.count).toBe(4);
     expect(trace.status).toBe("succeeded");
     expect(trace.attempts.some((attempt) => attempt.nodeId === "done")).toBe(true);
   });
 
   it("preserves explicit optional continuation of a lasting step", async () => {
-    const { pressed, options } = site([IGNORED, IGNORED]);
+    const { pressed, options } = site([IGNORED, IGNORED, IGNORED, IGNORED]);
     const trace = await runAutomationStudioGraph(line(post({ declaredConsequences: ["send_or_publish"], optional: true })), options);
-    expect(pressed.count).toBe(2);
+    expect(pressed.count).toBe(4);
     expect(trace.status).toBe("succeeded");
   });
 

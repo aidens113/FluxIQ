@@ -189,23 +189,38 @@ describe("a lasting act run outside a graph run", () => {
     expect(outcome.lastingAct).toBe("uncertain");
   });
 
-  it("is pressed once more, and only once, when its press certainly changed nothing (t517)", async () => {
+  it("retries confirmed no-effect presses within the ordinary four-attempt budget", async () => {
     const IGNORED: AutomationStudioFailureRecord = { category: "action_failed", code: "web.action.no_effect", retryable: true, stage: "execution", effect: "unacted", certainNoEffect: true };
     // The page posts on the second press.
     const posted = checked([IGNORED], declared);
     expect((await posted.run).result).toEqual({ ok: true });
     expect(posted.dispatched).toEqual([1, 2]);
-    // A control that ignores every press is pressed twice, never a third time.
+    // A control that ignores every press exhausts the first attempt and three retries.
     const dead = checked([IGNORED, IGNORED, IGNORED, IGNORED], declared);
     const outcome = await dead.run;
-    expect(dead.dispatched).toEqual([1, 2]);
+    expect(dead.dispatched).toEqual([1, 2, 3, 4]);
     expect(outcome.result).toEqual({ ok: false, failure: IGNORED });
-    expect(outcome.faults.map((fault) => fault.disposition)).toEqual(["retry", "refuse"]);
+    expect(outcome.faults.map((fault) => fault.disposition)).toEqual(["retry", "retry", "retry", "retry"]);
     expect(outcome.lastingAct).toBeUndefined();
     // A press that does not last keeps the first attempt and three retries.
     const plain = checked([IGNORED, IGNORED, IGNORED, IGNORED], declaredNone);
     await plain.run;
     expect(plain.dispatched).toEqual([1, 2, 3, 4]);
+  });
+
+  it.each([2, 3])("succeeds after %i confirmed no-effect attempts outside a graph", async (failures) => {
+    const ignored: AutomationStudioFailureRecord = { category: "action_failed", code: "test.no_effect", retryable: true, stage: "execution", effect: "unacted", certainNoEffect: true };
+    const { run, dispatched } = checked(Array.from({ length: failures }, () => ignored), declared);
+    expect((await run).result).toEqual({ ok: true });
+    expect(dispatched).toEqual(Array.from({ length: failures + 1 }, (_, index) => index + 1));
+  });
+
+  it.each(["unknown", "landed"] as const)("stops a later uncertain press when its effect check says %s", async (verdict) => {
+    const ignored: AutomationStudioFailureRecord = { category: "action_failed", code: "test.no_effect", retryable: true, stage: "execution", effect: "unacted", certainNoEffect: true };
+    const { run, dispatched, asked } = checked([ignored, AMBIGUOUS], declared, verdict);
+    expect((await run).lastingAct).toBe(verdict === "unknown" ? "uncertain" : "landed");
+    expect(dispatched).toEqual([1, 2]);
+    expect(asked).toEqual([2]);
   });
 
   it("leaves a node whose act does not last with the first attempt and three retries", async () => {
