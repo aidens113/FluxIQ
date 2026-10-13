@@ -186,11 +186,43 @@ function nextOwed(owed: readonly string[]): string {
   return owed.find((id) => id.startsWith(`${act}.`)) ?? first;
 }
 
+/**
+ * Whether Core's own record says the evidence covers every act the
+ * instruction asks for: the acts checklist was read (`actsMissing` given, from
+ * `../../flow-bootstrap/instructed-acts/`) and owes nothing, and the latest
+ * completion check names no gap. Only then does a candidate stall say "submit".
+ * No record is not coverage: live run `run-mv6bg7ac-d24d91ce` was told to
+ * submit with no candidate and no record, while one act's object was still the
+ * wrong item, and it submitted that item.
+ */
+function candidateCovered(input: AutomationStudioLlmEvidenceStallRedirectInput, stillMissing: "record_producer" | undefined): boolean {
+  return input.actsMissing !== undefined && actsMissing(input).length === 0 && !stillMissing;
+}
+
+/**
+ * The no-candidate stall that Core cannot show is covered: routes not yet
+ * tried, never "submit now". Abstract on purpose; its one example is a kind of
+ * site no realistic scenario uses.
+ */
+function untriedRoutes(owed: readonly string[], stillMissing: "record_producer" | undefined): string {
+  const gap = owed.length
+    ? `No candidate has been accepted, and the acts checklist still has ${owed.join(", ")} not shown done (actsMissing).`
+    : stillMissing
+      ? "No candidate has been accepted, and the instruction asks for a set of records no step gathered yet (stillMissing: record_producer)."
+      : "No candidate has been accepted, and nothing yet shows every act the instruction asks for done on the right item.";
+  return `${gap} Going back to pages already seen, or running the same search again, will not change that, and submitting now would submit what is still missing.`
+    + " Take a route not yet tried: a control on the current page you have not used (an option or variant choice, an \"Options\", \"More\" or \"See all\" link, a related or similar items section), a page search with other or fewer words, or going back to a listing and opening a result you have not opened."
+    + " For example, on a library catalogue where the title shown is the wrong edition, its \"Other editions\" link or a search for the title without the edition words reaches the right one."
+    + " Submit the whole candidate only once the evidence shows every act the instruction asks for done, using steps that were seen working, then test its returned revision and digest. Do not complete an untested candidate.";
+}
+
 function instruction(input: AutomationStudioLlmEvidenceStallRedirectInput, stepsLeft: number, refused: boolean, stillMissing: "record_producer" | undefined): string {
   if (input.discoveryOnly) {
     const next = input.candidate
       ? `The latest accepted candidate has receipt ${JSON.stringify(input.candidate)}. Use core.test_candidate with that exact revision and digest if its trial has not answered yes. Complete only after yes for that exact receipt; change and resubmit only when its feedback names a cause in the Flow.`
-      : "No candidate has been accepted. Use the evidence already gathered, correct any named submission issues and submit the whole candidate, then test its returned revision and digest. Do not complete an untested candidate.";
+      : candidateCovered(input, stillMissing)
+        ? "No candidate has been accepted. Use the evidence already gathered, correct any named submission issues and submit the whole candidate, then test its returned revision and digest. Do not complete an untested candidate."
+        : untriedRoutes(actsMissing(input), stillMissing);
     const looking = input.looksWithdrawn ? " Looking is withdrawn until an action runs; candidate submission and testing remain the finishing path." : "";
     return `The last ${input.stepsWithoutProgress} steps added no new evidence. Repeating the same request returns the answer already held.${looking} ${next} ${stepsLeft} more step(s) without progress stop this build.`;
   }
