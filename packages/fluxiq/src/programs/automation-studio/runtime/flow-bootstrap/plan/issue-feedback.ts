@@ -38,10 +38,18 @@
 // whose code says a step's consequences are undeclared now carries `instead`:
 // one fixed sentence, quoting nothing but the step's own `submit: true` and
 // Core's consequence classes, once per step.
+//
+// **A refusal that named a field says it (t489).** A domain that refuses a
+// step for a field it cannot use may name that field and the names it can use
+// (`detail`, read at `../../llm/harness-options/plan-parameter-resolution.ts`).
+// Such an issue carries `field` and `valid`, and Core's sentence with its code
+// and those names, rebuilt here from the detail alone; the issue's own message
+// is never passed for it. Lane D round 13 (`run-mv66sc3c-c47e74b8`) resent one
+// script until its build ended, told only that its parameters were refused.
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_ACTION_CONSEQUENCES } from "../../action-permissions/index.ts";
 import type { AutomationStudioNodeDefinition, AutomationStudioNodeRegistry, AutomationStudioNodeRegistryResolution } from "../../../nodes/index.ts";
-import type { AutomationStudioFlowBootstrapIssue } from "./contracts.ts";
+import type { AutomationStudioFlowBootstrapIssue, AutomationStudioFlowBootstrapIssueDetail } from "./contracts.ts";
 import { automationStudioFlowBootstrapParameterText } from "./parameter-text.ts";
 import { automationStudioFlowBootstrapRecordOutputContract } from "./record-output-contract.ts";
 import { AUTOMATION_STUDIO_ROUTE_CONDITION_FORM } from "./route-condition.ts";
@@ -144,7 +152,14 @@ const AUTHORED_CODES: ReadonlySet<string> = new Set([
   // A fact the model wrote that names its element by anything but a handle
   // (`../../llm/harness-options/plan-parameter-resolution.ts`, t432): a fixed
   // sentence that quotes nothing and says to name it by its handle.
-  "bootstrap.target_not_a_handle"
+  "bootstrap.target_not_a_handle",
+  // A record output's processing naming a field it does not keep
+  // (`./record-output-contract.ts`, t489): Core's sentence names only the field
+  // ids the model wrote in that record output and the ids its schema stores,
+  // never a value a condition compares.
+  "record_output.process_unknown_field",
+  "record_output.process_excluded_field",
+  "record_output.process_where_column_dropped"
 ]);
 
 const ROUTE_CODES: ReadonlySet<string> = new Set([
@@ -175,6 +190,28 @@ const PARAMETER_PATH = /^plan\.subflows\.(\d+)\.nodes\.(\d+)\.parameters\.([^.]+
 const PARAMETERS_PATH = /^plan\.subflows\.(\d+)\.nodes\.(\d+)\.parameters$/u;
 const POSITIONED_PARAMETER = /^[^:]+:([^.:]+)/u;
 
+/** A field or name a refusal's detail may carry: identifier characters only, never a sentence or a page value. */
+const DETAIL_NAME = /^[A-Za-z0-9_.:-]{1,200}$/u;
+
+/**
+ * Core's sentence for a domain refusal that named the field it could not use
+ * and the names it can use (t489, lane D round 13). Only the code and those
+ * identifiers are inserted; the domain's own words never are.
+ */
+export function automationStudioFlowBootstrapIssueDetailSentence(code: string, detail: AutomationStudioFlowBootstrapIssueDetail): string {
+  const field = detail.field !== undefined ? `It names ${JSON.stringify(detail.field)}, which the step cannot use there.` : "It names something the step cannot use there.";
+  const valid = detail.valid?.length ? ` The names it can use there are ${detail.valid.map((name) => JSON.stringify(name)).join(", ")}: write one of those instead.` : "";
+  return `The domain that runs this step refused it (${code}). ${field}${valid}`;
+}
+
+/** The detail as the model may read it: each name an identifier, the rest dropped; nothing when no name is left. */
+function detailOf(detail: AutomationStudioFlowBootstrapIssueDetail | undefined): AutomationStudioFlowBootstrapIssueDetail | undefined {
+  if (!detail) return undefined;
+  const field = typeof detail.field === "string" && DETAIL_NAME.test(detail.field) ? detail.field : undefined;
+  const valid = Array.isArray(detail.valid) ? [...new Set(detail.valid.filter((name) => typeof name === "string" && DETAIL_NAME.test(name)))] : [];
+  return field !== undefined || valid.length ? { ...(field !== undefined ? { field } : {}), ...(valid.length ? { valid } : {}) } : undefined;
+}
+
 /** The issues a refused plan is fed back with, each with the shape it accepts where one applies. */
 export function automationStudioFlowBootstrapIssueFeedback(input: {
   issues: readonly AutomationStudioFlowBootstrapIssue[];
@@ -186,10 +223,13 @@ export function automationStudioFlowBootstrapIssueFeedback(input: {
   const described = new Set<string>();
   const instructed = new Set<string>();
   return input.issues.map((issue) => {
+    const detail = detailOf(issue.detail);
     const entry: JsonObject = {
       code: issue.code,
       ...(issue.path ? { path: printablePath(issue.path) } : {}),
-      ...(AUTHORED_CODES.has(issue.code) && issue.message ? { message: issue.message } : {})
+      // A refusal that named a field is said in Core's sentence, rebuilt here from the detail alone (t489).
+      ...(detail ? { message: automationStudioFlowBootstrapIssueDetailSentence(issue.code, detail), ...detail }
+        : AUTHORED_CODES.has(issue.code) && issue.message ? { message: issue.message } : {})
     };
     const instead = insteadOf(issue, input.plan, instructed);
     if (instead) entry.instead = instead;

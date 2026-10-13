@@ -42,7 +42,7 @@ import { layoutNodes } from "./layout.ts";
 import { correctAutomationStudioFlowBootstrapPlanNames } from "./name-correction.ts";
 import type { AutomationStudioFlowBootstrapNameAssumption } from "./name-correction-assumption.ts";
 import { parseAutomationStudioFlowBootstrapPlan } from "./parsing.ts";
-import { automationStudioFlowBootstrapRecordOutputIssues } from "./record-output-contract.ts";
+import { automationStudioFlowBootstrapRecordOutputIssueMessage, automationStudioFlowBootstrapRecordOutputIssues } from "./record-output-contract.ts";
 import { deriveRisk } from "./risk.ts";
 import { automationStudioFlowBootstrapRouteIssues } from "./route-validation.ts";
 import {
@@ -279,10 +279,11 @@ function declaredOutputIds(registry: AutomationStudioNodeRegistry, resolution: A
 // Core's node that writes records replaces any path with its own and refuses
 // a missing or null record output, and the other nodes save nothing on null.
 // So each code is one the run would have failed with, and a record output
-// accepted here is one the run accepts.
+// accepted here is one the run accepts. A refusal about a field names it and
+// the ids the schema stores, in Core's own sentence (t489, F4).
 function recordOutputIssues(value: JsonValue | undefined, definition: AutomationStudioNodeDefinition, path: string): AutomationStudioFlowBootstrapIssue[] {
   return automationStudioFlowBootstrapRecordOutputIssues(definition, value)
-    .map((code) => error(code, "Record output does not satisfy the record-set contract.", path));
+    .map((code) => error(code, automationStudioFlowBootstrapRecordOutputIssueMessage(code, value) ?? "Record output does not satisfy the record-set contract.", path));
 }
 
 const CONTRACT_FAILED = "bootstrap.parameter_contract_failed";

@@ -138,7 +138,16 @@ describe("Automation Studio Flow bootstrap contract", () => {
     // (`run-mv0fu9pb-57454dc4`) followed the text and was refused for it. The
     // correction costs 131 bytes over the false clause (5,943 to 6,074); every
     // shorter wording tried still crossed 6,000 or dropped the search example.
-    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(6_100);
+    //
+    // Raised to 6,500 on 2026-10-13 (t489): the narrowing sentence told the model to
+    // narrow "first with the steps that set the target's own controls", and lane C
+    // twice pressed a site band narrower than the request (`run-mv62icw3-9118516f`,
+    // `run-mv5uu9g1-9d80deea`), losing rows no read could show. The corrected
+    // sentence says a control narrows only when its words keep exactly what is
+    // asked, otherwise `extractList.where` does; it costs 328 bytes (6,074
+    // to 6,402). Since t484 the schema sits in the cached prefix, so after a build's
+    // first call these bytes are billed at the cached rate.
+    expect(Buffer.byteLength(serializedSchema, "utf8")).toBeLessThan(6_500);
 
     const minimalWebPlan: AutomationStudioFlowBootstrapPlan = {
       schemaVersion: "0.1",

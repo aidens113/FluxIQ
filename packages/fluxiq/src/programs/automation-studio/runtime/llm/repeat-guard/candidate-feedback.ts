@@ -10,6 +10,15 @@
 // draft, and an identical `core.submit_candidate` is answered with the issues
 // its first refusal listed, as that refusal gave them (each names the step and
 // line it is about, and what to write instead where the check knows).
+//
+// **The note names the earlier call, and a refusal with no issues is not
+// said to have them (t489, F5).** Lane D round 13 (`run-mv66sc3c-c47e74b8`,
+// 0044 and 0062) sent an unchanged submission again and was told its issues
+// were "listed under issues as that refusal gave them". An unchanged refusal
+// (`candidate.unchanged_submission`, `candidate.unchanged_after_no`) lists none:
+// what failed is under its `lastTrial`, or `judged` after a no. So every
+// refused submission's note names the call that was refused, and one with no
+// issues says where that refusal put what failed and what to change.
 
 import type { JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioLlmEvidenceRepeatedOutcome } from "./outcomes.ts";
@@ -39,9 +48,30 @@ const HANDLE_UNSHOWN = "You already made this exact call -- the same tool with t
   + "or for a list's extraction handle detect the list's repeating structure from one of its items, which mints the handle and its fields. "
   + "Once a call has shown it, this same call may be made again with the handle exactly as shown.";
 
-const REFUSED_SUBMISSION = "You already submitted this exact candidate -- the same script, word for word -- and it was refused (sameAsCall, then.resultCode). "
-  + "It was the same script, so it was not checked again: it is refused for the same issues, listed under issues as that refusal gave them. "
-  + "Change the lines those issues name (each names its step and line where the refusal gave them, and what to write instead where it knows), keep every other line as it is, and submit the whole candidate again.";
+/** A refused submission sent again, whose refusal listed issues; `call` is the refused call's id. */
+function refusedSubmission(call: string): string {
+  return `You already submitted this exact candidate -- the same script, word for word -- in call ${call}, and it was refused (sameAsCall, then.resultCode). `
+    + "It was the same script, so it was not checked again: it is refused for the same issues, listed under issues as that refusal gave them. "
+    + "Change the lines those issues name (each names its step and line where the refusal gave them, and what to write instead where it knows), keep every other line as it is, and submit the whole candidate again.";
+}
+
+/** A submission refused as unchanged, sent again: its refusal named no issues, only what failed last (header, t489). */
+function unchangedSubmission(call: string): string {
+  return `You already submitted this exact candidate -- the same script, word for word -- in call ${call}, and it was refused as unchanged (sameAsCall, then.resultCode): it is the Flow of a revision already made. `
+    + "It was the same script, so it was not checked again. That refusal lists no issues: what failed is in its answer, under lastTrial (the step that stopped, and what it says happened), or under judged after the judge's no. "
+    + "Change the step that feedback names, or the steps that lead to it, keep every other line as it is, and submit the whole changed candidate; "
+    + "test the same revision again with core.test_candidate only if that feedback says trying again may pass.";
+}
+
+/** Any other refused submission with no issues, sent again. */
+function refusedWithoutIssues(call: string): string {
+  return `You already submitted this exact candidate -- the same script, word for word -- in call ${call}, and it was refused (sameAsCall, then.resultCode, then.resultReason). `
+    + "It was the same script, so it was not checked again, and it is refused for the same reason. That refusal lists no issues: read its answer in call "
+    + `${call} for what it names, change what it names, keep every other line as it is, and submit the whole changed candidate.`;
+}
+
+/** The refusal codes of a submission that changed nothing (`../../flow-bootstrap/candidate/unchanged-submission.ts`), read as plain strings. */
+const UNCHANGED_CODES: ReadonlySet<string> = new Set(["candidate.unchanged_submission", "candidate.unchanged_after_no"]);
 
 const ACCEPTED_SUBMISSION = "You already submitted this exact candidate -- the same script, word for word -- and it was accepted, with the revision and digest it returned (sameAsCall). "
   + "Submitting it again changes nothing, so it was not run. Test that revision, complete with it once its trial answers yes, or submit a changed candidate.";
@@ -62,7 +92,9 @@ export function automationStudioLlmEvidenceCandidateRepeatInstruction(input: {
   const { toolId, earlier, inARow, maxInARow } = input;
   if (toolId === SUBMIT_CANDIDATE) {
     if (earlier.outcome !== "failed") return { instruction: ACCEPTED_SUBMISSION + ending(inARow, maxInARow, "it") };
-    return { instruction: REFUSED_SUBMISSION + ending(inARow, maxInARow, "it"), ...(earlier.issues ? { issues: structuredClone(earlier.issues) } : {}) };
+    if (earlier.issues) return { instruction: refusedSubmission(earlier.callId) + ending(inARow, maxInARow, "it"), issues: structuredClone(earlier.issues) };
+    const said = earlier.resultCode !== undefined && UNCHANGED_CODES.has(earlier.resultCode) ? unchangedSubmission(earlier.callId) : refusedWithoutIssues(earlier.callId);
+    return { instruction: said + ending(inARow, maxInARow, "it") };
   }
   if (earlier.outcome === "same_answer") return { instruction: SAME_LOOK + ending(inARow, maxInARow, "the same look") };
   if (earlier.handleUnshown) return { instruction: HANDLE_UNSHOWN + ending(inARow, maxInARow, "this call") };

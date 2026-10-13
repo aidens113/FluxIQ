@@ -249,3 +249,28 @@ describe("the feedback on a step whose consequences are undeclared", () => {
     expect(feedback[0]!.instead).toBeUndefined();
   });
 });
+
+// t489 (F4): a processing refusal's sentence names the field and the stored ids, and reaches the model.
+describe("the feedback on a record output whose processing names a field it does not store", () => {
+  it("carries Core's sentence naming the field and the stored ids", () => {
+    const recordOutput = { datasetId: "members", writeMode: "replace", schema: { schemaVersion: "0.1", fields: [{ id: "name", label: "Name", valueType: "string" }, { id: "visits", label: "Visits", valueType: "number" }] }, process: { where: [{ field: "status", contains: "active" }] } };
+    const { feedback } = feedbackFor({ extractList, recordOutput });
+    const entry = feedback.find((item) => item.code === "record_output.process_unknown_field");
+    expect(entry?.message).toEqual(expect.stringContaining("\"status\""));
+    expect(entry?.message).toEqual(expect.stringContaining("\"name\", \"visits\""));
+  });
+});
+
+// t489: a domain's refusal that named the field and the names it can use reaches the model in Core's sentence.
+describe("the feedback on a domain refusal that names a field", () => {
+  it("carries Core's sentence and the field and valid names, and no message for the same code without a detail", () => {
+    const feedback = automationStudioFlowBootstrapIssueFeedback({ issues: [
+      { severity: "error", code: "web.handle.unknown_field", message: "built elsewhere", path: "plan.subflows.0.nodes.3.parameters", detail: { field: "status", valid: ["name", "visits"] } },
+      { severity: "error", code: "web.handle.unknown_field", message: "private-page-text", path: "plan.subflows.0.nodes.4.parameters" }
+    ] });
+    expect(feedback[0]).toMatchObject({ code: "web.handle.unknown_field", field: "status", valid: ["name", "visits"] });
+    expect(feedback[0]!.message).toEqual(expect.stringContaining("\"status\""));
+    expect(feedback[0]!.message).not.toBe("built elsewhere");
+    expect(feedback[1]).not.toHaveProperty("message");
+  });
+});

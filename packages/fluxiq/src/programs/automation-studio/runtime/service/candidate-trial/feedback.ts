@@ -49,6 +49,13 @@
 // it pressed when the domain could name it (`./interruptions.ts`), so a
 // dismissing step is written against that control and no look-alike.
 //
+// **A refused step says what its node refused (t489, F3).** A failed step lists
+// `issues`, its node's own codes with the field refused and the names it can
+// use where the node gives them (`./step-issues.ts`), and its `happened` says
+// the step was refused as written rather than that its node cannot run
+// (`./happened.ts`). Lane D round 13 (`run-mv66sc3c-c47e74b8`) resubmitted one
+// script three times because the feedback said only the latter.
+//
 // **A read says what it saw and kept (t466).** A judged trial lists each list
 // read with the rows it saw, kept and each condition rejected (`./reads.ts`).
 // A read that kept no rows is a valid ending -- the loop over it ran no passes,
@@ -96,6 +103,7 @@ import { automationStudioTrialExecutedSteps } from "./executed-steps.ts";
 import { automationStudioTrialFailureHappened } from "./happened.ts";
 import { automationStudioTrialInterruptions } from "./interruptions.ts";
 import { automationStudioTrialReadsFeedback } from "./reads.ts";
+import { automationStudioTrialStepIssues } from "./step-issues.ts";
 import { automationStudioTrialTargetOnPage } from "./target-on-page.ts";
 
 /** The handle the domain named each pressed way out by, keyed by the client's reference (`./interruptions.ts`). */
@@ -201,12 +209,14 @@ function steps(trace: AutomationStudioGraphExecutionTrace | undefined, graph: Au
       ...(attempt.skipped ? { skipped: skippedSaid(attempt.skipped) } : {}),
       // Done, though its try failed: the page already showed what the step does (`stateHeld`).
       ...(attempt.stateHeld ? { stateHeld: "The step's try failed, but the page already showed what the step does, so the run went on without doing it again." } : {}),
-      failureCode: failure?.code, happened: failure ? automationStudioTrialFailureHappened(failure.category) : undefined,
+      failureCode: failure?.code, happened: failure ? automationStudioTrialFailureHappened(failure.category, failure.code) : undefined,
       ...(failure ? automationStudioModelFacingFailureText(failure) : {})
     });
+    // What the step's own node said was wrong with it: codes, the field refused and the names it can use (`./step-issues.ts`, t489).
+    const issues = failure && !attempt.stateHeld ? automationStudioTrialStepIssues(attempt.outputs) : [];
     // What the run closed over the page while the step ran, and the handle of the way out it pressed when the domain named one (t470).
     const interruptions = automationStudioTrialInterruptions([...absorbed.map((entry) => entry.failed), attempt], wayOuts);
-    const told = { ...step, ...(absorbed.length ? { absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage !== undefined }) } : {}), ...(interruptions.length ? { interruptions } : {}) };
+    const told = { ...step, ...(issues.length ? { issues } : {}), ...(absorbed.length ? { absorbed: automationStudioTrialAbsorbedFeedback({ absorbed, pass, targetOnPage: onPage !== undefined }) } : {}), ...(interruptions.length ? { interruptions } : {}) };
     // A step whose state already held is done: no retry or check advice for a failure the run went past.
     return failure && !attempt.stateHeld ? { ...told, retryable: failure.retryable === true, ...automationStudioTrialCheckStepFeedback(node, attempt), ...onPage } : told;
   });

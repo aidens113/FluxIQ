@@ -267,9 +267,11 @@ describe("the legacy format and completion schema bytes", () => {
   // t378 changed legacy deliberately, by one clause: the consequence sentence
   // said a typing step never needs the line, and the web domain asks it of one
   // with `submit: true` (lane B's refused script). Both digests moved with it.
+  // t489 changed it deliberately again: the narrowing sentence no longer says to narrow with the site's own
+  // controls first, and its example moved off a shop (lane C round 13, D2). Both digests moved with it.
   it("are unchanged by candidate-only text", () => {
-    expect(digest(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT)).toBe("fbc8bfdb47b58003017b09e7fbe52daed7607db1a00bcae3ff8cae958987f87d");
-    expect(digest(JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA))).toBe("4158085b471a9c70072be180acdfaca04fb79787ede5f56e42635709b5176965");
+    expect(digest(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT)).toBe("7887ea279c568e9fd4436d6c68008ce132f1a784ca602afb81f7aeeba9b052b7");
+    expect(digest(JSON.stringify(AUTOMATION_STUDIO_EVIDENCE_FLOW_BOOTSTRAP_COMPLETION_SCHEMA))).toBe("acbbb16db061c7f1d08293a1745bd10e02d533cae43768dd9bfea61a387eb591");
   });
 });
 
@@ -326,7 +328,7 @@ describe("every example in the Flow script format", () => {
 
   it("finds every example of the four constants", () => {
     expect(blocks.map(([name]) => name)).toEqual([
-      "Example:", "Example, narrowing before reading:", "Example, two situations the run can start in:",
+      "Example:", "Example, narrowing with a control whose words are exactly the instruction's:", "Example, two situations the run can start in:",
       "Example, acting on one item:",
       "Example, reading every page of a list:", "Example, acting on each row a listing kept:", "Example, a loop the site asked to slow down:",
       "Example, starting where the page already is:", "Example, an interruption that can come at any pass:", "Example, a second known way, checked the same:"
@@ -502,5 +504,26 @@ describe("every example in the Flow script format, saved as a Flow", () => {
     const recovery = savedFlowValidation(anywhere.plan, registry, EXAMPLE_RESOLUTION).topology!.subflows.find((saved) => saved.subflow.role === "recovery")!;
     expect(recovery.graphFlow.nodes.map((node) => node.definitionId)).toEqual(["builtin.control.handler", "web.output.dom-click", "builtin.control.handler-end"]);
     expect(recovery.graphFlow.metadata?.requires).toEqual(["flow.handlers@1", "web.facts@1"]);
+  });
+});
+
+// Lane C round 13 (`run-mv66s8yl-fbbfa221`, D2): the format told the model to narrow a part of a collection "first with
+// the steps that set the target's own controls", the trap t482's judge rule exists to catch -- a site's band or
+// category that keeps less than the request asks. t489: a site control narrows only when its words keep exactly what
+// the instruction asks; otherwise the read's own condition narrows. Its example is on a kind of site no Lab lane uses.
+describe("the format's guidance on narrowing a collection", () => {
+  it("no longer invites narrowing with the site's own controls first", () => {
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).not.toContain("narrow it first with the steps that set the target's own controls");
+  });
+
+  it("narrows with a site control only when its words keep exactly what the instruction asks, and otherwise in the read's own condition", () => {
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).toContain("only when that control's words keep exactly what the instruction asks");
+    expect(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).toContain("narrow in the read's own condition, `extractList.where`");
+  });
+
+  it("shows its narrowing example on a site that is not a shop, a social feed or a job board", () => {
+    const narrowing = exampleBlocks(AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT).find(([name]) => /narrowing/u.test(name));
+    expect(narrowing?.[1]).toBeDefined();
+    expect(narrowing![1]).not.toMatch(/shop|store|order|cart|feed|social|post|job|career/iu);
   });
 });

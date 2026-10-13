@@ -152,3 +152,43 @@ describe("a judgement's left-out words and labels, read for what they say of the
     expect(lines[0]).toContain(`${BLUE} is in the result`);
   });
 });
+
+// t489, lane C round 13 (`run-mv66s8yl-fbbfa221`, D1): the judge named a left-out row by its title and its own price
+// and rating -- "<title>, $50.00, 4.6" -- and that title's four-word start was the start of a stored row with another
+// price and rating. The left-out row was in no condition's witness list, so the prefix named only the stored one, and
+// Core called a correct judge's reading misread. A prefix names a stored row only when the values the judgement writes
+// beside it agree with that row's cells; a price or rating that differs names another row.
+describe("a row named by its title beside values its stored cells do not hold", () => {
+  const TITLE = "Fernvale Trail Lamp 2";
+  const STORED = [
+    { name: `${TITLE} Rechargeable Headlamp, Graphite`, price: "$42.00", rating: "4.3" },
+    { name: "Lumen Ridge Camp Lantern, Dimmable, Olive", price: "$35.00", rating: "4.1" },
+    { name: "Northpine Pocket Torch, Aluminium, Black", price: "$18.00", rating: "4.7" }
+  ];
+  const summary = (): AutomationStudioRunResultSummary => ({
+    schemaVersion: "automation-studio.run-result-summary.v1",
+    totalRecordCount: STORED.length, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 1,
+    recordSets: [{ datasetId: "web.output.dom-extract_list", recordCount: STORED.length, refusedCount: 0, truncated: false, columns: ["name", "price", "rating"], columnsWithheld: false,
+      rowsChecked: STORED.length, rowsMissingRequired: 0, missingRequiredColumns: [], sampleRows: STORED.map((row) => ({ ...row })) }],
+    reads: [{ nodeId: "node.read", definitionId: "web.output.dom-extract_list", pagesRead: 1, truncated: false, itemsSeen: 12, kept: 3, conditions: [] }],
+    flowShape: [], withheld: false
+  });
+  const misread = (judgement: string): string[] => automationStudioResultCheckedRows(summary(), judgement).filter((line) => line.includes("misread"));
+
+  it("does not take a left-out row with another price and rating for the stored row its title starts like", () => {
+    expect(misread(`The condition left out "${TITLE}, $50.00, 4.6", which the request asks for.`)).toEqual([]);
+    expect(misread(`The run left out ${TITLE} at $50.00.`)).toEqual([]);
+  });
+
+  it("still names the stored row when the values beside its title are its own, or when none are written", () => {
+    expect(misread(`The run left out "${TITLE}, $42.00, 4.3".`)).toHaveLength(1);
+    expect(misread(`The run left out ${TITLE}.`)).toHaveLength(1);
+    // A bound the request sets is not the row's own value.
+    expect(misread(`The run left out ${TITLE}, though it is under $50.00.`)).toHaveLength(1);
+  });
+
+  it("reads each mention's values up to the next row it names", () => {
+    const lines = misread(`The run left out ${TITLE} at $42.00 and Northpine Pocket Torch, Aluminium at $18.00.`);
+    expect(lines).toHaveLength(2);
+  });
+});

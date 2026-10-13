@@ -308,7 +308,8 @@ describe("Automation Studio evidence-loop provider task", () => {
     // press step for; the reason and the byte cost are in
     // `flow-bootstrap/tests/plan.test.ts`, which holds the same ratchet.
     // 6,100 since t378, for the corrected `submit: true` clause; reason there.
-    expect(Buffer.byteLength(JSON.stringify(completion), "utf8")).toBeLessThan(6_100);
+    // 6,500 since t489, for the corrected narrowing sentence; reason there.
+    expect(Buffer.byteLength(JSON.stringify(completion), "utf8")).toBeLessThan(6_500);
     expect(estimateAutomationStudioDeepSeekInputTokens(productionRequest)).toBeLessThanOrEqual(8_000);
     await expect(provider.runTask(productionRequest)).resolves.toMatchObject({ response: { kind: "evidence_tool_decision" } });
     expect(secretCalls).toBe(1);

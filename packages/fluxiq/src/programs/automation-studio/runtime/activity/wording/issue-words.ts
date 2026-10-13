@@ -27,6 +27,46 @@ type Words = { one: string; many: string; named: string; namedMany: string };
 
 const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
 
+/** A step's words from what one step does and what several do: "a step {one}", "{some} steps {many}", and the same of named steps. */
+function stepWords(one: string, many: string): Words {
+  return { one: `a step ${one}`, many: `{some} steps ${many}`, named: `the step {step} ${one}`, namedMany: `the steps {steps} ${many}` };
+}
+
+/**
+ * A refused handle in the words of its own code (t489). Lane B round 13
+ * (`run-mv66samo-b5e6d5e8`) told the person a step "points at something that
+ * wasn't seen on the page" for a control that was seen, on another page: one
+ * pattern gave every handle code those words. Only a handle the page never
+ * showed says it was not seen now; the hints a domain sends beside another
+ * handle code (`web.handle.expected.*`, `web.handle.target_kind.*`) say nothing
+ * of their own, and a handle code with no words here says only that the step
+ * points at something it can't use.
+ */
+const HANDLE_WORDS: ReadonlyArray<readonly [RegExp, Words]> = [
+  [/^(?:web\.handle\.(?:unknown|unheard_of|invented)|bootstrap\.handle_(?:not_issued|unresolved))$/u,
+    stepWords("points at something that wasn't seen on the page", "point at things that weren't seen on the page")],
+  [/^(?:web\.handle\.stale|bootstrap\.handle[._]other_page)$/u,
+    stepWords("points at something from another page than the one it runs on", "point at things from other pages than the ones they run on")],
+  [/^web\.handle\.renumbered_by_reload$/u,
+    stepWords("points at something the page numbered anew when it reloaded", "point at things the page numbered anew when it reloaded")],
+  [/^web\.handle\.(?:ambiguous|not_unique)$/u,
+    stepWords("points at something that now matches more than one thing on the page", "point at things that now match more than one thing on the page")],
+  [/^web\.handle\.unidentifiable$/u,
+    stepWords("points at something that can't be told apart from the rest of the page", "point at things that can't be told apart from the rest of the page")],
+  [/^web\.handle\.frame_mismatch$/u,
+    stepWords("points at something in a different frame of the page", "point at things in a different frame of the page")],
+  [/^web\.handle\.unknown_field$/u, stepWords("reads a column the list it reads doesn't have", "read columns the lists they read don't have")],
+  [/^web\.handle\.extraction_required$/u, stepWords("reads a list without naming the list that was found", "read lists without naming the list that was found")],
+  [/^web\.handle\.not_a_field$/u, stepWords("types into something that isn't a box you can type in", "type into things that aren't boxes you can type in")],
+  [/^web\.handle\.not_a_control$/u, stepWords("presses something that isn't a control you can press", "press things that aren't controls you can press")],
+  [/^web\.handle\.wrong_control$/u, stepWords("uses a kind of step that doesn't work on what it points at", "use kinds of steps that don't work on what they point at")],
+  [/^(?:web\.handle\.malformed|bootstrap\.handle_malformed)$/u, stepWords("names what it acts on in a form the Flow can't read", "name what they act on in a form the Flow can't read")],
+  [/^web\.handle\.misplaced$/u, stepWords("puts what it points at in the wrong setting", "put what they point at in the wrong settings")],
+  [/^web\.handle\.(?:not_a_handle|required)$/u, stepWords("describes what it acts on instead of pointing at it on the page", "describe what they act on instead of pointing at it on the page")],
+  [/^bootstrap\.handle_resolution_unavailable$/u, stepWords("points at something that couldn't be checked against the page", "point at things that couldn't be checked against the page")],
+  [/^(?:web|bootstrap)\.handle[._](?!expected\.|target_kind\.)/u, stepWords("points at something on the page it can't use", "point at things on the page they can't use")]
+];
+
 /** First match wins. A code is read without what follows its `:` (`web.handle.unknown_field:extractList.fields.0`). */
 const BY_CODE: ReadonlyArray<readonly [RegExp, Words]> = [
   [/^web\.step\.(?:consequences_undeclared|expected\.consequences)|^bootstrap\.(?:step_consequences_invalid|invalid_consequences)$/u,
@@ -38,8 +78,7 @@ const BY_CODE: ReadonlyArray<readonly [RegExp, Words]> = [
       named: "the step {step} would accept the offer instead of closing it", namedMany: "the steps {steps} would accept the offer instead of closing it" }],
   [/^flow_script\.repeat_/u, { one: "a repeat was written where the Flow can't run it", many: "{some} repeats were written where the Flow can't run them",
     named: "the repeat on the step {step} was written where the Flow can't run it", namedMany: "the repeats on the steps {steps} were written where the Flow can't run them" }],
-  [/^(?:web|bootstrap)\.handle[._]/u, { one: "a step points at something that wasn't seen on the page", many: "{some} steps point at things that weren't seen on the page",
-    named: "the step {step} points at something that wasn't seen on the page", namedMany: "the steps {steps} point at things that weren't seen on the page" }],
+  ...HANDLE_WORDS,
   [/^bootstrap\.required_input_unconnected$/u, { one: "a step wasn't given what it works on from an earlier step", many: "{some} steps weren't given what they work on from earlier steps",
     named: "the step {step} wasn't given what it works on from an earlier step", namedMany: "the steps {steps} weren't given what they work on from earlier steps" }],
   [/^bootstrap\.(?:invalid_parameter_value|parameter_contract_violation|parameter_contract_failed)$/u, { one: "a step was given a setting it can't use", many: "{some} steps were given settings they can't use",
