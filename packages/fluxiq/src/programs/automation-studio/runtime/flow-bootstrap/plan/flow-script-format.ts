@@ -305,6 +305,36 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE = [
 ].join("\n");
 
 /**
+ * What a `where` condition may say, and how each comparison reads its value:
+ * the one text both places a condition is written are shown it (t478).
+ *
+ * **Why it is here.** It used to be written only in the web domain's detection
+ * tool's description. Lane D round 11 (`run-mv5yaapw-6d20d23d`) asked for the
+ * same detection three times running, Core withdrew every look until an act ran
+ * (`../../llm/decision-handlers/look-withdrawal.ts`), and the decisions that
+ * then wrote the listing's `where` were offered `core.submit_candidate`, which
+ * accepts one, and no word on what one may say. The model wrote a digit pattern
+ * for "five or more" and left out a row whose count was written another way. A
+ * withdrawal may take a look away; it must never take away the only description
+ * of a parameter a kept tool accepts. So the rules ride on the submission's own
+ * format (`AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT`), which no withdrawal
+ * touches, and a domain that describes the same conditions in a tool of its own
+ * says this same text rather than a second copy of it.
+ *
+ * The comparisons are the record processing vocabulary's
+ * (`@fluxiq/contracts`, `processing-vocabulary.ts`), the domain's item
+ * condition to the key, and the number a bound reads is the shared reader's
+ * (`read-number.ts`). `tests/condition-rules.test.ts` holds every key of that
+ * vocabulary to being named here.
+ */
+export const AUTOMATION_STUDIO_FLOW_CONDITION_RULES = [
+  "Presence: is: \"present\" or \"absent\", for a column only some items have.",
+  "Number: atLeast, atMost, lessThan, greaterThan, or equals with a number, compare the number the value states: the first number written ($49 is 49, 3.7 out of 5 is 3.7), or the total of a combined count it recognises; a value stating no number fails.",
+  "A quantity -- a count, price, rating or amount -- is always compared with a bound, never a text test: a pattern reads characters, not the number, and misses the same count written another way.",
+  "Text: contains, startsWith, endsWith, equals with text, or matches for a regex, ignoring case; one value or a list meaning any. not: true keeps what the condition rejects."
+].join(" ");
+
+/**
  * How a candidate repeats a span and binds a value, with an example of each
  * loop (t346): reading every page of a list and processing the rows at the end
  * of the run, and acting on each row a listing kept. Candidate-only, beside the act example and for the same reason: the
@@ -347,6 +377,7 @@ export const AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT = [
   "When a trial says a step in a loop met the site's request to slow down -- its feedback names the pass, the row and the wait -- adapt the Flow rather than send it again: `repeat pace:` of at least that wait on the span's first step. When that step's feedback also lists the notice under `interruptions` with the handle of its way out, `wayOut`, add right after the step, inside the span, an `optional: yes` step that presses that handle, and directly after it a `builtin.timing.wait` step with `only after: <that step's label>` that waits at least the wait the feedback named. A notice listed with no `wayOut` was closed by the run itself: write no step for it, and never close it through any other handle.",
   "A value that changes between rows or runs is bound, never typed in: `$row.<field>` is a field the listing reads, of the row the pass is on, and only inside a repeat over that listing; `$input.<name> = <value>` is a Flow input, written with the value the person gave; `$step.<label>.<output>` is an output of an earlier step, by its label.",
   "The rows a `repeat over` acts on are the rows its listing kept. To act on only some, put the condition on the listing step: `extractList.where: [{\"field\": \"amount\", \"atLeast\": 100}]`.",
+  `A where condition, on a listing or in \`recordOutput.process\`, names a column by field and must hold for a row to be kept. ${AUTOMATION_STUDIO_FLOW_CONDITION_RULES}`,
   "Rows a Flow reads are also collected over the whole run, and `recordOutput.process` on the reading step only shapes that saved answer at the end -- keep some, drop repeats, sort, limit -- over the columns `recordOutput.columns` saves. It never changes which rows a repeat visits.",
   "Example, reading every page of a list:",
   "flow: Gardening books published since 2015 on every page of the catalogue search",
