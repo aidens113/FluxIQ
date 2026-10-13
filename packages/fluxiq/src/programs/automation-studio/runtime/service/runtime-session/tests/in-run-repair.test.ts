@@ -4,7 +4,7 @@
 // a plain `none`, the run's one cost ceiling, and the records that wait for the
 // judged end.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JsonObject } from "../../../../../../core/index.ts";
 import type { AutomationStudioFlowRunDetail } from "../../../../model/index.ts";
 import type { AutomationStudioIncidentRepair } from "../../../executor/lifecycle-run/index.ts";
@@ -26,6 +26,24 @@ async function repair(world: InRunRepairWorld, request = inRunRepairRequest()): 
   if (!repairIncident) throw new Error("No repairIncident was supplied.");
   return await repairIncident(request);
 }
+
+// The ceilings below are sized for the off-peak rate. A call whose reply reports
+// no usage is charged what it reserved, and a reservation is the call's worst
+// case at the rate in force when it is held (`../../../recovery/annotation/run-budget.ts`,
+// t254): the fixture's 40,000 input and 4,000 output tokens are $0.0168 at
+// deepseek-flash's peak rate and $0.0084 off-peak. At peak a diagnosis and a
+// patch reserve $0.0336 against a $0.02 purse, so the first incident's patch was
+// refused and these tests failed only between 01:00-04:00 and 06:00-10:00 UTC on
+// a weekday (t481). The run session hands the recovery no clock, so the wall
+// clock is pinned here, to Monday 2026-10-12 12:00 UTC, off-peak.
+const OFF_PEAK_MS = Date.UTC(2026, 9, 12, 12);
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(OFF_PEAK_MS);
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("the in-run repair a run session supplies", () => {
   it("runs the diagnosis and then the patch request carrying the unit, its contract and the incident, and answers with the fix overlaid", async () => {
