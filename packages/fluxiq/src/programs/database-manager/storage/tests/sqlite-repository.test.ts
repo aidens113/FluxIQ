@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -10,7 +10,7 @@ afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, {
 async function root() { const value = await mkdtemp(path.join(os.tmpdir(), "fluxiq-readonly-")); roots.push(value); return value; }
 async function deleteJournal(directory: string) {
   await new Promise<void>((resolve, reject) => {
-    const db = new sqlite3.Database(path.join(directory, "global.sqlite"));
+    const db = new sqlite3.Database(path.toNamespacedPath(path.join(directory, "global.sqlite")));
     db.exec("pragma journal_mode=DELETE", error => db.close(closeError => error || closeError ? reject(error ?? closeError) : resolve()));
   });
 }
@@ -20,6 +20,20 @@ it("refuses absent SQLite storage without creating directories or databases", as
   const repository = new SQLiteRepository({ rootDir: path.join(directory, "absent"), kind: "automation.state", layoutVersion: 2 });
   await expect(repository.getExistingReadOnly("projects/index")).resolves.toBeNull();
   expect(await readdir(directory)).toEqual([]);
+});
+
+it("writes, reopens and reads existing storage beneath a long workspace path", async () => {
+  const directory = path.join(await root(), ...Array.from({ length: 8 }, (_, index) => `workspace-${index}-${"nested".repeat(4)}`));
+  expect(path.join(directory, "global.sqlite").length).toBeGreaterThan(300);
+  await mkdir(directory, { recursive: true });
+  expect(await readdir(directory)).toEqual([]);
+  const options = { rootDir: directory, kind: "automation.state", layoutVersion: 2 as const };
+  const repository = new SQLiteRepository(options);
+  await repository.put(createRecord({ id: "flow", kind: repository.kind, data: { revision: 1 } }));
+  await expect(new SQLiteRepository(options).get("flow")).resolves.toMatchObject({ data: { revision: 1 } });
+  await deleteJournal(directory);
+  await expect(new SQLiteRepository(options).getExistingReadOnly("flow")).resolves.toMatchObject({ data: { revision: 1 } });
+  expect(await readdir(directory)).toEqual(["global.sqlite"]);
 });
 
 it("reads actual existing records and leaves bytes/schema unchanged", async () => {

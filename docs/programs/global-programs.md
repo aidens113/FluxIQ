@@ -94,7 +94,7 @@ Database Manager is the explorer for framework and domain data stores.
 
 Current behavior:
 
-- uses SQLite repositories;
+- uses SQLite repositories; native database opens normalize Windows filenames to the extended path form so deeply nested workspaces can create, reopen and read existing databases. Repository and connection-pool identities retain their ordinary resolved paths; other platforms retain their normal path behavior;
 - global data lives in `.fluxiq/global.sqlite`;
 - domain data lives in `.fluxiq/domains/<domainId>/domain.sqlite`;
 - record browsing uses repository-level SQL count, escaped search, stable sorting,
