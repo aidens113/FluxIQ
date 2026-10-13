@@ -23,6 +23,52 @@ function automationStudioCandidateNothingSubmitted(submitId: string, testId: str
 }
 
 /**
+ * The Flow an accepted submission is, as the model sent it, labelled the
+ * current one with its revision and digest (t498).
+ *
+ * Every decision is a fresh request, and an accepted submission used to come
+ * back as a revision, a digest and changed paths only. Live run
+ * `run-mv6ff44s-01def7f6` therefore rewrote each revision from memory: the
+ * only script in its context was a refused one, which it sent back word for
+ * word three times after a later revision was accepted, and the repeat guard
+ * ended the build. The accepted result now carries the whole script (or the
+ * JSON plan) it accepted. It is written once, at the end of the evidence, and
+ * changes only when a newer revision is accepted, which replaces it with
+ * `supersededBy` (`../../llm/context-window.ts`), so every other request stays
+ * a byte prefix of the next.
+ */
+function acceptedScript(sent: JsonObject, candidate: Readonly<AutomationStudioFlowCandidate>): JsonObject {
+  const said = `Revision ${candidate.revision} (digest ${candidate.digest}) is your current Flow, the latest you submitted that Core accepted`;
+  if (typeof sent.flow === "string") {
+    return { script: sent.flow, scriptIs: `${said}, and script is its whole text. Make every change to the Flow by editing this script and submitting it whole; never write it again from memory, and never start from a refused script.` };
+  }
+  if (sent.plan !== undefined) {
+    return { plan: sent.plan, scriptIs: `${said}, and plan is its whole JSON plan. Make every change to the Flow by editing this plan and submitting it whole; never write it again from memory, and never start from a refused one.` };
+  }
+  return {};
+}
+
+/**
+ * What a refused submission is, once a revision was accepted before it (t498):
+ * no revision, and not the Flow to edit. Its script (`diagnostics.previous`,
+ * where the check gave one) stays readable, since its issues name its lines,
+ * and is labelled superseded by the current revision, which `current` names
+ * with the call whose result holds that revision's whole script. Once a newer
+ * revision is accepted, both are replaced by `supersededBy`
+ * (`../../llm/context-window.ts`). With nothing accepted before it, `previous`
+ * is the only script there is and is corrected as it stands: nothing is added.
+ */
+function refusedLabel(last: { revision: number; digest: string } | undefined, acceptedIn: ReadonlyMap<number, string>): JsonObject {
+  const call = last ? acceptedIn.get(last.revision) : undefined;
+  if (!last || call === undefined) return {};
+  return {
+    current: { revision: last.revision, digest: last.digest, call },
+    scriptIs: `This submission was refused and is no revision: the script it sent (previous, under diagnostics, where given) is superseded by revision ${last.revision}, your current Flow, whose whole script is under call ${call}. `
+      + `Submit again from revision ${last.revision}'s script, making again the changes this call meant and correcting the listed issues in them; read previous only to find the lines the issues name.`
+  };
+}
+
+/**
  * Discovery, explicit complete submission, and a trial of the exact latest
  * submission (`./trial-gate.ts`). With a trial port the model completes only on
  * a yes for that revision and digest; without one it completes on the latest
@@ -66,6 +112,8 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   } : undefined;
   const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: input.trial, signal, ...(reset ? { reset } : {}) });
   const submitId = "core.submit_candidate", testId = AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID;
+  /** The call each accepted revision was submitted in, so a refusal can name where the current script is (t498). */
+  const acceptedIn = new Map<number, string>();
   const tool: AutomationStudioLlmEvidenceTool = {
     toolId: submitId, effect: "observe",
     description: `Submit a complete Flow, written as a Flow script under "flow" (its description gives the format and examples), or an existing canonical JSON plan under "plan". Discovery calls are evidence only and never enter the Flow. Static validity returns a draft revision/digest, never semantic acceptance. Correct all diagnostics and resubmit the entire candidate. Then test that exact revision with ${testId}, and complete with the latest revision and digest only after its trial answers yes.`,
@@ -111,12 +159,19 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
       // unchanged, or one the judge refuted, is refused with what failed last
       // rather than made a new revision told to "test next" (t464, `./unchanged-submission.ts`).
       const submitted = await controller.submit(call.value, { trialOf: (candidate) => gate.standing(candidate), refuted: (digest) => gate.refuted(digest) });
-      // A refused submission names its way out and counts in the loop's run of refusals of one kind (`./submission-refusal.ts`).
-      if (!submitted.ok) return { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, ...automationStudioCandidateSubmissionRefusal(submitted) };
+      // A refused submission names its way out and counts in the loop's run of refusals of one kind (`./submission-refusal.ts`),
+      // and, once a revision was accepted, names that revision as the Flow to edit (header of `refusedLabel`, t498).
+      if (!submitted.ok) {
+        const refusal = automationStudioCandidateSubmissionRefusal(submitted);
+        return { kind: "llm_evidence_tool_execution", effectApplied: false, targetsUnchanged: true, ...refusal, evidence: { ...refusal.evidence, ...refusedLabel(controller.lastAccepted(), acceptedIn) } };
+      }
       input.accepted?.(structuredClone(submitted.candidate));
+      acceptedIn.set(submitted.candidate.revision, call.callId);
       const evidence: JsonObject = { ok: true, status: "draft", revision: submitted.candidate.revision, digest: submitted.candidate.digest, changedPaths: submitted.candidate.changedPaths, verification: "not_performed", promotionAllowed: false,
         // Which view each target was resolved from, so a step aimed at a control of another page than the one it runs on can be seen (t358).
         ...(submitted.handleViews.length ? { handleViews: submitted.handleViews.map((view) => ({ node: view.node, handle: view.handle, view: view.view, location: view.location })) } : {}),
+        // The whole Flow this revision is, as it was sent, labelled the current one (t498).
+        ...acceptedScript(call.value, submitted.candidate),
         next: gate.available ? `Test next with ${testId} using exactly {"revision": ${submitted.candidate.revision}, "digest": "${submitted.candidate.digest}"}. Do not complete until that exact revision's trial answers yes. Submitting again makes a new revision that needs its own trial.` : "No trial runner is available here; completing leaves an unverified draft." };
       return { kind: "llm_evidence_tool_execution", evidence, effectApplied: false, targetsUnchanged: true };
     }

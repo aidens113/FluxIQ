@@ -121,6 +121,8 @@ const CORPUS: CorpusCase[] = [
   { name: "a repeat that says nothing of what repeats it", lines: [...open, ...click("more", ["  repeat through: more"])], codes: ["flow_script.repeat_invalid"] },
   { name: "a repeat ending at no step", lines: [...open, ...click("more", ["  repeat while: ghost"])], codes: ["flow_script.repeat_span_unknown"] },
   { name: "a repeat inside a repeat", lines: [...open, ...list("rows"), ...click("more", ["  repeat while: check", "  repeat most: 3"]), ...click("buy", ["  repeat over: rows"]), ...wait("check")], codes: ["flow_script.repeat_body_is_routed"] },
+  // A read inside a loop that replaces the run's rows on every pass (t498, `../../script-statements/record-replace-in-repeat.ts`).
+  { name: "a read that replaces its rows inside a repeat", lines: [...open, ...list("rows"), "  recordOutput.writeMode: replace", "  repeat while: more", "  repeat most: 3", ...click("more")], codes: ["record_output.replace_in_repeat"] },
   { name: "a branch inside a repeat", lines: [...open, ...click("more", ["  repeat while: check", "  repeat most: 3"]), ...click("buy", ["  on failed: go to done"]), ...wait("check"), ...click("done")], codes: ["flow_script.repeat_body_branches"] },
   { name: "a branch into a repeat", lines: [...open, ...click("skip", ["  on failed: go to check"]), ...click("more", ["  repeat while: check", "  repeat most: 3"]), ...wait("check")], codes: ["flow_script.branch_into_repeat"] },
   { name: "a repeat while a step that never ends it", lines: [...open, ...click("more", ["  repeat while: check"]), ...wait("check")], codes: ["flow_script.repeat_while_never_ends"] },

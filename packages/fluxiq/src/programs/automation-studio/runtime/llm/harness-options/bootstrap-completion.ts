@@ -85,7 +85,7 @@
 // (`flow-bootstrap/authoring/draft-routing.ts`) with a sentence that names the
 // amendment fixing this draft. The issue feedback carries only its listed
 // authored codes' sentences, so the routing codes' sentences are put back here
-// (`withRoutingSentence`, below).
+// (`withCoreSentence`, below).
 //
 // **Every issue names the step it is about (t378).** A refusal used to name a
 // plan path and nothing else, and a script's steps do not become nodes one for
@@ -103,6 +103,23 @@
 // built at all -- it does not parse, a parameter does not resolve, the registry
 // refuses it -- is still refused: that is input that cannot execute, not a
 // judgement about what it would do.
+//
+// **A refused script is labelled refused, never "just sent" (t498).** Every
+// decision is a fresh request, and the refusal's `previous` stays in evidence
+// for every later decision. Live run `run-mv6ff44s-01def7f6` was told
+// "previous ... is the script you just sent" of a refused revision 3; after
+// revision 4 was accepted that sentence was false, and the model resent
+// revision 3 word for word three times until the repeat guard ended the build.
+// The sentence now says what stays true: `previous` is the script that call
+// sent and it was refused, and once a later submission is accepted, that
+// revision is the Flow to edit.
+//
+// **One plan check after registry validation (t498).** A step inside a loop
+// whose record output says `writeMode: replace` keeps only the last pass's rows,
+// which the same run stored as 0 of 17. It is refused here, after the plan
+// validated, for every shape a Flow arrives in
+// (`flow-bootstrap/script-statements/record-replace-in-repeat.ts`), and its
+// sentence is put back like the routing codes' (`withCoreSentence`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import type { AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -142,6 +159,7 @@ import { AUTOMATION_STUDIO_PLAN_NODE_HANDLE_KEY, AUTOMATION_STUDIO_PLAN_NODE_HAN
 import { automationStudioAmendedPlanParameters } from "./amended-plan-parameters.ts";
 import { automationStudioInheritedPlanNodeRefs } from "./inherited-plan-nodes.ts";
 import { resolveAutomationStudioFlowBootstrapPlanParameters, type AutomationStudioFlowBootstrapPlanHandleView } from "./plan-parameter-resolution.ts";
+import { automationStudioFlowPlanRecordReplaceInRepeatIssues } from "../../flow-bootstrap/script-statements/index.ts";
 
 // `evidence_completion_cannot_answer` is still produced, by the two act rules
 // that refuse (an undeclared consequence a person is asked about, and an act
@@ -217,7 +235,13 @@ const FEEDBACK_INSTRUCTION = "The completed plan was refused and nothing was cre
   // asked to complete again could not see what it had just written and wrote a
   // new answer from memory instead of correcting the old one. `previous` is
   // its own script handed back; this sentence is what tells it to amend that.
-  + "Where previous is given, it is the script you just sent. Send it again with only the listed issues corrected: keep every other line exactly as it is, rather than writing the result again from memory.";
+  //
+  // The refusal stays in evidence for every later decision, so the sentence
+  // says only what stays true of it: once a later submission is accepted, the
+  // refused script is not the Flow to edit (header, t498).
+  + "Where previous is given, it is the script this call sent, and it was refused: it is no revision, and nothing of it was kept. "
+  + "If no submission has been accepted since this one, send it again with only the listed issues corrected: keep every other line exactly as it is, rather than writing the result again from memory. "
+  + "Once a later submission is accepted, that revision is your current Flow: edit its script, never this refused one.";
 
 /** Said first whenever more than one check refused, so the model fixes them together. */
 const SEVERAL_INSTRUCTION = "Every check was run and refusals lists each one that failed: correct all of them before completing again, not only the first.";
@@ -369,6 +393,9 @@ export async function checkAutomationStudioFlowBootstrapCompletion(input: {
         } else {
           buildPlan = validated.outcome.validated;
           capabilityPlan = buildPlan.plan;
+          // A step a loop runs again that replaces the run's rows keeps only the last pass (header, t498).
+          const replacing = automationStudioFlowPlanRecordReplaceInRepeatIssues({ plan: buildPlan.plan, registry: input.registry, resolution: input.resolution });
+          if (replacing.length) failures.push({ code: "flow_bootstrap.evidence_completion_plan_invalid", issues: replacing });
         }
       }
     }
@@ -577,7 +604,7 @@ function refused(
   // was shown the first 16 issues, and the script only under 6,000 characters.
   const feedbackIssues = all.flatMap((failure) => failure.issues.length
     ? automationStudioFlowBootstrapIssueFeedback({ issues: failure.issues, ...(failure.about ? { plan: failure.about.plan, registry: failure.about.registry, resolution: failure.about.resolution } : {}) })
-      .map((entry, index) => located(withRoutingSentence(entry, failure.issues[index]), failure.issues[index], locator))
+      .map((entry, index) => located(withCoreSentence(entry, failure.issues[index]), failure.issues[index], locator))
     : []);
   const codes = [...new Set(all.map((failure) => failure.code))];
   const details = Object.fromEntries(all.flatMap((failure) => failure.detail ? [[failure.detail.key, failure.detail.value]] : []));
@@ -643,9 +670,18 @@ const DRAFT_ROUTING_CODES: ReadonlySet<string> = new Set([
   "flow_draft.repeat_body_is_routed"
 ]);
 
-/** A routing refusal's feedback entry with its sentence, where the feedback left it out. */
-function withRoutingSentence(entry: JsonObject, source: AutomationStudioFlowBootstrapIssue | undefined): JsonObject {
-  if (!source || entry.message !== undefined || !source.message || !DRAFT_ROUTING_CODES.has(source.code) || entry.code !== source.code) return entry;
+/**
+ * The refusal of a plan check made after registry validation (header, t498):
+ * a step inside a loop whose record output replaces the run's rows. Its sentence
+ * is Core's own and quotes nothing the model or the page wrote, so it travels
+ * with the code, as the routing codes' do.
+ */
+const PLAN_CHECK_CODES: ReadonlySet<string> = new Set(["record_output.replace_in_repeat"]);
+
+/** A routing or plan-check refusal's feedback entry with its sentence, where the feedback left it out. */
+function withCoreSentence(entry: JsonObject, source: AutomationStudioFlowBootstrapIssue | undefined): JsonObject {
+  if (!source || entry.message !== undefined || !source.message || entry.code !== source.code) return entry;
+  if (!DRAFT_ROUTING_CODES.has(source.code) && !PLAN_CHECK_CODES.has(source.code)) return entry;
   return { ...entry, message: source.message };
 }
 

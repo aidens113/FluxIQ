@@ -79,7 +79,11 @@ const HANDLE_ISSUE = /^[a-z]+\.handle\.([a-z_]+)(?::|$)/u;
 
 /** What ends a run of refusals, said after every way out. */
 const RESUBMIT = "Sending the same refused script, or one refused for the same reason, a third decision in a row ends this build.";
-const GENERAL_NEXT = `Correct every listed issue in the script you sent (previous, where given), keep every other line as it is, and submit the whole candidate again. ${RESUBMIT}`;
+// A refusal stays in evidence for every later decision, so this says only what
+// stays true of it: once a revision is accepted, its script is the one to edit,
+// and a refused script is never the current Flow (t498, `./authoring-loop.ts`).
+const GENERAL_NEXT = "Correct every listed issue in your current Flow's script -- the latest accepted revision's, where one was accepted (current names it), or else previous, the script this call sent -- "
+  + `keep every other line as it is, and submit the whole candidate again. ${RESUBMIT}`;
 const HANDLE_TAIL = `Correct every other listed issue as it says, keep every other line as it is, and submit the whole candidate again. ${RESUBMIT}`;
 
 /** "The handle t1" or "The handles t1, t2", or `none` when the issue named no handle. */

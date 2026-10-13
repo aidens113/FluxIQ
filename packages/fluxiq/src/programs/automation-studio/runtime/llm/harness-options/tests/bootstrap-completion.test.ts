@@ -106,7 +106,10 @@ describe("the feedback on a completed plan that was refused", () => {
     const unresolved = await refusal({ flow: script }, binding);
     expect(unresolved.verdict.code).toBe("flow_bootstrap.evidence_completion_parameters_unresolved");
     expect(unresolved.feedback.previous).toBe(script);
-    expect(unresolved.feedback.instruction).toContain("Where previous is given, it is the script you just sent.");
+    // Labelled refused, and never "just sent": the refusal stays in evidence after a later revision is accepted (t498).
+    expect(unresolved.feedback.instruction).toContain("Where previous is given, it is the script this call sent, and it was refused: it is no revision");
+    expect(unresolved.feedback.instruction).toContain("Once a later submission is accepted, that revision is your current Flow: edit its script, never this refused one.");
+    expect(unresolved.feedback.instruction).not.toContain("just sent");
 
     const unreadable = await refusal({ flow: "step: do the thing nobody named" });
     expect(unreadable.verdict.code).toBe("flow_bootstrap.evidence_completion_plan_invalid");

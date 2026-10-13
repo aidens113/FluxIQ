@@ -35,6 +35,16 @@ export class AutomationStudioFlowCandidateSubmissionController {
 
   latest(): AutomationStudioFlowCandidate | undefined { return !this.input.signal?.aborted && this.current ? structuredClone(this.current) : undefined; }
 
+  /**
+   * The last revision Core accepted, whether or not a refusal has since cleared
+   * it as the one to test (`previous`): the Flow a model edits next, which a
+   * refused submission's evidence names as its current one (t498,
+   * `./authoring-loop.ts`).
+   */
+  lastAccepted(): { revision: number; digest: string } | undefined {
+    return !this.input.signal?.aborted && this.previous ? { revision: this.previous.revision, digest: this.previous.digest } : undefined;
+  }
+
   matches(receipt: { revision: number; digest: string; baseDependencyDigest: string }): boolean {
     return !this.input.signal?.aborted && this.current?.revision === receipt.revision && this.current.digest === receipt.digest && this.current.baseDependencyDigest === receipt.baseDependencyDigest;
   }

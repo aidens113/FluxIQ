@@ -869,6 +869,35 @@ Retry waits, pace waits and Wait pauses share one wait,
   and that revision stands with its own names and its trial. A changed
   record-output `datasetId` is a real change: it decides where results are
   recorded.
+- **The model always sees its latest accepted script** (t498;
+  `runtime/flow-bootstrap/candidate/authoring-loop.ts`,
+  `runtime/llm/context-window.ts`). Every decision is a fresh request, so an
+  accepted `core.submit_candidate` result carries the whole `script` (or
+  `plan`) it accepted, with `scriptIs` naming it the current Flow by revision
+  and digest. A refused submission made after an accepted one carries
+  `current` (that revision, its digest and the call holding its script) and a
+  `scriptIs` saying its own script, `diagnostics.previous`, is refused, no
+  revision, and superseded by that revision. In what a decision is shown,
+  every submission older than the newest accepted one has its script, label
+  and `previous` replaced by `supersededBy`, naming the next accepted
+  submission after it, so one script is current and a stub never changes once
+  written: the request changes only when a new revision is accepted. Live run
+  `run-mv6ff44s-01def7f6` had only a refused script in context, called "the
+  script you just sent", and resent it three times after a later revision was
+  accepted; no refusal text says "you sent" any longer.
+- **A record output that replaces its rows inside a loop is refused** (t498;
+  `runtime/flow-bootstrap/script-statements/record-replace-in-repeat.ts`,
+  asked by `llm/harness-options/bootstrap-completion.ts` after registry
+  validation). A step on a cycle through a Repeat or a For Each whose record
+  output says `writeMode: replace` is refused `record_output.replace_in_repeat`
+  at that step: the run dataset store deletes the run's rows on every replace
+  batch (`storage/project/run-dataset-store.ts`, `appendBatch`), so each pass
+  would overwrite the last. Flows a person saves are not held to it.
+- **A trial's reads say how their paging ended** (t498;
+  `runtime/service/candidate-trial/feedback.ts`). Each read that paged carries
+  `pagesRead`, its `stop` word and `paging`, the sentence its judges were
+  shown, and the feedback's `pagingNote` (and a split's `readings`) says that
+  record stands against a reading about pages.
 
 **A lasting act is checked, never blindly repeated** (the user's rule of
 2026-10-07; t359). One owner decides it for every path, graph or not:

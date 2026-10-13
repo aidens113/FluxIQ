@@ -49,6 +49,20 @@
 //
 // A Core note superseded by a newer one of the same kind still leaves the
 // evidence (`./decision-context/supersede.ts`); a tool's result never does.
+//
+// **One current Flow script (t498).** An accepted candidate submission carries
+// the whole script it accepted, labelled the current Flow, and a refused one
+// may carry the script it sent (`flow-bootstrap/candidate/authoring-loop.ts`).
+// Live run `run-mv6ff44s-01def7f6` had only a refused script in context and
+// sent it back after a later revision was accepted. So every submission older
+// than the newest accepted one -- an accepted revision's script and label, or
+// a refused submission's script, label and named current revision -- is
+// replaced by `supersededBy`, naming the next accepted submission after it.
+// The newest accepted script is the only one labelled current. A refusal after
+// it keeps its script, labelled refused and superseded by that revision. As
+// with views, a stub names the submission that replaced it directly, so once
+// written it never changes, and a request changes only when a new revision is
+// accepted (`candidateScripts`, below).
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { automationStudioLlmEvidenceViewGroups, type AutomationStudioLlmEvidenceViewGroup } from "./decision-context/index.ts";
@@ -87,7 +101,7 @@ export function automationStudioLlmEvidenceContextWindow(
   records: readonly AutomationStudioLlmEvidenceEntry[],
   observedStateKeys: readonly string[] = []
 ): AutomationStudioLlmEvidenceEntry[] {
-  const window = records.map(({ callId, toolId, value }) => ({ callId, toolId, value }));
+  const window = candidateScripts(records.map(({ callId, toolId, value }) => ({ callId, toolId, value })));
   const declared = automationStudioLlmEvidenceViewGroups(observedStateKeys);
   if (!declared.length) return window;
   // Held views first, so the result's own view, replaced last, puts its
@@ -111,6 +125,53 @@ export function automationStudioLlmEvidenceContextWindow(
     }
   }
   return window;
+}
+
+/** The tool whose results carry a candidate's Flow script (`flow-bootstrap/candidate/authoring-loop.ts`). */
+const SUBMIT_CANDIDATE_TOOL_ID = "core.submit_candidate";
+/** What a submission's result says of its script: the script or plan itself, its label, and the revision a refusal names as current. */
+const SCRIPT_KEYS: ReadonlySet<string> = new Set(["script", "plan", "scriptIs", "current"]);
+
+/**
+ * The window with every candidate submission older than the newest accepted
+ * one carrying `supersededBy` in place of its script (header, t498): the
+ * script, plan, label and named current revision at its top level, and the
+ * refused script under `diagnostics.previous`. Each names the next accepted
+ * submission after it, never the newest, so a stub once written never changes.
+ */
+function candidateScripts(window: AutomationStudioLlmEvidenceEntry[]): AutomationStudioLlmEvidenceEntry[] {
+  let nextAccepted: string | undefined;
+  for (let index = window.length - 1; index >= 0; index -= 1) {
+    const entry = window[index]!;
+    if (entry.toolId !== SUBMIT_CANDIDATE_TOOL_ID || !isJsonObject(entry.value)) continue;
+    const value = entry.value;
+    const accepted = value.ok === true && (value.script !== undefined || value.plan !== undefined);
+    if (nextAccepted !== undefined) entry.value = withoutScript(value, nextAccepted);
+    if (accepted) nextAccepted = entry.callId;
+  }
+  return window;
+}
+
+/** A submission's result with its script replaced by the submission that superseded it, in its own key order, the reference last. */
+function withoutScript(value: JsonObject, replacedBy: string): JsonObject {
+  const kept: JsonObject = {};
+  let replaced = false;
+  for (const [key, member] of Object.entries(value)) {
+    if (SCRIPT_KEYS.has(key)) {
+      replaced = true;
+      continue;
+    }
+    if (key === "diagnostics" && isJsonObject(member) && member.previous !== undefined) {
+      const { previous: _refused, ...rest } = member;
+      kept[key] = rest;
+      replaced = true;
+      continue;
+    }
+    kept[key] = member;
+  }
+  if (!replaced) return value;
+  kept[AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDED_KEY] = replacedBy;
+  return kept;
 }
 
 /** The object a group's members sit in: the value itself, or the object it holds under `holder`. */
