@@ -11,8 +11,20 @@ describe("the latest accepted candidate receipt", () => {
     expect(automationStudioLlmEvidenceLatestCandidateReceipt(entries)).toEqual({ revision: 5, digest: "d".repeat(64) });
   });
 
-  it("does not reuse an older accepted receipt after a refused submission", () => {
-    expect(automationStudioLlmEvidenceLatestCandidateReceipt([submission(receipt), submission({ ok: false, revision: 4 })])).toBeUndefined();
+  // Live run `run-mv6i27oi-a87fb247` (D2): revision 1 was accepted and judged
+  // no, the next submission was refused, and the notes said "No candidate has
+  // been accepted". A refusal is no revision; the accepted one stays current.
+  it("reports the latest accepted revision when a refused submission came after it", () => {
+    expect(automationStudioLlmEvidenceLatestCandidateReceipt([submission(receipt), submission({ ok: false, revision: 4 })])).toEqual({ revision: 3, digest: receipt.digest });
+    expect(automationStudioLlmEvidenceLatestCandidateReceipt([submission(receipt), submission({ ok: false, revision: 4 }), submission({ ok: false, revision: 5 })])).toEqual({ revision: 3, digest: receipt.digest });
+  });
+
+  it("reports none when every submission was refused", () => {
+    expect(automationStudioLlmEvidenceLatestCandidateReceipt([submission({ ok: false, revision: 1 }), submission({ ok: false, revision: 2 })])).toBeUndefined();
+  });
+
+  it("never walks back past a newer accepted submission whose receipt is malformed", () => {
+    expect(automationStudioLlmEvidenceLatestCandidateReceipt([submission(receipt), submission({ ...receipt, revision: 4, digest: "untrusted" })])).toBeUndefined();
   });
 
   it.each([null, [], { ...receipt, ok: false }, { ...receipt, revision: 0 }, { ...receipt, revision: 1.5 }, { ...receipt, digest: "untrusted" }])("does not invent a receipt from malformed evidence %j", (value) => {

@@ -269,11 +269,36 @@ describe("run murwcmx2: the judge's reading reaches the build", () => {
     };
   };
 
-  it("two noes refute although the second's advice ran past its bound: a no, with the first call's reading", async () => {
+  // Both calls' readings reach the build, each under its call's label (t501, D1:
+  // live run `run-mv6i27oi-a87fb247` forwarded only the first and lost the second's defect).
+  it("two noes refute although the second's advice ran past its bound: a no, with both calls' readings", async () => {
     const provider = answering({ answersRequest: "no", ...FIRST }, { answersRequest: "no", expected: FIRST.expected, changed: LONG_CHANGED });
     const verdict = await judge(PICKUP_CART, { provider })({ summary: run40Summary(), budget: { maxCostUsd: 0.2 } });
-    expect(verdict).toMatchObject({ verdict: "no", expected: FIRST.expected, observed: FIRST.observed, advice: FIRST.changed });
+    // The expectation both calls worded alike is said once; the first call alone said what it observed.
+    expect(verdict).toMatchObject({ verdict: "no", expected: FIRST.expected, observed: `Judge call 1: ${FIRST.observed}` });
+    const advice = verdict.verdict === "no" ? verdict.advice ?? "" : "";
+    expect(advice.startsWith(`Judge call 1: ${FIRST.changed} Judge call 2: `)).toBe(true);
+    // The second call's advice is carried, clipped to its bound, never dropped.
+    expect(advice).toContain(`Judge call 2: ${LONG_CHANGED.slice(0, 120)}`);
+    expect(advice).not.toContain("contradicted by Core's record");
     expect(verdict.spent.calls).toBe(2);
+  });
+
+  // Through the real check (`../verify.ts` hands the reads to `../agreement.ts`):
+  // a reading of more pages, where every read's own account says its list ended,
+  // is marked contradicted and follows the reading the record leaves standing.
+  it("two noes, one claiming pages the record says do not exist: the other reading leads and that one is marked contradicted", async () => {
+    const ended = { nodeId: "s7", definitionId: "web.dom.extract_list", pagesRead: 5, pageLimit: 10, stop: "control_disabled", truncated: false, kept: 15, paginates: true };
+    const provider = answering(
+      { answersRequest: "no", expected: FIRST.expected, observed: "There are many more pages; the read stopped at page 5, not every page.", changed: "Follow the remaining pages." },
+      { answersRequest: "no", ...FIRST }
+    );
+    const verdict = await judge(PICKUP_CART, { provider })({ summary: { ...run40Summary(), reads: [ended] }, budget: { maxCostUsd: 0.2 } });
+    expect(verdict.verdict).toBe("no");
+    const observed = verdict.verdict === "no" ? verdict.observed ?? "" : "";
+    expect(observed.startsWith(`Judge call 2: ${FIRST.observed} Judge call 1 (contradicted by Core's record`)).toBe(true);
+    expect(observed).toContain("): There are many more pages");
+    expect(verdict).toMatchObject({ expected: FIRST.expected });
   });
 
   it("a no the second call did not confirm is unknown, carrying that no's expected, observed and advice as one unconfirmed reading", async () => {

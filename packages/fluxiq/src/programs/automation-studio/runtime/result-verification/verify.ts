@@ -179,7 +179,7 @@ export async function verifyAutomationStudioRunResult(request: AutomationStudioR
   }
   const second = await askCheck(request, provider, 2, interventions);
   return said({
-    outcome: { ...automationStudioResultVerificationAgreement({ first, second, confirmAnswer }), performed: true },
+    outcome: { ...automationStudioResultVerificationAgreement({ first, second, confirmAnswer, reads: request.summary.reads }), performed: true },
     interventions
   });
 }

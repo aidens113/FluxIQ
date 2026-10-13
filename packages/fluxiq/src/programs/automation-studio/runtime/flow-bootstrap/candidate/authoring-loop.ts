@@ -33,9 +33,9 @@ function automationStudioCandidateNothingSubmitted(submitId: string, testId: str
  * word three times after a later revision was accepted, and the repeat guard
  * ended the build. The accepted result now carries the whole script (or the
  * JSON plan) it accepted. It is written once, at the end of the evidence, and
- * changes only when a newer revision is accepted, which replaces it with
- * `supersededBy` (`../../llm/context-window.ts`), so every other request stays
- * a byte prefix of the next.
+ * never changes after (t501): a newer accepted revision names it under its own
+ * `supersedes` instead of rewriting it (`../../llm/context-window.ts`), so every
+ * request stays a byte prefix of the next.
  */
 function acceptedScript(sent: JsonObject, candidate: Readonly<AutomationStudioFlowCandidate>): JsonObject {
   const said = `Revision ${candidate.revision} (digest ${candidate.digest}) is your current Flow, the latest you submitted that Core accepted`;
@@ -54,8 +54,9 @@ function acceptedScript(sent: JsonObject, candidate: Readonly<AutomationStudioFl
  * where the check gave one) stays readable, since its issues name its lines,
  * and is labelled superseded by the current revision, which `current` names
  * with the call whose result holds that revision's whole script. Once a newer
- * revision is accepted, both are replaced by `supersededBy`
- * (`../../llm/context-window.ts`). With nothing accepted before it, `previous`
+ * revision is accepted, that revision names this call under its `supersedes`,
+ * and this result is left as it was sent (`../../llm/context-window.ts`, t501).
+ * With nothing accepted before it, `previous`
  * is the only script there is and is corrected as it stands: nothing is added.
  */
 function refusedLabel(last: { revision: number; digest: string } | undefined, acceptedIn: ReadonlyMap<number, string>): JsonObject {

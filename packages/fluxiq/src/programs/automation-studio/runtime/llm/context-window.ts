@@ -50,19 +50,23 @@
 // A Core note superseded by a newer one of the same kind still leaves the
 // evidence (`./decision-context/supersede.ts`); a tool's result never does.
 //
-// **One current Flow script (t498).** An accepted candidate submission carries
-// the whole script it accepted, labelled the current Flow, and a refused one
-// may carry the script it sent (`flow-bootstrap/candidate/authoring-loop.ts`).
-// Live run `run-mv6ff44s-01def7f6` had only a refused script in context and
-// sent it back after a later revision was accepted. So every submission older
-// than the newest accepted one -- an accepted revision's script and label, or
-// a refused submission's script, label and named current revision -- is
-// replaced by `supersededBy`, naming the next accepted submission after it.
-// The newest accepted script is the only one labelled current. A refusal after
-// it keeps its script, labelled refused and superseded by that revision. As
-// with views, a stub names the submission that replaced it directly, so once
-// written it never changes, and a request changes only when a new revision is
-// accepted (`candidateScripts`, below).
+// **One current Flow script (t498), marked append-only (t501).** An accepted
+// candidate submission carries the whole script it accepted, labelled the
+// current Flow, and a refused one may carry the script it sent
+// (`flow-bootstrap/candidate/authoring-loop.ts`). Live run
+// `run-mv6ff44s-01def7f6` had only a refused script in context and sent it back
+// after a later revision was accepted, so the model must read exactly one
+// script as current. t498 did that by rewriting every older submission in
+// place, which broke the provider's prefix cache at each newly accepted
+// revision: everything after the first rewritten entry was billed again (live
+// runs `run-mv6i27oi-a87fb247` W5 and `run-mv6i2akr-516b2f03` D3, about $0.008
+// a build). So no earlier entry is touched. The newest accepted submission --
+// itself new to the request that first shows it -- carries `supersedes` as its
+// last key: the callIds of every earlier submission whose script, plan or label
+// it supersedes, and a note saying none of those is the current Flow whatever
+// its own label says. Each mark names only submissions before it, so once
+// written it never changes, and every request stays a byte prefix of the next
+// (`candidateScripts`, below).
 
 import type { JsonObject, JsonValue } from "../../../../core/index.ts";
 import { automationStudioLlmEvidenceViewGroups, type AutomationStudioLlmEvidenceViewGroup } from "./decision-context/index.ts";
@@ -131,47 +135,39 @@ export function automationStudioLlmEvidenceContextWindow(
 const SUBMIT_CANDIDATE_TOOL_ID = "core.submit_candidate";
 /** What a submission's result says of its script: the script or plan itself, its label, and the revision a refusal names as current. */
 const SCRIPT_KEYS: ReadonlySet<string> = new Set(["script", "plan", "scriptIs", "current"]);
+/** The key an accepted submission names the earlier submissions it supersedes under (header, t501). */
+const AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDES_KEY = "supersedes";
 
 /**
- * The window with every candidate submission older than the newest accepted
- * one carrying `supersededBy` in place of its script (header, t498): the
- * script, plan, label and named current revision at its top level, and the
- * refused script under `diagnostics.previous`. Each names the next accepted
- * submission after it, never the newest, so a stub once written never changes.
+ * The window with every accepted submission that has earlier submissions
+ * carrying a script, plan or label marked as superseding them (header, t498,
+ * t501): `supersedes`, last in its key order, holds their callIds in order and
+ * a note. Only the accepted entry is changed, and only from what came before
+ * it, so the mark is the same in every request that shows it.
  */
 function candidateScripts(window: AutomationStudioLlmEvidenceEntry[]): AutomationStudioLlmEvidenceEntry[] {
-  let nextAccepted: string | undefined;
-  for (let index = window.length - 1; index >= 0; index -= 1) {
-    const entry = window[index]!;
+  const earlier: string[] = [];
+  for (const entry of window) {
     if (entry.toolId !== SUBMIT_CANDIDATE_TOOL_ID || !isJsonObject(entry.value)) continue;
     const value = entry.value;
     const accepted = value.ok === true && (value.script !== undefined || value.plan !== undefined);
-    if (nextAccepted !== undefined) entry.value = withoutScript(value, nextAccepted);
-    if (accepted) nextAccepted = entry.callId;
+    if (accepted && earlier.length) entry.value = { ...value, [AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDES_KEY]: { calls: [...earlier], note: supersedesNote(earlier) } };
+    if (carriesScript(value)) earlier.push(entry.callId);
   }
   return window;
 }
 
-/** A submission's result with its script replaced by the submission that superseded it, in its own key order, the reference last. */
-function withoutScript(value: JsonObject, replacedBy: string): JsonObject {
-  const kept: JsonObject = {};
-  let replaced = false;
-  for (const [key, member] of Object.entries(value)) {
-    if (SCRIPT_KEYS.has(key)) {
-      replaced = true;
-      continue;
-    }
-    if (key === "diagnostics" && isJsonObject(member) && member.previous !== undefined) {
-      const { previous: _refused, ...rest } = member;
-      kept[key] = rest;
-      replaced = true;
-      continue;
-    }
-    kept[key] = member;
-  }
-  if (!replaced) return value;
-  kept[AUTOMATION_STUDIO_LLM_EVIDENCE_SUPERSEDED_KEY] = replacedBy;
-  return kept;
+/** Whether a submission's result says anything of a script: one of `SCRIPT_KEYS`, or a refused script under `diagnostics.previous`. */
+function carriesScript(value: JsonObject): boolean {
+  if (Object.keys(value).some((key) => SCRIPT_KEYS.has(key))) return true;
+  const diagnostics = value.diagnostics;
+  return diagnostics !== undefined && isJsonObject(diagnostics) && diagnostics.previous !== undefined;
+}
+
+/** The note an accepted submission's `supersedes` carries: Core's words, naming the calls it supersedes. */
+function supersedesNote(calls: readonly string[]): string {
+  return `This accepted revision supersedes the core.submit_candidate results ${calls.join(", ")}: no script or plan in them is your current Flow any more, whatever their own scriptIs or current says, and none is to be edited or sent again. `
+    + "This result's script (or plan) is your current Flow until a newer accepted submission names this one under supersedes.";
 }
 
 /** The object a group's members sit in: the value itself, or the object it holds under `holder`. */

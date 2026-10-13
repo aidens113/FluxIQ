@@ -3,9 +3,12 @@
 // Unknown, silent, unavailable or absent confirmation leaves the result unsure.
 // Only two agreeing negatives refute; conflicting answers remain unverified.
 // This pure boundary preserves any negative reading for the repair controller,
-// and on a split the reading of the call that said yes beside it (t477).
+// and on a split the reading of the call that said yes beside it (t477). Where
+// both said no for different reasons, both readings are carried, and one Core's
+// own record of the reads contradicts is marked so (t501).
 
-import type { AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
+import type { AutomationStudioResultReadAccount, AutomationStudioResultVerdict, AutomationStudioResultVerification } from "./contracts.ts";
+import { automationStudioResultReadStop } from "./read-account/index.ts";
 import { AUTOMATION_STUDIO_RESULT_REPAIR_FINDING_CODES } from "./repair-directive.ts";
 import { AUTOMATION_STUDIO_RESULT_UNSETTLED_WORDS as UNSETTLED } from "./unsettled/index.ts";
 import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES } from "./verdict.ts";
@@ -20,6 +23,13 @@ export type AutomationStudioResultVerificationAgreementInput = {
   second?: AutomationStudioResultVerification | undefined;
   /** True when a first `answers` is confirmed by a second call (the build-test judge). */
   confirmAnswer?: boolean | undefined;
+  /**
+   * Core's own account of each list read of the judged result
+   * (`AutomationStudioRunResultSummary.reads`): what a reading that says there
+   * are more pages is weighed against on a double no (t501). Absent, no reading
+   * is marked.
+   */
+  reads?: readonly AutomationStudioResultReadAccount[] | undefined;
 };
 
 /** How a verification reads a first answer: whether a `yes` is confirmed too. */
@@ -61,14 +71,13 @@ export function automationStudioResultVerificationAgreement(input: AutomationStu
     return unsettled(first, second, "model_disagreed", codes.disagree, `This result was checked twice with the same evidence, and the answers differed: the first was that it does what was asked, the second that it does not. ${UNSETTLED.model_disagreed.run}`, verdicts);
   }
   if (first.verdict === "does_not_answer" && second.verdict === "does_not_answer") {
-    // The first call's `repair` stands, and the second call's is not merged in.
-    // One question asked twice with the same evidence reaches identical Core
-    // findings by construction; only the model's prose can differ, and two
-    // readings of one result spliced together would be a directive neither call
-    // gave. The failure record the repair is entered with is the first call's for
-    // the same reason.
+    // Both readings, each its own call's and labelled so (`bothReadings`):
+    // two calls with the same evidence reach identical Core findings, but their
+    // prose can name different defects. Live run `run-mv6i27oi-a87fb247` (D1):
+    // the first blamed paging against the record, the second named the two
+    // stored rows that were wrong, and only the first was forwarded.
     return {
-      ...first,
+      ...bothReadings(first, second, input.reads),
       // Nothing about the steps: this file reads only the two verdicts, and a
       // build's test can pass with a step it excused failing. "Although every
       // step of the run succeeded" was said above "Step 15 (×) failed" (t193
@@ -150,4 +159,103 @@ function unconfirmedReading(verification: AutomationStudioResultVerification): J
     ...(judgement.advice ? { advice: judgement.advice } : {})
   };
   return Object.keys(reading).length ? reading : undefined;
+}
+
+/** One call's reading as the repair is told it, and whether Core's record contradicts it. */
+type Weighed = { call: 1 | 2; verification: AutomationStudioResultVerification; reading: JudgeReading; contradicted: boolean };
+
+/** What a reading marked contradicted says of itself, after its call's number. */
+const CONTRADICTED = "contradicted by Core's record: every read's own account says its list ended with no further page, so what this reading says about more pages is mistaken";
+
+/**
+ * The refutation two calls that both said no come to (t501, D1).
+ *
+ * Where only one call gave a reading, or both gave the same, and the record
+ * contradicts neither, the first call's directive stands exactly as before.
+ * Otherwise the judgement carries every reading, each field's parts labelled
+ * "Judge call N" (a field both worded alike is said once, unlabelled), the one
+ * the record does not contradict first, and a reading the record contradicts
+ * says so in its label: a judge said there are more
+ * pages where every paging read's own account says its list ended
+ * (`contradictsPagingRecord`). Nothing is spliced: each part is one call's own
+ * words under its own label. The findings are Core's and identical by
+ * construction; `checked` lines are Core's checks of the rows each reading
+ * names, so both calls' are kept. The failure record is the leading call's.
+ */
+function bothReadings(first: AutomationStudioResultVerification, second: AutomationStudioResultVerification, reads: readonly AutomationStudioResultReadAccount[] | undefined): AutomationStudioResultVerification {
+  const weighed: Weighed[] = [];
+  for (const [call, verification] of [[1, first], [2, second]] as const) {
+    const reading = verification.repair?.judgement;
+    if (!reading || !(reading.expected || reading.observed || reading.advice)) continue;
+    if (weighed.some((other) => sameWords(other.reading, reading))) continue;
+    weighed.push({ call, verification, reading, contradicted: contradictsPagingRecord(reading, reads) });
+  }
+  if (!weighed.some((one) => one.contradicted) && weighed.length < 2) return weighed[0]?.verification ?? first;
+  const ordered = [...weighed.filter((one) => !one.contradicted), ...weighed.filter((one) => one.contradicted)];
+  const lead = ordered[0]!.verification;
+  const labelled = (field: "expected" | "observed" | "advice"): string | undefined => {
+    const saying = ordered.filter((one) => one.reading[field]);
+    // A field both calls worded alike is said once, unlabelled.
+    if (saying.length > 1 && saying.every((one) => one.reading[field] === saying[0]!.reading[field])) return saying[0]!.reading[field];
+    const parts = saying.map((one) => `Judge call ${one.call}${one.contradicted ? ` (${CONTRADICTED})` : ""}: ${one.reading[field]}`);
+    return parts.length ? parts.join(" ") : undefined;
+  };
+  const expected = labelled("expected");
+  const observed = labelled("observed");
+  const advice = labelled("advice");
+  const stillAchievable = weighedStillAchievable(ordered);
+  const checked = [...new Set([lead, first, second].flatMap((verification) => verification.repair?.checked ?? []))];
+  const withheld = first.repair?.withheld === true || second.repair?.withheld === true;
+  const repair = lead.repair ?? first.repair!;
+  return {
+    ...lead,
+    repair: {
+      ...repair,
+      judgement: { ...(expected ? { expected } : {}), ...(observed ? { observed } : {}), ...(advice ? { advice } : {}), ...(stillAchievable ? { stillAchievable } : {}) },
+      ...(checked.length ? { checked } : {}),
+      ...(withheld ? { withheld: true } : {})
+    }
+  };
+}
+
+/** Whether two readings say the same words in every field. */
+function sameWords(one: JudgeReading, other: JudgeReading): boolean {
+  return one.expected === other.expected && one.observed === other.observed && one.advice === other.advice;
+}
+
+/**
+ * Whether what was asked can still be had, by the readings the record does
+ * not contradict (all of them where it contradicts every one): their word where
+ * they agree, and otherwise the first that is not `no`, since a build ends
+ * "not doable" only on `no` (t195-w37) and one reading saying it can be had is
+ * reason enough not to.
+ */
+function weighedStillAchievable(ordered: readonly Weighed[]): JudgeReading["stillAchievable"] {
+  const standing = ordered.some((one) => !one.contradicted) ? ordered.filter((one) => !one.contradicted) : ordered;
+  const words = standing.map((one) => one.reading.stillAchievable).filter((word) => word !== undefined);
+  if (!words.length) return undefined;
+  return words.every((word) => word === words[0]) ? words[0] : words.find((word) => word !== "no");
+}
+
+/**
+ * A reading's words that say a list has pages its read did not reach: more,
+ * further, remaining or unread pages (never "no more" or "no further"), "not
+ * every page", a read that stopped early, or a page bound to raise. Generic
+ * words about paging only, never about any site or task.
+ */
+const MORE_PAGES = /(?<!\bno\s)(?<!\bno\s\w+\s)\b(?:more|further|remaining|additional|unread|later|subsequent)\s+pages?\b|\bnot\s+(?:every|all(?:\s+the)?)\s+pages?\b|\bstopped\s+(?:early|too\s+soon|before\s+the\s+(?:last|end))\b|\b(?:did\s+not|didn't)\s+(?:read|follow|reach)\s+(?:every|all|the\s+(?:last|remaining))\b|\b(?:increase|raise)\s+(?:the\s+)?(?:page\s+)?(?:limit|bound)\b/iu;
+
+/**
+ * Whether a reading says there are pages left unread where Core's own record
+ * says otherwise: at least one read follows pages, and every one that does
+ * says its list ended, with a stop word of the list's own and nothing cut
+ * short (`read-account/stop.ts`). Without reads, or with any paging read the
+ * record leaves open, nothing is contradicted.
+ */
+function contradictsPagingRecord(reading: JudgeReading, reads: readonly AutomationStudioResultReadAccount[] | undefined): boolean {
+  const paging = (reads ?? []).filter((read) => read.paginates === true || read.pagesRead > 1 || (read.keptPerPage?.length ?? 0) > 1);
+  if (!paging.length) return false;
+  const listEnded = paging.every((read) => read.stop !== undefined && !read.truncated && automationStudioResultReadStop(read) === "list_ended");
+  if (!listEnded) return false;
+  return [reading.expected, reading.observed, reading.advice].some((text) => typeof text === "string" && MORE_PAGES.test(text));
 }
