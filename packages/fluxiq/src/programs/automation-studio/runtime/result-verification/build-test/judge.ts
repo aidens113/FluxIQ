@@ -253,6 +253,7 @@ export function automationStudioBuildTestJudge(deps: {
     if (!outcome.performed) return { verdict: "not_judged", why: outcome.reason, ...carried, spent };
     // No call came back usable, each asked again where its fault was temporary: the test was not judged (header).
     if (outcome.basis === "model_unavailable") return { verdict: "not_judged", why: couldNotJudge(outcome.reason, spent.calls), ...carried, spent };
+    if (outcome.exclusionEvidenceMissing) return { verdict: "not_judged", why: outcome.reason, ...carried, spent };
     if (outcome.verdict === "answers") return { verdict: "yes", spent };
     if (outcome.verdict === "does_not_answer" && automationStudioResultVerificationFailsRun(outcome)) {
       const judgement = outcome.repair?.judgement;

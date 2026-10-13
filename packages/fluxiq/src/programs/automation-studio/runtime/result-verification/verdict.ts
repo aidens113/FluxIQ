@@ -167,6 +167,15 @@ export function automationStudioResultVerdict(input: AutomationStudioResultVerdi
   if (verdict === "answers") {
     const unaccounted = automationStudioResultLeftOutRowsUnaccounted(input.summary, replyText(input));
     const unquoted = input.wording ? withoutUnaccounted(automationStudioResultLeftOutRowsUnquoted(input.summary, replyText(input), input.wording), unaccounted) : [];
+    if (unquoted.length && !unaccounted.length && !keptNumber.length && input.diagnosis?.patchNeeded !== true) {
+      const proof = automationStudioResultRepairDirective({ summary: input.summary, checked: unquoted.map(unquotedLine) });
+      return {
+        schemaVersion: "automation-studio.result-verification.v1", verdict: "unsure", basis: "model_unconfirmed",
+        code: "core.result.exclusion_evidence_missing",
+        reason: "The affirmative judgement did not supply the required row-local exclusion evidence, so the result remains unconfirmed.",
+        observation, exclusionEvidenceMissing: proof.checked ?? []
+      };
+    }
     if (unaccounted.length || keptNumber.length || unquoted.length) {
       // Core's words only: the yes's own prose argues the opposite of the verdict it now carries.
       return failed("does_not_answer", "model", codes.doesNotAnswer, refusedYesReason(unaccounted.length > 0, keptNumber.length > 0, unquoted.length > 0), observation, automationStudioResultRepairDirective({

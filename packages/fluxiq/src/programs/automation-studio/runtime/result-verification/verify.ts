@@ -98,6 +98,7 @@ import { automationStudioResultCoreObservation } from "./core-observation.ts";
 import { automationStudioResultSummaryWithPagingWords, automationStudioResultSummaryWithUnreadColumns } from "./read-account/index.ts";
 import { automationStudioRequestWording, automationStudioResultSummaryWithLeftOutNamingTheItem } from "./request-rows/index.ts";
 import { automationStudioResultVerdict } from "./verdict.ts";
+import { automationStudioResultExclusionEvidenceRecheck } from "./exclusion-evidence/index.ts";
 import { emitAutomationStudioActivity } from "../activity/index.ts";
 
 /**
@@ -225,13 +226,20 @@ async function askCheck(
   /** The one re-ask of a contradicted unsure (header, t503): marked on its intervention. */
   reask = false
 ): Promise<ReturnType<typeof automationStudioResultVerdict>> {
+  let current = request;
+  let evidenceRecheck = false;
   for (let ask = 1; ; ask += 1) {
-    const asked = await askOnce(request, provider, check, ask, reask);
+    const asked = await askOnce(current, provider, check, ask, reask, evidenceRecheck);
     const taken = new Set(interventions.map((intervention) => intervention.interventionId));
     const intervention = taken.has(asked.intervention.interventionId) ? { ...asked.intervention, interventionId: `${asked.intervention.interventionId}.${interventions.length + 1}` } : asked.intervention;
     interventions.push(intervention);
     request.recordIntervention?.(intervention);
-    if (!asked.temporary || ask >= AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK || request.signal?.aborted) return asked.verification;
+    const correction = automationStudioResultExclusionEvidenceRecheck(asked.verification, request.deniedEvidenceKeys);
+    if ((!asked.temporary && !correction) || ask >= AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK || request.signal?.aborted) return asked.verification;
+    if (correction) {
+      current = { ...request, summary: { ...request.summary, recheck: [request.summary.recheck, correction].filter(Boolean).join("\n") } };
+      evidenceRecheck = true;
+    }
   }
 }
 
@@ -255,7 +263,8 @@ async function askOnce(
   provider: AutomationStudioLlmProvider,
   check: 1 | 2,
   ask: number,
-  reask: boolean
+  reask: boolean,
+  evidenceRecheck: boolean
 ): Promise<{ verification: ReturnType<typeof automationStudioResultVerdict>; intervention: AutomationStudioFlowIntervention; temporary: boolean }> {
   // With the instruction's named columns no stored column reads, said once
   // (`read-account/unread-columns.ts`): information for the judge, not a verdict.
@@ -307,7 +316,7 @@ async function askOnce(
   });
   // The harness records a call's own metadata, not the caller's, so the
   // intervention is told here which check it was and who asked.
-  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}) } };
+  const intervention = { ...result.intervention, metadata: { ...(result.intervention.metadata ?? {}), source: VERIFICATION_SOURCE, verificationCheck: check, ...(ask > 1 ? { verificationAsk: ask } : {}), ...(reask ? { verificationReask: true } : {}), ...(evidenceRecheck ? { verificationEvidenceRecheck: true } : {}) } };
   const temporary = !response && request.signal?.aborted !== true && askAgainAfter(firstError(result.diagnostics));
   return { verification, intervention, temporary };
 }

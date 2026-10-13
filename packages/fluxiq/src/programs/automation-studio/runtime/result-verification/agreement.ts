@@ -96,6 +96,7 @@ export type AutomationStudioResultVerificationAskAgainOptions = { confirmAnswer?
  * carried no verdict and a call that never came back are not asked again.
  */
 export function automationStudioResultVerificationAskAgain(first: AutomationStudioResultVerification, options: AutomationStudioResultVerificationAskAgainOptions = {}): boolean {
+  if (first.exclusionEvidenceMissing) return true;
   return first.basis === "model" && (first.verdict !== "answers" || options.confirmAnswer === true);
 }
 
@@ -122,6 +123,14 @@ function agree(input: AutomationStudioResultVerificationAgreementInput, reasked?
     return { ...first, verdicts: [first.verdict], calls: 1 };
   }
   const verdicts: AutomationStudioResultVerdict[] = [first.verdict, second.verdict];
+  if ((first.exclusionEvidenceMissing || second.exclusionEvidenceMissing) && first.verdict !== "does_not_answer" && second.verdict !== "does_not_answer") {
+    return {
+      schemaVersion: first.schemaVersion, verdict: "unsure", basis: "model_unconfirmed", code: "core.result.exclusion_evidence_missing",
+      reason: "The checks did not provide the required exclusion evidence, so the result remains unconfirmed.",
+      observation: first.observation, verdicts, calls: 2,
+      exclusionEvidenceMissing: [...(first.exclusionEvidenceMissing ?? []), ...(second.exclusionEvidenceMissing ?? [])]
+    };
+  }
   const codes = AUTOMATION_STUDIO_RESULT_VERDICT_CODES;
   const weigh = { wording: input.wording, reasked };
   if (first.verdict === "answers") {
