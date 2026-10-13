@@ -9,17 +9,25 @@
 // the left-out rows stating a number their text condition kept on another row
 // (`left-out-stating-a-kept-number.ts`, t478); and how they are read: words
 // (`words.ts`), request phrases (`request-phrases.ts`), a summary's reads
-// (`summary-reads.ts`) and how a row is named (`row-naming.ts`).
+// (`summary-reads.ts`) and how a row is named (`row-naming.ts`). And, held to
+// the request's own words (t515, live run `run-mv6v2hx5-f448e662`): the
+// request as a judge's words are read against (`request-wording.ts`), the
+// left-out rows a yes did not name beside a quote of the request's excluding
+// words (`unquoted-rows.ts`), and the exclusions an advice adds that the
+// request never states (`unstated-exclusions.ts`).
 export * from "./checked-rows.ts";
 export * from "./checked-rows-named.ts";
 export * from "./left-out-naming-the-item.ts";
 export * from "./left-out-stating-a-kept-number.ts";
 export * from "./named-of.ts";
 export * from "./request-phrases.ts";
+export * from "./request-wording.ts";
 export * from "./rerun-rows.ts";
 export * from "./row-naming.ts";
 export * from "./summary-reads.ts";
 export * from "./summary-with-left-out-naming-the-item.ts";
 export * from "./types.ts";
 export * from "./unaccounted-rows.ts";
+export * from "./unquoted-rows.ts";
+export * from "./unstated-exclusions.ts";
 export * from "./words.ts";

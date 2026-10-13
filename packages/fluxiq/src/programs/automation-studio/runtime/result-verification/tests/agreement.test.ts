@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { automationStudioResultVerificationFailsRun, type AutomationStudioResultVerification, type AutomationStudioRunResultSummary } from "../contracts.ts";
 import { automationStudioResultVerificationAgreement, automationStudioResultVerificationAskAgain } from "../agreement.ts";
-import { automationStudioResultVerdict } from "../verdict.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict } from "../verdict.ts";
+import { automationStudioResultVerificationStatus } from "../verification-status.ts";
 
 // What two checks of one result come to. Any answer the model gave other than
 // `yes` is asked again; only two agreeing `no`s fail the run. On 2026-09-18 the
@@ -263,5 +264,50 @@ describe("a split verification carries both readings, each its own call's", () =
   it("carries no yes reading where nobody said yes, or the yes went unconfirmed by a non-answer", () => {
     expect(automationStudioResultVerificationAgreement({ first: saidNo(), second: unavailable() })).not.toHaveProperty("answeredReading");
     expect(automationStudioResultVerificationAgreement({ first: saidYes(), second: said("unknown"), confirmAnswer: true })).not.toHaveProperty("answeredReading");
+  });
+});
+
+// A runtime result check that answers yes and says the Flow needs a change is
+// not a clean pass (t515, live run `run-mv6v2hx5-f448e662`, fix 5). The armed
+// playback's one check answered yes with `patchNeeded: true`, advising a
+// condition be removed; the runtime keeps a single affirmative judgement, so the
+// run was recorded confirmed and the chat said "Passed".
+describe("a yes that says the Flow needs a change (t515)", () => {
+  const CODES = AUTOMATION_STUDIO_RESULT_VERDICT_CODES;
+  const changeSummary: AutomationStudioRunResultSummary = {
+    schemaVersion: "automation-studio.run-result-summary.v1",
+    totalRecordCount: 6, totalRefusedCount: 0, totalRowsMissingRequired: 0, recordSetCount: 1, recordSets: [],
+    flowShape: [{ nodeId: "n1", definitionId: "extract_list" }], withheld: false
+  };
+  const yesAdvising = (patchNeeded?: boolean) => automationStudioResultVerdict({
+    summary: changeSummary, basis: "model",
+    diagnosis: { answersRequest: "yes", observed: "Six rows, as asked.", changed: "Remove the second condition.", ...(patchNeeded !== undefined ? { patchNeeded } : {}) }
+  });
+
+  it("is a yes with a change advised, by its code", () => {
+    expect(yesAdvising(true)).toMatchObject({ verdict: "answers", code: CODES.answersWithChangeAdvised });
+    expect(yesAdvising(false)).toMatchObject({ verdict: "answers", code: CODES.answers });
+    expect(yesAdvising()).toMatchObject({ verdict: "answers", code: CODES.answers });
+  });
+
+  it("is not confirmed as a runtime check's single yes, nor failed", () => {
+    const outcome = automationStudioResultVerificationAgreement({ first: yesAdvising(true) });
+    expect(outcome).toMatchObject({ verdict: "unsure", basis: "model_unconfirmed", code: CODES.answersWithChangeAdvised, verdicts: ["answers"], calls: 1 });
+    expect(outcome.reason).toContain("said the Flow needs a change");
+    expect(automationStudioResultVerificationFailsRun(outcome)).toBe(false);
+    expect(outcome.failure).toBeUndefined();
+    expect(outcome.repair).toBeUndefined();
+    expect(automationStudioResultVerificationStatus({ ...outcome, performed: true })).toBe("unverified");
+    expect(outcome.answeredReading).toEqual({ observed: "Six rows, as asked." });
+  });
+
+  it("leaves a runtime check's plain yes confirmed", () => {
+    const outcome = automationStudioResultVerificationAgreement({ first: yesAdvising(false) });
+    expect(automationStudioResultVerificationStatus({ ...outcome, performed: true })).toBe("confirmed");
+  });
+
+  it("leaves a build test's two yeses a yes, its advice unconfirmed as before", () => {
+    const outcome = automationStudioResultVerificationAgreement({ first: yesAdvising(true), second: yesAdvising(false), confirmAnswer: true });
+    expect(outcome).toMatchObject({ verdict: "answers", verdicts: ["answers", "answers"], calls: 2 });
   });
 });

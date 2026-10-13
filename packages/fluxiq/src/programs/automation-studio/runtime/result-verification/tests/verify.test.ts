@@ -7,6 +7,9 @@ import { AutomationStudioLlmBuildPurse, automationStudioLlmFlowPurseScope } from
 import { AutomationStudioLlmProviderError, type AutomationStudioLlmProvider, type AutomationStudioLlmTaskRequest } from "../../llm/index.ts";
 import { automationStudioResultVerificationDeadlineMs, AUTOMATION_STUDIO_RESULT_VERIFICATION_DEADLINE_MS } from "../deadline.ts";
 import { RUN_MUW60J7C_REQUEST, runMuw60j7cRunSummary } from "../request-rows/tests/run-muw60j7c.ts";
+import {
+  REQUEST_WORDS_CONDITIONS, REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary
+} from "../request-rows/tests/request-words-fixture.ts";
 import type { AutomationStudioResultReadAccount, AutomationStudioRunResultSummary } from "../contracts.ts";
 import { AUTOMATION_STUDIO_RESULT_VERIFICATION_ASKS_PER_CHECK, verifyAutomationStudioRunResult } from "../verify.ts";
 
@@ -18,7 +21,7 @@ const USAGE = { inputTokens: 900, outputTokens: 60, totalTokens: 960, estimatedC
 const NO = { answersRequest: "no", expected: "Only earbuds.", observed: "Two accessories are kept.", changed: "Leave out the accessories." };
 
 /** What one scripted call does: answer with a diagnosis, or fail as `fault` says. */
-type Call = { answer: Record<string, unknown> } | { fault: "timeout" | "unavailable" | "untyped" };
+type Call = { answer: Record<string, unknown> } | { fault: "timeout" | "unavailable" | "untyped" | "truncated" | "malformed" | "auth" };
 
 /** A provider that plays `calls` in order, recording what each was sent. */
 function scripted(calls: readonly Call[]): { provider: AutomationStudioLlmProvider; seen: AutomationStudioLlmTaskRequest[] } {
@@ -35,6 +38,9 @@ function scripted(calls: readonly Call[]): { provider: AutomationStudioLlmProvid
         if ("answer" in call) return { response: { kind: "diagnosis", summary: "Judged.", diagnosis: call.answer }, usage: USAGE } as Awaited<ReturnType<AutomationStudioLlmProvider["runTask"]>>;
         if (call.fault === "timeout") throw new AutomationStudioLlmProviderError("llm.provider_timeout", "Provider request ended.", true);
         if (call.fault === "unavailable") throw new AutomationStudioLlmProviderError("llm.provider_http_error", "Provider unavailable.", true, 503);
+        if (call.fault === "truncated") throw new AutomationStudioLlmProviderError("llm.provider_output_truncated", "Reply cut off at the length limit.", false);
+        if (call.fault === "malformed") throw new AutomationStudioLlmProviderError("llm.provider_malformed_response", "Reply was not JSON.", false);
+        if (call.fault === "auth") throw new AutomationStudioLlmProviderError("llm.provider_auth_failed", "Key refused.", false, 401);
         throw new Error("something unexplained");
       }
     }
@@ -107,6 +113,41 @@ describe("a verification check that did not come back", () => {
     expect(cancelled).toHaveLength(1);
   });
 
+  // t515 (live run `run-mv6v2kzn-d593231f`, step 0088): the result check's one
+  // reply looped a sentence until it was cut off at 8,192 tokens, and that
+  // unread reply was recorded as a refutation. A reply that arrived and could
+  // not be read is a spent call (`../../llm/failure-disposition.ts`), so it is
+  // asked once more, as a temporary fault is.
+  it("is asked again after a reply cut off at the length limit, and the answer it then gives stands", async () => {
+    const { provider, seen } = scripted([{ fault: "truncated" }, { answer: NO }, { answer: NO }]);
+    const report = await verify(provider);
+    expect(seen).toHaveLength(3);
+    expect(seen[1]?.context.resultSummary).toEqual(seen[0]?.context.resultSummary);
+    expect(report.outcome).toMatchObject({ performed: true, verdict: "does_not_answer", basis: "model", calls: 2 });
+    expect(report.interventions.map((intervention) => [intervention.metadata?.verificationCheck, intervention.metadata?.verificationAsk])).toEqual([[1, undefined], [1, 2], [2, undefined]]);
+  });
+
+  it("is asked again after a reply that was not JSON", async () => {
+    const { provider, seen } = scripted([{ fault: "malformed" }, { answer: NO }, { answer: NO }]);
+    const report = await verify(provider);
+    expect(seen).toHaveLength(3);
+    expect(report.outcome).toMatchObject({ verdict: "does_not_answer", calls: 2 });
+  });
+
+  it("asks an unreadable check only once more: two cut-off replies give no answer, never a third call", async () => {
+    const { provider, seen } = scripted([{ fault: "truncated" }, { fault: "truncated" }, { answer: NO }]);
+    const report = await verify(provider);
+    expect(seen).toHaveLength(2);
+    expect(report.outcome).toMatchObject({ verdict: "unsure", basis: "model_unavailable", failureCode: "llm.provider_output_truncated" });
+    expect(report.interventions).toHaveLength(2);
+  });
+
+  it("is not asked again after a refused key", async () => {
+    const { provider, seen } = scripted([{ fault: "auth" }, { answer: NO }]);
+    expect((await verify(provider)).outcome).toMatchObject({ basis: "model_unavailable", failureCode: "llm.provider_auth_failed" });
+    expect(seen).toHaveLength(1);
+  });
+
   it("charges each ask to the Flow's purse", async () => {
     const charged: number[] = [];
     const flow = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.25, carriedUsd: 0, onSettled: (usd) => charged.push(usd) });
@@ -167,5 +208,46 @@ describe("the deadline a verification runs under", () => {
     expect(automationStudioResultVerificationDeadlineMs(20_000)).toBe(AUTOMATION_STUDIO_RESULT_VERIFICATION_DEADLINE_MS);
     // A build's 45 s calls: two checks, each asked twice, and the reads around them.
     expect(automationStudioResultVerificationDeadlineMs(45_000)).toBe(4 * 45_000 + 30_000);
+  });
+});
+
+// The request's own words, end to end (t515, live run `run-mv6v2hx5-f448e662`):
+// a yes over a row a condition alone left out quotes, beside it, the request's
+// words that exclude it, and a split's no whose advice excludes by words the
+// request never states is asked once more with that named. A generic
+// catalogue, not a scenario the Lab measures.
+describe("a verification held to the request's own words", () => {
+  const catalogue = (body: string): AutomationStudioFlowInstruction => ({ ...instruction, title: "Collect the catalogue", body });
+  const held = (provider: AutomationStudioLlmProvider, extra: Partial<Parameters<typeof verifyAutomationStudioRunResult>[0]> = {}) =>
+    verify(provider, { summary: requestWordsRunSummary(), instructions: [catalogue(REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS)], ...extra });
+  const STOCK_SAID = `Copper Garden Tools Pair is left out, as the request says "leaving out out-of-stock items".`;
+  const yesSaying = (handle: string) => ({ answersRequest: "yes", observed: `${STOCK_SAID} Replacement Handle for Garden Tools is left out, ${handle}.` });
+
+  it("does not take a yes whose reason for a left-out row is only the words the request searched by", async () => {
+    const unquoted = yesSaying("because the request asks for \"garden tools\"");
+    const { provider, seen } = scripted([{ answer: unquoted }, { answer: unquoted }]);
+    const report = await held(provider);
+    expect(seen).toHaveLength(2);
+    expect(report.outcome).toMatchObject({ performed: true, verdict: "does_not_answer" });
+    const checked = report.outcome.performed ? report.outcome.repair?.checked ?? [] : [];
+    expect(checked.join("\n")).toContain(`without quoting, beside this row, words of the request that exclude it; it was left out by condition "${REQUEST_WORDS_CONDITIONS.handle}" alone (Read read) -- ${REQUEST_WORDS_HANDLE}`);
+  });
+
+  it("takes a yes that quotes, beside each left-out row, the request's own excluding words", async () => {
+    const { provider, seen } = scripted([{ answer: yesSaying("as the request says \"replacement parts\"") }]);
+    const report = await held(provider);
+    expect(seen).toHaveLength(1);
+    expect(report.outcome).toMatchObject({ performed: true, verdict: "answers" });
+  });
+
+  it("asks a split's no once more when its advice excludes by words the request never states", async () => {
+    const quoted = yesSaying("as the request says \"replacement parts\"");
+    const no = { answersRequest: "no", observed: "A row that is not a tool was left out.", changed: "Add a condition that excludes refurbished bundles such as the Copper Garden Tools Pair row." };
+    const { provider, seen } = scripted([{ answer: quoted }, { answer: no }, { answer: quoted }]);
+    const report = await held(provider, { confirmAnswer: true });
+    expect(seen).toHaveLength(3);
+    expect(report.outcome).toMatchObject({ performed: true, verdict: "answers", verdicts: ["answers", "does_not_answer", "answers"], calls: 3 });
+    expect(report.interventions.map((intervention) => [intervention.metadata?.verificationCheck, intervention.metadata?.verificationReask])).toEqual([[1, undefined], [2, undefined], [2, true]]);
+    expect(String(seen[2]?.context.resultSummary?.recheck)).toContain("never states as an exclusion: \"excludes refurbished bundles such as the Copper Garden Tools Pair row\"");
   });
 });

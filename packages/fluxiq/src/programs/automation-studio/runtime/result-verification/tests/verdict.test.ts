@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { automationStudioResultVerificationAnswers, type AutomationStudioRunResultSummary } from "../contracts.ts";
-import { automationStudioResultVerdict, automationStudioResultVerdictFromDiagnosis } from "../verdict.ts";
+import { automationStudioResultVerificationAnswers, automationStudioResultVerificationFailsRun, type AutomationStudioRunResultSummary } from "../contracts.ts";
+import { AUTOMATION_STUDIO_RESULT_VERDICT_CODES, automationStudioResultVerdict, automationStudioResultVerdictFromDiagnosis } from "../verdict.ts";
+import {
+  REQUEST_WORDS_CONDITIONS, REQUEST_WORDS_HANDLE, REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS, requestWordsRunSummary, requestWordsWording
+} from "../request-rows/tests/request-words-fixture.ts";
+import { automationStudioResultCheckedRowsNamed } from "../request-rows/index.ts";
 import { automationStudioResultRecordedOutcome } from "../run-record.ts";
 
 // The fail-closed rule, stated once and asserted from every direction.
@@ -279,5 +283,55 @@ describe("a yes over a left-out row stating a number its text condition kept", (
   it("takes a yes where the text condition left out only numbers outside the range it kept", () => {
     const reads = [{ ...contradicted.reads![0]!, conditions: [{ condition, rejected: 1, alone: 1, leftOutOnlyByThis: ["Rain barrels — replies: 1 reply"] }] }];
     expect(automationStudioResultVerdict({ summary: { ...contradicted, reads }, diagnosis: { answersRequest: "yes" }, basis: "model" }).verdict).toBe("answers");
+  });
+});
+
+// A yes is taken over a row a condition alone left out only where it quotes,
+// beside that row, the request's own words that exclude it (t515, live run
+// `run-mv6v2hx5-f448e662`, fix 1). Both build-test judges said yes over a
+// revision whose second condition left out a row the request never excludes,
+// each naming the row and calling it an accessory; and the runtime check said
+// yes over the same rows.
+describe("a yes over rows a condition alone left out, held to the request's own words (t515)", () => {
+  const yesSaying = (observed: string, wording = requestWordsWording()) => automationStudioResultVerdict({
+    summary: requestWordsRunSummary(),
+    diagnosis: { answersRequest: "yes", expected: "Every garden tool on the first page that is in stock.", observed },
+    basis: "model",
+    wording
+  });
+  const stockSaid = `Copper Garden Tools Pair is left out, as the request says "leaving out out-of-stock items".`;
+
+  it("is not taken when its reason for a row is only the words the request searched by", () => {
+    const verification = yesSaying(`${stockSaid} Replacement Handle for Garden Tools is left out: it is a part, and the request asks for "garden tools".`);
+    expect(verification).toMatchObject({ verdict: "does_not_answer", basis: "model", code: AUTOMATION_STUDIO_RESULT_VERDICT_CODES.doesNotAnswer });
+    expect(automationStudioResultVerificationFailsRun(verification)).toBe(true);
+    expect(verification.reason).toContain("without quoting");
+    // The repair is told the row and its condition, in Core's words, and no reading of the yes.
+    expect(verification.repair?.judgement).toBeUndefined();
+    expect(verification.repair?.checked).toEqual([
+      `The check answered yes without quoting, beside this row, words of the request that exclude it; it was left out by condition "${REQUEST_WORDS_CONDITIONS.handle}" alone (Read read) -- ${REQUEST_WORDS_HANDLE}. A row the request's own words do not exclude is one it asks for.`
+    ]);
+    // Not rows Core says the request asks for: a repair's rerun is never measured against them.
+    expect(automationStudioResultCheckedRowsNamed(requestWordsRunSummary(), verification.repair?.checked ?? [])).toEqual([]);
+  });
+
+  it("is taken when each row stands beside a quote of the request's own excluding words", () => {
+    const wording = requestWordsWording(REQUEST_WORDS_REQUEST_TWO_EXCLUSIONS);
+    const verification = yesSaying(`${stockSaid} Replacement Handle for Garden Tools is left out, as the request says "replacement parts".`, wording);
+    expect(verification).toMatchObject({ verdict: "answers", code: AUTOMATION_STUDIO_RESULT_VERDICT_CODES.answers });
+  });
+
+  it("is read as before where no request wording is given", () => {
+    const verification = automationStudioResultVerdict({ summary: requestWordsRunSummary(), diagnosis: { answersRequest: "yes", observed: "All rows are right." }, basis: "model" });
+    expect(verification.verdict).toBe("answers");
+  });
+
+  it("leaves a no as it was", () => {
+    const verification = automationStudioResultVerdict({
+      summary: requestWordsRunSummary(), basis: "model", wording: requestWordsWording(),
+      diagnosis: { answersRequest: "no", observed: "Replacement Handle for Garden Tools is missing.", changed: "Remove the handle condition." }
+    });
+    expect(verification.verdict).toBe("does_not_answer");
+    expect(verification.repair?.judgement?.advice).toBe("Remove the handle condition.");
   });
 });

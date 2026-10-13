@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AutomationStudioRecordSchema } from "../../schema.ts";
 import {
   processAutomationStudioRecordRows,
+  readAutomationStudioRecordDate,
   type AutomationStudioRecordCollectedRow,
   type AutomationStudioRecordProcessing
 } from "../index.ts";
@@ -90,6 +91,33 @@ describe("processAutomationStudioRecordRows", () => {
     const today = { title: "Today", price: "just posted" };
     const result = processOf(rows("n1", "b1", old, today, recent), { sort: [{ field: "price", order: "desc" }] });
     expect(result.rows).toEqual([today, recent, old]);
+  });
+
+  // t515 (live run `run-mv6v2kzn-d593231f`): an answer sorted newest first by a
+  // column its `columns` leave out carried no record of the order, so nothing
+  // the judge was shown could confirm it. The sort's reading is kept on the
+  // account, taken before the columns are applied; the column is never added.
+  it("records how the sort read a key the answer's columns leave out, in answer order", () => {
+    const old = { title: "Old", price: "2026-09-01", url: "/o" };
+    const recent = { title: "Recent", price: "2 days ago", url: "/r" };
+    const today = { title: "Today", price: "just posted", url: "/t" };
+    const undated = { title: "Undated", price: "ask", url: "/u" };
+    const result = processOf(rows("n1", "b1", old, undated, today, recent), { sort: [{ field: "price", order: "desc" }, { field: "url", order: "asc" }], columns: ["title"] });
+    expect(result.rows).toEqual([{ title: "Today" }, { title: "Recent" }, { title: "Old" }, { title: "Undated" }]);
+    expect(result.account.hiddenSortKeys).toEqual([
+      {
+        field: "price", position: 0, order: "desc", kind: "date", read: 3, inOrder: true,
+        readings: [readAutomationStudioRecordDate("just posted", NOW), readAutomationStudioRecordDate("2 days ago", NOW), readAutomationStudioRecordDate("2026-09-01", NOW), null]
+      },
+      { field: "url", position: 1, order: "asc", kind: "text", read: 4 }
+    ]);
+  });
+
+  it("records no hidden sort key when the answer keeps the key, has no columns, or no sort", () => {
+    const collected = rows("n1", "b1", A, B);
+    expect(processOf(collected, { sort: [{ field: "price", order: "desc" }], columns: ["title", "price"] }).account).not.toHaveProperty("hiddenSortKeys");
+    expect(processOf(collected, { sort: [{ field: "price", order: "desc" }] }).account).not.toHaveProperty("hiddenSortKeys");
+    expect(processOf(collected, { columns: ["title"] }).account).not.toHaveProperty("hiddenSortKeys");
   });
 
   it("filters with where before dedupe and counts what it filtered out", () => {

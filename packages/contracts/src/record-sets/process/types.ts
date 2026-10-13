@@ -114,4 +114,27 @@ export type AutomationStudioRecordProcessingAccount = {
   passes: AutomationStudioRecordProcessingPass[];
   /** One per `where` condition, in its order; absent when the declaration has none. */
   conditions?: AutomationStudioRecordProcessingConditionAccount[];
+  /** Each sort key the answer's `columns` leave out, as the sort read it before they were applied (t515); absent when none is. */
+  hiddenSortKeys?: AutomationStudioRecordProcessingHiddenSortKey[];
+};
+
+/**
+ * One sort key whose column the answer's `columns` leave out, as the sort read
+ * it on the answer's rows, in answer order, before the columns were applied
+ * (`process-rows.ts`, t515). The column stays stored and hidden; it is never
+ * added to the answer.
+ */
+export type AutomationStudioRecordProcessingHiddenSortKey = {
+  field: string;
+  /** The key's place in the sort, from 0. */
+  position: number;
+  order: AutomationStudioRecordSortOrder;
+  /** What the sort read the column as, `auto` decided. */
+  kind: Exclude<AutomationStudioRecordSortType, "auto">;
+  /** How many of the answer's rows state a value of `kind`. */
+  read: number;
+  /** For the first key only: whether the answer's rows run in its order as read. */
+  inOrder?: boolean;
+  /** The first answer rows' readings, at most four: a date as epoch milliseconds, a number as itself, `null` where none. Never for text, which would be the page's own words. */
+  readings?: (number | null)[];
 };
