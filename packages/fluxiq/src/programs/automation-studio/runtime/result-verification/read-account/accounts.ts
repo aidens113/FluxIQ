@@ -200,7 +200,6 @@ function conditionAccounts(
   const total = Math.max(rejected.length, written.length);
   const accounts: NonNullable<AutomationStudioResultReadAccount["conditions"]> = [];
   for (let index = 0; index < total; index += 1) {
-    const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index], stored) : undefined;
     const rows = count(rejected[index]);
     const byItself = count(alone[index]);
     const tested = automationStudioResultReadConditionColumn(written[index], columns);
@@ -211,6 +210,9 @@ function conditionAccounts(
     const leftOutOnlyByThis = deniedKeys
       ? automationStudioResultReadAloneRows(withTestedValue(aloneRows[index], tested), deniedKeys, undefined, { observations: aloneObservations[index], conditionIndex: index, evidenceKey, onScreened: observations => { leftOutObservations = observations; } })
       : undefined;
+    // A presence test of its own read is said by the word it found on a row it left out, screened as those rows are (`condition.ts`, t482 N3).
+    const leftOutSeen = leftOutObservations?.find((observation) => observation?.state === "present")?.value;
+    const condition = deniedKeys ? automationStudioResultReadConditionText(written[index], columns, deniedKeys, seen[index], stored, leftOutSeen) : undefined;
     accounts.push({
       ...(condition ? { condition } : {}),
       ...(rows !== undefined ? { rejected: rows } : {}),

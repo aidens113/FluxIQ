@@ -354,3 +354,40 @@ describe("each judge is told the start view is not the page a list read ran on",
     for (const buildTest of [false, true]) expect(automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest }), String(buildTest)).toContain(SENTENCE);
   });
 });
+
+// The judge's rule for a step that keeps less than the request asks before a
+// read (t482, lane C rounds 10 and 12: `run-mv5uu9g1-9d80deea`,
+// `run-mv62icw3-9118516f`). The judge was told only to refuse a Flow that
+// could not narrow; a site filter narrower than the request's bound, before the
+// read, was named by every judge and passed. The rule is the converse, written
+// abstractly: its example is another kind of site, and it names no price, shop
+// or product the Lab's scenarios use.
+/** The sentences of the rule, as one string. */
+const narrowingRule = (): string => {
+  const at = AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION.indexOf("resultSummary.reads[].narrowedBefore");
+  return AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION.slice(at, AUTOMATION_STUDIO_RESULT_VERIFICATION_INSTRUCTION.indexOf("is correct.", at) + "is correct.".length);
+};
+
+describe("the judge's rule for a step before a read that keeps less than asked", () => {
+  it("is told to every result judge, of a finished run and of a build's test", () => {
+    for (const buildTest of [false, true]) {
+      const prompt = automationStudioDiagnosisPromptInstruction("loop_verification", { buildTest });
+      expect(prompt).toContain("resultSummary.reads[].narrowedBefore");
+      expect(prompt).toContain("a step before a read that keeps less than the request asks");
+    }
+  });
+
+  it("says the removed rows have no witness, that the answer is no, and that the step is named in changed", () => {
+    const said = narrowingRule();
+    expect(said).toContain("never reached the read, so no condition's leftOutOnlyByThis and no count can show them");
+    expect(said).toContain("so answer no");
+    expect(said).toContain("in changed name that step by its nodeId");
+    expect(said).toContain("A step whose words keep exactly what a clause of the request asks for, or that narrows nothing (a notice closed, a page opened), is correct.");
+  });
+
+  it("teaches nothing a Lab scenario could be passed by: no price, currency, shop or product", () => {
+    const said = narrowingRule();
+    expect(said).not.toMatch(/[$€£]|\bprice|\bunder\b|\bcart\b|\bstore\b|\bshop|earbud|friend|job|listing/iu);
+    expect(said).toContain("library");
+  });
+});

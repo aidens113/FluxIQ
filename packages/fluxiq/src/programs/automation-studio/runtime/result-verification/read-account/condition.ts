@@ -41,6 +41,17 @@
 // Where the caller does not say which columns are stored, every column is taken
 // as stored and nothing changes.
 //
+// **And a presence test of its own read says what it looks for (t482, N3).**
+// A condition that keeps only the rows lacking something, over a read no
+// column makes and no attribute names, was said `the item's text is absent`,
+// which names neither what is absent nor that the rest of the item is not
+// tested. Lane D round 12 (`run-mv636xyp-2e4fe54d`) kept the requests that no
+// longer had their accept control that way, and both trial judges called the
+// result fragile. Such a condition is now said by the words its read found on
+// a row it left out (`leftOutSeen`, screened like the left-out rows):
+// `the item's text "Accept" is absent (a row is kept only when it has no
+// "Accept")`. With no such word it is said as before.
+//
 // **What is said about it.** Every other key of the condition is a relation the
 // model wrote, spelled as it wrote it (the domain's reader accepts several
 // spellings, and translating them here would be Core learning a grammar it does
@@ -79,11 +90,14 @@ export function automationStudioResultReadConditionText(
   columns: JsonObject | undefined,
   deniedKeys: readonly string[],
   seen?: JsonValue | undefined,
-  stored?: ReadonlySet<string> | undefined
+  stored?: ReadonlySet<string> | undefined,
+  leftOutSeen?: JsonValue | undefined
 ): string | undefined {
   if (!isRecord(condition)) return undefined;
   const denied = new Set(deniedKeys.map(automationStudioEvidenceKey));
   const named = subjectOf(condition, columns, denied);
+  const lacking = lackingText(condition, named, leftOutSeen, denied);
+  if (lacking) return lacking;
   const unstored = named.column !== undefined && stored !== undefined && !stored.has(named.column);
   const found = named.ownRead || unstored ? foundText(seen, denied) : undefined;
   const subject = found ? `${named.text} (read ${found} on a row it kept)` : named.text;
@@ -117,7 +131,7 @@ export function automationStudioResultReadConditionColumn(condition: JsonValue |
  * part that addresses the page -- and whether it is the latter, or which column
  * it is, which decide whether a value the read found is said beside it.
  */
-function subjectOf(condition: JsonObject, columns: JsonObject | undefined, denied: ReadonlySet<string>): { text: string; ownRead: boolean; column?: string } {
+function subjectOf(condition: JsonObject, columns: JsonObject | undefined, denied: ReadonlySet<string>): { text: string; ownRead: boolean; column?: string; generic?: string } {
   const named = condition.field;
   if (typeof named === "string" && plainName(named, denied)) return { text: named, ownRead: false, column: named };
   const read = condition.read;
@@ -126,8 +140,25 @@ function subjectOf(condition: JsonObject, columns: JsonObject | undefined, denie
   if (column) return { text: column, ownRead: false, column };
   const kind = typeof read.kind === "string" && WORD.test(read.kind) ? read.kind : "value";
   const attribute = read.attribute;
-  const text = kind === "attribute" && typeof attribute === "string" && plainName(attribute, denied) ? `attribute ${attribute}` : `the item's ${kind}`;
-  return { text, ownRead: true };
+  if (kind === "attribute" && typeof attribute === "string" && plainName(attribute, denied)) return { text: `attribute ${attribute}`, ownRead: true };
+  // Named by nothing of its own: `generic` says so, for a presence test said by what it found (`lackingText`).
+  return { text: `the item's ${kind}`, ownRead: true, generic: `the item's ${kind}` };
+}
+
+/**
+ * A condition that keeps the rows lacking what its own read finds -- `is:
+ * absent` over a read no column makes and no attribute names, and nothing else
+ * -- said by the word that read found on a row it left out (header);
+ * `undefined` for any other condition, or where no such word may be said.
+ */
+function lackingText(condition: JsonObject, named: { ownRead: boolean; generic?: string }, leftOutSeen: JsonValue | undefined, denied: ReadonlySet<string>): string | undefined {
+  if (!named.ownRead || named.generic === undefined || condition.is !== "absent" || condition.not === true) return undefined;
+  const relations = Object.keys(condition).filter((key) => !NAMING_KEYS.has(key) && key !== "not" && condition[key] !== null && condition[key] !== undefined);
+  if (relations.length !== 1) return undefined;
+  const found = foundText(leftOutSeen, denied);
+  if (!found) return undefined;
+  const text = `${named.generic} ${found} is absent (a row is kept only when it has no ${found})`;
+  return sayable(text) ? text : undefined;
 }
 
 /** A value the condition's read found, quoted and whole, or `undefined` when there is none or it may not be said. */

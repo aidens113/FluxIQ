@@ -266,6 +266,33 @@ export type AutomationStudioResultReadAccount = {
    * true. Absent outside a loop.
    */
   keptPerPage?: number[];
+  /**
+   * The steps that acted on the page before this read first ran, in run order
+   * (`./narrowed-before.ts`, t482): a search, a filter, a sort, an option
+   * chosen, a move to another page. The rows such a step removed never reached
+   * the read, so no condition's `leftOutOnlyByThis` can show them. Lane C
+   * rounds 10 and 12 (`run-mv5uu9g1-9d80deea`, `run-mv62icw3-9118516f`): a
+   * site band narrower than the request's bound dropped two asked rows before
+   * the read, and every judge said yes while naming it. Present only in a
+   * summary of a run whose trace was in hand.
+   */
+  narrowedBefore?: AutomationStudioResultNarrowingStep[];
+};
+
+/**
+ * One step that acted on the page before a read (`AutomationStudioResultReadAccount.narrowedBefore`).
+ * `control` is the words of what it pressed or chose, as a model may read them
+ * (`../llm/model-facing/control-words.ts`), absent where it names no control
+ * or no denied-keys declaration was made. `effect`: `new_page`, it went to
+ * another page; `same_page`, it changed the page it stayed on;
+ * `already_shown`, its try found the page already showing what it does; absent
+ * where the run recorded no comparison of the page before and after it.
+ */
+export type AutomationStudioResultNarrowingStep = {
+  nodeId: string;
+  label?: string;
+  control?: string;
+  effect?: "new_page" | "same_page" | "already_shown";
 };
 
 /**
