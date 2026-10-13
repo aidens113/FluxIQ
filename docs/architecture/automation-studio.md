@@ -1824,7 +1824,13 @@ unknown; an explicitly false flag explains that no change was kept. A true
 flag says that this run kept a change for future runs, covering runtime patches,
 in-run handlers and kept reauthoring, without claiming a later run reused it.
 The adaptation's own details remain the authority for proposed, waiting,
-held-back and applied decisions.
+held-back and applied decisions. Chat completion, web detail metrics/headlines
+and extension rows use this same historical flag; a later current applied
+status cannot override false or unknown. Chat names a kept change kind only
+when its automatic applied decision belongs to the same run. Positive exact
+counts and kinds are omitted where that attribution is unavailable. Proposed,
+validated, rejected and unreadable current statuses remain distinct from
+whether the completed run kept a change.
 
 Build and re-author repairs are gated separately, by a whole-Flow run judged on
 the Flow as it finally stands (t244).
