@@ -26,10 +26,26 @@
 // **Why an instruction.** For the reason `brief.ts` gives: the instruction list
 // is the one part of the context every provider renders on every build call.
 // It is marked as Core's and never stored.
+//
+// **What the run concluded, and "already done" (t500, F3).** Live run
+// `run-mv6i28zl-a53d36db`: a step that sets a choice failed because the site
+// already held that choice, so the control it presses was not offered. The
+// diagnosis said the result was still achievable and recoverable, Core's own
+// check of the page had compared it with the step's recorded change, and the
+// brief said neither: it ordered "re-find the step", and three rounds hunted for
+// a control that could not exist, twice pressing another record's control and
+// reversing the choice the site held. The brief now says what the diagnosis
+// concluded -- its verdicts, the only part of it the run keeps
+// (`../structured-diagnosis.ts`) -- and what Core's check found, as the run
+// recorded it (`stateRouting`). It offers "already done" before "re-find", and
+// forbids changing a lasting choice the build did not make. Every word is
+// abstract: no site's words (AGENTS.md, "Model guidance never teaches to the
+// test").
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import type { AutomationStudioFlowDocument, AutomationStudioFlowInstruction, AutomationStudioFlowRunDetail } from "../../../model/index.ts";
 import type { AutomationStudioNodeAttemptTrace } from "../../executor.ts";
+import { automationStudioNodeRouteSignatures } from "../../route-state/signatures/index.ts";
 import { buildAutomationStudioRuntimeRecoveryContext } from "../context.ts";
 
 /** The id every failed-step brief carries, so a reader can tell it from an instruction a person wrote. */
@@ -80,12 +96,16 @@ export function automationStudioStepFailureReauthorBrief(input: {
     ...(step?.parametersWithheld !== undefined ? [`- Parameters withheld from this brief: ${rendered(step.parametersWithheld)}`] : []),
     ...(target ? [`- How its target resolved: ${rendered(target)}`] : []),
     ...(expected ? [`- What it was expected to produce: ${rendered(expectedText(expected))}`] : []),
+    ...concludedLines(input.detail, input.nodeId, input.flow),
     "",
     "What to do:",
-    `1. Re-find step ${input.nodeId} on the site as it is now. Look at it, find what now does what this step was meant to do, and rewrite the step to act on that. It may carry a different name than the one recorded, or sit behind something that has to be opened first; if so, add the step that opens it before this one.`,
-    "2. Check every later step that depends on this one -- one that reads what it produced, or acts on what it opened -- and re-find it the same way where it no longer matches.",
-    "3. Keep every other step exactly as it is. The steps before the failed one ran and succeeded.",
-    "4. The re-found step must still do what the person's request asked of it. Do not swap it for a step that does something else; if nothing on the site does it any more, say so in your completion summary."
+    "1. First look at whether the page already shows the result this step was meant to bring about: what it leaves on the site, not the control it acts on. A site can keep an earlier choice, so a step that sets something may find it already set, and its control is then not offered for it.",
+    "2. If the page already shows that result, do not look for another control to do it again. Keep the step, make it run only when its result is not already shown (a step that is passed over when its control is absent, or a route on the page's state), then go on with the later steps.",
+    `3. Otherwise, re-find step ${input.nodeId} on the site as it is now. Look at it, find what now does what this step was meant to do, and rewrite the step to act on that. It may carry a different name than the one recorded, or sit behind something that has to be opened first; if so, add the step that opens it before this one.`,
+    "4. Check every later step that depends on this one -- one that reads what it produced, or acts on what it opened -- and re-find it the same way where it no longer matches.",
+    "5. Keep every other step exactly as it is. The steps before the failed one ran and succeeded.",
+    "6. The re-found step must still do what the person's request asked of it. Do not swap it for a step that does something else; if nothing on the site does it any more, say so in your completion summary.",
+    "7. Never change a lasting choice the site already holds that this build did not make: do not choose a different option where one is already chosen, and do not act on another record in place of the step's own. That undoes what the person already has, and is not a repair."
   ];
   return {
     schemaVersion: "0.1",
@@ -101,6 +121,41 @@ export function automationStudioStepFailureReauthorBrief(input: {
     updatedAt: input.now,
     metadata: { source: "core.step_failure_repair", nodeId: input.nodeId }
   };
+}
+
+/**
+ * What the run concluded about the failed step, as the run recorded it: the
+ * diagnosis's verdicts (`llmGate.structuredDiagnosis`, never its prose, which
+ * the run does not keep), and what Core's own check of the page found when the
+ * step could not run (the failed attempt's `stateRouting`), said only for a
+ * step that recorded the change it made. Empty when the run recorded neither.
+ */
+function concludedLines(detail: AutomationStudioFlowRunDetail, nodeId: string, flow: AutomationStudioFlowDocument | undefined): string[] {
+  const lines: string[] = [];
+  const diagnosis = record(record(detail.metadata?.llmGate)?.structuredDiagnosis);
+  const verdicts = diagnosis ? diagnosisVerdicts(diagnosis) : [];
+  if (verdicts.length) lines.push(`- The run's diagnosis of this failure concluded: ${verdicts.join("; ")}.`);
+  const node = flow?.nodes.find((candidate) => candidate.id === nodeId);
+  const routing = [...(detail.actionAttempts ?? [])].reverse().find((attempt) => attempt.nodeId === nodeId && attempt.status === "failed")?.stateRouting;
+  if (node && automationStudioNodeRouteSignatures(node).effect && routing) {
+    if (routing.outcome === "no_match") lines.push("- When the step could not run, Core compared the page with what this step changed when the Flow was built, and did not find all of that change on the page. Part of what changed then may have been incidental, so judge the page itself.");
+    else if (routing.outcome === "unobserved") lines.push("- When the step could not run, Core could not observe the page to compare it with what this step changed when the Flow was built.");
+  }
+  return lines;
+}
+
+/** The diagnosis's verdicts a re-author can act on, each said with the answer the run recorded. */
+function diagnosisVerdicts(diagnosis: JsonObject): string[] {
+  const said: Array<[string, string]> = [
+    ["stillAchievable", "the step's intended result is still achievable"],
+    ["deterministicRecoveryPossible", "it can be recovered without rebuilding the step"]
+  ];
+  const verdicts = said.flatMap(([key, words]) => {
+    const answer = diagnosis[key];
+    return answer === "yes" || answer === "no" || answer === "unknown" ? [`${words} (${answer})`] : [];
+  });
+  if (typeof diagnosis.patchNeeded === "boolean") verdicts.push(`the Flow needs a change (${diagnosis.patchNeeded ? "yes" : "no"})`);
+  return verdicts;
 }
 
 /** The ladder's ending, in its own codes, as one parenthetical. */

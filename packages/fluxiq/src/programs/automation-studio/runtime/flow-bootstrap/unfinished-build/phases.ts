@@ -106,6 +106,19 @@
 // the round limit runs out first, the budget ending says the Flow as it stands
 // was never run whole, naming those steps (`./not-done.ts`).
 //
+// **A stalled repair that made no new act ends the build (t500, F4).** Live
+// run `run-mv6i28zl-a53d36db`'s failed-step re-author: every round's Flow held
+// carried steps, so none was measured, and a changed Flow counted as progress.
+// Round 1, a repair, swapped one press for another, stalled on unusable
+// decisions with the request's acts done unchanged, and round 2 opened with the
+// same brief and a fresh decision allowance until the run's call allowance
+// stopped it. Now an unmeasured repair round that stalls -- unusable decisions,
+// or refused repeats -- while acts the request asked are still to do, and that
+// did none of them newly and ran no carried step again, ends the build not
+// finished (`no_progress`), saying what stood still. A Flow that is merely
+// different is not a new act. A round with no act left to do is unchanged
+// (murwcmx2's read, above).
+//
 // **Unreadable replies end the build only as that (t211).** Each reply the
 // loop could not read is asked again; an unbroken run of them ends the round
 // as `unreadable`, and the build with a message saying so and how many tries
@@ -187,6 +200,7 @@ import type {
   AutomationStudioFlowBootstrapJudgedWrong,
   AutomationStudioFlowBootstrapJudgement,
   AutomationStudioFlowBootstrapNoRouteLeft,
+  AutomationStudioFlowBootstrapProgressMeasure,
   AutomationStudioFlowBootstrapRoundProgress,
   AutomationStudioFlowBootstrapStoodStill,
   AutomationStudioFlowBootstrapTestVerdict,
@@ -214,6 +228,12 @@ import { AutomationStudioFlowBootstrapUnfinishedStall } from "./unfinished-stall
 
 /** The least time worth starting a repair with: a look, a few decisions and the test. */
 export const AUTOMATION_STUDIO_FLOW_BOOTSTRAP_MIN_REPAIR_MS = 30_000;
+
+/** The stops that are a stall: the round's decisions kept coming back unusable, or its repeats were refused. */
+const STALLED: ReadonlySet<AutomationStudioFlowBootstrapUnfinishedStop | "budget"> = new Set<AutomationStudioFlowBootstrapUnfinishedStop | "budget">(["unusable_decisions", "repeat_without_progress"]);
+
+/** The measures that are a new act of an unmeasured round: an act asked for newly done or proven, or a carried step run again (t500, F4). */
+const NEW_ACT: ReadonlySet<AutomationStudioFlowBootstrapProgressMeasure> = new Set<AutomationStudioFlowBootstrapProgressMeasure>(["acts_done", "acts_proven", "fewer_steps_not_run"]);
 
 /** What a purse has left at most and still counts as spent: the purse's own floating-point slack. */
 const PURSE_EMPTY_USD = 1e-9;
@@ -533,6 +553,10 @@ export async function runAutomationStudioFlowBootstrapBuildPhases(input: Automat
     // A Flow holding steps that never ran in this build was not run from its start: no measurement, so neither "not doable" nor a stall is concluded from it (t194-w70, murwcmx2 C-F).
     const unmeasured = automationStudioFlowBootstrapJudgementUnmeasured(judgement);
     const moved = previous ? automationStudioFlowBootstrapJudgementProgress(previous, judgement) : undefined;
+    // A repair that stalled with acts still to do, and did none of them newly nor ran a carried step again, ends the build: a changed Flow is not a new act (t500, F4, run-mv6i28zl).
+    if (unmeasured && previous && moved && STALLED.has(stopped) && judgement.todo.length > 0 && !moved.some((measure) => NEW_ACT.has(measure))) {
+      return await end({ notFinished: { kind: "no_progress", before: previous, rounds: 1 } });
+    }
     if (!unmeasured) {
       // The one no-way condition: the judge says what was asked can no longer be had, about a Flow run from its start (t195-w37).
       if (judgement.judge?.verdict === "no" && judgement.judge.stillAchievable === "no") return await end("not_doable", { kind: "judged_unachievable" });
