@@ -95,6 +95,7 @@ async function run(steps: Step[]) {
       return { revision: request.revision, digest: request.digest, verdict: "unsure", feedback: { said: "unsure" }, trialRunId: `trial.${asked.length}` };
     } },
     siteReset: made.ledger,
+    siteResetSettleMs: 0,
     loop: {
       tools: [runNode], maxIterations: steps.length, maxToolCalls: steps.length + 2,
       unusableDecisions: { maxConsecutive: steps.length, maxInARow: steps.length, stalled: () => new Error("stalled") },

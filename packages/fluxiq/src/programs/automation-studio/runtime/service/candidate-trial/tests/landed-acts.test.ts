@@ -77,4 +77,20 @@ describe("the lasting acts a trial landed", () => {
     expect(automationStudioCandidateTrialLandedActs(undefined, graph)).toEqual([]);
     expect(automationStudioCandidateTrialLandedActs(trace([attempt("add", "succeeded")]), undefined)).toEqual([]);
   });
+
+  it("leaves out a step whose effect never appeared: its diff on the same page added and removed nothing, or its effect check found it not landed (t475)", () => {
+    const empty = { stateRefs: { stateDiff: { changed: false, added: "", removed: "", locationChanged: false, documentChanged: false } } };
+    const shown = { stateRefs: { stateDiff: { changed: true, added: "button \"Remove\"", removed: "", documentChanged: false } } };
+    const moved = { stateRefs: { stateDiff: { changed: true, documentChanged: true } } };
+    const acts = automationStudioCandidateTrialLandedActs(trace([
+      attempt("add", "succeeded", empty),
+      attempt("open", "succeeded"),
+      attempt("add", "succeeded", { effectCheck: { result: "not_landed", checkedAt: 1 } }),
+      attempt("open", "succeeded"),
+      attempt("add", "succeeded", shown),
+      attempt("open", "succeeded"),
+      attempt("add", "succeeded", moved)
+    ]), graph);
+    expect(acts.map((act) => act.step)).toEqual([5, 7]);
+  });
 });

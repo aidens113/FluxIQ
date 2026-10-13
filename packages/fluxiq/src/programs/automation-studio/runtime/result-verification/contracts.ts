@@ -148,6 +148,15 @@ export type AutomationStudioResultFlowStepSummary = {
    * read one "+" press as a quantity of 1.
    */
   changed?: Array<{ added?: string; removed?: string }>;
+  /**
+   * For a step that runs once per row of a list loop, the rows it acted on in
+   * this run, one per pass, each by its own fields, screened (`./step-rows.ts`,
+   * t475). Present only for such a step in a summary of a run; the row it was
+   * written on is then left out of `parameters`, and `perRow` says so. Lane D
+   * round 10's judge read a Confirm step's written-on row as a row it acted on.
+   */
+  rowsActedOn?: JsonValue[];
+  perRow?: string;
 };
 
 /**

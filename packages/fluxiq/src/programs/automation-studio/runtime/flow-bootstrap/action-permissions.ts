@@ -120,8 +120,10 @@ import {
   AUTOMATION_STUDIO_SITE_RESET_UNDOES_KEY,
   type AutomationStudioSiteResetCalls,
   type AutomationStudioSiteResetClaim,
-  type AutomationStudioSiteResetDeclared
+  type AutomationStudioSiteResetDeclared,
+  type AutomationStudioSiteResetTarget
 } from "./site-reset/contracts.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_WORDS } from "./site-reset/words.ts";
 
 /**
  * How long a build waits for an answer, for a caller that waits at all.
@@ -247,8 +249,11 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
   /**
    * The candidate build's site-reset ledger (t462). Present, an exploration
    * call's `undoes` key is read by it and stripped before the domain sees the
-   * call, and every call that ran is reported to it. Absent, every call goes
-   * through exactly as before. Plan steps are never undos.
+   * call, and every call that ran is reported to it. An undo's every action
+   * is put to the ledger before the gate (t475): one on a control that is not
+   * its act's own item, nor on what the act created, is refused unrun and
+   * asks nobody. Absent, every call goes through exactly as before. Plan
+   * steps are never undos.
    */
   siteReset?: AutomationStudioSiteResetCalls | undefined;
   now?: () => number;
@@ -330,11 +335,27 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
       }
       const undo = claim.kind === "undo" ? claim.undo : undefined;
       if (automationStudioFlowDraftDeclaresLasting(value.consequences)) await read();
-      const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId, ...(undo ? { undoes: undo } : {}) });
+      const check = asking({ kind: "exploration_step", id: call.toolId, ref: call.callId });
       // The last action the domain put to the gate for this call, as the gate read it.
       let declared: AutomationStudioSiteResetDeclared | undefined;
+      // For an undo, where the control the domain is about to act on sits, read before it acts (t475).
+      let target: AutomationStudioSiteResetTarget | undefined;
       const permission: AutomationStudioActionPermissionCheck = async (declaration) => {
-        const verdict = await check(declaration);
+        if (!undo) {
+          const verdict = await check(declaration);
+          declared = declaredAs(gate, declaration, verdict.permitted);
+          return verdict;
+        }
+        // Read as the gate reads it, so a declaration it would refuse to read is refused here the same way.
+        const action = readAutomationStudioActionDeclaration(declaration);
+        target = siteReset.target(undo.act, {
+          effect: action.effect,
+          consequences: action.effect === "observe" ? [] : action.consequences,
+          control: { ...(action.controlItem !== null ? { item: action.controlItem } : {}), ...(action.controlDialog !== null ? { dialog: action.controlDialog } : {}) }
+        });
+        // Another item's control: never acted on, and nobody is asked about it.
+        if (target.kind === "refused") return { permitted: false, missing: [], requestId: null };
+        const verdict = await asking({ kind: "exploration_step", id: call.toolId, ref: call.callId, undoes: { act: undo.act, allowed: target.allowed } })(declaration);
         declared = declaredAs(gate, declaration, verdict.permitted);
         return verdict;
       };
@@ -345,8 +366,17 @@ export function automationStudioFlowBootstrapActionPermissions(input: {
         toolId: call.toolId,
         ...(undo ? { undoes: undo.act } : {}),
         ...(declared ? { declared } : {}),
+        ...(target?.kind === "admit" ? { on: target.on } : {}),
         landed: landed(execution)
       });
+      if (target?.kind === "refused") {
+        return { kind: "llm_evidence_tool_execution", evidence: target.evidence, effectApplied: false, targetsUnchanged: true, resultCode: target.evidence.code };
+      }
+      // An undo the gate refused keeps its act (`./site-reset/ledger.ts`), and the model is told so in plain words.
+      if (undo && declared && declared.effect === "mutate" && !declared.permitted && isExecutionResult(execution)) {
+        const code = "candidate.undo_refused";
+        return { ...execution, evidence: { ok: false, code, act: undo.act, instruction: AUTOMATION_STUDIO_SITE_RESET_WORDS.undoRefused(), ...(execution.evidence !== undefined ? { refusal: execution.evidence } : {}) }, resultCode: code };
+      }
       return execution;
     },
     planStep: (step) => {
@@ -422,9 +452,19 @@ function declaredAs(gate: AutomationStudioActionPermissionGate, declaration: Aut
     permitted,
     effect: read.effect,
     consequences: read.effect === "observe" ? [] : automationStudioConsequencesInOrder(read.consequences),
-    control: { name: gate.carriedControlName(read.controlName), kind: read.controlKind },
+    control: {
+      name: gate.carriedControlName(read.controlName), kind: read.controlKind,
+      // Opaque, compared only for equality, and never carried to a person (t475).
+      ...(read.controlItem !== null ? { item: read.controlItem } : {}),
+      ...(read.controlDialog !== null ? { dialog: read.controlDialog } : {})
+    },
     verb: read.verb
   };
+}
+
+/** An evidence tool's own answer, as opposed to bare JSON. */
+function isExecutionResult(execution: JsonValue | AutomationStudioLlmEvidenceToolExecutionResult): execution is AutomationStudioLlmEvidenceToolExecutionResult {
+  return Boolean(execution) && typeof execution === "object" && !Array.isArray(execution) && (execution as { kind?: unknown }).kind === "llm_evidence_tool_execution";
 }
 
 /** The call applied an effect and did not answer `ok: false`: what the ledger counts as an act having landed. */

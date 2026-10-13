@@ -23,13 +23,34 @@
 // act changed there; `compareAt` takes the target back to that page -- the
 // arrival's own node, with the `location` the domain answered in place of the
 // start -- and says what differs from the state before the act.
+//
+// **What changes by itself is not an act's (t475).** Lane B round 10
+// (`run-mv5tusj4-b7ee0630`) was asked to undo a home page's rotating carousel
+// as an act's effect, and those asks drove removals of what the build never
+// added. With `liveCheck`, every read the reset decides on is a settled read
+// (`settled`): the page is read twice, `settleMs` apart, with nothing done
+// between, and a line or difference the first read had and the second no
+// longer has went away by itself: live content. It is remembered, and left
+// out of every read and comparison from then on. Only what went away counts:
+// an act's effect that is slow to appear shows only in the second read, and
+// is never taken for live content and hidden. Core compares the domain's strings only for equality, so this
+// holds for any domain and names no site; the domain itself leaves out what it
+// already knows is not state, such as focus.
+//
+// **Items (t475).** A read may carry the opaque tokens of the items on the
+// page (`items`), in the form a declaration's `control.item` takes. Every
+// token any read has seen is remembered (`seenItems`): an act created an item
+// only if no read of this build saw it before (`./act-places.ts`).
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied } from "../../action-permissions/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID, type AutomationStudioLlmEvidenceRuntimeBinding, type AutomationStudioLlmEvidenceTool } from "../../llm/index.ts";
-import type { AutomationStudioSiteResetComparison, AutomationStudioSiteResetLines, AutomationStudioSiteResetPlace, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
+import type { AutomationStudioSiteResetComparison, AutomationStudioSiteResetLines, AutomationStudioSiteResetPlace, AutomationStudioSiteResetRead, AutomationStudioSiteResetReadAnswer } from "./contracts.ts";
 
 type Execute = (call: { callId: string; toolId: string; value: JsonObject; signal?: AbortSignal }) => Promise<unknown>;
+
+/** A settled read: the page read twice this far apart, and what differed between the two taken as live content (header). */
+export type AutomationStudioSiteResetLiveCheck = { settleMs: number; sleep?: ((ms: number, signal?: AbortSignal) => Promise<void>) | undefined };
 
 export class AutomationStudioSiteResetStartCheck {
   private attempted = false;
@@ -39,6 +60,11 @@ export class AutomationStudioSiteResetStartCheck {
   private places = 0;
   /** Why the last read or comparison could not be made, kept for a reader rather than dropped. */
   private lastFailure: unknown;
+  /** Differences and lines seen to change between two reads with nothing done between: live content (header). */
+  private readonly liveDiffers = new Set<string>();
+  private readonly liveLines = new Set<string>();
+  /** Every item token a read has seen. */
+  private readonly seen = new Set<string>();
 
   constructor(private readonly input: {
     binding: Pick<AutomationStudioLlmEvidenceRuntimeBinding, "startState" | "runsNodes"> | undefined;
@@ -46,6 +72,8 @@ export class AutomationStudioSiteResetStartCheck {
     flowId: string;
     tools: readonly AutomationStudioLlmEvidenceTool[];
     executeTool: Execute;
+    /** Absent: every read is taken once, as it comes. */
+    liveCheck?: AutomationStudioSiteResetLiveCheck | undefined;
   }) {}
 
   /** Whether the start was read. */
@@ -53,6 +81,11 @@ export class AutomationStudioSiteResetStartCheck {
 
   /** Why the last read or comparison failed, if one did. */
   get failure(): unknown { return this.lastFailure; }
+
+  /** The item tokens every read so far has seen. */
+  seenItems(): ReadonlySet<string> {
+    return new Set(this.seen);
+  }
 
   /** Reads the start, the first time only. */
   async capture(signal?: AbortSignal): Promise<void> {
@@ -62,7 +95,10 @@ export class AutomationStudioSiteResetStartCheck {
     if (!startState) return;
     try {
       const read = await startState.call(this.input.binding, { projectId: this.input.projectId, flowId: this.input.flowId, callId: "site-reset.start", permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) });
-      if (stateAnswer(read)) this.start = structuredClone(read.state);
+      if (stateAnswer(read)) {
+        this.start = structuredClone(read.state);
+        for (const item of stringsOf(read.items) ?? []) this.seen.add(item);
+      }
     } catch (error) {
       if (signal?.aborted) throw error;
       this.lastFailure = error;
@@ -78,12 +114,33 @@ export class AutomationStudioSiteResetStartCheck {
       const read = await startState.call(this.input.binding, { projectId: this.input.projectId, flowId: this.input.flowId, callId: `site-reset.read.${this.reads}`, ...(start ? { start: structuredClone(start) } : {}), permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) });
       if (!stateAnswer(read)) return { unread: "no_answer" };
       const lines = linesOf(read.lines);
-      return { state: structuredClone(read.state), differs: [...read.differs], ...(typeof read.location === "string" && read.location ? { location: read.location } : {}), ...(lines ? { lines } : {}) };
+      const items = stringsOf(read.items);
+      for (const item of items ?? []) this.seen.add(item);
+      return this.steady({ state: structuredClone(read.state), differs: [...read.differs], ...(typeof read.location === "string" && read.location ? { location: read.location } : {}), ...(lines ? { lines } : {}), ...(items ? { items: [...new Set(items)] } : {}) });
     } catch (error) {
       if (signal?.aborted) throw error;
       this.lastFailure = error;
       return { unread: "failed" };
     }
+  }
+
+  /**
+   * A read the reset decides on (header): with `liveCheck`, read twice with
+   * nothing done between, what differed between the two remembered as live,
+   * and the second read answered without it. Without it, one read.
+   */
+  async settled(start?: JsonObject, signal?: AbortSignal): Promise<AutomationStudioSiteResetReadAnswer> {
+    const first = await this.read(start, signal);
+    const live = this.input.liveCheck;
+    if (!live || "unread" in first) return first;
+    await (live.sleep ?? pause)(live.settleMs, signal);
+    const again = await this.read(start, signal);
+    if ("unread" in again) return first;
+    if (first.location === again.location) {
+      for (const entry of vanished(first.differs, again.differs)) this.liveDiffers.add(entry);
+      for (const line of [...vanished(first.lines?.added ?? [], again.lines?.added ?? []), ...vanished(first.lines?.gone ?? [], again.lines?.gone ?? [])]) this.liveLines.add(line);
+    }
+    return this.steady(again);
   }
 
   /** Takes the target to the page an act was made on and says what differs from it before the act; `differs` is absent when that cannot be said. */
@@ -99,7 +156,7 @@ export class AutomationStudioSiteResetStartCheck {
       const ran = await this.input.executeTool({ callId: `site-reset.place.${n}.arrival`, toolId: tool.toolId, value: { node: to.node, parameters: { [to.parameter]: place.location }, consequences: [] }, ...(signal ? { signal } : {}) });
       moved = isExecution(ran) && ran.effectApplied === true;
       if (!landed(ran)) return { moved };
-      const read = await this.read(place.state, signal);
+      const read = await this.settled(place.state, signal);
       return "unread" in read ? { moved } : { moved, differs: read.differs, ...(read.lines ? { lines: read.lines } : {}) };
     } catch (error) {
       if (signal?.aborted) throw error;
@@ -113,7 +170,8 @@ export class AutomationStudioSiteResetStartCheck {
     const startState = this.input.binding?.startState;
     const tool = this.input.tools.find((entry) => entry.toolId === AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID);
     const arrival = tool?.initialObservation?.arrival;
-    if (!startState || !this.start || !tool || !arrival) return { moved: false };
+    const start = this.start;
+    if (!startState || !start || !tool || !arrival) return { moved: false };
     this.checks += 1;
     const n = this.checks;
     let moved = false;
@@ -121,13 +179,38 @@ export class AutomationStudioSiteResetStartCheck {
       const ran = await this.input.executeTool({ callId: `site-reset.${n}.arrival`, toolId: tool.toolId, value: structuredClone(arrival), ...(signal ? { signal } : {}) });
       moved = isExecution(ran) && ran.effectApplied === true;
       if (!landed(ran)) return { moved };
-      const read = await startState.call(this.input.binding, { projectId: this.input.projectId, flowId: this.input.flowId, callId: `site-reset.${n}.start`, start: structuredClone(this.start), permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) });
-      return stateAnswer(read) ? { moved, differs: [...read.differs] } : { moved };
+      const ask = async (callId: string): Promise<string[] | undefined> => {
+        const read = await startState.call(this.input.binding, { projectId: this.input.projectId, flowId: this.input.flowId, callId, start: structuredClone(start), permission: automationStudioActionPermissionDenied, ...(signal ? { signal } : {}) });
+        if (!stateAnswer(read)) return undefined;
+        for (const item of stringsOf(read.items) ?? []) this.seen.add(item);
+        return [...read.differs];
+      };
+      const first = await ask(`site-reset.${n}.start`);
+      if (first === undefined) return { moved };
+      const live = this.input.liveCheck;
+      if (!live) return { moved, differs: this.steadyDiffers(first) };
+      // Read again with nothing done between: what changed by itself is live content, not the build's (header).
+      await (live.sleep ?? pause)(live.settleMs, signal);
+      const again = await ask(`site-reset.${n}.start.again`);
+      if (again === undefined) return { moved, differs: this.steadyDiffers(first) };
+      for (const entry of vanished(first, again)) this.liveDiffers.add(entry);
+      return { moved, differs: this.steadyDiffers(again) };
     } catch (error) {
       if (signal?.aborted) throw error;
       this.lastFailure = error;
       return { moved };
     }
+  }
+
+  /** A read with what is known to be live left out of its differences and lines. */
+  private steady(read: AutomationStudioSiteResetRead): AutomationStudioSiteResetRead {
+    if (!this.liveDiffers.size && !this.liveLines.size) return read;
+    const lines = read.lines ? { gone: read.lines.gone.filter((line) => !this.liveLines.has(line)), added: read.lines.added.filter((line) => !this.liveLines.has(line)) } : undefined;
+    return { ...read, differs: this.steadyDiffers(read.differs), ...(lines ? { lines } : {}) };
+  }
+
+  private steadyDiffers(differs: readonly string[]): string[] {
+    return differs.filter((entry) => !this.liveDiffers.has(entry));
   }
 }
 
@@ -153,7 +236,41 @@ function strings(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-function stateAnswer(value: unknown): value is { state: JsonObject; differs: string[]; location?: unknown; lines?: unknown } {
+/** The domain's item tokens, when it gave them as strings. */
+function stringsOf(value: unknown): string[] | undefined {
+  return strings(value) ? [...value] : undefined;
+}
+
+/** The entries the first read had that the second no longer has, counting repeats: what went away by itself. */
+function vanished(first: readonly string[], again: readonly string[]): string[] {
+  const available = new Map<string, number>();
+  for (const entry of again) available.set(entry, (available.get(entry) ?? 0) + 1);
+  return first.filter((entry) => {
+    const count = available.get(entry) ?? 0;
+    if (count === 0) return true;
+    available.set(entry, count - 1);
+    return false;
+  });
+}
+
+/** Waits `ms`, or rejects when `signal` aborts. */
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const stop = (): void => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", stop);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", stop, { once: true });
+  });
+}
+
+function stateAnswer(value: unknown): value is { state: JsonObject; differs: string[]; location?: unknown; lines?: unknown; items?: unknown } {
   return isObject(value) && isObject(value.state) && Array.isArray(value.differs) && value.differs.every((entry) => typeof entry === "string");
 }
 

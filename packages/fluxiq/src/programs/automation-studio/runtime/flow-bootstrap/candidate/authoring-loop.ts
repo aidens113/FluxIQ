@@ -1,7 +1,7 @@
 import type { JsonObject } from "../../../../../core/index.ts";
 import { runAutomationStudioLlmEvidenceLoop, type AutomationStudioLlmEvidenceLoopInput, type AutomationStudioLlmEvidenceTool } from "../../llm/evidence-loop.ts";
 import type { AutomationStudioLlmEvidenceRuntimeBinding } from "../../llm/index.ts";
-import { AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
+import { AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS, AutomationStudioSiteResetStartCheck, automationStudioSiteResetPlacedCall, automationStudioSiteResetUndoesTool, type AutomationStudioSiteResetLedger, type AutomationStudioSiteResetTrialReset } from "../site-reset/index.ts";
 import { AUTOMATION_STUDIO_FLOW_SCRIPT_ACT_EXAMPLE, AUTOMATION_STUDIO_FLOW_SCRIPT_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_LOOP_FORMAT, AUTOMATION_STUDIO_FLOW_SCRIPT_STATE_FORMAT } from "../plan/index.ts";
 import type { AutomationStudioCandidateTrialPort, AutomationStudioFlowCandidate } from "./contracts.ts";
 import { AutomationStudioFlowCandidateSubmissionController } from "./submission.ts";
@@ -41,6 +41,8 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
    * library tool takes `undoes`. Without a trial port it changes nothing.
    */
   siteReset?: AutomationStudioSiteResetLedger | undefined;
+  /** How far apart the reset's two reads of an untouched page are (t475); tests set 0. */
+  siteResetSettleMs?: number | undefined;
   /** Told each submission Core accepted, so a caller whose loop then fails still knows the latest one (t362: a refused resubmission clears `latest`). */
   accepted?: (candidate: Readonly<AutomationStudioFlowCandidate>) => void;
   /**
@@ -55,10 +57,11 @@ export async function runAutomationStudioFlowCandidateAuthoringLoop(input: {
   const signal = signals.length ? AbortSignal.any(signals) : undefined;
   const controller = new AutomationStudioFlowCandidateSubmissionController({ ...input.submission, ...(signal ? { signal } : {}) });
   const ledger = input.trial ? input.siteReset : undefined;
-  const startCheck = ledger ? new AutomationStudioSiteResetStartCheck({ binding: input.submission.binding, projectId: input.submission.projectId, flowId: input.submission.flowId, tools: input.loop.tools, executeTool: (call) => input.loop.executeTool(call) }) : undefined;
+  // Every read the reset decides on is settled, so content that changes by itself is not taken for an act's (t475).
+  const startCheck = ledger ? new AutomationStudioSiteResetStartCheck({ binding: input.submission.binding, projectId: input.submission.projectId, flowId: input.submission.flowId, tools: input.loop.tools, executeTool: (call) => input.loop.executeTool(call), liveCheck: { settleMs: input.siteResetSettleMs ?? AUTOMATION_STUDIO_SITE_RESET_SETTLE_MS } }) : undefined;
   const reset: AutomationStudioSiteResetTrialReset | undefined = ledger && startCheck ? {
-    // Each act still to undo is looked for on its own page, then the start is compared (`../site-reset/ledger.ts`, t471).
-    beforeTrial: (resetSignal, cannotUndo) => ledger.beforeTrial({ compare: () => startCheck.compare(resetSignal), compareAt: (place) => startCheck.compareAt(place, resetSignal) }, cannotUndo),
+    // Each act still to undo is looked for on its own page, then the start is compared (`../site-reset/ledger.ts`, t471); after a start hook, every act (t475).
+    beforeTrial: (resetSignal, cannotUndo, options) => ledger.beforeTrial({ compare: () => startCheck.compare(resetSignal), compareAt: (place) => startCheck.compareAt(place, resetSignal) }, cannotUndo, options),
     trialRan: (acts, trialRunId) => ledger.trialRan(acts, trialRunId)
   } : undefined;
   const gate = new AutomationStudioFlowCandidateTrialGate({ latest: () => controller.latest(), trial: input.trial, signal, ...(reset ? { reset } : {}) });

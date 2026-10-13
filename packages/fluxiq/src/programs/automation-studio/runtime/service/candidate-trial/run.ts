@@ -5,7 +5,9 @@
 // 1. The start. When the deployment has a start hook (D1), it is called first
 //    and what it answered is recorded; otherwise the start is `not_reset` and
 //    the trial runs on the target as it stands. A hook that fails ends the
-//    trial before anything runs.
+//    trial before anything runs. Since t475 the port runs the hook before the
+//    build's reset check (`./port.ts`, `prepareStart`) and hands its start in
+//    here, so the hook runs once, and before the check rather than after it.
 // 2. A runtime session of its own (`metadata.candidateTrial`), so the rows the
 //    run stores land under the trial's run id and nowhere else.
 // 3. The exact submitted candidate, run detached
@@ -48,12 +50,12 @@ const NO_SPEND: AutomationStudioCandidateTrialRecord["judge"] = Object.freeze({ 
 export type AutomationStudioCandidateTrialOutcome = { result: AutomationStudioCandidateTrialResult; record: AutomationStudioCandidateTrialRecord; unjudged?: AutomationStudioCandidateTrialUnjudged };
 
 /** Runs and judges one trial; the result is the trial gate's answer, the record Core's audit of it. */
-export async function runAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts): Promise<AutomationStudioCandidateTrialOutcome> {
+export async function runAutomationStudioCandidateTrial(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts, preparedStart?: AutomationStudioCandidateTrialStart): Promise<AutomationStudioCandidateTrialOutcome> {
   const { signal, candidate } = request;
   signal.throwIfAborted();
   const now = ports.now ?? Date.now;
   const answer = answerFor(request);
-  const start = await prepared(request, ports);
+  const start = preparedStart ?? await automationStudioCandidateTrialStart(request, ports);
   if (start.status === "failed") return answer("execution_failed", { code: start.code, start: start.status }, { start, execution: "not_run", code: start.code, judge: { ...NO_SPEND } });
 
   const runId = ports.newRunId?.() ?? `trial.${randomUUID()}`;
@@ -155,7 +157,7 @@ async function wayOutHandles(attempts: readonly AutomationStudioNodeAttemptTrace
 }
 
 /** The trial's start: the deployment's hook when it has one, otherwise the target as it stands. */
-async function prepared(request: AutomationStudioCandidateTrialRequest, ports: AutomationStudioCandidateTrialPorts): Promise<AutomationStudioCandidateTrialStart> {
+export async function automationStudioCandidateTrialStart(request: Pick<AutomationStudioCandidateTrialRequest, "candidateId" | "revision" | "digest" | "signal">, ports: AutomationStudioCandidateTrialPorts): Promise<AutomationStudioCandidateTrialStart> {
   const hook = ports.prepareStart;
   if (!hook) return { status: "not_reset" };
   try {
