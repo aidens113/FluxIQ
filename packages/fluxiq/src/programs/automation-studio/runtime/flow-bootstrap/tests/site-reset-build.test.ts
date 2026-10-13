@@ -6,7 +6,8 @@
 // `undoes`, refuses any input key it does not take, puts every lasting act to
 // the permission check first, with the opaque token of the item its control
 // sits in (t475), and acts only on a yes. Its reads list the items on the page
-// by the same tokens.
+// by the same tokens. With `rowTokens: false` its lines name no row, as a
+// one-line list with no twin does on the web (t479).
 
 import { describe, expect, it } from "vitest";
 import type { JsonObject } from "../../../../../core/index.ts";
@@ -46,7 +47,7 @@ type Entry = { callId: string; toolId: string; value: unknown };
 type Step = (evidence: readonly Entry[]) => JsonObject;
 type Decision = Awaited<ReturnType<Parameters<typeof runAutomationStudioFlowCandidateAuthoringLoop>[0]["loop"]["decide"]>>;
 type Verdict = { permitted: boolean; missing?: readonly string[]; requestId?: string | null };
-type Site = { lines: string[]; requests: Record<string, "pending" | "accepted" | "removed">; title: string; next: number };
+type Site = { lines: string[]; requests: Record<string, "pending" | "accepted" | "removed">; title: string; next: number; badge: number };
 
 const latestOf = (toolId: string, evidence: readonly Entry[]) => [...evidence].reverse().find((entry) => entry.toolId === toolId)?.value as JsonObject | undefined;
 const receipt = (evidence: readonly Entry[]) => {
@@ -60,6 +61,10 @@ const add = (callId: string, extra: JsonObject = {}) => node(callId, "demo.add",
 const edit = (callId: string) => node(callId, "demo.edit", ["modify_existing"]);
 /** Removes one line by its own Remove button, which sits in that line. */
 const remove = (callId: string, line: string, undoes?: string) => node(callId, "demo.remove", ["delete"], { parameters: { line }, ...(undoes ? { undoes } : {}) });
+/** The same Remove, declared with other classes, as the model may declare it (lane B round 11 declared `modify_existing`). */
+const removeAs = (callId: string, line: string, consequences: AutomationStudioActionConsequence[], undoes?: string) => node(callId, "demo.remove", consequences, { parameters: { line }, ...(undoes ? { undoes } : {}) });
+/** An add whose line lands on another page, as an Add to cart on a product page does: here only a badge changes. */
+const addElsewhere = (callId: string) => node(callId, "demo.add", ["create_new"], { parameters: { elsewhere: true } });
 /** Confirms one request by the Confirm button in its row. */
 const confirm = (callId: string, row: string) => node(callId, "demo.confirm", ["modify_existing"], { parameters: { row } });
 /** The Delete button in one request's row. */
@@ -68,17 +73,17 @@ const submit = (callId: string): Step => () => ({ kind: "tool_call", toolId: "co
 const test = (callId: string, cannotUndo?: string[]): Step => (evidence) => ({ kind: "tool_call", toolId: AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, callId, input: { ...receipt(evidence), ...(cannotUndo ? { cannotUndo } : {}) } });
 
 /** What the stand-in domain reads of the page: its lines, and the item tokens its declarations use. */
-function view(site: Site): { lines: string[]; items: string[] } {
+function view(site: Site, rowTokens: boolean): { lines: string[]; items: string[] } {
   const rows = Object.entries(site.requests);
   return {
-    lines: [`title ${site.title}`, ...site.lines.map((line) => `line ${line}`), ...rows.map(([row, status]) => `request ${row} ${status}`)],
-    items: [...site.lines.map((line) => `line:${line}`), ...rows.filter(([, status]) => status !== "removed").map(([row]) => `row:${row}`)]
+    lines: [`title ${site.title}`, `badge ${site.badge}`, ...site.lines.map((line) => `line ${line}`), ...rows.map(([row, status]) => `request ${row} ${status}`)],
+    items: [...(rowTokens ? site.lines.map((line) => `line:${line}`) : []), ...rows.filter(([, status]) => status !== "removed").map(([row]) => `row:${row}`)]
   };
 }
 
 /** A site with a line that was there before the build and four pending requests, behind the real ledger and permission wrapper. */
-function build() {
-  const site: Site = { lines: ["before"], requests: { tom: "pending", amara: "pending", lin: "pending", marta: "pending" }, title: "Home", next: 1 };
+function build(rowTokens = true) {
+  const site: Site = { lines: ["before"], requests: { tom: "pending", amara: "pending", lin: "pending", marta: "pending" }, title: "Home", next: 1, badge: 0 };
   const state = { site, inputs: [] as JsonObject[], acted: [] as string[], said: [] as string[] };
   const ledger = new AutomationStudioSiteResetLedger();
   let requests = 0;
@@ -97,14 +102,15 @@ function build() {
       const name = String(call.value.node);
       const parameters = (call.value.parameters ?? {}) as JsonObject;
       const consequences = (call.value.consequences ?? []) as AutomationStudioActionConsequence[];
-      const item = typeof parameters.line === "string" ? `line:${parameters.line}` : typeof parameters.row === "string" ? `row:${parameters.row}` : undefined;
+      const item = typeof parameters.line === "string" ? (rowTokens ? `line:${parameters.line}` : undefined) : typeof parameters.row === "string" ? `row:${parameters.row}` : undefined;
       // As the web domain does, every call that declares (an empty list too) is put to the gate, with what the node does to the page and where its control sits.
       if (Array.isArray(call.value.consequences)) {
         const verdict = await call.permission!({ consequences, control: { name: CONTROLS[name] ?? name, kind: "button", ...(item ? { item } : {}) }, verb: "press", effect: name === "demo.look" ? "observe" : "mutate" }) as Verdict;
         if (!verdict.permitted) return { kind: "llm_evidence_tool_execution", effectApplied: false, evidence: { ok: false, code: "permission_required", missing: [...(verdict.missing ?? [])], requestId: verdict.requestId ?? null } };
       }
       state.acted.push(name);
-      if (name === "demo.add" && parameters.broken !== true) site.lines.push(`added-${site.next++}`);
+      if (name === "demo.add" && parameters.elsewhere === true) site.badge += 1;
+      else if (name === "demo.add" && parameters.broken !== true) site.lines.push(`added-${site.next++}`);
       if (name === "demo.remove") site.lines = site.lines.filter((line) => line !== parameters.line);
       if (name === "demo.edit") site.title = "Renamed";
       if (name === "demo.confirm") site.requests[String(parameters.row)] = "accepted";
@@ -114,7 +120,7 @@ function build() {
   });
   const binding = {
     startState: async (input: { start?: JsonObject }) => {
-      const now = view(site);
+      const now = view(site, rowTokens);
       const was = Array.isArray(input.start?.lines) ? (input.start!.lines as string[]) : undefined;
       const gone = was ? was.filter((line) => !now.lines.includes(line)) : [];
       const added = was ? now.lines.filter((line) => !was.includes(line)) : [];
@@ -125,8 +131,12 @@ function build() {
   return { state, ledger, wrapper, binding };
 }
 
-/** The trial runner: each trial adds one line through the Flow's own step, and reports that act. With `hook`, its start hook puts the site back first. */
-function portOf(asked: AutomationStudioCandidateTrialRequest[], site: Site, hook?: { put: Site; ran: number }): AutomationStudioCandidateTrialPort {
+/**
+ * The trial runner: each trial adds one line through the Flow's own step, and reports that act. With `hook`, its start
+ * hook puts the site back first; with `gap`, it leaves the title as it finds it, as content a look after it would still
+ * see -- a rotating carousel, a cover the runtime closed -- leaves a difference no undo is for.
+ */
+function portOf(asked: AutomationStudioCandidateTrialRequest[], site: Site, hook?: { put: Site; ran: number; gap: boolean }): AutomationStudioCandidateTrialPort {
   const port: AutomationStudioCandidateTrialPort = async (request) => {
     asked.push(request);
     site.lines.push(`trial-${asked.length}`);
@@ -137,18 +147,19 @@ function portOf(asked: AutomationStudioCandidateTrialRequest[], site: Site, hook
       hook.ran += 1;
       site.lines = [...hook.put.lines];
       site.requests = { ...hook.put.requests };
-      site.title = hook.put.title;
+      if (!hook.gap) site.title = hook.put.title;
+      site.badge = hook.put.badge;
       return "reset";
     };
   }
   return port;
 }
 
-async function run(steps: Step[], options: { hook?: boolean } = {}) {
-  const built = build();
+async function run(steps: Step[], options: { hook?: boolean; gap?: boolean; rowTokens?: boolean } = {}) {
+  const built = build(options.rowTokens ?? true);
   const asked: AutomationStudioCandidateTrialRequest[] = [];
   const seen: Entry[][] = [];
-  const hook = options.hook ? { put: structuredClone(built.state.site), ran: 0 } : undefined;
+  const hook = options.hook ? { put: structuredClone(built.state.site), ran: 0, gap: options.gap === true } : undefined;
   let index = 0;
   const outcome = await runAutomationStudioFlowCandidateAuthoringLoop({
     submission: { projectId: "project.test", flowId: "flow.test", registry, resolution, baseDependencyDigest: "accepted.base", binding: built.binding },
@@ -307,6 +318,69 @@ describe("a candidate build puts the site back before each trial, through the re
     expect(second.startedWith).toBeUndefined();
     expect(asked).toHaveLength(2);
     expect(hook?.ran).toBe(2);
+    expect(state.site.lines).toEqual(["before", "trial-2"]);
+  });
+
+  // Lane B round 11 (`run-mv5yaapd-ad19eaae`): the add sat in no row and its line landed on another page; the cart's
+  // only line, the soap from before the build, named no row either, and two missing items compared equal. The reset
+  // pressed Remove on the soap, declared `modify_existing`, unasked. The rule (t479): no positive match, no press.
+  it("B shape: a one-line cart whose line names no row; the reset can never remove the line that was there before the build", async () => {
+    for (const consequences of [["modify_existing"], ["delete"]] as AutomationStudioActionConsequence[][]) {
+      const { seen, asked, state, wrapper } = await run([
+        addElsewhere("call.add"), submit("call.submit"), test("call.test.1"), removeAs("call.undo.soap", "before", consequences, "act-1"), test("call.test.2"), submit("call.again")
+      ], { rowTokens: false });
+      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[3]!)).toMatchObject({ code: "candidate.trial_reset_required", actsToUndo: [{ act: "act-1" }] });
+      expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-1", cannotUndo: [{ act: "act-1" }] });
+      expect(state.acted).not.toContain("demo.remove");
+      expect(wrapper.request()).toBeUndefined();
+      expect(undoRecords(wrapper.declarations())).toEqual([]);
+      // No positively identified reverse: the act is kept, the trial runs with it, and the line from before is there.
+      expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ verdict: "unsure", trialRunId: "trial.1", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+      expect(asked).toHaveLength(1);
+      expect(state.site.lines).toEqual(["before", "trial-1"]);
+    }
+  });
+
+  it("B shape, two lines that name no row: neither line is removed, the added one included, since neither can be told apart", async () => {
+    const { seen, state } = await run([
+      add("call.add"), submit("call.submit"), test("call.test.1"), removeAs("call.undo", "added-1", ["modify_existing"], "act-1"), test("call.test.2"), submit("call.again")
+    ], { rowTokens: false });
+    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: false, code: "candidate.undo_wrong_target", act: "act-1" });
+    expect(state.acted).not.toContain("demo.remove");
+    expect(latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)).toMatchObject({ trialRunId: "trial.1", startedWith: { cannotUndo: [{ act: "act-1" }] } });
+    expect(state.site.lines).toEqual(["before", "added-1", "trial-1"]);
+  });
+
+  it("a two-line cart with row tokens: the reset removes only the line the act added, and the trial starts clean", async () => {
+    const { seen, asked, state, wrapper } = await run([
+      add("call.add"), submit("call.submit"), test("call.test.1"), removeAs("call.undo", "added-1", ["modify_existing"], "act-1"), test("call.test.2"), submit("call.again")
+    ]);
+    expect(latestOf("core.run_node", seen[4]!)).toMatchObject({ ok: true, lines: ["before"] });
+    expect(wrapper.request()).toBeUndefined();
+    const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[5]!)!;
+    expect(ran).toMatchObject({ verdict: "unsure", trialRunId: "trial.1" });
+    expect(ran.startedWith).toBeUndefined();
+    expect(asked).toHaveLength(1);
+    expect(state.site.lines).toEqual(["before", "trial-1"]);
+  });
+
+  // Lane B round 11 (`run-mv5yaapd-ad19eaae`): after the hook, a look on each act's own page still saw a rotating
+  // carousel and a chat card's cover, so the model was asked to undo two acts -- ten calls -- and removed the soap.
+  it("hook first: a look after it would still see a difference, yet the model is asked to undo nothing (t479)", async () => {
+    const { seen, asked, state, hook } = await run([
+      edit("call.edit"), addElsewhere("call.add"), submit("call.submit"), test("call.test.1"), test("call.test.2"), submit("call.again")
+    ], { hook: true, gap: true, rowTokens: false });
+    for (const [index, trialRunId] of [[4, "trial.1"], [5, "trial.2"]] as const) {
+      const ran = latestOf(AUTOMATION_STUDIO_CANDIDATE_TEST_TOOL_ID, seen[index]!)!;
+      expect(ran).toMatchObject({ verdict: "unsure", trialRunId });
+      expect(ran.startedWith).toBeUndefined();
+    }
+    expect(seen.flat().some((entry) => JSON.stringify(entry.value).includes("candidate.trial_reset_required"))).toBe(false);
+    expect(state.acted).not.toContain("demo.remove");
+    expect(hook?.ran).toBe(2);
+    expect(asked).toHaveLength(2);
+    // The gap the hook left is still there, and nothing of the build's was pressed to "undo" it.
+    expect(state.site.title).toBe("Renamed");
     expect(state.site.lines).toEqual(["before", "trial-2"]);
   });
 

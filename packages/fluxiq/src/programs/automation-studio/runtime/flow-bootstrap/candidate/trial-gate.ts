@@ -66,8 +66,8 @@
 //
 // **A start hook runs before the reset check (t475).** When the trial port has
 // one (`prepareStart`), it runs first, and the reset is told the site was just
-// put back (`startReset`), so it confirms a clean start by looking rather than
-// by asking the model to undo what the hook already undid.
+// put back (`startReset`), so every act of this build counts undone and the
+// model is asked to undo nothing the hook already undid (t479).
 //
 // With no port injected the test tool says `candidate.trial_unavailable` and
 // completion keeps its old meaning: the latest valid submission ends as an
