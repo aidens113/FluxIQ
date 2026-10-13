@@ -15,7 +15,7 @@
 
 import { safeSegment } from "../../../../_shared/storage.ts";
 import type { AutomationStudioFlowAdaptation, AutomationStudioFlowArtifact } from "../../../model/index.ts";
-import { actionTargetParameterValues } from "../../flow-change/index.ts";
+import { actionTargetParameterValues, withAutomationStudioNodeAdaptationId } from "../../flow-change/index.ts";
 import { compactJsonObject } from "../compact-json.ts";
 import { isJsonRecord } from "../json-values.ts";
 import { automationStudioGraphWithUnitRepair, automationStudioIsUnitRepairChange } from "./unit-repair-change.ts";
@@ -42,6 +42,10 @@ export function automationStudioGraphFlowWithAdaptationPatch(
       if (patch.after === undefined) throw new Error("Action target adaptation patches must provide an after value.");
       node.parameterValues = compactJsonObject({ ...parameterValues, ...actionTargetParameterValues({ nodeId: node.id, definitionId: node.definitionId, parameterValues }, structuredClone(patch.after), adaptation.adaptationId) });
     }
+    // Provenance, as the typed graph transaction stamps it: the node lists the
+    // change once, so a later run's attempt on it names the adaptation it
+    // exercised. A rollback restores the whole graph from before, stamp included.
+    node.metadata = withAutomationStudioNodeAdaptationId(node.metadata, adaptation.adaptationId);
     return { ...graphFlow, nodes, updatedAt: now };
   }
   const toNodeId = patch.kind === "edit_router" && isJsonRecord(patch.after) && typeof patch.after.toNodeId === "string" ? patch.after.toNodeId.trim() : "";

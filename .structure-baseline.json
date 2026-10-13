@@ -305,7 +305,7 @@
       "packages/fluxiq/src/programs/secret-keys/runtime/value-sealer.ts": 1
     },
     "file-lines": {
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4360,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 4359,
       "apps/web/e2e/automation-studio-render-loop.spec.ts": 962
     },
     "import-cycles": {
@@ -752,12 +752,12 @@
       "packages/fluxiq/src/client-gateway/service/command-ledger/tests/controller.test.ts": 19,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/command-execution/controller.ts": 19,
       "packages/fluxiq/src/programs/automation-studio/storage/project/command-ledger/store.ts": 19,
-      "packages/fluxiq/src/programs/automation-studio/storage/project/runtime-stream-store.ts": 19,
       "apps/web/src/features/automation-studio/problems/tests/problems-query-feedback.test.tsx": 18,
       "apps/web/src/features/automation-studio/workspace/overlays/tests/floating-entry-focus.test.tsx": 18,
       "apps/web/src/features/programs/documentation-tree/VirtualDocumentationTree.tsx": 18,
       "packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/tests/durable-session.test.ts": 17,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/command-context/tests/controller.test.ts": 17,
+      "packages/fluxiq/src/programs/automation-studio/storage/project/runtime-stream-store.ts": 17,
       "apps/web/src/app/tests/AuthStatus.test.tsx": 16,
       "apps/web/src/features/automation-studio/hierarchy/components/tests/ProjectTree-keyboard-ownership.test.tsx": 16,
       "apps/web/src/features/programs/components/overlays/tests/Modal-keyboard.test.tsx": 16,
@@ -1145,8 +1145,8 @@
     },
     "swallowed-failure": {
       "apps/web/src/features/automation-studio/workspace/cache/backends.ts": 7,
-      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 6,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/flows/mutations.ts": 6,
+      "packages/fluxiq/src/programs/automation-studio/runtime/service.ts": 5,
       "packages/fluxiq/src/programs/automation-studio/runtime/service/summaries/store.ts": 3,
       "packages/fluxiq/src/programs/database-manager/storage/sqlite-repository.ts": 3,
       "apps/web/src/features/automation-studio/flow-editor/palette-preferences-repository.ts": 2,

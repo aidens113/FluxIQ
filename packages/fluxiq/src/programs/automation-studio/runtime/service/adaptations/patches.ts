@@ -57,7 +57,7 @@ export class AutomationStudioAdaptationPatches {
     // The Subflow's role, which the graph does not carry (t398).
     const validationContext = target.validation;
     assertFlowValidationOk(after, "Flow node adaptation patch", validationContext);
-    const saved = await this.flowWriter.saveFlowInternal({ projectId: adaptation.projectId, flow: after, validation: validationContext }, false);
+    const saved = await this.saveFlowOrRestore({ projectId: adaptation.projectId, before, after, validation: validationContext });
     return durableAdaptationMutationRecord({
       patchKind: patch.kind,
       artifactKind: "flow",
@@ -76,6 +76,29 @@ export class AutomationStudioAdaptationPatches {
         })
       } : {})
     });
+  }
+
+  /**
+   * Saves a Flow an adaptation changed, or fails with it unchanged. A save can
+   * fail part-way -- its cached copy written, its document not -- and no
+   * mutation is recorded for a save that threw, so the durable apply's rollback
+   * could not undo it: the change would stay in effect while the apply reported
+   * it unapplied. `before` is saved back first, then the failure propagates; if
+   * that restore fails too, the error says so (t508).
+   */
+  async saveFlowOrRestore(input: { projectId: string; before: AutomationStudioFlowArtifact; after: AutomationStudioFlowArtifact; validation?: AutomationStudioFlowValidationContext }): Promise<AutomationStudioFlowArtifact> {
+    const validation = input.validation ? { validation: input.validation } : {};
+    try {
+      return await this.flowWriter.saveFlowInternal({ projectId: input.projectId, flow: input.after, ...validation }, false);
+    } catch (error) {
+      const failure = error instanceof Error ? error.message : String(error);
+      try {
+        await this.flowWriter.saveFlowInternal({ projectId: input.projectId, flow: input.before, ...validation }, false);
+      } catch (restoreError) {
+        throw new Error(`${failure}; restoring Flow ${input.before.flowId} from before the change failed too (${restoreError instanceof Error ? restoreError.message : String(restoreError)}).`, { cause: error });
+      }
+      throw error;
+    }
   }
 
   async resolveFlowNodeAdaptationTarget(
@@ -117,7 +140,7 @@ export class AutomationStudioAdaptationPatches {
       const after = automationStudioGraphFlowWithAdaptationPatch(before, adaptation, patch, now);
       const validationContext = target.validation;
       assertFlowValidationOk(after, "Router reroute adaptation patch", validationContext);
-      const saved = await this.flowWriter.saveFlowInternal({ projectId: adaptation.projectId, flow: after, validation: validationContext }, false);
+      const saved = await this.saveFlowOrRestore({ projectId: adaptation.projectId, before, after, validation: validationContext });
       return durableAdaptationMutationRecord({
         patchKind: patch.kind,
         artifactKind: "flow",
