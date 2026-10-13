@@ -101,6 +101,18 @@
 // fits is said in Core's own sentence with the code, the field and the names
 // inserted (`automationStudioFlowBootstrapIssueDetailSentence`), and carries
 // them as `detail`; every other code keeps the fixed sentence.
+//
+// **A handle nothing resolved is refused where it is, by name (t514).** Social
+// gate run `run-mv6v2jh4-69244ffb` (step 0083) was refused
+// `bootstrap.handle_unresolved` at a node's parameters with that fixed
+// sentence: the leftover was `expectedState: {handle: "absent"}`, a word made a
+// handle, and the refusal named neither the key nor the token, so the model
+// re-sent the script unchanged until the build ended. A node left naming a
+// handle is now refused at the parameter that holds the first one, in Core's
+// own sentence naming that parameter and the token -- both identifiers the
+// model wrote -- and the plan feedback adds the line the node takes the token
+// in where it is a word one of its parameters takes
+// (`../../flow-bootstrap/plan/issue-feedback.ts`). A page fact keeps its own path.
 
 import type { JsonObject, JsonValue } from "../../../../../core/index.ts";
 import { automationStudioActionPermissionDenied, type AutomationStudioActionPermissionCheck } from "../../action-permissions/index.ts";
@@ -247,7 +259,9 @@ export async function resolveAutomationStudioFlowBootstrapPlanParameters(input: 
         return { ok: false, issues };
       }
       if (outcome.status === "refused") {
-        issues.push(...refusalIssues(outcome, path));
+        // A handle nothing resolved is refused at the parameter holding it (header, t514).
+        const left = outcome.unresolved;
+        issues.push(...(left ? [{ severity: "error" as const, code: outcome.issueCodes[0]!, message: left.message, path: `${path}.${left.parameter}` }] : refusalIssues(outcome, path)));
         continue;
       }
       if (outcome.status === "unchanged") continue;
@@ -279,7 +293,8 @@ export function assertAutomationStudioFlowBootstrapPlanHandlesResolved(plan: Aut
 type NodeOutcome =
   | { status: "unchanged" }
   | { status: "resolved"; parameters: JsonObject; handleViews?: AutomationStudioPlanHandleView[]; effect?: JsonObject }
-  | { status: "refused"; issueCodes: string[]; details?: RefusalDetail[] }
+  /** `unresolved`, for a node left naming a handle: the parameter holding it and Core's sentence about it (header, t514). */
+  | { status: "refused"; issueCodes: string[]; details?: RefusalDetail[]; unresolved?: { parameter: string; message: string } }
   | { status: "needs_permission"; missing: string[]; requestId: string | null };
 
 /** What a domain's refusal named beside one of its codes (header, t489): the field it could not use and the names it can. */
@@ -365,8 +380,23 @@ async function resolveNode(
   // Whatever the node leaves with -- its own parameters or the domain's --
   // names no handle.
   const leaving = outcome.status === "resolved" ? outcome.parameters : parameters;
-  if (automationStudioPlanNodeParametersNameHandle(leaving)) return refused(AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved);
+  if (automationStudioPlanNodeParametersNameHandle(leaving)) return unresolvedRefusal(leaving);
   return outcome;
+}
+
+/**
+ * A node left naming a handle (header, t514): refused at the parameter that
+ * holds the first one, with a sentence naming that parameter and the token,
+ * when both are identifiers; otherwise refused as before, at the parameters.
+ */
+function unresolvedRefusal(parameters: JsonObject): NodeOutcome {
+  const code = AUTOMATION_STUDIO_PLAN_PARAMETER_ISSUE_CODES.unresolved;
+  const site = automationStudioPlanNodeHandleSites(parameters).sites[0];
+  const parameter = site?.path[0];
+  if (!site || typeof parameter !== "string" || !DETAIL_NAME.test(parameter)) return refused(code);
+  const message = `The step's \`${parameter}\` holds ${JSON.stringify(site.handle)} where a handle goes, and nothing resolved it: no view this build was shown printed a handle by that name. `
+    + "Name an element only by the handle a view printed for it, copied exactly, in the parameter that takes one; a word that is a setting goes in the parameter that takes it (core.describe_nodes says what each parameter takes).";
+  return { status: "refused", issueCodes: [code], unresolved: { parameter, message } };
 }
 
 /**

@@ -4,3 +4,4 @@
 export * from "./web-domain-definitions-fixture.ts";
 export * from "./state-node-definitions-fixture.ts";
 export * from "./saved-flow-validation-fixture.ts";
+export * from "./wait-node-definition-fixture.ts";

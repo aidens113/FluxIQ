@@ -45,6 +45,7 @@ import type {
   AutomationStudioFlowBootstrapSubflow
 } from "./contracts.ts";
 import type { AutomationStudioFlowBootstrapNameAssumption } from "./name-correction-assumption.ts";
+import { automationStudioParameterTakesHandle } from "../parameter-words/index.ts";
 
 /**
  * The plan with every parameter key resolved to a name its node declares, and
@@ -112,7 +113,7 @@ function correctNode(
       continue;
     }
     const valueShape = writtenValueShape(value);
-    const match = automationStudioMatchName(key, unclaimedCandidates(definition, claimed), { valueShape });
+    const match = automationStudioMatchName(key, unclaimedCandidates(definition, claimed, value), { valueShape });
     // `exact` cannot happen -- every candidate is a declared id and this key is
     // not one -- and a key left as written is refused, which is the honest
     // answer if it ever did.
@@ -157,18 +158,41 @@ export function automationStudioMatchWrittenParameterName(
   claimed: ReadonlySet<string>
 ): { id: string; how: "normalized" | "nearest"; score: number; valueShape: AutomationStudioNameValueShape } | undefined {
   const valueShape = writtenValueShape(value);
-  const match = automationStudioMatchName(key, unclaimedCandidates(definition, claimed), { valueShape });
+  const match = automationStudioMatchName(key, unclaimedCandidates(definition, claimed, value), { valueShape });
   // `exact` cannot happen: every candidate is a declared id and a caller only
   // asks about a key that is not one.
   if (!match || match.how === "exact") return undefined;
   return { id: match.id, how: match.how, score: match.score, valueShape };
 }
 
-/** The declared parameters nothing has claimed yet, with what each one takes. */
-function unclaimedCandidates(definition: AutomationStudioNodeDefinition, claimed: ReadonlySet<string>): AutomationStudioNameCandidate[] {
+/** The declared parameters nothing has claimed yet and the written value can be, with what each one takes. */
+function unclaimedCandidates(definition: AutomationStudioNodeDefinition, claimed: ReadonlySet<string>, value: JsonValue): AutomationStudioNameCandidate[] {
   return definition.parameters
-    .filter((parameter) => !claimed.has(parameter.id))
+    .filter((parameter) => !claimed.has(parameter.id) && takesWrittenValue(parameter, value))
     .map((parameter) => ({ id: parameter.id, accepts: acceptedValueShape(parameter) }));
+}
+
+/** The handle syntax, as `runtime/llm` declares it for a target override, at most 64 characters. */
+const HANDLE_TOKEN = /^[A-Za-z0-9](?:[A-Za-z0-9_.:-]{0,62}[A-Za-z0-9])?$/u;
+
+/**
+ * Whether a written value can be the parameter's at all (t514).
+ *
+ * **A text value never matches an object parameter by name.** The shape was
+ * only evidence for the matcher, so `state: absent` on a wait step went to
+ * `expectedState` (`how: "nearest"`, 0.739) for want of a better name, and the
+ * object reader then made the word a handle no view printed
+ * (`run-mv6v2jh4-69244ffb`, step 0083). Text reaches an object parameter only
+ * where that parameter reads text itself: a handle, under a parameter that
+ * takes one (`../parameter-words/handle-parameter.ts`), or a dataset's name,
+ * under a record output. Everything else stays as written and is refused as
+ * the unknown key it is, with the line its word belongs in where the node
+ * declares one (`../parameter-words/word-instead.ts`).
+ */
+function takesWrittenValue(parameter: AutomationNodeParameter, value: JsonValue): boolean {
+  if (typeof value !== "string" || acceptedValueShape(parameter) !== "record") return true;
+  if (parameter.ui?.control === "record-output") return true;
+  return automationStudioParameterTakesHandle(parameter) && HANDLE_TOKEN.test(value.trim());
 }
 
 /**
