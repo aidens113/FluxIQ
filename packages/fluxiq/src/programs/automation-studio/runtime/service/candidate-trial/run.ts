@@ -43,6 +43,7 @@ import { automationStudioCandidateTrialLandedActs } from "./landed-acts.ts";
 import { automationStudioTrialLearnedPaces } from "./learned-paces.ts";
 import { automationStudioCandidateTrialSummary } from "./summary.ts";
 import { automationStudioTrialWayOuts } from "./way-outs.ts";
+import { automationStudioCandidateFrameEvidence } from "./frame-evidence.ts";
 
 const NO_SPEND: AutomationStudioCandidateTrialRecord["judge"] = Object.freeze({ calls: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCostUsd: 0 });
 
@@ -91,21 +92,22 @@ export async function runAutomationStudioCandidateTrial(request: AutomationStudi
   await ports.writeSession(ended);
   signal.throwIfAborted();
   // The handle of each way out the run pressed to close a layer the page put in the way, named by the domain (`./interruptions.ts`, t470).
-  const shown = { trialRunId: runId, trace: executed.trace, graph: executed.graph, start: start.status, wayOuts: await wayOutHandles(executed.trace?.attempts ?? [], ports) };
+  const frames = automationStudioCandidateFrameEvidence(executed.trace?.attempts ?? [], executed.graph, executed.candidateGraphs);
+  const shown = { trialRunId: runId, trace: executed.trace, graph: frames.graph, start: start.status, wayOuts: await wayOutHandles(frames.attempts, ports) };
   // What the run learned to slow down for is kept with the trial, for a promotion of it to keep (`./promotion.ts`).
-  const learned = automationStudioTrialLearnedPaces(executed.trace, executed.graph), paced = learned.length ? { learnedPaces: learned } : {};
+  const learned = automationStudioTrialLearnedPaces(executed.trace, executed.graph, executed.candidateGraphs), paced = learned.length ? { learnedPaces: learned } : {};
   // The lasting acts the run left on the site, whatever its verdict, for the build to undo before its next trial (t462).
-  const acts = automationStudioCandidateTrialLandedActs(executed.trace, executed.graph);
+  const acts = automationStudioCandidateTrialLandedActs(executed.trace, frames.graph);
   if (executed.receipt.status !== "succeeded") {
     const code = executed.code ?? `candidate.trial_${executed.receipt.status}`;
     // What each list read kept, from the run's own read accounts, as a judged trial's summary has them (t474).
-    const { reads } = automationStudioResultReadAccounts({ actionAttempts: ports.actionAttempts?.(ended), flowNodes: executed.graph?.nodes, deniedEvidenceKeys: ports.deniedEvidenceKeys });
+    const { reads } = automationStudioResultReadAccounts({ actionAttempts: ports.actionAttempts?.(ended)?.filter((attempt) => !attempt.subflowTarget), flowNodes: frames.graph?.nodes, deniedEvidenceKeys: ports.deniedEvidenceKeys });
     const failed = Feedback.executionFailed({ code, ...shown, reads });
     return answer(failed.verdict, failed.feedback, { trialRunId: runId, start, execution: executed.receipt.status, code, ...paced, judge: { ...NO_SPEND } }, acts);
   }
   let summary: AutomationStudioRunResultSummary;
   try {
-    summary = await automationStudioCandidateTrialSummary({ recordSets: await ports.recordSets(runId), graph: executed.graph, trace: executed.trace,
+    summary = await automationStudioCandidateTrialSummary({ recordSets: await ports.recordSets(runId), graph: frames.graph, trace: executed.trace,
       ...(ports.readEndView ? { readEndView: () => ports.readEndView!({ runId }) } : {}), actionAttempts: ports.actionAttempts?.(ended),
       observedStateKeys: ports.observedStateKeys, deniedEvidenceKeys: ports.deniedEvidenceKeys, ...(request.startedWith?.length ? { startedWith: request.startedWith } : {}) });
   } catch (error) {

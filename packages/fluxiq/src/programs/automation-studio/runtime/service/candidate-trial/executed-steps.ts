@@ -14,6 +14,7 @@
 import type { AutomationStudioNodeAttemptTrace } from "../../executor/index.ts";
 import { automationStudioAttemptSettled } from "../../flow-change/index.ts";
 import type { AutomationStudioTrialExecutedStep } from "./contracts.ts";
+import { automationStudioCandidateFrameEvidence } from "./frame-evidence.ts";
 
 /** The nodes whose `body` passes a step can run in, as the executor keys them. */
 const LOOP_DEFINITION_IDS: ReadonlySet<string> = new Set(["builtin.control.for-each", "builtin.control.repeat"]);
@@ -22,9 +23,9 @@ const LOOP_DEFINITION_IDS: ReadonlySet<string> = new Set(["builtin.control.for-e
 export function automationStudioTrialExecutedSteps(attempts: readonly AutomationStudioNodeAttemptTrace[]): AutomationStudioTrialExecutedStep[] {
   const folded: AutomationStudioTrialExecutedStep[] = [];
   let pass: AutomationStudioTrialExecutedStep["pass"];
-  for (const attempt of attempts) {
+  for (const attempt of automationStudioCandidateFrameEvidence(attempts).attempts) {
     const last = folded.at(-1);
-    if (last && last.attempt.nodeId === attempt.nodeId && automationStudioAttemptSettled(last.attempt).status === "failed") {
+    if (last && last.attempt.nodeId === attempt.nodeId && JSON.stringify(last.attempt.framePath) === JSON.stringify(attempt.framePath) && automationStudioAttemptSettled(last.attempt).status === "failed") {
       folded[folded.length - 1] = { ...last, attempt, attempts: last.attempts + 1, absorbed: [...last.absorbed, { failed: last.attempt, retry: attempt }] };
       continue;
     }

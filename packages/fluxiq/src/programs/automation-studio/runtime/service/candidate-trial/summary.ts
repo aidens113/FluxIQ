@@ -12,6 +12,7 @@
 import type { AutomationStudioFlowArtifact, AutomationStudioFlowRunActionAttemptRecord } from "../../../model/index.ts";
 import type { AutomationStudioGraphExecutionTrace } from "../../executor/index.ts";
 import { automationStudioResultEndViewRead, summarizeAutomationStudioRunResult, type AutomationStudioResultEndView, type AutomationStudioResultRecordSetInput, type AutomationStudioRunResultSummary } from "../../result-verification/index.ts";
+import { automationStudioCandidateFrameEvidence } from "./frame-evidence.ts";
 
 /** The judge's summary of one trial run. */
 export async function automationStudioCandidateTrialSummary(input: {
@@ -26,12 +27,13 @@ export async function automationStudioCandidateTrialSummary(input: {
   startedWith?: readonly string[] | undefined;
 }): Promise<AutomationStudioRunResultSummary> {
   const ended = await automationStudioResultEndViewRead(input.readEndView);
+  const frames = automationStudioCandidateFrameEvidence(input.trace?.attempts ?? [], input.graph);
   const summary = summarizeAutomationStudioRunResult({
     recordSets: input.recordSets,
     ...(input.graph ? { flowNodes: input.graph.nodes, flowEdges: input.graph.edges } : {}),
     ...ended,
-    ...(input.actionAttempts ? { actionAttempts: input.actionAttempts } : {}),
-    ...(input.trace ? { sessionAttempts: input.trace.attempts, ...(input.observedStateKeys ? { observedStateKeys: input.observedStateKeys } : {}) } : {}),
+    ...(input.actionAttempts ? { actionAttempts: input.actionAttempts.filter((attempt) => !attempt.subflowTarget) } : {}),
+    ...(input.trace ? { sessionAttempts: frames.attempts.filter((attempt) => !attempt.subflowTarget), ...(input.observedStateKeys ? { observedStateKeys: input.observedStateKeys } : {}) } : {}),
     ...(input.deniedEvidenceKeys !== undefined ? { deniedEvidenceKeys: input.deniedEvidenceKeys } : {})
   });
   return input.startedWith?.length ? { ...summary, startedWith: [...input.startedWith] } : summary;

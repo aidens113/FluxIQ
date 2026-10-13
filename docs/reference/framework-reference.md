@@ -7,13 +7,13 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 
 ## API Summary
 
-- Public declarations: 3583
+- Public declarations: 3584
 - Class: 110
 - Interface: 2
 - Object: 466
 - Type: 1939
 - Type Alias: 1
-- Value: 1065
+- Value: 1066
 
 ## Public Declarations
 
@@ -706,6 +706,7 @@ Regenerate it with `pnpm docs:reference`; CI verifies freshness with `pnpm docs:
 | `AutomationStudioCandidateDurableSession` | Class | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/durable-session.ts` | Internal trusted-port orchestration; production promotion is deliberately closed. |
 | `AutomationStudioCandidateExecutionReceipt` | Type | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/contracts.ts` | - |
 | `automationStudioCandidateFingerprint` | Object | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/candidate/digest.ts` | One fingerprint owner: byte-compatible legacy graph and source-bound v2. |
+| `automationStudioCandidateGraphSource` | Value | `packages/fluxiq/src/programs/automation-studio/runtime/flow-bootstrap/verification/candidate-graphs.ts` | - |
 | `AutomationStudioCandidateLedgerRecord` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/candidate-verification/contracts.ts` | - |
 | `AutomationStudioCandidateLedgerRequest` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/candidate-verification/contracts.ts` | - |
 | `AutomationStudioCandidateLedgerStage` | Type | `packages/fluxiq/src/programs/automation-studio/storage/project/candidate-verification/contracts.ts` | - |

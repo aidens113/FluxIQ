@@ -32,7 +32,7 @@ export function automationStudioCandidateTrialLandedActs(trace: AutomationStudio
   const nodes = new Map((graph?.nodes ?? []).map((node) => [node.id, node]));
   const acts: AutomationStudioCandidateTrialAct[] = [];
   automationStudioTrialExecutedSteps(trace?.attempts ?? []).forEach(({ attempt }, index) => {
-    if (attempt.stateHeld || attempt.skipped || automationStudioAttemptSettled(attempt).status !== "succeeded" || noEffectSeen(attempt)) return;
+    if (attempt.subflowTarget || attempt.stateHeld || attempt.skipped || automationStudioAttemptSettled(attempt).status !== "succeeded" || noEffectSeen(attempt)) return;
     const node = nodes.get(attempt.nodeId);
     const declared = node?.metadata?.[AUTOMATION_STUDIO_DECLARED_CONSEQUENCES_METADATA_KEY];
     const consequences = Array.isArray(declared) ? automationStudioConsequencesInOrder(declared.filter(isAutomationStudioActionConsequence)) : [];
