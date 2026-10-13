@@ -19,11 +19,15 @@ const IN_RUN_ID = AUTOMATION_STUDIO_LLM_IN_RUN_REPAIR_INSTRUCTION.instructionId;
 describe("a runtime patch that is not an in-run repair", () => {
   // The digest and length were taken from this exact input on the harness as it
   // stood before the slot existed (t392 unit I), so this pins the bytes sent.
+  // The digest was re-taken once, when t492 moved the run id and the node id
+  // behind the instruction and the policy (`../context-packet.ts`) for the
+  // provider cache: the same keys and values, so the same length, in a new order.
   it("is byte-identical to the request built before the slot existed", async () => {
     const result = await runAutomationStudioLlmHarness(notInRun());
     const bytes = JSON.stringify(result.request);
     expect(bytes.length).toBe(2941);
-    expect(createHash("sha256").update(bytes).digest("hex")).toBe("1de28ba862c1161c87c04787871f0a55d1eb3851fd3246103a782b20a89cfc93");
+    expect(Object.keys(result.request.context)).toEqual(["schemaVersion", "taskKind", "stage", "promptVersion", "projectId", "flowId", "instructions", "policyGates", "runId", "nodeId", "failureEvidence", "metadata"]);
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe("5317e954e83c40532a00022347e49aee0489f24261f20af0528515b4f8b6aed0");
     expect(result.request.context.instructions.instructionIds).not.toContain(IN_RUN_ID);
     expect(result.request.context).not.toHaveProperty("inRunRepair");
   });

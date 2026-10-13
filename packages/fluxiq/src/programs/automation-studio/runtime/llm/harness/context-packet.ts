@@ -332,10 +332,20 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     promptVersion,
     projectId: input.projectId,
     flowId: input.flowId,
+    // **The order is the point (t492, D1 of `run-mv6bg8sv-99895ba1`).** A
+    // one-shot call's provider cache is only ever an earlier call's prefix, so
+    // what every call about one Flow shares -- the instruction and the policy
+    // -- comes before anything that names this call. The run id sat in front
+    // of the instruction, and each trial judge and result check after the
+    // first was billed again for both. The ids are opaque handles the model
+    // reads by key, never by position, so the move changes no meaning; they
+    // stay in the packet because the evidence they identify is about them.
+    // Anything that varies per call goes after the policy, never before it.
+    instructions,
+    ...(input.policy ? { policyGates: adaptationPolicyGates(input.policy, input.actionPermissions) } : {}),
     ...(input.runId ? { runId: input.runId } : {}),
     ...(input.subflowId ? { subflowId: input.subflowId } : {}),
     ...(input.nodeId ? { nodeId: input.nodeId } : {}),
-    instructions,
     // Page-derived, so carried whole: every state diff and every route visited.
     ...(input.stateDiffs?.length ? { stateDiffs: [...input.stateDiffs] } : {}),
     ...(input.routeHistory?.length ? { routeHistory: [...input.routeHistory] } : {}),
@@ -372,7 +382,6 @@ export function packAutomationStudioLlmContext(input: AutomationStudioLlmHarness
     ...(input.availableActions?.length ? { availableActions: [...input.availableActions] } : {}),
     ...(flowBootstrap ? { flowBootstrap } : {}),
     ...(input.taskKind === "evidence_tool_decision" && input.evidenceLoop ? { evidenceLoop: packEvidenceLoop(input.evidenceLoop, deniedEvidenceKeys) } : {}),
-    ...(input.policy ? { policyGates: adaptationPolicyGates(input.policy, input.actionPermissions) } : {}),
     ...(input.metadata ? { metadata: input.metadata } : {})
   };
   if (input.explorationEvidence === undefined) return packed;
