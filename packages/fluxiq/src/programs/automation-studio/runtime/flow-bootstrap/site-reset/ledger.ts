@@ -77,7 +77,10 @@
 // **A start hook's reset asks the model for nothing (t475, t479).** When the
 // deployment's start hook has just put the site back (`startReset`), every act
 // of this build, kept ones too, counts undone, nothing is compared, and the
-// trial runs. The hook is the deployment's own reset of the whole site; what a
+// trial runs. Each act it took back is answered as `absorbedByStartReset`, by
+// what it did and the call that made it (t504): lane D round 17
+// (`run-mv6lgt3s-c3aa6fac`) pressed one row's control while exploring, the hook
+// took it back, and no trial evidence or run record said the act had existed. The hook is the deployment's own reset of the whole site; what a
 // look after it still sees is content that changes by itself, a cover the
 // runtime closed during the act, or a gap in the hook -- never something the
 // model can put back better. t475 looked again on each act's own page and
@@ -272,13 +275,16 @@ export class AutomationStudioSiteResetLedger implements AutomationStudioSiteRese
     }
     if (options.startReset === true) {
       // The hook put the whole site back: no act of this build is on it, and the model is asked for nothing (header).
+      // Each act it took back is answered, never erased in silence (t504).
+      const absorbed: AutomationStudioSiteResetNamedAct[] = [];
       for (const act of this.acts) {
         if (!act.undoable || act.undone) continue;
         act.undone = true;
         delete act.stillThere;
+        absorbed.push(namedAct(act));
       }
       this.phase = { recorded: 0, refusals: 0, startDiffersSent: false };
-      return { kind: "admit" };
+      return { kind: "admit", ...(absorbed.length > 0 ? { absorbedByStartReset: absorbed } : {}) };
     }
     let moved = false;
     for (const act of this.acts.filter((entry) => this.toUndo(entry))) {
