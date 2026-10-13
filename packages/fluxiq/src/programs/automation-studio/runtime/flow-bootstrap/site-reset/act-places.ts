@@ -20,6 +20,13 @@
 // and the ledger is told so (`noEffect`): it is never asked for. The items the
 // page shows after the act that no read of this build had seen before are the
 // items it created, the only ones an undo of it may remove without asking.
+//
+// **Only positive evidence counts (t479).** An item is created only when the
+// read before the act listed the page's items and this one was not among them:
+// a read that listed none proves nothing absent, so then nothing is created.
+// A call stayed on its page only when both reads named the same location: two
+// missing locations are not one page. A read that names none says nothing of
+// where the call ran, so it is left to the ledger as an unread target is.
 
 import type { JsonObject } from "../../../../../core/index.ts";
 import { AUTOMATION_STUDIO_LLM_RUN_NODE_TOOL_ID } from "../../llm/index.ts";
@@ -56,15 +63,18 @@ export async function automationStudioSiteResetPlacedCall<T>(input: {
   if ("unread" in before) return ran;
   const after = reader.settled ? await reader.settled(before.state, signal) : await reader.read(before.state, signal);
   if ("unread" in after) return ran;
+  // Where neither read can say which page it was, nothing is claimed (header).
+  if (before.location === undefined || after.location === undefined) return ran;
   const stayed = after.location === before.location;
   if (typeof undoes === "string") {
     ledger.undoSeen(undoes, stayed && after.differs.length > 0);
     return ran;
   }
   const act = ledger.actOf(call.callId);
-  if (!act || !stayed || !before.location) return ran;
-  const known = seen ?? new Set(before.items ?? []);
-  const created = after.items ? after.items.filter((item) => !known.has(item)) : [];
+  if (!act || !stayed) return ran;
+  // Absent before is known only from a read that listed the page's items (header).
+  const known = new Set([...(seen ?? []), ...(before.items ?? [])]);
+  const created = after.items && before.items ? after.items.filter((item) => !known.has(item)) : [];
   // Its own page shows nothing of it: no effect appeared, so there is nothing of it to undo.
   if (!after.differs.length && !created.length) {
     ledger.noEffect?.(act);

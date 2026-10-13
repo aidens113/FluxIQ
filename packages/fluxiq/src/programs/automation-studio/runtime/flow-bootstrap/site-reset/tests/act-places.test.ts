@@ -116,4 +116,27 @@ describe("site reset reads around an act", () => {
     expect(settled).toBe(1);
     expect(placed).toEqual([{ state: { page: "https://site.test/basket" }, location: "https://site.test/basket", changed: ["new line"], lines: { gone: [], added: ["new line"] }, created: ["line:added"] }]);
   });
+
+  it("counts nothing created when the read before the act listed no items: absence before needs a read that listed them (t479)", async () => {
+    const placed: AutomationStudioSiteResetPlace[] = [];
+    const reads: AutomationStudioSiteResetRead[] = [at("https://site.test/basket"), { ...at("https://site.test/basket", ["new line"]), items: ["line:before", "line:added"] }];
+    await automationStudioSiteResetPlacedCall({
+      call: { callId: "add", toolId: "core.run_node", value: { node: "demo.press", consequences: ["create_new"] } },
+      ledger: { actOf: () => "act-1", placed: (_act, place) => { placed.push(place); }, undoSeen: () => undefined },
+      reader: { read: async () => reads.shift() ?? { unread: "no_answer" }, seenItems: () => new Set() },
+      run: async () => "ran"
+    });
+    expect(placed).toHaveLength(1);
+    expect(placed[0]!.created).toBeUndefined();
+  });
+
+  it("never takes two reads with no location for one page: an undo there is left to the ledger, and an act gets no place (t479)", async () => {
+    const unplaced = (differs: string[]): AutomationStudioSiteResetRead => ({ state: {}, differs, lines: { gone: [], added: differs } });
+    const undo = harness([unplaced([]), unplaced(["gone line"])]);
+    await undo.run({ callId: "remove", value: { node: "demo.press", consequences: ["delete"], undoes: "act-1" } });
+    expect(undo.seen).toEqual([]);
+    const act = harness([unplaced([]), unplaced(["new line"])], "act-2");
+    await act.run({ callId: "add", value: { node: "demo.press", consequences: ["create_new"] } });
+    expect(act.placed).toEqual([]);
+  });
 });

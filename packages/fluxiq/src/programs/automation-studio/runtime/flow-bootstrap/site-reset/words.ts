@@ -14,7 +14,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
     return "Before this trial, put the site back the way this build found it, so the trial measures only what the Flow does. "
       + `Undo each act listed under actsToUndo with core.run_node, adding "${UNDOES}": "<act>" to that call: remove what the act added, or set back what it changed. `
       + "stillThere lists what the act changed on its own page that is still there; an act counts as undone only once that is gone. "
-      + "An undo may act only on the act's own item -- the same row, card or dialog it acted on -- or on what the act itself created; a control on any other item is refused unrun. "
+      + "An undo may act only on the act's own item -- the same row or card it acted on, told apart from the others -- or on what the act itself created; a control on any other item, or on one that cannot be told apart, is refused unrun. "
       + "Removing only what the act created needs no permission; anything else is asked. Do not change anything that was there before the build began. "
       + (differs ? "differs lists what is still not as the build found it. " : "")
       + "If the site offers no control that reverses an act, do not keep trying: test the same revision again with its id under cannotUndo, and the trial runs with that act already done. "
@@ -46,7 +46,7 @@ export const AUTOMATION_STUDIO_SITE_RESET_WORDS = Object.freeze({
   },
   /** An undo whose control is not on the act's own item, nor on what it created (t475). */
   wrongTarget(): string {
-    return "That control is not on the item this act acted on, nor on anything it created, so it was not touched: an undo never acts on another item. "
+    return "That control is not shown to be on the item this act acted on, nor on anything it created, so it was not touched: an undo never acts on another item, or on one it cannot tell apart. "
       + "This act stays as it is and is listed under cannotUndo: the next trial runs with it already done, and the judge is told. "
       + `Do not try to undo it again. Test the same revision again now, or undo another listed act on its own item with "${UNDOES}".`;
   },

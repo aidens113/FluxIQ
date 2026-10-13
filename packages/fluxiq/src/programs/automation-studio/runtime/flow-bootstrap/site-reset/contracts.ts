@@ -24,7 +24,8 @@ export type AutomationStudioSiteResetUndo = { act: string; allowed: readonly Aut
 /**
  * Where a control sits, as the domain declared it (t475): opaque tokens for the
  * item -- row, card, list item -- and the dialog, compared only for equality.
- * Absent where the control sits in no item, or in no dialog.
+ * Absent where the control sits in no item, or in no dialog. Two absent items
+ * are never the same item (t479).
  */
 export type AutomationStudioSiteResetSpot = { item?: string; dialog?: string };
 
@@ -124,7 +125,9 @@ export type AutomationStudioSiteResetPlace = {
   /**
    * The items that were on its page after the act and not before it (t475):
    * the only items an undo of it may remove without asking. Absent when the
-   * domain gives no items, and then nothing is removed unasked.
+   * domain gives no items, or gave none before the act (t479: absence before is
+   * known only from a read that listed the items), and then nothing is removed
+   * unasked.
    */
   created?: string[];
 };
@@ -176,9 +179,8 @@ export type AutomationStudioSiteResetTrialAct = {
 
 /**
  * How a trial's start was made (t475). `startReset`: the deployment's start
- * hook has just put the site back, before the check, so an act no longer seen
- * on its own page -- or, with no page of its own, on a start that no longer
- * differs -- counts undone with no call from the model.
+ * hook has just put the site back, before the check, so every act of this
+ * build counts undone and the model is asked for nothing (t479).
  */
 export type AutomationStudioSiteResetBeforeTrialOptions = { startReset?: boolean };
 

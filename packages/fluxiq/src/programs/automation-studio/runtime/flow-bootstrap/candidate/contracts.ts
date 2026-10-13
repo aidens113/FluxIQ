@@ -122,7 +122,7 @@ export type AutomationStudioCandidateTrialPrepared = "reset" | "failed" | "none"
 /**
  * Runs one trial. `prepareStart`, when the port has a start hook, runs that
  * hook first, before the trial gate's reset check (t475): the site is put
- * back, then checked, so a clean start is confirmed with no model call. The
+ * back, and the reset asks the model for nothing (t479). The
  * trial of the same revision and digest that follows uses that start and does
  * not run the hook again.
  */
