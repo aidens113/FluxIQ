@@ -76,7 +76,6 @@ function requestWasCutShort(result: { status?: number; code?: string }): boolean
 function runResultFromDetail(runDetail: any) {
   const summary = runDetail?.summary ?? {};
   const adaptationIds: string[] = Array.isArray(runDetail?.adaptationIds) ? runDetail.adaptationIds : [];
-  const attempts: any[] = Array.isArray(runDetail?.metadata?.runtimePatchAttempts) ? runDetail.metadata.runtimePatchAttempts : [];
   return {
     runtimeSession: { runId: summary.runId, flowId: summary.flowId, status: summary.status },
     runSummary: summary,
@@ -84,7 +83,7 @@ function runResultFromDetail(runDetail: any) {
     createdAdaptationIds: adaptationIds,
     interventionCount: summary.interventionCount ?? 0,
     terminalReason: summary.status,
-    durableBehaviorChanged: adaptationIds.some((adaptationId) => attempts.some((attempt) => attempt?.adaptationId === adaptationId && attempt?.approvalDecision?.autoApply === true))
+    ...(typeof summary.durableBehaviorChanged === "boolean" ? { durableBehaviorChanged: summary.durableBehaviorChanged } : {})
   };
 }
 
@@ -466,18 +465,26 @@ export function RuntimePostRunSummary(props: {
 }) {
   const session = props.result.runtimeSession ?? {};
   const adaptationIds = Array.isArray(props.result.createdAdaptationIds) ? props.result.createdAdaptationIds : [];
+  const durable = props.result.durableBehaviorChanged;
+  const learning = durable === true
+    ? "This run kept a change for future runs."
+    : durable === false
+      ? adaptationIds.length
+        ? "Changes were recorded, but this run did not keep a change for future runs. Open the adaptation details to see whether a change is proposed, waiting, or held back."
+        : "This run did not keep a change for future runs."
+      : "Whether this run kept a change is not available.";
   return (
     <section className="automation-runtime-log-section">
       <header><strong>Last Run</strong><span>{session.runId ?? "-"}</span></header>
       {props.permission ? <RunPermissionRequest busy={props.permission.busy} onDismiss={props.permission.onDismiss} runDetail={props.permission.runDetail} {...(props.permission.onAllow ? { onAllow: props.permission.onAllow } : {})} /> : null}
-      {adaptationIds.length ? <p className="automation-runtime-message" role="status"><strong>{AUTOMATION_LLM_PROGRESS_LABELS.readyForReview}.</strong> {adaptationIds.length === 1 ? "One adaptation" : `${adaptationIds.length} adaptations`} must be reviewed and approved before applying.</p> : null}
+      <p className="automation-runtime-message" role="status">{learning}</p>
       <SummaryStrip items={[
         ["Status", session.status ?? "-"],
         ["Actions", props.result.runSummary?.actionAttemptCount ?? session.trace?.attempts?.length ?? 0],
         ["Recovery", props.result.runSummary?.metadata?.recoveryAttemptCount ?? 0],
         ["Interventions", props.result.interventionCount ?? 0],
         ["Adaptations", adaptationIds.length],
-        ["Durable", props.result.durableBehaviorChanged ? "yes" : "no"]
+        ["Durable", durable === true ? "yes" : durable === false ? "no" : "unknown"]
       ]} />
       <DataTable label="Run result summary" columns={["Field", "Value"]} rows={[
         ["Terminal reason", props.result.terminalReason ?? session.trace?.message ?? session.status ?? "-"],
