@@ -720,6 +720,8 @@ export type AutomationStudioResultVerification = {
    * `observation`, which are said in the chat. Absent when nothing failed.
    */
   failureCode?: string;
+  /** Core's bounded missing-proof lines for a yes lacking row-local exclusion evidence. Not a refutation or permission to promote; never recorded on a run. */
+  exclusionEvidenceMissing?: string[];
 };
 
 /**

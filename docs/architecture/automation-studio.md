@@ -442,6 +442,17 @@ revision asks the judge again on it instead of running the Flow again
 `run-mv5q4j5c-49bfb5e2` lost an 84-second trial to a judge cut off at
 19,985 ms.
 
+An affirmative check with missing row-local exclusion quotations remains
+unconfirmed when no stronger omission, numeric contradiction or advised graph
+change was found. Core asks for the exact missing name/quotation proof using
+the same screened task and result, sharing the existing two-asks-per-check
+allowance with temporary failures. Corrective feedback requires declared
+denied keys and passes the credential/evidence screen. A corrected yes still
+needs normal confirmation; persistent deficiency is `not_judged` for a
+candidate and cannot promote it. The exact revision/digest may reuse its
+retained trial evidence for another judgement without repeating the graph.
+Actual refutations and strict row identity rules retain their existing gates.
+
 Two codes and one status are historical. `core.result.no_records` and
 `core.result.nothing_to_judge` are produced by nothing and readable on runs
 recorded before 2026-09-24, and the `no_result` value of a run's

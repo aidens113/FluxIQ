@@ -303,12 +303,12 @@ describe("a yes over rows a condition alone left out, held to the request's own 
 
   it("is not taken when its reason for a row is only the words the request searched by", () => {
     const verification = yesSaying(`${stockSaid} Replacement Handle for Garden Tools is left out: it is a part, and the request asks for "garden tools".`);
-    expect(verification).toMatchObject({ verdict: "does_not_answer", basis: "model", code: AUTOMATION_STUDIO_RESULT_VERDICT_CODES.doesNotAnswer });
-    expect(automationStudioResultVerificationFailsRun(verification)).toBe(true);
-    expect(verification.reason).toContain("without quoting");
+    expect(verification).toMatchObject({ verdict: "unsure", basis: "model_unconfirmed", code: "core.result.exclusion_evidence_missing" });
+    expect(automationStudioResultVerificationFailsRun(verification)).toBe(false);
+    expect(verification.reason).toContain("unconfirmed");
     // The repair is told the row and its condition, in Core's words, and no reading of the yes.
     expect(verification.repair?.judgement).toBeUndefined();
-    expect(verification.repair?.checked).toEqual([
+    expect(verification.exclusionEvidenceMissing).toEqual([
       `The check answered yes without quoting, beside this row, words of the request that exclude it; it was left out by condition "${REQUEST_WORDS_CONDITIONS.handle}" alone (Read read) -- ${REQUEST_WORDS_HANDLE}. A row the request's own words do not exclude is one it asks for.`
     ]);
     // Not rows Core says the request asks for: a repair's rerun is never measured against them.

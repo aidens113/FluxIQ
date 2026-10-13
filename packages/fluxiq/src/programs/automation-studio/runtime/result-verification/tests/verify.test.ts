@@ -223,13 +223,74 @@ describe("a verification held to the request's own words", () => {
   const STOCK_SAID = `Copper Garden Tools Pair is left out, as the request says "leaving out out-of-stock items".`;
   const yesSaying = (handle: string) => ({ answersRequest: "yes", observed: `${STOCK_SAID} Replacement Handle for Garden Tools is left out, ${handle}.` });
 
+  it("corrects deficient explanation within the check and then independently confirms the yes", async () => {
+    const deficient = yesSaying("because the request asks for \"garden tools\"");
+    const complete = yesSaying("as the request says \"replacement parts\"");
+    const { provider, seen } = scripted([{ answer: deficient }, { answer: complete }, { answer: complete }]);
+    const report = await held(provider, { confirmAnswer: true });
+    expect(report.outcome).toMatchObject({ verdict: "answers", calls: 2 });
+    expect(seen).toHaveLength(3);
+    expect(String(seen[1]?.context.resultSummary?.recheck)).toContain(REQUEST_WORDS_HANDLE);
+    expect(seen[1]?.context.instructions).toEqual(seen[0]?.context.instructions);
+    expect(report.interventions.map((entry) => entry.metadata?.verificationCheck)).toEqual([1, 1, 2]);
+  });
+
+  it("corrects a deficient confirming explanation without replacing the first check", async () => {
+    const complete = yesSaying("as the request says \"replacement parts\"");
+    const { provider, seen } = scripted([{ answer: complete }, { answer: yesSaying("no quotation supplied") }, { answer: complete }]);
+    const report = await held(provider, { confirmAnswer: true });
+    expect(report.outcome).toMatchObject({ verdict: "answers", calls: 2 });
+    expect(seen).toHaveLength(3);
+    expect(report.interventions.map((entry) => entry.metadata?.verificationCheck)).toEqual([1, 2, 2]);
+  });
+
+  it("shares its ask allowance with a temporary fault instead of adding another correction ask", async () => {
+    const deficient = yesSaying("no quotation supplied");
+    const { provider, seen } = scripted([{ fault: "truncated" }, { answer: deficient }, { answer: deficient }, { answer: deficient }]);
+    const report = await held(provider, { confirmAnswer: true });
+    expect(seen).toHaveLength(4);
+    expect(report.outcome).toMatchObject({ verdict: "unsure", code: "core.result.exclusion_evidence_missing" });
+    expect(report.interventions.map((entry) => [entry.metadata?.verificationCheck, entry.metadata?.verificationAsk])).toEqual([[1, undefined], [1, 2], [2, undefined], [2, 2]]);
+  });
+
+  it("does not turn an evidence correction into permission to ignore a genuine no", async () => {
+    const deficient = yesSaying("no quotation supplied");
+    const no = { answersRequest: "no", observed: "A required row was lost.", changed: "Restore the missing row." };
+    const { provider, seen } = scripted([{ answer: deficient }, { answer: no }, { answer: no }]);
+    const report = await held(provider, { confirmAnswer: true });
+    expect(seen).toHaveLength(3);
+    expect(report.outcome).toMatchObject({ verdict: "does_not_answer" });
+    expect(report.outcome).not.toHaveProperty("exclusionEvidenceMissing");
+  });
+
+  it("uses the existing evidence screen for corrective feedback", async () => {
+    const deficient = yesSaying("no quotation supplied");
+    const complete = yesSaying("as the request says \"replacement parts\"");
+    const { provider, seen } = scripted([{ answer: deficient }, { answer: complete }]);
+    await held(provider, { deniedEvidenceKeys: ["recheck"] });
+    expect(seen).toHaveLength(2);
+    expect(seen[1]?.context.resultSummary).not.toHaveProperty("recheck");
+  });
+
+  it("charges corrective asks to the same purse and does not retry a refused key", async () => {
+    const deficient = yesSaying("no quotation supplied");
+    const { provider, seen } = scripted([{ answer: deficient }, { fault: "auth" }]);
+    const charged: number[] = [];
+    const flow = new AutomationStudioLlmBuildPurse({ ceilingUsd: 0.25, carriedUsd: 0, onSettled: (usd) => charged.push(usd) });
+    const report = await automationStudioLlmFlowPurseScope(flow, () => held(provider));
+    expect(seen).toHaveLength(2);
+    expect(charged).toHaveLength(2);
+    expect(report.outcome).toMatchObject({ verdict: "unsure", basis: "model_unavailable", failureCode: "llm.provider_auth_failed" });
+    expect(report.interventions[1]?.metadata).toMatchObject({ verificationAsk: 2, verificationEvidenceRecheck: true });
+  });
+
   it("does not take a yes whose reason for a left-out row is only the words the request searched by", async () => {
     const unquoted = yesSaying("because the request asks for \"garden tools\"");
-    const { provider, seen } = scripted([{ answer: unquoted }, { answer: unquoted }]);
+    const { provider, seen } = scripted(Array.from({ length: 4 }, () => ({ answer: unquoted })));
     const report = await held(provider);
-    expect(seen).toHaveLength(2);
-    expect(report.outcome).toMatchObject({ performed: true, verdict: "does_not_answer" });
-    const checked = report.outcome.performed ? report.outcome.repair?.checked ?? [] : [];
+    expect(seen).toHaveLength(4);
+    expect(report.outcome).toMatchObject({ performed: true, verdict: "unsure", basis: "model_unconfirmed", code: "core.result.exclusion_evidence_missing" });
+    const checked = report.outcome.performed ? report.outcome.exclusionEvidenceMissing ?? [] : [];
     expect(checked.join("\n")).toContain(`without quoting, beside this row, words of the request that exclude it; it was left out by condition "${REQUEST_WORDS_CONDITIONS.handle}" alone (Read read) -- ${REQUEST_WORDS_HANDLE}`);
   });
 
