@@ -313,3 +313,71 @@ describe("a read's rows a newer read replaced", () => {
   });
 });
 });
+
+// t484 (W1 cause 2 of `run-mv62icw0-070f88ad`): a request's bytes change only
+// where the content truly changed. Measured over the lab builds of 2026-10-11
+// and 10-12, every entry the window rewrote between consecutive decisions was
+// a view replaced by a reference: a page view in 464 decision pairs, and a
+// second view of the same result -- a read's rows after its page, or the other
+// way round -- in 55. No kept value changed. Each rewrite re-bills the entries
+// already sent after it, 1.17M characters across both days, mostly the route
+// state after the replaced call. Removing it means not showing the newest view
+// in place, which changes what a model is told (`../evidence-loop-decision.ts`:
+// "only the newest view of the target is shown whole"), so the invariant is
+// held here instead: nothing else is ever rewritten.
+describe("what a growing window rewrites between one decision and the next", () => {
+  const KEYS = ["page", "read.extracted"];
+  const view = (callId: string): AutomationStudioLlmEvidenceEntry => ({ callId, toolId: "core.run_node", value: { ok: true, node: "web.click", page: { title: callId, text: "x".repeat(500) } } });
+  const read = (callId: string): AutomationStudioLlmEvidenceEntry => ({ callId, toolId: "core.run_node", value: { ok: true, node: "web.read", page: { title: callId }, read: { count: 2, extracted: [{ name: "a" }, { name: "b" }], firstRows: [{ name: "a" }] } } });
+  const look = (callId: string): AutomationStudioLlmEvidenceEntry => ({ callId, toolId: "web.find_on_page", value: { matches: 3 } });
+  const situation = (index: number): AutomationStudioLlmEvidenceEntry => ({ callId: `core.route_state.${index}`, toolId: "core.route_state", value: { seen: "after exploring", state: { "state.page.path": `/${index}` } } });
+  const log = [view("open"), situation(1), look("find-1"), read("read-1"), situation(2), view("press-1"), situation(3), recallOf("read-1"), read("read-2"), look("find-2"), view("press-2"), situation(4), recallOf("read-2")];
+
+  function recallOf(callId: string): AutomationStudioLlmEvidenceEntry {
+    return { callId: `recall-${callId}`, toolId: AUTOMATION_STUDIO_LLM_EVIDENCE_RECALL_TOOL_ID, value: { ok: true, of: callId, restored: [{ name: "a" }, { name: "b" }] } };
+  }
+
+  it("changes an entry already sent only by replacing a view with the call that replaced it, and never again for that view", () => {
+    const stubbed = new Map<string, Set<string>>();
+    for (let count = 1; count < log.length; count += 1) {
+      const earlier = automationStudioLlmEvidenceContextWindow(log.slice(0, count), KEYS);
+      const later = automationStudioLlmEvidenceContextWindow(log.slice(0, count + 1), KEYS);
+      for (const [index, before] of earlier.entries()) {
+        const after = later[index]!;
+        expect(after.callId, `${count}: order`).toBe(before.callId);
+        if (JSON.stringify(after) === JSON.stringify(before)) continue;
+        // What changed is views, each replaced by a reference to a newer entry; every other value is byte for byte the same, in order.
+        const changed = viewChanges(before.value as JsonObject, after.value as JsonObject);
+        expect(changed.length, `${count}: ${before.callId} changed for no view`).toBeGreaterThan(0);
+        for (const { at, by } of changed) {
+          expect(log.findIndex((entry) => entry.callId === by), `${count}: ${before.callId}.${at} names a newer entry`).toBeGreaterThan(index);
+          const seen = stubbed.get(before.callId) ?? new Set<string>();
+          expect(seen.has(at), `${count}: ${before.callId}.${at} replaced twice`).toBe(false);
+          stubbed.set(before.callId, seen.add(at));
+        }
+      }
+    }
+    // The fixture exercised both kinds of view, the recall's answers, and an entry with two.
+    expect([...stubbed.entries()].map(([callId, at]) => `${callId}:${[...at].sort().join("+")}`).sort()).toEqual(["open:page", "press-1:page", "read-1:page+read", "read-2:page", "recall-read-1:restored"].sort());
+  });
+
+  /** Where `after` differs from `before`: a level whose view keys were removed and `supersededBy` added, every other key unchanged and in order. */
+  function viewChanges(before: JsonObject, after: JsonObject, at = ""): Array<{ at: string; by: string }> {
+    const found: Array<{ at: string; by: string }> = [];
+    const kept = Object.keys(before).filter((key) => key in after);
+    const referenced = typeof after.supersededBy === "string" && before.supersededBy === undefined;
+    // The reference, when newly written, goes last.
+    expect(Object.keys(after), `${at}: keys kept in order`).toEqual(referenced ? [...kept, "supersededBy"] : kept);
+    for (const key of kept) {
+      if (JSON.stringify(before[key]) === JSON.stringify(after[key])) continue;
+      const inner = before[key], outer = after[key];
+      expect(typeof inner === "object" && inner !== null && !Array.isArray(inner) && typeof outer === "object" && outer !== null && !Array.isArray(outer), `${at}${key}: only a holder changes`).toBe(true);
+      found.push(...viewChanges(inner as JsonObject, outer as JsonObject, `${at}${key}.`));
+    }
+    if (referenced) {
+      expect(Object.keys(before).length, `${at}: a view was removed`).toBeGreaterThan(kept.length);
+      found.push({ at: at.replace(/\.$/u, "") || Object.keys(before).find((key) => !(key in after))!, by: String(after.supersededBy) });
+    }
+    return found;
+  }
+});

@@ -82,7 +82,11 @@ export function automationStudioDeepSeekMessages(request: AutomationStudioLlmTas
  * the budget -- are replaced, and they ride at its end
  * (`../decision-context/shown.ts`). So with nothing varying in front of it,
  * call N is a byte prefix of call N+1 up to the end of the last tool result
- * the two share, which for a build is nearly all of either.
+ * the two share, which for a build is nearly all of either. The one rewrite
+ * is a result whose view of the target a newer result replaced: its view
+ * becomes a reference (B1, `../context-window.ts`), which re-bills what was
+ * sent after it. That is a true change of what the entry shows, and the only
+ * one the window makes (t484 measured and holds it).
  *
  * Measured on `run-mup2i28c-6c7fc209` (2026-10-01), where this did not hold:
  * five decisions read 15,722 / 59,061 / 173,545 / 174,103 / 214,853 input
@@ -107,19 +111,35 @@ export function automationStudioDeepSeekMessages(request: AutomationStudioLlmTas
  * leaving a context that is constant: it goes in front. The tools change only
  * when withdrawn (once in that build): in front, a change costs one call's
  * miss of the window instead of every call paying for them. The output schema
- * stays last: it changed three times in that build, and each change in front
- * of the window would cost the whole window, more than it costs behind it.
+ * stayed last (until t484, below): it changed three times in that build, and
+ * each change in front of the window would cost the whole window.
  * Reconstructed on that run's requests, the decisions after the first send
  * 151k uncached tokens where they sent 228k.
  *
- * So, for an evidence decision: the task envelope; the instruction, the policy
- * gates, the node catalog and a routing context that lists no situations; the
- * offered tools; then the evidence window; and after it only what varies --
+ * So, for an evidence decision: the task envelope and the output schema; the
+ * instruction, the policy gates, the node catalog and a routing context that
+ * lists no situations; the offered tools; then the evidence window; and after it only what varies --
  * the counter, a routing context that still lists its situations (a caller
- * that does not place them), any reusable context, and last the output schema.
- * Nothing is removed or cut. A later edit that adds a key must put it on the
- * correct side of the window, and a key that varies per call belongs after it.
- * Other task kinds are one call each and keep their order.
+ * that does not place them) and any reusable context. Nothing is removed or cut.
+ *
+ * **The output schema goes in front (t484, W1 of `run-mv62icw0-070f88ad`).**
+ * It stayed behind the window on t193's measure, when it was 10k characters
+ * and changed three times a build. A candidate build's schema is now 28,779
+ * characters and was the same on all 19 of that build's decisions, yet behind
+ * the window it was read uncached on every one: about $0.039, half the build.
+ * So it sits where the one-shot request has always put it, ahead of `context`,
+ * under the name the system prompt reads it by, with the head that never
+ * changes: a decision whose offer changes misses the window once, and every
+ * other decision reads it from cache. Measured over the recorded lab builds
+ * (2026-10-01 to 10-12), the schema changed between 6.4% of consecutive
+ * decisions on the evidence-guided path (136 of 2,113, all but 31 together
+ * with the tools, which sit in front already) and 3.2% on the candidate path
+ * (50 of 1,562). Behind the window it cost 25.8M and 36.7M uncached
+ * characters; in front, the misses its changes cause come to 2.2M and 0.13M.
+ *
+ * A later edit that adds a key must put it on the correct side of the window,
+ * and a key that varies per call belongs after it. Other task kinds are one
+ * call each and keep their order.
  *
  * The catalog an evidence decision is shown is every node by name and what it
  * does (`nodeCatalog`, from the packet's `catalogNames`) and the note that says
@@ -166,7 +186,7 @@ function providerUserPayload(request: AutomationStudioLlmTaskRequest): Record<st
   };
 }
 
-/** One evidence decision's user message: the constant head, the window, then everything that varies (see above). */
+/** One evidence decision's user message: the output schema and the constant head, the window, then everything that varies (see above). */
 function providerEvidenceDecisionPayload(
   request: AutomationStudioLlmTaskRequest,
   loop: NonNullable<AutomationStudioLlmTaskRequest["context"]["evidenceLoop"]>
@@ -180,6 +200,8 @@ function providerEvidenceDecisionPayload(
     taskKind: request.taskKind,
     promptVersion: request.promptVersion,
     expectedOutput: request.expectedOutput,
+    // Rebuilt only when what is offered changes (completion, amending, tools): in front, one miss per change.
+    ...(outputSchema ? { outputSchema } : {}),
     context: {
       schemaVersion: request.context.schemaVersion,
       ...(request.context.stage ? { stage: request.context.stage } : {}),
@@ -209,9 +231,7 @@ function providerEvidenceDecisionPayload(
       ...(routing && !routingInFront ? { routing } : {}),
       // Looked up again against each decision's fresh evidence.
       ...(request.context.reusableContext ? { reusableContext: request.context.reusableContext } : {})
-    },
-    // Rebuilt whenever what is offered changes: completion, amending, tools.
-    ...(outputSchema ? { outputSchema } : {})
+    }
   };
 }
 
