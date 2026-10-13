@@ -130,8 +130,55 @@ describe("candidate stall guidance", () => {
       proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true,
       ...{ discoveryOnly: true }
     });
-    expect(note.instruction).toContain("submit the whole candidate");
+    expect(note.instruction).toContain("Submit the whole candidate only once");
     expect(note.instruction).not.toMatch(/Your draft|amend_draft|or complete/u);
     expect(note).not.toHaveProperty("candidate");
+  });
+});
+
+// Live run `run-mv6bg7ac-d24d91ce`: with no candidate accepted and one act's
+// object still the wrong item, the note said "Use the evidence already
+// gathered ... submit the whole candidate", and the model submitted the wrong
+// item. A no-candidate stall says "submit" only when Core's own record (the
+// acts checklist, the completion check) shows every act covered.
+describe("a no-candidate stall", () => {
+  const stall = (extra: Record<string, unknown>) => String(automationStudioLlmEvidenceStallRedirect({
+    stepsWithoutProgress: 3, maxStepsWithoutProgress: 8, repeatingToolIds: ["web.search"],
+    proposableSteps: 0, completionAttempts: 0, lastIssueCodes: [], canComplete: true, discoveryOnly: true,
+    ...extra
+  }).instruction);
+  const routes = /control on the current page you have not used.*page search with other or fewer words.*going back to a listing/su;
+
+  it("points to untried routes, not to submitting, while an act is still owed", () => {
+    const said = stall({ actsMissing: ["a2", "a2.variant"] });
+    expect(said).not.toContain("Use the evidence already gathered");
+    expect(said).not.toMatch(/correct any named submission issues and submit/u);
+    expect(said).toContain("a2, a2.variant not shown done");
+    expect(said).toMatch(routes);
+    expect(said).toContain("Submit the whole candidate only once the evidence shows every act");
+  });
+
+  it("points to untried routes when Core holds no record of the acts", () => {
+    const said = stall({});
+    expect(said).not.toContain("Use the evidence already gathered");
+    expect(said).toMatch(routes);
+  });
+
+  it("points to untried routes when the completion check names a gap", () => {
+    const said = stall({ actsMissing: [], answerability: { recordsRequested: true, recordProducerPresent: false, recordStorePresent: false } });
+    expect(said).toContain("stillMissing: record_producer");
+    expect(said).toMatch(routes);
+  });
+
+  it("says submit when the checklist owes nothing", () => {
+    const said = stall({ actsMissing: [] });
+    expect(said).toContain("Use the evidence already gathered, correct any named submission issues and submit the whole candidate");
+    expect(said).not.toMatch(routes);
+  });
+
+  it("uses no scenario words", () => {
+    for (const said of [stall({ actsMissing: ["a1"] }), stall({})]) {
+      expect(said).not.toMatch(/napkin|pack|towel|shop|store|cart|product/iu);
+    }
   });
 });
